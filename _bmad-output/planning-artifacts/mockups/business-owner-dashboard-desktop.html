@@ -1,0 +1,1369 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aureon Last Mile - Business Owner Dashboard (Desktop)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        /* Tractis Theme Colors */
+        :root {
+            --gold-primary: #e6c15c;
+            --gold-light: #fef3c7;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+
+            --green: #10b981;
+            --green-50: #f0fdf4;
+            --green-600: #16a34a;
+            --green-700: #15803d;
+
+            --yellow: #f59e0b;
+            --yellow-50: #fefce8;
+            --yellow-600: #ca8a04;
+            --yellow-700: #a16207;
+
+            --red: #ef4444;
+            --red-50: #fef2f2;
+            --red-600: #dc2626;
+            --red-700: #b91c1c;
+
+            --blue: #3b82f6;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--slate-50);
+            color: var(--slate-900);
+            line-height: 1.5;
+            min-width: 1200px;
+        }
+
+        /* App Layout with Sidebar */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 70px;
+            background: var(--slate-900);
+            color: white;
+            transition: width 0.3s ease;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            z-index: 200;
+            overflow: hidden;
+        }
+
+        .sidebar:hover,
+        .sidebar.expanded {
+            width: 250px;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            white-space: nowrap;
+        }
+
+        .sidebar-logo {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-brand {
+            font-weight: 600;
+            font-size: 1rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar:hover .sidebar-brand,
+        .sidebar.expanded .sidebar-brand {
+            opacity: 1;
+        }
+
+        .sidebar-nav {
+            padding: 20px 0;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 20px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .sidebar-item.active {
+            background: var(--gold-primary);
+            color: var(--slate-900);
+            font-weight: 600;
+        }
+
+        .sidebar-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            width: 30px;
+            text-align: center;
+        }
+
+        .sidebar-label {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            font-size: 0.875rem;
+        }
+
+        .sidebar:hover .sidebar-label,
+        .sidebar.expanded .sidebar-label {
+            opacity: 1;
+        }
+
+        .sidebar-footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 70px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Top Navigation Bar */
+        .top-nav {
+            background: white;
+            height: 64px;
+            border-bottom: 1px solid var(--slate-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            white-space: nowrap;
+        }
+
+        .date-selectors {
+            display: flex;
+            gap: 12px;
+        }
+
+        .date-btn {
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            font-family: inherit;
+        }
+
+        .date-btn:hover {
+            border-color: var(--gold-primary);
+            background: var(--gold-light);
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--slate-300);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 32px;
+        }
+
+        /* Hero Section - SLA Fulfillment */
+        .hero-section {
+            background: white;
+            border-radius: 12px;
+            padding: 48px;
+            margin-bottom: 32px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .hero-section:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: scale(1.01);
+        }
+
+        .hero-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .hero-percentage {
+            font-size: 4rem;
+            font-weight: 700;
+            margin-bottom: 16px;
+            line-height: 1;
+            transition: all 0.3s;
+        }
+
+        .hero-percentage.excellent {
+            color: var(--green);
+        }
+
+        .hero-percentage.warning {
+            color: var(--yellow);
+        }
+
+        .hero-percentage.critical {
+            color: var(--red);
+        }
+
+        .hero-trend {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 24px;
+        }
+
+        .trend-up {
+            color: var(--green);
+        }
+
+        .trend-down {
+            color: var(--red);
+        }
+
+        .hero-context {
+            font-size: 1.5rem;
+            color: var(--slate-600);
+            margin-bottom: 24px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto 32px;
+            height: 32px;
+            background: var(--slate-200);
+            border-radius: 16px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--gold-primary), var(--gold-light));
+            border-radius: 16px;
+            transition: width 0.8s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 16px;
+        }
+
+        .progress-bar-text {
+            color: white;
+            font-weight: 600;
+            font-size: 0.875rem;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        .hero-inline-metrics {
+            display: flex;
+            justify-content: center;
+            gap: 48px;
+            font-size: 1.125rem;
+            color: var(--slate-700);
+        }
+
+        .inline-metric {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Primary Metrics Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid var(--slate-200);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            min-height: 240px;
+            transition: all 0.2s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .metric-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transform: scale(1.01);
+        }
+
+        .metric-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .metric-icon {
+            font-size: 1.5rem;
+        }
+
+        .metric-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--slate-700);
+        }
+
+        .metric-value {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            line-height: 1;
+        }
+
+        .metric-value.excellent {
+            color: var(--green);
+        }
+
+        .metric-value.warning {
+            color: var(--yellow);
+        }
+
+        .metric-value.critical {
+            color: var(--red);
+        }
+
+        .metric-trend {
+            font-size: 1rem;
+            font-weight: 500;
+            margin-bottom: 12px;
+        }
+
+        .metric-context {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-bottom: 12px;
+            flex: 1;
+        }
+
+        .metric-benchmark {
+            font-size: 0.875rem;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: 500;
+            margin-top: auto;
+        }
+
+        .benchmark-excellent {
+            background: var(--green-50);
+            color: var(--green-700);
+        }
+
+        .benchmark-warning {
+            background: var(--yellow-50);
+            color: var(--yellow-700);
+        }
+
+        /* Customer Performance Table */
+        .table-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 32px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .table-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-800);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .export-btn {
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-family: inherit;
+        }
+
+        .export-btn:hover {
+            border-color: var(--gold-primary);
+            background: var(--gold-light);
+        }
+
+        .customer-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .customer-table thead {
+            background: var(--slate-50);
+            border-bottom: 2px solid var(--slate-300);
+        }
+
+        .customer-table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--slate-700);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .customer-table th:hover {
+            background: var(--slate-100);
+        }
+
+        .customer-table tbody tr {
+            border-bottom: 1px solid var(--slate-200);
+            transition: background 0.2s;
+        }
+
+        .customer-table tbody tr:hover {
+            background: var(--slate-50);
+            cursor: pointer;
+        }
+
+        .customer-table td {
+            padding: 16px;
+            font-size: 0.875rem;
+            vertical-align: middle;
+        }
+
+        .customer-name {
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .sla-cell {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sla-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .sla-indicator.excellent {
+            background: var(--green);
+        }
+
+        .sla-indicator.warning {
+            background: var(--yellow);
+        }
+
+        .sla-indicator.critical {
+            background: var(--red);
+        }
+
+        .sla-percentage {
+            font-weight: 600;
+        }
+
+        .sla-percentage.excellent {
+            color: var(--green-700);
+        }
+
+        .sla-percentage.warning {
+            color: var(--yellow-700);
+        }
+
+        .sla-percentage.critical {
+            color: var(--red-700);
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .detail-link {
+            color: var(--blue);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        .detail-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Failed Deliveries Analysis */
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: 60% 38%;
+            gap: 2%;
+            margin-bottom: 32px;
+        }
+
+        .analysis-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .analysis-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-800);
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .failure-reason {
+            margin-bottom: 16px;
+        }
+
+        .reason-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .reason-label {
+            font-size: 1rem;
+            color: var(--slate-700);
+        }
+
+        .reason-percentage {
+            font-size: 1.125rem;
+            font-weight: 500;
+            color: var(--red-600);
+        }
+
+        .reason-bar-container {
+            height: 32px;
+            background: var(--slate-200);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            margin-bottom: 4px;
+        }
+
+        .reason-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--red-600), #f87171);
+            border-radius: 6px;
+            transition: width 0.6s ease-out;
+        }
+
+        .reason-count {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            text-align: right;
+        }
+
+        .total-failures {
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 2px solid var(--slate-200);
+            font-size: 1rem;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        .total-failures.good {
+            color: var(--green-700);
+        }
+
+        .total-failures.warning {
+            color: var(--yellow-700);
+        }
+
+        .total-failures.critical {
+            color: var(--red-700);
+        }
+
+        .analyze-btn {
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: var(--slate-100);
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+            font-family: inherit;
+        }
+
+        .analyze-btn:hover {
+            background: var(--slate-200);
+        }
+
+        .trend-chart-container {
+            height: 200px;
+            margin-bottom: 24px;
+        }
+
+        .trend-insights {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            font-size: 0.875rem;
+        }
+
+        .trend-insight {
+            padding: 8px 12px;
+            background: var(--slate-50);
+            border-radius: 6px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .insight-label {
+            color: var(--slate-600);
+        }
+
+        .insight-value {
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .trend-status {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .trend-status.improving {
+            background: var(--green-50);
+            color: var(--green-700);
+        }
+
+        .trend-status.worsening {
+            background: var(--red-50);
+            color: var(--red-700);
+        }
+
+        .view-analysis-btn {
+            margin-top: 16px;
+            padding: 10px 20px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+            color: var(--blue);
+            font-family: inherit;
+        }
+
+        .view-analysis-btn:hover {
+            background: var(--slate-50);
+        }
+
+        /* Secondary Metrics */
+        .secondary-metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .secondary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid var(--slate-200);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            min-height: 180px;
+            transition: all 0.2s;
+            cursor: pointer;
+            text-align: center;
+        }
+
+        .secondary-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transform: scale(1.01);
+        }
+
+        .secondary-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            margin-bottom: 16px;
+        }
+
+        .secondary-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--slate-900);
+            margin-bottom: 8px;
+            line-height: 1;
+        }
+
+        .secondary-context {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-top: 12px;
+        }
+
+        .star-rating {
+            color: var(--yellow);
+            font-size: 1.25rem;
+            margin-top: 8px;
+        }
+
+        /* Bottom Actions */
+        .bottom-actions {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+        }
+
+        .action-btn {
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: none;
+            font-family: inherit;
+        }
+
+        .action-btn.primary {
+            background: var(--gold-primary);
+            color: var(--slate-900);
+        }
+
+        .action-btn.primary:hover {
+            background: #d4a942;
+        }
+
+        .action-btn.secondary {
+            background: white;
+            border: 1px solid var(--slate-300);
+            color: var(--slate-700);
+        }
+
+        .action-btn.secondary:hover {
+            background: var(--slate-50);
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .hero-section,
+        .metric-card,
+        .table-section,
+        .analysis-card,
+        .secondary-card {
+            animation: slideIn 0.5s ease-out;
+        }
+
+        /* Tooltip */
+        [title] {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">🏠</div>
+                <div class="sidebar-brand">Aureon</div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">📊</span>
+                    <span class="sidebar-label">Ops Control</span>
+                </a>
+                <a href="#" class="sidebar-item active">
+                    <span class="sidebar-icon">💰</span>
+                    <span class="sidebar-label">Business Dashboard</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">📦</span>
+                    <span class="sidebar-label">Inventory</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">🚚</span>
+                    <span class="sidebar-label">Fleet & Trucks</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">👥</span>
+                    <span class="sidebar-label">Team</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">📈</span>
+                    <span class="sidebar-label">Reports</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">⚙️</span>
+                    <span class="sidebar-label">Settings</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Top Navigation -->
+            <nav class="top-nav">
+                <div class="logo">🏠 Aureon Last Mile</div>
+                <div class="date-selectors">
+                    <button class="date-btn" onclick="changeDate('today')">Hoy ▼</button>
+                    <button class="date-btn" onclick="changeDate('month')">Este Mes ▼</button>
+                    <button class="date-btn" onclick="changeDate('custom')">📅 Rango</button>
+                </div>
+                <div class="user-avatar" title="Usuario">👤</div>
+            </nav>
+
+            <!-- Main Container -->
+            <div class="container">
+                <!-- Hero Section: SLA Fulfillment -->
+                <section class="hero-section" onclick="drillDownSLA()" title="Click para ver análisis detallado">
+                    <h1 class="hero-title">CUMPLIMIENTO SLA - HOY</h1>
+                    <div class="hero-percentage excellent" id="slaPercentage">94.2%</div>
+                    <div class="hero-trend trend-up">↑ +2.3% vs ayer</div>
+                    <div class="hero-context">287 de 305 entregas cumplidas</div>
+
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="progressBar" style="width: 94.2%;">
+                            <span class="progress-bar-text">94.2%</span>
+                        </div>
+                    </div>
+
+                    <div class="hero-inline-metrics">
+                        <div class="inline-metric">
+                            <span>🎯</span>
+                            <span>Primera Entrega (FADR): <strong>92.1%</strong></span>
+                        </div>
+                        <div class="inline-metric">
+                            <span>⚠️</span>
+                            <span>Fallos: <strong>18 (5.9%)</strong></span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Primary Metrics Grid -->
+                <div class="metrics-grid">
+                    <!-- FADR Card -->
+                    <div class="metric-card" onclick="drillDownMetric('fadr')" title="Click para ver análisis detallado">
+                        <div class="metric-header">
+                            <span class="metric-icon">🎯</span>
+                            <span class="metric-title">FADR</span>
+                        </div>
+                        <div class="metric-value warning">92.1%</div>
+                        <div class="metric-trend trend-down">↓ -1.2% vs ayer</div>
+                        <div class="metric-context">281/305 primera entrega exitosa</div>
+                        <div class="metric-benchmark benchmark-warning">⚠️ Bajo objetivo (&gt;95%)</div>
+                    </div>
+
+                    <!-- Reclamos Card -->
+                    <div class="metric-card" onclick="drillDownMetric('claims')" title="Click para ver análisis detallado">
+                        <div class="metric-header">
+                            <span class="metric-icon">💰</span>
+                            <span class="metric-title">Reclamos</span>
+                        </div>
+                        <div class="metric-value excellent" style="font-size: 2.5rem;">150,000 CLP</div>
+                        <div class="metric-trend trend-up">↓ -80% vs mes pasado</div>
+                        <div class="metric-context">0 reclamos hoy</div>
+                        <div class="metric-benchmark benchmark-excellent">💾 Ahorro: 2.3M CLP este mes</div>
+                    </div>
+
+                    <!-- Eficiencia Card -->
+                    <div class="metric-card" onclick="drillDownMetric('efficiency')" title="Click para ver análisis detallado">
+                        <div class="metric-header">
+                            <span class="metric-icon">⚡</span>
+                            <span class="metric-title">Eficiencia</span>
+                        </div>
+                        <div class="metric-value excellent" style="font-size: 2rem;">42 min/carga</div>
+                        <div class="metric-trend trend-up">↑ -78 min vs manual</div>
+                        <div class="metric-context">847 pedidos hoy</div>
+                        <div class="metric-benchmark benchmark-excellent">📊 89% capacidad utilizada</div>
+                    </div>
+                </div>
+
+                <!-- Customer Performance Table -->
+                <section class="table-section">
+                    <div class="table-header">
+                        <h2 class="table-title">Desempeño por Cliente</h2>
+                        <button class="export-btn" onclick="exportData()">
+                            <span>↓</span>
+                            <span>Exportar CSV</span>
+                        </button>
+                    </div>
+
+                    <table class="customer-table">
+                        <thead>
+                            <tr>
+                                <th onclick="sortTable(0)">Cliente</th>
+                                <th onclick="sortTable(1)" class="text-right">Pedidos</th>
+                                <th onclick="sortTable(2)">SLA %</th>
+                                <th onclick="sortTable(3)">FADR %</th>
+                                <th onclick="sortTable(4)" class="text-right">Fallos</th>
+                                <th onclick="sortTable(5)" class="text-right">Valor (CLP)</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr onclick="viewCustomerDetails('Falabella')">
+                                <td class="customer-name">Falabella</td>
+                                <td class="text-right">847</td>
+                                <td>
+                                    <div class="sla-cell">
+                                        <span class="sla-indicator excellent"></span>
+                                        <span class="sla-percentage excellent">96.2%</span>
+                                    </div>
+                                </td>
+                                <td>94.1%</td>
+                                <td class="text-right">32</td>
+                                <td class="text-right">42.3M</td>
+                                <td><a href="#" class="detail-link" onclick="event.stopPropagation();">Ver detalles</a></td>
+                            </tr>
+                            <tr onclick="viewCustomerDetails('Paris')">
+                                <td class="customer-name">Paris</td>
+                                <td class="text-right">623</td>
+                                <td>
+                                    <div class="sla-cell">
+                                        <span class="sla-indicator warning"></span>
+                                        <span class="sla-percentage warning">93.8%</span>
+                                    </div>
+                                </td>
+                                <td>91.2%</td>
+                                <td class="text-right">54</td>
+                                <td class="text-right">31.1M</td>
+                                <td><a href="#" class="detail-link" onclick="event.stopPropagation();">Ver detalles</a></td>
+                            </tr>
+                            <tr onclick="viewCustomerDetails('Ripley')">
+                                <td class="customer-name">Ripley</td>
+                                <td class="text-right">512</td>
+                                <td>
+                                    <div class="sla-cell">
+                                        <span class="sla-indicator critical"></span>
+                                        <span class="sla-percentage critical">89.1%</span>
+                                    </div>
+                                </td>
+                                <td>87.3%</td>
+                                <td class="text-right">65</td>
+                                <td class="text-right">25.6M</td>
+                                <td><a href="#" class="detail-link" onclick="event.stopPropagation();">Ver detalles</a></td>
+                            </tr>
+                            <tr onclick="viewCustomerDetails('Lider')">
+                                <td class="customer-name">Lider</td>
+                                <td class="text-right">294</td>
+                                <td>
+                                    <div class="sla-cell">
+                                        <span class="sla-indicator excellent"></span>
+                                        <span class="sla-percentage excellent">97.1%</span>
+                                    </div>
+                                </td>
+                                <td>96.8%</td>
+                                <td class="text-right">9</td>
+                                <td class="text-right">14.7M</td>
+                                <td><a href="#" class="detail-link" onclick="event.stopPropagation();">Ver detalles</a></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <!-- Failed Deliveries Analysis -->
+                <div class="analysis-grid">
+                    <!-- Left Panel: Failure Reasons -->
+                    <div class="analysis-card">
+                        <h2 class="analysis-title">Motivos de Fallos - Este Mes</h2>
+
+                        <div class="failure-reason">
+                            <div class="reason-header">
+                                <span class="reason-label">Cliente ausente</span>
+                                <span class="reason-percentage">45%</span>
+                            </div>
+                            <div class="reason-bar-container">
+                                <div class="reason-bar-fill" style="width: 45%;"></div>
+                            </div>
+                            <div class="reason-count">81 fallos</div>
+                        </div>
+
+                        <div class="failure-reason">
+                            <div class="reason-header">
+                                <span class="reason-label">Dirección incorrecta</span>
+                                <span class="reason-percentage">28%</span>
+                            </div>
+                            <div class="reason-bar-container">
+                                <div class="reason-bar-fill" style="width: 28%;"></div>
+                            </div>
+                            <div class="reason-count">51 fallos</div>
+                        </div>
+
+                        <div class="failure-reason">
+                            <div class="reason-header">
+                                <span class="reason-label">Lugar inaccesible</span>
+                                <span class="reason-percentage">15%</span>
+                            </div>
+                            <div class="reason-bar-container">
+                                <div class="reason-bar-fill" style="width: 15%;"></div>
+                            </div>
+                            <div class="reason-count">27 fallos</div>
+                        </div>
+
+                        <div class="failure-reason">
+                            <div class="reason-header">
+                                <span class="reason-label">Sin lugar seguro</span>
+                                <span class="reason-percentage">8%</span>
+                            </div>
+                            <div class="reason-bar-container">
+                                <div class="reason-bar-fill" style="width: 8%;"></div>
+                            </div>
+                            <div class="reason-count">14 fallos</div>
+                        </div>
+
+                        <div class="failure-reason">
+                            <div class="reason-header">
+                                <span class="reason-label">Otros</span>
+                                <span class="reason-percentage">4%</span>
+                            </div>
+                            <div class="reason-bar-container">
+                                <div class="reason-bar-fill" style="width: 4%;"></div>
+                            </div>
+                            <div class="reason-count">7 fallos</div>
+                        </div>
+
+                        <div class="total-failures warning">
+                            Total Fallos: 180 de 3,276 (5.5%)
+                        </div>
+
+                        <button class="analyze-btn" onclick="analyzeByCustomer()">Analizar por cliente ↓</button>
+                    </div>
+
+                    <!-- Right Panel: Trend Chart -->
+                    <div class="analysis-card">
+                        <h2 class="analysis-title">Tendencia Fallos</h2>
+
+                        <div class="trend-chart-container">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+
+                        <div class="trend-insights">
+                            <div class="trend-insight">
+                                <span class="insight-label">Peak:</span>
+                                <span class="insight-value">23 fallos (15 Ene)</span>
+                            </div>
+                            <div class="trend-insight">
+                                <span class="insight-label">Lowest:</span>
+                                <span class="insight-value">8 fallos (3 Feb)</span>
+                            </div>
+                        </div>
+
+                        <div class="trend-status improving">
+                            ↓ Mejorando
+                        </div>
+
+                        <button class="view-analysis-btn" onclick="viewFullAnalysis()">Ver análisis completo</button>
+                    </div>
+                </div>
+
+                <!-- Secondary Metrics -->
+                <div class="secondary-metrics">
+                    <div class="secondary-card" onclick="drillDownMetric('capacity')">
+                        <div class="secondary-title">Capacidad Utilizada</div>
+                        <div class="secondary-value">89.2%</div>
+                        <div class="secondary-context">847/950 pedidos</div>
+                    </div>
+
+                    <div class="secondary-card" onclick="drillDownMetric('orders-per-hour')">
+                        <div class="secondary-title">Pedidos por Hora</div>
+                        <div class="secondary-value">38.2</div>
+                        <div class="secondary-context">↑ vs manual (20/hora)</div>
+                    </div>
+
+                    <div class="secondary-card" onclick="drillDownMetric('cost')">
+                        <div class="secondary-title">Costo por Entrega</div>
+                        <div class="secondary-value" style="font-size: 1.5rem;">2,847 CLP</div>
+                        <div class="secondary-context">↓ -12% este mes</div>
+                    </div>
+
+                    <div class="secondary-card" onclick="drillDownMetric('satisfaction')">
+                        <div class="secondary-title">Satisfacción Cliente</div>
+                        <div class="secondary-value">4.6/5.0</div>
+                        <div class="star-rating">⭐⭐⭐⭐⭐</div>
+                        <div class="secondary-context">92% positivo</div>
+                    </div>
+                </div>
+
+                <!-- Bottom Actions -->
+                <div class="bottom-actions">
+                    <button class="action-btn primary" onclick="exportReport()">
+                        <span>📊</span>
+                        <span>Exportar Reporte</span>
+                    </button>
+                    <button class="action-btn secondary" onclick="sendToRetailers()">
+                        <span>📧</span>
+                        <span>Enviar a Retailers</span>
+                    </button>
+                    <button class="action-btn secondary" onclick="openSettings()">
+                        <span>⚙️</span>
+                        <span>Configurar</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize trend chart
+        const ctx = document.getElementById('trendChart').getContext('2d');
+        const trendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['1 Ene', '5 Ene', '10 Ene', '15 Ene', '20 Ene', '25 Ene', '30 Ene', '3 Feb'],
+                datasets: [{
+                    label: 'Fallos Diarios',
+                    data: [15, 12, 18, 23, 14, 10, 11, 8],
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return context.parsed.y + ' fallos';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: '#e2e8f0'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+
+        // Animate progress bar on load
+        window.addEventListener('load', () => {
+            const progressBar = document.getElementById('progressBar');
+            progressBar.style.width = '0%';
+            setTimeout(() => {
+                progressBar.style.width = '94.2%';
+            }, 100);
+        });
+
+        // Interactive functions
+        function drillDownSLA() {
+            console.log('Navigating to detailed SLA analysis...');
+            alert('Navegando a análisis detallado de SLA:\n\n• Desglose horario\n• Rendimiento por comuna/zona\n• Rendimiento por conductor\n• Distribución de tiempos de entrega\n• Comparación entregas a tiempo vs tardías');
+        }
+
+        function drillDownMetric(metric) {
+            console.log('Drilling down into metric:', metric);
+            alert('Navegando a análisis detallado de ' + metric.toUpperCase());
+        }
+
+        function changeDate(period) {
+            console.log('Changing date range to:', period);
+            alert('Selector de fecha: ' + period + '\n\nActualizando dashboard con datos de: ' + period);
+        }
+
+        function exportData() {
+            console.log('Exporting customer data to CSV...');
+            alert('Exportando datos de clientes a CSV...\n\nArchivo: customer-performance-2026-02-05.csv');
+        }
+
+        function sortTable(column) {
+            console.log('Sorting table by column:', column);
+            alert('Ordenando tabla por columna: ' + column);
+        }
+
+        function viewCustomerDetails(customer) {
+            console.log('Viewing details for:', customer);
+            alert('Navegando a dashboard de cliente: ' + customer + '\n\n• Tendencias SLA diarias\n• Desglose FADR por comuna/zona\n• Motivos de fallos específicos\n• Rendimiento histórico\n• Rutas con mejor/peor rendimiento');
+        }
+
+        function analyzeByCustomer() {
+            console.log('Analyzing failures by customer...');
+            alert('Análisis de fallos por cliente:\n\n• Qué clientes tienen mayores tasas de fallo por motivo\n• Análisis a nivel de comuna\n• Análisis a nivel de conductor\n• Oportunidades de entrenamiento');
+        }
+
+        function viewFullAnalysis() {
+            console.log('Opening full failure analysis...');
+            alert('Navegando a análisis completo de fallos:\n\n• Desglose por hora del día\n• Desglose por día de la semana\n• Correlación con volumen de pedidos\n• Patrones de fallo por conductor');
+        }
+
+        function exportReport() {
+            console.log('Exporting comprehensive report...');
+            alert('Generando reporte completo...\n\nFormato: PDF/Excel\nIncluye: Gráficos, tablas, análisis de tendencias\nRango: Seleccionado en filtros');
+        }
+
+        function sendToRetailers() {
+            console.log('Opening send to retailers modal...');
+            alert('Enviar resumen a retailers:\n\n✓ Seleccionar destinatarios\n✓ Personalizar mensaje\n✓ Incluir métricas clave (SLA, FADR, pedidos entregados)\n✓ Formato profesional con branding Aureon');
+        }
+
+        function openSettings() {
+            console.log('Opening dashboard settings...');
+            alert('Configuración del Dashboard:\n\n• Rango de fecha predeterminado\n• Orden de tarjetas de métricas\n• Umbrales de notificación por email\n• Preferencias de exportación');
+        }
+
+        // Sidebar toggle
+        const sidebar = document.querySelector('.sidebar');
+        sidebar.addEventListener('click', function(e) {
+            if (!e.target.closest('.sidebar-item')) {
+                this.classList.toggle('expanded');
+            }
+        });
+
+        // Sidebar navigation
+        document.querySelectorAll('.sidebar-item').forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                console.log('Navigating to:', this.querySelector('.sidebar-label').textContent);
+            });
+        });
+
+        // Add staggered animation to failure reason bars
+        window.addEventListener('load', () => {
+            const reasonBars = document.querySelectorAll('.reason-bar-fill');
+            reasonBars.forEach((bar, index) => {
+                const targetWidth = bar.style.width;
+                bar.style.width = '0%';
+                setTimeout(() => {
+                    bar.style.width = targetWidth;
+                }, 200 + (index * 100));
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aureon Last Mile - Design Directions (Mobile + Tablet)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f8fafc;
+            color: #334155;
+            line-height: 1.6;
+        }
+
+        /* Navigation */
+        .nav {
+            background: #0f172a;
+            color: white;
+            padding: 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .nav-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .nav h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .nav-brand {
+            color: #e6c15c;
+        }
+
+        .nav-controls {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .nav-btn {
+            background: #5e6b7b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: #535f6e;
+            transform: translateY(-1px);
+        }
+
+        .nav-btn.active {
+            background: #e6c15c;
+            color: #0f172a;
+        }
+
+        /* Container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 32px 24px;
+        }
+
+        /* Intro Section */
+        .intro {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .intro h2 {
+            color: #0f172a;
+            margin-bottom: 16px;
+            font-size: 1.5rem;
+        }
+
+        .intro p {
+            color: #64748b;
+            margin-bottom: 12px;
+        }
+
+        .device-note {
+            background: #fffbeb;
+            border-left: 4px solid #e6c15c;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .device-note strong {
+            color: #d97706;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        /* Direction Cards */
+        .directions {
+            display: grid;
+            gap: 32px;
+        }
+
+        .direction {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .direction-header {
+            background: linear-gradient(135deg, #5e6b7b 0%, #535f6e 100%);
+            color: white;
+            padding: 24px 32px;
+        }
+
+        .direction-header h3 {
+            font-size: 1.75rem;
+            margin-bottom: 8px;
+        }
+
+        .direction-header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .direction-content {
+            padding: 32px;
+        }
+
+        .device-comparison {
+            margin-bottom: 48px;
+        }
+
+        .device-comparison h4 {
+            font-size: 1.25rem;
+            color: #0f172a;
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .device-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+        }
+
+        .device-mockup {
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #ffffff;
+            transition: all 0.3s;
+        }
+
+        .device-mockup:hover {
+            border-color: #e6c15c;
+            box-shadow: 0 8px 20px rgba(230, 193, 92, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .device-label {
+            background: #f8fafc;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #0f172a;
+            font-size: 0.875rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .device-badge {
+            background: #e6c15c;
+            color: #0f172a;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        /* Mobile Phone Frame */
+        .phone-frame {
+            max-width: 375px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 24px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            border: 8px solid #1e293b;
+        }
+
+        .phone-notch {
+            background: #1e293b;
+            height: 24px;
+            position: relative;
+        }
+
+        .phone-notch::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: 4px;
+            width: 100px;
+            height: 16px;
+            background: #0f172a;
+            border-radius: 12px;
+        }
+
+        .phone-screen {
+            background: #ffffff;
+            min-height: 600px;
+            position: relative;
+        }
+
+        /* Tablet Frame */
+        .tablet-frame {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            border: 12px solid #1e293b;
+        }
+
+        .tablet-frame.landscape {
+            aspect-ratio: 4/3;
+        }
+
+        .tablet-frame.portrait {
+            aspect-ratio: 3/4;
+        }
+
+        .tablet-screen {
+            background: #ffffff;
+            min-height: 600px;
+            max-height: 800px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Status Bar */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 16px;
+            font-size: 0.75rem;
+            color: #64748b;
+            background: #ffffff;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .status-time {
+            font-weight: 600;
+            color: #0f172a;
+        }
+
+        .status-icons {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        /* App Header */
+        .app-header {
+            background: #ffffff;
+            padding: 16px;
+            border-bottom: 2px solid #f1f5f9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .app-header-dark {
+            background: #0f172a;
+            color: white;
+            padding: 20px;
+            border-bottom: none;
+        }
+
+        .app-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .app-header-dark .app-title {
+            color: white;
+            font-size: 1.25rem;
+        }
+
+        .app-subtitle {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+
+        .app-header-dark .app-subtitle {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.75rem;
+        }
+
+        .offline-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            color: rgba(255, 255, 255, 0.9);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .offline-dot {
+            width: 6px;
+            height: 6px;
+            background: currentColor;
+            border-radius: 50%;
+        }
+
+        /* Scan Button */
+        .scan-btn-standard {
+            width: 100%;
+            padding: 20px;
+            background: #5e6b7b;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1.125rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(94, 107, 123, 0.3);
+            transition: all 0.2s;
+        }
+
+        .scan-btn-standard:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(94, 107, 123, 0.4);
+            background: #535f6e;
+        }
+
+        /* Progress Display */
+        .progress-section {
+            padding: 16px;
+        }
+
+        .progress-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            margin-bottom: 16px;
+        }
+
+        .progress-number {
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #5e6b7b;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .progress-number span {
+            font-size: 1.5rem;
+            color: #64748b;
+        }
+
+        .progress-label {
+            font-size: 1rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .progress-bar-container {
+            background: #e2e8f0;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 12px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #5e6b7b;
+            transition: width 0.3s;
+            border-radius: 4px;
+        }
+
+        .progress-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .stat-item {
+            background: #f8fafc;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 4px;
+        }
+
+        /* Tablet-specific Progress Layout */
+        .tablet-progress-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 16px;
+        }
+
+        .tablet-progress-main {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .tablet-progress-number {
+            font-size: 2.5rem;
+            font-weight: 900;
+            color: #5e6b7b;
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .tablet-stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        /* Validation States */
+        .validation-success {
+            background: #ecfdf5;
+            border: 2px solid #10b981;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .validation-error {
+            background: #fef2f2;
+            border: 2px solid #ef4444;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .validation-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .validation-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .validation-success .validation-title {
+            color: #047857;
+        }
+
+        .validation-error .validation-title {
+            color: #dc2626;
+        }
+
+        .validation-detail {
+            font-size: 1rem;
+            color: #64748b;
+            margin-bottom: 16px;
+        }
+
+        /* Info boxes */
+        .info-box {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+
+        .info-box-warning {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+        }
+
+        .info-box-success {
+            background: #ecfdf5;
+            border-left: 4px solid #10b981;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: #5e6b7b;
+            color: white;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background: #535f6e;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: #64748b;
+            border: 1px solid #cbd5e1;
+            padding: 14px 24px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 8px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .device-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .tablet-progress-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-content">
+            <div>
+                <h1><span class="nav-brand">Aureon</span> Last Mile - Design Directions</h1>
+                <p style="margin-top: 4px; font-size: 0.875rem; opacity: 0.8;">Mobile + Tablet UI Exploration</p>
+            </div>
+            <div class="nav-controls">
+                <button class="nav-btn active" onclick="showDirection('all')">All Directions</button>
+                <button class="nav-btn" onclick="showDirection('minimal')">Minimal Focus</button>
+                <button class="nav-btn" onclick="showDirection('balanced')">Balanced Professional ⭐</button>
+                <button class="nav-btn" onclick="showDirection('confident')">High-Confidence</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="intro">
+            <h2>🎨 Design Direction Exploration - Mobile + Tablet</h2>
+            <p>Below are 3 distinct visual design approaches for Aureon Last Mile's core scanning experience, shown across both <strong>mobile</strong> and <strong>tablet</strong> form factors.</p>
+
+            <div class="device-note">
+                <strong>📲 Tablet-First Approach</strong>
+                <span style="color: #64748b; font-size: 0.875rem;">Your customer is purchasing tablets for this process. Mockups show how each direction scales from mobile (375px) to tablet (10-11 inch, 768x1024 portrait orientation - ideal for one-handed holding while scanning).</span>
+            </div>
+
+            <p style="margin-top: 16px;"><strong>⭐ Recommended:</strong> <strong>Balanced Professional</strong> - Restrained color palette, minimalistic elements, professional logistics feel with clear hierarchy.</p>
+        </div>
+
+        <div id="all-directions" class="directions">
+
+            <!-- Direction 1: Minimal Focus -->
+            <div class="direction" data-direction="minimal">
+                <div class="direction-header" style="background: linear-gradient(135deg, #e6c15c 0%, #d9a332 100%); color: #0f172a;">
+                    <h3>Direction 1: Minimal Focus</h3>
+                    <p>WhatsApp-inspired radical simplicity. Maximum emphasis on scan button. Clean and uncluttered.</p>
+                </div>
+                <div class="direction-content">
+                    <div class="device-comparison">
+                        <h4>📱 Main Scanning Interface - Minimal Focus</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header">
+                                                <div>
+                                                    <div class="app-title" style="font-size: 1rem;">Falabella Maipú</div>
+                                                    <div class="app-subtitle">Escanear pedidos</div>
+                                                </div>
+                                            </div>
+                                            <div style="padding: 24px 16px; text-align: center;">
+                                                <div style="background: #f8fafc; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                                                    <div style="font-size: 3rem; font-weight: 800; color: #e6c15c; line-height: 1; margin-bottom: 8px;">
+                                                        287<span style="font-size: 2rem; color: #64748b;">/300</span>
+                                                    </div>
+                                                    <div style="font-size: 0.875rem; color: #64748b;">pedidos escaneados</div>
+                                                </div>
+                                                <button style="width: 180px; height: 180px; border-radius: 50%; background: linear-gradient(135deg, #e6c15c 0%, #d9a332 100%); border: none; box-shadow: 0 8px 24px rgba(230, 193, 92, 0.4); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; color: #0f172a;">
+                                                    <div style="font-size: 3.5rem; margin-bottom: 8px;">📷</div>
+                                                    <div style="font-size: 1rem; font-weight: 700;">Escanear</div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Landscape -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶 WiFi</span>
+                                                    <span>🔋 87%</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header">
+                                                <div>
+                                                    <div class="app-title">Falabella Maipú</div>
+                                                    <div class="app-subtitle">Verificación de pedidos</div>
+                                                </div>
+                                            </div>
+                                            <div style="padding: 20px;">
+                                                <div style="background: #f8fafc; border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 20px;">
+                                                    <div style="font-size: 3rem; font-weight: 900; color: #e6c15c; line-height: 1; margin-bottom: 8px;">
+                                                        287<span style="font-size: 2rem; color: #64748b;">/300</span>
+                                                    </div>
+                                                    <div style="font-size: 1rem; color: #64748b; margin-bottom: 12px;">pedidos escaneados</div>
+                                                    <div class="progress-bar-container" style="height: 10px;">
+                                                        <div class="progress-bar" style="width: 95.7%; background: linear-gradient(90deg, #e6c15c 0%, #d9a332 100%);"></div>
+                                                    </div>
+                                                </div>
+                                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                                                    <div class="stat-item">
+                                                        <div class="stat-value" style="color: #10b981; font-size: 1.5rem;">287</div>
+                                                        <div class="stat-label">Verificados</div>
+                                                    </div>
+                                                    <div class="stat-item">
+                                                        <div class="stat-value" style="color: #64748b; font-size: 1.5rem;">13</div>
+                                                        <div class="stat-label">Restantes</div>
+                                                    </div>
+                                                </div>
+                                                <div style="text-align: center;">
+                                                    <button style="width: 200px; height: 200px; border-radius: 50%; background: linear-gradient(135deg, #e6c15c 0%, #d9a332 100%); border: none; box-shadow: 0 8px 24px rgba(230, 193, 92, 0.4); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0 auto; color: #0f172a;">
+                                                        <div style="font-size: 4rem; margin-bottom: 8px;">📷</div>
+                                                        <div style="font-size: 1.25rem; font-weight: 700;">Escanear</div>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direction 2: Balanced Professional (RECOMMENDED) -->
+            <div class="direction" data-direction="balanced">
+                <div class="direction-header">
+                    <h3>Direction 2: Balanced Professional ⭐ RECOMMENDED</h3>
+                    <p>Restrained color palette. Minimalistic elements. Professional logistics feel with clear hierarchy. Not overloaded.</p>
+                </div>
+                <div class="direction-content">
+
+                    <!-- Screen 1: Main Scanning Interface -->
+                    <div class="device-comparison">
+                        <h4>📱 Main Scanning Interface</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header-dark">
+                                                <div>
+                                                    <div style="font-size: 0.75rem; opacity: 0.7; margin-bottom: 2px;">VERIFICACIÓN ACTIVA</div>
+                                                    <div class="app-title">Falabella Maipú</div>
+                                                </div>
+                                                <div class="offline-badge">
+                                                    <span class="offline-dot"></span> Sin conexión
+                                                </div>
+                                            </div>
+                                            <div style="padding: 16px;">
+                                                <div class="progress-card">
+                                                    <div style="display: flex; justify-content: space-between; align-items: end; margin-bottom: 12px;">
+                                                        <div>
+                                                            <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Progreso</div>
+                                                            <div class="progress-number">287<span>/300</span></div>
+                                                        </div>
+                                                        <div style="background: #ecfdf5; color: #047857; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">95.7%</div>
+                                                    </div>
+                                                    <div class="progress-bar-container">
+                                                        <div class="progress-bar" style="width: 95.7%;"></div>
+                                                    </div>
+                                                    <div class="progress-stats">
+                                                        <div class="stat-item">
+                                                            <div style="color: #64748b; font-size: 0.75rem;">Restantes</div>
+                                                            <div style="font-weight: 600; color: #0f172a; font-size: 1.25rem;">13</div>
+                                                        </div>
+                                                        <div class="stat-item">
+                                                            <div style="color: #64748b; font-size: 0.75rem;">Discrepancias</div>
+                                                            <div style="font-weight: 600; color: #10b981; font-size: 1.25rem;">0</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style="padding: 0 16px 24px;">
+                                                <button class="scan-btn-standard">📷 Escanear Pedido</button>
+                                                <div style="color: #64748b; font-size: 0.875rem; text-align: center; margin-top: 12px;">
+                                                    Apunta el escáner al código de barras
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Landscape -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶 WiFi</span>
+                                                    <span>🔋 87%</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header-dark">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div>
+                                                        <div style="font-size: 0.875rem; opacity: 0.7; margin-bottom: 4px;">VERIFICACIÓN ACTIVA</div>
+                                                        <div class="app-title">Falabella Maipú</div>
+                                                    </div>
+                                                    <div class="offline-badge" style="font-size: 0.875rem; padding: 8px 16px;">
+                                                        <span class="offline-dot"></span> Sin conexión • 3 scans en cola
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="tablet-progress-grid">
+                                                <!-- Left: Progress Stats -->
+                                                <div class="tablet-progress-main">
+                                                    <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">PROGRESO TOTAL</div>
+                                                    <div class="tablet-progress-number">287<span style="font-size: 1.5rem; color: #64748b;">/300</span></div>
+                                                    <div style="font-size: 1rem; font-weight: 600; color: #10b981; margin-bottom: 12px;">95.7% Completado</div>
+                                                    <div class="progress-bar-container" style="height: 12px; margin-bottom: 16px;">
+                                                        <div class="progress-bar" style="width: 95.7%;"></div>
+                                                    </div>
+                                                    <div class="tablet-stats-grid">
+                                                        <div style="background: #ecfdf5; padding: 12px; border-radius: 8px; border: 2px solid #10b981; text-align: center;">
+                                                            <div style="font-size: 1.5rem; font-weight: 700; color: #10b981;">287</div>
+                                                            <div style="font-size: 0.65rem; color: #047857; text-transform: uppercase; margin-top: 2px;">Verificados</div>
+                                                        </div>
+                                                        <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 2px solid #e2e8f0; text-align: center;">
+                                                            <div style="font-size: 1.5rem; font-weight: 700; color: #64748b;">13</div>
+                                                            <div style="font-size: 0.65rem; color: #64748b; text-transform: uppercase; margin-top: 2px;">Restantes</div>
+                                                        </div>
+                                                        <div style="background: #ecfdf5; padding: 12px; border-radius: 8px; border: 2px solid #10b981; text-align: center;">
+                                                            <div style="font-size: 1.5rem; font-weight: 700; color: #10b981;">0</div>
+                                                            <div style="font-size: 0.65rem; color: #047857; text-transform: uppercase; margin-top: 2px;">Errores</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <!-- Scan Action -->
+                                                <div style="display: flex; flex-direction: column; gap: 12px;">
+                                                    <button class="scan-btn-standard" style="padding: 20px; font-size: 1.125rem;">
+                                                        📷 Escanear Pedido
+                                                    </button>
+                                                    <div style="background: #0f172a; color: white; padding: 12px; border-radius: 8px; text-align: center;">
+                                                        <div style="font-weight: 600; margin-bottom: 4px; font-size: 0.875rem;">⚡ Rendimiento</div>
+                                                        <div style="opacity: 0.8; font-size: 0.75rem;">4.2 seg/pedido • 28 min</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Screen 2: Manifest List View -->
+                    <div class="device-comparison" style="margin-top: 48px;">
+                        <h4>📋 Manifest List View - Scrollable Order List</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header-dark">
+                                                <div>
+                                                    <div style="font-size: 0.75rem; opacity: 0.7; margin-bottom: 2px;">MANIFIESTO COMPLETO</div>
+                                                    <div class="app-title">Falabella Maipú</div>
+                                                </div>
+                                            </div>
+                                            <!-- Progress sticky header -->
+                                            <div style="background: white; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 10;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                                    <div>
+                                                        <span style="font-size: 1.5rem; font-weight: 800; color: #5e6b7b;">287</span>
+                                                        <span style="font-size: 1rem; color: #64748b;">/300</span>
+                                                    </div>
+                                                    <div style="background: #ecfdf5; color: #047857; padding: 4px 10px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">95.7%</div>
+                                                </div>
+                                                <div class="progress-bar-container" style="height: 6px;">
+                                                    <div class="progress-bar" style="width: 95.7%;"></div>
+                                                </div>
+                                                <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 0.75rem;">
+                                                    <div><span style="color: #64748b;">Restantes:</span> <strong>13</strong></div>
+                                                    <div><span style="color: #64748b;">Discrepancias:</span> <strong style="color: #10b981;">0</strong></div>
+                                                </div>
+                                            </div>
+                                            <!-- Scrollable order list -->
+                                            <div style="padding: 12px; overflow-y: auto; max-height: 400px;">
+                                                <!-- Scanned orders -->
+                                                <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 0.875rem;">#FL-47283</div>
+                                                        <div style="background: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">✓ Escaneado</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #64748b;">Las Condes • Patio A</div>
+                                                    <div style="font-size: 0.7rem; color: #047857; margin-top: 4px;">10:23 AM • Juan Pérez</div>
+                                                </div>
+
+                                                <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 0.875rem;">#FL-47284</div>
+                                                        <div style="background: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">✓ Escaneado</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #64748b;">Providencia • Patio B</div>
+                                                    <div style="font-size: 0.7rem; color: #047857; margin-top: 4px;">10:22 AM • Juan Pérez</div>
+                                                </div>
+
+                                                <!-- Pending orders -->
+                                                <div style="background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 0.875rem;">#FL-47299</div>
+                                                        <div style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">⏳ Pendiente</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #64748b;">Las Condes • Patio A</div>
+                                                </div>
+
+                                                <div style="background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 12px; border-radius: 6px; margin-bottom: 8px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 0.875rem;">#FL-47300</div>
+                                                        <div style="background: #f59e0b; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">⏳ Pendiente</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #64748b;">Ñuñoa • Patio C</div>
+                                                </div>
+
+                                                <div style="text-align: center; padding: 16px; color: #64748b; font-size: 0.875rem;">
+                                                    ... 283 más escaneados ...
+                                                </div>
+                                            </div>
+                                            <!-- Bottom action -->
+                                            <div style="padding: 12px 16px; background: white; border-top: 2px solid #e2e8f0;">
+                                                <button class="scan-btn-standard" style="padding: 14px;">📷 Volver a Escanear</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Portrait -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶 WiFi</span>
+                                                    <span>🔋 87%</span>
+                                                </div>
+                                            </div>
+                                            <div class="app-header-dark">
+                                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                                    <div>
+                                                        <div style="font-size: 0.875rem; opacity: 0.7; margin-bottom: 4px;">MANIFIESTO COMPLETO</div>
+                                                        <div class="app-title">Falabella Maipú - 300 Pedidos</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Progress sticky header -->
+                                            <div style="background: white; padding: 16px; border-bottom: 2px solid #e2e8f0;">
+                                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                                    <div>
+                                                        <span style="font-size: 2rem; font-weight: 800; color: #5e6b7b;">287</span>
+                                                        <span style="font-size: 1.25rem; color: #64748b;">/300</span>
+                                                        <span style="font-size: 0.875rem; color: #64748b; margin-left: 8px;">escaneados</span>
+                                                    </div>
+                                                    <div style="background: #ecfdf5; color: #047857; padding: 6px 14px; border-radius: 8px; font-size: 1rem; font-weight: 600;">95.7%</div>
+                                                </div>
+                                                <div class="progress-bar-container" style="height: 8px; margin-bottom: 12px;">
+                                                    <div class="progress-bar" style="width: 95.7%;"></div>
+                                                </div>
+                                                <div style="display: flex; gap: 20px; font-size: 0.875rem;">
+                                                    <div><span style="color: #64748b;">Restantes:</span> <strong style="font-size: 1rem;">13</strong></div>
+                                                    <div><span style="color: #64748b;">Discrepancias:</span> <strong style="font-size: 1rem; color: #10b981;">0</strong></div>
+                                                    <div><span style="color: #64748b;">Tiempo:</span> <strong style="font-size: 1rem;">28 min</strong></div>
+                                                </div>
+                                            </div>
+                                            <!-- Scrollable order list - optimized for tablet -->
+                                            <div style="padding: 16px; overflow-y: auto; max-height: 500px;">
+                                                <!-- Scanned orders -->
+                                                <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-bottom: 10px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 1rem;">#FL-47283</div>
+                                                        <div style="background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">✓ Escaneado</div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 16px; font-size: 0.875rem; color: #64748b;">
+                                                        <div>📍 Las Condes</div>
+                                                        <div>🚚 Patio A</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #047857; margin-top: 6px;">⏰ 10:23 AM • 👤 Juan Pérez</div>
+                                                </div>
+
+                                                <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-bottom: 10px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 1rem;">#FL-47284</div>
+                                                        <div style="background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">✓ Escaneado</div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 16px; font-size: 0.875rem; color: #64748b;">
+                                                        <div>📍 Providencia</div>
+                                                        <div>🚚 Patio B</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #047857; margin-top: 6px;">⏰ 10:22 AM • 👤 Juan Pérez</div>
+                                                </div>
+
+                                                <div style="background: #ecfdf5; border-left: 4px solid #10b981; padding: 14px; border-radius: 8px; margin-bottom: 10px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 1rem;">#FL-47285</div>
+                                                        <div style="background: #10b981; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">✓ Escaneado</div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 16px; font-size: 0.875rem; color: #64748b;">
+                                                        <div>📍 Las Condes</div>
+                                                        <div>🚚 Patio A</div>
+                                                    </div>
+                                                    <div style="font-size: 0.75rem; color: #047857; margin-top: 6px;">⏰ 10:21 AM • 👤 Juan Pérez</div>
+                                                </div>
+
+                                                <!-- Pending orders -->
+                                                <div style="background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 1rem;">#FL-47299</div>
+                                                        <div style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">⏳ Pendiente</div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 16px; font-size: 0.875rem; color: #64748b;">
+                                                        <div>📍 Las Condes</div>
+                                                        <div>🚚 Patio A</div>
+                                                    </div>
+                                                </div>
+
+                                                <div style="background: #f8fafc; border-left: 4px solid #cbd5e1; padding: 14px; border-radius: 8px; margin-bottom: 10px;">
+                                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                                        <div style="font-weight: 600; color: #0f172a; font-size: 1rem;">#FL-47300</div>
+                                                        <div style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600;">⏳ Pendiente</div>
+                                                    </div>
+                                                    <div style="display: flex; gap: 16px; font-size: 0.875rem; color: #64748b;">
+                                                        <div>📍 Ñuñoa</div>
+                                                        <div>🚚 Patio C</div>
+                                                    </div>
+                                                </div>
+
+                                                <div style="text-align: center; padding: 20px; color: #64748b; font-size: 1rem;">
+                                                    ... mostrando primeros resultados • 283 más escaneados ...
+                                                </div>
+                                            </div>
+                                            <!-- Bottom action -->
+                                            <div style="padding: 16px; background: white; border-top: 2px solid #e2e8f0;">
+                                                <button class="scan-btn-standard" style="padding: 16px; font-size: 1.125rem;">📷 Volver a Escanear</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Screen 2b: Validation Success -->
+                    <div class="device-comparison" style="margin-top: 48px;">
+                        <h4>✅ Validation Success State</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div style="background: #10b981; color: white; padding: 24px; text-align: center;">
+                                                <div style="font-size: 4rem; margin-bottom: 8px;">✓</div>
+                                                <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 4px;">Pedido Verificado</div>
+                                                <div style="font-size: 1rem; opacity: 0.9;">#FL-47283</div>
+                                            </div>
+                                            <div style="padding: 24px 16px;">
+                                                <div style="background: white; border: 2px solid #10b981; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                                        <div>
+                                                            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">PEDIDO</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">#FL-47283</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">COMUNA</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">Las Condes</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">PATIO</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">Patio A</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="font-size: 0.75rem; color: #64748b; margin-bottom: 4px;">ESTADO</div>
+                                                            <div style="font-weight: 600; color: #10b981;">✓ Verificado</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="info-box-success">
+                                                    <div style="font-weight: 600; color: #047857; margin-bottom: 4px;">Progreso actualizado</div>
+                                                    <div style="color: #64748b; font-size: 0.875rem;">288/300 completado • 0 discrepancias</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Landscape -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div style="background: #10b981; color: white; padding: 24px; text-align: center;">
+                                                <div style="font-size: 3rem; margin-bottom: 12px;">✓</div>
+                                                <div style="font-size: 1.25rem; font-weight: 700; margin-bottom: 4px;">Pedido Verificado</div>
+                                                <div style="font-size: 1rem; opacity: 0.9;">#FL-47283 • Las Condes</div>
+                                            </div>
+                                            <div style="padding: 16px;">
+                                                <div style="background: white; border: 2px solid #10b981; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                                                    <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; margin-bottom: 12px;">DETALLES DEL PEDIDO</div>
+                                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.875rem;">
+                                                        <div>
+                                                            <div style="color: #64748b; margin-bottom: 4px; font-size: 0.75rem;">Pedido</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">#FL-47283</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="color: #64748b; margin-bottom: 4px; font-size: 0.75rem;">Comuna</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">Las Condes</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="color: #64748b; margin-bottom: 4px; font-size: 0.75rem;">Patio</div>
+                                                            <div style="font-weight: 600; color: #0f172a;">Patio A</div>
+                                                        </div>
+                                                        <div>
+                                                            <div style="color: #64748b; margin-bottom: 4px; font-size: 0.75rem;">Estado</div>
+                                                            <div style="font-weight: 600; color: #10b981;">✓ Verificado</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div style="background: #ecfdf5; border: 2px solid #10b981; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                                                    <div style="font-size: 0.75rem; color: #047857; text-transform: uppercase; margin-bottom: 8px;">PROGRESO ACTUALIZADO</div>
+                                                    <div style="font-size: 2rem; font-weight: 800; color: #10b981; line-height: 1; margin-bottom: 8px;">288<span style="font-size: 1.25rem; color: #64748b;">/300</span></div>
+                                                    <div style="font-size: 0.875rem; color: #047857; margin-bottom: 12px;">96% Completado • 0 discrepancias</div>
+                                                    <div class="progress-bar-container" style="height: 8px;">
+                                                        <div class="progress-bar" style="width: 96%; background: #10b981;"></div>
+                                                    </div>
+                                                </div>
+                                                <div style="background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 0.875rem;">
+                                                    <span style="font-size: 1.125rem;">🔄</span>
+                                                    <span style="color: #64748b;"><strong style="color: #d97706;">Sin conexión:</strong> Guardado localmente, se sincronizará automáticamente.</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Screen 3: Error State -->
+                    <div class="device-comparison" style="margin-top: 48px;">
+                        <h4>⚠️ Validation Error State</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:24</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div style="background: #ef4444; color: white; padding: 24px; text-align: center;">
+                                                <div style="font-size: 4rem; margin-bottom: 8px;">⚠️</div>
+                                                <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 4px;">Error de Verificación</div>
+                                                <div style="font-size: 1rem; opacity: 0.9;">Revisar antes de continuar</div>
+                                            </div>
+                                            <div style="padding: 24px 16px;">
+                                                <div style="background: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; padding: 20px; margin-bottom: 16px;">
+                                                    <div style="font-weight: 600; color: #dc2626; font-size: 1.125rem; margin-bottom: 12px;">Este pedido pertenece a Patio B, no Patio A</div>
+                                                    <div style="background: white; padding: 12px; border-radius: 8px;">
+                                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.875rem;">
+                                                            <span style="color: #64748b;">Pedido:</span>
+                                                            <span style="font-weight: 600;">#FL-58392</span>
+                                                        </div>
+                                                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.875rem;">
+                                                            <span style="color: #64748b;">Comuna:</span>
+                                                            <span style="font-weight: 600;">Las Condes</span>
+                                                        </div>
+                                                        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+                                                            <span style="color: #64748b;">Patio correcto:</span>
+                                                            <span style="font-weight: 600; color: #10b981;">Patio B</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <button class="btn-primary" style="background: #dc2626;">Marcar como Discrepancia</button>
+                                                <button class="btn-secondary">Volver a Escanear</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Landscape -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div style="background: #ef4444; color: white; padding: 24px; text-align: center;">
+                                                <div style="font-size: 3rem; margin-bottom: 12px;">⚠️</div>
+                                                <div style="font-size: 1.25rem; font-weight: 700; margin-bottom: 4px;">Error de Verificación</div>
+                                                <div style="font-size: 1rem; opacity: 0.9;">Revisar antes de continuar</div>
+                                            </div>
+                                            <div style="padding: 16px;">
+                                                <div style="background: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+                                                    <div style="font-size: 1rem; font-weight: 700; color: #dc2626; margin-bottom: 12px; text-align: center;">
+                                                        Este pedido pertenece a Patio B, no Patio A
+                                                    </div>
+                                                    <div style="background: white; padding: 12px; border-radius: 8px; margin-bottom: 12px;">
+                                                        <div style="font-size: 0.75rem; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">INFORMACIÓN DEL PEDIDO</div>
+                                                        <div style="display: grid; gap: 8px; font-size: 0.875rem;">
+                                                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
+                                                                <span style="color: #64748b;">Pedido:</span>
+                                                                <span style="font-weight: 600;">#FL-58392</span>
+                                                            </div>
+                                                            <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9;">
+                                                                <span style="color: #64748b;">Comuna:</span>
+                                                                <span style="font-weight: 600;">Las Condes</span>
+                                                            </div>
+                                                            <div style="display: flex; justify-content: space-between; padding: 6px 0;">
+                                                                <span style="color: #64748b;">Patio asignado:</span>
+                                                                <span style="font-weight: 600; color: #ef4444;">Patio A ✗</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style="background: #ecfdf5; border: 2px solid #10b981; padding: 12px; border-radius: 8px;">
+                                                        <div style="font-size: 0.75rem; color: #047857; text-transform: uppercase; margin-bottom: 8px;">PATIO CORRECTO</div>
+                                                        <div style="font-size: 1.75rem; font-weight: 800; color: #10b981; margin-bottom: 6px;">Patio B ✓</div>
+                                                        <div style="color: #047857; font-size: 0.875rem;">Debe procesarse en Patio B según comuna.</div>
+                                                    </div>
+                                                </div>
+                                                <button class="btn-primary" style="background: #dc2626; font-size: 1rem; padding: 14px; margin-bottom: 8px;">⚠️ Marcar como Discrepancia</button>
+                                                <button class="btn-secondary" style="font-size: 1rem; padding: 14px;">🔄 Volver a Escanear</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Direction 3: High-Confidence -->
+            <div class="direction" data-direction="confident">
+                <div class="direction-header" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                    <h3>Direction 3: High-Confidence</h3>
+                    <p>Bold feedback and prominent progress. Maximum reassurance. Every action feels validated and protected.</p>
+                </div>
+                <div class="direction-content">
+                    <div class="device-comparison">
+                        <h4>📱 Main Scanning Interface - High-Confidence</h4>
+                        <div class="device-grid">
+                            <!-- Mobile -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Mobile (375px)</span>
+                                    <span class="device-badge">📱 Phone</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="phone-frame">
+                                        <div class="phone-notch"></div>
+                                        <div class="phone-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶</span>
+                                                    <span>🔋</span>
+                                                </div>
+                                            </div>
+                                            <div style="background: linear-gradient(180deg, #10b981 0%, #059669 100%); color: white; padding: 24px; border-bottom: 4px solid #047857;">
+                                                <div style="font-size: 1.5rem; font-weight: 800; margin-bottom: 4px;">Falabella Maipú</div>
+                                                <div style="font-size: 1rem; opacity: 0.9;">Verificación en progreso</div>
+                                            </div>
+                                            <div style="background: linear-gradient(180deg, #10b981 0%, #ffffff 30%); padding: 24px 16px;">
+                                                <div style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15); margin-bottom: 20px;">
+                                                    <div style="text-align: center; margin-bottom: 16px;">
+                                                        <div style="font-size: 0.875rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;">PROGRESO TOTAL</div>
+                                                        <div style="font-size: 3.5rem; font-weight: 900; color: #10b981; line-height: 1; margin-bottom: 8px;">287<span style="font-size: 2rem; color: #cbd5e1;">/300</span></div>
+                                                        <div style="font-size: 1.125rem; font-weight: 600; color: #047857;">95.7% Completado</div>
+                                                    </div>
+                                                    <div style="background: #f8fafc; height: 16px; border-radius: 8px; overflow: hidden; margin-bottom: 16px; border: 2px solid #e2e8f0;">
+                                                        <div style="height: 100%; background: linear-gradient(90deg, #10b981 0%, #059669 100%); width: 95.7%;"></div>
+                                                    </div>
+                                                </div>
+                                                <button style="width: 100%; padding: 20px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; border-radius: 12px; color: white; font-size: 1.25rem; font-weight: 800; box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);">
+                                                    📷 ESCANEAR PEDIDO
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tablet Landscape -->
+                            <div class="device-mockup">
+                                <div class="device-label">
+                                    <span>Tablet Portrait (768x1024)</span>
+                                    <span class="device-badge">📲 Tablet</span>
+                                </div>
+                                <div style="padding: 24px; background: #fafbfc;">
+                                    <div class="tablet-frame portrait">
+                                        <div class="tablet-screen">
+                                            <div class="status-bar">
+                                                <span class="status-time">10:23</span>
+                                                <div class="status-icons">
+                                                    <span>📶 WiFi</span>
+                                                    <span>🔋 87%</span>
+                                                </div>
+                                            </div>
+                                            <div style="background: linear-gradient(180deg, #10b981 0%, #059669 100%); color: white; padding: 32px; border-bottom: 6px solid #047857;">
+                                                <div style="font-size: 2.5rem; font-weight: 900; margin-bottom: 8px;">Falabella Maipú</div>
+                                                <div style="font-size: 1.25rem; opacity: 0.9;">Verificación activa • Rendimiento excelente</div>
+                                            </div>
+                                            <div style="background: linear-gradient(180deg, #10b981 0%, #ffffff 25%); padding: 40px;">
+                                                <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 32px;">
+                                                    <div style="background: white; border-radius: 20px; padding: 40px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15);">
+                                                        <div style="font-size: 1rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 16px;">PROGRESO TOTAL</div>
+                                                        <div style="font-size: 5rem; font-weight: 900; color: #10b981; line-height: 1; margin-bottom: 12px;">287<span style="font-size: 3rem; color: #cbd5e1;">/300</span></div>
+                                                        <div style="font-size: 1.75rem; font-weight: 700; color: #047857; margin-bottom: 24px;">95.7% Completado</div>
+                                                        <div style="background: #f8fafc; height: 24px; border-radius: 12px; overflow: hidden; border: 3px solid #e2e8f0; margin-bottom: 32px;">
+                                                            <div style="height: 100%; background: linear-gradient(90deg, #10b981 0%, #059669 100%); width: 95.7%;"></div>
+                                                        </div>
+                                                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;">
+                                                            <div style="background: #ecfdf5; padding: 20px; border-radius: 12px; border: 3px solid #10b981; text-align: center;">
+                                                                <div style="font-size: 2.5rem; font-weight: 800; color: #10b981;">287</div>
+                                                                <div style="font-size: 0.75rem; color: #047857; text-transform: uppercase; margin-top: 6px;">Verificados</div>
+                                                            </div>
+                                                            <div style="background: #fffbeb; padding: 20px; border-radius: 12px; border: 3px solid #fde68a; text-align: center;">
+                                                                <div style="font-size: 2.5rem; font-weight: 800; color: #f59e0b;">13</div>
+                                                                <div style="font-size: 0.75rem; color: #d97706; text-transform: uppercase; margin-top: 6px;">Restantes</div>
+                                                            </div>
+                                                            <div style="background: #ecfdf5; padding: 20px; border-radius: 12px; border: 3px solid #10b981; text-align: center;">
+                                                                <div style="font-size: 2.5rem; font-weight: 800; color: #10b981;">0</div>
+                                                                <div style="font-size: 0.75rem; color: #047857; text-transform: uppercase; margin-top: 6px;">Errores</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div style="display: flex; flex-direction: column; justify-content: center; gap: 24px;">
+                                                        <button style="width: 100%; padding: 40px; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none; border-radius: 16px; color: white; font-size: 2rem; font-weight: 900; box-shadow: 0 12px 36px rgba(16, 185, 129, 0.4);">
+                                                            📷 ESCANEAR
+                                                        </button>
+                                                        <div style="background: #0f172a; color: white; padding: 24px; border-radius: 16px; text-align: center;">
+                                                            <div style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px;">⚡ Excelente</div>
+                                                            <div style="opacity: 0.8;">4.2 seg/pedido</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        function showDirection(direction) {
+            const buttons = document.querySelectorAll('.nav-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            const directions = document.querySelectorAll('.direction');
+            if (direction === 'all') {
+                directions.forEach(dir => dir.style.display = 'block');
+            } else {
+                directions.forEach(dir => {
+                    dir.style.display = dir.dataset.direction === direction ? 'block' : 'none';
+                });
+            }
+        }
+    </script>
+</body>
+</html>

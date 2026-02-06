@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aureon Last Mile - Operations Control (Mobile)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Tractis Theme Colors */
+        :root {
+            --gold-primary: #e6c15c;
+            --gold-light: #fef3c7;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+
+            --red-50: #fef2f2;
+            --red-700: #b91c1c;
+            --red-600: #dc2626;
+
+            --yellow-50: #fefce8;
+            --yellow-700: #a16207;
+            --yellow-600: #ca8a04;
+
+            --green-50: #f0fdf4;
+            --green-700: #15803d;
+            --green-600: #16a34a;
+
+            --gray-100: #f3f4f6;
+            --gray-900: #111827;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1e293b;
+            color: var(--slate-900);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        /* Mobile Viewport Wrapper */
+        .mobile-wrapper {
+            max-width: 428px;
+            width: 100%;
+            background: var(--slate-50);
+            box-shadow: 0 0 30px rgba(0,0,0,0.3);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        /* Mobile Header */
+        .mobile-header {
+            background: white;
+            height: 56px;
+            border-bottom: 1px solid var(--slate-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .menu-btn {
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 8px;
+            background: none;
+            border: none;
+        }
+
+        .header-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            flex: 1;
+            text-align: center;
+        }
+
+        .notification-btn {
+            font-size: 1.25rem;
+            position: relative;
+            cursor: pointer;
+            padding: 8px;
+            background: none;
+            border: none;
+        }
+
+        .notification-badge {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: var(--red-600);
+            color: white;
+            font-size: 0.625rem;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--slate-300);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        /* Container */
+        .container {
+            padding: 16px;
+            padding-bottom: 80px; /* Space for bottom tabs */
+            max-width: 768px;
+            margin: 0 auto;
+        }
+
+        /* Bottom Tab Navigation */
+        .bottom-tabs {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            border-top: 1px solid var(--slate-200);
+            display: flex;
+            justify-content: space-around;
+            padding: 8px 0;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+
+        .tab-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            padding: 8px 4px;
+            text-decoration: none;
+            color: var(--slate-600);
+            transition: all 0.2s;
+            cursor: pointer;
+            min-width: 60px;
+        }
+
+        .tab-item:active {
+            transform: scale(0.95);
+        }
+
+        .tab-item.active {
+            color: var(--gold-primary);
+        }
+
+        .tab-icon {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+
+        .tab-item.active .tab-icon {
+            transform: scale(1.1);
+        }
+
+        .tab-label {
+            font-size: 0.7rem;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .tab-item.active .tab-label {
+            font-weight: 700;
+            color: var(--slate-900);
+        }
+
+        /* Badge on tab */
+        .tab-badge {
+            position: absolute;
+            top: 6px;
+            right: 50%;
+            margin-right: -20px;
+            background: var(--red-600);
+            color: white;
+            font-size: 0.625rem;
+            font-weight: 700;
+            padding: 2px 5px;
+            border-radius: 10px;
+            min-width: 18px;
+            text-align: center;
+        }
+
+        /* Status Summary Cards */
+        .status-summary {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .summary-card:active {
+            transform: scale(0.98);
+        }
+
+        .summary-card.urgent {
+            border-left: 6px solid var(--red-600);
+        }
+
+        .summary-card.alert {
+            border-left: 6px solid var(--yellow-600);
+        }
+
+        .summary-card.ok {
+            border-left: 6px solid var(--green-600);
+        }
+
+        .summary-info {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .summary-icon {
+            font-size: 2.5rem;
+            width: 56px;
+            height: 56px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .summary-icon.urgent {
+            background: var(--red-50);
+        }
+
+        .summary-icon.alert {
+            background: var(--yellow-50);
+        }
+
+        .summary-icon.ok {
+            background: var(--green-50);
+        }
+
+        .summary-text {
+            flex: 1;
+        }
+
+        .summary-count {
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .summary-count.urgent {
+            color: var(--red-700);
+        }
+
+        .summary-count.alert {
+            color: var(--yellow-700);
+        }
+
+        .summary-count.ok {
+            color: var(--green-700);
+        }
+
+        .summary-label {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-top: 4px;
+        }
+
+        .summary-chevron {
+            font-size: 1.5rem;
+            color: var(--slate-400);
+        }
+
+        /* Search Bar */
+        .search-bar {
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid var(--slate-300);
+            border-radius: 12px;
+            font-size: 1rem;
+            font-family: inherit;
+            background: white;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--gold-primary);
+            box-shadow: 0 0 0 3px var(--gold-light);
+        }
+
+        /* Order Cards */
+        .orders-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .order-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            position: relative;
+        }
+
+        .order-card.urgent {
+            border-left: 6px solid var(--red-600);
+            background: var(--red-50);
+        }
+
+        .order-card.alert {
+            border-left: 6px solid var(--yellow-600);
+            background: var(--yellow-50);
+        }
+
+        .order-card.ok {
+            border-left: 6px solid var(--green-600);
+        }
+
+        .order-card.late {
+            border-left: 6px solid var(--gray-900);
+            background: var(--gray-100);
+        }
+
+        .order-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .order-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .status-badge.urgent {
+            background: var(--red-600);
+            color: white;
+        }
+
+        .status-badge.alert {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .status-badge.ok {
+            background: var(--green-600);
+            color: white;
+        }
+
+        .status-badge.late {
+            background: var(--gray-900);
+            color: white;
+        }
+
+        .order-info {
+            margin-bottom: 12px;
+        }
+
+        .order-id-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .order-id {
+            font-family: 'Courier New', monospace;
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: #3b82f6;
+        }
+
+        .order-customer {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        .order-promise {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            margin-bottom: 4px;
+        }
+
+        .order-promise.late {
+            color: var(--red-700);
+        }
+
+        .order-window {
+            font-size: 0.875rem;
+            color: var(--slate-700);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .countdown {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-weight: 600;
+            margin-top: 4px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            width: fit-content;
+        }
+
+        .countdown.urgent {
+            background: var(--red-600);
+            color: white;
+            animation: pulse 1s infinite;
+        }
+
+        .countdown.warning {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .countdown.expired {
+            background: var(--red-700);
+            color: white;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.8;
+            }
+        }
+
+        .order-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.875rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .btn:active {
+            transform: scale(0.96);
+        }
+
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--red-600);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--slate-100);
+            color: var(--slate-700);
+            border: 1px solid var(--slate-300);
+        }
+
+        /* Loading More */
+        .load-more {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .load-more-btn {
+            padding: 12px 24px;
+            background: white;
+            border: 2px solid var(--slate-300);
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+
+        .load-more-btn:active {
+            transform: scale(0.96);
+        }
+
+        /* Pull to Refresh Indicator */
+        .pull-to-refresh {
+            text-align: center;
+            padding: 12px;
+            color: var(--slate-600);
+            font-size: 0.875rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            margin-bottom: 8px;
+        }
+
+        .empty-text {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-wrapper">
+    <!-- Mobile Header -->
+    <header class="mobile-header">
+        <button class="menu-btn">☰</button>
+        <div class="header-title">Ops Control</div>
+        <button class="notification-btn">
+            🔔
+            <span class="notification-badge">3</span>
+        </button>
+        <div class="user-avatar">👤</div>
+    </header>
+
+    <!-- Container -->
+    <div class="container">
+        <!-- Status Summary Cards -->
+        <div class="status-summary">
+            <div class="summary-card urgent" onclick="filterByStatus('urgent')">
+                <div class="summary-info">
+                    <div class="summary-icon urgent">🔴</div>
+                    <div class="summary-text">
+                        <div class="summary-count urgent">23</div>
+                        <div class="summary-label">Urgentes</div>
+                    </div>
+                </div>
+                <div class="summary-chevron">›</div>
+            </div>
+
+            <div class="summary-card alert" onclick="filterByStatus('alert')">
+                <div class="summary-info">
+                    <div class="summary-icon alert">🟡</div>
+                    <div class="summary-text">
+                        <div class="summary-count alert">147</div>
+                        <div class="summary-label">Alertas</div>
+                    </div>
+                </div>
+                <div class="summary-chevron">›</div>
+            </div>
+
+            <div class="summary-card ok" onclick="filterByStatus('ok')">
+                <div class="summary-info">
+                    <div class="summary-icon ok">🟢</div>
+                    <div class="summary-text">
+                        <div class="summary-count ok">1,632</div>
+                        <div class="summary-label">OK</div>
+                    </div>
+                </div>
+                <div class="summary-chevron">›</div>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-bar">
+            <input type="text" class="search-input" placeholder="🔍 Buscar pedido...">
+        </div>
+
+        <!-- Pull to Refresh -->
+        <div class="pull-to-refresh">
+            Desliza hacia abajo para actualizar
+        </div>
+
+        <!-- Orders List -->
+        <div class="orders-list">
+            <!-- Urgent Order -->
+            <div class="order-card urgent">
+                <div class="order-header">
+                    <div class="order-status">
+                        <span class="status-badge urgent">🔴 URGENTE</span>
+                    </div>
+                </div>
+                <div class="order-info">
+                    <div class="order-id-line">
+                        <span class="order-id">FK-28473</span>
+                        <span class="order-customer">• Falabella</span>
+                    </div>
+                    <div class="order-promise">Hoy 10:00-12:00</div>
+                    <div class="countdown urgent">⏰ 45 min restantes</div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn btn-primary">Ver</button>
+                    <button class="btn btn-warning">Reasignar</button>
+                </div>
+            </div>
+
+            <!-- Alert Order -->
+            <div class="order-card alert">
+                <div class="order-header">
+                    <div class="order-status">
+                        <span class="status-badge alert">🟡 ALERTA</span>
+                    </div>
+                </div>
+                <div class="order-info">
+                    <div class="order-id-line">
+                        <span class="order-id">PR-18234</span>
+                        <span class="order-customer">• Paris</span>
+                    </div>
+                    <div class="order-promise">Mañana 14:00-16:00</div>
+                    <div class="order-window">Providencia</div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn btn-primary">Ver</button>
+                </div>
+            </div>
+
+            <!-- OK Order -->
+            <div class="order-card ok">
+                <div class="order-header">
+                    <div class="order-status">
+                        <span class="status-badge ok">🟢 OK</span>
+                    </div>
+                </div>
+                <div class="order-info">
+                    <div class="order-id-line">
+                        <span class="order-id">RP-92847</span>
+                        <span class="order-customer">• Ripley</span>
+                    </div>
+                    <div class="order-promise">7 Feb 16:00-18:00</div>
+                    <div class="order-window">Maipú</div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn btn-primary">Ver</button>
+                </div>
+            </div>
+
+            <!-- Late Order -->
+            <div class="order-card late">
+                <div class="order-header">
+                    <div class="order-status">
+                        <span class="status-badge late">⚫ ATRASADO</span>
+                    </div>
+                </div>
+                <div class="order-info">
+                    <div class="order-id-line">
+                        <span class="order-id">LD-47283</span>
+                        <span class="order-customer">• Lider</span>
+                    </div>
+                    <div class="order-promise late">4 Feb (Ayer) 09:00-11:00</div>
+                    <div class="countdown expired">❌ Venció ayer</div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn btn-primary">Ver</button>
+                    <button class="btn btn-danger">Escalar</button>
+                </div>
+            </div>
+
+            <!-- Another OK Order -->
+            <div class="order-card ok">
+                <div class="order-header">
+                    <div class="order-status">
+                        <span class="status-badge ok">🟢 OK</span>
+                    </div>
+                </div>
+                <div class="order-info">
+                    <div class="order-id-line">
+                        <span class="order-id">FB-38291</span>
+                        <span class="order-customer">• Falabella</span>
+                    </div>
+                    <div class="order-promise">8 Feb 11:00-13:00</div>
+                    <div class="order-window">Ñuñoa</div>
+                </div>
+                <div class="order-actions">
+                    <button class="btn btn-primary">Ver</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Load More -->
+        <div class="load-more">
+            <button class="load-more-btn">Cargar más pedidos</button>
+            <div style="margin-top: 12px; color: var(--slate-600); font-size: 0.875rem;">
+                Mostrando 5 de 1,860
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Tab Navigation -->
+    <nav class="bottom-tabs">
+        <a href="#" class="tab-item active">
+            <div style="position: relative;">
+                <div class="tab-icon">📊</div>
+                <span class="tab-badge">3</span>
+            </div>
+            <div class="tab-label">Ops</div>
+        </a>
+        <a href="#" class="tab-item">
+            <div class="tab-icon">💰</div>
+            <div class="tab-label">Dashboard</div>
+        </a>
+        <a href="#" class="tab-item">
+            <div class="tab-icon">📦</div>
+            <div class="tab-label">Orders</div>
+        </a>
+        <a href="#" class="tab-item">
+            <div class="tab-icon">📈</div>
+            <div class="tab-label">Reports</div>
+        </a>
+        <a href="#" class="tab-item">
+            <div class="tab-icon">⚙️</div>
+            <div class="tab-label">More</div>
+        </a>
+    </nav>
+
+    <script>
+        // Filter by status
+        function filterByStatus(status) {
+            console.log('Filtering by status:', status);
+            // In real implementation, this would filter the orders list
+        }
+
+        // Search functionality
+        document.querySelector('.search-input').addEventListener('input', function(e) {
+            console.log('Searching for:', e.target.value);
+        });
+
+        // Pull to refresh
+        let touchStartY = 0;
+        let touchEndY = 0;
+
+        document.addEventListener('touchstart', e => {
+            touchStartY = e.changedTouches[0].screenY;
+        });
+
+        document.addEventListener('touchend', e => {
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        });
+
+        function handleSwipe() {
+            const swipeDistance = touchEndY - touchStartY;
+            if (swipeDistance > 100 && window.scrollY === 0) {
+                console.log('Pull to refresh triggered');
+                document.querySelector('.pull-to-refresh').textContent = '🔄 Actualizando...';
+                setTimeout(() => {
+                    document.querySelector('.pull-to-refresh').textContent = 'Desliza hacia abajo para actualizar';
+                    console.log('Refresh complete');
+                }, 1500);
+            }
+        }
+
+        // Countdown simulation
+        setInterval(() => {
+            const countdowns = document.querySelectorAll('.countdown.urgent');
+            countdowns.forEach(countdown => {
+                const text = countdown.textContent;
+                const match = text.match(/(\d+) min/);
+                if (match) {
+                    let mins = parseInt(match[1]);
+                    mins = Math.max(0, mins - 1);
+                    countdown.textContent = `⏰ ${mins} min restantes`;
+
+                    if (mins === 0) {
+                        countdown.classList.remove('urgent');
+                        countdown.classList.add('expired');
+                        countdown.textContent = '❌ Venció';
+                    }
+                }
+            });
+        }, 60000); // Update every minute
+
+        // Load more button
+        document.querySelector('.load-more-btn').addEventListener('click', function() {
+            console.log('Loading more orders...');
+            this.textContent = 'Cargando...';
+            setTimeout(() => {
+                this.textContent = 'Cargar más pedidos';
+            }, 1000);
+        });
+
+        // Bottom tab navigation
+        const tabItems = document.querySelectorAll('.tab-item');
+
+        tabItems.forEach(tab => {
+            tab.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                // Remove active class from all tabs
+                tabItems.forEach(t => t.classList.remove('active'));
+
+                // Add active class to clicked tab
+                this.classList.add('active');
+
+                // Get tab label
+                const tabLabel = this.querySelector('.tab-label').textContent;
+                console.log('Switched to tab:', tabLabel);
+
+                // Update header title
+                const headerTitle = document.querySelector('.header-title');
+                if (tabLabel === 'Ops') {
+                    headerTitle.textContent = 'Ops Control';
+                } else if (tabLabel === 'Dashboard') {
+                    headerTitle.textContent = 'Business Dashboard';
+                } else if (tabLabel === 'Orders') {
+                    headerTitle.textContent = 'Orders';
+                } else if (tabLabel === 'Reports') {
+                    headerTitle.textContent = 'Reports';
+                } else if (tabLabel === 'More') {
+                    headerTitle.textContent = 'More';
+                }
+
+                // In real app, would load different content here
+            });
+        });
+    </script>
+    </div>
+</body>
+</html>

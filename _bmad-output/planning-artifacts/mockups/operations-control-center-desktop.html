@@ -1,0 +1,1278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aureon Last Mile - Operations Control Center (Desktop)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Tractis Theme Colors */
+        :root {
+            --gold-primary: #e6c15c;
+            --gold-light: #fef3c7;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+
+            --red-50: #fef2f2;
+            --red-700: #b91c1c;
+            --red-600: #dc2626;
+
+            --yellow-50: #fefce8;
+            --yellow-700: #a16207;
+            --yellow-600: #ca8a04;
+
+            --green-50: #f0fdf4;
+            --green-700: #15803d;
+            --green-600: #16a34a;
+
+            --gray-100: #f3f4f6;
+            --gray-900: #111827;
+
+            --orange-50: #fff7ed;
+            --orange-600: #ea580c;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--slate-50);
+            color: var(--slate-900);
+            line-height: 1.5;
+            min-width: 1200px;
+        }
+
+        /* App Layout with Sidebar */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 70px;
+            background: var(--slate-900);
+            color: white;
+            transition: width 0.3s ease;
+            position: fixed;
+            left: 0;
+            top: 0;
+            height: 100vh;
+            z-index: 200;
+            overflow: hidden;
+        }
+
+        .sidebar:hover,
+        .sidebar.expanded {
+            width: 250px;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            white-space: nowrap;
+        }
+
+        .sidebar-logo {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-brand {
+            font-weight: 600;
+            font-size: 1rem;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sidebar:hover .sidebar-brand,
+        .sidebar.expanded .sidebar-brand {
+            opacity: 1;
+        }
+
+        .sidebar-nav {
+            padding: 20px 0;
+        }
+
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 14px 20px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: white;
+        }
+
+        .sidebar-item.active {
+            background: var(--gold-primary);
+            color: var(--slate-900);
+            font-weight: 600;
+        }
+
+        .sidebar-item.active:hover {
+            background: var(--gold-primary);
+        }
+
+        .sidebar-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            width: 30px;
+            text-align: center;
+        }
+
+        .sidebar-label {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            font-size: 0.875rem;
+        }
+
+        .sidebar:hover .sidebar-label,
+        .sidebar.expanded .sidebar-label {
+            opacity: 1;
+        }
+
+        .sidebar-footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            margin-left: 70px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Top Navigation Bar */
+        .top-nav {
+            background: white;
+            height: 64px;
+            border-bottom: 1px solid var(--slate-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .logo {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-900);
+            white-space: nowrap;
+        }
+
+        .date-selectors {
+            display: flex;
+            gap: 12px;
+        }
+
+        .date-btn {
+            padding: 8px 16px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .date-btn:hover {
+            border-color: var(--gold-primary);
+            background: var(--gold-light);
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--slate-300);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        /* Main Container */
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 32px;
+        }
+
+        /* Page Title */
+        .page-title {
+            font-size: 1.875rem;
+            font-weight: 700;
+            color: var(--slate-900);
+            margin-bottom: 24px;
+        }
+
+        /* Pipeline Overview Cards */
+        .pipeline-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .pipeline-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            color: var(--slate-800);
+            margin-bottom: 16px;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .pipeline-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+        }
+
+        .pipeline-card {
+            background: white;
+            border: 2px solid var(--slate-200);
+            border-radius: 10px;
+            padding: 14px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            min-height: 130px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .pipeline-card:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+
+        .pipeline-card.active {
+            border: 4px solid var(--gold-primary);
+        }
+
+        .card-header {
+            flex-shrink: 0;
+        }
+
+        .card-icon {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+
+        .card-stage-name {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--slate-700);
+            line-height: 1.2;
+            min-height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            margin: 8px 0;
+        }
+
+        .card-count {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--slate-900);
+            line-height: 1;
+        }
+
+        .card-label {
+            font-size: 0.7rem;
+            color: var(--slate-600);
+            margin-top: 3px;
+        }
+
+        .card-footer {
+            flex-shrink: 0;
+        }
+
+        .card-status {
+            font-size: 0.7rem;
+            font-weight: 500;
+            padding: 4px 6px;
+            border-radius: 4px;
+            margin-top: 6px;
+            white-space: nowrap;
+        }
+
+        .status-urgent {
+            background: var(--red-50);
+            color: var(--red-700);
+        }
+
+        .status-ok {
+            background: var(--green-50);
+            color: var(--green-700);
+        }
+
+        .status-delayed {
+            background: var(--red-50);
+            color: var(--red-700);
+        }
+
+        .pipeline-divider {
+            grid-column: 1 / -1;
+            height: 2px;
+            background: linear-gradient(to right, var(--slate-200), var(--slate-300), var(--slate-200));
+            margin: 8px 0;
+        }
+
+        /* Alert Banner */
+        .alert-banner {
+            background: var(--yellow-50);
+            border: 2px solid var(--yellow-600);
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .alert-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .alert-icon {
+            font-size: 1.5rem;
+        }
+
+        .alert-text {
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .alert-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+            text-decoration: none;
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--yellow-700);
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--slate-600);
+            border: 1px solid var(--slate-300);
+        }
+
+        .btn-ghost:hover {
+            background: var(--slate-100);
+        }
+
+        /* Orders Table Section */
+        .orders-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow-x: auto;
+        }
+
+        .orders-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .orders-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--slate-900);
+        }
+
+        .orders-count {
+            color: var(--slate-600);
+            font-weight: 400;
+        }
+
+        .orders-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .search-input {
+            padding: 10px 16px;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            width: 300px;
+            font-family: inherit;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--gold-primary);
+            box-shadow: 0 0 0 3px var(--gold-light);
+        }
+
+        .filter-btn {
+            padding: 10px 16px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--gold-primary);
+            background: var(--gold-light);
+        }
+
+        /* Orders Table */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 0 -24px;
+            padding: 0 24px;
+        }
+
+        .orders-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1200px;
+        }
+
+        .orders-table thead {
+            background: var(--slate-50);
+            border-bottom: 2px solid var(--slate-300);
+        }
+
+        .orders-table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+        }
+
+        .orders-table tbody tr {
+            border-bottom: 1px solid var(--slate-200);
+            transition: background 0.2s;
+        }
+
+        .orders-table tbody tr:hover {
+            background: var(--slate-50);
+            cursor: pointer;
+        }
+
+        .orders-table tbody tr.urgent {
+            background: var(--red-50);
+        }
+
+        .orders-table tbody tr.alert {
+            background: var(--yellow-50);
+        }
+
+        .orders-table td {
+            padding: 16px;
+            font-size: 0.875rem;
+            vertical-align: middle;
+        }
+
+        /* Status Column */
+        .status-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 120px;
+        }
+
+        .status-indicator {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+
+        .status-indicator.urgent {
+            background: var(--red-600);
+            color: white;
+        }
+
+        .status-indicator.alert {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .status-indicator.ok {
+            background: var(--green-600);
+            color: white;
+        }
+
+        .status-indicator.late {
+            background: var(--gray-900);
+            color: white;
+        }
+
+        .status-label {
+            font-weight: 600;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .status-label.urgent {
+            color: var(--red-700);
+        }
+
+        .status-label.alert {
+            color: var(--yellow-700);
+        }
+
+        .status-label.ok {
+            color: var(--green-700);
+        }
+
+        .status-label.late {
+            color: var(--gray-900);
+        }
+
+        /* Order ID */
+        .order-id {
+            font-family: 'Courier New', monospace;
+            font-weight: 600;
+            color: #3b82f6;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .order-id:hover {
+            text-decoration: underline;
+        }
+
+        /* Customer Column */
+        .customer-cell {
+            white-space: nowrap;
+            min-width: 100px;
+        }
+
+        /* Promise Column */
+        .promise-cell {
+            line-height: 1.4;
+            min-width: 120px;
+        }
+
+        .promise-day {
+            font-weight: 600;
+            color: var(--slate-900);
+            white-space: nowrap;
+        }
+
+        .promise-date {
+            font-size: 0.75rem;
+            color: var(--slate-600);
+            white-space: nowrap;
+        }
+
+        .promise-late {
+            color: var(--red-700);
+        }
+
+        /* Time Window Column */
+        .window-cell {
+            line-height: 1.4;
+            min-width: 140px;
+        }
+
+        .window-time {
+            font-weight: 500;
+            color: var(--slate-900);
+            white-space: nowrap;
+        }
+
+        .window-countdown {
+            font-size: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 2px;
+            white-space: nowrap;
+        }
+
+        .window-countdown.urgent {
+            color: var(--red-700);
+            font-weight: 600;
+            animation: pulse 1s infinite;
+        }
+
+        .window-countdown.warning {
+            color: var(--yellow-700);
+        }
+
+        .window-countdown.ok {
+            color: var(--green-700);
+        }
+
+        .window-countdown.expired {
+            color: var(--red-700);
+            font-weight: 600;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        /* Comuna Column */
+        .comuna-cell {
+            white-space: nowrap;
+            min-width: 100px;
+        }
+
+        /* Actions Column */
+        .actions-cell {
+            display: flex;
+            gap: 8px;
+            min-width: 160px;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-link {
+            background: transparent;
+            color: #3b82f6;
+            border: 1px solid transparent;
+        }
+
+        .btn-link:hover {
+            background: #eff6ff;
+            border-color: #3b82f6;
+        }
+
+        .btn-warning {
+            background: var(--yellow-600);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: var(--yellow-700);
+        }
+
+        .btn-danger {
+            background: var(--red-600);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: var(--red-700);
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 24px;
+            padding-top: 24px;
+            border-top: 1px solid var(--slate-200);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .pagination-info {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        .pagination-controls {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .page-btn {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid var(--slate-300);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .page-btn:hover {
+            background: var(--slate-100);
+        }
+
+        .page-btn.active {
+            background: var(--gold-primary);
+            border-color: var(--gold-primary);
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">🏠</div>
+                <div class="sidebar-brand">Aureon</div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <a href="#" class="sidebar-item active">
+                    <span class="sidebar-icon">📊</span>
+                    <span class="sidebar-label">Ops Control</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">💰</span>
+                    <span class="sidebar-label">Business Dashboard</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">📦</span>
+                    <span class="sidebar-label">Inventory</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">🚚</span>
+                    <span class="sidebar-label">Fleet & Trucks</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">👥</span>
+                    <span class="sidebar-label">Team</span>
+                </a>
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">📈</span>
+                    <span class="sidebar-label">Reports</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <a href="#" class="sidebar-item">
+                    <span class="sidebar-icon">⚙️</span>
+                    <span class="sidebar-label">Settings</span>
+                </a>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Top Navigation -->
+            <nav class="top-nav">
+        <div class="logo">🏠 Aureon Last Mile</div>
+        <div class="date-selectors">
+            <button class="date-btn">Hoy ▼</button>
+            <button class="date-btn">Este Mes ▼</button>
+            <button class="date-btn">📅 Rango</button>
+        </div>
+        <div class="user-avatar">👤</div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="container">
+        <h1 class="page-title">Centro de Control Operacional</h1>
+
+        <!-- Pipeline Overview Section -->
+        <section class="pipeline-section">
+            <h2 class="pipeline-title">Estado Operacional - Tiempo Real</h2>
+
+            <div class="pipeline-grid">
+                <!-- Row 1 -->
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">📦</div>
+                        <div class="card-stage-name">Pendiente Recogida</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">847</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-urgent">⚠️ 23 urgentes</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">🚐</div>
+                        <div class="card-stage-name">En Tránsito a CD</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">234</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-ok">✓ En camino</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">📥</div>
+                        <div class="card-stage-name">En CD Recepción</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">156</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-delayed">🔴 12 atrasados</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">📦</div>
+                        <div class="card-stage-name">En Bodega</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">623</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-ok">✓ OK</div>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="pipeline-divider"></div>
+
+                <!-- Row 2 -->
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">🚚</div>
+                        <div class="card-stage-name">Pendiente Despacho</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">294</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-ok">✓ Listo</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">📦</div>
+                        <div class="card-stage-name">Cargado en Camión</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">412</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-ok">✓ 12 camiones</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">🚗</div>
+                        <div class="card-stage-name">En Ruta</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">189</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-urgent">⚠️ 8 en riesgo</div>
+                    </div>
+                </div>
+
+                <div class="pipeline-card">
+                    <div class="card-header">
+                        <div class="card-icon">✅</div>
+                        <div class="card-stage-name">Entregado Hoy</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-count">5,847</div>
+                        <div class="card-label">pedidos</div>
+                    </div>
+                    <div class="card-footer">
+                        <div class="card-status status-ok">94.2% SLA</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Alert Banner -->
+        <div class="alert-banner">
+            <div class="alert-content">
+                <span class="alert-icon">⚠️</span>
+                <span class="alert-text">23 pedidos urgentes requieren atención</span>
+            </div>
+            <div class="alert-actions">
+                <button class="btn btn-primary">Ver Lista</button>
+                <button class="btn btn-ghost">✕</button>
+            </div>
+        </div>
+
+        <!-- Orders Table Section -->
+        <section class="orders-section">
+            <div class="orders-header">
+                <h2 class="orders-title">
+                    Órdenes Activas <span class="orders-count">(1,860)</span>
+                </h2>
+                <div class="orders-actions">
+                    <input type="text" class="search-input" placeholder="🔍 Buscar pedido...">
+                    <button class="filter-btn">
+                        <span>⚙️</span>
+                        <span>Filtros</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-wrapper">
+                <table class="orders-table">
+                    <thead>
+                        <tr>
+                            <th>Estado</th>
+                            <th>Pedido</th>
+                            <th>Cliente</th>
+                            <th>Promesa Entrega</th>
+                            <th>Ventana Horaria</th>
+                            <th>Comuna</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Urgent Order -->
+                        <tr class="urgent">
+                            <td>
+                                <div class="status-cell">
+                                    <div class="status-indicator urgent">🔴</div>
+                                    <div class="status-label urgent">URGENTE</div>
+                                </div>
+                            </td>
+                            <td><a href="#" class="order-id">FK-28473</a></td>
+                            <td class="customer-cell">Falabella</td>
+                            <td>
+                                <div class="promise-cell">
+                                    <div class="promise-day">Hoy</div>
+                                    <div class="promise-date">5 Feb 2026</div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="window-cell">
+                                    <div class="window-time">10:00-12:00</div>
+                                    <div class="window-countdown urgent">⏰ 45 min restantes</div>
+                                </div>
+                            </td>
+                            <td class="comuna-cell">Las Condes</td>
+                            <td>
+                                <div class="actions-cell">
+                                    <button class="btn-sm btn-link">Ver</button>
+                                    <button class="btn-sm btn-warning">Reasignar</button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Alert Order -->
+                        <tr class="alert">
+                            <td>
+                                <div class="status-cell">
+                                    <div class="status-indicator alert">🟡</div>
+                                    <div class="status-label alert">ALERTA</div>
+                                </div>
+                            </td>
+                            <td><a href="#" class="order-id">PR-18234</a></td>
+                            <td class="customer-cell">Paris</td>
+                            <td>
+                                <div class="promise-cell">
+                                    <div class="promise-day">Mañana</div>
+                                    <div class="promise-date">6 Feb 2026</div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="window-cell">
+                                    <div class="window-time">14:00-16:00</div>
+                                </div>
+                            </td>
+                            <td class="comuna-cell">Providencia</td>
+                            <td>
+                                <div class="actions-cell">
+                                    <button class="btn-sm btn-link">Ver</button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- OK Order -->
+                        <tr>
+                            <td>
+                                <div class="status-cell">
+                                    <div class="status-indicator ok">🟢</div>
+                                    <div class="status-label ok">OK</div>
+                                </div>
+                            </td>
+                            <td><a href="#" class="order-id">RP-92847</a></td>
+                            <td class="customer-cell">Ripley</td>
+                            <td>
+                                <div class="promise-cell">
+                                    <div class="promise-day">7 Feb 2026</div>
+                                    <div class="promise-date">(en 2 días)</div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="window-cell">
+                                    <div class="window-time">16:00-18:00</div>
+                                </div>
+                            </td>
+                            <td class="comuna-cell">Maipú</td>
+                            <td>
+                                <div class="actions-cell">
+                                    <button class="btn-sm btn-link">Ver</button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Late Order -->
+                        <tr>
+                            <td>
+                                <div class="status-cell">
+                                    <div class="status-indicator late">⚫</div>
+                                    <div class="status-label late">ATRASADO</div>
+                                </div>
+                            </td>
+                            <td><a href="#" class="order-id">LD-47283</a></td>
+                            <td class="customer-cell">Lider</td>
+                            <td>
+                                <div class="promise-cell">
+                                    <div class="promise-day promise-late">4 Feb 2026</div>
+                                    <div class="promise-date promise-late">(Ayer)</div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="window-cell">
+                                    <div class="window-time">09:00-11:00</div>
+                                    <div class="window-countdown expired">❌ Venció ayer</div>
+                                </div>
+                            </td>
+                            <td class="comuna-cell">Santiago Centro</td>
+                            <td>
+                                <div class="actions-cell">
+                                    <button class="btn-sm btn-link">Ver</button>
+                                    <button class="btn-sm btn-danger">Escalar</button>
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Additional OK Orders -->
+                        <tr>
+                            <td>
+                                <div class="status-cell">
+                                    <div class="status-indicator ok">🟢</div>
+                                    <div class="status-label ok">OK</div>
+                                </div>
+                            </td>
+                            <td><a href="#" class="order-id">FB-38291</a></td>
+                            <td class="customer-cell">Falabella</td>
+                            <td>
+                                <div class="promise-cell">
+                                    <div class="promise-day">8 Feb 2026</div>
+                                    <div class="promise-date">(en 3 días)</div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="window-cell">
+                                    <div class="window-time">11:00-13:00</div>
+                                </div>
+                            </td>
+                            <td class="comuna-cell">Ñuñoa</td>
+                            <td>
+                                <div class="actions-cell">
+                                    <button class="btn-sm btn-link">Ver</button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination">
+                <div class="pagination-info">
+                    Mostrando 1-50 de 1,860
+                </div>
+                <div class="pagination-controls">
+                    <button class="page-btn">← Anterior</button>
+                    <button class="page-btn active">1</button>
+                    <button class="page-btn">2</button>
+                    <button class="page-btn">3</button>
+                    <button class="page-btn">...</button>
+                    <button class="page-btn">38</button>
+                    <button class="page-btn">Siguiente →</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // Add interactivity
+        document.querySelectorAll('.pipeline-card').forEach(card => {
+            card.addEventListener('click', function() {
+                // Remove active class from all cards
+                document.querySelectorAll('.pipeline-card').forEach(c => c.classList.remove('active'));
+                // Add active class to clicked card
+                this.classList.add('active');
+                console.log('Filtering by stage:', this.querySelector('.card-stage-name').textContent.trim());
+            });
+        });
+
+        // Search functionality
+        document.querySelector('.search-input').addEventListener('input', function(e) {
+            console.log('Searching for:', e.target.value);
+        });
+
+        // Alert banner dismiss
+        document.querySelectorAll('.alert-actions .btn-ghost').forEach(btn => {
+            btn.addEventListener('click', function() {
+                this.closest('.alert-banner').style.display = 'none';
+            });
+        });
+
+        // Order row click
+        document.querySelectorAll('.orders-table tbody tr').forEach(row => {
+            row.addEventListener('click', function(e) {
+                if (!e.target.closest('button') && !e.target.closest('a')) {
+                    console.log('Opening order detail for:', this.querySelector('.order-id').textContent);
+                }
+            });
+        });
+
+        // Simulate countdown updates
+        setInterval(() => {
+            const countdowns = document.querySelectorAll('.window-countdown.urgent');
+            countdowns.forEach(countdown => {
+                const text = countdown.textContent;
+                const match = text.match(/(\d+) min/);
+                if (match) {
+                    let mins = parseInt(match[1]);
+                    mins = Math.max(0, mins - 1);
+                    countdown.textContent = `⏰ ${mins} min restantes`;
+
+                    if (mins === 0) {
+                        countdown.classList.remove('urgent');
+                        countdown.classList.add('expired');
+                        countdown.textContent = '❌ Venció';
+                    }
+                }
+            });
+        }, 60000); // Update every minute
+
+        // Sidebar toggle
+        const sidebar = document.querySelector('.sidebar');
+        const sidebarItems = document.querySelectorAll('.sidebar-item');
+
+        // Optional: Click to lock expanded state
+        sidebar.addEventListener('click', function(e) {
+            if (!e.target.closest('.sidebar-item')) {
+                this.classList.toggle('expanded');
+            }
+        });
+
+        // Sidebar navigation
+        sidebarItems.forEach(item => {
+            item.addEventListener('click', function(e) {
+                e.preventDefault();
+                sidebarItems.forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                console.log('Navigating to:', this.querySelector('.sidebar-label').textContent);
+            });
+        });
+    </script>
+        </div> <!-- /main-content -->
+    </div> <!-- /app-layout -->
+</body>
+</html>

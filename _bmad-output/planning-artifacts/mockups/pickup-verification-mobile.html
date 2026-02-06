@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aureon - Pickup Verification (Mobile)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Tractis Theme Colors */
+        :root {
+            --gold-primary: #e6c15c;
+            --gold-light: #fef3c7;
+            --slate-50: #f8fafc;
+            --slate-100: #f1f5f9;
+            --slate-200: #e2e8f0;
+            --slate-300: #cbd5e1;
+            --slate-600: #475569;
+            --slate-700: #334155;
+            --slate-800: #1e293b;
+            --slate-900: #0f172a;
+
+            --red-50: #fef2f2;
+            --red-700: #b91c1c;
+            --red-600: #dc2626;
+
+            --yellow-50: #fefce8;
+            --yellow-700: #a16207;
+            --yellow-600: #ca8a04;
+
+            --green-50: #f0fdf4;
+            --green-700: #15803d;
+            --green-600: #16a34a;
+
+            --orange-50: #fff7ed;
+            --orange-600: #ea580c;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1e293b;
+            color: var(--slate-900);
+            line-height: 1.5;
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        /* Tablet Viewport Wrapper */
+        .tablet-wrapper {
+            max-width: 768px;
+            width: 100%;
+            background: var(--slate-50);
+            box-shadow: 0 0 30px rgba(0,0,0,0.3);
+            border-radius: 20px;
+            overflow: hidden;
+            min-height: 1024px;
+        }
+
+        /* Header */
+        .header {
+            background: white;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--slate-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .back-btn {
+            font-size: 1.5rem;
+            color: var(--slate-700);
+            cursor: pointer;
+            padding: 8px;
+        }
+
+        .header-title {
+            font-size: 1.125rem;
+            font-weight: 600;
+            flex: 1;
+            text-align: center;
+        }
+
+        .offline-indicator {
+            background: var(--orange-50);
+            color: var(--orange-600);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: none;
+        }
+
+        .offline-indicator.active {
+            display: block;
+        }
+
+        /* Screens Container */
+        .screen {
+            display: none;
+            min-height: calc(1024px - 64px);
+        }
+
+        .screen.active {
+            display: block;
+        }
+
+        /* Screen 1: Manifest List */
+        .manifest-list {
+            padding: 24px;
+        }
+
+        .screen-heading {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .screen-subtitle {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-bottom: 24px;
+        }
+
+        .manifest-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            border: 2px solid var(--slate-200);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .manifest-card:active {
+            transform: scale(0.98);
+        }
+
+        .manifest-card:hover {
+            border-color: var(--gold-primary);
+            box-shadow: 0 4px 12px rgba(230, 193, 92, 0.2);
+        }
+
+        .manifest-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .manifest-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--gold-light);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .manifest-info {
+            flex: 1;
+        }
+
+        .manifest-customer {
+            font-size: 1.125rem;
+            font-weight: 700;
+            color: var(--slate-900);
+        }
+
+        .manifest-count {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--gold-primary);
+        }
+
+        .manifest-label {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        .manifest-meta {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--slate-200);
+        }
+
+        .meta-item {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+        }
+
+        /* Screen 2: Scanning */
+        .scanning-screen {
+            display: flex;
+            flex-direction: column;
+            height: calc(1024px - 64px);
+        }
+
+        .progress-header {
+            background: white;
+            padding: 20px;
+            border-bottom: 2px solid var(--slate-200);
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .progress-count {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--slate-900);
+        }
+
+        .progress-label {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-top: 4px;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 16px;
+            background: var(--slate-200);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(to right, var(--gold-primary), #fef3c7);
+            transition: width 0.3s ease;
+            border-radius: 8px;
+        }
+
+        .scan-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            background: var(--slate-50);
+        }
+
+        .scan-icon {
+            font-size: 6rem;
+            margin-bottom: 24px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        .scan-instruction {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--slate-700);
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .scan-hint {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            text-align: center;
+        }
+
+        .scan-button {
+            margin-top: 32px;
+            background: var(--gold-primary);
+            color: var(--slate-900);
+            border: none;
+            border-radius: 16px;
+            padding: 20px 48px;
+            font-size: 1.125rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(230, 193, 92, 0.3);
+        }
+
+        .scan-button:active {
+            transform: scale(0.95);
+        }
+
+        /* Success/Error Overlay */
+        .feedback-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .feedback-overlay.active {
+            display: flex;
+        }
+
+        .feedback-overlay.success {
+            background: var(--green-600);
+        }
+
+        .feedback-overlay.error {
+            background: var(--red-600);
+        }
+
+        .feedback-content {
+            text-align: center;
+            color: white;
+        }
+
+        .feedback-icon {
+            font-size: 8rem;
+            margin-bottom: 24px;
+        }
+
+        .feedback-message {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        /* Screen 3: Completion */
+        .completion-screen {
+            padding: 40px 24px;
+            text-align: center;
+        }
+
+        .completion-icon {
+            font-size: 6rem;
+            margin-bottom: 24px;
+        }
+
+        .completion-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--slate-900);
+            margin-bottom: 12px;
+        }
+
+        .completion-subtitle {
+            font-size: 1rem;
+            color: var(--slate-600);
+            margin-bottom: 32px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid var(--slate-200);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--gold-primary);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin-top: 4px;
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--gold-primary);
+            color: var(--slate-900);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--slate-700);
+            border: 2px solid var(--slate-300);
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+    </style>
+</head>
+<body>
+    <div class="tablet-wrapper">
+        <!-- Header -->
+        <header class="header">
+            <div class="back-btn" onclick="goBack()">←</div>
+            <h1 class="header-title" id="headerTitle">Recogidas de Hoy</h1>
+            <div class="offline-indicator" id="offlineIndicator">📶 Sin conexión</div>
+        </header>
+
+        <!-- Screen 1: Manifest List -->
+        <div class="screen active" id="screen1">
+            <div class="manifest-list">
+                <h2 class="screen-heading">Recogidas de Hoy</h2>
+                <p class="screen-subtitle">Selecciona el manifiesto para comenzar la verificación</p>
+
+                <div class="manifest-card" onclick="selectManifest('Falabella', 347)">
+                    <div class="manifest-header">
+                        <div class="manifest-icon">📦</div>
+                        <div class="manifest-info">
+                            <div class="manifest-customer">Falabella</div>
+                            <div class="manifest-count">347</div>
+                            <div class="manifest-label">órdenes</div>
+                        </div>
+                    </div>
+                    <div class="manifest-meta">
+                        <div class="meta-item">📍 CD Santiago</div>
+                        <div class="meta-item">🕐 6:00 AM</div>
+                        <div class="meta-item">✓ Disponible</div>
+                    </div>
+                </div>
+
+                <div class="manifest-card" onclick="selectManifest('Paris', 189)">
+                    <div class="manifest-header">
+                        <div class="manifest-icon">📦</div>
+                        <div class="manifest-info">
+                            <div class="manifest-customer">Paris</div>
+                            <div class="manifest-count">189</div>
+                            <div class="manifest-label">órdenes</div>
+                        </div>
+                    </div>
+                    <div class="manifest-meta">
+                        <div class="meta-item">📍 CD Quilicura</div>
+                        <div class="meta-item">🕐 8:00 AM</div>
+                        <div class="meta-item">✓ Disponible</div>
+                    </div>
+                </div>
+
+                <div class="manifest-card" onclick="selectManifest('Ripley', 256)">
+                    <div class="manifest-header">
+                        <div class="manifest-icon">📦</div>
+                        <div class="manifest-info">
+                            <div class="manifest-customer">Ripley</div>
+                            <div class="manifest-count">256</div>
+                            <div class="manifest-label">órdenes</div>
+                        </div>
+                    </div>
+                    <div class="manifest-meta">
+                        <div class="meta-item">📍 CD Maipú</div>
+                        <div class="meta-item">🕐 10:00 AM</div>
+                        <div class="meta-item">⏰ Pendiente</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen 2: Scanning -->
+        <div class="screen" id="screen2">
+            <div class="scanning-screen">
+                <div class="progress-header">
+                    <div class="progress-text">
+                        <div class="progress-count" id="progressCount">0/347</div>
+                        <div class="progress-label">completado</div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" id="progressBar" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="scan-area">
+                    <div class="scan-icon">📱</div>
+                    <div class="scan-instruction">Escanea el código de barras</div>
+                    <div class="scan-hint">Apunta la cámara o escáner al código</div>
+                    <button class="scan-button" onclick="simulateScan()">Simular Escaneo</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Screen 3: Completion -->
+        <div class="screen" id="screen3">
+            <div class="completion-screen">
+                <div class="completion-icon">✅</div>
+                <h2 class="completion-title">¡Verificación Completa!</h2>
+                <p class="completion-subtitle">Todas las órdenes han sido verificadas exitosamente</p>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalScanned">347</div>
+                        <div class="stat-label">Órdenes verificadas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">28 min</div>
+                        <div class="stat-label">Tiempo total</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="discrepancies">0</div>
+                        <div class="stat-label">Discrepancias</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">100%</div>
+                        <div class="stat-label">Precisión</div>
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="generateReceipt()">
+                        📄 Generar Recibo Digital
+                    </button>
+                    <button class="btn btn-secondary" onclick="goToManifestList()">
+                        ← Volver a Recogidas
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feedback Overlay -->
+        <div class="feedback-overlay" id="feedbackOverlay">
+            <div class="feedback-content">
+                <div class="feedback-icon" id="feedbackIcon">✓</div>
+                <div class="feedback-message" id="feedbackMessage">Orden verificada</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentScreen = 1;
+        let currentManifest = { customer: '', total: 0, scanned: 0 };
+
+        function showScreen(screenNum) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(`screen${screenNum}`).classList.add('active');
+            currentScreen = screenNum;
+        }
+
+        function goBack() {
+            if (currentScreen > 1) {
+                showScreen(currentScreen - 1);
+            }
+        }
+
+        function selectManifest(customer, total) {
+            currentManifest = { customer, total, scanned: 0 };
+            document.getElementById('headerTitle').textContent = `${customer} - Verificación`;
+            document.getElementById('progressCount').textContent = `0/${total}`;
+            showScreen(2);
+        }
+
+        function simulateScan() {
+            const isSuccess = Math.random() > 0.1; // 90% success rate
+
+            if (isSuccess) {
+                showFeedback('success', '✓', 'Orden verificada');
+                currentManifest.scanned++;
+                updateProgress();
+
+                setTimeout(() => {
+                    hideFeedback();
+                    if (currentManifest.scanned >= currentManifest.total) {
+                        showCompletion();
+                    }
+                }, 800);
+            } else {
+                showFeedback('error', '✗', 'Orden NO está en el manifiesto');
+                setTimeout(() => {
+                    hideFeedback();
+                }, 2000);
+            }
+        }
+
+        function showFeedback(type, icon, message) {
+            const overlay = document.getElementById('feedbackOverlay');
+            overlay.className = `feedback-overlay active ${type}`;
+            document.getElementById('feedbackIcon').textContent = icon;
+            document.getElementById('feedbackMessage').textContent = message;
+
+            // Play sound (browser may block, but try)
+            if (type === 'success') {
+                playBeep(800, 100);
+            } else {
+                playBeep(400, 300);
+            }
+        }
+
+        function hideFeedback() {
+            document.getElementById('feedbackOverlay').classList.remove('active');
+        }
+
+        function updateProgress() {
+            const { scanned, total } = currentManifest;
+            const percentage = (scanned / total) * 100;
+
+            document.getElementById('progressCount').textContent = `${scanned}/${total}`;
+            document.getElementById('progressBar').style.width = `${percentage}%`;
+        }
+
+        function showCompletion() {
+            document.getElementById('totalScanned').textContent = currentManifest.total;
+            document.getElementById('discrepancies').textContent = '0';
+            showScreen(3);
+        }
+
+        function generateReceipt() {
+            alert('📄 Recibo digital generado y enviado\n✓ Firma digital registrada\n✓ Sincronizado con sistema');
+        }
+
+        function goToManifestList() {
+            currentManifest = { customer: '', total: 0, scanned: 0 };
+            document.getElementById('headerTitle').textContent = 'Recogidas de Hoy';
+            document.getElementById('progressCount').textContent = '0/0';
+            document.getElementById('progressBar').style.width = '0%';
+            showScreen(1);
+        }
+
+        function playBeep(frequency, duration) {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.frequency.value = frequency;
+                oscillator.type = 'sine';
+
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration / 1000);
+
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + duration / 1000);
+            } catch (e) {
+                console.log('Audio not supported');
+            }
+        }
+
+        // Simulate offline indicator (5% chance)
+        if (Math.random() < 0.05) {
+            document.getElementById('offlineIndicator').classList.add('active');
+        }
+    </script>
+</body>
+</html>
