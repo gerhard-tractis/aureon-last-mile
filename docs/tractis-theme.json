@@ -1,0 +1,497 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "name": "Tractis Design System",
+  "version": "1.0.0",
+  "description": "Single source of truth for Tractis brand identity - Intelligent Ops Infrastructure",
+  
+  "colors": {
+    "brand": {
+      "gold": {
+        "DEFAULT": "#e6c15c",
+        "50": "#fef9ed",
+        "100": "#fcf0d0",
+        "200": "#f9df9d",
+        "300": "#f6c968",
+        "400": "#f3b541",
+        "500": "#e6c15c",
+        "600": "#d9a332",
+        "700": "#b47f27",
+        "800": "#926426",
+        "900": "#785323"
+      },
+      "slate": {
+        "DEFAULT": "#5e6b7b",
+        "50": "#f7f8fa",
+        "100": "#eceef2",
+        "200": "#d4d9e2",
+        "300": "#afb8c8",
+        "400": "#8491a8",
+        "500": "#5e6b7b",
+        "600": "#535f6e",
+        "700": "#454f5c",
+        "800": "#3b434d",
+        "900": "#343941"
+      }
+    },
+    
+    "semantic": {
+      "success": {
+        "DEFAULT": "#10b981",
+        "light": "#d1fae5",
+        "dark": "#065f46",
+        "bg": "#ecfdf5",
+        "border": "#a7f3d0",
+        "text": "#047857"
+      },
+      "warning": {
+        "DEFAULT": "#f59e0b",
+        "light": "#fef3c7",
+        "dark": "#92400e",
+        "bg": "#fffbeb",
+        "border": "#fde68a",
+        "text": "#d97706"
+      },
+      "error": {
+        "DEFAULT": "#ef4444",
+        "light": "#fee2e2",
+        "dark": "#991b1b",
+        "bg": "#fef2f2",
+        "border": "#fecaca",
+        "text": "#dc2626"
+      },
+      "info": {
+        "DEFAULT": "#3b82f6",
+        "light": "#dbeafe",
+        "dark": "#1e3a8a",
+        "bg": "#eff6ff",
+        "border": "#bfdbfe",
+        "text": "#2563eb"
+      }
+    },
+    
+    "charts": {
+      "primary": "#e6c15c",
+      "secondary": "#5e6b7b",
+      "tertiary": "#06b6d4",
+      "quaternary": "#8b5cf6",
+      "quinary": "#ec4899",
+      "series": [
+        "#e6c15c",
+        "#5e6b7b",
+        "#06b6d4",
+        "#8b5cf6",
+        "#ec4899",
+        "#10b981",
+        "#f59e0b"
+      ]
+    },
+    
+    "gray": {
+      "50": "#f8fafc",
+      "100": "#f1f5f9",
+      "200": "#e2e8f0",
+      "300": "#cbd5e1",
+      "400": "#94a3b8",
+      "500": "#64748b",
+      "600": "#475569",
+      "700": "#334155",
+      "800": "#1e293b",
+      "900": "#0f172a"
+    },
+    
+    "surface": {
+      "page": "#f8fafc",
+      "card": "#ffffff",
+      "cardAlt": "#f1f5f9",
+      "elevated": "#ffffff",
+      "overlay": "rgba(15, 23, 42, 0.5)"
+    },
+    
+    "text": {
+      "primary": "#334155",
+      "secondary": "#64748b",
+      "tertiary": "#94a3b8",
+      "disabled": "#cbd5e1",
+      "inverse": "#ffffff",
+      "link": "#e6c15c",
+      "linkHover": "#d9a332"
+    },
+    
+    "border": {
+      "subtle": "#e2e8f0",
+      "default": "#cbd5e1",
+      "strong": "#94a3b8",
+      "brand": "#e6c15c"
+    }
+  },
+  
+  "typography": {
+    "fontFamily": {
+      "display": ["Inter Variable", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+      "body": ["Inter Variable", "Inter", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+      "mono": ["JetBrains Mono", "Consolas", "Monaco", "Courier New", "monospace"]
+    },
+    
+    "fontWeight": {
+      "normal": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700,
+      "extrabold": 800
+    },
+    
+    "fontSize": {
+      "display": {
+        "size": "clamp(2.5rem, 5vw, 4rem)",
+        "lineHeight": "1.1",
+        "letterSpacing": "-0.02em",
+        "fontWeight": 700
+      },
+      "h1": {
+        "size": "clamp(2rem, 4vw, 3rem)",
+        "lineHeight": "1.2",
+        "letterSpacing": "-0.015em",
+        "fontWeight": 700
+      },
+      "h2": {
+        "size": "clamp(1.5rem, 3vw, 2.25rem)",
+        "lineHeight": "1.25",
+        "letterSpacing": "-0.01em",
+        "fontWeight": 600
+      },
+      "h3": {
+        "size": "1.5rem",
+        "lineHeight": "1.3",
+        "letterSpacing": "-0.005em",
+        "fontWeight": 600
+      },
+      "h4": {
+        "size": "1.25rem",
+        "lineHeight": "1.4",
+        "letterSpacing": "normal",
+        "fontWeight": 600
+      },
+      "bodyLg": {
+        "size": "1.125rem",
+        "lineHeight": "1.6",
+        "letterSpacing": "normal",
+        "fontWeight": 400
+      },
+      "body": {
+        "size": "1rem",
+        "lineHeight": "1.6",
+        "letterSpacing": "normal",
+        "fontWeight": 400
+      },
+      "bodySm": {
+        "size": "0.875rem",
+        "lineHeight": "1.5",
+        "letterSpacing": "0.01em",
+        "fontWeight": 400
+      },
+      "caption": {
+        "size": "0.75rem",
+        "lineHeight": "1.4",
+        "letterSpacing": "0.02em",
+        "fontWeight": 500
+      }
+    }
+  },
+  
+  "spacing": {
+    "0": "0px",
+    "1": "4px",
+    "2": "8px",
+    "3": "12px",
+    "4": "16px",
+    "5": "20px",
+    "6": "24px",
+    "7": "28px",
+    "8": "32px",
+    "9": "36px",
+    "10": "40px",
+    "11": "44px",
+    "12": "48px",
+    "14": "56px",
+    "16": "64px",
+    "20": "80px",
+    "24": "96px",
+    "28": "112px",
+    "32": "128px"
+  },
+  
+  "borderRadius": {
+    "none": "0",
+    "sm": "4px",
+    "DEFAULT": "6px",
+    "md": "8px",
+    "lg": "12px",
+    "xl": "16px",
+    "full": "9999px"
+  },
+  
+  "borderWidth": {
+    "0": "0px",
+    "DEFAULT": "1px",
+    "2": "2px",
+    "4": "4px",
+    "8": "8px"
+  },
+  
+  "boxShadow": {
+    "none": "none",
+    "sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+    "DEFAULT": "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)",
+    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)",
+    "xl": "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)",
+    "inner": "inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)",
+    "card": "0 1px 3px rgba(0, 0, 0, 0.1)",
+    "cardHover": "0 4px 12px rgba(0, 0, 0, 0.15)",
+    "button": "0 1px 2px rgba(0, 0, 0, 0.05)",
+    "buttonHover": "0 2px 4px rgba(0, 0, 0, 0.1)"
+  },
+  
+  "layout": {
+    "maxWidth": {
+      "container": "1280px",
+      "prose": "800px",
+      "narrow": "640px"
+    },
+    
+    "breakpoints": {
+      "mobile": "320px",
+      "tablet": "768px",
+      "desktop": "1280px",
+      "wide": "1536px"
+    },
+    
+    "grid": {
+      "desktop": {
+        "columns": 12,
+        "gutter": "24px",
+        "margin": "48px"
+      },
+      "tablet": {
+        "columns": 8,
+        "gutter": "20px",
+        "margin": "32px"
+      },
+      "mobile": {
+        "columns": 4,
+        "gutter": "16px",
+        "margin": "20px"
+      }
+    }
+  },
+  
+  "components": {
+    "button": {
+      "primary": {
+        "background": "#e6c15c",
+        "backgroundHover": "#d9a332",
+        "text": "#0f172a",
+        "border": "none",
+        "borderRadius": "6px",
+        "padding": "10px 20px",
+        "fontWeight": 500,
+        "shadow": "0 1px 2px rgba(0, 0, 0, 0.05)",
+        "shadowHover": "0 2px 4px rgba(0, 0, 0, 0.1)"
+      },
+      "secondary": {
+        "background": "transparent",
+        "backgroundHover": "#f8fafc",
+        "text": "#334155",
+        "border": "1px solid #cbd5e1",
+        "borderRadius": "6px",
+        "padding": "10px 20px",
+        "fontWeight": 500
+      },
+      "ghost": {
+        "background": "transparent",
+        "backgroundHover": "#f1f5f9",
+        "text": "#64748b",
+        "border": "none",
+        "borderRadius": "6px",
+        "padding": "10px 20px",
+        "fontWeight": 500
+      }
+    },
+    
+    "card": {
+      "background": "#ffffff",
+      "border": "1px solid #e2e8f0",
+      "borderRadius": "8px",
+      "padding": "24px",
+      "shadow": "0 1px 3px rgba(0, 0, 0, 0.1)",
+      "shadowHover": "0 4px 12px rgba(0, 0, 0, 0.15)"
+    },
+    
+    "table": {
+      "header": {
+        "background": "#f8fafc",
+        "text": "#334155",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.05em",
+        "fontSize": "0.75rem",
+        "fontWeight": 500,
+        "padding": "12px 16px",
+        "borderBottom": "2px solid #e2e8f0"
+      },
+      "row": {
+        "borderBottom": "1px solid #f1f5f9",
+        "padding": "12px 16px",
+        "backgroundHover": "#f8fafc"
+      },
+      "cellNumeric": {
+        "fontFamily": ["JetBrains Mono", "monospace"],
+        "textAlign": "right",
+        "fontFeatureSettings": "'tnum'"
+      }
+    },
+    
+    "badge": {
+      "success": {
+        "background": "#ecfdf5",
+        "text": "#047857",
+        "border": "1px solid #a7f3d0"
+      },
+      "warning": {
+        "background": "#fffbeb",
+        "text": "#d97706",
+        "border": "1px solid #fde68a"
+      },
+      "error": {
+        "background": "#fef2f2",
+        "text": "#dc2626",
+        "border": "1px solid #fecaca"
+      },
+      "info": {
+        "background": "#eff6ff",
+        "text": "#2563eb",
+        "border": "1px solid #bfdbfe"
+      },
+      "default": {
+        "borderRadius": "4px",
+        "padding": "2px 8px",
+        "fontSize": "0.75rem",
+        "fontWeight": 500
+      }
+    },
+    
+    "input": {
+      "background": "#ffffff",
+      "backgroundDisabled": "#f1f5f9",
+      "border": "1px solid #cbd5e1",
+      "borderFocus": "1px solid #e6c15c",
+      "borderRadius": "6px",
+      "padding": "10px 12px",
+      "text": "#334155",
+      "placeholder": "#94a3b8",
+      "shadow": "0 1px 2px rgba(0, 0, 0, 0.05)",
+      "shadowFocus": "0 0 0 3px rgba(230, 193, 92, 0.1)"
+    }
+  },
+  
+  "pdf": {
+    "header": {
+      "padding": "24px 48px",
+      "borderBottom": "2px solid #e6c15c",
+      "logo": {
+        "height": "32px"
+      },
+      "title": {
+        "fontSize": "1.25rem",
+        "fontWeight": 600,
+        "color": "#334155"
+      },
+      "meta": {
+        "fontSize": "0.875rem",
+        "color": "#64748b"
+      }
+    },
+    
+    "body": {
+      "maxWidth": "800px",
+      "margin": "48px auto",
+      "fontSize": "1rem",
+      "lineHeight": "1.6",
+      "color": "#334155"
+    },
+    
+    "footer": {
+      "padding": "16px 48px",
+      "borderTop": "1px solid #e2e8f0",
+      "fontSize": "0.75rem",
+      "color": "#64748b"
+    },
+    
+    "cover": {
+      "background": "#0f172a",
+      "logo": {
+        "filter": "brightness(0) invert(1)",
+        "maxWidth": "200px"
+      },
+      "title": {
+        "fontSize": "clamp(2rem, 4vw, 3rem)",
+        "color": "#ffffff",
+        "fontWeight": 700
+      },
+      "subtitle": {
+        "fontSize": "1.125rem",
+        "color": "#94a3b8"
+      }
+    }
+  },
+  
+  "dataVisualization": {
+    "chartDefaults": {
+      "fontFamily": "Inter Variable, Inter, sans-serif",
+      "fontSize": "12px",
+      "colors": ["#e6c15c", "#5e6b7b", "#06b6d4", "#8b5cf6", "#ec4899", "#10b981", "#f59e0b"],
+      "gridColor": "#e2e8f0",
+      "axisColor": "#94a3b8",
+      "tooltipBackground": "#1e293b",
+      "tooltipText": "#f8fafc"
+    },
+    
+    "allowedTypes": [
+      "line",
+      "bar",
+      "area",
+      "scatter",
+      "heatmap",
+      "sankey"
+    ],
+    
+    "prohibitedTypes": [
+      "pie",
+      "donut",
+      "3d"
+    ]
+  },
+  
+  "messaging": {
+    "prohibitedTerms": [
+      "soluciones innovadoras",
+      "transformación digital",
+      "revolucionamos",
+      "simplificamos lo complejo"
+    ],
+    
+    "preferredTerms": {
+      "automation": "orquestación de procesos",
+      "aiSolutions": "motores de optimización",
+      "efficiency": "throughput medido",
+      "costReduction": "reducción de OPEX",
+      "digitalTransformation": "migración a infraestructura determinista"
+    }
+  },
+  
+  "meta": {
+    "lastUpdated": "2025-01-12",
+    "version": "1.0.0",
+    "maintainer": "Tractis Brand Team",
+    "license": "Proprietary - Internal Use Only"
+  }
+}
