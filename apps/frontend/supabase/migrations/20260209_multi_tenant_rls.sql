@@ -30,31 +30,12 @@ ALTER TABLE public.operators ENABLE ROW LEVEL SECURITY;
 -- Operators can only see their own record
 CREATE POLICY "operators_isolation" ON public.operators
   FOR ALL
-  USING (id = auth.operator_id());
+  USING (id = public.get_operator_id());
 
 -- ============================================================================
--- PART 2: Extend auth.users with operator_id (Multi-Tenant User Assignment)
+-- PART 2: Create Core Tables with operator_id
 -- ============================================================================
-
--- Add operator_id to user metadata via trigger
--- Note: Supabase auth.users table is managed, so we use app_metadata
-
--- Helper function to get operator_id from JWT
-CREATE OR REPLACE FUNCTION auth.operator_id()
-RETURNS UUID
-LANGUAGE sql STABLE
-AS $$
-  SELECT NULLIF(
-    current_setting('request.jwt.claims', true)::json->>'operator_id',
-    ''
-  )::uuid;
-$$;
-
-COMMENT ON FUNCTION auth.operator_id IS 'Extract operator_id from JWT claims for RLS policies';
-
--- ============================================================================
--- PART 3: Create Core Tables with operator_id
--- ============================================================================
+-- Note: public.get_operator_id() function created in 20260209000001_auth_function.sql
 
 -- Orders table
 CREATE TABLE IF NOT EXISTS public.orders (
@@ -89,7 +70,7 @@ ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 -- RLS Policy: Tenant isolation
 CREATE POLICY "orders_tenant_isolation" ON public.orders
   FOR ALL
-  USING (operator_id = auth.operator_id());
+  USING (operator_id = public.get_operator_id());
 
 -- Manifests table
 CREATE TABLE IF NOT EXISTS public.manifests (
@@ -122,7 +103,7 @@ ALTER TABLE public.manifests ENABLE ROW LEVEL SECURITY;
 -- RLS Policy
 CREATE POLICY "manifests_tenant_isolation" ON public.manifests
   FOR ALL
-  USING (operator_id = auth.operator_id());
+  USING (operator_id = public.get_operator_id());
 
 -- Barcode Scans table
 CREATE TABLE IF NOT EXISTS public.barcode_scans (
@@ -152,7 +133,7 @@ ALTER TABLE public.barcode_scans ENABLE ROW LEVEL SECURITY;
 -- RLS Policy
 CREATE POLICY "scans_tenant_isolation" ON public.barcode_scans
   FOR ALL
-  USING (operator_id = auth.operator_id());
+  USING (operator_id = public.get_operator_id());
 
 -- Audit Logs table (7-year retention for compliance)
 CREATE TABLE IF NOT EXISTS public.audit_logs (
@@ -182,10 +163,10 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 -- RLS Policy
 CREATE POLICY "audit_tenant_isolation" ON public.audit_logs
   FOR ALL
-  USING (operator_id = auth.operator_id());
+  USING (operator_id = public.get_operator_id());
 
 -- ============================================================================
--- PART 4: Create Seed Data (Development Only)
+-- PART 3: Create Seed Data (Development Only)
 -- ============================================================================
 
 -- Insert test operator
@@ -195,7 +176,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- PART 5: Utility Functions
+-- PART 4: Utility Functions
 -- ============================================================================
 
 -- Function to audit log inserts
@@ -212,7 +193,7 @@ AS $$
 BEGIN
   INSERT INTO public.audit_logs (operator_id, user_id, action, resource_type, resource_id, changes_json, ip_address)
   VALUES (
-    auth.operator_id(),
+    public.get_operator_id(),
     auth.uid(),
     p_action,
     p_resource_type,
