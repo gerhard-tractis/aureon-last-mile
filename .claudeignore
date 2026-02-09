@@ -1,0 +1,7 @@
+# Claude settings files - DO NOT MODIFY
+.claude/settings.local.json
+.claude/settings.json
+.claude/keybindings.json
+
+# Keep Claude from accidentally editing configuration
+**/*settings*.json

@@ -1,0 +1,93 @@
+# generated: 2026-02-07
+# project: Aureon_Last_Mile
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-07
+project: Aureon_Last_Mile
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-clone-and-deploy-razikus-template-skeleton: in-progress
+  1-2-configure-multi-tenant-database-schema-with-rls-policies: backlog
+  1-3-implement-role-based-authentication-5-roles: backlog
+  1-4-build-user-management-interface-create-users-assign-roles: backlog
+  1-5-add-pwa-enhancement-layer-serwist-indexeddb-background-sync: backlog
+  1-6-set-up-audit-logging-infrastructure: backlog
+  1-7-configure-ci-cd-pipeline-github-actions: backlog
+  1-8-set-up-monitoring-and-alerting-sentry-betterstack: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-create-orders-table-and-data-model: backlog
+  2-2-build-csv-excel-upload-interface-with-validation: backlog
+  2-3-implement-email-manifest-parsing-n8n-workflow: backlog
+  2-4-build-manual-order-entry-form-fallback: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-create-performance-metrics-tables-and-calculation-logic: backlog
+  3-2-build-hero-sla-section-with-real-time-calculation: backlog
+  3-3-implement-primary-metrics-cards-fadr-claims-efficiency: backlog
+  3-4-build-customer-performance-table-sortable-color-coded: backlog
+  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: backlog
+  3-6-add-secondary-metrics-dashboard: backlog
+  3-7-implement-export-functionality-csv-pdf-reports: backlog
+  3-8-set-up-tanstack-query-caching-for-dashboard-performance: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-create-manifests-and-pickup-scans-tables: backlog
+  4-2-build-screen-1-manifest-list-todays-pickups: backlog
+  4-3-build-screen-2-barcode-scanning-with-camera-integration: backlog
+  4-4-implement-multi-sensory-feedback-audio-haptic-visual: backlog
+  4-5-build-offline-scan-queue-with-indexeddb-storage: backlog
+  4-6-implement-background-sync-when-connectivity-restored: backlog
+  4-7-build-screen-3-completion-summary-with-digital-signature: backlog
+  4-8-generate-pdf-receipt-with-complete-audit-trail: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-create-order-status-tracking-and-capacity-forecast-tables: backlog
+  5-2-build-desktop-navigation-and-pipeline-overview-8-stages: backlog
+  5-3-build-desktop-orders-table-with-filters-search-live-updates: backlog
+  5-4-build-mobile-bottom-tab-navigation-and-status-summary-cards: backlog
+  5-5-build-mobile-orders-list-with-pull-to-refresh: backlog
+  5-6-implement-capacity-alerts-and-forecast-accuracy-tracking: backlog
+  5-7-build-audit-log-viewer-with-search-and-filters: backlog
+  5-8-set-up-platform-health-monitoring-dashboard-aureon-devops: backlog
+  5-9-configure-supabase-realtime-for-live-order-updates: backlog
+  epic-5-retrospective: optional
