@@ -165,7 +165,6 @@ export const useScanStore = create<ScanStoreState>((set, get) => ({
       console.log("[ScanStore] Back online - trigger sync via service worker");
       if ("serviceWorker" in navigator && "sync" in navigator.serviceWorker) {
         navigator.serviceWorker.ready.then((registration) => {
-          // @ts-expect-error - Background Sync API not in TypeScript types yet
           return registration.sync.register("sync-scans");
         });
       }
