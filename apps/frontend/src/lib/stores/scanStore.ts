@@ -28,7 +28,7 @@ interface ScanStoreState {
   // Actions
   addScan: (scan: Omit<ScanItem, "id" | "scannedAt" | "syncStatus">) => Promise<void>;
   loadPendingScans: (operatorId: string) => Promise<void>;
-  syncScans: (operatorId: string) => Promise<void>;
+  syncScans: () => Promise<void>;
   setOnlineStatus: (online: boolean) => void;
   clearSyncedScans: () => void;
 }
@@ -66,7 +66,7 @@ export const useScanStore = create<ScanStoreState>((set, get) => ({
 
     // Auto-sync if online
     if (get().isOnline && !get().isSyncing) {
-      await get().syncScans(scan.operatorId);
+      await get().syncScans();
     }
   },
 
@@ -77,7 +77,7 @@ export const useScanStore = create<ScanStoreState>((set, get) => ({
   },
 
   // Sync scans to server
-  syncScans: async (_operatorId: string) => {
+  syncScans: async () => {
     const { scans, isOnline } = get();
 
     if (!isOnline) {
