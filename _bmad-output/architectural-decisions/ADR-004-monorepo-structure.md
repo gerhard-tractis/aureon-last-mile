@@ -258,17 +258,19 @@ interface Order {
 
 5. **Simplified CI/CD**
    ```yaml
-   # .github/workflows/ci.yml
+   # .github/workflows/ci.yml (Example - see actual implementation)
    - name: Install dependencies (all workspaces)
      run: npm install
 
    - name: Run tests (all workspaces)
      run: npm run test --workspaces
 
-   - name: Deploy frontend
-     if: contains(github.event.head_commit.message, 'frontend')
-     run: vercel deploy --prod
+   # Note: Actual implementation uses manual deployment for cost control
+   # See: .github/workflows/test.yml (CI only)
+   # Deployment: Manual via Vercel dashboard/CLI
    ```
+
+   **Actual Implementation:** CI runs automatically (test, lint, type-check, build), deployment is manual for cost control. See [.github/workflows/README.md](../../.github/workflows/README.md) for details.
 
 ### Negative
 
