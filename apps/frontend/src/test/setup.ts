@@ -56,12 +56,14 @@ Object.defineProperty(navigator, 'onLine', {
 global.fetch = vi.fn();
 
 // Mock window.location
+/* eslint-disable @typescript-eslint/no-explicit-any */
 delete (window as any).location;
 window.location = {
   reload: vi.fn(),
   href: '',
   origin: 'http://localhost:3000',
 } as any;
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Mock window.history
 window.history.back = vi.fn();
