@@ -87,6 +87,7 @@ npm run type-check      # TypeScript validation
 - **State:** Zustand (local), TanStack Query (server)
 - **Styling:** Tailwind CSS, shadcn/ui
 - **Testing:** Vitest, React Testing Library (75.78% coverage)
+- **CI/CD:** GitHub Actions (CI on every commit, manual deployment)
 - **Hosting:** Vercel (frontend), Supabase (database)
 
 ---
@@ -110,19 +111,45 @@ Aureon uses **PostgreSQL Row-Level Security (RLS)** for tenant isolation:
 
 - [x] Multi-tenant RLS implementation
 - [x] PWA with offline-first capabilities
-- [x] Deployed to Vercel
-- [x] 75.78% test coverage
+- [x] Deployed to Vercel (manual deployment)
+- [x] 75.78% test coverage (72/72 tests passing)
+- [x] CI/CD pipeline (GitHub Actions - CI only, manual deploy)
+- [x] Architectural Decision Records (4 ADRs)
+- [x] Comprehensive documentation (README, ADRs, workflow guides)
 
 ### 🚧 In Progress
 
-- [ ] RF-2: Architectural Decision Records (ADR)
-- [ ] RF-4: Complete remaining deployment tasks
+- [ ] Task 6.3-6.4: Complete CI/CD setup (branch protection, testing)
+- [ ] Task 7: Monitoring and alerting (Sentry, BetterStack)
+- [ ] Task 8: Final documentation and validation
 
 ### 📋 Planned
 
 - Story 2.1-2.5: BI Dashboard
 - Story 3.1-3.3: Manifest Management
 - Story 4.1-4.4: Order Processing
+
+---
+
+## 🚀 Deployment & CI/CD
+
+### CI/CD Pipeline
+- **Strategy:** CI always, manual deployment (cost control)
+- **CI:** GitHub Actions runs on every push/PR (type-check, lint, test, build)
+- **Deployment:** Manual via Vercel dashboard or CLI
+- **Documentation:** [.github/workflows/README.md](.github/workflows/README.md)
+- **Cost Savings:** ~90% reduction vs auto-deploy (8 vs 80 deploys/month)
+
+### Quick Deploy
+```bash
+# Option 1: Vercel Dashboard
+# → Go to Vercel → Click "Deploy" button
+
+# Option 2: CLI
+cd apps/frontend && npx vercel --prod
+```
+
+**Full Guide:** [.github/workflows/README.md](.github/workflows/README.md)
 
 ---
 

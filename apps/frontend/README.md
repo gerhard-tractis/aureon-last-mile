@@ -52,9 +52,9 @@
 - **Storage:** [Supabase Storage](https://supabase.com/docs/guides/storage) (Signature images, proof of delivery)
 
 ### DevOps & Monitoring
-- **Hosting:** [Vercel](https://vercel.com/) (Edge runtime, automatic deployments)
+- **Hosting:** [Vercel](https://vercel.com/) (Edge runtime)
 - **Testing:** [Vitest 4](https://vitest.dev/) (75.78% coverage, 72 tests)
-- **CI/CD:** GitHub Actions (planned)
+- **CI/CD:** [GitHub Actions](../../.github/workflows/) (CI on every commit, manual deployment for cost control)
 - **Monitoring:** Sentry + BetterStack (planned)
 
 ---
@@ -411,12 +411,38 @@ apps/frontend/
 
 ## 🚀 Deployment
 
-### Vercel (Frontend)
+### CI/CD Strategy
+
+**Continuous Integration (CI):** Automatic on every commit
+- ✅ Type-check, lint, test (70% coverage enforcement)
+- ✅ Build verification
+- ✅ Runs in GitHub Actions (FREE)
+- 📄 See [.github/workflows/README.md](../../.github/workflows/README.md)
+
+**Continuous Deployment (CD):** Manual (cost control)
+- ⚠️ Deployment is **MANUAL** (not automatic)
+- 💡 Rationale: Avoid excessive Vercel charges (90% cost savings)
+- 📖 Full deployment guide: [.github/workflows/README.md](../../.github/workflows/README.md)
+
+### Vercel (Frontend) - Manual Deployment
 
 **Current Deployment:** [https://aureon-last-mile.vercel.app/](https://aureon-last-mile.vercel.app/)
 
-**Deploy Your Own:**
+**How to Deploy:**
 
+#### Option 1: Vercel Dashboard (Recommended)
+1. Go to [Vercel Dashboard](https://vercel.com/gerhard-tractis/aureon-last-mile)
+2. Click **"Deploy"** button
+3. Select branch: `main`
+4. Wait ~2-3 minutes
+
+#### Option 2: Vercel CLI
+```bash
+cd apps/frontend
+npx vercel --prod
+```
+
+#### Option 3: First-Time Setup
 1. **Connect GitHub Repository**
    - Go to [Vercel Dashboard](https://vercel.com/new)
    - Import `gerhard-tractis/aureon-last-mile`
@@ -427,10 +453,10 @@ apps/frontend/
    - Add `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - Add `SUPABASE_SERVICE_KEY` (server-side only)
 
-3. **Deploy**
-   - Vercel auto-deploys on push to `main`
-   - Preview deployments on pull requests
-   - Build time: ~2 minutes
+3. **Disable Auto-Deploy** (Important!)
+   - Go to Project Settings → Git
+   - Configure deployment to manual only
+   - See [CI/CD documentation](../../.github/workflows/README.md) for details
 
 **Environment:** Node.js 20, Next.js 15, Edge Runtime
 
