@@ -373,7 +373,7 @@ This document provides the complete epic and story breakdown for Aureon_Last_Mil
 - Frontend deployment on Vercel with automatic Git deployments and preview URLs per PR
 - Backend + workers on Railway with built-in Redis, BullMQ for background jobs, n8n for workflow orchestration
 - Database + services on Supabase (PostgreSQL, Auth, Realtime, Storage, Edge Functions)
-- CI/CD pipeline via GitHub Actions (test, type-check, lint, build, deploy preview on PR, deploy production on merge to main)
+- CI/CD pipeline via GitHub Actions (CI: test, type-check, lint, build on every commit; CD: manual deployment for cost control)
 - Environment configuration: Development (local), Preview (per PR), Production
 
 **Caching Strategy (Multi-Layer):**
@@ -545,7 +545,7 @@ Aureon DevOps can provision secure, isolated operator tenants with complete auth
 - Audit log pattern (user_id, operator_id, timestamp, action, IP address)
 - Soft delete pattern for data recovery
 - Deployment: Vercel (frontend) + Railway (backend + Redis + BullMQ) + Supabase (database + auth)
-- CI/CD: GitHub Actions (test, lint, build, deploy preview on PR, deploy production on merge)
+- CI/CD: GitHub Actions (CI on every commit: test, lint, build; CD: manual deployment)
 - Monitoring: Sentry (error tracking), BetterStack (uptime), structured JSON logging
 
 ---
