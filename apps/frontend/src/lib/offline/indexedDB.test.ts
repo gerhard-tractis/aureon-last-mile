@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { AureonOfflineDB, type OfflineScan } from './indexedDB';
+import { AureonOfflineDB } from './indexedDB';
 
 describe('AureonOfflineDB', () => {
   let db: AureonOfflineDB;
@@ -181,7 +181,6 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      const beforeSync = new Date().toISOString();
       await db.markScanSynced(scanId!);
       const scan = await db.scans.get(scanId!);
 
@@ -250,7 +249,7 @@ describe('AureonOfflineDB', () => {
 
   describe('cacheManifest', () => {
     it('caches manifest with timestamp', async () => {
-      const manifestId = await db.cacheManifest({
+      await db.cacheManifest({
         id: 'manifest-1',
         manifestNumber: 'MAN-001',
         operatorId: 'op-1',

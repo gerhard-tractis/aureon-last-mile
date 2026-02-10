@@ -27,6 +27,7 @@ describe('useScanStore', () => {
   const mockGetPendingScans = mockDb.getPendingScans as Mock;
   const mockMarkScanSynced = mockDb.markScanSynced as Mock;
   const mockMarkScanFailed = mockDb.markScanFailed as Mock;
+  const mockFetch = global.fetch as unknown as Mock;
 
   beforeEach(() => {
     // Reset all mocks
@@ -41,7 +42,7 @@ describe('useScanStore', () => {
     });
 
     // Reset fetch mock
-    (global.fetch as any).mockClear();
+    mockFetch.mockClear();
   });
 
   describe('State Initialization', () => {
@@ -137,7 +138,7 @@ describe('useScanStore', () => {
 
     it('sets syncStatus to "pending"', async () => {
       mockAddScan.mockResolvedValue(1);
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 
@@ -160,7 +161,7 @@ describe('useScanStore', () => {
 
     it('triggers auto-sync when online and not syncing', async () => {
       mockAddScan.mockResolvedValue(1);
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 
@@ -175,7 +176,7 @@ describe('useScanStore', () => {
 
       // Wait for sync to complete
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalled();
+        expect(mockFetch).toHaveBeenCalled();
       });
     });
 
@@ -198,7 +199,7 @@ describe('useScanStore', () => {
         });
       });
 
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('handles geolocation data', async () => {
@@ -327,11 +328,11 @@ describe('useScanStore', () => {
         await result.current.syncScans();
       });
 
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('syncs only pending and failed scans', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
       mockAddScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
 
       const { result } = renderHook(() => useScanStore());
@@ -352,7 +353,7 @@ describe('useScanStore', () => {
       });
 
       // Clear fetch calls from addScan auto-sync
-      (global.fetch as any).mockClear();
+      mockFetch.mockClear();
 
       await act(async () => {
         await result.current.syncScans();
@@ -363,7 +364,7 @@ describe('useScanStore', () => {
 
     it('updates UI to "syncing" before fetch', async () => {
       let fetchCalled = false;
-      (global.fetch as any).mockImplementation(async () => {
+      mockFetch.mockImplementation(async () => {
         fetchCalled = true;
         return { ok: true };
       });
@@ -386,7 +387,7 @@ describe('useScanStore', () => {
     });
 
     it('makes POST to /api/scans with correct payload', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -401,7 +402,7 @@ describe('useScanStore', () => {
       });
 
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
+        expect(mockFetch).toHaveBeenCalledWith(
           '/api/scans',
           expect.objectContaining({
             method: 'POST',
@@ -413,7 +414,7 @@ describe('useScanStore', () => {
     });
 
     it('marks as "synced" on response.ok', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -433,7 +434,7 @@ describe('useScanStore', () => {
     });
 
     it('calls db.markScanSynced on success', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -453,7 +454,7 @@ describe('useScanStore', () => {
     });
 
     it('marks as "failed" on network error', async () => {
-      (global.fetch as any).mockRejectedValue(new Error('Network error'));
+      mockFetch.mockRejectedValue(new Error('Network error'));
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -473,7 +474,7 @@ describe('useScanStore', () => {
     });
 
     it('calls db.markScanFailed with error message', async () => {
-      (global.fetch as any).mockRejectedValue(new Error('Network timeout'));
+      mockFetch.mockRejectedValue(new Error('Network timeout'));
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -493,7 +494,7 @@ describe('useScanStore', () => {
     });
 
     it('handles missing scan.id gracefully', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 
@@ -520,7 +521,7 @@ describe('useScanStore', () => {
     });
 
     it('sets lastSyncTime after successful sync', async () => {
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
       mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
@@ -560,7 +561,7 @@ describe('useScanStore', () => {
 
     it('triggers service worker sync when going online with pending scans', async () => {
       mockAddScan.mockResolvedValue(1);
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 
@@ -586,12 +587,12 @@ describe('useScanStore', () => {
 
       // Service worker sync should be registered
       await waitFor(() => {
-        expect(navigator.serviceWorker.ready).toHaveBeenCalled;
+        expect(navigator.serviceWorker.ready).toBeDefined();
       });
     });
 
     it('checks for serviceWorker support before syncing', () => {
-      const { result } = renderHook(() => useScanStore());
+      renderHook(() => useScanStore());
 
       // This test verifies that the code checks for service worker support
       // The actual implementation checks "if ('serviceWorker' in navigator && 'sync' in navigator.serviceWorker)"
@@ -607,14 +608,14 @@ describe('useScanStore', () => {
       });
 
       // No scans, so no sync should trigger
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
   describe('clearSyncedScans Action', () => {
     it('filters out synced scans', async () => {
       mockAddScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 
@@ -654,7 +655,7 @@ describe('useScanStore', () => {
 
     it('maintains immutability using filter', async () => {
       mockAddScan.mockResolvedValue(1);
-      (global.fetch as any).mockResolvedValue({ ok: true });
+      mockFetch.mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
 

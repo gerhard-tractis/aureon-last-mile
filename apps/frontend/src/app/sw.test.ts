@@ -9,12 +9,16 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
+interface MockClient {
+  postMessage: (message: { type: string }) => void;
+}
+
 describe('Service Worker', () => {
   describe('Core Functionality', () => {
     it('has sync event handler function', () => {
       // Test that the sync function exists and handles scans
       async function syncOfflineScans() {
-        const clients: any[] = [];
+        const clients: MockClient[] = [];
         clients.forEach((client) => {
           client.postMessage({
             type: 'SYNC_SCANS_START',
@@ -47,7 +51,7 @@ describe('Service Worker', () => {
     });
 
     it('sync function handles empty clients array', () => {
-      const mockClients: any[] = [];
+      const mockClients: MockClient[] = [];
 
       // Should not throw
       expect(() => {
