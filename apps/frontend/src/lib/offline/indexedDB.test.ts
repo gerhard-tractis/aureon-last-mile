@@ -63,7 +63,7 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      expect(id2).toBeGreaterThan(id1);
+      expect(id2!).toBeGreaterThan(id1!);
     });
 
     it('stores geolocation data when provided', async () => {
@@ -166,8 +166,8 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      await db.markScanSynced(scanId);
-      const scan = await db.scans.get(scanId);
+      await db.markScanSynced(scanId!);
+      const scan = await db.scans.get(scanId!);
 
       expect(scan?.syncStatus).toBe('synced');
     });
@@ -182,8 +182,8 @@ describe('AureonOfflineDB', () => {
       });
 
       const beforeSync = new Date().toISOString();
-      await db.markScanSynced(scanId);
-      const scan = await db.scans.get(scanId);
+      await db.markScanSynced(scanId!);
+      const scan = await db.scans.get(scanId!);
 
       expect(scan?.lastSyncAttempt).toBeDefined();
       expect(scan?.lastSyncAttempt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
@@ -204,8 +204,8 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      await db.markScanFailed(scanId, 'Network timeout');
-      const scan = await db.scans.get(scanId);
+      await db.markScanFailed(scanId!, 'Network timeout');
+      const scan = await db.scans.get(scanId!);
 
       expect(scan?.syncStatus).toBe('failed');
     });
@@ -219,12 +219,12 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      await db.markScanFailed(scanId, 'Error 1');
-      let scan = await db.scans.get(scanId);
+      await db.markScanFailed(scanId!, 'Error 1');
+      let scan = await db.scans.get(scanId!);
       expect(scan?.syncAttempts).toBe(1);
 
-      await db.markScanFailed(scanId, 'Error 2');
-      scan = await db.scans.get(scanId);
+      await db.markScanFailed(scanId!, 'Error 2');
+      scan = await db.scans.get(scanId!);
       expect(scan?.syncAttempts).toBe(2);
     });
 
@@ -237,8 +237,8 @@ describe('AureonOfflineDB', () => {
         userId: 'user-1',
       });
 
-      await db.markScanFailed(scanId, 'Connection refused');
-      const scan = await db.scans.get(scanId);
+      await db.markScanFailed(scanId!, 'Connection refused');
+      const scan = await db.scans.get(scanId!);
 
       expect(scan?.errorMessage).toBe('Connection refused');
     });
@@ -358,7 +358,7 @@ describe('AureonOfflineDB', () => {
         operatorId: 'op-1',
         userId: 'user-1',
       });
-      await db.markScanSynced(oldScanId);
+      await db.markScanSynced(oldScanId!);
 
       // Add recent synced scan
       const recentScanId = await db.addScan({
@@ -368,7 +368,7 @@ describe('AureonOfflineDB', () => {
         operatorId: 'op-1',
         userId: 'user-1',
       });
-      await db.markScanSynced(recentScanId);
+      await db.markScanSynced(recentScanId!);
 
       // Add old manifest
       await db.manifests.add({

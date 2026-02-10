@@ -7,7 +7,7 @@
  * These tests cover the core logic that we can reasonably unit test.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 describe('Service Worker', () => {
   describe('Core Functionality', () => {

@@ -19,8 +19,15 @@ vi.mock('@/lib/offline/indexedDB', () => ({
 // Now import the store (after mocks are set up)
 import { useScanStore } from './scanStore';
 import { db as mockDb } from '@/lib/offline/indexedDB';
+import type { Mock } from 'vitest';
 
 describe('useScanStore', () => {
+  // Type-cast mocked functions for TypeScript
+  const mockAddScan = mockDb.addScan as Mock;
+  const mockGetPendingScans = mockDb.getPendingScans as Mock;
+  const mockMarkScanSynced = mockDb.markScanSynced as Mock;
+  const mockMarkScanFailed = mockDb.markScanFailed as Mock;
+
   beforeEach(() => {
     // Reset all mocks
     vi.clearAllMocks();
@@ -62,7 +69,7 @@ describe('useScanStore', () => {
 
   describe('addScan Action', () => {
     it('adds scan to IndexedDB', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -75,7 +82,7 @@ describe('useScanStore', () => {
         });
       });
 
-      expect(mockDb.addScan).toHaveBeenCalledWith({
+      expect(mockAddScan).toHaveBeenCalledWith({
         barcode: 'TEST123',
         manifestId: 'manifest-1',
         operatorId: 'op-1',
@@ -87,7 +94,7 @@ describe('useScanStore', () => {
     });
 
     it('updates Zustand state immutably', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -106,7 +113,7 @@ describe('useScanStore', () => {
     });
 
     it('auto-generates scannedAt timestamp', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -129,7 +136,7 @@ describe('useScanStore', () => {
     });
 
     it('sets syncStatus to "pending"', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
       (global.fetch as any).mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
@@ -152,7 +159,7 @@ describe('useScanStore', () => {
     });
 
     it('triggers auto-sync when online and not syncing', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
       (global.fetch as any).mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
@@ -173,7 +180,7 @@ describe('useScanStore', () => {
     });
 
     it('does not sync when offline', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -195,7 +202,7 @@ describe('useScanStore', () => {
     });
 
     it('handles geolocation data', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -210,7 +217,7 @@ describe('useScanStore', () => {
         });
       });
 
-      expect(mockDb.addScan).toHaveBeenCalledWith(
+      expect(mockAddScan).toHaveBeenCalledWith(
         expect.objectContaining({
           latitude: 40.7128,
           longitude: -74.0060,
@@ -219,7 +226,7 @@ describe('useScanStore', () => {
     });
 
     it('handles DB failure gracefully', async () => {
-      mockDb.addScan.mockRejectedValue(new Error('DB error'));
+      mockAddScan.mockRejectedValue(new Error('DB error'));
 
       const { result } = renderHook(() => useScanStore());
 
@@ -250,7 +257,7 @@ describe('useScanStore', () => {
         },
       ];
 
-      mockDb.getPendingScans.mockResolvedValue(mockScans);
+      mockGetPendingScans.mockResolvedValue(mockScans);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -258,12 +265,12 @@ describe('useScanStore', () => {
         await result.current.loadPendingScans('op-1');
       });
 
-      expect(mockDb.getPendingScans).toHaveBeenCalledWith('op-1');
+      expect(mockGetPendingScans).toHaveBeenCalledWith('op-1');
       expect(result.current.scans).toEqual(mockScans);
     });
 
     it('filters by operatorId', async () => {
-      mockDb.getPendingScans.mockResolvedValue([]);
+      mockGetPendingScans.mockResolvedValue([]);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -271,7 +278,7 @@ describe('useScanStore', () => {
         await result.current.loadPendingScans('op-2');
       });
 
-      expect(mockDb.getPendingScans).toHaveBeenCalledWith('op-2');
+      expect(mockGetPendingScans).toHaveBeenCalledWith('op-2');
     });
 
     it('updates state correctly', async () => {
@@ -296,7 +303,7 @@ describe('useScanStore', () => {
         },
       ];
 
-      mockDb.getPendingScans.mockResolvedValue(mockScans);
+      mockGetPendingScans.mockResolvedValue(mockScans);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -325,7 +332,7 @@ describe('useScanStore', () => {
 
     it('syncs only pending and failed scans', async () => {
       (global.fetch as any).mockResolvedValue({ ok: true });
-      mockDb.addScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
+      mockAddScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -361,7 +368,7 @@ describe('useScanStore', () => {
         return { ok: true };
       });
 
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -380,7 +387,7 @@ describe('useScanStore', () => {
 
     it('makes POST to /api/scans with correct payload', async () => {
       (global.fetch as any).mockResolvedValue({ ok: true });
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -407,7 +414,7 @@ describe('useScanStore', () => {
 
     it('marks as "synced" on response.ok', async () => {
       (global.fetch as any).mockResolvedValue({ ok: true });
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -427,7 +434,7 @@ describe('useScanStore', () => {
 
     it('calls db.markScanSynced on success', async () => {
       (global.fetch as any).mockResolvedValue({ ok: true });
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -441,13 +448,13 @@ describe('useScanStore', () => {
       });
 
       await waitFor(() => {
-        expect(mockDb.markScanSynced).toHaveBeenCalledWith(1);
+        expect(mockMarkScanSynced).toHaveBeenCalledWith(1);
       });
     });
 
     it('marks as "failed" on network error', async () => {
       (global.fetch as any).mockRejectedValue(new Error('Network error'));
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -467,7 +474,7 @@ describe('useScanStore', () => {
 
     it('calls db.markScanFailed with error message', async () => {
       (global.fetch as any).mockRejectedValue(new Error('Network timeout'));
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -481,7 +488,7 @@ describe('useScanStore', () => {
       });
 
       await waitFor(() => {
-        expect(mockDb.markScanFailed).toHaveBeenCalledWith(1, 'Network timeout');
+        expect(mockMarkScanFailed).toHaveBeenCalledWith(1, 'Network timeout');
       });
     });
 
@@ -514,7 +521,7 @@ describe('useScanStore', () => {
 
     it('sets lastSyncTime after successful sync', async () => {
       (global.fetch as any).mockResolvedValue({ ok: true });
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
 
       const { result } = renderHook(() => useScanStore());
 
@@ -552,7 +559,7 @@ describe('useScanStore', () => {
     });
 
     it('triggers service worker sync when going online with pending scans', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
       (global.fetch as any).mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
@@ -606,7 +613,7 @@ describe('useScanStore', () => {
 
   describe('clearSyncedScans Action', () => {
     it('filters out synced scans', async () => {
-      mockDb.addScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+      mockAddScan.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
       (global.fetch as any).mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
@@ -646,7 +653,7 @@ describe('useScanStore', () => {
     });
 
     it('maintains immutability using filter', async () => {
-      mockDb.addScan.mockResolvedValue(1);
+      mockAddScan.mockResolvedValue(1);
       (global.fetch as any).mockResolvedValue({ ok: true });
 
       const { result } = renderHook(() => useScanStore());
