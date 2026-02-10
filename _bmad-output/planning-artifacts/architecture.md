@@ -66,7 +66,7 @@ architecturalDecisions:
     performance: 'Vercel Analytics + Railway Dashboard'
     uptime: 'BetterStack or UptimeRobot'
     logging: 'Structured logs with request IDs on Railway'
-  cicd: 'GitHub Actions (test → type-check → lint → preview deploy → production)'
+  cicd: 'GitHub Actions (CI: test → type-check → lint → build; CD: manual deployment for cost control)'
   apiDocs: 'OpenAPI/Swagger (interactive docs at /api/docs)'
   pdfGeneration: 'Client-side jsPDF (offline-capable for mobile PWA)'
 ---
@@ -206,14 +206,14 @@ Aureon Last Mile encompasses **82 functional requirements** organized into 13 ca
 - **Platform**: Vercel (Next.js 14 App Router)
 - **BI Dashboard**: Desktop web application with responsive design
 - **Mobile PWA**: Offline-first progressive web app for pickup crews
-- **Deployment**: Git push auto-deploy, preview deployments, global CDN
+- **Deployment**: Manual deployment via dashboard/CLI (cost control), global CDN
 - **Cost**: Free tier for MVP
 
 **Backend API + Workers:**
 - **Platform**: Railway (Node.js/Express or Next.js API)
 - **Capabilities**: No timeout limits, background job workers, long-running batch processes
 - **Job Queue**: BullMQ for background task processing
-- **Deployment**: Git push auto-deploy
+- **Deployment**: Manual deployment (cost control)
 - **Cost**: ~$5-20/month for MVP, scales with usage
 
 **Database + Services:**
@@ -841,8 +841,9 @@ UPDATE orders SET deleted_at = NULL WHERE id = 'order-123';
 #### **Hosting Strategy**
 
 **Frontend: Vercel (Next.js 14 App Router)**
-- **Rationale**: Optimized for Next.js, global CDN, automatic deployments, preview URLs
-- **Features**: Git push auto-deploy, preview deployments per PR, Edge Functions
+- **Rationale**: Optimized for Next.js, global CDN, controlled deployments, Edge Functions
+- **Features**: Manual deployment for cost control, CI via GitHub Actions, Edge Functions
+- **Note**: Auto-deploy disabled to prevent excessive deployment costs (~90% cost savings)
 - **Cost**: Free tier for MVP
 - **Affects**: Frontend deployment, CDN delivery, preview environments
 
@@ -852,7 +853,7 @@ UPDATE orders SET deleted_at = NULL WHERE id = 'order-123';
   - Background workers (BullMQ)
   - Built-in Redis (for BullMQ + caching)
   - Single-click n8n deployment
-- **Features**: Git auto-deploy, environment variables, persistent storage
+- **Features**: Manual deployment, environment variables, persistent storage
 - **Cost**: ~$5-20/month MVP
 - **Affects**: API hosting, background jobs, n8n workflows, job queues
 
@@ -1089,7 +1090,7 @@ GitHub Actions
 ├─ Playwright (E2E tests)
 ├─ TypeScript (type checking)
 ├─ ESLint (linting)
-└─ Vercel + Railway (auto-deploy)
+└─ Vercel + Railway (manual deployment)
 ```
 
 ---
