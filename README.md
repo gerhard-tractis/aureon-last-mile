@@ -168,6 +168,7 @@ cd apps/frontend && npx vercel --prod
 - [ADR-002: Multi-Tenant Isolation Strategy](/_bmad-output/architectural-decisions/ADR-002-multi-tenant-isolation-strategy.md) - RLS vs App-Level
 - [ADR-003: Offline Storage Design](/_bmad-output/architectural-decisions/ADR-003-offline-storage-design.md) - IndexedDB Schema
 - [ADR-004: Monorepo Structure](/_bmad-output/architectural-decisions/ADR-004-monorepo-structure.md) - Workspaces vs Polyrepo
+- [ADR-005: CI/CD Deployment Strategy](/_bmad-output/architectural-decisions/ADR-005-cicd-deployment-strategy.md) - Manual vs Auto-Deploy
 
 ### Implementation
 
