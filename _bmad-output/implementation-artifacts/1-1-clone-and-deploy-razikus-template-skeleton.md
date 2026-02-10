@@ -36,7 +36,7 @@ This is the **foundational story for the entire Aureon Last Mile platform**. It 
 ### Given
 - ✅ Access to Razikus template repository (https://github.com/Razikus/supabase-nextjs-template)
 - ✅ GitHub account with repository creation permissions
-- ✅ Vercel account linked to GitHub for auto-deployments
+- ✅ Vercel account linked to GitHub (auto-deployments disabled for cost control)
 - ✅ Railway account for backend hosting
 - ✅ Supabase account for database/auth services
 
@@ -57,7 +57,7 @@ This is the **foundational story for the entire Aureon Last Mile platform**. It 
 - ✅ **Deployed application accessible** at custom Vercel URL
 - ✅ **PWA capabilities added** (Serwist service worker, IndexedDB offline storage)
 - ✅ **Multi-tenant RLS policies verified** (operator data isolation tested)
-- ✅ **GitHub Actions CI/CD pipeline passing** (test → type-check → lint → build)
+- ✅ **GitHub Actions CI pipeline passing** (test → type-check → lint → build; manual deployment configured)
 - ✅ **Monitoring tools connected** (Sentry error tracking, BetterStack uptime monitoring)
 
 ### Edge Cases
