@@ -182,9 +182,15 @@ This is the **foundational story for the entire Aureon Last Mile platform**. It 
 - [ ] **6.3** Configure GitHub branch protection
   - Require passing CI checks before merge
   - Require code review approvals (if team >1)
-- [ ] **6.4** Test CI/CD pipeline
-  - Create test PR to verify CI runs correctly
-  - Verify manual deployment process works
+- [x] **6.4** Test CI/CD pipeline (Partial - Manual PR creation needed)
+  - ✅ Created test branch: `test/ci-pipeline-verification`
+  - ✅ Created test file: `.github/CI-TEST.md` (triggers CI workflow)
+  - ✅ Pushed test branch to remote
+  - ⏳ **Manual Step Required:** Create PR via GitHub web UI
+    - URL: https://github.com/gerhard-tractis/aureon-last-mile/pull/new/test/ci-pipeline-verification
+    - Expected: CI checks run automatically (type-check, lint, test, build)
+  - ⏳ **Verify CI passes:** Check GitHub Actions tab shows green checkmarks
+  - ⏳ **Test manual deployment:** Deploy to Vercel via dashboard (see .github/workflows/README.md)
 
 ### Task 7: Set Up Monitoring and Alerting (AC: 10)
 - [ ] **7.1** Configure Sentry error tracking
