@@ -135,6 +135,13 @@ Aureon uses **PostgreSQL Row-Level Security (RLS)** for tenant isolation:
 - [Database Schema](/_bmad-output/planning-artifacts/database-schema.md)
 - [Epics & Stories](/_bmad-output/planning-artifacts/epics.md)
 
+### Architectural Decision Records (ADRs)
+
+- [ADR-001: PWA Library Selection](/_bmad-output/architectural-decisions/ADR-001-pwa-library-selection.md) - Serwist vs Workbox
+- [ADR-002: Multi-Tenant Isolation Strategy](/_bmad-output/architectural-decisions/ADR-002-multi-tenant-isolation-strategy.md) - RLS vs App-Level
+- [ADR-003: Offline Storage Design](/_bmad-output/architectural-decisions/ADR-003-offline-storage-design.md) - IndexedDB Schema
+- [ADR-004: Monorepo Structure](/_bmad-output/architectural-decisions/ADR-004-monorepo-structure.md) - Workspaces vs Polyrepo
+
 ### Implementation
 
 - [Frontend README](apps/frontend/README.md) - Complete setup guide
