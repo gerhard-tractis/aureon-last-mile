@@ -166,20 +166,25 @@ This is the **foundational story for the entire Aureon Last Mile platform**. It 
   - Database connection string
 
 ### Task 6: Set Up CI/CD Pipeline (AC: 9)
-- [ ] **6.1** Create `.github/workflows/test.yml`
-  - Run on push and pull_request events
-  - Steps: npm install, type-check, lint, test, build
-- [ ] **6.2** Create `.github/workflows/deploy.yml`
-  - Trigger on main branch merge
-  - Deploy to Vercel production
-  - Deploy to Railway production
-  - Run smoke tests on deployed environment
+- [x] **6.1** Create `.github/workflows/test.yml`
+  - ✅ Runs on push and pull_request to main/develop
+  - ✅ Matrix testing: Node 20.x and 22.x
+  - ✅ Steps: type-check → lint → test (70% coverage enforcement) → build
+  - ✅ Codecov integration for coverage reporting
+  - ✅ Build artifact upload for verification
+- [x] **6.2** Configure deployment strategy (Modified: Manual Deploy)
+  - ✅ **Decision:** Manual deployment for cost control (Option A)
+  - ✅ CI runs on every commit (FREE via GitHub Actions)
+  - ✅ Deployment: Manual via Vercel dashboard/CLI (on-demand)
+  - ✅ Documentation: `.github/workflows/README.md` with instructions
+  - ✅ Cost savings: ~90% reduction (8 vs 80 deploys/month)
+  - ❌ Auto-deploy removed (was deploy.yml) - prevents excessive Vercel/Railway costs
 - [ ] **6.3** Configure GitHub branch protection
   - Require passing CI checks before merge
-  - Require code review approvals
+  - Require code review approvals (if team >1)
 - [ ] **6.4** Test CI/CD pipeline
-  - Create test PR to verify preview deployments
-  - Merge to main to verify production deployments
+  - Create test PR to verify CI runs correctly
+  - Verify manual deployment process works
 
 ### Task 7: Set Up Monitoring and Alerting (AC: 10)
 - [ ] **7.1** Configure Sentry error tracking
@@ -525,9 +530,18 @@ Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
 - ✅ Environment setup with .env.example template
 - ✅ Contributing guidelines with naming conventions
 
+**Task 6 Progress (2026-02-10):**
+- ✅ 6.1: CI pipeline implemented (.github/workflows/test.yml)
+- ✅ 6.2: Manual deployment strategy configured (cost control)
+- ⏳ 6.3: Branch protection pending (requires GitHub repo settings)
+- ⏳ 6.4: CI/CD testing pending (requires PR to test)
+
 **Remaining Work:**
-- Tasks 5-8 pending (Railway, CI/CD, Monitoring, Documentation)
-- RF-4 pending (Complete Tasks 5-8)
+- Task 5: Railway backend deployment (deferred - Supabase sufficient for MVP)
+- Task 6: CI/CD partially complete (6.3, 6.4 pending)
+- Task 7: Monitoring and alerting (Sentry, BetterStack)
+- Task 8: Documentation and validation
+- RF-4: Complete Tasks 5-8
 
 ### File List
 
@@ -801,6 +815,57 @@ Claude Sonnet 4.5 (claude-sonnet-4-5-20250929)
 ---
 
 ## 📝 Change Log
+
+### 2026-02-10 - Task 6 (Partial): CI Pipeline with Manual Deployment
+
+**Summary:** Implemented CI pipeline (test.yml) with manual deployment strategy for cost control.
+
+**What Was Implemented:**
+- ✅ **GitHub Actions CI Pipeline** (.github/workflows/test.yml)
+  - Triggers: Every push/PR to main or develop
+  - Type-check (TypeScript strict mode validation)
+  - ESLint (naming conventions, code quality)
+  - Vitest tests with 70% coverage enforcement
+  - Production build verification
+  - Matrix testing: Node 20.x and 22.x
+  - Codecov integration for coverage tracking
+  - Build artifact upload
+
+- ✅ **Manual Deployment Strategy** (Option A)
+  - CI runs automatically on every commit (FREE)
+  - Deployment: Manual via Vercel dashboard/CLI (on-demand)
+  - Rationale: Cost control - avoid 80 deploys/month from auto-deploy
+  - Cost savings: ~90% reduction (8 manual vs 80 auto deploys)
+
+- ✅ **Documentation** (.github/workflows/README.md)
+  - CI pipeline explanation
+  - Manual deployment instructions (3 methods)
+  - Vercel auto-deploy disable instructions
+  - Cost comparison analysis
+  - Future upgrade path (tag-based deployment)
+
+**Design Decision: Manual vs Auto-Deploy**
+- **User concern:** Vercel/Railway charge per deployment
+- **Problem:** Auto-deploy on every push = 80+ deploys/month = 💸💸💸
+- **Solution:** CI always (catch bugs free), deploy manually when ready
+- **Result:** Full test coverage protection + 90% cost savings
+
+**Task Status:**
+- ✅ Task 6.1: CI pipeline created
+- ✅ Task 6.2: Deployment strategy configured (manual)
+- ⏳ Task 6.3: Branch protection pending (GitHub settings)
+- ⏳ Task 6.4: CI/CD testing pending (create test PR)
+
+**Files Created:**
+- .github/workflows/test.yml (CI pipeline)
+- .github/workflows/README.md (documentation)
+
+**Next Steps:**
+- Configure GitHub branch protection (Task 6.3)
+- Test CI pipeline with PR (Task 6.4)
+- Optional: Disable Vercel auto-deploy in dashboard
+
+---
 
 ### 2026-02-10 - RF-3 Verified Complete: README Documentation
 
