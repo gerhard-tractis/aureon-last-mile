@@ -169,6 +169,7 @@ cd apps/frontend && npx vercel --prod
 - [ADR-003: Offline Storage Design](/_bmad-output/architectural-decisions/ADR-003-offline-storage-design.md) - IndexedDB Schema
 - [ADR-004: Monorepo Structure](/_bmad-output/architectural-decisions/ADR-004-monorepo-structure.md) - Workspaces vs Polyrepo
 - [ADR-005: CI/CD Deployment Strategy](/_bmad-output/architectural-decisions/ADR-005-cicd-deployment-strategy.md) - Manual vs Auto-Deploy
+- [ADR-006: Railway Backend Deferral](/_bmad-output/architectural-decisions/ADR-006-railway-backend-deferral.md) - Deploy in Epic 2 (Story 2.3)
 
 ### Implementation
 
