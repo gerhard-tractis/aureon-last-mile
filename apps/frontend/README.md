@@ -55,7 +55,7 @@
 - **Hosting:** [Vercel](https://vercel.com/) (Edge runtime)
 - **Testing:** [Vitest 4](https://vitest.dev/) (75.78% coverage, 72 tests)
 - **CI/CD:** [GitHub Actions](../../.github/workflows/) (CI on every commit, manual deployment for cost control)
-- **Monitoring:** Sentry + BetterStack (planned)
+- **Monitoring:** [Sentry](https://sentry.io/organizations/tractis/projects/aureon-last-mile/) ✅ (error tracking active) + BetterStack (uptime monitoring - planned)
 
 ---
 
