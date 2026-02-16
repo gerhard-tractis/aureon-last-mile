@@ -7,35 +7,46 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
-// Mock the hooks
+// Create mock implementations that can be reconfigured
+let mockDeleteUserReturn = {
+  mutate: vi.fn(),
+  isPending: false,
+};
+
+let mockAdminStoreReturn = {
+  isDeleteConfirmOpen: true,
+  selectedUserId: '123',
+  setDeleteConfirmOpen: vi.fn(),
+};
+
+// Mock the hooks at top level
 vi.mock('@/hooks/useUsers', () => ({
-  useDeleteUser: vi.fn(() => ({
-    mutate: vi.fn(),
-    isPending: false,
-  })),
+  useDeleteUser: vi.fn(() => mockDeleteUserReturn),
 }));
 
 vi.mock('@/stores/adminStore', () => ({
-  useAdminStore: vi.fn(() => ({
-    isDeleteConfirmOpen: true,
-    selectedUserId: '123',
-    setDeleteConfirmOpen: vi.fn(),
-  })),
+  useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 
 describe('DeleteConfirmationModal', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    // Reset to default state
+    mockDeleteUserReturn = {
+      mutate: vi.fn(),
+      isPending: false,
+    };
+
+    mockAdminStoreReturn = {
+      isDeleteConfirmOpen: true,
+      selectedUserId: '123',
+      setDeleteConfirmOpen: vi.fn(),
+    };
   });
 
   describe('Visibility', () => {
     it('should not render when isDeleteConfirmOpen is false', () => {
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        isDeleteConfirmOpen: false,
-        selectedUserId: null,
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.isDeleteConfirmOpen = false;
+      mockAdminStoreReturn.selectedUserId = null;
 
       const { container } = render(<DeleteConfirmationModal />);
       expect(container.firstChild).toBeNull();
@@ -79,38 +90,23 @@ describe('DeleteConfirmationModal', () => {
 
   describe('Cancel Action', () => {
     it('should call setDeleteConfirmOpen(false) when Cancel is clicked', () => {
-      const mockSetDeleteConfirmOpen = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        isDeleteConfirmOpen: true,
-        selectedUserId: '123',
-        setDeleteConfirmOpen: mockSetDeleteConfirmOpen,
-      });
-
       render(<DeleteConfirmationModal />);
 
       const cancelButton = screen.getByText('Cancel');
       fireEvent.click(cancelButton);
 
-      expect(mockSetDeleteConfirmOpen).toHaveBeenCalledWith(false);
+      expect(mockAdminStoreReturn.setDeleteConfirmOpen).toHaveBeenCalledWith(false);
     });
   });
 
   describe('Delete Action', () => {
     it('should call deleteUser mutation when Delete is clicked', () => {
-      const mockMutate = vi.fn();
-      const { useDeleteUser } = require('@/hooks/useUsers');
-      useDeleteUser.mockReturnValue({
-        mutate: mockMutate,
-        isPending: false,
-      });
-
       render(<DeleteConfirmationModal />);
 
       const deleteButton = screen.getByText('Delete');
       fireEvent.click(deleteButton);
 
-      expect(mockMutate).toHaveBeenCalledWith(
+      expect(mockDeleteUserReturn.mutate).toHaveBeenCalledWith(
         '123',
         expect.objectContaining({
           onSuccess: expect.any(Function),
@@ -119,24 +115,8 @@ describe('DeleteConfirmationModal', () => {
     });
 
     it('should close modal on successful deletion', async () => {
-      const mockSetDeleteConfirmOpen = vi.fn();
-      const mockMutate = vi.fn((userId, { onSuccess }) => {
-        // Simulate successful deletion
+      mockDeleteUserReturn.mutate = vi.fn((userId, { onSuccess }) => {
         onSuccess();
-      });
-
-      const { useAdminStore } = require('@/stores/adminStore');
-      const { useDeleteUser } = require('@/hooks/useUsers');
-
-      useAdminStore.mockReturnValue({
-        isDeleteConfirmOpen: true,
-        selectedUserId: '123',
-        setDeleteConfirmOpen: mockSetDeleteConfirmOpen,
-      });
-
-      useDeleteUser.mockReturnValue({
-        mutate: mockMutate,
-        isPending: false,
       });
 
       render(<DeleteConfirmationModal />);
@@ -145,42 +125,25 @@ describe('DeleteConfirmationModal', () => {
       fireEvent.click(deleteButton);
 
       await waitFor(() => {
-        expect(mockSetDeleteConfirmOpen).toHaveBeenCalledWith(false);
+        expect(mockAdminStoreReturn.setDeleteConfirmOpen).toHaveBeenCalledWith(false);
       });
     });
 
     it('should not call deleteUser when selectedUserId is null', () => {
-      const mockMutate = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      const { useDeleteUser } = require('@/hooks/useUsers');
-
-      useAdminStore.mockReturnValue({
-        isDeleteConfirmOpen: true,
-        selectedUserId: null,
-        setDeleteConfirmOpen: vi.fn(),
-      });
-
-      useDeleteUser.mockReturnValue({
-        mutate: mockMutate,
-        isPending: false,
-      });
+      mockAdminStoreReturn.selectedUserId = null;
 
       render(<DeleteConfirmationModal />);
 
       const deleteButton = screen.getByText('Delete');
       fireEvent.click(deleteButton);
 
-      expect(mockMutate).not.toHaveBeenCalled();
+      expect(mockDeleteUserReturn.mutate).not.toHaveBeenCalled();
     });
   });
 
   describe('Loading State', () => {
     it('should disable buttons when isPending is true', () => {
-      const { useDeleteUser } = require('@/hooks/useUsers');
-      useDeleteUser.mockReturnValue({
-        mutate: vi.fn(),
-        isPending: true,
-      });
+      mockDeleteUserReturn.isPending = true;
 
       render(<DeleteConfirmationModal />);
 
@@ -192,11 +155,7 @@ describe('DeleteConfirmationModal', () => {
     });
 
     it('should show "Deleting..." text when isPending is true', () => {
-      const { useDeleteUser } = require('@/hooks/useUsers');
-      useDeleteUser.mockReturnValue({
-        mutate: vi.fn(),
-        isPending: true,
-      });
+      mockDeleteUserReturn.isPending = true;
 
       render(<DeleteConfirmationModal />);
 
@@ -204,11 +163,7 @@ describe('DeleteConfirmationModal', () => {
     });
 
     it('should show spinner icon when isPending is true', () => {
-      const { useDeleteUser } = require('@/hooks/useUsers');
-      useDeleteUser.mockReturnValue({
-        mutate: vi.fn(),
-        isPending: true,
-      });
+      mockDeleteUserReturn.isPending = true;
 
       const { container } = render(<DeleteConfirmationModal />);
 

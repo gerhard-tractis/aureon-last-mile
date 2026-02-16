@@ -7,10 +7,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { UserListHeader } from './UserListHeader';
 
-// Mock the adminStore
+// Mock the adminStore at top level
+const mockSetCreateFormOpen = vi.fn();
+
 vi.mock('@/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => ({
-    setCreateFormOpen: vi.fn(),
+    setCreateFormOpen: mockSetCreateFormOpen,
   })),
 }));
 
@@ -40,12 +42,6 @@ describe('UserListHeader', () => {
 
   describe('Create User Button', () => {
     it('should call setCreateFormOpen when clicked', () => {
-      const mockSetCreateFormOpen = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        setCreateFormOpen: mockSetCreateFormOpen,
-      });
-
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
@@ -72,7 +68,8 @@ describe('UserListHeader', () => {
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
-      expect(createButton.getAttribute('style')).toContain('minHeight');
+      // Check for min-height CSS property (not minHeight in style object)
+      expect(createButton.getAttribute('style')).toContain('min-height');
     });
   });
 
