@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { createUser, getUsers, updateUser, deleteUser, type CreateUserInput, type UpdateUserInput } from '@/lib/api/users';
+import { createUser, getUsers, updateUser, deleteUser, type UpdateUserInput } from '@/lib/api/users';
 import { toast } from 'sonner';
 
 /**
