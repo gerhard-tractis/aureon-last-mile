@@ -13,10 +13,8 @@ export const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
   role: z.enum(
-    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'],
-    {
-      errorMap: () => ({ message: 'Please select a valid role' })
-    }
+    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
+    { message: 'Please select a valid role' }
   ),
   operator_id: z.string().uuid('Invalid operator ID')
 });
@@ -29,10 +27,8 @@ export const createUserSchema = z.object({
 export const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
   role: z.enum(
-    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'],
-    {
-      errorMap: () => ({ message: 'Please select a valid role' })
-    }
+    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
+    { message: 'Please select a valid role' }
   )
 });
 

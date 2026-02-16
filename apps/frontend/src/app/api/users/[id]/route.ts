@@ -5,8 +5,8 @@ import { z } from 'zod';
 // Validation schema for updating users
 const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  role: z.enum(['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'], {
-    errorMap: () => ({ message: 'Invalid role' })
+  role: z.enum(['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
+    message: 'Invalid role'
   }).optional()
 }).refine(
   (data) => data.full_name !== undefined || data.role !== undefined,
@@ -27,9 +27,10 @@ const updateUserSchema = z.object({
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const supabase = await createSSRClient();
 
     // Verify authentication
@@ -61,7 +62,7 @@ export async function PUT(
     const validation = updateUserSchema.safeParse(body);
 
     if (!validation.success) {
-      const firstError = validation.error.errors[0];
+      const firstError = validation.error.issues[0];
       return NextResponse.json(
         {
           code: 'VALIDATION_ERROR',
@@ -73,7 +74,6 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
     const updateData = validation.data;
 
     // Check if user exists and belongs to the same operator (RLS will enforce this)
@@ -99,14 +99,14 @@ export async function PUT(
 
     // Prevent changing last admin's role to non-admin (would lock out operator)
     if (roleChanged && existingUser.role === 'admin' && updateData.role !== 'admin') {
-      const { data: adminUsers, error: countError } = await supabase
+      const { count: adminCount, error: countError } = await supabase
         .from('users')
         .select('id', { count: 'exact', head: true })
         .eq('role', 'admin')
         .eq('operator_id', existingUser.operator_id)
         .is('deleted_at', null);
 
-      if (!countError && adminUsers && (adminUsers as any).count <= 1) {
+      if (!countError && adminCount !== null && adminCount <= 1) {
         return NextResponse.json(
           {
             code: 'LAST_ADMIN',
@@ -186,8 +186,9 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   try {
     const supabase = await createSSRClient();
 
@@ -214,8 +215,6 @@ export async function DELETE(
         { status: 403 }
       );
     }
-
-    const { id } = params;
 
     // Check if user exists and belongs to the same operator
     const { data: existingUser, error: fetchError } = await supabase
@@ -250,14 +249,14 @@ export async function DELETE(
 
     // Optional: Check if this is the last admin (prevent locking out)
     if (existingUser.role === 'admin') {
-      const { data: adminUsers, error: countError } = await supabase
+      const { count: adminCount, error: countError } = await supabase
         .from('users')
         .select('id', { count: 'exact', head: true })
         .eq('role', 'admin')
         .eq('operator_id', existingUser.operator_id)
         .is('deleted_at', null);
 
-      if (!countError && adminUsers && (adminUsers as any).count <= 1) {
+      if (!countError && adminCount !== null && adminCount <= 1) {
         return NextResponse.json(
           {
             code: 'LAST_ADMIN',
