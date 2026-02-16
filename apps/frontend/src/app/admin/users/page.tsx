@@ -1,6 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createSSRClient } from '@/lib/supabase/server';
 import { UserManagementPage } from '@/components/admin/UserManagementPage';
 
 /**
@@ -15,7 +14,7 @@ import { UserManagementPage } from '@/components/admin/UserManagementPage';
  * Renders: <UserManagementPage /> container component
  */
 export default async function AdminUsersPage() {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = await createSSRClient();
 
   // Check authentication
   const { data: { session } } = await supabase.auth.getSession();
