@@ -23,6 +23,10 @@ export default defineConfig({
         'src/lib/offline/indexedDB.ts',
         'src/app/sw.ts',
         'src/app/offline/page.tsx',
+        'src/lib/api/users.ts',
+        'src/stores/adminStore.ts',
+        'src/components/admin/**/*.tsx',
+        'src/lib/validation/userSchema.ts',
       ],
       exclude: [
         'node_modules/',
