@@ -8,15 +8,18 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { UserTable } from './UserTable';
 import type { User } from '@/lib/api/users';
 
+// Create mock return object that can be reconfigured
+let mockAdminStoreReturn = {
+  sortBy: 'created_at',
+  sortOrder: 'desc',
+  toggleSort: vi.fn(),
+  setEditFormOpen: vi.fn(),
+  setDeleteConfirmOpen: vi.fn(),
+};
+
 // Mock the adminStore
 vi.mock('@/stores/adminStore', () => ({
-  useAdminStore: vi.fn(() => ({
-    sortBy: 'created_at',
-    sortOrder: 'desc',
-    toggleSort: vi.fn(),
-    setEditFormOpen: vi.fn(),
-    setDeleteConfirmOpen: vi.fn(),
-  })),
+  useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 
 // Mock date-fns format
@@ -57,6 +60,14 @@ describe('UserTable', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset to default state
+    mockAdminStoreReturn = {
+      sortBy: 'created_at',
+      sortOrder: 'desc',
+      toggleSort: vi.fn(),
+      setEditFormOpen: vi.fn(),
+      setDeleteConfirmOpen: vi.fn(),
+    };
   });
 
   describe('Loading State', () => {
@@ -136,14 +147,7 @@ describe('UserTable', () => {
   describe('Sorting', () => {
     it('should call toggleSort when clicking email header', () => {
       const mockToggleSort = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: mockToggleSort,
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.toggleSort = mockToggleSort;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -155,14 +159,7 @@ describe('UserTable', () => {
 
     it('should call toggleSort when clicking full_name header', () => {
       const mockToggleSort = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: mockToggleSort,
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.toggleSort = mockToggleSort;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -174,14 +171,7 @@ describe('UserTable', () => {
 
     it('should call toggleSort when clicking role header', () => {
       const mockToggleSort = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: mockToggleSort,
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.toggleSort = mockToggleSort;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -193,14 +183,7 @@ describe('UserTable', () => {
 
     it('should call toggleSort when clicking created_at header', () => {
       const mockToggleSort = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: mockToggleSort,
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.toggleSort = mockToggleSort;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -211,14 +194,8 @@ describe('UserTable', () => {
     });
 
     it('should display correct sort icon for active column', () => {
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'email',
-        sortOrder: 'asc',
-        toggleSort: vi.fn(),
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.sortBy = 'email';
+      mockAdminStoreReturn.sortOrder = 'asc';
 
       const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -228,14 +205,8 @@ describe('UserTable', () => {
     });
 
     it('should display neutral sort icon for inactive columns', () => {
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'email',
-        sortOrder: 'asc',
-        toggleSort: vi.fn(),
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.sortBy = 'email';
+      mockAdminStoreReturn.sortOrder = 'asc';
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -258,14 +229,7 @@ describe('UserTable', () => {
 
     it('should call setEditFormOpen when clicking Edit button', () => {
       const mockSetEditFormOpen = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: vi.fn(),
-        setEditFormOpen: mockSetEditFormOpen,
-        setDeleteConfirmOpen: vi.fn(),
-      });
+      mockAdminStoreReturn.setEditFormOpen = mockSetEditFormOpen;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
@@ -277,14 +241,7 @@ describe('UserTable', () => {
 
     it('should call setDeleteConfirmOpen when clicking Delete button', () => {
       const mockSetDeleteConfirmOpen = vi.fn();
-      const { useAdminStore } = require('@/stores/adminStore');
-      useAdminStore.mockReturnValue({
-        sortBy: 'created_at',
-        sortOrder: 'desc',
-        toggleSort: vi.fn(),
-        setEditFormOpen: vi.fn(),
-        setDeleteConfirmOpen: mockSetDeleteConfirmOpen,
-      });
+      mockAdminStoreReturn.setDeleteConfirmOpen = mockSetDeleteConfirmOpen;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
