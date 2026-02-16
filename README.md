@@ -4,8 +4,8 @@
 
 [![Live Demo](https://img.shields.io/badge/demo-live-green?style=flat-square)](https://aureon-last-mile.vercel.app/)
 [![Test Coverage](https://img.shields.io/badge/coverage-75.78%25-brightgreen?style=flat-square)](apps/frontend/coverage)
-[![CI](https://github.com/tractis/aureon-last-mile/actions/workflows/ci.yml/badge.svg)](https://github.com/tractis/aureon-last-mile/actions/workflows/ci.yml)
-[![Deploy](https://github.com/tractis/aureon-last-mile/actions/workflows/deploy.yml/badge.svg)](https://github.com/tractis/aureon-last-mile/actions/workflows/deploy.yml)
+[![CI](https://github.com/gerhard-tractis/aureon-last-mile/actions/workflows/ci.yml/badge.svg)](https://github.com/gerhard-tractis/aureon-last-mile/actions/workflows/ci.yml)
+[![Deploy](https://github.com/gerhard-tractis/aureon-last-mile/actions/workflows/deploy.yml/badge.svg)](https://github.com/gerhard-tractis/aureon-last-mile/actions/workflows/deploy.yml)
 
 ---
 
