@@ -64,7 +64,8 @@ export function getClientIpAddress(request: NextRequest): string {
  * @param ipAddress - IP address to set
  */
 export async function setSupabaseSessionIp(
-  supabase: SupabaseClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
   ipAddress: string
 ): Promise<void> {
   try {

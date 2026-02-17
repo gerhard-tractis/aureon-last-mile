@@ -1,0 +1,63 @@
+require('dotenv').config({ path: '.env.local' });
+
+const BETTERSTACK_API_KEY = process.env.BETTERSTACK_API_KEY;
+const BASE_URL = 'https://uptime.betterstack.com/api/v2';
+
+// New production domain
+const PRODUCTION_URL = 'https://aureon.tractis.ai';
+
+async function listMonitors() {
+  const response = await fetch(`${BASE_URL}/monitors`, {
+    headers: { 'Authorization': `Bearer ${BETTERSTACK_API_KEY}` },
+  });
+  return (await response.json()).data;
+}
+
+async function updateMonitor(monitorId, updates) {
+  const response = await fetch(`${BASE_URL}/monitors/${monitorId}`, {
+    method: 'PATCH',
+    headers: {
+      'Authorization': `Bearer ${BETTERSTACK_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to update: ${await response.text()}`);
+  }
+  
+  return response.json();
+}
+
+async function updateMonitors() {
+  console.log('🚀 Updating monitors to production domain: aureon.tractis.ai\n');
+  
+  const monitors = await listMonitors();
+  
+  for (const monitor of monitors) {
+    const name = monitor.attributes.pronounceable_name;
+    
+    if (name === 'Aureon Frontend') {
+      console.log('📊 Updating Frontend monitor...');
+      await updateMonitor(monitor.id, {
+        url: PRODUCTION_URL,
+      });
+      console.log(`✅ Updated to: ${PRODUCTION_URL}\n`);
+    }
+    
+    if (name === 'Aureon Health Check') {
+      console.log('📊 Updating Health Check monitor...');
+      await updateMonitor(monitor.id, {
+        url: `${PRODUCTION_URL}/api/health`,
+      });
+      console.log(`✅ Updated to: ${PRODUCTION_URL}/api/health\n`);
+    }
+  }
+  
+  console.log('✨ Monitors updated to production domain!');
+  console.log('⏰ First check will happen within 5 minutes');
+  console.log('🎯 View at: https://uptime.betterstack.com\n');
+}
+
+updateMonitors().catch(console.error);

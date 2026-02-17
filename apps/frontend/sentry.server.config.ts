@@ -3,6 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
+import { sanitizeEvent } from "@/lib/sentry/sanitize";
 
 // Validate Sentry DSN before initialization
 const sentryDsn = process.env.SENTRY_DSN;
@@ -21,4 +22,8 @@ Sentry.init({
   debug: false,
 
   environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
+
+  // Sanitize sensitive data before sending to Sentry (GDPR/privacy compliance)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  beforeSend: sanitizeEvent as any,
 });

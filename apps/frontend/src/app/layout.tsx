@@ -5,6 +5,7 @@ import CookieConsent from "@/components/Cookies";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import ConnectionStatusBanner from "@/components/ConnectionStatusBanner";
+import SentryUserProvider from "@/components/SentryUserProvider";
 
 
 export const metadata: Metadata = {
@@ -35,6 +36,7 @@ export default function RootLayout({
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     </head>
     <body className={theme}>
+      <SentryUserProvider />
       <ServiceWorkerRegistration />
       <ConnectionStatusBanner />
       {children}
