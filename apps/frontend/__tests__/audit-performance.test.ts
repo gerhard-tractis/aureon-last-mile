@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '@/types/database.types';
+import type { Database } from '@/lib/types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
