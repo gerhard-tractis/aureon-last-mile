@@ -18,6 +18,8 @@ import { addActionBreadcrumb, addErrorBreadcrumb } from '@/lib/sentry/breadcrumb
  * - key: Required secret key to prevent abuse (set SENTRY_TEST_KEY in env)
  *
  * Example: /api/test-sentry?key=your-secret-key
+ *
+ * Story: 1.8 - Set Up Monitoring and Alerting
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
