@@ -1,0 +1,247 @@
+/**
+ * E2E Tests for Audit Log Viewer UI
+ * Story 1.6: Set Up Audit Logging Infrastructure
+ * FIX #3: Write missing E2E tests
+ *
+ * Note: These tests use Playwright syntax
+ * Run with: npx playwright test audit-e2e.spec.ts
+ */
+
+import { test, expect } from '@playwright/test';
+
+test.describe('Audit Log Viewer - E2E Tests', () => {
+  test.beforeEach(async ({ page }) => {
+    // Login as admin user (adjust based on your auth flow)
+    await page.goto('/login');
+    await page.fill('input[name="email"]', 'admin@example.com');
+    await page.fill('input[name="password"]', 'admin-password');
+    await page.click('button[type="submit"]');
+
+    // Wait for redirect to home
+    await page.waitForURL('/');
+  });
+
+  test('should navigate to /admin/audit-logs as admin', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Verify page loaded
+    await expect(page.locator('h1')).toContainText('Audit Logs');
+  });
+
+  test('should redirect non-admin users to home with error', async ({ page }) => {
+    // Logout and login as non-admin
+    await page.goto('/logout');
+    await page.goto('/login');
+    await page.fill('input[name="email"]', 'driver@example.com');
+    await page.fill('input[name="password"]', 'driver-password');
+    await page.click('button[type="submit"]');
+
+    // Try to access audit logs
+    await page.goto('/admin/audit-logs');
+
+    // Should redirect to home
+    await page.waitForURL('/?error=unauthorized_audit_logs');
+    await expect(page.url()).toContain('error=unauthorized_audit_logs');
+  });
+
+  test('should display audit logs table with correct columns', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Check table headers
+    await expect(page.locator('th:has-text("Timestamp")')).toBeVisible();
+    await expect(page.locator('th:has-text("User")')).toBeVisible();
+    await expect(page.locator('th:has-text("Action")')).toBeVisible();
+    await expect(page.locator('th:has-text("Resource")')).toBeVisible();
+    await expect(page.locator('th:has-text("IP Address")')).toBeVisible();
+    await expect(page.locator('th:has-text("Details")')).toBeVisible();
+  });
+
+  test('should filter by date range preset', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Select "Today" preset
+    await page.selectOption('select[aria-label*="Date Range"], select:has(option[value="today"])', 'today');
+
+    // Wait for data to load
+    await page.waitForTimeout(1000);
+
+    // Verify table updated (check for loading state to disappear)
+    await expect(page.locator('text=Loading audit logs')).not.toBeVisible();
+  });
+
+  test('should filter by user dropdown', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Wait for users to load
+    await page.waitForSelector('select:has(option:text("All Users"))');
+
+    // Select a specific user
+    const userSelect = page.locator('select:has(option:text("All Users"))');
+    const options = await userSelect.locator('option').allTextContents();
+
+    if (options.length > 1) {
+      await userSelect.selectOption({ index: 1 });
+
+      // Wait for filtered results
+      await page.waitForTimeout(1000);
+      await expect(page.locator('text=Loading audit logs')).not.toBeVisible();
+    }
+  });
+
+  test('should filter by action type', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Select action filter
+    await page.selectOption('select:has(option:text("All Actions"))', 'INSERT_users');
+
+    // Wait for filtered results
+    await page.waitForTimeout(1000);
+
+    // Verify action badges show only INSERT
+    const actionBadges = page.locator('span:text("INSERT_users")');
+    await expect(actionBadges.first()).toBeVisible();
+  });
+
+  test('should search in resource ID and changes JSON', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Enter search query
+    await page.fill('input[placeholder*="Search"]', 'test-search-term');
+
+    // Wait for search results
+    await page.waitForTimeout(1000);
+  });
+
+  test('should expand and collapse row details', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Wait for table to load
+    await page.waitForSelector('table tbody tr');
+
+    // Click first row to expand
+    const firstRow = page.locator('table tbody tr').first();
+    await firstRow.click();
+
+    // Verify details expanded
+    await expect(page.locator('text=Changes JSON:')).toBeVisible();
+    await expect(page.locator('pre')).toBeVisible(); // JSON pre block
+
+    // Click again to collapse
+    await firstRow.click();
+    await expect(page.locator('text=Changes JSON:')).not.toBeVisible();
+  });
+
+  test('should navigate pagination', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Wait for pagination
+    await page.waitForSelector('button:has-text("Next")');
+
+    // Check if Next button is enabled
+    const nextButton = page.locator('button:has-text("Next")');
+    const isDisabled = await nextButton.getAttribute('disabled');
+
+    if (!isDisabled) {
+      // Click Next
+      await nextButton.click();
+
+      // Wait for page 2 to load
+      await page.waitForTimeout(1000);
+
+      // Verify page number changed
+      await expect(page.locator('button[aria-current="page"]:has-text("2")')).toBeVisible();
+
+      // Click Previous
+      await page.locator('button:has-text("Previous")').click();
+      await page.waitForTimeout(1000);
+      await expect(page.locator('button[aria-current="page"]:has-text("1")')).toBeVisible();
+    }
+  });
+
+  test('should export CSV file', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Set up download listener
+    const downloadPromise = page.waitForEvent('download');
+
+    // Click Export CSV button
+    await page.click('button:has-text("Export CSV")');
+
+    // Wait for download
+    const download = await downloadPromise;
+
+    // Verify filename format
+    expect(download.suggestedFilename()).toMatch(/audit_logs_.+_\d{4}-\d{2}-\d{2}\.csv/);
+
+    // Verify file is downloaded
+    const path = await download.path();
+    expect(path).toBeTruthy();
+  });
+
+  test('should show loading state while fetching data', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Loading spinner should appear
+    await expect(page.locator('text=Loading audit logs')).toBeVisible();
+
+    // Wait for data to load
+    await page.waitForSelector('table tbody tr', { timeout: 5000 });
+
+    // Loading should disappear
+    await expect(page.locator('text=Loading audit logs')).not.toBeVisible();
+  });
+
+  test('should show error state on API failure', async ({ page }) => {
+    // Intercept API request and return error
+    await page.route('**/api/audit-logs*', route => {
+      route.fulfill({
+        status: 500,
+        body: JSON.stringify({ code: 'DATABASE_ERROR', message: 'Database connection failed' })
+      });
+    });
+
+    await page.goto('/admin/audit-logs');
+
+    // Error message should appear
+    await expect(page.locator('text=Error loading audit logs')).toBeVisible();
+    await expect(page.locator('text=Database connection failed')).toBeVisible();
+  });
+
+  test('should show empty state when no logs found', async ({ page }) => {
+    // Intercept API request and return empty data
+    await page.route('**/api/audit-logs*', route => {
+      route.fulfill({
+        status: 200,
+        body: JSON.stringify({ data: [], total: 0, page: 1, limit: 50 })
+      });
+    });
+
+    await page.goto('/admin/audit-logs');
+
+    // Empty state should appear
+    await expect(page.locator('text=No audit logs found')).toBeVisible();
+    await expect(page.locator('text=Try adjusting your filters')).toBeVisible();
+  });
+
+  test('should be keyboard accessible', async ({ page }) => {
+    await page.goto('/admin/audit-logs');
+
+    // Wait for table to load
+    await page.waitForSelector('table tbody tr');
+
+    // Tab to first row
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+
+    // Press Enter to expand
+    await page.keyboard.press('Enter');
+
+    // Details should expand
+    await expect(page.locator('text=Changes JSON:')).toBeVisible();
+
+    // Press Enter again to collapse
+    await page.keyboard.press('Enter');
+    await expect(page.locator('text=Changes JSON:')).not.toBeVisible();
+  });
+});

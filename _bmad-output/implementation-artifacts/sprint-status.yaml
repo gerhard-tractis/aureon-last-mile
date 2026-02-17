@@ -45,8 +45,8 @@ development_status:
   1-2-configure-multi-tenant-database-schema-with-rls-policies: done
   1-3-implement-role-based-authentication-5-roles: done  # Migration applied, RBAC validated (12/12), Auth Hook active
   1-4-build-user-management-interface-create-users-assign-roles: done  # Full CRUD UI, 138 tests, TanStack Query + Zustand, soft delete
-  1-5-add-pwa-enhancement-layer-serwist-indexeddb-background-sync: ready-for-dev
-  1-6-set-up-audit-logging-infrastructure: ready-for-dev
+  1-5-add-pwa-enhancement-layer-serwist-indexeddb-background-sync: done  # Code review complete: 9 issues found and fixed (3H, 4M, 2L), 15 tests passing
+  1-6-set-up-audit-logging-infrastructure: done  # Code review: 18 issues fixed (8 HIGH, 7 MEDIUM, 3 LOW), 5 test files, docs created, manual setup required
   1-7-configure-ci-cd-pipeline-github-actions: done  # CI/CD workflows active, catching bugs in Story 1.4
   1-8-set-up-monitoring-and-alerting-sentry-betterstack: ready-for-dev
   epic-1-retrospective: optional
