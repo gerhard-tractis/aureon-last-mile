@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSSRClient } from '@/lib/supabase/server';
+import { createServerAdminClient } from '@/lib/supabase/serverAdminClient';
 
 // NOTE: This endpoint should be rate-limited in production (e.g., via middleware or Vercel Edge Config)
 // to prevent abuse. Recommended: 60 requests per minute per IP.
@@ -31,8 +31,8 @@ export async function GET() {
   };
 
   try {
-    // Check 1: Database connectivity
-    const supabase = await createSSRClient();
+    // Check 1: Database connectivity (using service role to bypass RLS)
+    const supabase = await createServerAdminClient();
     const { error } = await supabase.from('operators').select('id').limit(1);
     checks.database = !error;
 

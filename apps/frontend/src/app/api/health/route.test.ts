@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock Supabase client - must be declared before vi.mock due to hoisting
+// Mock Supabase admin client - must be declared before vi.mock due to hoisting
 const mockSupabaseFrom = vi.fn();
 
-vi.mock('@/lib/supabase/server', () => ({
-  createSSRClient: vi.fn(() => ({
+vi.mock('@/lib/supabase/serverAdminClient', () => ({
+  createServerAdminClient: vi.fn(() => ({
     from: mockSupabaseFrom,
   })),
 }));

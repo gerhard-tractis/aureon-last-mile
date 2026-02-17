@@ -5,7 +5,7 @@ export async function createServerAdminClient() {
 
     return createServerClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.PRIVATE_SUPABASE_SERVICE_KEY!,
+        process.env.SUPABASE_SERVICE_KEY!,
         {
             cookies: {
                 getAll: () => [],
