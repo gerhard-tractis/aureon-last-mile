@@ -14,6 +14,13 @@ export default defineConfig({
     // Setup file to run before tests
     setupFiles: ['./src/test/setup.ts'],
 
+    // Exclude E2E tests (they use Playwright, not Vitest)
+    exclude: [
+      '**/node_modules/**',
+      '**/__tests__/e2e/**',
+      '**/dist/**',
+    ],
+
     // Coverage configuration
     coverage: {
       provider: 'v8',

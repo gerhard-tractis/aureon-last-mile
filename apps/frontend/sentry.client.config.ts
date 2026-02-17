@@ -41,10 +41,10 @@ Sentry.init({
 
   // Sanitize sensitive data before sending to Sentry (GDPR/privacy compliance)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  beforeSend: (event: any, hint: any) => {
+  beforeSend: ((event: any, hint: any) => {
     console.log('[Sentry Client] beforeSend wrapper called');
     return sanitizeEvent(event, hint);
-  },
+  }) as any,
 
   // Ignore common browser errors
   ignoreErrors: [
