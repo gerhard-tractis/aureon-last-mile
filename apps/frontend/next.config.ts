@@ -3,7 +3,8 @@ import withSerwistInit from "@serwist/next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const withSerwist = withSerwistInit({
-  swSrc: "src/app/sw.ts",
+  disable: process.env.NODE_ENV === 'development',
+  swSrc: "src/lib/sw.ts",
   swDest: "public/sw.js",
   cacheOnNavigation: true,
   reloadOnOnline: true,
