@@ -19,9 +19,9 @@ let mockUsersReturn = {
       role: 'admin',
       operator_id: 'op-1',
       created_at: '2026-02-16T14:30:00Z',
-      deleted_at: null,
+      deleted_at: null as string | null,
     },
-  ],
+  ] as User[] | undefined,
 };
 
 let mockCreateUserReturn = {
@@ -63,9 +63,9 @@ describe('UserForm', () => {
           role: 'admin',
           operator_id: 'op-1',
           created_at: '2026-02-16T14:30:00Z',
-          deleted_at: null,
+          deleted_at: null as string | null,
         },
-      ],
+      ] as User[] | undefined,
     };
     mockCreateUserReturn = {
       mutate: vi.fn(),
@@ -228,14 +228,14 @@ describe('UserForm', () => {
   });
 
   describe('Edit Mode', () => {
-    const mockUser: User = {
+    const mockUser = {
       id: '123',
       email: 'edit@test.com',
       full_name: 'Edit User',
       role: 'operations_manager',
       operator_id: 'op-1',
       created_at: '2026-02-16T14:30:00Z',
-      deleted_at: null,
+      deleted_at: null as string | null,
     };
 
     beforeEach(() => {

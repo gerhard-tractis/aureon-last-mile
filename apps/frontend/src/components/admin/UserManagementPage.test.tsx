@@ -59,14 +59,14 @@ const mockUsers: User[] = [
 
 // Create mock return objects that can be reconfigured
 let mockUsersReturn = {
-  data: mockUsers,
+  data: mockUsers as User[] | undefined | null,
   isLoading: false,
 };
 
 let mockAdminStoreReturn = {
   isCreateFormOpen: false,
   isEditFormOpen: false,
-  selectedUserId: null,
+  selectedUserId: null as string | null,
 };
 
 // Mock the hooks

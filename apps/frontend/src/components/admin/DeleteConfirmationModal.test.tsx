@@ -15,7 +15,7 @@ let mockDeleteUserReturn = {
 
 let mockAdminStoreReturn = {
   isDeleteConfirmOpen: true,
-  selectedUserId: '123',
+  selectedUserId: '123' as string | null,
   setDeleteConfirmOpen: vi.fn(),
 };
 
@@ -38,7 +38,7 @@ describe('DeleteConfirmationModal', () => {
 
     mockAdminStoreReturn = {
       isDeleteConfirmOpen: true,
-      selectedUserId: '123',
+      selectedUserId: '123' as string | null,
       setDeleteConfirmOpen: vi.fn(),
     };
   });
