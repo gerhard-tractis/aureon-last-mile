@@ -21,6 +21,15 @@ let mockUsersReturn = {
       created_at: '2026-02-16T14:30:00Z',
       deleted_at: null as string | null,
     },
+    {
+      id: '123',
+      email: 'edit@test.com',
+      full_name: 'Edit User',
+      role: 'operations_manager',
+      operator_id: 'op-1',
+      created_at: '2026-02-16T14:30:00Z',
+      deleted_at: null as string | null,
+    },
   ] as User[] | undefined,
 };
 
@@ -61,6 +70,15 @@ describe('UserForm', () => {
           email: 'existing@test.com',
           full_name: 'Existing User',
           role: 'admin',
+          operator_id: 'op-1',
+          created_at: '2026-02-16T14:30:00Z',
+          deleted_at: null as string | null,
+        },
+        {
+          id: '123',
+          email: 'edit@test.com',
+          full_name: 'Edit User',
+          role: 'operations_manager',
           operator_id: 'op-1',
           created_at: '2026-02-16T14:30:00Z',
           deleted_at: null as string | null,
@@ -299,8 +317,10 @@ describe('UserForm', () => {
         expect(mockMutate).toHaveBeenCalledWith(
           expect.objectContaining({
             id: '123',
-            full_name: 'Updated User',
-            role: 'admin',
+            data: expect.objectContaining({
+              full_name: 'Updated User',
+              role: 'admin',
+            }),
           }),
           expect.any(Object)
         );
