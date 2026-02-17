@@ -11,7 +11,7 @@ vi.mock('@sentry/nextjs', () => ({
 // Mock Supabase client
 const mockGetSession = vi.fn();
 vi.mock('@/lib/supabase/client', () => ({
-  createBrowserClient: vi.fn(() => ({
+  createSPAClient: vi.fn(() => ({
     auth: {
       getSession: mockGetSession,
       onAuthStateChange: vi.fn((callback) => {
