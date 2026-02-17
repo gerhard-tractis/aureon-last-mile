@@ -5,13 +5,14 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database.types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 describe('Audit Trigger Function - Unit Tests', () => {
-  let supabase: ReturnType<typeof createClient>;
+  let supabase: SupabaseClient<Database>;
   let testOperatorId: string;
   let testUserId: string;
 
@@ -20,7 +21,7 @@ describe('Audit Trigger Function - Unit Tests', () => {
       console.warn('⚠️ Skipping database tests: SUPABASE_SERVICE_ROLE_KEY not set');
       return;
     }
-    supabase = createClient(supabaseUrl, supabaseServiceKey);
+    supabase = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     // Create test operator and user
     const { data: operator } = await supabase

@@ -5,26 +5,27 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database.types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 describe('Audit Logs RLS - Integration Tests', () => {
-  let supabaseAdmin: ReturnType<typeof createClient>;
+  let supabaseAdmin: SupabaseClient<Database>;
   let operatorA_id: string;
   let operatorB_id: string;
   let userA_id: string;
   let userB_id: string;
-  let userA_client: ReturnType<typeof createClient>;
-  let userB_client: ReturnType<typeof createClient>;
+  let userA_client: SupabaseClient<Database>;
+  let userB_client: SupabaseClient<Database>;
 
   beforeAll(async () => {
     if (!supabaseServiceKey) {
       console.warn('⚠️ Skipping database tests: SUPABASE_SERVICE_ROLE_KEY not set');
       return;
     }
-    supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+    supabaseAdmin = createClient<Database>(supabaseUrl, supabaseServiceKey);
 
     // Create two operators
     const { data: opA } = await supabaseAdmin
