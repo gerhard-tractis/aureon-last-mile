@@ -33,14 +33,16 @@ describe('Audit Logs RLS - Integration Tests', () => {
       .insert({ name: 'Operator A - RLS Test', slug: 'operator-a-rls' })
       .select()
       .single();
-    operatorA_id = opA?.id;
+    if (!opA) throw new Error('Failed to create operator A');
+    operatorA_id = opA.id;
 
     const { data: opB } = await supabaseAdmin
       .from('operators')
       .insert({ name: 'Operator B - RLS Test', slug: 'operator-b-rls' })
       .select()
       .single();
-    operatorB_id = opB?.id;
+    if (!opB) throw new Error('Failed to create operator B');
+    operatorB_id = opB.id;
 
     // Create users in each operator
     const { data: userA } = await supabaseAdmin
@@ -53,7 +55,8 @@ describe('Audit Logs RLS - Integration Tests', () => {
       })
       .select()
       .single();
-    userA_id = userA?.id;
+    if (!userA) throw new Error('Failed to create user A');
+    userA_id = userA.id;
 
     const { data: userB } = await supabaseAdmin
       .from('users')
@@ -65,7 +68,8 @@ describe('Audit Logs RLS - Integration Tests', () => {
       })
       .select()
       .single();
-    userB_id = userB?.id;
+    if (!userB) throw new Error('Failed to create user B');
+    userB_id = userB.id;
 
     // Create authenticated clients for each user (simulating logged-in users)
     // Note: This requires actual auth tokens in a real test environment
@@ -187,7 +191,8 @@ describe('Audit Logs RLS - Integration Tests', () => {
 
   it.skipIf(!supabaseServiceKey)('should validate RLS policy exists', async () => {
     // Query PostgreSQL system tables to verify RLS policy
-    const { data: policies } = await supabaseAdmin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: policies } = await (supabaseAdmin as any)
       .from('pg_policies')
       .select('*')
       .eq('tablename', 'audit_logs')

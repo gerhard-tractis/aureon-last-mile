@@ -32,7 +32,8 @@ describe('Audit Logs Performance Tests', () => {
       .insert({ name: 'Perf Test Operator', slug: 'perf-test-op' })
       .select()
       .single();
-    testOperatorId = operator?.id;
+    if (!operator) throw new Error('Failed to create test operator');
+    testOperatorId = operator.id;
 
     const { data: user } = await supabase
       .from('users')
@@ -44,7 +45,8 @@ describe('Audit Logs Performance Tests', () => {
       })
       .select()
       .single();
-    testUserId = user?.id;
+    if (!user) throw new Error('Failed to create test user');
+    testUserId = user.id;
   });
 
   afterAll(async () => {
@@ -198,7 +200,8 @@ describe('Audit Logs Performance Tests', () => {
     ];
 
     for (const indexName of expectedIndexes) {
-      const { data, error } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
         .from('pg_indexes')
         .select('indexname')
         .eq('tablename', 'audit_logs')

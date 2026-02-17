@@ -29,8 +29,8 @@ describe('Audit Trigger Function - Unit Tests', () => {
       .insert({ name: 'Test Operator - Audit Tests', slug: 'test-audit-trigger' })
       .select()
       .single();
-
-    testOperatorId = operator?.id;
+    if (!operator) throw new Error('Failed to create test operator');
+    testOperatorId = operator.id;
 
     const { data: user } = await supabase
       .from('users')
@@ -42,8 +42,8 @@ describe('Audit Trigger Function - Unit Tests', () => {
       })
       .select()
       .single();
-
-    testUserId = user?.id;
+    if (!user) throw new Error('Failed to create test user');
+    testUserId = user.id;
   });
 
   afterAll(async () => {
