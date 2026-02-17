@@ -229,8 +229,7 @@ test.describe('PWA Offline Workflow', () => {
  *
  * 1. Adjust routes and selectors based on actual app structure
  * 2. Create test fixtures for consistent test data
- * 3. Mock API endpoints using Playwright's route interception:
- *    await page.route('**/api/pickup/scans/bulk', route => route.fulfill({ status: 200 }));
+ * 3. Mock API endpoints using Playwright route interception
  * 4. Consider adding visual regression tests for PWA install banner
  * 5. Test on multiple browsers (Chrome, Safari, Firefox) for PWA compatibility
  * 6. Test on mobile viewport sizes for mobile PWA features
