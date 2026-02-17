@@ -10,35 +10,296 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
-  }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
+      audit_logs: {
+        Row: {
+          action: string
+          changes_json: Json | null
+          id: string
+          ip_address: string | null
+          operator_id: string
+          resource_id: string | null
+          resource_type: string | null
+          timestamp: string | null
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          action: string
+          changes_json?: Json | null
+          id?: string
+          ip_address?: string | null
+          operator_id: string
+          resource_id?: string | null
+          resource_type?: string | null
+          timestamp?: string | null
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          action?: string
+          changes_json?: Json | null
+          id?: string
+          ip_address?: string | null
+          operator_id?: string
+          resource_id?: string | null
+          resource_type?: string | null
+          timestamp?: string | null
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_trigger_failures: {
+        Row: {
+          error_detail: string | null
+          error_message: string
+          id: string
+          operation: string
+          table_name: string
+          timestamp: string | null
+        }
+        Insert: {
+          error_detail?: string | null
+          error_message: string
+          id?: string
+          operation: string
+          table_name: string
+          timestamp?: string | null
+        }
+        Update: {
+          error_detail?: string | null
+          error_message?: string
+          id?: string
+          operation?: string
+          table_name?: string
+          timestamp?: string | null
+        }
+        Relationships: []
+      }
+      barcode_scans: {
+        Row: {
+          barcode: string
+          id: string
+          latitude: number | null
+          longitude: number | null
+          manifest_id: string | null
+          metadata: Json | null
+          operator_id: string
+          order_id: string | null
+          scanned_at: string | null
+          scanned_by: string
+        }
+        Insert: {
+          barcode: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          manifest_id?: string | null
+          metadata?: Json | null
+          operator_id: string
+          order_id?: string | null
+          scanned_at?: string | null
+          scanned_by: string
+        }
+        Update: {
+          barcode?: string
+          id?: string
+          latitude?: number | null
+          longitude?: number | null
+          manifest_id?: string | null
+          metadata?: Json | null
+          operator_id?: string
+          order_id?: string | null
+          scanned_at?: string | null
+          scanned_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "barcode_scans_manifest_id_fkey"
+            columns: ["manifest_id"]
+            isOneToOne: false
+            referencedRelation: "manifests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "barcode_scans_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "barcode_scans_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manifests: {
+        Row: {
+          created_at: string | null
+          driver_id: string | null
+          expected_packages: number | null
+          id: string
+          manifest_number: string
+          operator_id: string
+          route_name: string | null
+          scanned_packages: number | null
+          signature_data: string | null
+          signed_at: string | null
+          status: string
+          updated_at: string | null
+          vehicle_plate: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          driver_id?: string | null
+          expected_packages?: number | null
+          id?: string
+          manifest_number: string
+          operator_id: string
+          route_name?: string | null
+          scanned_packages?: number | null
+          signature_data?: string | null
+          signed_at?: string | null
+          status?: string
+          updated_at?: string | null
+          vehicle_plate?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          driver_id?: string | null
+          expected_packages?: number | null
+          id?: string
+          manifest_number?: string
+          operator_id?: string
+          route_name?: string | null
+          scanned_packages?: number | null
+          signature_data?: string | null
+          signed_at?: string | null
+          status?: string
+          updated_at?: string | null
+          vehicle_plate?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "manifests_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operators: {
+        Row: {
+          country_code: string | null
+          created_at: string | null
+          deleted_at: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          settings: Json | null
+          slug: string
+          updated_at: string | null
+        }
+        Insert: {
+          country_code?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          settings?: Json | null
+          slug: string
+          updated_at?: string | null
+        }
+        Update: {
+          country_code?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          settings?: Json | null
+          slug?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          barcode: string
+          created_at: string | null
+          customer_name: string
+          customer_phone: string | null
+          delivered_at: string | null
+          delivery_address: string
+          id: string
+          metadata: Json | null
+          notes: string | null
+          operator_id: string
+          order_number: string
+          priority: string | null
+          status: string
+          updated_at: string | null
+        }
+        Insert: {
+          barcode: string
+          created_at?: string | null
+          customer_name: string
+          customer_phone?: string | null
+          delivered_at?: string | null
+          delivery_address: string
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          operator_id: string
+          order_number: string
+          priority?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Update: {
+          barcode?: string
+          created_at?: string | null
+          customer_name?: string
+          customer_phone?: string | null
+          delivered_at?: string | null
+          delivery_address?: string
+          id?: string
+          metadata?: Json | null
+          notes?: string | null
+          operator_id?: string
+          order_number?: string
+          priority?: string | null
+          status?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       todo_list: {
         Row: {
           created_at: string
@@ -72,15 +333,124 @@ export type Database = {
         }
         Relationships: []
       }
+      user_profiles: {
+        Row: {
+          created_at: string | null
+          full_name: string | null
+          id: string
+          operator_id: string
+          role: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          operator_id: string
+          role?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          operator_id?: string
+          role?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          created_at: string | null
+          deleted_at: string | null
+          email: string
+          full_name: string
+          id: string
+          operator_id: string
+          role: Database["public"]["Enums"]["user_role"]
+        }
+        Insert: {
+          created_at?: string | null
+          deleted_at?: string | null
+          email: string
+          full_name: string
+          id: string
+          operator_id: string
+          role?: Database["public"]["Enums"]["user_role"]
+        }
+        Update: {
+          created_at?: string | null
+          deleted_at?: string | null
+          email?: string
+          full_name?: string
+          id?: string
+          operator_id?: string
+          role?: Database["public"]["Enums"]["user_role"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "users_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      archive_old_audit_logs: { Args: never; Returns: undefined }
+      create_audit_logs_partition: {
+        Args: { partition_date: string }
+        Returns: undefined
+      }
+      custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      get_operator_id: { Args: never; Returns: string }
+      log_audit_event: {
+        Args: {
+          p_action: string
+          p_changes: Json
+          p_resource_id: string
+          p_resource_type: string
+        }
+        Returns: undefined
+      }
+      set_config: {
+        Args: {
+          is_local?: boolean
+          setting_name: string
+          setting_value: string
+        }
+        Returns: string
+      }
+      validate_audit_logging: {
+        Args: never
+        Returns: {
+          details: string
+          status: string
+          test_name: string
+        }[]
+      }
     }
     Enums: {
-      [_ in never]: never
+      user_role:
+        | "pickup_crew"
+        | "warehouse_staff"
+        | "loading_crew"
+        | "operations_manager"
+        | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -206,10 +576,15 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
-    Enums: {},
+    Enums: {
+      user_role: [
+        "pickup_crew",
+        "warehouse_staff",
+        "loading_crew",
+        "operations_manager",
+        "admin",
+      ],
+    },
   },
 } as const
