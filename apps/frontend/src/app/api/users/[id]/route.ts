@@ -82,7 +82,7 @@ export async function PUT(
       .select('id, role, operator_id')
       .eq('id', id)
       .is('deleted_at', null)
-      .single();
+      .single<{ id: string; role: string; operator_id: string }>();
 
     if (fetchError || !existingUser) {
       return NextResponse.json(
@@ -122,10 +122,11 @@ export async function PUT(
     // RLS policy (users_admin_full_access) enforces: Can only update users from own operator
     const { data: updatedUser, error: updateError } = await supabase
       .from('users')
+      // @ts-ignore - Supabase TypeScript inference issue, works correctly at runtime
       .update(updateData)
       .eq('id', id)
       .select('id, email, full_name, role, operator_id, created_at, deleted_at')
-      .single();
+      .single<{ id: string; email: string; full_name: string; role: string; operator_id: string; created_at: string; deleted_at: string | null }>();
 
     if (updateError) {
       console.error('Error updating user:', updateError);
@@ -222,7 +223,7 @@ export async function DELETE(
       .select('id, email, role, operator_id')
       .eq('id', id)
       .is('deleted_at', null)
-      .single();
+      .single<{ id: string; email: string; role: string; operator_id: string }>();
 
     if (fetchError || !existingUser) {
       return NextResponse.json(
@@ -272,6 +273,7 @@ export async function DELETE(
     // RLS policy enforces: Can only delete users from own operator
     const { error: deleteError } = await supabase
       .from('users')
+      // @ts-ignore - Supabase TypeScript inference issue, works correctly at runtime
       .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
 

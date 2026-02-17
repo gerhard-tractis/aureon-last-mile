@@ -252,8 +252,9 @@ export async function POST(request: NextRequest) {
 
     // Database trigger (handle_new_user) auto-creates public.users record
     // Retry logic to handle race condition with trigger execution
-    let createdUser = null;
-    let fetchError = null;
+    type UserRecord = { id: string; email: string; full_name: string; role: string; operator_id: string; created_at: string; deleted_at: string | null };
+    let createdUser: UserRecord | null = null;
+    let fetchError: unknown = null;
     const maxRetries = 3;
     const retryDelay = 100; // ms
 
@@ -267,7 +268,7 @@ export async function POST(request: NextRequest) {
         .from('users')
         .select('id, email, full_name, role, operator_id, created_at, deleted_at')
         .eq('id', authUser.user.id)
-        .single();
+        .single<UserRecord>();
 
       if (result.data) {
         createdUser = result.data;

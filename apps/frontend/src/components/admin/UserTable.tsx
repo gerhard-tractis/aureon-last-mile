@@ -24,8 +24,8 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
     if (!users) return [];
 
     return [...users].sort((a, b) => {
-      let compareA: any = a[sortBy];
-      let compareB: any = b[sortBy];
+      let compareA: string | number = a[sortBy];
+      let compareB: string | number = b[sortBy];
 
       // Handle date comparison
       if (sortBy === 'created_at') {
@@ -34,7 +34,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
       }
 
       // Handle string comparison
-      if (typeof compareA === 'string') {
+      if (typeof compareA === 'string' && typeof compareB === 'string') {
         compareA = compareA.toLowerCase();
         compareB = compareB.toLowerCase();
       }
