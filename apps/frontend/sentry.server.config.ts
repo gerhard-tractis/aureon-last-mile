@@ -24,7 +24,8 @@ Sentry.init({
   environment: process.env.VERCEL_ENV || process.env.NODE_ENV,
 
   // Sanitize sensitive data before sending to Sentry (GDPR/privacy compliance)
-  beforeSend: (event, hint) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  beforeSend: (event: any, hint: any) => {
     console.log('[Sentry Server] beforeSend wrapper called');
     return sanitizeEvent(event, hint);
   },
