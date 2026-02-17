@@ -12,6 +12,30 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 These files control Claude's own behavior and permissions. Modifying them can break the Claude CLI tool entirely. If the user reports issues with these files, provide instructions for manual fixes rather than editing them directly.
 
+## ⚠️ CRITICAL: Read Deployment Runbook Before Implementation
+
+**BEFORE implementing any code changes, deployments, or infrastructure work, you MUST read:**
+
+📖 **`apps/frontend/docs/deployment-runbook.md`**
+
+This runbook contains critical lessons learned from Epic 1 that prevent common mistakes:
+- GitHub Secrets configuration (correct naming, no typos)
+- Vercel setup (path doubling issues, root directory settings)
+- Supabase configuration (RLS testing, migration workflows)
+- Railway deployment (n8n setup for Story 2.3+)
+- Common deployment errors and their solutions
+- Migration best practices and rollback procedures
+
+**When to read the runbook:**
+- ✅ Before starting any new story implementation
+- ✅ Before creating or modifying deployment configurations
+- ✅ Before running database migrations
+- ✅ When encountering deployment errors
+- ✅ When setting up new infrastructure (Railway, n8n, etc.)
+
+**Why this matters:**
+Epic 1 taught us that catching issues early (during development) is far better than discovering them after deployment. The runbook contains patterns and solutions that will save hours of debugging.
+
 ## ⚠️ CRITICAL: Deployment Rules
 
 **NEVER deploy to Vercel, Supabase, or any production environment unless the user explicitly uses the word "deploy" or "push to production".**
