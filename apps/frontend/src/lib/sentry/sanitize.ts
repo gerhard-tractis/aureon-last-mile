@@ -22,10 +22,15 @@ import type { Event, EventHint } from '@sentry/nextjs';
  * @returns Processed event, null (drop event), or original event if processing fails
  */
 export function sanitizeEvent(event: Event, _hint: EventHint): Event | null {
+  console.log('[Sentry] beforeSend called:', { level: event.level, message: event.message });
+
   try {
     // Apply sampling logic first (before expensive sanitization)
     const shouldSample = applyErrorSampling(event);
+    console.log('[Sentry] shouldSample:', shouldSample, 'level:', event.level);
+
     if (!shouldSample) {
+      console.log('[Sentry] Event dropped by sampling');
       return null; // Drop event
     }
 
@@ -57,6 +62,7 @@ export function sanitizeEvent(event: Event, _hint: EventHint): Event | null {
       sanitized.user.email = maskEmail(email);
     }
 
+    console.log('[Sentry] Event sanitized and will be sent');
     return sanitized;
   } catch (error) {
     // Fail-open: Send unsanitized event rather than dropping it
