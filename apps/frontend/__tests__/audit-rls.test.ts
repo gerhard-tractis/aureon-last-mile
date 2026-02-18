@@ -4,9 +4,14 @@
  * FIX #3: Write missing RLS tests
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
+
+// Use real fetch for database integration tests (setup.ts mocks it)
+// @ts-ignore - Using Node.js built-in fetch
+import { fetch as nodeFetch } from 'undici';
+vi.stubGlobal('fetch', nodeFetch);
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
