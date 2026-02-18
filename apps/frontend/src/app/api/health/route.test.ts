@@ -33,7 +33,6 @@ describe('/api/health', () => {
     expect(response.status).toBe(200);
     expect(data.status).toBe('healthy');
     expect(data.checks.database).toBe(true);
-    expect(data.checks.memory).toBe(true);
     expect(data.checks.timestamp).toBeDefined();
   });
 
@@ -76,7 +75,7 @@ describe('/api/health', () => {
     expect(data.memory.heapUsed).toMatch(/\d+MB/);
   });
 
-  it('should return unhealthy if memory usage exceeds 80%', async () => {
+  it('should return healthy even with high memory usage (memory is observability-only)', async () => {
     mockSupabaseFrom.mockReturnValue({
       select: vi.fn().mockReturnValue({
         limit: vi.fn().mockResolvedValue({
@@ -86,7 +85,7 @@ describe('/api/health', () => {
       }),
     });
 
-    // Mock high memory usage
+    // Mock high memory usage — should NOT cause 503 (memory check removed in 02d608b)
     vi.spyOn(process, 'memoryUsage').mockReturnValue({
       rss: 100 * 1024 * 1024,
       heapTotal: 100 * 1024 * 1024,
@@ -98,9 +97,10 @@ describe('/api/health', () => {
     const response = await GET();
     const data = await response.json();
 
-    expect(response.status).toBe(503);
-    expect(data.status).toBe('unhealthy');
-    expect(data.checks.memory).toBe(false);
+    expect(response.status).toBe(200);
+    expect(data.status).toBe('healthy');
+    expect(data.memory).toBeDefined();
+    expect(data.memory.heapUsed).toBe('85MB');
 
     vi.restoreAllMocks();
   });

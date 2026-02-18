@@ -48,9 +48,9 @@ import type { Database } from '@/lib/types';
 import { fetch as nodeFetch } from 'undici';
 vi.stubGlobal('fetch', nodeFetch);
 
-// FIX: Code Review Issue #8 - Fail loudly if env vars missing instead of silent fallback
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://localhost:54321';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+// Fail loudly if env vars missing instead of silent fallback
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.warn('⚠️ Missing environment variables - tests will be skipped');
@@ -506,7 +506,7 @@ describe('Orders + Packages Tables RLS - Integration Tests (Story 2.1)', () => {
   // Skipping for now since audit function may need separate deployment verification
   // ============================================================================
 
-  it.skip('should log order INSERT to audit_logs table', async () => {
+  it.skipIf(!supabaseServiceKey)('should log order INSERT to audit_logs table', async () => {
     // Create order
     const { data: order } = await supabaseAdmin
       .from('orders')
@@ -769,7 +769,7 @@ describe('Orders + Packages Tables RLS - Integration Tests (Story 2.1)', () => {
     // Skipping to avoid duplicate testing and deployment dependencies.
     // ========================================================================
 
-    it.skip('should log package INSERT to audit_logs table', async () => {
+    it.skipIf(!supabaseServiceKey)('should log package INSERT to audit_logs table', async () => {
       // Create package
       const { data: pkg } = await supabaseAdmin
         .from('packages')

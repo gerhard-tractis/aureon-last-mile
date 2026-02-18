@@ -44,3 +44,9 @@ next-env.d.ts
 # serwist build artifacts
 public/swe-worker-*.js
 public/sw.js
+
+# test artifacts
+vitest-results.json
+
+# Windows reserved device names
+NUL

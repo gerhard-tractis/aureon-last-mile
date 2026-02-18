@@ -241,54 +241,138 @@ export type Database = {
         }
         Relationships: []
       }
-      orders: {
+      packages: {
         Row: {
-          barcode: string
-          created_at: string | null
-          customer_name: string
-          customer_phone: string | null
-          delivered_at: string | null
-          delivery_address: string
           id: string
-          metadata: Json | null
-          notes: string | null
           operator_id: string
-          order_number: string
-          priority: string | null
-          status: string
-          updated_at: string | null
+          order_id: string
+          label: string
+          package_number: string | null
+          declared_box_count: number | null
+          is_generated_label: boolean | null
+          parent_label: string | null
+          sku_items: Json
+          declared_weight_kg: number | null
+          declared_dimensions: Json | null
+          verified_weight_kg: number | null
+          verified_dimensions: Json | null
+          metadata: Json | null
+          raw_data: Json
+          created_at: string
+          deleted_at: string | null
         }
         Insert: {
-          barcode: string
-          created_at?: string | null
-          customer_name: string
-          customer_phone?: string | null
-          delivered_at?: string | null
-          delivery_address: string
           id?: string
-          metadata?: Json | null
-          notes?: string | null
           operator_id: string
-          order_number: string
-          priority?: string | null
-          status?: string
-          updated_at?: string | null
+          order_id: string
+          label: string
+          package_number?: string | null
+          declared_box_count?: number | null
+          is_generated_label?: boolean | null
+          parent_label?: string | null
+          sku_items?: Json
+          declared_weight_kg?: number | null
+          declared_dimensions?: Json | null
+          verified_weight_kg?: number | null
+          verified_dimensions?: Json | null
+          metadata?: Json | null
+          raw_data: Json
+          created_at?: string
+          deleted_at?: string | null
         }
         Update: {
-          barcode?: string
-          created_at?: string | null
-          customer_name?: string
-          customer_phone?: string | null
-          delivered_at?: string | null
-          delivery_address?: string
           id?: string
+          operator_id?: string
+          order_id?: string
+          label?: string
+          package_number?: string | null
+          declared_box_count?: number | null
+          is_generated_label?: boolean | null
+          parent_label?: string | null
+          sku_items?: Json
+          declared_weight_kg?: number | null
+          declared_dimensions?: Json | null
+          verified_weight_kg?: number | null
+          verified_dimensions?: Json | null
           metadata?: Json | null
-          notes?: string | null
+          raw_data?: Json
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "packages_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packages_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          id: string
+          operator_id: string
+          order_number: string
+          customer_name: string
+          customer_phone: string
+          delivery_address: string
+          comuna: string
+          delivery_date: string
+          delivery_window_start: string | null
+          delivery_window_end: string | null
+          retailer_name: string | null
+          raw_data: Json
+          metadata: Json | null
+          imported_via: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
+          imported_at: string
+          created_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          order_number: string
+          customer_name: string
+          customer_phone: string
+          delivery_address: string
+          comuna: string
+          delivery_date: string
+          delivery_window_start?: string | null
+          delivery_window_end?: string | null
+          retailer_name?: string | null
+          raw_data: Json
+          metadata?: Json | null
+          imported_via: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
+          imported_at: string
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
           operator_id?: string
           order_number?: string
-          priority?: string | null
-          status?: string
-          updated_at?: string | null
+          customer_name?: string
+          customer_phone?: string
+          delivery_address?: string
+          comuna?: string
+          delivery_date?: string
+          delivery_window_start?: string | null
+          delivery_window_end?: string | null
+          retailer_name?: string | null
+          raw_data?: Json
+          metadata?: Json | null
+          imported_via?: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
+          imported_at?: string
+          created_at?: string
+          deleted_at?: string | null
         }
         Relationships: [
           {
@@ -445,6 +529,11 @@ export type Database = {
       }
     }
     Enums: {
+      imported_via_enum:
+        | "API"
+        | "EMAIL"
+        | "MANUAL"
+        | "CSV"
       user_role:
         | "pickup_crew"
         | "warehouse_staff"

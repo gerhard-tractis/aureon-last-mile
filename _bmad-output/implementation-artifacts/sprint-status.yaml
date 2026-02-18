@@ -52,10 +52,14 @@ development_status:
   epic-1-retrospective: done  # Completed 2026-02-17, comprehensive team review with 6 action items and 3 prep tasks
 
   epic-2: in-progress
-  2-1-create-orders-table-and-data-model: review
-  2-2-build-csv-excel-upload-interface-with-validation: backlog
-  2-3-implement-email-manifest-parsing-n8n-workflow: backlog
-  2-4-build-manual-order-entry-form-fallback: backlog
+  2-1-create-orders-table-and-data-model: done  # Code review: 3 fixes applied (H1 packages types, H2 env fallback, M2 stale ref), 3 acknowledged
+  2-2-build-csv-excel-upload-interface-with-validation: done
+  2-3-set-up-vps-infrastructure-and-n8n: ready-for-dev
+  2-4-create-automation-worker-database-schema: backlog
+  2-5-implement-easy-csv-email-connector: backlog
+  2-6-implement-paris-beetrack-browser-connector: backlog
+  2-7-implement-job-queue-orchestration-and-monitoring: backlog
+  2-8-build-manual-order-entry-form-fallback: backlog
   epic-2-retrospective: optional
 
   epic-3: backlog
