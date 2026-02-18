@@ -858,11 +858,13 @@ So that I know immediately when the platform is down or throwing errors.
 
 ---
 
-## Epic 2: Order Data Ingestion
+## Epic 2: Order Data Ingestion & Automation Worker
 
-Operations managers can import retailer orders into the platform via email manifests, CSV uploads, or manual entry with graceful fallback mechanisms.
+Operations managers can import retailer orders into the platform via automated connectors (email/CSV, browser scraping, API), manual CSV upload, or manual entry. A multi-tenant automation worker on a dedicated VPS handles automated ingestion with a typed connector framework and job queue. First tenant: Transportes Musan (Easy via CSV/email, Paris via Beetrack browser scraping).
 
 **FRs covered:** FR8-FR10, FR47 (4 FRs)
+
+**Scope expanded:** 2026-02-18 — Sprint Change Proposal added automation worker infrastructure (Stories 2.3-2.7), browser scraping capability, and job orchestration. See `_bmad-output/planning-artifacts/sprint-change-proposal-2026-02-18.md`.
 
 ---
 
@@ -924,39 +926,197 @@ So that I can quickly import manifests received via email or downloaded from ret
 
 ---
 
-### Story 2.3: Implement Email Manifest Parsing (n8n Workflow)
+### Story 2.3: Set Up VPS Infrastructure and n8n
 
-As an operations manager,
-I want the system to automatically parse order manifests received via email attachments,
-So that I don't have to manually download and upload CSVs for every retailer email.
+**Note:** Scope changed 2026-02-18 via Sprint Change Proposal. Original "Email Manifest Parsing" story replaced with automation worker infrastructure. See `_bmad-output/planning-artifacts/sprint-change-proposal-2026-02-18.md`.
+
+As an Aureon DevOps engineer,
+I want to provision a VPS with n8n and the automation worker runtime,
+So that we have dedicated infrastructure for running data ingestion connectors (email, browser, API).
 
 **Acceptance Criteria:**
 
-**Given** n8n is deployed on Railway and connected to Supabase
-**When** An email arrives at manifests@aureon.com with CSV/Excel attachment
-**Then** n8n workflow triggers on new email receipt
-**And** Workflow extracts: Sender email, subject, body text, all attachments (CSV/Excel/PDF)
-**And** For each CSV/Excel attachment: Parse file using same validation logic as Story 2.2, create orders in database with imported_via = 'EMAIL', raw_data = {email_subject, sender_email, attachment_name, parsed_row}
-**And** Retailer name is auto-detected from sender email domain (falabella.cl → "Falabella", shopee.cl → "Shopee") or extracted from subject line
-**And** Successfully parsed orders create audit log entries: action = 'EMAIL_IMPORT', resource_type = 'order'
-**And** Parsing errors log to Sentry with context: email subject, sender, attachment name, error details
-**And** Operations manager receives summary email: "Imported X orders from [retailer]. Y errors occurred." with link to /orders/import/results/[batch_id]
-**And** /orders/import/results/[batch_id] page shows: Email subject, sender, timestamp, list of imported orders, list of errors with details
+**Given** A Hostinger KVM 2 VPS (São Paulo, 2 vCPU, 8GB RAM, 100GB NVMe) is provisioned
+**When** I run the setup script and configure services
+**Then** Ubuntu 24.04 LTS is installed and hardened (UFW firewall: allow SSH + n8n port only)
+**And** Node.js 20+ is installed via nvm
+**And** n8n is installed globally and running as a systemd service with auto-restart
+**And** n8n basic auth is enabled (N8N_BASIC_AUTH_ACTIVE=true)
+**And** n8n is connected to Supabase via environment variables (SUPABASE_URL, SUPABASE_SERVICE_KEY)
+**And** Playwright with Chromium is installed (`npx playwright install --with-deps chromium`)
+**And** The `apps/worker/` directory structure is created in the repository
+**And** A deploy.sh script exists for pulling latest code and restarting services
+**And** GitHub Actions workflow deploys to VPS via SSH on push to `apps/worker/**`
+**And** Architecture doc is updated to reflect VPS infrastructure (replacing Railway n8n)
+**And** Deployment runbook has new VPS section with setup instructions
 
 **Edge Cases:**
-- Email has no attachments → Log warning, send reply: "No manifest file found. Please attach CSV/Excel."
-- Attachment is PDF (scanned manifest) → Skip for now, log "PDF parsing not implemented", send reply: "PDF manifests not supported yet. Please send CSV/Excel."
-- Attachment is corrupt/unreadable → Log error to Sentry, send reply: "Could not read attachment. Please resend."
-- Duplicate orders in email + database → Skip duplicates, import new ones, summary shows: "Skipped X duplicates"
-- Sender email not recognized → Import with retailer_name = NULL, operations manager can edit later
+- VPS provisioning fails → Document manual setup steps as fallback
+- n8n crashes → systemd auto-restarts, alert via BetterStack
+- SSH key rotation → Document in deployment runbook
 
 **Technical Requirements:**
-- n8n workflow nodes: Email Trigger (IMAP) → Extract Attachments → Parse CSV/Excel → HTTP Request to API (POST /api/orders/bulk-import) → Send Summary Email
-- API endpoint /api/orders/bulk-import accepts: [{order_number, customer_name, ...}, ...], returns: {imported: count, errors: [{row, message}]}
+- Provider: Hostinger KVM 2 ($6.99/month, São Paulo)
+- OS: Ubuntu 24.04 LTS
+- Software: Node.js 20+, n8n (global), Playwright + Chromium
+- Services: n8n (systemd, 24/7), worker process (systemd, 24/7)
+- New repo structure: `apps/worker/` with src/, n8n/, scripts/
 
 ---
 
-### Story 2.4: Build Manual Order Entry Form (Fallback)
+### Story 2.4: Create Automation Worker Database Schema
+
+**Note:** Scope changed 2026-02-18 via Sprint Change Proposal. Original "Manual Order Entry Form" story moved to 2.8.
+
+As an Aureon DevOps engineer,
+I want to create the database tables for the automation worker's connector framework and job queue,
+So that connectors can be configured per tenant/client and jobs can be tracked and orchestrated.
+
+**Acceptance Criteria:**
+
+**Given** The existing operators table serves as the tenant identity
+**When** I run the migration
+**Then** The `tenant_clients` table exists with fields: id (UUID), operator_id (UUID FK to operators), name (VARCHAR), slug (VARCHAR), connector_type (ENUM: 'csv_email', 'api', 'browser'), connector_config (JSONB), is_active (BOOLEAN), created_at, updated_at
+**And** Unique constraint on (operator_id, slug) prevents duplicate client slugs per operator
+**And** RLS policy enforces tenant isolation via operator_id = public.get_operator_id()
+**And** The `jobs` table exists with fields: id (UUID), operator_id (UUID FK), client_id (UUID FK to tenant_clients), job_type (ENUM: 'csv_email', 'api', 'browser'), status (ENUM: 'pending', 'running', 'completed', 'failed', 'retrying'), priority (INT), scheduled_at (TIMESTAMPTZ), started_at, completed_at, result (JSONB), error_message (TEXT), retry_count (INT), max_retries (INT default 3), created_at
+**And** Index on jobs (status, priority DESC, scheduled_at) WHERE status IN ('pending', 'retrying') for efficient worker polling
+**And** The `raw_files` table exists with fields: id (UUID), operator_id (UUID FK), client_id (UUID FK), job_id (UUID FK to jobs), file_name (VARCHAR), storage_path (VARCHAR), file_size_bytes (INT), row_count (INT), received_at (TIMESTAMPTZ)
+**And** RLS policies on all new tables enforce tenant isolation
+**And** The `orders` table is extended with new columns: external_load_id (VARCHAR nullable), recipient_region (VARCHAR nullable), service_type (VARCHAR nullable), total_weight_kg (DECIMAL nullable), total_volume_m3 (DECIMAL nullable), status (VARCHAR default 'pending'), status_detail (VARCHAR nullable), source_file (VARCHAR nullable), tenant_client_id (UUID FK to tenant_clients nullable)
+**And** Seed data inserted for Transportes Musan: operator record + Easy (csv_email) and Paris (browser) tenant_clients with connector_config templates
+
+**Edge Cases:**
+- connector_config contains credentials → Must be encrypted (application-level encryption with VPS env key)
+- Migration conflicts with existing orders columns → Use IF NOT EXISTS / ADD COLUMN IF NOT EXISTS
+- Seed data for Musan assumes operator already exists → Check and create if needed
+
+**Technical Requirements:**
+- Migration file: `apps/frontend/supabase/migrations/YYYYMMDD_create_automation_worker_schema.sql`
+- Reuse existing RLS pattern: `public.get_operator_id()`
+- connector_config examples documented in migration comments
+- Credential fields use `ENCRYPTED:` prefix convention (decrypted by worker at runtime)
+
+---
+
+### Story 2.5: Implement Easy CSV/Email Connector
+
+As an operations manager at Transportes Musan,
+I want the system to automatically parse Easy's daily CSV manifests received via email,
+So that orders from Easy/Cencosud are imported without manual intervention.
+
+**Acceptance Criteria:**
+
+**Given** n8n is running on the VPS and connected to Supabase
+**When** An email arrives from Easy's sender address with a CSV attachment
+**Then** n8n workflow triggers via IMAP polling (every 10 minutes)
+**And** Email is filtered by sender address and subject line (from connector_config)
+**And** CSV attachment is extracted and uploaded to Supabase Storage: `raw-files/{operator_slug}/{client_slug}/{date}/{filename}`
+**And** CSV is parsed with correct encoding (Latin-1) and delimiter (;) as configured in connector_config
+**And** CSV columns are mapped to orders table fields via the column_map in connector_config
+**And** Orders are upserted using (operator_id, order_number) as conflict key — existing orders are updated (cumulative CSV logic)
+**And** Each order is created with imported_via = 'EMAIL', raw_data = original CSV row as JSON, source_file = filename, tenant_client_id = Easy's client ID
+**And** A job record is created/updated in the jobs table tracking rows_processed and errors
+**And** Audit log entries are created: action = 'EMAIL_IMPORT', resource_type = 'order'
+**And** On failure: job marked as failed, error logged to Sentry, notification sent
+
+**Edge Cases:**
+- Easy sends cumulative CSVs (12:00 has load 0001, 13:00 has 0001+0002) → UPSERT handles this, always process most recent email
+- CSV encoding is Latin-1 with ; delimiter → Configured per-client in connector_config
+- Email has no attachment → Log warning, skip processing
+- CSV is corrupt/unreadable → Mark job as failed, log to Sentry
+- Duplicate processing of same email → Track processed email IDs to prevent re-processing
+
+**Technical Requirements:**
+- n8n workflow: IMAP Trigger → Filter → Extract Attachment → Upload to Storage → Parse CSV → Column Map → Upsert to Supabase → Log Job
+- n8n workflow exported as JSON: `apps/worker/n8n/workflows/easy-csv-import.json`
+- Supabase Storage bucket: `raw-files` (create if not exists)
+- Uses Supabase service role key for direct DB access (no API proxy)
+- Validation reuses Story 2.2 logic where applicable (phone format, date format, comuna validation)
+
+---
+
+### Story 2.6: Implement Paris/Beetrack Browser Connector
+
+As an operations manager at Transportes Musan,
+I want the system to automatically extract today's orders from the Paris/Beetrack portal,
+So that orders from Paris/Cencosud are imported without manual login and data copy.
+
+**Acceptance Criteria:**
+
+**Given** OpenClaw and Playwright are installed on the VPS with Groq API configured
+**When** A scheduled browser job triggers (2x daily: 07:00 and 14:00 CLT)
+**Then** The worker launches a Playwright headless Chrome session
+**And** Navigates to Beetrack login page and authenticates with Paris credentials (from encrypted connector_config)
+**And** Navigates to the orders/deliveries section
+**And** Filters by today's date
+**And** Extracts all order rows from the table (handles pagination if needed)
+**And** Browser session is closed immediately after extraction (free RAM)
+**And** Extracted data is mapped to orders table schema
+**And** Orders are upserted to Supabase using (operator_id, external_order_id) as conflict key
+**And** Raw extracted data is uploaded as JSON to Supabase Storage: `raw-files/{operator_slug}/{client_slug}/{date}/beetrack_extract.json`
+**And** Job record is updated with rows_processed count
+**And** On failure: screenshot is saved to Storage for debugging, job marked as failed, notification sent
+
+**Edge Cases:**
+- Login fails → Retry once, then mark job as failed with screenshot
+- Beetrack is down/unreachable → Retry with exponential backoff (max 3 retries)
+- Extraction fails mid-page → Save screenshot, log partial results, mark job as failed
+- Session timeout during extraction → Catch error, close browser, retry
+- Credentials expired → Mark job as failed, alert operations team to update credentials
+- No orders for today → Job completes successfully with rows_processed = 0
+
+**Technical Requirements:**
+- Browser agent: OpenClaw with Playwright (headless Chromium)
+- LLM: Groq API → Llama 4 Scout (17Bx16E, 128k context) — $0.11/$0.34 per MTok
+- Credentials: Stored encrypted in connector_config, decrypted at runtime with VPS ENCRYPTION_KEY
+- Sequential execution: Only one browser session at a time (conserve RAM on 8GB VPS)
+- Scheduled via cron job creating entries in jobs table
+
+---
+
+### Story 2.7: Implement Job Queue Orchestration and Monitoring
+
+As an Aureon DevOps engineer,
+I want a reliable job orchestration system with monitoring and alerting,
+So that connectors run on schedule, failures are retried, and the team is notified of issues.
+
+**Acceptance Criteria:**
+
+**Given** The jobs table and tenant_clients are configured
+**When** The worker process is running on the VPS
+**Then** Worker polls the jobs table every 30 seconds: `SELECT ... FROM jobs WHERE status IN ('pending', 'retrying') AND (scheduled_at IS NULL OR scheduled_at <= now()) ORDER BY priority DESC, scheduled_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+**And** When a job is found: status → 'running', started_at → now(), execute connector based on job_type
+**And** On success: status → 'completed', completed_at → now(), result JSONB updated
+**And** On failure: retry_count++, if < max_retries → status → 'retrying' (with backoff), else → 'failed'
+**And** A cron process creates scheduled jobs daily at 06:00 CLT for all active browser connector clients
+**And** CSV/email jobs are created by n8n on email receipt (event-driven) but still logged to jobs table
+**And** Health monitoring: systemd watchdog for both n8n and worker processes
+**And** Alerts via n8n workflow: job failed after max retries → notification, no jobs completed in expected window → warning, VPS disk usage > 80% → alert
+**And** Sentry captures worker errors with job context
+**And** Worker logs structured output to stdout (captured by journald)
+**And** GitHub Actions workflow deploys `apps/worker/` to VPS via SSH on push
+
+**Edge Cases:**
+- Worker process crashes → systemd auto-restarts
+- Two jobs picked simultaneously → FOR UPDATE SKIP LOCKED prevents double-processing
+- Job runs longer than expected → No timeout by default (browser scraping can be slow), but log duration
+- VPS disk fills up → Alert at 80%, auto-cleanup of old journald logs at 90%
+- Supabase unreachable → Worker retries connection with exponential backoff
+
+**Technical Requirements:**
+- Worker: Node.js process running as systemd service
+- Job polling: PostgreSQL advisory locks via FOR UPDATE SKIP LOCKED
+- Notifications: n8n workflow triggered by Supabase webhook or polling failed jobs
+- Logging: Structured JSON to stdout → journald
+- Deployment: `apps/worker/scripts/deploy.sh` + GitHub Actions SSH workflow
+- Monitoring: BetterStack for VPS uptime, Sentry for errors
+
+---
+
+### Story 2.8: Build Manual Order Entry Form (Fallback)
+
+**Note:** Moved from original Story 2.4 position. Requirements unchanged.
 
 As an operations manager,
 I want to manually enter a single order via a web form,

@@ -35,6 +35,7 @@
     "dexie": "^4.3.0",
     "lucide-react": "^0.469.0",
     "next": "^15.4.8",
+    "papaparse": "^5.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.71.1",
@@ -43,6 +44,7 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
@@ -52,6 +54,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/date-fns": "^2.5.3",
     "@types/node": "^20",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/testing-library__jest-dom": "^5.14.9",
