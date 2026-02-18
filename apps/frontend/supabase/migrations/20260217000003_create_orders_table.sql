@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS public.packages (
   label VARCHAR(100) NOT NULL,
 
   -- Package sequencing (handle inefficient retailers who don't pre-label individual boxes)
-  package_number VARCHAR(20),                -- "1 of 3" (if retailer provides)
+  package_number VARCHAR(20),                -- "1 of 3" (if retailer provides) - FREE-FORM TEXT, validated at app layer
   declared_box_count INTEGER DEFAULT 1,      -- Boxes in package (usually 1, sometimes 3+ requiring split)
   is_generated_label BOOLEAN DEFAULT FALSE,  -- TRUE if operator created sub-label (CTN001-1, CTN001-2)
   parent_label VARCHAR(100),                 -- Original CTN if this is a sub-label
@@ -173,8 +173,10 @@ CREATE TABLE IF NOT EXISTS public.packages (
 
 COMMENT ON TABLE public.packages IS 'Scannable packages/cartons with SKU details and physical attributes';
 COMMENT ON COLUMN public.packages.label IS 'Barcode/label value (CTN12345, LPN98765) - what gets scanned at pickup';
-COMMENT ON COLUMN public.packages.declared_box_count IS 'Number of boxes retailer declared (usually 1, >1 for inefficient retailers)';
-COMMENT ON COLUMN public.packages.is_generated_label IS 'TRUE if operator created sub-labels (CTN001-1, CTN001-2) from single CTN001';
+COMMENT ON COLUMN public.packages.package_number IS 'Package sequence from retailer (e.g., "1 of 3", "2/3") - FREE-FORM TEXT with no validation. Application layer validates format. No uniqueness constraint - duplicates possible if retailer data is inconsistent.';
+COMMENT ON COLUMN public.packages.declared_box_count IS 'Number of boxes retailer declared (usually 1, >1 for inefficient retailers). Used for sub-label generation: if retailer sends "CTN001 contains 3 boxes" without individual labels, operator generates CTN001-1, CTN001-2, CTN001-3 during import (see is_generated_label and parent_label).';
+COMMENT ON COLUMN public.packages.is_generated_label IS 'TRUE if operator created sub-labels (CTN001-1, CTN001-2) from single CTN001. Algorithm: During import, if declared_box_count > 1 and only one label provided, generate N sub-labels with format: {parent_label}-{1..N}. Created by application code at import time (Stories 2.2/2.3/2.4).';
+COMMENT ON COLUMN public.packages.parent_label IS 'Original manifest label (e.g., CTN001) if is_generated_label=true. NULL for original labels. Used to trace sub-labels back to retailer manifest entry. Query all sub-labels: WHERE parent_label = ''CTN001''.';
 COMMENT ON COLUMN public.packages.sku_items IS 'Array of SKU items: [{sku, description, quantity}] from manifest';
 COMMENT ON COLUMN public.packages.declared_weight_kg IS 'Retailer-declared weight (often underreported for billing)';
 COMMENT ON COLUMN public.packages.verified_weight_kg IS 'Operator-measured weight (for accurate billing and dispute resolution)';
@@ -272,7 +274,7 @@ BEGIN
     RAISE EXCEPTION 'ENUM type imported_via_enum not found!';
   END IF;
 
-  -- Verify orders indexes exist
+  -- Verify ALL orders indexes exist (FIX: Code Review Issue #2)
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE tablename = 'orders'
@@ -281,13 +283,69 @@ BEGIN
     RAISE EXCEPTION 'Critical index idx_orders_operator_id not found!';
   END IF;
 
-  -- Verify packages indexes exist
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'orders'
+    AND indexname = 'idx_orders_operator_order_number'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_orders_operator_order_number not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'orders'
+    AND indexname = 'idx_orders_delivery_date'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_orders_delivery_date not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'orders'
+    AND indexname = 'idx_orders_deleted_at'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_orders_deleted_at not found!';
+  END IF;
+
+  -- Verify ALL packages indexes exist (FIX: Code Review Issue #2)
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
     WHERE tablename = 'packages'
     AND indexname = 'idx_packages_operator_id'
   ) THEN
     RAISE EXCEPTION 'Critical index idx_packages_operator_id not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'packages'
+    AND indexname = 'idx_packages_order_id'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_packages_order_id not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'packages'
+    AND indexname = 'idx_packages_label'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_packages_label not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'packages'
+    AND indexname = 'idx_packages_deleted_at'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_packages_deleted_at not found!';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'packages'
+    AND indexname = 'idx_packages_parent_label'
+  ) THEN
+    RAISE EXCEPTION 'Index idx_packages_parent_label not found!';
   END IF;
 
   RAISE NOTICE '✓ Story 2.1 migration complete - orders + packages tables with multi-tenant isolation created';

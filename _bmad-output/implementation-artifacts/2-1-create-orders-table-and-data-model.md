@@ -43,8 +43,9 @@ so that we can store orders from multiple sources and re-process if parsing erro
 1. **RLS Policy:** Enforces that users can only access orders for their operator
    ```sql
    CREATE POLICY "orders_tenant_isolation" ON orders
-     FOR ALL USING (operator_id = auth.operator_id())
+     FOR ALL USING (operator_id = public.get_operator_id())
    ```
+   **Note:** Function is `public.get_operator_id()` (from Story 1.2), not `auth.operator_id()`
 
 2. **Unique Constraint:** Prevent duplicate order numbers within an operator
    ```sql
