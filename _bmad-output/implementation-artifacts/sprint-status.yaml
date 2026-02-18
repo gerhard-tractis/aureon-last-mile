@@ -51,8 +51,8 @@ development_status:
   1-8-set-up-monitoring-and-alerting-sentry-betterstack: done  # Sentry + BetterStack configured, Slack/email alerts working, CI/CD passing
   epic-1-retrospective: done  # Completed 2026-02-17, comprehensive team review with 6 action items and 3 prep tasks
 
-  epic-2: backlog
-  2-1-create-orders-table-and-data-model: backlog
+  epic-2: in-progress
+  2-1-create-orders-table-and-data-model: review
   2-2-build-csv-excel-upload-interface-with-validation: backlog
   2-3-implement-email-manifest-parsing-n8n-workflow: backlog
   2-4-build-manual-order-entry-form-fallback: backlog
