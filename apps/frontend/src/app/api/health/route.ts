@@ -13,7 +13,10 @@ import { createServerAdminClient } from '@/lib/supabase/serverAdminClient';
  *
  * Checks:
  * - Database connectivity (Supabase query)
- * - Memory usage (< 80% threshold)
+ *
+ * Note: Memory check removed — Vercel serverless functions have small initial heap sizes
+ * (often 30-50MB). heapUsed/heapTotal ratio routinely exceeds 80% without any real problem
+ * because Node.js expands the heap on demand. This caused persistent false 503 alerts.
  *
  * Response:
  * - 200: All checks passed (healthy)
@@ -26,23 +29,19 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   const checks = {
     database: false,
-    memory: false,
     timestamp: new Date().toISOString(),
   };
 
   try {
-    // Check 1: Database connectivity (using service role to bypass RLS)
+    // Check: Database connectivity (using service role to bypass RLS)
     const supabase = await createServerAdminClient();
     const { error } = await supabase.from('operators').select('id').limit(1);
     checks.database = !error;
 
-    // Check 2: Memory usage (warn if >80%)
-    const memUsage = process.memoryUsage();
-    const memUsagePct = (memUsage.heapUsed / memUsage.heapTotal) * 100;
-    checks.memory = memUsagePct < 80;
+    const isHealthy = checks.database;
 
-    // Overall health
-    const isHealthy = checks.database && checks.memory;
+    // Include memory info for observability (not used for health determination)
+    const memUsage = process.memoryUsage();
 
     return NextResponse.json(
       {
@@ -51,7 +50,7 @@ export async function GET() {
         memory: {
           heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
           heapTotal: `${Math.round(memUsage.heapTotal / 1024 / 1024)}MB`,
-          usagePercent: `${Math.round(memUsagePct)}%`,
+          rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
         },
       },
       { status: isHealthy ? 200 : 503 }
