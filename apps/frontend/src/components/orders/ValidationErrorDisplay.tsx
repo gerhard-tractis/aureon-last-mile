@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle, XCircle, Download } from 'lucide-react';
+import { CheckCircle, XCircle } from 'lucide-react';
 import { ValidationError } from '@/lib/validation/orderImportValidation';
 
 interface ValidationErrorDisplayProps {

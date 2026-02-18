@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, CheckCircle, Download, Loader2, ShieldAlert } from 'lucide-react';
+import { CheckCircle, Download, Loader2, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { createSPAClient } from '@/lib/supabase/client';
 import FileUploadForm from '@/components/orders/FileUploadForm';

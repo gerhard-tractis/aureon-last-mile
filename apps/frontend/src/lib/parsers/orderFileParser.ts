@@ -148,7 +148,7 @@ export async function parseExcel(file: File): Promise<ParseResult> {
   const data = rows.map((row) => {
     const obj: Record<string, string> = {};
     headers.forEach((header, index) => {
-      const cellValue = (row as string[])[index];
+      const cellValue = (row as unknown[])[index];
       // Handle Date objects from cellDates: true
       if (cellValue instanceof Date) {
         obj[header] = cellValue.toISOString().split('T')[0]; // YYYY-MM-DD

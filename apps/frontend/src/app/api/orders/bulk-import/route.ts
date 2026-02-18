@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       .map((r) => r.order_number?.trim())
       .filter(Boolean);
 
-    const operatorId = session.user.app_metadata?.claims?.operator_id;
+    const operatorId = session.user.app_metadata?.claims?.operator_id as string | undefined;
     let dbDuplicates: string[] = [];
 
     if (orderNumbers.length > 0 && operatorId) {
@@ -156,6 +156,13 @@ export async function POST(request: NextRequest) {
     const errorRows = new Set(allErrors.map((e) => e.row));
     const validRows = parsed.data.filter((_, i) => !errorRows.has(i + 2));
 
+    if (!operatorId) {
+      return NextResponse.json(
+        { code: 'FORBIDDEN', message: 'No operator assigned to user', timestamp: new Date().toISOString() },
+        { status: 403 }
+      );
+    }
+
     if (validRows.length === 0) {
       return NextResponse.json(
         {
@@ -182,7 +189,7 @@ export async function POST(request: NextRequest) {
       delivery_date: normalizeDeliveryDate(row.delivery_date),
       delivery_window_start: row.delivery_window_start?.trim() || null,
       delivery_window_end: row.delivery_window_end?.trim() || null,
-      retailer_name: row.retailer_name?.trim() || formData.get('retailer_name') || null,
+      retailer_name: row.retailer_name?.trim() || (formData.get('retailer_name') as string) || null,
       raw_data: row,
       metadata: {},
       imported_via: 'CSV' as const,
@@ -191,6 +198,7 @@ export async function POST(request: NextRequest) {
 
     const { error: insertError } = await supabase
       .from('orders')
+      // @ts-expect-error -- createServerClient third generic causes .insert() to resolve as never
       .insert(ordersToInsert);
 
     if (insertError) {
@@ -207,19 +215,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit log
+    // @ts-expect-error -- createServerClient third generic causes .insert() to resolve as never
     await supabase.from('audit_logs').insert({
       operator_id: operatorId,
       user_id: userId,
       action: 'CSV_IMPORT',
       resource_type: 'order',
-      resource_id: null,
       changes_json: {
         file_name: file.name,
         rows_imported: validRows.length,
         rows_failed: allErrors.length,
       },
-      ip_address: request.headers.get('x-forwarded-for'),
-      timestamp: now,
+      ip_address: request.headers.get('x-forwarded-for') ?? 'unknown',
     });
 
     return NextResponse.json(
