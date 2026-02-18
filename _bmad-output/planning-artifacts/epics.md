@@ -866,11 +866,13 @@ Operations managers can import retailer orders into the platform via email manif
 
 ---
 
-### Story 2.1: Create Orders Table and Data Model
+### Story 2.1: Create Orders and Packages Tables with Data Model
 
 As an Aureon DevOps engineer,
-I want to create the orders table with fields for both normalized data and raw retailer format,
-So that we can store orders from multiple sources and re-process if parsing errors occur.
+I want to create the orders and packages tables with fields for both normalized data and raw retailer format,
+So that we can store orders from multiple sources, track individual scannable packages (cartons), and re-process if parsing errors occur.
+
+**Note:** Scope expanded during implementation (2026-02-17) to include packages table (16 columns) based on domain analysis. Packages are the scannable units (CTN labels) that compose orders, supporting barcode scanning workflows in Epic 4 (Pickup Verification).
 
 **Acceptance Criteria:**
 
