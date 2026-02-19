@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Order Data Ingestion & Automation Worker
 **Story ID:** 2.3
-**Status:** ready-for-dev
+**Status:** review
 **Created:** 2026-02-18
 
 **Note:** Scope changed 2026-02-18 via Sprint Change Proposal. Original "Email Manifest Parsing" story replaced with automation worker infrastructure. See `_bmad-output/planning-artifacts/sprint-change-proposal-2026-02-18.md`.
@@ -115,24 +115,24 @@ And Deployment runbook has new VPS section replacing Railway section:
 ## Tasks / Subtasks
 
 ### Phase 1: Repository Structure (AC: Repository Structure)
-- [ ] Check root `package.json` — if using npm workspaces, add `"apps/worker"` to workspaces array
-- [ ] Create `apps/worker/package.json` (name: "@aureon/worker", private, engines: node >=20)
-- [ ] Create `apps/worker/tsconfig.json`
-- [ ] Create `apps/worker/src/index.ts` (placeholder: `console.log('Aureon worker starting...')`)
-- [ ] Create `apps/worker/n8n/workflows/.gitkeep`
-- [ ] Create `apps/worker/scripts/setup.sh` (Phase 2 content)
-- [ ] Create `apps/worker/scripts/deploy.sh` (Phase 2 content)
-- [ ] Create `apps/worker/.env.example` — complete template (see Environment Variables section below)
-- [ ] Create `apps/worker/README.md` — setup guide, service management, troubleshooting, n8n workflow export procedure
+- [x] Check root `package.json` — if using npm workspaces, add `"apps/worker"` to workspaces array — **N/A: no root package.json in this repo; apps/frontend and apps/mobile are independent**
+- [x] Create `apps/worker/package.json` (name: "@aureon/worker", private, engines: node >=20)
+- [x] Create `apps/worker/tsconfig.json`
+- [x] Create `apps/worker/src/index.ts` (placeholder: `console.log('Aureon worker starting...')`)
+- [x] Create `apps/worker/n8n/workflows/.gitkeep`
+- [x] Create `apps/worker/scripts/setup.sh` (Phase 2 content)
+- [x] Create `apps/worker/scripts/deploy.sh` (Phase 2 content)
+- [x] Create `apps/worker/.env.example` — complete template (see Environment Variables section below)
+- [x] Create `apps/worker/README.md` — setup guide, service management, troubleshooting, n8n workflow export procedure
 
 ### Phase 2: VPS Setup Script (AC: VPS Provisioning, Browser Automation)
 
 Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with `set -e` error handling. All commands must check if already done before executing (idempotent).
 
-- [ ] **System updates:** `apt update && apt upgrade -y`
-- [ ] **Create dedicated user:** `useradd -m -s /bin/bash aureon` (if not exists)
-- [ ] **Grant limited sudo:** `aureon ALL=(ALL) NOPASSWD: /bin/systemctl` for service management
-- [ ] **SSH hardening** (`/etc/ssh/sshd_config`):
+- [x] **System updates:** `apt update && apt upgrade -y`
+- [x] **Create dedicated user:** `useradd -m -s /bin/bash aureon` (if not exists)
+- [x] **Grant limited sudo:** `aureon ALL=(ALL) NOPASSWD: /bin/systemctl` for service management
+- [x] **SSH hardening** (`/etc/ssh/sshd_config`):
   ```
   PasswordAuthentication no
   PermitRootLogin no
@@ -143,7 +143,7 @@ Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with
   ClientAliveInterval 300
   ClientAliveCountMax 2
   ```
-- [ ] **Firewall (UFW):**
+- [x] **Firewall (UFW):**
   ```bash
   sudo ufw default deny incoming
   sudo ufw default allow outgoing
@@ -151,35 +151,35 @@ Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with
   sudo ufw allow 5678/tcp    # n8n web UI
   sudo ufw --force enable
   ```
-- [ ] **Security packages:**
+- [x] **Security packages:**
   ```bash
   sudo apt install -y fail2ban unattended-upgrades
   sudo dpkg-reconfigure -plow unattended-upgrades
   # fail2ban: bantime=3600, maxretry=3
   ```
-- [ ] **Node.js 20 LTS via NodeSource** (NOT nvm — nvm doesn't work with systemd):
+- [x] **Node.js 20 LTS via NodeSource** (NOT nvm — nvm doesn't work with systemd):
   ```bash
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y nodejs
   # Gives /usr/bin/node and /usr/bin/npm — stable paths for systemd
   ```
-- [ ] **n8n 2.9.0** (pinned version — 8 CVEs in older versions):
+- [x] **n8n 2.9.0** (pinned version — 8 CVEs in older versions):
   ```bash
   sudo npm install -g n8n@2.9.0
   ```
-- [ ] **n8n PostgreSQL backend** (local PostgreSQL or Supabase schema):
+- [x] **n8n PostgreSQL backend** (local PostgreSQL or Supabase schema):
   ```bash
   sudo apt install -y postgresql
   sudo -u postgres createuser n8n
   sudo -u postgres createdb n8n -O n8n
   # Add DB_TYPE=postgresdb + connection vars to .env
   ```
-- [ ] **Playwright + Chromium:**
+- [x] **Playwright + Chromium:**
   ```bash
   sudo -u aureon npx playwright install --with-deps chromium
   # Binaries at /home/aureon/.cache/ms-playwright/ (~200MB)
   ```
-- [ ] **4GB swap** (safety net for Chromium memory spikes — peak 826-874MB):
+- [x] **4GB swap** (safety net for Chromium memory spikes — peak 826-874MB):
   ```bash
   sudo fallocate -l 4G /swapfile
   sudo chmod 600 /swapfile
@@ -189,7 +189,7 @@ Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with
   echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
   sudo sysctl -p
   ```
-- [ ] **systemd service: n8n** (`/etc/systemd/system/n8n.service`):
+- [x] **systemd service: n8n** (`/etc/systemd/system/n8n.service`):
   ```ini
   [Unit]
   Description=n8n Workflow Automation
@@ -214,7 +214,7 @@ Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with
   [Install]
   WantedBy=multi-user.target
   ```
-- [ ] **systemd service: worker** (`/etc/systemd/system/aureon-worker.service`):
+- [x] **systemd service: worker** (`/etc/systemd/system/aureon-worker.service`):
   ```ini
   [Unit]
   Description=Aureon Automation Worker
@@ -238,9 +238,9 @@ Write `apps/worker/scripts/setup.sh` — idempotent VPS provisioning script with
   [Install]
   WantedBy=multi-user.target
   ```
-- [ ] **Secure .env file:** `chmod 600 /home/aureon/.env && chown aureon:aureon /home/aureon/.env`
-- [ ] **Enable and start services:** `systemctl daemon-reload && systemctl enable n8n aureon-worker && systemctl start n8n`
-- [ ] **Smoke tests:**
+- [x] **Secure .env file:** `chmod 600 /home/aureon/.env && chown aureon:aureon /home/aureon/.env`
+- [x] **Enable and start services:** `systemctl daemon-reload && systemctl enable n8n aureon-worker && systemctl start n8n`
+- [x] **Smoke tests:**
   ```bash
   # 1. n8n health check
   curl -sf http://localhost:5678/healthz || { echo "n8n health check FAILED"; exit 1; }
@@ -331,8 +331,8 @@ jobs:
 
 ### Phase 4: Documentation (AC: Documentation Updates)
 
-- [ ] Update `_bmad-output/planning-artifacts/architecture.md` — specific sections to change:
-  - [ ] **"Backend + Workers: Railway" section** → Replace entirely with:
+- [x] Update `_bmad-output/planning-artifacts/architecture.md` — specific sections to change:
+  - [x] **"Backend + Workers: Railway" section** → Replace entirely with:
     ```
     Automation Worker: Hostinger VPS (São Paulo, KVM 2)
     - n8n 2.x (workflow orchestration, IMAP listener, CSV processing) — 24/7 systemd daemon
@@ -341,19 +341,19 @@ jobs:
     - Node.js 20 LTS runtime
     - No Redis — Supabase jobs table with FOR UPDATE SKIP LOCKED replaces BullMQ
     ```
-  - [ ] **Application structure diagram** → Add `apps/worker/` entry
-  - [ ] **External services table** → Add rows:
+  - [x] **Application structure diagram** → Add `apps/worker/` entry
+  - [x] **External services table** → Add rows:
     - `Hostinger VPS | KVM 2: automation worker infrastructure | $6.99/month`
     - `Groq API | LLM inference for browser agent (Llama 4 Scout) | ~$1/month`
-  - [ ] **Service boundaries diagram** → Redraw: `Vercel ↔ Supabase ↔ VPS` (Supabase is sole contract layer)
-  - [ ] **Technology dependency graph** → Remove Railway, Redis, BullMQ; add VPS, Playwright, n8n 2.x
-  - [ ] **"aureon-api" Railway references** → Remove (Vercel handles both frontend AND API routes)
-  - [ ] Add note: "BullMQ (Redis job queue) replaced by Supabase `jobs` table with `FOR UPDATE SKIP LOCKED`"
-- [ ] Update `apps/frontend/docs/deployment-runbook.md`:
-  - [ ] **Railway section** → Add deprecation callout: `> **OBSOLETE (2026-02-18):** n8n moved to Hostinger VPS. See VPS Deployment section below.`
-  - [ ] **Remove** `RAILWAY_TOKEN` from required secrets table
-  - [ ] **Add** new secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (with format notes)
-  - [ ] **Add new section: "VPS Deployment (Hostinger)"** with:
+  - [x] **Service boundaries diagram** → Redraw: `Vercel ↔ Supabase ↔ VPS` (Supabase is sole contract layer)
+  - [x] **Technology dependency graph** → Remove Railway, Redis, BullMQ; add VPS, Playwright, n8n 2.x
+  - [x] **"aureon-api" Railway references** → Removed key references; remaining historical refs preserved as context
+  - [x] Add note: "BullMQ (Redis job queue) replaced by Supabase `jobs` table with `FOR UPDATE SKIP LOCKED`"
+- [x] Update `apps/frontend/docs/deployment-runbook.md`:
+  - [x] **Railway section** → Add deprecation callout: `> **OBSOLETE (2026-02-18):** n8n moved to Hostinger VPS. See VPS Deployment section below.`
+  - [x] **Remove** `RAILWAY_TOKEN` from required secrets table
+  - [x] **Add** new secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` (with format notes)
+  - [x] **Add new section: "VPS Deployment (Hostinger)"** with:
     1. Initial provisioning checklist
     2. Running setup.sh
     3. Environment variables table (Required/Optional, Component, How to Generate)
@@ -684,25 +684,46 @@ Story 2.3 provides the runtime environment. Story 2.7 fills in the application l
 
 ### Agent Model Used
 
-_To be filled by dev agent_
+claude-sonnet-4-6 (Claude Code)
 
 ### Debug Log References
 
-_To be filled by dev agent_
+- No root `package.json` found — npm workspaces N/A. Each app (`apps/frontend`, `apps/mobile`) is independent.
+- `appleboy/ssh-action` pinned to commit SHA `a7d4b97cd9e01e8e09cedc7c85cb9b2bb4e00ab4` (v1.2.4) per supply chain security requirement.
+- Phase 5 (Manual VPS Provisioning) requires Gerhard's Hostinger account credentials — HALT condition. Infrastructure scripts are ready; actual provisioning awaits Gerhard.
 
 ### Completion Notes List
 
-_To be filled by dev agent_
+- **Phase 1 (Repository Structure):** All files created: `apps/worker/package.json`, `tsconfig.json`, `src/index.ts`, `n8n/workflows/.gitkeep`, `scripts/setup.sh`, `scripts/deploy.sh`, `.env.example`, `README.md`.
+- **Phase 2 (VPS Setup Scripts):** `setup.sh` is idempotent, covers all 14 provisioning steps including UFW (`ufw limit 22/tcp` not `allow`), NodeSource APT (not nvm), n8n 2.9.0 pinned, PostgreSQL backend, Playwright + Chromium, 4GB swap, both systemd services with resource limits, smoke tests. `deploy.sh` has `set -euo pipefail`, disk pre-check, `npm ci`, build, restart, health check.
+- **Phase 3 (GitHub Actions):** `.github/workflows/deploy-worker.yml` created with `appleboy/ssh-action` pinned to commit SHA, concurrency group `vps-deploy`, `cancel-in-progress: false`, 10-minute timeout, path filter `apps/worker/**`.
+- **Phase 4 (Documentation):** `_bmad-output/planning-artifacts/architecture.md` updated — Railway replaced with Hostinger VPS in all key sections (tech stack YAML, Backend+Workers section, service boundaries, technology dependency graph, application structure, external services, caching layer). `apps/frontend/docs/deployment-runbook.md` v1.1 — added full VPS Deployment section, deprecated Railway section, updated GitHub secrets table (removed `RAILWAY_TOKEN`, added `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`), updated ToC and changelog.
+- **Phase 5 (Manual VPS Provisioning):** HALT — requires Gerhard's Hostinger account. All scripts and configuration are ready. See open items below.
 
 ### File List
 
-_To be filled by dev agent_
+**New files:**
+- `apps/worker/package.json`
+- `apps/worker/tsconfig.json`
+- `apps/worker/src/index.ts`
+- `apps/worker/n8n/workflows/.gitkeep`
+- `apps/worker/scripts/setup.sh`
+- `apps/worker/scripts/deploy.sh`
+- `apps/worker/.env.example`
+- `apps/worker/README.md`
+- `.github/workflows/deploy-worker.yml`
+
+**Modified files:**
+- `_bmad-output/planning-artifacts/architecture.md`
+- `apps/frontend/docs/deployment-runbook.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/2-3-set-up-vps-infrastructure-and-n8n.md` (this file)
 
 ---
 
 ## Story Completion Status
 
-**Status:** ready-for-dev
+**Status:** review
 **Analysis Completed:** 2026-02-18
 **Quality Review:** Passed (4-agent validation: architecture, epics/PRD, CI/CD patterns, web research)
 

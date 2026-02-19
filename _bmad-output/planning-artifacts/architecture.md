@@ -20,13 +20,13 @@ mvpPriority:
 implementationTimeline: '4 weeks total (parallel development possible)'
 techStack:
   frontend: 'Vercel (Next.js 14 App Router)'
-  backend: 'Railway (Node.js/Express + Background Workers)'
+  backend: 'Hostinger VPS — São Paulo (n8n 2.x + Automation Worker + Playwright)'
   database: 'Supabase (PostgreSQL with RLS)'
   auth: 'Supabase Auth (JWT + RBAC)'
   realtime: 'Supabase Realtime (WebSockets)'
   storage: 'Supabase Storage'
-  jobQueue: 'BullMQ on Railway'
-  integration: 'n8n (self-hosted on Railway)'
+  jobQueue: 'Supabase jobs table (FOR UPDATE SKIP LOCKED — no Redis/BullMQ)'
+  integration: 'n8n 2.9.0 (self-hosted on Hostinger VPS, systemd daemon)'
 starterTemplate:
   selected: 'Razikus Supabase-Next.js Template + PWA Enhancement'
   repo: 'https://github.com/Razikus/supabase-nextjs-template'
@@ -57,15 +57,15 @@ architecturalDecisions:
     display: 'Toast notifications, inline validation, modal dialogs, error boundaries'
   caching:
     frontend: 'TanStack Query (30s stale, 60s background refresh)'
-    api: 'Redis on Railway (5min metrics, 15min lists, 1hr rules)'
+    api: 'TanStack Query client-side cache only (Redis removed — Supabase queries are fast enough for MVP)'
     cdn: 'Vercel (static assets cached forever with hash-based filenames)'
     offline: 'Service Worker + IndexedDB (app shell, scan queue, manifests)'
   migrations: 'Supabase Migrations (SQL files in Git, CLI-based deployment)'
   monitoring:
     errors: 'Sentry (5K/month free tier)'
-    performance: 'Vercel Analytics + Railway Dashboard'
-    uptime: 'BetterStack or UptimeRobot'
-    logging: 'Structured logs with request IDs on Railway'
+    performance: 'Vercel Analytics + VPS systemd journald'
+    uptime: 'BetterStack (n8n healthz + VPS SSH)'
+    logging: 'Structured JSON logs to stdout → journald (VPS worker), Sentry (errors)'
   cicd: 'GitHub Actions (CI: test → type-check → lint → build; CD: manual deployment for cost control)'
   apiDocs: 'OpenAPI/Swagger (interactive docs at /api/docs)'
   pdfGeneration: 'Client-side jsPDF (offline-capable for mobile PWA)'
@@ -209,12 +209,12 @@ Aureon Last Mile encompasses **82 functional requirements** organized into 13 ca
 - **Deployment**: Manual deployment via dashboard/CLI (cost control), global CDN
 - **Cost**: Free tier for MVP
 
-**Backend API + Workers:**
-- **Platform**: Railway (Node.js/Express or Next.js API)
-- **Capabilities**: No timeout limits, background job workers, long-running batch processes
-- **Job Queue**: BullMQ for background task processing
-- **Deployment**: Manual deployment (cost control)
-- **Cost**: ~$5-20/month for MVP, scales with usage
+**Automation Worker:**
+- **Platform**: Hostinger VPS (São Paulo, KVM 2 — 2 vCPU, 8 GB RAM, 100 GB NVMe)
+- **Services**: n8n 2.9.0 (workflow orchestration), Playwright + Chromium (browser automation), Worker process (job orchestrator) — all as systemd daemons
+- **Job Queue**: Supabase `jobs` table with `FOR UPDATE SKIP LOCKED` — no Redis/BullMQ
+- **Deployment**: GitHub Actions → SSH → deploy.sh (auto on push to `apps/worker/**`)
+- **Cost**: $6.99/month fixed
 
 **Database + Services:**
 - **Platform**: Supabase
@@ -228,7 +228,7 @@ Aureon Last Mile encompasses **82 functional requirements** organized into 13 ca
 **Rationale for Stack Choice:**
 - **Supabase PostgreSQL RLS**: Solves multi-tenant isolation requirement (NFR-S2) out-of-box
 - **Supabase Auth**: Provides JWT, RBAC, session management (FR50-FR58) without custom implementation
-- **Railway**: Handles bulk operations (100-200 orders), no serverless timeout limits, background workers
+- **Hostinger VPS**: Handles bulk operations (100-200 orders), no serverless timeout limits, persistent Playwright installation, full systemd control
 - **Vercel**: Optimized for Next.js, fast CDN delivery, perfect for frontend hosting
 - **Combined**: Fast MVP iteration, managed services reduce DevOps overhead, scales to production workload
 
@@ -237,13 +237,15 @@ Aureon Last Mile encompasses **82 functional requirements** organized into 13 ca
 - **Routing Tools**: SimpliRoute, Beetrack, Driv.in APIs
 - **Email Service**: For manifest parsing when APIs unavailable
 - **Chart Library**: Chart.js for BI dashboard visualizations (from mockups)
+- **Hostinger VPS**: KVM 2 São Paulo — automation worker infrastructure ($6.99/month)
+- **Groq API**: LLM inference for browser agent (Llama 4 Scout) — Story 2.6 (~$1/month)
 
 **Infrastructure Requirements:**
-- **Hosting**: Cloud-based (Vercel + Railway + Supabase), no on-premise infrastructure
-- **SSL/TLS**: Automatic via platform providers (TLS 1.3 requirement met)
+- **Hosting**: Cloud-based (Vercel + Hostinger VPS + Supabase), no on-premise infrastructure
+- **SSL/TLS**: Automatic via Vercel/Supabase; VPS runs on IP:5678 for MVP (reverse proxy future enhancement)
 - **CDN**: Vercel global CDN for frontend assets
 - **Backups**: Automated daily via Supabase (30-day retention)
-- **Monitoring**: Vercel Analytics, Railway metrics, Supabase dashboard
+- **Monitoring**: Vercel Analytics, BetterStack (VPS uptime), Sentry (worker errors), journald (service logs)
 
 ---
 
@@ -847,15 +849,18 @@ UPDATE orders SET deleted_at = NULL WHERE id = 'order-123';
 - **Cost**: Free tier for MVP
 - **Affects**: Frontend deployment, CDN delivery, preview environments
 
-**Backend + Workers: Railway (Node.js/Express + n8n)**
+**Automation Worker: Hostinger VPS (São Paulo, KVM 2)**
 - **Rationale**:
-  - No timeout limits (handles 100-200 order manifests)
-  - Background workers (BullMQ)
-  - Built-in Redis (for BullMQ + caching)
-  - Single-click n8n deployment
-- **Features**: Manual deployment, environment variables, persistent storage
-- **Cost**: ~$5-20/month MVP
-- **Affects**: API hosting, background jobs, n8n workflows, job queues
+  - No timeout limits (handles long-running browser automation + manifest imports)
+  - Persistent Playwright/Chromium installation (not possible in ephemeral containers)
+  - Full systemd control (n8n daemon, worker daemon, auto-restart)
+  - No Redis needed — Supabase `jobs` table with `FOR UPDATE SKIP LOCKED` replaces BullMQ
+  - $6.99/month vs Railway's $5-20/month — comparable cost, more capability
+- **Services**: n8n 2.9.0 (workflow orchestration, IMAP listener, CSV processing), Playwright + Chromium (browser automation, on-demand), Worker process (job queue orchestrator)
+- **Deployment**: GitHub Actions → SSH → deploy.sh (on push to `apps/worker/**`)
+- **Cost**: $6.99/month fixed
+- **Affects**: Automation jobs, n8n workflows, browser scraping (Story 2.6)
+- **Note**: BullMQ (Redis job queue) replaced by Supabase `jobs` table with `FOR UPDATE SKIP LOCKED`
 
 **Database + Services: Supabase**
 - **Components**: PostgreSQL, Auth, Realtime, Storage, Edge Functions
@@ -871,12 +876,11 @@ UPDATE orders SET deleted_at = NULL WHERE id = 'order-123';
 - Order details: **1 minute** stale time
 - **Rationale**: Balance freshness vs performance, reduce unnecessary API calls
 
-**Layer 2: API (Redis on Railway)**
-- SLA calculations: **5 minutes** TTL
-- Customer/retailer lists: **15 minutes** TTL
-- Sectorization rules: **1 hour** TTL
+**Layer 2: Supabase (Query-level)**
 - Real-time order status: **No cache** (use Supabase Realtime)
-- **Rationale**: Expensive queries cached longer, frequently changing data cached shorter
+- Read replicas handle read-heavy dashboard queries
+- **Rationale**: Redis removed — Supabase query performance is sufficient for MVP scale. Re-evaluate at 5+ customers.
+- **Note**: BullMQ (Redis job queue) replaced by Supabase `jobs` table with `FOR UPDATE SKIP LOCKED`
 
 **Layer 3: CDN (Vercel - Automatic)**
 - Static assets: **Forever** (hash-based filenames invalidate automatically)
@@ -1070,27 +1074,27 @@ Next.js 14 App Router
 ├─ Serwist (PWA, offline)
 └─ shadcn/ui (components from template)
 
-Railway Backend
+Hostinger VPS (São Paulo, KVM 2)
     ↓
-├─ Express (REST API)
-├─ BullMQ (background jobs)
-├─ Redis (job queue + caching)
-└─ n8n (integration workflows)
+├─ n8n 2.9.0 (workflow orchestration — systemd daemon)
+├─ Playwright + Chromium (browser automation — on-demand)
+├─ Node.js 20 LTS via NodeSource APT (NOT nvm)
+└─ PostgreSQL (local, n8n backend — prevents SQLite write-locks)
 
 Supabase
     ↓
-├─ PostgreSQL (data persistence)
+├─ PostgreSQL (data persistence + jobs table replaces BullMQ)
 ├─ Auth (JWT, RBAC)
 ├─ Realtime (WebSockets)
-└─ Storage (PDFs, signatures)
+└─ Storage (PDFs, signatures, raw-files bucket)
 
 GitHub Actions
     ↓
 ├─ Jest (unit tests)
-├─ Playwright (E2E tests)
 ├─ TypeScript (type checking)
 ├─ ESLint (linting)
-└─ Vercel + Railway (manual deployment)
+├─ Vercel (frontend deploy)
+└─ SSH → deploy.sh (worker deploy to VPS)
 ```
 
 ---
@@ -2455,7 +2459,7 @@ _This section defines the complete file and directory structure for Aureon Last 
 | **FR24-FR28: Warehouse WMS** | `app/warehouse/` | `components/warehouse/` | `app/api/inventory/` | Location tracking |
 | **FR29-FR37: Loading & Sectorization** | `app/loading/` | `components/loading/` | `app/api/loading/`, `app/api/sectorization/` | Routing tool integration |
 | **FR38-FR41: Capacity Planning** | `app/capacity/` | `components/capacity/` | `app/api/capacity/` | Forecast algorithms |
-| **FR42-FR49: Integration Hub** | `app/integrations/` | `components/integrations/` | `lib/integrations/` | **Separate n8n instance on Railway** |
+| **FR42-FR49: Integration Hub** | `app/integrations/` | `components/integrations/` | `lib/integrations/` | **n8n 2.9.0 on Hostinger VPS (systemd)** |
 | **FR50-FR58: User Management** | `app/(auth)/` | `components/auth/` | `app/api/users/` | Supabase Auth integration |
 | **FR59-FR64: AI Support Agent** | `app/support/` | `components/support/` | `app/api/ai/` | Claude API integration |
 | **FR65-FR70: Platform Admin** | `app/admin/` | `components/admin/` | `app/api/admin/` | Tenant provisioning |
@@ -2485,8 +2489,9 @@ aureon-last-mile/
 ├── .github/
 │   └── workflows/
 │       ├── test.yml                      # Run tests on PR
-│       ├── deploy-preview.yml            # Deploy preview to Vercel/Railway
-│       └── deploy-production.yml         # Deploy to production
+│       ├── ci.yml                        # CI: lint, typecheck, build
+│       ├── deploy.yml                    # Deploy Supabase migrations + Vercel
+│       └── deploy-worker.yml             # Deploy worker to VPS via SSH
 │
 ├── public/                               # Static assets
 │   ├── icons/                            # PWA icons
@@ -2889,6 +2894,19 @@ aureon-last-mile/
     ├── seed-db.ts                        # Seed database
     ├── generate-types.ts                 # Generate types from Supabase
     └── deploy.sh                         # Deployment script
+│
+└── apps/worker/                          # Automation worker (VPS — Stories 2.3+)
+    ├── package.json                      # @aureon/worker, Node.js >=20
+    ├── tsconfig.json
+    ├── .env.example                      # Copy to /home/aureon/.env on VPS (chmod 600)
+    ├── README.md                         # Setup, operation, troubleshooting, n8n export
+    ├── src/
+    │   └── index.ts                      # Entry point (placeholder — Story 2.7 adds logic)
+    ├── n8n/
+    │   └── workflows/                    # n8n workflow exports (JSON)
+    └── scripts/
+        ├── setup.sh                      # Idempotent VPS provisioning (run as root)
+        └── deploy.sh                     # Deployment (called by GitHub Actions)
 ```
 
 ---
@@ -2973,18 +2991,18 @@ App Layout (layout.tsx)
 **Service Layer Organization:**
 
 ```
-Frontend (Vercel - Next.js)
+Frontend (Vercel - Next.js API Routes)
     ↓
-API Layer (Next.js API Routes - Railway backend)
-    ↓
-    ├─ Supabase (PostgreSQL + Auth + Realtime + Storage)
-    ├─ Redis (Caching + BullMQ job queue)
-    └─ n8n (Integration orchestration)
-    ↓
-External Services
-    ├─ Retailer APIs (Falabella, Shopee, Mercado Libre, etc.)
-    ├─ Routing Tools (SimpliRoute, Beetrack, Driv.in)
-    └─ AI Services (Claude API for support agent)
+    ↔  Supabase (PostgreSQL + Auth + Realtime + Storage)  ↔  VPS (n8n 2.x + Worker + Playwright)
+    ↓                                                              ↓
+External Services                                          External Sources
+    ├─ Retailer APIs (Falabella, Shopee, etc.)             ├─ IMAP email (manifest attachments)
+    ├─ Routing Tools (SimpliRoute, Beetrack, Driv.in)      ├─ Retailer web portals (Playwright)
+    └─ AI Services (Claude API for support agent)          └─ Groq API (Llama 4 Scout — Story 2.6)
+
+Contract Layer: Supabase is the sole communication bridge between Vercel and VPS.
+No direct Vercel ↔ VPS communication.
+No Redis. Job queue = Supabase jobs table (FOR UPDATE SKIP LOCKED).
 ```
 
 **Service Communication Patterns:**

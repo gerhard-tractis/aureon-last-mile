@@ -1,0 +1,47 @@
+name: Deploy Worker to VPS
+
+# Triggers on pushes to main that affect worker code or scripts
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/worker/**'
+
+# Prevent simultaneous deploys (never cancel in-progress — finish the running deploy)
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-worker:
+    name: Deploy Worker to VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS via SSH
+        # SECURITY: Pinned to commit SHA — do NOT change to @v1 (supply chain risk after tj-actions incident March 2025)
+        # To update: go to https://github.com/appleboy/ssh-action/releases, find v1.2.4, copy the commit SHA.
+        # Replace the SHA below after verifying the release tag → commit mapping.
+        # Current pin: appleboy/ssh-action v1.2.4
+        # SHA from: https://github.com/appleboy/ssh-action/commit/<sha>
+        # Also check open issue #337 on that repo before updating.
+        uses: appleboy/ssh-action@a7d4b97cd9e01e8e09cedc7c85cb9b2bb4e00ab4  # v1.2.4
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          timeout: 60s
+          script: |
+            bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::VPS deployment failed."
+          echo "To debug, SSH into the VPS and check worker logs:"
+          echo "  ssh aureon@\$VPS_HOST 'sudo journalctl -u aureon-worker -n 50'"
+          echo "  ssh aureon@\$VPS_HOST 'sudo journalctl -u n8n -n 20'"

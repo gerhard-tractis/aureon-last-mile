@@ -54,7 +54,7 @@ development_status:
   epic-2: in-progress
   2-1-create-orders-table-and-data-model: done  # Code review: 3 fixes applied (H1 packages types, H2 env fallback, M2 stale ref), 3 acknowledged
   2-2-build-csv-excel-upload-interface-with-validation: done
-  2-3-set-up-vps-infrastructure-and-n8n: ready-for-dev
+  2-3-set-up-vps-infrastructure-and-n8n: review  # Phases 1-4 complete; Phase 5 (manual VPS provisioning) awaits Gerhard
   2-4-create-automation-worker-database-schema: backlog
   2-5-implement-easy-csv-email-connector: backlog
   2-6-implement-paris-beetrack-browser-connector: backlog

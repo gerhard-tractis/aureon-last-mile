@@ -1,7 +1,7 @@
 # Deployment Runbook - Aureon Last Mile
 
-**Version:** 1.0
-**Last Updated:** February 17, 2026
+**Version:** 1.1
+**Last Updated:** February 19, 2026
 **Owner:** Charlie (Senior Dev)
 **Purpose:** Complete guide for deploying Aureon Last Mile to production environments
 
@@ -12,10 +12,11 @@
 1. [GitHub Secrets Configuration](#github-secrets-configuration)
 2. [Vercel Configuration](#vercel-configuration)
 3. [Supabase Setup](#supabase-setup)
-4. [Railway Deployment](#railway-deployment)
-5. [Migration Workflow](#migration-workflow)
-6. [Common Deployment Errors](#common-deployment-errors)
-7. [Verification Checklist](#verification-checklist)
+4. [VPS Deployment (Hostinger)](#vps-deployment-hostinger) ← Story 2.3+
+5. [Railway Deployment](#railway-deployment) ← OBSOLETE (2026-02-18)
+6. [Migration Workflow](#migration-workflow)
+7. [Common Deployment Errors](#common-deployment-errors)
+8. [Verification Checklist](#verification-checklist)
 
 ---
 
@@ -32,7 +33,9 @@ All secrets must be configured in **Settings → Secrets and variables → Actio
 | `VERCEL_PROJECT_ID` | Identify Vercel project | `.vercel/project.json` → `projectId` | `prj_...` (starts with prj_) |
 | `VERCEL_ORG_ID` | Identify Vercel team/org | `.vercel/project.json` → `orgId` | `team_...` (starts with team_) |
 | `SENTRY_AUTH_TOKEN` | Upload source maps | Sentry → Settings → Auth Tokens | `sntryu_...` |
-| `RAILWAY_TOKEN` | Deploy n8n backend (Story 2.3+) | Railway Dashboard → Account → Tokens | `railway_...` |
+| `VPS_HOST` | VPS IP address for worker deploys | Hostinger dashboard → VPS details | `192.168.x.x` |
+| `VPS_USER` | SSH username for VPS | Fixed value: `aureon` | `aureon` |
+| `VPS_SSH_KEY` | ed25519 private key for VPS SSH | Generate locally (see VPS section) | Full file content including `-----BEGIN/END-----` |
 
 ### How to Add Secrets
 
@@ -202,7 +205,143 @@ postgresql://postgres.[project-ref]:[password]@aws-0-us-east-1.pooler.supabase.c
 
 ---
 
+## VPS Deployment (Hostinger)
+
+> **Active as of Story 2.3 (2026-02-18).** n8n and automation worker run on a Hostinger KVM 2 VPS (São Paulo). See `apps/worker/README.md` for detailed setup instructions.
+
+### VPS Specifications
+
+| Property | Value |
+|----------|-------|
+| Provider | Hostinger KVM 2 |
+| Location | São Paulo, Brazil |
+| CPU | 2 vCPU |
+| RAM | 8 GB + 4 GB swap |
+| Storage | 100 GB NVMe |
+| OS | Ubuntu 24.04 LTS |
+| Cost | $6.99/month |
+
+### Initial Provisioning Checklist
+
+- [ ] Provision Hostinger KVM 2 VPS, verify billing/auto-renewal
+- [ ] Generate SSH key pair: `ssh-keygen -t ed25519 -f aureon-vps-key -N "" -C "aureon-ci-cd"`
+- [ ] Copy public key to VPS: `ssh-copy-id -i aureon-vps-key.pub root@<VPS_IP>`
+- [ ] Clone repo on VPS as root: `git clone <repo> ~/aureon-last-mile`
+- [ ] Copy `.env.example` to `/home/aureon/.env` and fill in values
+- [ ] Run setup script: `bash ~/aureon-last-mile/apps/worker/scripts/setup.sh`
+- [ ] Add GitHub secrets: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`
+- [ ] Navigate to `http://<VPS_IP>:5678` and create n8n owner account
+- [ ] Verify Supabase connectivity (see setup.sh smoke tests)
+- [ ] Create Supabase Storage bucket `raw-files` (Stories 2.5-2.6)
+- [ ] Configure BetterStack: HTTP monitor on `http://<VPS_IP>:5678/healthz`
+- [ ] Configure Sentry: Create `aureon-worker` project, add DSN to `.env`
+- [ ] Trigger test deploy: push change to `apps/worker/`, verify GitHub Actions
+
+### Running setup.sh
+
+The setup script is **idempotent** — safe to re-run:
+
+```bash
+ssh root@<VPS_IP>
+cd ~/aureon-last-mile
+bash apps/worker/scripts/setup.sh
+```
+
+### Environment Variables Reference
+
+| Variable | Required | Component | How to Generate |
+|----------|----------|-----------|-----------------|
+| `N8N_PORT` | Yes | n8n | Fixed: `5678` |
+| `DB_TYPE` | Yes | n8n | Fixed: `postgresdb` |
+| `DB_POSTGRESDB_PASSWORD` | Yes | n8n | `openssl rand -base64 24` |
+| `SUPABASE_URL` | Yes | n8n + Worker | Supabase Dashboard → Settings → API |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | n8n + Worker | Supabase Dashboard → Settings → API |
+| `SUPABASE_DB_HOST` | Yes | n8n PostgreSQL node | Supabase Dashboard → Database → Connection string |
+| `SUPABASE_DB_PASSWORD` | Yes | n8n PostgreSQL node | Supabase Dashboard → Database → Settings |
+| `NODE_ENV` | Yes | Worker | Fixed: `production` |
+| `ENCRYPTION_KEY` | Yes | Worker (Story 2.4+) | `openssl rand -hex 32` |
+| `SENTRY_DSN` | Yes | Worker | Sentry → aureon-worker → Client Keys |
+| `GROQ_API_KEY` | Story 2.6 | Worker | console.groq.com |
+
+### Service Management
+
+```bash
+# Status
+sudo systemctl status n8n
+sudo systemctl status aureon-worker
+
+# Logs (live)
+sudo journalctl -u n8n -f
+sudo journalctl -u aureon-worker -f
+
+# Restart
+sudo systemctl restart n8n
+sudo systemctl restart aureon-worker
+```
+
+### Deployment
+
+**Automatic:** Push any change to `apps/worker/**` on `main` → triggers `deploy-worker.yml`.
+
+**Manual:**
+```bash
+ssh aureon@<VPS_HOST>
+bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
+```
+
+### SSH Key Rotation
+
+```bash
+# 1. Generate new key
+ssh-keygen -t ed25519 -f aureon-vps-key-new -N "" -C "aureon-ci-cd-$(date +%Y%m)"
+
+# 2. Add new key to VPS
+ssh aureon@<VPS_HOST> "echo '$(cat aureon-vps-key-new.pub)' >> ~/.ssh/authorized_keys"
+
+# 3. Test new key
+ssh -i aureon-vps-key-new aureon@<VPS_HOST> "echo OK"
+
+# 4. Update GitHub secret VPS_SSH_KEY with new private key content
+
+# 5. Verify CI deploys successfully
+
+# 6. Remove old key from VPS
+ssh -i aureon-vps-key-new aureon@<VPS_HOST> "sed -i '/aureon-ci-cd$/d' ~/.ssh/authorized_keys"
+```
+
+### Rollback
+
+```bash
+# Option 1: Revert commit (triggers redeploy via CI)
+git revert <commit-sha> && git push
+
+# Option 2: SSH and checkout specific version
+ssh aureon@<VPS_HOST>
+cd ~/aureon-last-mile
+git checkout <commit-sha>
+bash apps/worker/scripts/deploy.sh
+```
+
+### Troubleshooting
+
+| Issue | Debug Steps |
+|-------|------------|
+| n8n won't start | `journalctl -u n8n -n 50` → check `.env` exists, Node.js at `/usr/bin/node`, DB creds |
+| Worker won't start | `journalctl -u aureon-worker -n 50` → check `dist/index.js` exists (`npm run build`) |
+| Supabase unreachable | Test: `curl -sf "$SUPABASE_URL/rest/v1/" -H "apikey: $SUPABASE_SERVICE_ROLE_KEY"` |
+| Disk full | `df -h` → `journalctl --vacuum-size=500M` |
+| Memory pressure | `free -h` → ensure only 1 Chromium session at a time (Story 2.6) |
+
+### Monitoring
+
+- **BetterStack:** HTTP monitor `http://<VPS_IP>:5678/healthz` (n8n health endpoint)
+- **Sentry:** Worker errors via `SENTRY_DSN` in `.env`
+
+---
+
 ## Railway Deployment
+
+> **OBSOLETE (2026-02-18):** n8n moved to Hostinger VPS. See [VPS Deployment (Hostinger)](#vps-deployment-hostinger) section above. This section is preserved for historical reference only.
 
 **Required for:** Story 2.3+ (n8n email manifest parsing)
 **Service:** n8n workflow automation
@@ -668,13 +807,20 @@ If deployment fails:
 |-------|---------|--------|
 | Vercel down | Vercel Support | https://vercel.com/support |
 | Supabase down | Supabase Support | support@supabase.io |
-| Railway down | Railway Support | https://railway.app/help |
+| Hostinger VPS down | Hostinger Support | https://support.hostinger.com |
 | Sentry down | Sentry Support | https://sentry.io/support |
 | Critical production bug | Gerhard | Slack @gerhard or +56... |
 
 ---
 
 ## Changelog
+
+### v1.1 - February 19, 2026
+- Added VPS Deployment (Hostinger) section — Story 2.3
+- Added `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` GitHub secrets; removed `RAILWAY_TOKEN`
+- Marked Railway section as OBSOLETE (n8n moved to Hostinger VPS)
+- Updated Emergency Contacts (Hostinger replaces Railway)
+- Updated Table of Contents
 
 ### v1.0 - February 17, 2026
 - Initial runbook created based on Epic 1 lessons learned
