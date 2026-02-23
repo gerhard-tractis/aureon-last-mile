@@ -72,7 +72,17 @@ set_sshd AllowUsers aureon
 set_sshd ClientAliveInterval 300
 set_sshd ClientAliveCountMax 2
 
-systemctl reload sshd
+# Copy root's SSH keys to aureon BEFORE reloading sshd (prevents lockout)
+if [[ -f /root/.ssh/authorized_keys ]]; then
+  mkdir -p /home/aureon/.ssh
+  cp /root/.ssh/authorized_keys /home/aureon/.ssh/authorized_keys
+  chown -R aureon:aureon /home/aureon/.ssh
+  chmod 700 /home/aureon/.ssh
+  chmod 600 /home/aureon/.ssh/authorized_keys
+  echo "Copied root SSH keys to aureon user"
+fi
+
+systemctl reload sshd || systemctl reload ssh || true
 echo "SSH hardened"
 
 # ---------------------------------------------------------------------------
@@ -156,7 +166,7 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='n8n'" | g
 
   # Set password for n8n DB user (read from env if available)
   if [[ -n "${DB_POSTGRESDB_PASSWORD:-}" ]]; then
-    sudo -u postgres psql -c "ALTER USER n8n WITH PASSWORD '${DB_POSTGRESDB_PASSWORD}';"
+    sudo -u postgres psql -c "ALTER USER n8n WITH PASSWORD :'pass'" -v pass="${DB_POSTGRESDB_PASSWORD}"
   else
     echo "WARNING: DB_POSTGRESDB_PASSWORD not set — set password manually:"
     echo "  sudo -u postgres psql -c \"ALTER USER n8n WITH PASSWORD 'your-password';\""
@@ -207,6 +217,7 @@ fi
 # 12. systemd service: n8n
 # ---------------------------------------------------------------------------
 echo "--- [12/14] Installing n8n systemd service ---"
+if [[ ! -f /etc/systemd/system/n8n.service ]]; then
 cat > /etc/systemd/system/n8n.service <<'EOF'
 [Unit]
 Description=n8n Workflow Automation
@@ -232,7 +243,12 @@ SyslogIdentifier=n8n
 WantedBy=multi-user.target
 EOF
 
-# systemd service: aureon-worker
+echo "n8n systemd service installed"
+else
+  echo "n8n systemd service already exists — skipping"
+fi
+
+if [[ ! -f /etc/systemd/system/aureon-worker.service ]]; then
 cat > /etc/systemd/system/aureon-worker.service <<'EOF'
 [Unit]
 Description=Aureon Automation Worker
@@ -256,6 +272,11 @@ SyslogIdentifier=aureon-worker
 [Install]
 WantedBy=multi-user.target
 EOF
+
+echo "aureon-worker systemd service installed"
+else
+  echo "aureon-worker systemd service already exists — skipping"
+fi
 
 systemctl daemon-reload
 systemctl enable n8n aureon-worker
