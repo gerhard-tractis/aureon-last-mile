@@ -14,6 +14,8 @@ gh pr create
 # CI passes → auto-merges → auto-deploys
 ```
 
+**Always create a PR immediately after every push** — run `gh pr create` as part of the same step.
+
 **Before any story/deployment work**, read: `apps/frontend/docs/deployment-runbook.md`
 
 ## Project
