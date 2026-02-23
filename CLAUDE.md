@@ -55,6 +55,29 @@ When working with environment variables or configuration:
 
 **Remember:** "Use Vercel CLI to add env vars" means CHECK and ADD variables only, NOT deploy.
 
+## ⚠️ CRITICAL: Git Workflow — Always Use Feature Branches
+
+**NEVER push directly to `main`.** Branch protection is enforced for everyone including admins.
+
+**Every code change must follow this flow:**
+1. `git checkout -b <type>/<short-description>` — create a feature branch
+2. Make changes, commit normally
+3. `git push origin <branch-name>`
+4. `gh pr create` — open a PR
+5. CI runs automatically — when it passes, the PR auto-merges to main
+6. Feature branch is auto-deleted after merge
+
+**Branch naming convention:**
+- `feat/` — new features (e.g. `feat/order-table-schema`)
+- `fix/` — bug fixes (e.g. `fix/rls-policy-orders`)
+- `chore/` — maintenance, deps, config (e.g. `chore/update-dependencies`)
+- `docs/` — documentation only (e.g. `docs/update-runbook`)
+
+**Why this matters:**
+- Direct pushes to `main` are rejected by GitHub
+- CI (tests/lint/build) must pass before merge
+- Merge triggers the full deploy pipeline: Supabase → Vercel + VPS Worker
+
 ## Project Overview
 
 Aureon Last Mile - Last-mile logistics management platform
