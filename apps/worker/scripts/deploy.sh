@@ -24,9 +24,10 @@ git pull origin main
 
 # Build worker
 cd apps/worker
-npm ci --production
-npm audit --production --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
+npm ci
+npm audit --omit=dev --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
 npm run build
+npm prune --omit=dev
 
 # Restart worker service
 sudo systemctl restart aureon-worker
