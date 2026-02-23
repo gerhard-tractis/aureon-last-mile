@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Order Data Ingestion & Automation Worker
 **Story ID:** 2.3
-**Status:** review
+**Status:** in-progress
 **Created:** 2026-02-18
 
 **Note:** Scope changed 2026-02-18 via Sprint Change Proposal. Original "Email Manifest Parsing" story replaced with automation worker infrastructure. See `_bmad-output/planning-artifacts/sprint-change-proposal-2026-02-18.md`.
@@ -290,42 +290,16 @@ echo "=== Deploy SUCCESS ==="
 
 ### Phase 3: GitHub Actions Deployment (AC: Deployment Pipeline)
 
-Create `.github/workflows/deploy-worker.yml` following existing patterns from `deploy.yml`:
+**Implementation note:** A separate `deploy-worker.yml` was originally planned but was consolidated into the unified `.github/workflows/deploy.yml` pipeline (commit `c8ed6be`) to keep all production deploys in one orchestrated workflow. The worker deploy uses a **self-hosted GitHub Actions runner on the VPS** (`runs-on: [self-hosted, vps]`) rather than the `appleboy/ssh-action` SSH approach — this eliminates external action supply chain risk entirely.
 
-```yaml
-name: Deploy Worker to VPS
+Worker path filtering is enforced via a `git diff HEAD~1 HEAD -- apps/worker/` check at the start of the deploy-worker job; deploys are skipped when no worker files changed.
 
-on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/worker/**'
-
-concurrency:
-  group: vps-deploy
-  cancel-in-progress: false
-
-jobs:
-  deploy-worker:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Deploy to VPS via SSH
-        uses: appleboy/ssh-action@<PIN_TO_COMMIT_SHA_OF_v1.2.4>
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          timeout: 60s
-          script: |
-            bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
-
-      - name: Verify deployment
-        if: failure()
-        run: echo "::error::VPS deployment failed. Check worker logs via SSH."
-```
-
-**Note:** Get the commit SHA from https://github.com/appleboy/ssh-action/releases — do NOT use `@v1` tag (supply chain risk after tj-actions incident March 2025). Also check open issue #337 on that repo.
+The `deploy-worker` job in `.github/workflows/deploy.yml`:
+- Depends on `deploy-supabase` (migrations must pass first)
+- Pulls latest code on the VPS
+- Detects worker file changes — skips deploy if none
+- Calls `deploy.sh` (error handling, health checks, disk pre-check)
+- Has 10-minute timeout + concurrency group `production-deploy` (`cancel-in-progress: false`)
 
 **Worker CI pipeline** (linting, testing, type-checking) is OUT OF SCOPE for Story 2.3. Will be created in Story 2.7 when actual worker application code exists.
 
@@ -696,9 +670,16 @@ claude-sonnet-4-6 (Claude Code)
 
 - **Phase 1 (Repository Structure):** All files created: `apps/worker/package.json`, `tsconfig.json`, `src/index.ts`, `n8n/workflows/.gitkeep`, `scripts/setup.sh`, `scripts/deploy.sh`, `.env.example`, `README.md`.
 - **Phase 2 (VPS Setup Scripts):** `setup.sh` is idempotent, covers all 14 provisioning steps including UFW (`ufw limit 22/tcp` not `allow`), NodeSource APT (not nvm), n8n 2.9.0 pinned, PostgreSQL backend, Playwright + Chromium, 4GB swap, both systemd services with resource limits, smoke tests. `deploy.sh` has `set -euo pipefail`, disk pre-check, `npm ci`, build, restart, health check.
-- **Phase 3 (GitHub Actions):** `.github/workflows/deploy-worker.yml` created with `appleboy/ssh-action` pinned to commit SHA, concurrency group `vps-deploy`, `cancel-in-progress: false`, 10-minute timeout, path filter `apps/worker/**`.
+- **Phase 3 (GitHub Actions):** Worker deploy consolidated into `.github/workflows/deploy.yml` (unified pipeline, commit `c8ed6be`). Uses self-hosted GitHub Actions runner on VPS (`runs-on: [self-hosted, vps]`) — eliminates external action supply chain risk. Path-change detection added (2026-02-23 code review fix): `git diff HEAD~1 HEAD -- apps/worker/` skips deploy when no worker files changed. Concurrency group `production-deploy`, `cancel-in-progress: false`, 10-minute timeout. Note: `deploy-worker.yml` was created and later deleted during pipeline unification.
 - **Phase 4 (Documentation):** `_bmad-output/planning-artifacts/architecture.md` updated — Railway replaced with Hostinger VPS in all key sections (tech stack YAML, Backend+Workers section, service boundaries, technology dependency graph, application structure, external services, caching layer). `apps/frontend/docs/deployment-runbook.md` v1.1 — added full VPS Deployment section, deprecated Railway section, updated GitHub secrets table (removed `RAILWAY_TOKEN`, added `VPS_HOST`/`VPS_USER`/`VPS_SSH_KEY`), updated ToC and changelog.
 - **Phase 5 (Manual VPS Provisioning):** HALT — requires Gerhard's Hostinger account. All scripts and configuration are ready. See open items below.
+- **Code Review Fixes (2026-02-23):**
+  - H1: Corrected story File List — removed `deploy-worker.yml` (deleted), added `deploy.yml` as modified
+  - H2: Added `apps/worker/**` path-change detection to `deploy.yml` deploy-worker job
+  - H3: Updated Phase 3 description to reflect actual self-hosted runner implementation
+  - M1: Removed `apps/worker/.trigger` debug artifact
+  - M2: Removed CI/CD trigger timestamp from `apps/worker/README.md`
+  - M3: Status corrected to `in-progress` — Phase 5 ACs (BetterStack, Sentry, Storage bucket, VPS) remain unmet pending Gerhard's Hostinger provisioning
 
 ### File List
 
@@ -711,9 +692,9 @@ claude-sonnet-4-6 (Claude Code)
 - `apps/worker/scripts/deploy.sh`
 - `apps/worker/.env.example`
 - `apps/worker/README.md`
-- `.github/workflows/deploy-worker.yml`
 
 **Modified files:**
+- `.github/workflows/deploy.yml` (worker deploy job added — self-hosted runner, path-change detection)
 - `_bmad-output/planning-artifacts/architecture.md`
 - `apps/frontend/docs/deployment-runbook.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
@@ -723,9 +704,10 @@ claude-sonnet-4-6 (Claude Code)
 
 ## Story Completion Status
 
-**Status:** review
+**Status:** in-progress
 **Analysis Completed:** 2026-02-18
 **Quality Review:** Passed (4-agent validation: architecture, epics/PRD, CI/CD patterns, web research)
+**Code Review:** 2026-02-23 — 3 HIGH / 3 MEDIUM issues found and fixed (see Dev Agent Record)
 
 **Next Steps for Developer:**
 1. Read this entire story file
