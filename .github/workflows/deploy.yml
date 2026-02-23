@@ -78,7 +78,7 @@ jobs:
       - name: Check for worker changes
         id: worker-changes
         run: |
-          CHANGED=$(cd ~/aureon-last-mile && git diff HEAD~1 HEAD --name-only -- apps/worker/ | wc -l)
+          CHANGED=$(cd ~/aureon-last-mile && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- apps/worker/ | wc -l)
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
       - name: Deploy worker

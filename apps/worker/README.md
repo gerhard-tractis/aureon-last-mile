@@ -163,7 +163,7 @@ curl http://localhost:5678/healthz
 
 ### Automatic (GitHub Actions)
 
-Pushes to `main` affecting `apps/worker/**` trigger `.github/workflows/deploy-worker.yml` automatically.
+Pushes to `main` affecting `apps/worker/**` trigger the `deploy-worker` job in `.github/workflows/deploy.yml` automatically.
 
 ### Manual
 
