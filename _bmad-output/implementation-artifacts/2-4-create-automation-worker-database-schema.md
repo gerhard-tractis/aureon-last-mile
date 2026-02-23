@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Order Data Ingestion & Automation Worker
 **Story ID:** 2.4
-**Status:** review
+**Status:** done
 **Created:** 2026-02-23
 
 **Note:** Scope changed 2026-02-18 via Sprint Change Proposal. Original "Manual Order Entry Form" story moved to 2.8.
