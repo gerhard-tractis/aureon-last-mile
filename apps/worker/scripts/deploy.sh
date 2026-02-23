@@ -26,7 +26,7 @@ git pull origin main
 cd apps/worker
 npm ci
 npm audit --omit=dev --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
-npm run build
+PATH="$PWD/node_modules/.bin:$PATH" npm run build
 npm prune --omit=dev
 
 # Restart worker service
