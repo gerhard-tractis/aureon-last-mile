@@ -6,15 +6,17 @@
 
 **Never deploy** to Vercel/Supabase/VPS unless user says "deploy" or "push to production".
 
+**Always create a PR immediately after every push** — run `gh pr create` as part of the same step.
+
 **Never push to `main` directly.** Always use a feature branch + PR:
 ```
 git checkout -b feat/my-feature
 git push origin feat/my-feature
 gh pr create
+gh pr merge --auto --squash
 # CI passes → auto-merges → auto-deploys
 ```
 
-**Always create a PR immediately after every push** — run `gh pr create` as part of the same step.
 
 **Before any story/deployment work**, read: `apps/frontend/docs/deployment-runbook.md`
 
