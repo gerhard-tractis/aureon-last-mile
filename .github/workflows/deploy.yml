@@ -4,11 +4,13 @@ on:
   push:
     branches: [main]
 
+# All deploy jobs run sequentially — a failed migration never reaches app deploys
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
+  # ─── 1. Database Migrations ──────────────────────────────────────────────────
   deploy-supabase:
     name: Deploy Supabase Migrations
     runs-on: ubuntu-latest
@@ -36,6 +38,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
+  # ─── 2. Frontend (Vercel) ────────────────────────────────────────────────────
   deploy-vercel:
     name: Deploy to Vercel
     needs: deploy-supabase
@@ -60,4 +63,34 @@ jobs:
         run: |
           npm i -g vercel
           vercel rollback --yes --token=${{ secrets.VERCEL_TOKEN }}
-          echo "::error::Deployment failed, rolled back to previous version"
+          echo "::error::Vercel deployment failed — rolled back to previous version"
+
+  # ─── 3. Worker (VPS) ─────────────────────────────────────────────────────────
+  deploy-worker:
+    name: Deploy Worker to VPS
+    needs: deploy-supabase
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 10
+    steps:
+      - name: Pull latest code
+        run: cd ~/aureon-last-mile && git pull origin main
+
+      - name: Deploy worker
+        run: bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::VPS worker deployment failed."
+          echo "To debug: sudo journalctl -u aureon-worker -n 50"
+
+  # ─── 4. Railway (future) ─────────────────────────────────────────────────────
+  # deploy-railway:
+  #   name: Deploy to Railway
+  #   needs: deploy-supabase
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - run: railway up --service <service-name>
+  #       env:
+  #         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
