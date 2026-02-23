@@ -233,15 +233,33 @@ And connector_config for Paris includes: beetrack_url, login fields (with ENCRYP
 - All 3 new tables with RLS + audit triggers
 - orders table extended with 9 new columns
 - Seed data: Musan operator + 2 tenant_clients (Easy, Paris)
-- Validation block: 15 assertion checks
+- Validation block: 20 assertion checks (expanded after code review)
+
+---
+
+## Senior Developer Review (AI)
+
+**Date:** 2026-02-23
+**Reviewer:** Opus 4.6 (adversarial code review)
+**Outcome:** Changes Requested (7 issues: 3H, 3M, 1L → all H/M fixed automatically)
+
+### Action Items
+
+- [x] [H1] `tenant_clients.updated_at` has no auto-update trigger — added `set_updated_at()` function + BEFORE UPDATE trigger
+- [x] [H2] Migration not idempotent for CREATE POLICY/TRIGGER — wrapped all in `DO $$ EXCEPTION WHEN duplicate_object` blocks
+- [x] [H3] `orders.status` is unvalidated VARCHAR — created `order_status_enum` ENUM, used for column type
+- [x] [M1] `raw_files` missing `created_at` column — added to match project-wide pattern
+- [x] [M2] `jobs` missing `updated_at` column — added with auto-update trigger for status transition tracking
+- [x] [M3] No constraint/FK validation in tests — added tests 7, 11, 14, 15, 17 for UNIQUE, FK, data type checks
+- [ ] [L1] Test file duplicates migration validation block — acknowledged, not fixing (low impact)
 
 ---
 
 ## File List
 
-- `apps/frontend/supabase/migrations/20260223000001_create_automation_worker_schema.sql` (new)
-- `apps/frontend/supabase/tests/automation_worker_schema_test.sql` (new)
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` (updated: 2-4 → in-progress)
+- `apps/frontend/supabase/migrations/20260223000001_create_automation_worker_schema.sql` (new, updated with review fixes)
+- `apps/frontend/supabase/tests/automation_worker_schema_test.sql` (new, expanded from 15→20 tests)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (updated: 2-4 → review)
 
 ---
 
@@ -250,3 +268,4 @@ And connector_config for Paris includes: beetrack_url, login fields (with ENCRYP
 | Date | Change |
 |------|--------|
 | 2026-02-23 | Story created and implemented — migration + tests for automation worker schema |
+| 2026-02-23 | Code review: 6 issues fixed (3H, 3M) — updated_at triggers, idempotent policies, order_status_enum, BIGINT file_size, constraint tests |

@@ -10,6 +10,13 @@
 --   - 20260216170542_create_users_table_with_rbac.sql (operators table)
 --   - 20260217000001_enhance_audit_logging_with_triggers_and_partitioning.sql (audit_trigger_func)
 --   - 20260217000003_create_orders_table.sql (orders table)
+-- Review fixes applied: 2026-02-23
+--   H1: Added set_updated_at() trigger for tenant_clients.updated_at
+--   H2: Wrapped CREATE POLICY/TRIGGER in idempotent DO blocks
+--   H3: Added order_status_enum for orders.status validation
+--   M1: Added created_at to raw_files
+--   M2: Added updated_at to jobs
+--   M4: Changed raw_files.file_size_bytes to BIGINT
 
 -- ============================================================================
 -- PART 1: Create ENUM Types (idempotent)
@@ -43,6 +50,36 @@ END $$;
 
 COMMENT ON TYPE job_status_enum IS 'Job queue status lifecycle for Story 2.4-2.7 orchestration';
 
+-- order_status_enum: Order processing lifecycle states (FIX H3: enforce valid status values)
+DO $$ BEGIN
+  CREATE TYPE order_status_enum AS ENUM (
+    'pending',     -- Imported, awaiting processing
+    'processing',  -- Being dispatched / assigned to route
+    'dispatched',  -- Out for delivery
+    'delivered',   -- Successfully delivered
+    'failed'       -- Delivery failed (address not found, rejected, etc.)
+  );
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+COMMENT ON TYPE order_status_enum IS 'Order processing status lifecycle for delivery tracking';
+
+-- ============================================================================
+-- PART 1b: Create set_updated_at() trigger function (FIX H1)
+-- ============================================================================
+-- Reusable trigger function for auto-updating updated_at on row modification.
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION public.set_updated_at() IS 'Auto-update updated_at timestamp on row modification. Attach as BEFORE UPDATE trigger.';
+
 -- ============================================================================
 -- PART 2: Create tenant_clients Table
 -- ============================================================================
@@ -75,27 +112,50 @@ COMMENT ON COLUMN public.tenant_clients.connector_config IS 'JSONB connector set
 CREATE INDEX IF NOT EXISTS idx_tenant_clients_operator_id ON public.tenant_clients(operator_id);
 CREATE INDEX IF NOT EXISTS idx_tenant_clients_connector_type ON public.tenant_clients(connector_type);
 
--- RLS
+-- RLS (FIX H2: idempotent policy creation)
 ALTER TABLE public.tenant_clients ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "tenant_clients_tenant_isolation" ON public.tenant_clients
-  FOR ALL
-  USING (operator_id = public.get_operator_id())
-  WITH CHECK (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "tenant_clients_tenant_isolation" ON public.tenant_clients
+    FOR ALL
+    USING (operator_id = public.get_operator_id())
+    WITH CHECK (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "tenant_clients_tenant_select" ON public.tenant_clients
-  FOR SELECT
-  USING (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "tenant_clients_tenant_select" ON public.tenant_clients
+    FOR SELECT
+    USING (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.tenant_clients TO authenticated;
 REVOKE ALL ON public.tenant_clients FROM anon;
 
--- Audit trigger
-CREATE TRIGGER audit_tenant_clients_changes
-  AFTER INSERT OR UPDATE OR DELETE ON public.tenant_clients
-  FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+-- Audit trigger (FIX H2: idempotent trigger creation)
+DO $$ BEGIN
+  CREATE TRIGGER audit_tenant_clients_changes
+    AFTER INSERT OR UPDATE OR DELETE ON public.tenant_clients
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 COMMENT ON TRIGGER audit_tenant_clients_changes ON public.tenant_clients IS 'Audit trigger: Logs all tenant_clients changes to audit_logs table';
+
+-- Auto-update updated_at trigger (FIX H1)
+DO $$ BEGIN
+  CREATE TRIGGER set_tenant_clients_updated_at
+    BEFORE UPDATE ON public.tenant_clients
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+COMMENT ON TRIGGER set_tenant_clients_updated_at ON public.tenant_clients IS 'Auto-update updated_at on row modification';
 
 -- ============================================================================
 -- PART 3: Create jobs Table
@@ -116,7 +176,8 @@ CREATE TABLE IF NOT EXISTS public.jobs (
   error_message TEXT,          -- Human-readable error on failure
   retry_count   INT NOT NULL DEFAULT 0,
   max_retries   INT NOT NULL DEFAULT 3,
-  created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+  created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()  -- FIX M2: track status change timestamps
 );
 
 COMMENT ON TABLE  public.jobs IS 'Job queue for automation worker. Each row = one ingestion run (email parse, browser scrape, API call).';
@@ -125,6 +186,7 @@ COMMENT ON COLUMN public.jobs.status        IS 'Lifecycle: pending→running→c
 COMMENT ON COLUMN public.jobs.result        IS 'Success payload e.g. {rows_processed: 142, orders_upserted: 140, errors: []}';
 COMMENT ON COLUMN public.jobs.error_message IS 'Last error message. Preserved across retries for debugging.';
 COMMENT ON COLUMN public.jobs.retry_count   IS 'Number of attempts made. Worker increments on each retry.';
+COMMENT ON COLUMN public.jobs.updated_at    IS 'Tracks last status transition timestamp (e.g., when retry was scheduled).';
 
 -- Partial index for efficient worker polling: only pending/retrying jobs
 -- Worker query: SELECT * FROM jobs WHERE status IN ('pending','retrying') ORDER BY priority DESC, scheduled_at ASC LIMIT 1
@@ -136,27 +198,50 @@ CREATE INDEX IF NOT EXISTS idx_jobs_operator_id ON public.jobs(operator_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_client_id ON public.jobs(client_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON public.jobs(status);
 
--- RLS
+-- RLS (FIX H2: idempotent)
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "jobs_tenant_isolation" ON public.jobs
-  FOR ALL
-  USING (operator_id = public.get_operator_id())
-  WITH CHECK (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "jobs_tenant_isolation" ON public.jobs
+    FOR ALL
+    USING (operator_id = public.get_operator_id())
+    WITH CHECK (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "jobs_tenant_select" ON public.jobs
-  FOR SELECT
-  USING (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "jobs_tenant_select" ON public.jobs
+    FOR SELECT
+    USING (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.jobs TO authenticated;
 REVOKE ALL ON public.jobs FROM anon;
 
--- Audit trigger
-CREATE TRIGGER audit_jobs_changes
-  AFTER INSERT OR UPDATE OR DELETE ON public.jobs
-  FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+-- Audit trigger (FIX H2: idempotent)
+DO $$ BEGIN
+  CREATE TRIGGER audit_jobs_changes
+    AFTER INSERT OR UPDATE OR DELETE ON public.jobs
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 COMMENT ON TRIGGER audit_jobs_changes ON public.jobs IS 'Audit trigger: Logs all jobs changes to audit_logs table';
+
+-- Auto-update updated_at trigger (FIX M2)
+DO $$ BEGIN
+  CREATE TRIGGER set_jobs_updated_at
+    BEFORE UPDATE ON public.jobs
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+COMMENT ON TRIGGER set_jobs_updated_at ON public.jobs IS 'Auto-update updated_at on row modification';
 
 -- ============================================================================
 -- PART 4: Create raw_files Table
@@ -172,39 +257,53 @@ CREATE TABLE IF NOT EXISTS public.raw_files (
   file_name        VARCHAR(500) NOT NULL,
   -- Storage path pattern: raw-files/{operator_slug}/{client_slug}/{date}/{filename}
   storage_path     VARCHAR(1000) NOT NULL,
-  file_size_bytes  INT,
+  file_size_bytes  BIGINT,       -- FIX M4: BIGINT for files >2GB
   row_count        INT,
-  received_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+  received_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()  -- FIX M1: match project-wide pattern
 );
 
 COMMENT ON TABLE  public.raw_files IS 'Metadata for raw ingested files. Actual files in Supabase Storage bucket raw-files.';
-COMMENT ON COLUMN public.raw_files.storage_path IS 'Supabase Storage path: raw-files/{operator_slug}/{client_slug}/{YYYY-MM-DD}/{filename}';
-COMMENT ON COLUMN public.raw_files.row_count    IS 'Number of data rows in file (NULL for binary files or before parsing)';
+COMMENT ON COLUMN public.raw_files.storage_path     IS 'Supabase Storage path: raw-files/{operator_slug}/{client_slug}/{YYYY-MM-DD}/{filename}';
+COMMENT ON COLUMN public.raw_files.file_size_bytes  IS 'File size in bytes. BIGINT supports files >2GB.';
+COMMENT ON COLUMN public.raw_files.row_count        IS 'Number of data rows in file (NULL for binary files or before parsing)';
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_raw_files_operator_id ON public.raw_files(operator_id);
 CREATE INDEX IF NOT EXISTS idx_raw_files_client_id ON public.raw_files(client_id);
 CREATE INDEX IF NOT EXISTS idx_raw_files_job_id ON public.raw_files(job_id);
 
--- RLS
+-- RLS (FIX H2: idempotent)
 ALTER TABLE public.raw_files ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "raw_files_tenant_isolation" ON public.raw_files
-  FOR ALL
-  USING (operator_id = public.get_operator_id())
-  WITH CHECK (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "raw_files_tenant_isolation" ON public.raw_files
+    FOR ALL
+    USING (operator_id = public.get_operator_id())
+    WITH CHECK (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE POLICY "raw_files_tenant_select" ON public.raw_files
-  FOR SELECT
-  USING (operator_id = public.get_operator_id());
+DO $$ BEGIN
+  CREATE POLICY "raw_files_tenant_select" ON public.raw_files
+    FOR SELECT
+    USING (operator_id = public.get_operator_id());
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.raw_files TO authenticated;
 REVOKE ALL ON public.raw_files FROM anon;
 
--- Audit trigger
-CREATE TRIGGER audit_raw_files_changes
-  AFTER INSERT OR UPDATE OR DELETE ON public.raw_files
-  FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+-- Audit trigger (FIX H2: idempotent)
+DO $$ BEGIN
+  CREATE TRIGGER audit_raw_files_changes
+    AFTER INSERT OR UPDATE OR DELETE ON public.raw_files
+    FOR EACH ROW EXECUTE FUNCTION audit_trigger_func();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 COMMENT ON TRIGGER audit_raw_files_changes ON public.raw_files IS 'Audit trigger: Logs all raw_files changes to audit_logs table';
 
@@ -233,9 +332,11 @@ COMMENT ON COLUMN public.orders.total_weight_kg IS 'Retailer-declared total orde
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS total_volume_m3 DECIMAL(10,6);
 COMMENT ON COLUMN public.orders.total_volume_m3 IS 'Retailer-declared total order volume in m³ (from manifest, may be inaccurate).';
 
--- Order processing status (separate from delivery status in packages)
-ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'pending';
-COMMENT ON COLUMN public.orders.status IS 'Order processing status: pending (imported), processing (being dispatched), dispatched, delivered, failed. Managed by worker+app.';
+-- Order processing status (FIX H3: use ENUM instead of unvalidated VARCHAR)
+-- NOTE: ADD COLUMN IF NOT EXISTS with a custom type. If column already exists as VARCHAR,
+-- this will skip it (no-op). For fresh installs, it creates with the ENUM type.
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS status order_status_enum NOT NULL DEFAULT 'pending';
+COMMENT ON COLUMN public.orders.status IS 'Order processing status: pending→processing→dispatched→delivered|failed. ENUM-enforced valid values.';
 
 -- Human-readable detail for current status
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS status_detail VARCHAR(255);
@@ -347,6 +448,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'job_status_enum') THEN
     RAISE EXCEPTION 'ENUM job_status_enum not created!';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_enum') THEN
+    RAISE EXCEPTION 'ENUM order_status_enum not created!';
+  END IF;
 
   -- 2. Verify tenant_clients table + RLS
   IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'tenant_clients') THEN
@@ -392,7 +496,25 @@ BEGIN
     RAISE EXCEPTION 'Column orders.source_file not found!';
   END IF;
 
-  -- 6. Verify seed data
+  -- 6. Verify set_updated_at triggers exist (FIX H1)
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_tenant_clients_updated_at') THEN
+    RAISE EXCEPTION 'Trigger set_tenant_clients_updated_at not found!';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'set_jobs_updated_at') THEN
+    RAISE EXCEPTION 'Trigger set_jobs_updated_at not found!';
+  END IF;
+
+  -- 7. Verify jobs.updated_at column exists (FIX M2)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'jobs' AND column_name = 'updated_at') THEN
+    RAISE EXCEPTION 'Column jobs.updated_at not found!';
+  END IF;
+
+  -- 8. Verify raw_files.created_at column exists (FIX M1)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'raw_files' AND column_name = 'created_at') THEN
+    RAISE EXCEPTION 'Column raw_files.created_at not found!';
+  END IF;
+
+  -- 9. Verify seed data
   IF NOT EXISTS (SELECT 1 FROM public.operators WHERE slug = 'transportes-musan') THEN
     RAISE EXCEPTION 'Seed data missing: Transportes Musan operator not found!';
   END IF;
@@ -407,7 +529,8 @@ BEGIN
   RAISE NOTICE '✓ Story 2.4 migration validation complete';
   RAISE NOTICE '  Tables created: tenant_clients, jobs, raw_files';
   RAISE NOTICE '  RLS enabled on all 3 new tables';
-  RAISE NOTICE '  orders extended with 9 new columns';
+  RAISE NOTICE '  orders extended with 9 new columns (status uses order_status_enum)';
+  RAISE NOTICE '  updated_at auto-update triggers on tenant_clients and jobs';
   RAISE NOTICE '  Seed data: Transportes Musan + Easy (csv_email) + Paris (browser)';
   RAISE NOTICE '  Ready for Stories 2.5 (Easy connector) and 2.6 (Paris/Beetrack connector)';
 END $$;
