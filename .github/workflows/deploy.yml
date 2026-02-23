@@ -75,22 +75,22 @@ jobs:
       - name: Pull latest code
         run: cd ~/aureon-last-mile && git pull origin main
 
+      - name: Check for worker changes
+        id: worker-changes
+        run: |
+          CHANGED=$(cd ~/aureon-last-mile && git diff HEAD~1 HEAD --name-only -- apps/worker/ | wc -l)
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
       - name: Deploy worker
+        if: steps.worker-changes.outputs.changed != '0'
         run: bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
+
+      - name: No worker changes
+        if: steps.worker-changes.outputs.changed == '0'
+        run: echo "No apps/worker changes detected — skipping worker deploy"
 
       - name: Report failure
         if: failure()
         run: |
           echo "::error::VPS worker deployment failed."
           echo "To debug: sudo journalctl -u aureon-worker -n 50"
-
-  # ─── 4. Railway (future) ─────────────────────────────────────────────────────
-  # deploy-railway:
-  #   name: Deploy to Railway
-  #   needs: deploy-supabase
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - run: railway up --service <service-name>
-  #       env:
-  #         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
