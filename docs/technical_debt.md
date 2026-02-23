@@ -35,12 +35,15 @@
 
 ## CI/CD
 
-### TD-003 — No branch protection / PR requirement enforced
+### TD-003 — No branch protection / PR requirement enforced ✅
 - **Added:** 2026-02-23
-- **Status:** Open
-- **Context:** All commits during Epic 1 & 2 were pushed directly to `main` (GitHub shows "Bypassed rule violations — changes must be made through a pull request"). Branch protection rules exist but are being bypassed.
-- **Risk:** Low (solo dev) → Medium (when team grows).
-- **What to do:** Enforce PR requirement once a second developer joins the project.
+- **Resolved:** 2026-02-23
+- **Context:** All commits during Epic 1 & 2 were pushed directly to `main` (GitHub shows "Bypassed rule violations — changes must be made through a pull request"). Branch protection rules exist but `enforce_admins` was false, allowing admin bypass.
+- **What was done:**
+  - Enabled `enforce_admins` on `main` — admins now go through the PR flow too
+  - Consolidated all production deploys into a single `deploy.yml` with sequential jobs: Supabase → Vercel + VPS Worker (parallel) → Railway (stubbed for future)
+  - Removed standalone `deploy-worker.yml`
+  - Deploy pipeline now only runs on code that has passed CI (tests/lint/build) via branch protection
 
 ---
 
