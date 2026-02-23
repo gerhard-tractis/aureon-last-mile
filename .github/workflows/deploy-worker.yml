@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Pull latest code
+        run: cd ~/aureon-last-mile && git pull origin main
+
       - name: Deploy worker
         run: bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
 

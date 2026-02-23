@@ -18,12 +18,8 @@ if [[ "$DISK_USAGE" -gt 90 ]]; then
 fi
 echo "Disk usage: ${DISK_USAGE}% — OK"
 
-# Pull latest code
-cd ~/aureon-last-mile
-git pull origin main
-
 # Build worker
-cd apps/worker
+cd ~/aureon-last-mile/apps/worker
 npm ci
 npm audit --omit=dev --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
 PATH="$PWD/node_modules/.bin:$PATH" npm run build
