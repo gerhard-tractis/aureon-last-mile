@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import { createSPAClient } from '@/lib/supabase/client';
 import { manualOrderSchema, RETAILER_OPTIONS, type ManualOrderFormData } from '@/lib/validation/manualOrderSchema';
 import { ALL_COMUNAS } from '@/lib/data/chileanLocations';
-import { useCreateManualOrder } from '@/hooks/useOrders';
+import { useCreateManualOrder, checkOrderNumberDuplicate } from '@/hooks/useOrders';
 
 // Form input type (before Zod transforms)
 interface ManualOrderFormInput {
@@ -38,7 +38,6 @@ export default function ManualOrderForm() {
     formState: { errors, isValid },
     reset,
     watch,
-    trigger,
     setFocus,
   } = useForm<ManualOrderFormInput>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -56,7 +55,7 @@ export default function ManualOrderForm() {
     });
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   // Debounced order number duplicate check
   const orderNumberValue = watch('order_number');
@@ -67,14 +66,8 @@ export default function ManualOrderForm() {
     }
     const timeoutId = setTimeout(async () => {
       try {
-        const supabase = createSPAClient();
-        const { data } = await supabase
-          .from('orders')
-          .select('id')
-          .eq('operator_id', operatorId)
-          .eq('order_number', orderNumberValue)
-          .maybeSingle();
-        if (data) {
+        const isDuplicate = await checkOrderNumberDuplicate(operatorId, orderNumberValue);
+        if (isDuplicate) {
           setOrderNumberError(`Order #${orderNumberValue} already exists for this operator`);
         } else {
           setOrderNumberError(null);
@@ -164,7 +157,7 @@ export default function ManualOrderForm() {
           {...register('order_number')}
           disabled={isPending}
           className={inputClassName}
-          aria-describedby={errors.order_number || orderNumberError ? 'order_number-error' : undefined}
+          aria-describedby={errors.order_number ? 'order_number-error' : orderNumberError ? 'order_number-dup-error' : undefined}
           aria-invalid={!!(errors.order_number || orderNumberError)}
         />
         {errors.order_number && (
@@ -173,7 +166,7 @@ export default function ManualOrderForm() {
           </p>
         )}
         {orderNumberError && (
-          <p id="order_number-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="order_number-dup-error" className="mt-1 text-sm text-red-600" role="alert">
             {orderNumberError}
           </p>
         )}

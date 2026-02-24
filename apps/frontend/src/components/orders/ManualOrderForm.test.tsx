@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ManualOrderForm from './ManualOrderForm';
+import NewOrderPage from '@/app/app/orders/new/page';
 
 // Mock session data
 const mockSession = {
@@ -37,15 +38,17 @@ vi.mock('sonner', () => ({
   },
 }));
 
-// Mock useCreateManualOrder
+// Mock useCreateManualOrder and checkOrderNumberDuplicate
 let mockMutate = vi.fn();
 let mockIsPending = false;
+let mockCheckDuplicate = vi.fn().mockResolvedValue(false);
 
 vi.mock('@/hooks/useOrders', () => ({
   useCreateManualOrder: () => ({
     mutate: mockMutate,
     isPending: mockIsPending,
   }),
+  checkOrderNumberDuplicate: (...args: unknown[]) => mockCheckDuplicate(...args),
 }));
 
 // Mock QueryClient for TanStack Query
@@ -59,6 +62,7 @@ describe('ManualOrderForm', () => {
     vi.clearAllMocks();
     mockMutate = vi.fn();
     mockIsPending = false;
+    mockCheckDuplicate = vi.fn().mockResolvedValue(false);
     // Default: no duplicate found
     mockFrom.mockReturnValue({
       select: vi.fn().mockReturnValue({
@@ -121,16 +125,8 @@ describe('ManualOrderForm', () => {
   });
 
   it('should show duplicate order number error', async () => {
-    // Mock duplicate found
-    mockFrom.mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'existing-id' } }),
-          }),
-        }),
-      }),
-    });
+    // Mock duplicate found via checkOrderNumberDuplicate
+    mockCheckDuplicate = vi.fn().mockResolvedValue(true);
 
     const user = userEvent.setup();
     render(<ManualOrderForm />);
@@ -276,6 +272,34 @@ describe('ManualOrderForm', () => {
     });
   });
 
+  it('should show error when delivery window end is before start', async () => {
+    const user = userEvent.setup();
+    render(<ManualOrderForm />);
+
+    // Fill required fields first
+    await user.type(screen.getByLabelText(/Order Number/), 'ORD-WIN');
+    await user.type(screen.getByLabelText(/Customer Name/), 'Test User');
+    await user.type(screen.getByLabelText(/Customer Phone/), '912345678');
+    await user.type(screen.getByLabelText(/Delivery Address/), 'Test Address');
+
+    const comunaInput = screen.getByLabelText(/^Comuna/);
+    await user.type(comunaInput, 'Providencia');
+    await user.tab();
+
+    const today = new Date().toISOString().slice(0, 10);
+    await user.clear(screen.getByLabelText(/Delivery Date/));
+    await user.type(screen.getByLabelText(/Delivery Date/), today);
+
+    // Set window end before start
+    await user.type(screen.getByLabelText(/Delivery Window Start/), '14:00');
+    await user.type(screen.getByLabelText(/Delivery Window End/), '09:00');
+    await user.tab();
+
+    await waitFor(() => {
+      expect(screen.getByText('Window end must be after window start')).toBeInTheDocument();
+    }, { timeout: 3000 });
+  });
+
   it('should show error toast and preserve form on submit error', async () => {
     mockMutate = vi.fn((_, { onError }) => {
       onError(new Error('Network error'));
@@ -310,5 +334,56 @@ describe('ManualOrderForm', () => {
 
     // Form values preserved
     expect((screen.getByLabelText(/Order Number/) as HTMLInputElement).value).toBe('ORD-ERR');
+  });
+});
+
+describe('NewOrderPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMutate = vi.fn();
+    mockIsPending = false;
+    mockFrom.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({ data: null }),
+          }),
+        }),
+      }),
+    });
+  });
+
+  it('should show loading state initially', () => {
+    // Make getSession hang
+    mockGetSession.mockReturnValue(new Promise(() => {}));
+    render(<NewOrderPage />);
+    // Loader2 spinner should be visible (svg with animate-spin)
+    const spinner = document.querySelector('.animate-spin');
+    expect(spinner).toBeTruthy();
+  });
+
+  it('should render form when role is allowed', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { user: { app_metadata: { claims: { role: 'admin' } } } } },
+    });
+
+    render(<NewOrderPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('New Order')).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText(/Order Number/)).toBeInTheDocument();
+  });
+
+  it('should show access denied for unauthorized role', async () => {
+    mockGetSession.mockResolvedValue({
+      data: { session: { user: { app_metadata: { claims: { role: 'driver' } } } } },
+    });
+
+    render(<NewOrderPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/don.t have permission/)).toBeInTheDocument();
+    });
   });
 });

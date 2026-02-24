@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { isValidComuna } from '@/lib/data/chileanLocations';
 
-const todayISO = new Date().toISOString().slice(0, 10);
-
 export const RETAILER_OPTIONS = [
   'Falabella',
   'Shopee',
@@ -28,7 +26,7 @@ const baseSchema = z.object({
   delivery_date: z
     .string()
     .min(1, 'Delivery date is required')
-    .refine((val) => val >= todayISO, {
+    .refine((val) => val >= new Date().toISOString().slice(0, 10), {
       message: 'Delivery date cannot be in the past',
     }),
   delivery_window_start: z
