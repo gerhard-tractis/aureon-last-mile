@@ -96,7 +96,7 @@ async function executeJob(job: JobRecord): Promise<void> {
 async function handleJobFailure(job: JobRecord, errorMessage: string): Promise<void> {
   const newRetryCount = job.retry_count + 1;
   if (job.retry_count < job.max_retries) {
-    const backoffSeconds = Math.pow(2, newRetryCount) * 60;
+    const backoffSeconds = Math.pow(2, job.retry_count) * 60; // AC4: retry 1→60s, retry 2→120s, retry 3→240s
     await pool.query(
       `UPDATE jobs SET status = 'retrying', retry_count = $1, error_message = $2,
         scheduled_at = NOW() + ($3 || ' seconds')::interval, updated_at = NOW() WHERE id = $4`,
@@ -116,7 +116,7 @@ async function handleJobFailure(job: JobRecord, errorMessage: string): Promise<v
   }
 }
 
-async function sendHeartbeat(): Promise<void> {
+export async function sendHeartbeat(): Promise<void> {
   if (!BETTERSTACK_HEARTBEAT_URL) return;
   try {
     await fetch(BETTERSTACK_HEARTBEAT_URL);

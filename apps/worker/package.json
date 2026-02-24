@@ -1,6 +1,6 @@
 {
   "name": "@aureon/worker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Aureon automation worker — VPS runtime for data ingestion connectors",
   "engines": {
