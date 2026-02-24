@@ -56,10 +56,10 @@ development_status:
   2-2-build-csv-excel-upload-interface-with-validation: done
   2-3-set-up-vps-infrastructure-and-n8n: done  # All 5 phases complete. VPS at 187.77.48.107, n8n Docker at n8n.tractis.ai, deploy pipeline tested (PR #9), BetterStack + Sentry configured
   2-4-create-automation-worker-database-schema: done  # Code review: 6 issues fixed (3H, 3M), 20 SQL tests, 363 Vitest passing
-  2-5-implement-easy-csv-email-connector: backlog
+  2-5-implement-easy-csv-email-connector: ready-for-dev
   2-6-implement-paris-beetrack-browser-connector: backlog
-  2-7-implement-job-queue-orchestration-and-monitoring: backlog
-  2-8-build-manual-order-entry-form-fallback: backlog
+  2-7-implement-job-queue-orchestration-and-monitoring: in-progress
+  2-8-build-manual-order-entry-form-fallback: ready-for-dev
   epic-2-retrospective: optional
 
   epic-3: backlog
