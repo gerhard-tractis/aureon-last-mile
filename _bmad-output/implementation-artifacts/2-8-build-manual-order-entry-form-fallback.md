@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Order Data Ingestion & Automation Worker
 **Story ID:** 2.8
-**Status:** review
+**Status:** done
 **Created:** 2026-02-23
 
 ---
@@ -475,6 +475,27 @@ Claude Opus 4.6
 - Fixed Supabase `from('orders').insert()` typing: `never` type due to PostgREST version metadata in Database type — used explicit `OrderInsert` type + `any` cast on `.from()` call
 - Added `zod@^4.3.6` as direct dependency (was only transitive via `@hookform/resolvers`)
 - Added `<Toaster />` from sonner to `app/app/layout.tsx` — was completely missing, all toasts would have been invisible
+
+### Code Review
+
+**Reviewer:** Claude Opus 4.6 (adversarial review)
+**Issues Found:** 3 HIGH, 4 MEDIUM, 2 LOW (9 total)
+**Issues Fixed:** 7 (3H + 4M) — 2 LOW acknowledged, not fixed
+
+| ID | Severity | Description | Fix |
+|----|----------|-------------|-----|
+| H1 | HIGH | Stale `todayISO` module-level constant in schema date validation | Compute inline in refine callback |
+| H2 | HIGH | Inline Supabase query in component duplicates exported `checkOrderNumberDuplicate` | Refactored to use imported function |
+| H3 | HIGH | Duplicate HTML `id="order_number-error"` on Zod error and duplicate error | Changed duplicate error to `order_number-dup-error` |
+| M1 | MEDIUM | Unused `trigger` destructured from `useForm` | Removed |
+| M2 | MEDIUM | No test for cross-field validation (window end < start) | Added test |
+| M3 | MEDIUM | `today` recomputed on every render | Wrapped in `useMemo` |
+| M4 | MEDIUM | No tests for NewOrderPage role guard | Added 3 tests (loading/allowed/denied) |
+| L1 | LOW | No test for `handleInvalidSubmit` focus logic | Acknowledged — low risk |
+| L2 | LOW | `checkOrderNumberDuplicate` silent catch | Acknowledged — intentional per UX (retry on submit) |
+
+**Commit:** `review(story-2.8): fix 7 code review issues (3H, 4M)`
+**Tests after fix:** 377 passed (14 in ManualOrderForm.test.tsx)
 
 ### Completion Notes List
 
