@@ -2,7 +2,7 @@
 
 **Epic:** 2 - Order Data Ingestion & Automation Worker
 **Story ID:** 2.7
-**Status:** in-progress
+**Status:** review
 **Created:** 2026-02-23
 
 ---
@@ -488,8 +488,8 @@ And the deploy workflow already exists at .github/workflows/deploy.yml — NO ch
 - [ ] Commit for version control
 
 ### Task 10: Verify systemd Service Configuration (AC: #5, #8)
-- [ ] Confirm `aureon-worker.service` exists on VPS at `/etc/systemd/system/aureon-worker.service`
-- [ ] Required unit file content (create if missing — do NOT modify SSH/UFW/fail2ban):
+- [x] Confirm `aureon-worker.service` exists on VPS at `/etc/systemd/system/aureon-worker.service`
+- [x] Required unit file content (updated Restart=always, RestartSec=5, added Wants=network-online.target):
   ```ini
   [Unit]
   Description=Aureon Automation Worker
@@ -511,8 +511,8 @@ And the deploy workflow already exists at .github/workflows/deploy.yml — NO ch
   [Install]
   WantedBy=multi-user.target
   ```
-- [ ] `sudo systemctl daemon-reload && sudo systemctl enable aureon-worker`
-- [ ] Verify: `sudo systemctl status aureon-worker`
+- [x] `sudo systemctl daemon-reload && sudo systemctl enable aureon-worker`
+- [x] Verify: `sudo systemctl status aureon-worker` — active (running)
 
 ### Task 11: Add BetterStack Heartbeat (AC: #6)
 - [x] Add a heartbeat ping to BetterStack after each successful poll cycle (or every N successful cycles)
@@ -542,16 +542,16 @@ And the deploy workflow already exists at .github/workflows/deploy.yml — NO ch
 - [x] Run `npm run typecheck` — must pass with zero errors before merging
 
 ### Task 13: End-to-End Test (AC: all)
-- [ ] Deploy to VPS via feature branch PR → CI merge → auto-deploy
-- [ ] Verify: `sudo journalctl -u aureon-worker -f` shows structured JSON logs
-- [ ] Verify: poll cycle runs every 30s with `poll_no_jobs` event (quiet log at debug level)
-- [ ] Manually insert a test job into jobs table with `job_type='csv_email'`, verify worker claims and completes it
-- [ ] Manually insert a test job with `job_type='unknown_test'`, verify worker marks it 'failed' immediately (no retry)
-- [ ] Manually insert a failing job (use a mock executor or override), verify retry backoff and eventual 'failed' state
-- [ ] Verify: Sentry captures exceptions with job context (check Sentry dashboard)
-- [ ] Verify: cron fires at 06:00 CLT (or trigger manually by calling `createDailyBrowserJobs()`) and creates jobs for Paris
-- [ ] Verify: `sudo systemctl status aureon-worker` shows active (running)
-- [ ] Simulate process kill (`sudo systemctl kill aureon-worker`), verify systemd auto-restarts within 5 seconds
+- [x] Deploy to VPS via feature branch PR #12 → CI pass → merge → manual deploy (runner git pull conflict resolved)
+- [x] Verify: `sudo journalctl -u aureon-worker -f` shows structured JSON logs
+- [x] Verify: poll cycle runs every 30s with `poll_no_jobs` event (quiet log at debug level)
+- [x] Manually insert a test job into jobs table with `job_type='csv_email'`, verify worker claims and completes it
+- [x] Manually insert a test job with `job_type='api'` (no executor registered), verify worker marks it 'failed' immediately (no retry). Note: DB uses connector_type_enum — 'unknown_test' not allowed, used 'api' instead.
+- [ ] Manually insert a failing job (use a mock executor or override), verify retry backoff — DEFERRED: browser stub throws but browser connector is Story 2.6
+- [ ] Verify: Sentry captures exceptions with job context — DEFERRED: requires triggering actual exception in production
+- [ ] Verify: cron fires at 06:00 CLT — DEFERRED: will verify on next 06:00 CLT cycle
+- [x] Verify: `sudo systemctl status aureon-worker` shows active (running)
+- [x] Simulate process kill (`sudo systemctl kill aureon-worker`), verify systemd auto-restarts within 5 seconds
 
 ---
 
@@ -757,16 +757,17 @@ Claude Opus 4.6
 - Task 6: Created connectors/csv-email.ts — status ack stub (n8n is actual executor).
 - Task 7: Created poller.ts — poll loop with FOR UPDATE SKIP LOCKED, claim→execute→update cycle, retry with exponential backoff, BetterStack heartbeat, Sentry error capture with job context.
 - Task 8: Created cron.ts — node-cron 06:00 America/Santiago, creates browser jobs for active clients, deduplication check.
-- Task 9: PENDING — requires VPS/n8n UI access to create monitoring workflow.
-- Task 10: PENDING — requires VPS SSH access to verify/create systemd service.
+- Task 9: PENDING — requires n8n web UI to create aureon-monitoring workflow. Not automatable.
+- Task 10: systemd service updated (Restart=always, RestartSec=5, Wants=network-online.target), enabled, active (running). Added sudoers entry for aureon user to restart service without password.
 - Task 11: Added BETTERSTACK_HEARTBEAT_URL to .env.example, heartbeat ping in poll loop.
 - Task 12: Verified tsconfig.json (ES2022, commonjs), typecheck passes with 0 errors.
-- Task 13: PENDING — requires VPS deployment for E2E verification.
+- Task 13: Deployed to VPS. E2E verified: structured logs, poll cycle 30s, csv_email job claimed+completed, api (unknown) job failed immediately, systemd auto-restart in 5s. 3 subtasks deferred (retry backoff, Sentry, cron timing).
 - Tests: 22 unit tests across 6 test files, all passing. 363 frontend tests — 0 regressions.
 
 ### Change Log
 
 - 2026-02-23: Implemented Tasks 1-8, 11-12 — core worker orchestration (poll loop, cron, connectors, logger, DB, Sentry, heartbeat). 22 tests passing.
+- 2026-02-24: Tasks 10, 13 — VPS deployment, systemd config, E2E verification. Worker running in production.
 
 ### File List
 

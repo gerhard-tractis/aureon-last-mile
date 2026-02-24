@@ -161,6 +161,22 @@ describe('poller', () => {
     );
   });
 
+  it('sends heartbeat when URL is configured', async () => {
+    const originalEnv = process.env.BETTERSTACK_HEARTBEAT_URL;
+    process.env.BETTERSTACK_HEARTBEAT_URL = 'https://heartbeat.test/ping';
+    const mockFetch = vi.fn().mockResolvedValue({});
+    vi.stubGlobal('fetch', mockFetch);
+
+    // Re-import to pick up new env value
+    vi.resetModules();
+    const { sendHeartbeat } = await import('./poller');
+    await sendHeartbeat();
+
+    expect(mockFetch).toHaveBeenCalledWith('https://heartbeat.test/ping');
+    process.env.BETTERSTACK_HEARTBEAT_URL = originalEnv;
+    vi.unstubAllGlobals();
+  });
+
   it('rolls back and logs on poll error', async () => {
     mockClientQuery.mockRejectedValueOnce(new Error('DB error')); // BEGIN fails
     mockClientQuery.mockResolvedValueOnce(undefined); // ROLLBACK in catch

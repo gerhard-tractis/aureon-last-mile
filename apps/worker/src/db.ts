@@ -20,6 +20,9 @@ export async function initDb(): Promise<void> {
   while (attempt < 5) {
     try {
       await pool.query('SELECT 1');
+      pool.on('error', (err) => {
+        log('error', 'db_pool_error', { error: String(err) });
+      });
       log('info', 'db_connected');
       return;
     } catch {

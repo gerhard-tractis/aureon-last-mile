@@ -1,4 +1,5 @@
 // src/cron.ts — Daily browser job creation at 06:00 CLT
+import * as Sentry from '@sentry/node';
 import cron from 'node-cron';
 import { pool } from './db';
 import { log } from './logger';
@@ -17,14 +18,13 @@ export async function createDailyBrowserJobs(): Promise<void> {
     log('info', 'cron_clients_found', { count: clients.length });
 
     for (const client of clients) {
-      const today = new Date().toISOString().slice(0, 10);
       const { rows: existing } = await pool.query(
         `SELECT id FROM jobs
          WHERE client_id = $1
            AND status IN ('pending', 'running', 'retrying', 'completed')
-           AND created_at >= $2::date
-           AND created_at < ($2::date + interval '1 day')`,
-        [client.id, today],
+           AND created_at >= (NOW() AT TIME ZONE 'America/Santiago')::date
+           AND created_at < ((NOW() AT TIME ZONE 'America/Santiago')::date + interval '1 day')`,
+        [client.id],
       );
       if (existing.length > 0) {
         log('debug', 'cron_job_exists_skip', { clientId: client.id });
@@ -38,6 +38,7 @@ export async function createDailyBrowserJobs(): Promise<void> {
       log('info', 'cron_job_created', { clientId: client.id, operatorId: client.operator_id });
     }
   } catch (err) {
+    Sentry.captureException(err);
     log('error', 'cron_daily_jobs_error', { error: String(err) });
   }
 }

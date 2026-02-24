@@ -9,6 +9,10 @@ vi.mock('./logger', () => ({
   log: vi.fn(),
 }));
 
+vi.mock('@sentry/node', () => ({
+  captureException: vi.fn(),
+}));
+
 const mockSchedule = vi.fn();
 vi.mock('node-cron', () => ({
   default: { schedule: mockSchedule },
@@ -31,22 +35,25 @@ describe('cron', () => {
   });
 
   it('creates jobs for active browser clients with no existing jobs today', async () => {
-    // Active browser clients
     mockQuery.mockResolvedValueOnce({
       rows: [{ id: 'client-paris', operator_id: 'op-musan' }],
     });
-    // No existing jobs today
-    mockQuery.mockResolvedValueOnce({ rows: [] });
-    // INSERT
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // No existing jobs
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // INSERT
 
     const { createDailyBrowserJobs } = await import('./cron');
     await createDailyBrowserJobs();
 
     expect(mockQuery).toHaveBeenCalledTimes(3);
+    // Dedup query uses DB timezone, only 1 param (client_id)
+    expect(mockQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('America/Santiago'),
+      ['client-paris'],
+    );
     expect(mockQuery).toHaveBeenLastCalledWith(
       expect.stringContaining('INSERT INTO jobs'),
-      expect.arrayContaining(['op-musan', 'client-paris']),
+      ['op-musan', 'client-paris'],
     );
   });
 
@@ -54,13 +61,11 @@ describe('cron', () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ id: 'client-paris', operator_id: 'op-musan' }],
     });
-    // Existing job found
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'existing-job' }] });
 
     const { createDailyBrowserJobs } = await import('./cron');
     await createDailyBrowserJobs();
 
-    // Only 2 queries: SELECT clients + SELECT existing — no INSERT
     expect(mockQuery).toHaveBeenCalledTimes(2);
   });
 
