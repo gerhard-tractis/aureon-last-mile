@@ -788,3 +788,14 @@ Claude Opus 4.6
 - apps/worker/src/connectors/csv-email.test.ts (NEW — 1 test)
 - apps/worker/src/connectors/index.test.ts (NEW — 2 tests)
 - apps/worker/.env.example (MODIFIED — added BETTERSTACK_HEARTBEAT_URL)
+
+---
+
+## Pending Manual Tasks
+
+> These items require manual action or real-world conditions. Check them off as completed.
+
+- [ ] **Task 9: n8n monitoring workflow** — Create "aureon-monitoring" workflow in n8n web UI (https://n8n.tractis.ai). See Task 9 spec above for node details (failed jobs poll, stale jobs check, disk usage, stuck running jobs). Export JSON to `apps/worker/n8n/workflows/aureon-monitoring.json` and commit.
+- [ ] **E2E: Retry backoff verification** — Requires Story 2.6 (browser connector) to have a real failing connector. Insert a browser job, let it fail, verify `scheduled_at` advances by 2^retry_count * 60 seconds.
+- [ ] **E2E: Sentry alert verification** — Trigger a real exception in production (e.g., temporarily corrupt a job row), confirm it appears in Sentry dashboard with job context.
+- [ ] **E2E: Cron timing verification** — Check VPS logs after 06:00 CLT to confirm `cron_daily_jobs_start` event fires and browser jobs are created for active clients. Command: `ssh root@187.77.48.107 "journalctl -u aureon-worker --since '06:00' --until '06:05' | grep cron"`
