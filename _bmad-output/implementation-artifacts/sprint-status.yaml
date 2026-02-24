@@ -59,7 +59,7 @@ development_status:
   2-5-implement-easy-csv-email-connector: ready-for-dev
   2-6-implement-paris-beetrack-browser-connector: backlog
   2-7-implement-job-queue-orchestration-and-monitoring: done  # Code review: 6 issues fixed (3H, 3M), 23 tests, deployed to VPS v0.2.0
-  2-8-build-manual-order-entry-form-fallback: ready-for-dev
+  2-8-build-manual-order-entry-form-fallback: done  # Code review: 7 issues fixed (3H, 4M), 14 tests, 377 total passing
   epic-2-retrospective: optional
 
   epic-3: backlog
