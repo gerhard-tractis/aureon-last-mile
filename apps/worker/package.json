@@ -11,11 +11,21 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest --watch"
   },
   "devDependencies": {
-    "typescript": "^5.3.3",
     "@types/node": "^20.11.5",
-    "ts-node": "^10.9.2"
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.16.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@sentry/node": "^9.20.0",
+    "node-cron": "^4.2.1",
+    "pg": "^8.18.0"
   }
 }
