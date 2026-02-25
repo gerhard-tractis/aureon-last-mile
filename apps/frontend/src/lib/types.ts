@@ -452,6 +452,119 @@ export type Database = {
           },
         ]
       }
+      delivery_attempts: {
+        Row: {
+          id: string
+          operator_id: string
+          order_id: string
+          attempt_number: number
+          status: Database["public"]["Enums"]["delivery_attempt_status_enum"]
+          failure_reason: string | null
+          attempted_at: string
+          driver_id: string | null
+          created_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          order_id: string
+          attempt_number: number
+          status: Database["public"]["Enums"]["delivery_attempt_status_enum"]
+          failure_reason?: string | null
+          attempted_at: string
+          driver_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          order_id?: string
+          attempt_number?: number
+          status?: Database["public"]["Enums"]["delivery_attempt_status_enum"]
+          failure_reason?: string | null
+          attempted_at?: string
+          driver_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_attempts_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_attempts_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      performance_metrics: {
+        Row: {
+          id: string
+          operator_id: string
+          metric_date: string
+          retailer_name: string | null
+          total_orders: number
+          delivered_orders: number
+          first_attempt_deliveries: number
+          failed_deliveries: number
+          shortage_claims_count: number
+          shortage_claims_amount_clp: number
+          avg_delivery_time_minutes: number | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          metric_date: string
+          retailer_name?: string | null
+          total_orders?: number
+          delivered_orders?: number
+          first_attempt_deliveries?: number
+          failed_deliveries?: number
+          shortage_claims_count?: number
+          shortage_claims_amount_clp?: number
+          avg_delivery_time_minutes?: number | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          metric_date?: string
+          retailer_name?: string | null
+          total_orders?: number
+          delivered_orders?: number
+          first_attempt_deliveries?: number
+          failed_deliveries?: number
+          shortage_claims_count?: number
+          shortage_claims_amount_clp?: number
+          avg_delivery_time_minutes?: number | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "performance_metrics_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           created_at: string | null
@@ -527,8 +640,42 @@ export type Database = {
           test_name: string
         }[]
       }
+      calculate_sla: {
+        Args: {
+          p_operator_id: string
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: number | null
+      }
+      calculate_fadr: {
+        Args: {
+          p_operator_id: string
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: number | null
+      }
+      get_failure_reasons: {
+        Args: {
+          p_operator_id: string
+          p_start_date: string
+          p_end_date: string
+        }
+        Returns: { reason: string; count: number; percentage: number }[]
+      }
+      calculate_daily_metrics: {
+        Args: {
+          p_date: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
+      delivery_attempt_status_enum:
+        | "success"
+        | "failed"
+        | "returned"
       imported_via_enum:
         | "API"
         | "EMAIL"
@@ -667,6 +814,11 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      delivery_attempt_status_enum: [
+        "success",
+        "failed",
+        "returned",
+      ],
       user_role: [
         "pickup_crew",
         "warehouse_staff",
