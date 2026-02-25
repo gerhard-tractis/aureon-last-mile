@@ -6,14 +6,14 @@
 
 **Never deploy** to Vercel/Supabase/VPS unless user says "deploy" or "push to production".
 
-**Always create a PR immediately after every push** — run `gh pr create` as part of the same step.
+**Always create a PR with auto-merge after every push** — run `gh pr create` followed by `gh pr merge --auto --squash` as part of the same step. Never skip the auto-merge command.
 
 **Never push to `main` directly.** Always use a feature branch + PR:
 ```
 git checkout -b feat/my-feature
 git push origin feat/my-feature
 gh pr create
-gh pr merge --auto --squash
+gh pr merge --auto --squash   # MANDATORY — always enable auto-merge
 # CI passes → auto-merges → auto-deploys
 ```
 
