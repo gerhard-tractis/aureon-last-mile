@@ -1,0 +1,271 @@
+{
+  "_comment": "Easy CSV Email Import — n8n workflow backup (sanitized). Secrets replaced with <SUPABASE_SERVICE_ROLE_KEY> placeholder. On n8n, configure via HTTP Request header auth or replace with actual values from env.",
+  "id": "Cj79hRWYsXPuHfHY",
+  "name": "Easy CSV Email Import",
+  "active": true,
+  "nodes": [
+    {
+      "id": "1cacc400-6ae7-4d55-a8de-d267d395a892",
+      "name": "Email Trigger (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "downloadAttachments": true,
+        "options": {}
+      },
+      "credentials": {
+        "imap": {
+          "id": "QPqswKjKr9O2h7ck",
+          "name": "IMAP Easy"
+        }
+      }
+    },
+    {
+      "id": "filter-email",
+      "name": "Filter Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "// Filter: only process emails from Easy/Logfire about Musan\nconst subject = ($json.subject || '').toLowerCase();\nconst from = ($json.from || '').toLowerCase();\n\nif (subject.includes('musan') && from.includes('logfire')) {\n  return [$input.first()];\n}\n\n// No match — stop execution\nreturn [];"
+      }
+    },
+    {
+      "id": "decompress-zip",
+      "name": "Decompress ZIP",
+      "type": "n8n-nodes-base.compression",
+      "typeVersion": 1,
+      "position": [440, 0],
+      "parameters": {
+        "operation": "decompress",
+        "binaryPropertyName": "attachment_0",
+        "outputPrefix": "file_"
+      }
+    },
+    {
+      "id": "extract-csv",
+      "name": "Extract Spreadsheet",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [660, 0],
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "file_0",
+        "options": {
+          "headerRow": false
+        }
+      }
+    },
+    {
+      "id": "map-validate",
+      "name": "Map & Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 0],
+      "parameters": {
+        "jsCode": "// XLSX rows come as arrays: item.json.row = [val0, val1, ...]\n// Row 0 = metadata (skip), Row 1 = headers, Row 2+ = data\nconst items = $input.all();\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';\nconst CLIENT_ID = 'acf3d096-1ff6-4157-9b69-cab6e6a5789f';\n\nconst emailItem = $('Email Trigger (IMAP)').first();\nconst binaryKeys = Object.keys(emailItem.binary || {});\nconst fileName = binaryKeys.length > 0\n  ? (emailItem.binary[binaryKeys[0]].fileName || 'unknown.xlsx')\n  : 'unknown.xlsx';\n\nif (items.length < 3) {\n  throw new Error('Not enough rows: ' + items.length);\n}\n\n// Row 1 (index 1) contains the header names\nconst headers = items[1].json.row;\nconst colIdx = {};\nheaders.forEach((h, i) => { if (h) colIdx[String(h).trim()] = i; });\n\nfunction col(row, name) {\n  const i = colIdx[name];\n  if (i === undefined) return '';\n  return String(row[i] != null ? row[i] : '').trim();\n}\n\nfunction rowToObj(row) {\n  const obj = {};\n  headers.forEach((h, i) => { if (h && row[i] != null) obj[String(h).trim()] = row[i]; });\n  return obj;\n}\n\nconst ordersMap = new Map();\nconst packages = [];\nconst errors = [];\n\nfunction cleanPhone(phone) {\n  if (!phone) return '';\n  let cleaned = phone.replace(/[\\s\\-\\.\\(\\)]/g, '');\n  if (/^9\\d{8}$/.test(cleaned)) cleaned = '+56' + cleaned;\n  if (/^569\\d{8}$/.test(cleaned)) cleaned = '+' + cleaned;\n  return cleaned;\n}\n\nfunction parseDate(dateStr) {\n  if (!dateStr) return null;\n  const num = Number(dateStr);\n  if (!isNaN(num) && num > 40000 && num < 60000) {\n    const d = new Date((num - 25569) * 86400 * 1000);\n    return d.toISOString().split('T')[0];\n  }\n  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(dateStr)) return dateStr;\n  const m = dateStr.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})$/);\n  if (m) return `${m[3]}-${m[2]}-${m[1]}`;\n  return null;\n}\n\n// Data starts at row index 2\nfor (let i = 2; i < items.length; i++) {\n  const row = items[i].json.row;\n  if (!row || !Array.isArray(row)) continue;\n  const rowNum = i + 1;\n  const rawData = rowToObj(row);\n\n  const entrega = col(row, 'Entrega');\n  const carton = col(row, 'Cartón') || col(row, 'Carton');\n  const address = col(row, 'Direccion');\n  const rawDate = col(row, 'Fecha Entrega');\n  const parsedDate = parseDate(rawDate);\n\n  if (!entrega) {\n    errors.push({ row: rowNum, reason: 'Missing Entrega' });\n    continue;\n  }\n  if (!address) {\n    errors.push({ row: rowNum, reason: 'Missing Direccion' });\n    continue;\n  }\n\n  const cleanedPhone = cleanPhone(col(row, 'Telefono'));\n\n  if (!ordersMap.has(entrega)) {\n    ordersMap.set(entrega, {\n      operator_id: OPERATOR_ID,\n      order_number: entrega,\n      external_load_id: col(row, 'Nro Carga'),\n      customer_name: col(row, 'Nombre'),\n      customer_phone: cleanedPhone,\n      delivery_address: address,\n      comuna: col(row, 'Comuna'),\n      recipient_region: col(row, 'Región') || col(row, 'Region'),\n      delivery_date: parsedDate,\n      service_type: col(row, 'Tipo Orden'),\n      retailer_name: 'Easy',\n      imported_via: 'EMAIL',\n      source_file: fileName,\n      tenant_client_id: CLIENT_ID,\n      imported_at: new Date().toISOString(),\n      metadata: {\n        customer_email: col(row, 'Correo'),\n        distribution_center: col(row, 'CD'),\n        dock: col(row, 'Anden'),\n        complement: col(row, 'Compl')\n      },\n      raw_data: rawData\n    });\n  }\n\n  if (carton) {\n    packages.push({\n      operator_id: OPERATOR_ID,\n      order_number: entrega,\n      label: carton,\n      sku_items: [{\n        sku: col(row, 'Producto'),\n        description: col(row, 'Descripcion'),\n        quantity: parseInt(col(row, 'Unid') || col(row, 'Cant') || '1', 10) || 1\n      }],\n      declared_box_count: parseInt(col(row, 'Bultos') || '1', 10) || 1,\n      raw_data: rawData\n    });\n  }\n}\n\nconst orders = Array.from(ordersMap.values());\n\nif (orders.length === 0) {\n  throw new Error('No valid orders (' + items.length + ' rows, ' + errors.length + ' errors). Headers: ' + headers.join(','));\n}\n\nreturn [{ json: {\n  orders,\n  packages,\n  rows_processed: items.length - 2,\n  orders_count: orders.length,\n  packages_count: packages.length,\n  rows_skipped: errors.length,\n  errors: errors.slice(0, 20),\n  operator_id: OPERATOR_ID,\n  client_id: CLIENT_ID,\n  file_name: fileName\n}}];"
+      }
+    },
+    {
+      "id": "create-job",
+      "name": "Create Job Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Prefer", "value": "return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({operator_id: $('Map & Validate').first().json.operator_id, client_id: $('Map & Validate').first().json.client_id, job_type: 'csv_email', status: 'running', started_at: $now.toISO()}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "upsert-orders",
+      "name": "UPSERT Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/orders?on_conflict=operator_id,order_number",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Map & Validate').first().json.orders) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "link-packages",
+      "name": "Link Packages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0],
+      "parameters": {
+        "jsCode": "// Map order_number -> order_id from UPSERT Orders response\nconst orderItems = $input.all();\nconst orders = orderItems.map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst packageBodies = packages\n  .filter(p => orderIds[p.order_number])\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    declared_box_count: p.declared_box_count,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: packageBodies,\n  orders_upserted: orders.length,\n  packages_count: packageBodies.length\n}}];"
+      }
+    },
+    {
+      "id": "upsert-packages",
+      "name": "UPSERT Packages",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/packages",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.packages) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "prepare-summary",
+      "name": "Prepare Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1980, 0],
+      "parameters": {
+        "jsCode": "// Prepare job completion data\nconst mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\nconst allFailed = mapData.rows_skipped > 0 && linkData.orders_upserted === 0;\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: allFailed ? 'failed' : 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      rows_processed: mapData.rows_processed,\n      orders_upserted: linkData.orders_upserted,\n      packages_inserted: linkData.packages_count,\n      rows_skipped: mapData.rows_skipped,\n      errors: mapData.errors\n    },\n    error_message: allFailed ? 'All rows failed validation (' + mapData.rows_skipped + ' skipped)' : null\n  }\n}}];"
+      }
+    },
+    {
+      "id": "complete-job",
+      "name": "Complete Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 0],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [880, 400],
+      "parameters": {}
+    },
+    {
+      "id": "prepare-error",
+      "name": "Prepare Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 400],
+      "parameters": {
+        "jsCode": "// Extract error info and job_id for failure handler\nconst error = $input.first().json;\nlet jobId = null;\ntry {\n  const jobResp = $('Create Job Record').first();\n  if (jobResp && jobResp.json) {\n    jobId = jobResp.json.id || null;\n  }\n} catch(e) {\n  // Create Job Record may not have executed\n}\n\nconst errorMessage = String(error.message || error.description || JSON.stringify(error)).substring(0, 1000);\n\nreturn [{ json: {\n  job_id: jobId || 'null',\n  patch_body: {\n    status: 'failed',\n    completed_at: new Date().toISOString(),\n    error_message: errorMessage\n  }\n}}];"
+      }
+    },
+    {
+      "id": "mark-job-failed",
+      "name": "Mark Job Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 400],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [[{ "node": "Filter Email", "type": "main", "index": 0 }]]
+    },
+    "Filter Email": {
+      "main": [[{ "node": "Decompress ZIP", "type": "main", "index": 0 }]]
+    },
+    "Decompress ZIP": {
+      "main": [[{ "node": "Extract Spreadsheet", "type": "main", "index": 0 }]]
+    },
+    "Extract Spreadsheet": {
+      "main": [[{ "node": "Map & Validate", "type": "main", "index": 0 }]]
+    },
+    "Map & Validate": {
+      "main": [[{ "node": "Create Job Record", "type": "main", "index": 0 }]]
+    },
+    "Create Job Record": {
+      "main": [[{ "node": "UPSERT Orders", "type": "main", "index": 0 }]]
+    },
+    "UPSERT Orders": {
+      "main": [[{ "node": "Link Packages", "type": "main", "index": 0 }]]
+    },
+    "Link Packages": {
+      "main": [[{ "node": "UPSERT Packages", "type": "main", "index": 0 }]]
+    },
+    "UPSERT Packages": {
+      "main": [[{ "node": "Prepare Summary", "type": "main", "index": 0 }]]
+    },
+    "Prepare Summary": {
+      "main": [[{ "node": "Complete Job", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Prepare Error", "type": "main", "index": 0 }]]
+    },
+    "Prepare Error": {
+      "main": [[{ "node": "Mark Job Failed", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
