@@ -24,32 +24,31 @@ describe('cron', () => {
     mockSchedule.mockReset();
   });
 
-  it('registers a cron schedule for 06:00 America/Santiago', async () => {
+  it('registers cron for 07:00, 10:00, 13:00, 16:00 America/Santiago', async () => {
     const { startCron } = await import('./cron');
     startCron();
     expect(mockSchedule).toHaveBeenCalledWith(
-      '0 6 * * *',
+      '0 7,10,13,16 * * *',
       expect.any(Function),
       { timezone: 'America/Santiago' },
     );
   });
 
-  it('creates jobs for active browser clients with no existing jobs today', async () => {
+  it('creates jobs for active browser clients with no existing jobs in time window', async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ id: 'client-paris', operator_id: 'op-musan' }],
     });
     mockQuery.mockResolvedValueOnce({ rows: [] }); // No existing jobs
     mockQuery.mockResolvedValueOnce({ rows: [] }); // INSERT
 
-    const { createDailyBrowserJobs } = await import('./cron');
-    await createDailyBrowserJobs();
+    const { createBrowserJobs } = await import('./cron');
+    await createBrowserJobs();
 
     expect(mockQuery).toHaveBeenCalledTimes(3);
-    // Dedup query uses DB timezone, only 1 param (client_id)
     expect(mockQuery).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('America/Santiago'),
-      ['client-paris'],
+      expect.stringContaining('1 hour'),
+      ['client-paris', expect.any(Number)],
     );
     expect(mockQuery).toHaveBeenLastCalledWith(
       expect.stringContaining('INSERT INTO jobs'),
@@ -57,14 +56,14 @@ describe('cron', () => {
     );
   });
 
-  it('skips clients that already have a job today', async () => {
+  it('skips clients that already have a job in time window', async () => {
     mockQuery.mockResolvedValueOnce({
       rows: [{ id: 'client-paris', operator_id: 'op-musan' }],
     });
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'existing-job' }] });
 
-    const { createDailyBrowserJobs } = await import('./cron');
-    await createDailyBrowserJobs();
+    const { createBrowserJobs } = await import('./cron');
+    await createBrowserJobs();
 
     expect(mockQuery).toHaveBeenCalledTimes(2);
   });
@@ -72,8 +71,8 @@ describe('cron', () => {
   it('handles no active browser clients', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
 
-    const { createDailyBrowserJobs } = await import('./cron');
-    await createDailyBrowserJobs();
+    const { createBrowserJobs } = await import('./cron');
+    await createBrowserJobs();
 
     expect(mockQuery).toHaveBeenCalledTimes(1);
   });
@@ -82,8 +81,8 @@ describe('cron', () => {
     mockQuery.mockRejectedValueOnce(new Error('DB error'));
     const { log } = await import('./logger');
 
-    const { createDailyBrowserJobs } = await import('./cron');
-    await createDailyBrowserJobs();
+    const { createBrowserJobs } = await import('./cron');
+    await createBrowserJobs();
 
     expect(log).toHaveBeenCalledWith('error', 'cron_daily_jobs_error', expect.any(Object));
   });
