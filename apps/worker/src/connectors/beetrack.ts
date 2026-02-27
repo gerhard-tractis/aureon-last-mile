@@ -89,11 +89,13 @@ export async function executeBeetrack(job: JobRecord): Promise<JobResult> {
     await page.locator('.hp-modal__surface button').filter({ hasText: 'Generar reporte' }).click();
     await page.waitForTimeout(2000);
 
-    // Verify success toast
-    const feedback = await page.evaluate(() => {
-      const toasts = document.querySelectorAll("[class*='toast'], [role='alert']");
-      return Array.from(toasts).map(t => t.textContent?.trim() || '').filter(t => t.length > 0);
-    });
+    // Verify success toast (evaluate runs in browser context — use string to avoid DOM types)
+    const feedback = await page.evaluate(`
+      (() => {
+        const toasts = document.querySelectorAll("[class*='toast'], [role='alert']");
+        return Array.from(toasts).map(t => (t.textContent || '').trim()).filter(t => t.length > 0);
+      })()
+    `) as string[];
     const success = feedback.some(f => f.includes('correo electrónico'));
 
     if (success) {
