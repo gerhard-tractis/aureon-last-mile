@@ -6,6 +6,7 @@ import type { Database } from '@/lib/types';
 type RpcFunctions = Database['public']['Functions'];
 type SlaArgs = RpcFunctions['calculate_sla']['Args'];
 type FadrArgs = RpcFunctions['calculate_fadr']['Args'];
+type FailureReasonsArgs = RpcFunctions['get_failure_reasons']['Args'];
 
 const DASHBOARD_QUERY_OPTIONS = {
   staleTime: 30000,
@@ -453,6 +454,36 @@ export function useSlaPreviousPeriod(
       const { data, error } = await (createSPAClient().rpc as CallableFunction)('calculate_sla', args);
       if (error) throw error;
       return data as number | null;
+    },
+    enabled: !!operatorId,
+    ...DASHBOARD_QUERY_OPTIONS,
+  });
+}
+
+// === Story 3.5 hooks ===
+
+export type FailureReasonRow = {
+  reason: string;
+  count: number;
+  percentage: number;
+};
+
+export function useFailureReasons(
+  operatorId: string | null,
+  startDate: string,
+  endDate: string
+) {
+  return useQuery({
+    queryKey: ['dashboard', operatorId, 'failure-reasons', startDate, endDate],
+    queryFn: async () => {
+      const args: FailureReasonsArgs = {
+        p_operator_id: operatorId!,
+        p_start_date: startDate,
+        p_end_date: endDate,
+      };
+      const { data, error } = await (createSPAClient().rpc as CallableFunction)('get_failure_reasons', args);
+      if (error) throw error;
+      return data as FailureReasonRow[];
     },
     enabled: !!operatorId,
     ...DASHBOARD_QUERY_OPTIONS,
