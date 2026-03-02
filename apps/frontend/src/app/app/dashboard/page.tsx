@@ -6,6 +6,7 @@ import { useOperatorId } from '@/hooks/useDashboardMetrics';
 import HeroSLA from '@/components/dashboard/HeroSLA';
 import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
 import PrimaryMetricsGrid from '@/components/dashboard/PrimaryMetricsGrid';
+import CustomerPerformanceTable from '@/components/dashboard/CustomerPerformanceTable';
 
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
@@ -27,6 +28,7 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <HeroSLA operatorId={operatorId} />
       <PrimaryMetricsGrid operatorId={operatorId} />
+      <CustomerPerformanceTable operatorId={operatorId} />
     </div>
   );
 }
