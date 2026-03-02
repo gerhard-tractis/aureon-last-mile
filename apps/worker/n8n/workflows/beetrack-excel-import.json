@@ -1,315 +1,663 @@
-{
-  "_comment": "Paris/DispatchTrack Excel Import — n8n workflow backup (sanitized). Shares IMAP inbox (contacto@transportesmusan.com) with Easy CSV workflow. IMAP triggers on DispatchTrack export emails (from: no-reply@dtmail.dispatchtrack.io, subject: 'Reporte excel YYYY-MM-DD - Paris'), extracts download link from cluster-1.dispatchtrack.com/files/*, downloads .xlsx, parses with headerRow=true, groups by Orden, upserts orders + packages with CARTONID.",
-  "name": "Beetrack Excel Import",
-  "active": true,
-  "nodes": [
-    {
-      "id": "bt-imap-trigger",
-      "name": "Email Trigger (IMAP)",
-      "type": "n8n-nodes-base.emailReadImap",
-      "typeVersion": 2,
-      "position": [0, 0],
-      "parameters": {
-        "downloadAttachments": false,
-        "options": {}
-      },
-      "credentials": {
-        "imap": {
-          "id": "QPqswKjKr9O2h7ck",
-          "name": "IMAP Easy"
+[
+  {
+    "updatedAt": "2026-02-27T19:56:55.000Z",
+    "createdAt": "2026-02-27T19:06:52.676Z",
+    "id": "5hQa3YQFOwfkWE4V",
+    "name": "Beetrack Excel Import",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "bt-imap-trigger",
+        "name": "Email Trigger (IMAP)",
+        "type": "n8n-nodes-base.emailReadImap",
+        "typeVersion": 2,
+        "position": [
+          0,
+          0
+        ],
+        "parameters": {
+          "downloadAttachments": false,
+          "options": {}
+        },
+        "credentials": {
+          "imap": {
+            "id": "QPqswKjKr9O2h7ck",
+            "name": "IMAP Easy"
+          }
         }
-      }
-    },
-    {
-      "id": "bt-filter-email",
-      "name": "Filter DispatchTrack Email",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [220, 0],
-      "parameters": {
-        "jsCode": "// Filter: only DispatchTrack report emails\n// From: DispatchTrack <no-reply@dtmail.dispatchtrack.io>\n// Subject: \"Reporte excel 2026-02-25 - Paris\"\nconst subject = ($json.subject || '').toLowerCase();\nconst from = ($json.from || '').toLowerCase();\n\nif (from.includes('dispatchtrack') && subject.includes('reporte excel')) {\n  return [$input.first()];\n}\nreturn [];"
-      }
-    },
-    {
-      "id": "bt-extract-link",
-      "name": "Extract Download Link",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [440, 0],
-      "parameters": {
-        "jsCode": "// Extract direct download link from DispatchTrack email HTML body\n// Link pattern: https://cluster-1.dispatchtrack.com/files/1/669607\nconst html = $json.html || $json.textHtml || $json.body || '';\nconst text = $json.text || $json.textPlain || '';\nconst content = html || text;\n\nconst linkPattern = /https?:\\/\\/cluster[^\\s\"'<>]*\\.dispatchtrack\\.com\\/files\\/[^\\s\"'<>]+/gi;\nconst matches = content.match(linkPattern);\n\nif (!matches || matches.length === 0) {\n  throw new Error('No DispatchTrack download link found in email body');\n}\n\nreturn [{ json: { download_url: matches[0] } }];"
-      }
-    },
-    {
-      "id": "bt-download-xlsx",
-      "name": "Download XLSX",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [660, 0],
-      "parameters": {
-        "method": "GET",
-        "url": "={{ $json.download_url }}",
-        "options": {
-          "response": {
+      },
+      {
+        "id": "bt-filter-email",
+        "name": "Filter DispatchTrack Email",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          0
+        ],
+        "parameters": {
+          "jsCode": "// Filter: only DispatchTrack report emails\n// From: DispatchTrack <no-reply@dtmail.dispatchtrack.io>\n// Subject: \"Reporte excel 2026-02-25 - Paris\"\nconst subject = ($json.subject || '').toLowerCase();\nconst from = ($json.from || '').toLowerCase();\n\nif (from.includes('dispatchtrack') && subject.includes('reporte excel')) {\n  return [$input.first()];\n}\nreturn [];"
+        }
+      },
+      {
+        "id": "bt-extract-link",
+        "name": "Extract Download Link",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          0
+        ],
+        "parameters": {
+          "jsCode": "// Extract direct download link from DispatchTrack email HTML body\n// Link pattern: https://cluster-1.dispatchtrack.com/files/1/669607\nconst html = $json.html || $json.textHtml || $json.body || '';\nconst text = $json.text || $json.textPlain || '';\nconst content = html || text;\n\nconst linkPattern = /https?:\\/\\/cluster[^\\s\"'<>]*\\.dispatchtrack\\.com\\/files\\/[^\\s\"'<>]+/gi;\nconst matches = content.match(linkPattern);\n\nif (!matches || matches.length === 0) {\n  throw new Error('No DispatchTrack download link found in email body');\n}\n\nreturn [{ json: { download_url: matches[0] } }];"
+        }
+      },
+      {
+        "id": "bt-download-xlsx",
+        "name": "Download XLSX",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          660,
+          0
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "={{ $json.download_url }}",
+          "options": {
             "response": {
-              "responseFormat": "file"
+              "response": {
+                "responseFormat": "file"
+              }
             }
           }
         }
-      }
-    },
-    {
-      "id": "bt-upload-raw",
-      "name": "Upload Raw File",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [880, 0],
-      "parameters": {
-        "method": "POST",
-        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/storage/v1/object/raw-files/musan/paris/{{ $now.format('yyyy-MM-dd') }}/beetrack_export_{{ $now.toMillis() }}.xlsx",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Content-Type", "value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "binaryData",
-        "options": {}
-      }
-    },
-    {
-      "id": "bt-extract-xlsx",
-      "name": "Extract Spreadsheet",
-      "type": "n8n-nodes-base.extractFromFile",
-      "typeVersion": 1,
-      "position": [1100, 0],
-      "parameters": {
-        "operation": "xlsx",
-        "binaryPropertyName": "data",
-        "options": {
-          "headerRow": true
+      },
+      {
+        "id": "bt-upload-raw",
+        "name": "Upload Raw File",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          880,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/storage/v1/object/raw-files/musan/paris/{{ $now.format('yyyy-MM-dd') }}/beetrack_export_{{ $now.toMillis() }}.xlsx",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "binaryData",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-extract-xlsx",
+        "name": "Extract Spreadsheet",
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          1100,
+          0
+        ],
+        "parameters": {
+          "operation": "xlsx",
+          "binaryPropertyName": "data",
+          "options": {
+            "headerRow": true
+          }
+        }
+      },
+      {
+        "id": "bt-map-validate",
+        "name": "Map & Validate",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1320,
+          0
+        ],
+        "parameters": {
+          "jsCode": "// DispatchTrack XLSX: headerRow=true, one row per carton/product\n// Group rows by 'Orden' column \u00e2\u20ac\u201d multiple rows per order\nconst items = $input.all();\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';\nconst CLIENT_ID = 'acf3d096-1ff6-4157-9b69-cab6e6a5789f';\n\nfunction cleanPhone(phone) {\n  if (!phone) return null;\n  let c = String(phone).replace(/[\\s\\-\\.\\(\\)]/g, '');\n  if (/^9\\d{8}$/.test(c)) c = '+56' + c;\n  else if (/^569\\d{8}$/.test(c)) c = '+' + c;\n  else if (/^56\\d{9}$/.test(c)) c = '+' + c;\n  return c || null;\n}\n\nfunction val(row, key) {\n  const v = row[key];\n  if (v === null || v === undefined) return null;\n  const s = String(v).trim();\n  return s === '' ? null : s;\n}\n\nfunction parseDate(dateStr) {\n  if (!dateStr) return null;\n  const m = String(dateStr).match(/^(\\d{4}-\\d{2}-\\d{2})/);\n  return m ? m[1] : null;\n}\n\nconst ordersMap = new Map();\nconst packages = [];\nconst errors = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const row = items[i].json;\n  const orden = val(row, 'Orden');\n\n  if (!orden) {\n    errors.push({ row: i + 1, reason: 'Missing Orden' });\n    continue;\n  }\n\n  if (!ordersMap.has(orden)) {\n    ordersMap.set(orden, {\n      operator_id: OPERATOR_ID,\n      order_number: orden,\n      external_load_id: val(row, 'Identificador ruta'),\n      delivery_date: parseDate(val(row, 'Fecha estimada')),\n      status_detail: val(row, 'Estado'),\n      customer_name: val(row, 'Nombre cliente'),\n      delivery_address: val(row, 'Direcci\u00c3\u00b3n cliente') || val(row, 'Direccion cliente'),\n      customer_phone: cleanPhone(val(row, 'Tel\u00c3\u00a9fono cliente') || val(row, 'Telefono cliente')),\n      comuna: val(row, 'Desc_Comuna'),\n      retailer_name: 'Paris',\n      imported_via: 'EMAIL',\n      tenant_client_id: CLIENT_ID,\n      imported_at: new Date().toISOString(),\n      metadata: {\n        customer_email: val(row, 'Correo electr\u00c3\u00b3nico cliente') || val(row, 'Correo electronico cliente'),\n        latitude: val(row, 'Latitud direcci\u00c3\u00b3n') || val(row, 'Latitud direccion'),\n        longitude: val(row, 'Longitud direcci\u00c3\u00b3n') || val(row, 'Longitud direccion'),\n        is_prime: val(row, 'isPrime'),\n        delivery_guide_url: val(row, 'URLGUIA'),\n        load_guide_url: val(row, 'URLCARGA'),\n        rut: val(row, 'Id cliente')\n      },\n      raw_data: row\n    });\n  }\n\n  // Each row = one carton/product\n  const cartonId = val(row, 'CARTONID');\n  if (cartonId) {\n    packages.push({\n      operator_id: OPERATOR_ID,\n      order_number: orden,\n      label: cartonId,\n      sku_items: [{\n        sku: val(row, 'C\u00c3\u00b3digo del producto') || val(row, 'Codigo del producto') || '',\n        description: val(row, 'Nombre del producto') || ''\n      }],\n      raw_data: row\n    });\n  }\n}\n\nconst orders = Array.from(ordersMap.values());\n\nif (orders.length === 0) {\n  throw new Error('No valid orders from ' + items.length + ' rows (' + errors.length + ' errors)');\n}\n\nreturn [{ json: {\n  orders,\n  packages,\n  rows_processed: items.length,\n  orders_count: orders.length,\n  packages_count: packages.length,\n  rows_skipped: errors.length,\n  errors: errors.slice(0, 20),\n  operator_id: OPERATOR_ID,\n  client_id: CLIENT_ID\n}}];"
+        }
+      },
+      {
+        "id": "bt-create-job",
+        "name": "Create Job Record",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1540,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Prefer",
+                "value": "return=representation"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({operator_id: $json.operator_id, client_id: $json.client_id, job_type: 'browser', status: 'running', started_at: $now.toISO()}) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-upsert-orders",
+        "name": "UPSERT Orders",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1760,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/orders?on_conflict=operator_id,order_number",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Map & Validate').first().json.orders) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-link-packages",
+        "name": "Link Packages",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1980,
+          0
+        ],
+        "parameters": {
+          "jsCode": "// Map order_number -> order_id from UPSERT Orders response\nconst orders = $input.all().map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst linked = packages\n  .filter(p => orderIds[p.order_number])\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: linked,\n  orders_upserted: orders.length,\n  packages_count: linked.length\n}}];"
+        }
+      },
+      {
+        "id": "bt-upsert-packages",
+        "name": "UPSERT Packages",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2200,
+          0
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/packages?on_conflict=operator_id,label",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.packages) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-prepare-summary",
+        "name": "Prepare Summary",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2420,
+          0
+        ],
+        "parameters": {
+          "jsCode": "const mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      rows_processed: mapData.rows_processed,\n      orders_upserted: linkData.orders_upserted,\n      packages_inserted: linkData.packages_count,\n      rows_skipped: mapData.rows_skipped,\n      errors: mapData.errors\n    }\n  }\n}}];"
+        }
+      },
+      {
+        "id": "bt-complete-job",
+        "name": "Complete Job",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2640,
+          0
+        ],
+        "parameters": {
+          "method": "PATCH",
+          "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-error-trigger",
+        "name": "Error Trigger",
+        "type": "n8n-nodes-base.errorTrigger",
+        "typeVersion": 1,
+        "position": [
+          1320,
+          400
+        ],
+        "parameters": {}
+      },
+      {
+        "id": "bt-prepare-error",
+        "name": "Prepare Error",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1540,
+          400
+        ],
+        "parameters": {
+          "jsCode": "const error = $input.first().json;\nlet jobId = null;\ntry {\n  const jobResp = $('Create Job Record').first();\n  if (jobResp && jobResp.json) jobId = jobResp.json.id || null;\n} catch(e) {}\n\nif (!jobId || jobId === 'null') {\n  return [];\n}\n\nconst errorMessage = String(error.message || error.description || JSON.stringify(error)).substring(0, 1000);\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'failed',\n    completed_at: new Date().toISOString(),\n    error_message: errorMessage\n  }\n}}];"
+        }
+      },
+      {
+        "id": "bt-mark-job-failed",
+        "name": "Mark Job Failed",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1760,
+          400
+        ],
+        "parameters": {
+          "method": "PATCH",
+          "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "apikey",
+                "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              },
+              {
+                "name": "Authorization",
+                "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
+          "options": {}
+        }
+      },
+      {
+        "id": "bt-schedule",
+        "name": "Schedule Trigger",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -440,
+          -300
+        ],
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 7,
+                "triggerAtMinute": 0
+              },
+              {
+                "triggerAtHour": 10,
+                "triggerAtMinute": 0
+              },
+              {
+                "triggerAtHour": 13,
+                "triggerAtMinute": 0
+              },
+              {
+                "triggerAtHour": 16,
+                "triggerAtMinute": 0
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "bt-build-date",
+        "name": "Build Date Params",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -220,
+          -300
+        ],
+        "parameters": {
+          "jsCode": "// Build today's date in both formats needed by DispatchTrack\nconst now = new Date();\nconst yyyy = now.getFullYear();\nconst mm = String(now.getMonth() + 1).padStart(2, '0');\nconst dd = String(now.getDate()).padStart(2, '0');\n\nreturn [{ json: {\n  date_api: `${yyyy}-${mm}-${dd}`,\n  date_url: `${dd}-${mm}-${yyyy}`,\n  email: 'contacto@transportesmusan.com',\n  base_url: 'https://paris.dispatchtrack.com'\n}}];"
+        }
+      },
+      {
+        "id": "bt-trigger-export",
+        "name": "Trigger DispatchTrack Export",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          0,
+          -300
+        ],
+        "parameters": {
+          "url": "={{ $json.exportUrl }}",
+          "options": {
+            "redirect": {
+              "redirect": {
+                "followRedirects": true,
+                "maxRedirects": 5
+              }
+            },
+            "response": {
+              "response": {
+                "fullResponse": false
+              }
+            }
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Cookie",
+                "value": "=_cluster_1_dt_auth_session={{ $env.DT_SESSION_COOKIE }}; remember_user_token={{ $env.DT_REMEMBER_TOKEN }}"
+              }
+            ]
+          }
         }
       }
-    },
-    {
-      "id": "bt-map-validate",
-      "name": "Map & Validate",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1320, 0],
-      "parameters": {
-        "jsCode": "// DispatchTrack XLSX: headerRow=true, one row per carton/product\n// Group rows by 'Orden' column — multiple rows per order\nconst items = $input.all();\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';\nconst CLIENT_ID = 'acf3d096-1ff6-4157-9b69-cab6e6a5789f';\n\nfunction cleanPhone(phone) {\n  if (!phone) return null;\n  let c = String(phone).replace(/[\\s\\-\\.\\(\\)]/g, '');\n  if (/^9\\d{8}$/.test(c)) c = '+56' + c;\n  else if (/^569\\d{8}$/.test(c)) c = '+' + c;\n  else if (/^56\\d{9}$/.test(c)) c = '+' + c;\n  return c || null;\n}\n\nfunction val(row, key) {\n  const v = row[key];\n  if (v === null || v === undefined) return null;\n  const s = String(v).trim();\n  return s === '' ? null : s;\n}\n\nfunction parseDate(dateStr) {\n  if (!dateStr) return null;\n  const m = String(dateStr).match(/^(\\d{4}-\\d{2}-\\d{2})/);\n  return m ? m[1] : null;\n}\n\nconst ordersMap = new Map();\nconst packages = [];\nconst errors = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const row = items[i].json;\n  const orden = val(row, 'Orden');\n\n  if (!orden) {\n    errors.push({ row: i + 1, reason: 'Missing Orden' });\n    continue;\n  }\n\n  if (!ordersMap.has(orden)) {\n    ordersMap.set(orden, {\n      operator_id: OPERATOR_ID,\n      order_number: orden,\n      external_load_id: val(row, 'Identificador ruta'),\n      delivery_date: parseDate(val(row, 'Fecha estimada')),\n      status_detail: val(row, 'Estado'),\n      customer_name: val(row, 'Nombre cliente'),\n      delivery_address: val(row, 'Dirección cliente') || val(row, 'Direccion cliente'),\n      customer_phone: cleanPhone(val(row, 'Teléfono cliente') || val(row, 'Telefono cliente')),\n      comuna: val(row, 'Desc_Comuna'),\n      retailer_name: 'Paris',\n      imported_via: 'EMAIL',\n      tenant_client_id: CLIENT_ID,\n      imported_at: new Date().toISOString(),\n      metadata: {\n        customer_email: val(row, 'Correo electrónico cliente') || val(row, 'Correo electronico cliente'),\n        latitude: val(row, 'Latitud dirección') || val(row, 'Latitud direccion'),\n        longitude: val(row, 'Longitud dirección') || val(row, 'Longitud direccion'),\n        is_prime: val(row, 'isPrime'),\n        delivery_guide_url: val(row, 'URLGUIA'),\n        load_guide_url: val(row, 'URLCARGA'),\n        rut: val(row, 'Id cliente')\n      },\n      raw_data: row\n    });\n  }\n\n  // Each row = one carton/product\n  const cartonId = val(row, 'CARTONID');\n  if (cartonId) {\n    packages.push({\n      operator_id: OPERATOR_ID,\n      order_number: orden,\n      label: cartonId,\n      sku_items: [{\n        sku: val(row, 'Código del producto') || val(row, 'Codigo del producto') || '',\n        description: val(row, 'Nombre del producto') || ''\n      }],\n      raw_data: row\n    });\n  }\n}\n\nconst orders = Array.from(ordersMap.values());\n\nif (orders.length === 0) {\n  throw new Error('No valid orders from ' + items.length + ' rows (' + errors.length + ' errors)');\n}\n\nreturn [{ json: {\n  orders,\n  packages,\n  rows_processed: items.length,\n  orders_count: orders.length,\n  packages_count: packages.length,\n  rows_skipped: errors.length,\n  errors: errors.slice(0, 20),\n  operator_id: OPERATOR_ID,\n  client_id: CLIENT_ID\n}}];"
-      }
-    },
-    {
-      "id": "bt-create-job",
-      "name": "Create Job Record",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1540, 0],
-      "parameters": {
-        "method": "POST",
-        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "return=representation" }
+    ],
+    "connections": {
+      "Email Trigger (IMAP)": {
+        "main": [
+          [
+            {
+              "node": "Filter DispatchTrack Email",
+              "type": "main",
+              "index": 0
+            }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({operator_id: $json.operator_id, client_id: $json.client_id, job_type: 'browser', status: 'running', started_at: $now.toISO()}) }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "bt-upsert-orders",
-      "name": "UPSERT Orders",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1760, 0],
-      "parameters": {
-        "method": "POST",
-        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/orders?on_conflict=operator_id,order_number",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+        ]
+      },
+      "Filter DispatchTrack Email": {
+        "main": [
+          [
+            {
+              "node": "Extract Download Link",
+              "type": "main",
+              "index": 0
+            }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($('Map & Validate').first().json.orders) }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "bt-link-packages",
-      "name": "Link Packages",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1980, 0],
-      "parameters": {
-        "jsCode": "// Map order_number -> order_id from UPSERT Orders response\nconst orders = $input.all().map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst linked = packages\n  .filter(p => orderIds[p.order_number])\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: linked,\n  orders_upserted: orders.length,\n  packages_count: linked.length\n}}];"
-      }
-    },
-    {
-      "id": "bt-upsert-packages",
-      "name": "UPSERT Packages",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2200, 0],
-      "parameters": {
-        "method": "POST",
-        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/packages?on_conflict=operator_id,label",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+        ]
+      },
+      "Extract Download Link": {
+        "main": [
+          [
+            {
+              "node": "Download XLSX",
+              "type": "main",
+              "index": 0
+            }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.packages) }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "bt-prepare-summary",
-      "name": "Prepare Summary",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [2420, 0],
-      "parameters": {
-        "jsCode": "const mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      rows_processed: mapData.rows_processed,\n      orders_upserted: linkData.orders_upserted,\n      packages_inserted: linkData.packages_count,\n      rows_skipped: mapData.rows_skipped,\n      errors: mapData.errors\n    }\n  }\n}}];"
-      }
-    },
-    {
-      "id": "bt-complete-job",
-      "name": "Complete Job",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2640, 0],
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+        ]
+      },
+      "Download XLSX": {
+        "main": [
+          [
+            {
+              "node": "Upload Raw File",
+              "type": "main",
+              "index": 0
+            }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
-        "options": {}
-      }
-    },
-    {
-      "id": "bt-error-trigger",
-      "name": "Error Trigger",
-      "type": "n8n-nodes-base.errorTrigger",
-      "typeVersion": 1,
-      "position": [1320, 400],
-      "parameters": {}
-    },
-    {
-      "id": "bt-prepare-error",
-      "name": "Prepare Error",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1540, 400],
-      "parameters": {
-        "jsCode": "const error = $input.first().json;\nlet jobId = null;\ntry {\n  const jobResp = $('Create Job Record').first();\n  if (jobResp && jobResp.json) jobId = jobResp.json.id || null;\n} catch(e) {}\n\nconst errorMessage = String(error.message || error.description || JSON.stringify(error)).substring(0, 1000);\n\nreturn [{ json: {\n  job_id: jobId || 'null',\n  patch_body: {\n    status: 'failed',\n    completed_at: new Date().toISOString(),\n    error_message: errorMessage\n  }\n}}];"
-      }
-    },
-    {
-      "id": "bt-mark-job-failed",
-      "name": "Mark Job Failed",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1760, 400],
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
-        "authentication": "none",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+        ]
+      },
+      "Upload Raw File": {
+        "main": [
+          [
+            {
+              "node": "Extract Spreadsheet",
+              "type": "main",
+              "index": 0
+            }
           ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.patch_body) }}",
-        "options": {}
+        ]
+      },
+      "Extract Spreadsheet": {
+        "main": [
+          [
+            {
+              "node": "Map & Validate",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Map & Validate": {
+        "main": [
+          [
+            {
+              "node": "Create Job Record",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Job Record": {
+        "main": [
+          [
+            {
+              "node": "UPSERT Orders",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "UPSERT Orders": {
+        "main": [
+          [
+            {
+              "node": "Link Packages",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Link Packages": {
+        "main": [
+          [
+            {
+              "node": "UPSERT Packages",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "UPSERT Packages": {
+        "main": [
+          [
+            {
+              "node": "Prepare Summary",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Summary": {
+        "main": [
+          [
+            {
+              "node": "Complete Job",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Error Trigger": {
+        "main": [
+          [
+            {
+              "node": "Prepare Error",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Error": {
+        "main": [
+          [
+            {
+              "node": "Mark Job Failed",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Schedule Trigger": {
+        "main": [
+          [
+            {
+              "node": "Build Date Params",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Build Date Params": {
+        "main": [
+          [
+            {
+              "node": "Trigger DispatchTrack Export",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
       }
-    }
-  ],
-  "connections": {
-    "Email Trigger (IMAP)": {
-      "main": [[{ "node": "Filter DispatchTrack Email", "type": "main", "index": 0 }]]
     },
-    "Filter DispatchTrack Email": {
-      "main": [[{ "node": "Extract Download Link", "type": "main", "index": 0 }]]
+    "settings": {
+      "executionOrder": "v1",
+      "saveManualExecutions": true,
+      "callerPolicy": "workflowsFromSameOwner",
+      "availableInMCP": false
     },
-    "Extract Download Link": {
-      "main": [[{ "node": "Download XLSX", "type": "main", "index": 0 }]]
+    "staticData": {
+      "node:Email Trigger (IMAP)": {},
+      "node:Schedule Trigger": {
+        "recurrenceRules": []
+      }
     },
-    "Download XLSX": {
-      "main": [[{ "node": "Upload Raw File", "type": "main", "index": 0 }]]
-    },
-    "Upload Raw File": {
-      "main": [[{ "node": "Extract Spreadsheet", "type": "main", "index": 0 }]]
-    },
-    "Extract Spreadsheet": {
-      "main": [[{ "node": "Map & Validate", "type": "main", "index": 0 }]]
-    },
-    "Map & Validate": {
-      "main": [[{ "node": "Create Job Record", "type": "main", "index": 0 }]]
-    },
-    "Create Job Record": {
-      "main": [[{ "node": "UPSERT Orders", "type": "main", "index": 0 }]]
-    },
-    "UPSERT Orders": {
-      "main": [[{ "node": "Link Packages", "type": "main", "index": 0 }]]
-    },
-    "Link Packages": {
-      "main": [[{ "node": "UPSERT Packages", "type": "main", "index": 0 }]]
-    },
-    "UPSERT Packages": {
-      "main": [[{ "node": "Prepare Summary", "type": "main", "index": 0 }]]
-    },
-    "Prepare Summary": {
-      "main": [[{ "node": "Complete Job", "type": "main", "index": 0 }]]
-    },
-    "Error Trigger": {
-      "main": [[{ "node": "Prepare Error", "type": "main", "index": 0 }]]
-    },
-    "Prepare Error": {
-      "main": [[{ "node": "Mark Job Failed", "type": "main", "index": 0 }]]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "binaryMode": "separate",
-    "saveManualExecutions": true,
-    "callerPolicy": "workflowsFromSameOwner"
+    "meta": null,
+    "pinData": null,
+    "versionId": "e70452b4-89ae-417e-9a9f-5105f81ff314",
+    "activeVersionId": "e70452b4-89ae-417e-9a9f-5105f81ff314",
+    "versionCounter": 8,
+    "triggerCount": 2,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-02-27T19:06:52.679Z",
+        "createdAt": "2026-02-27T19:06:52.679Z",
+        "role": "workflow:owner",
+        "workflowId": "5hQa3YQFOwfkWE4V",
+        "projectId": "qDTsvNqorr23W2OK",
+        "project": {
+          "updatedAt": "2026-02-24T00:13:00.587Z",
+          "createdAt": "2026-02-19T16:36:23.656Z",
+          "id": "qDTsvNqorr23W2OK",
+          "name": "Gerhard Neumann <gerhard@tractis.ai>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "creatorId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
+        }
+      }
+    ]
   }
-}
+]
