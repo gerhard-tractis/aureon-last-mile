@@ -10,9 +10,10 @@ import {
     ChevronDown,
     LogOut,
     Key, Files, LucideListTodo,
+    BarChart3,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
-import { createSPASassClient } from "@/lib/supabase/client";
+import { createSPAClient, createSPASassClient } from "@/lib/supabase/client";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -22,6 +23,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 
     const { user } = useGlobal();
+    const [userRole, setUserRole] = useState<string | null>(null);
+
+    React.useEffect(() => {
+        const supabase = createSPAClient();
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            setUserRole(session?.user?.app_metadata?.claims?.role ?? null);
+        });
+    }, []);
 
     const handleLogout = async () => {
         try {
@@ -44,7 +53,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
 
+    const dashboardAllowed = userRole === 'operations_manager' || userRole === 'admin';
+
     const navigation = [
+        ...(dashboardAllowed
+            ? [{ name: 'Dashboard', href: '/app/dashboard', icon: BarChart3 }]
+            : []),
         { name: 'Homepage', href: '/app', icon: Home },
         { name: 'Example Storage', href: '/app/storage', icon: Files },
         { name: 'Example Table', href: '/app/table', icon: LucideListTodo },
