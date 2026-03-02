@@ -60,14 +60,14 @@ development_status:
   2-6-implement-paris-beetrack-browser-connector: done  # n8n workflow e2e verified: Schedule Trigger → CSRF → Export API → IMAP → XLSX parse → UPSERT. 41 orders/42 packages (Feb 27). IMAP filters separate Easy/DispatchTrack emails.
   2-7-implement-job-queue-orchestration-and-monitoring: done  # Code review: 6 issues fixed (3H, 3M), 23 tests, deployed to VPS v0.2.0
   2-8-build-manual-order-entry-form-fallback: done  # Code review: 7 issues fixed (3H, 4M), 14 tests, 377 total passing
-  epic-2-retrospective: done  # Completed 2026-03-02, 8/8 stories, n8n workflows live, 377+ tests
+  epic-2-retrospective: done  # Completed 2026-03-02, 8/8 stories, 377+ tests, 0 incidents, 7 action items, 3 team agreements
 
   epic-3: in-progress
   3-1-create-performance-metrics-tables-and-calculation-logic: done  # Code review: 7 issues fixed (3H, 4M), security DEFINER revoke, cron graceful fallback, metrics column completeness
   3-2-build-hero-sla-section-with-real-time-calculation: done
   3-3-implement-primary-metrics-cards-fadr-claims-efficiency: done
   3-4-build-customer-performance-table-sortable-color-coded: done  # Code review: 7 issues fixed (3H, 4M), 35 tests, 480 total passing
-  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: ready-for-dev
+  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: in-progress
   3-6-add-secondary-metrics-dashboard: ready-for-dev
   3-7-implement-export-functionality-csv-pdf-reports: backlog
   3-8-set-up-tanstack-query-caching-for-dashboard-performance: backlog
