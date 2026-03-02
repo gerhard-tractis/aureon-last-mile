@@ -403,7 +403,7 @@ export function useCustomerPerformance(
       type RawRow = { retailer_name: string | null; total_orders: number; delivered_orders: number; first_attempt_deliveries: number; failed_deliveries: number };
       // Aggregate by retailer_name in JS
       const byRetailer = new Map<string, CustomerPerformanceRow>();
-      for (const row of (data as RawRow[]) ?? []) {
+      for (const row of (data ?? []) as RawRow[]) {
         const key = row.retailer_name!;
         const existing = byRetailer.get(key) ?? {
           retailer_name: key,

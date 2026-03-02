@@ -33,6 +33,14 @@ function getFadrColor(value: number | null): { bg: string; text: string } {
   return { bg: 'bg-[#ef4444]/10', text: 'text-[#ef4444]' };
 }
 
+function escapeCSVField(value: string | number): string {
+  const str = String(value);
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || /^[=+\-@\t\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
 function exportCSV(data: CustomerPerformanceRow[], filename: string) {
   const headers = ['Cliente', 'Pedidos', 'SLA %', 'FADR %', 'Fallos'];
   const rows = data.map(r => [
@@ -42,7 +50,7 @@ function exportCSV(data: CustomerPerformanceRow[], filename: string) {
     r.fadr_pct?.toFixed(1) ?? 'N/A',
     r.failed_deliveries,
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const csv = [headers, ...rows].map(r => r.map(escapeCSVField).join(',')).join('\n');
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -69,6 +77,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
     const days = dateRange === 'custom' ? 7 : Number(dateRange);
     const start = format(subDays(today, days - 1), 'yyyy-MM-dd');
     return { startDate: start, endDate: end };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally recompute only on dateRange/custom changes; today's date is stable within a session
   }, [dateRange, customStart, customEnd]);
 
   // Sort state
@@ -144,8 +153,8 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
   if (isLoading) return <CustomerPerformanceTableSkeleton />;
 
-  const ariaSortValue = (col: SortColumn): 'ascending' | 'descending' | 'none' => {
-    if (col !== sortColumn) return 'none';
+  const ariaSortValue = (col: SortColumn): 'ascending' | 'descending' | undefined => {
+    if (col !== sortColumn) return undefined;
     return sortDirection === 'asc' ? 'ascending' : 'descending';
   };
 
@@ -245,7 +254,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
         )}
 
         {/* Table */}
-        {processedData.length === 0 && !isLoading ? (
+        {processedData.length === 0 && !isLoading && !isError ? (
           <p className="text-sm text-slate-500 text-center py-8">
             No hay datos de clientes para este periodo
           </p>
