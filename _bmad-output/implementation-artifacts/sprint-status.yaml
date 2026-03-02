@@ -66,7 +66,7 @@ development_status:
   3-1-create-performance-metrics-tables-and-calculation-logic: done  # Code review: 7 issues fixed (3H, 4M), security DEFINER revoke, cron graceful fallback, metrics column completeness
   3-2-build-hero-sla-section-with-real-time-calculation: done
   3-3-implement-primary-metrics-cards-fadr-claims-efficiency: done
-  3-4-build-customer-performance-table-sortable-color-coded: ready-for-dev
+  3-4-build-customer-performance-table-sortable-color-coded: review
   3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: ready-for-dev
   3-6-add-secondary-metrics-dashboard: ready-for-dev
   3-7-implement-export-functionality-csv-pdf-reports: backlog
