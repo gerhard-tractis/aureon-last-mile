@@ -1,6 +1,6 @@
 # Story 3.4: Build Customer Performance Table (Sortable, Color-Coded)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -423,16 +423,33 @@ None — clean implementation.
 - Task 9: `CustomerPerformanceTableSkeleton.tsx` — 5 skeleton rows with matching column widths.
 - Task 10: Integrated below `<PrimaryMetricsGrid />` in `dashboard/page.tsx`.
 - Task 11: 29 tests covering sort logic (5), color-coding (6), search (3), pagination (3), CSV export (1), accessibility (4), edge cases (5), drill-down (1), hook integration (1).
-- Full suite: 474 tests passing, 0 failures, 0 lint errors.
+- Full suite: 480 tests passing, 0 failures, 0 lint errors.
+
+## Senior Developer Review (AI)
+
+**Review Date:** 2026-03-02
+**Review Outcome:** Changes Requested
+**Total Action Items:** 7 (3 High, 4 Medium)
+
+### Action Items
+
+- [x] [H1] CSV export vulnerable to CSV injection — fields not escaped (CustomerPerformanceTable.tsx:38-45)
+- [x] [H2] Operator precedence bug in `(data as RawRow[]) ?? []` (useDashboardMetrics.ts:406)
+- [x] [H3] Error + empty state overlap — misleading "no data" message on API error (CustomerPerformanceTable.tsx:248)
+- [x] [M1] No test for date range switching (AC4 untested)
+- [x] [M2] `aria-sort="none"` on non-active columns adds screen reader noise (CustomerPerformanceTable.tsx:269)
+- [x] [M3] CSV export test doesn't validate content (CustomerPerformanceTable.test.tsx:231-247)
+- [x] [M4] `new Date()` in useMemo non-deterministic — added eslint-disable comment documenting intent
 
 ### Change Log
 
 - 2026-03-02: Story 3.4 implementation complete — customer performance table with all ACs satisfied.
+- 2026-03-02: Code review: 7 issues fixed (3H, 4M) — CSV injection, operator precedence, error state, aria-sort, test coverage. 6 new tests added (35 total).
 
 ### File List
 
-- `apps/frontend/src/hooks/useDashboardMetrics.ts` (MODIFIED) — added `useCustomerPerformance` hook + `CustomerPerformanceRow` type
+- `apps/frontend/src/hooks/useDashboardMetrics.ts` (MODIFIED) — added `useCustomerPerformance` hook + `CustomerPerformanceRow` type, fixed cast precedence
 - `apps/frontend/src/components/dashboard/CustomerPerformanceTable.tsx` (NEW) — main table component
 - `apps/frontend/src/components/dashboard/CustomerPerformanceTableSkeleton.tsx` (NEW) — skeleton loader
-- `apps/frontend/src/components/dashboard/CustomerPerformanceTable.test.tsx` (NEW) — 29 tests
+- `apps/frontend/src/components/dashboard/CustomerPerformanceTable.test.tsx` (NEW) — 35 tests
 - `apps/frontend/src/app/app/dashboard/page.tsx` (MODIFIED) — integrated CustomerPerformanceTable

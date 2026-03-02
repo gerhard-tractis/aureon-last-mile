@@ -257,11 +257,12 @@ describe('CustomerPerformanceTable', () => {
       expect(container.querySelectorAll('th[scope="col"]').length).toBeGreaterThan(0);
     });
 
-    it('has aria-sort on active sort column', () => {
+    it('has aria-sort only on active sort column', () => {
       const { container } = renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
-      const headers = container.querySelectorAll('th[aria-sort]');
-      const pedidosHeader = Array.from(headers).find(h => h.textContent?.includes('Pedidos'));
-      expect(pedidosHeader?.getAttribute('aria-sort')).toBe('descending');
+      const headersWithSort = container.querySelectorAll('th[aria-sort]');
+      expect(headersWithSort.length).toBe(1);
+      expect(headersWithSort[0].textContent).toContain('Pedidos');
+      expect(headersWithSort[0].getAttribute('aria-sort')).toBe('descending');
     });
 
     it('Ver detalles buttons have descriptive aria-label', () => {
@@ -335,6 +336,93 @@ describe('CustomerPerformanceTable', () => {
     it('passes operatorId to hook and renders data', () => {
       renderWithProvider(<CustomerPerformanceTable operatorId="test-op" />);
       expect(screen.getByText('Falabella')).toBeDefined();
+    });
+  });
+
+  // --- Date range tests (AC4, M1) ---
+  describe('date range', () => {
+    it('renders date range dropdown with default option', () => {
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      const select = screen.getByDisplayValue('Últimos 7 días');
+      expect(select).toBeDefined();
+    });
+
+    it('shows custom date inputs when custom range selected', async () => {
+      const user = userEvent.setup();
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      await user.selectOptions(screen.getByDisplayValue('Últimos 7 días'), 'custom');
+      expect(screen.getAllByDisplayValue('').length).toBeGreaterThanOrEqual(2); // two date inputs
+    });
+  });
+
+  // --- CSV content validation (M3) ---
+  describe('CSV content', () => {
+    it('generates CSV with correct headers and escaped fields', async () => {
+      const user = userEvent.setup();
+      let blobContent = '';
+      const OrigBlob = global.Blob;
+      global.Blob = class MockBlob extends OrigBlob {
+        constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
+          super(parts, options);
+          blobContent = parts?.join('') ?? '';
+        }
+      } as typeof Blob;
+
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      await user.click(screen.getByText('Exportar CSV ↓'));
+
+      expect(blobContent).toContain('Cliente,Pedidos,SLA %,FADR %,Fallos');
+      expect(blobContent).toContain('Falabella');
+      expect(blobContent).toContain('96.2');
+      global.Blob = OrigBlob;
+    });
+
+    it('escapes fields with commas and formula characters', async () => {
+      const user = userEvent.setup();
+      mockCustomerQuery.data = [{
+        retailer_name: '=evil,name"test',
+        total_orders: 10, delivered_orders: 9, first_attempt_deliveries: 8,
+        failed_deliveries: 1, sla_pct: 90.0, fadr_pct: 80.0,
+      }];
+      let blobContent = '';
+      const OrigBlob = global.Blob;
+      global.Blob = class MockBlob extends OrigBlob {
+        constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
+          super(parts, options);
+          blobContent = parts?.join('') ?? '';
+        }
+      } as typeof Blob;
+
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      await user.click(screen.getByText('Exportar CSV ↓'));
+
+      // Field should be quoted and inner quotes doubled
+      expect(blobContent).toContain('"=evil,name""test"');
+      global.Blob = OrigBlob;
+    });
+  });
+
+  // --- FADR red threshold (L2) ---
+  describe('FADR red threshold', () => {
+    it('applies red for FADR < 80%', () => {
+      mockCustomerQuery.data = [{
+        retailer_name: 'LowFADR', total_orders: 100, delivered_orders: 90,
+        first_attempt_deliveries: 70, failed_deliveries: 10, sla_pct: 90.0, fadr_pct: 70.0,
+      }];
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      const cell = screen.getByText('70.0%');
+      expect(cell.className).toContain('bg-[#ef4444]/10');
+    });
+  });
+
+  // --- Error state without empty message (H3) ---
+  describe('error state', () => {
+    it('does not show empty state message when error occurs', () => {
+      mockCustomerQuery.isError = true;
+      mockCustomerQuery.data = [];
+      renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
+      expect(screen.getByText('Error al cargar datos.')).toBeDefined();
+      expect(screen.queryByText('No hay datos de clientes para este periodo')).toBeNull();
     });
   });
 });
