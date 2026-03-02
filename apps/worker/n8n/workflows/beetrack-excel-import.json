@@ -390,20 +390,20 @@
         "rule": {
           "interval": [
             {
-              "triggerAtMinute": 0,
-              "triggerAtHour": 7
+              "triggerAtHour": 7,
+              "triggerAtMinute": 0
             },
             {
-              "triggerAtMinute": 0,
-              "triggerAtHour": 10
+              "triggerAtHour": 10,
+              "triggerAtMinute": 0
             },
             {
-              "triggerAtMinute": 0,
-              "triggerAtHour": 13
+              "triggerAtHour": 13,
+              "triggerAtMinute": 0
             },
             {
-              "triggerAtMinute": 0,
-              "triggerAtHour": 16
+              "triggerAtHour": 16,
+              "triggerAtMinute": 0
             }
           ]
         }
@@ -713,8 +713,8 @@
   },
   "meta": null,
   "pinData": null,
-  "activeVersionId": "d57456ec-f70a-4350-8241-0f70f2739093",
-  "versionCounter": 404,
+  "activeVersionId": "9d9cea19-39a7-4346-90c0-9d23f2d15cfd",
+  "versionCounter": 352,
   "triggerCount": 2,
   "shared": [
     {
@@ -737,9 +737,9 @@
   ],
   "tags": [],
   "activeVersion": {
-    "updatedAt": "2026-03-02T20:03:09.587Z",
-    "createdAt": "2026-03-02T20:03:09.587Z",
-    "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
+    "updatedAt": "2026-03-02T16:47:34.026Z",
+    "createdAt": "2026-03-02T16:47:34.026Z",
+    "versionId": "9d9cea19-39a7-4346-90c0-9d23f2d15cfd",
     "workflowId": "5hQa3YQFOwfkWE4V",
     "nodes": [
       {
@@ -1131,20 +1131,20 @@
           "rule": {
             "interval": [
               {
-                "triggerAtMinute": 0,
-                "triggerAtHour": 7
+                "triggerAtHour": 7,
+                "triggerAtMinute": 0
               },
               {
-                "triggerAtMinute": 0,
-                "triggerAtHour": 10
+                "triggerAtHour": 10,
+                "triggerAtMinute": 0
               },
               {
-                "triggerAtMinute": 0,
-                "triggerAtHour": 13
+                "triggerAtHour": 13,
+                "triggerAtMinute": 0
               },
               {
-                "triggerAtMinute": 0,
-                "triggerAtHour": 16
+                "triggerAtHour": 16,
+                "triggerAtMinute": 0
               }
             ]
           }
@@ -1446,50 +1446,18 @@
     "autosaved": false,
     "workflowPublishHistory": [
       {
-        "createdAt": "2026-03-02T20:03:11.280Z",
-        "id": 74,
+        "createdAt": "2026-03-02T16:47:35.798Z",
+        "id": 58,
         "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
+        "versionId": "9d9cea19-39a7-4346-90c0-9d23f2d15cfd",
         "event": "activated",
         "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
       },
       {
-        "createdAt": "2026-03-02T20:03:17.759Z",
-        "id": 76,
+        "createdAt": "2026-03-02T16:47:34.362Z",
+        "id": 57,
         "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
-        "event": "activated",
-        "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
-      },
-      {
-        "createdAt": "2026-03-02T20:03:25.596Z",
-        "id": 78,
-        "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
-        "event": "activated",
-        "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
-      },
-      {
-        "createdAt": "2026-03-02T20:03:09.893Z",
-        "id": 73,
-        "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
-        "event": "deactivated",
-        "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
-      },
-      {
-        "createdAt": "2026-03-02T20:03:16.473Z",
-        "id": 75,
-        "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
-        "event": "deactivated",
-        "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
-      },
-      {
-        "createdAt": "2026-03-02T20:03:18.244Z",
-        "id": 77,
-        "workflowId": "5hQa3YQFOwfkWE4V",
-        "versionId": "d57456ec-f70a-4350-8241-0f70f2739093",
+        "versionId": "9d9cea19-39a7-4346-90c0-9d23f2d15cfd",
         "event": "deactivated",
         "userId": "61c2e104-327e-463d-ac7c-5bf848a98d0d"
       }
