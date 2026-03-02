@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
+import type { Database } from '@/lib/types';
+
+type RpcFunctions = Database['public']['Functions'];
+type SlaArgs = RpcFunctions['calculate_sla']['Args'];
+type FadrArgs = RpcFunctions['calculate_fadr']['Args'];
 
 const DASHBOARD_QUERY_OPTIONS = {
   staleTime: 30000,
@@ -31,12 +36,12 @@ export function useSlaMetric(
   return useQuery({
     queryKey: ['dashboard', operatorId, 'sla', startDate, endDate],
     queryFn: async () => {
-      const supabase = createSPAClient();
-      const { data, error } = await supabase.rpc('calculate_sla', {
+      const args: SlaArgs = {
         p_operator_id: operatorId!,
         p_start_date: startDate,
         p_end_date: endDate,
-      });
+      };
+      const { data, error } = await (createSPAClient().rpc as CallableFunction)('calculate_sla', args);
       if (error) throw error;
       return data as number | null;
     },
@@ -53,12 +58,12 @@ export function useFadrMetric(
   return useQuery({
     queryKey: ['dashboard', operatorId, 'fadr', startDate, endDate],
     queryFn: async () => {
-      const supabase = createSPAClient();
-      const { data, error } = await supabase.rpc('calculate_fadr', {
+      const args: FadrArgs = {
         p_operator_id: operatorId!,
         p_start_date: startDate,
         p_end_date: endDate,
-      });
+      };
+      const { data, error } = await (createSPAClient().rpc as CallableFunction)('calculate_fadr', args);
       if (error) throw error;
       return data as number | null;
     },
@@ -81,8 +86,7 @@ export function usePerformanceMetricsSummary(
   return useQuery({
     queryKey: ['dashboard', operatorId, 'performance', startDate, endDate],
     queryFn: async () => {
-      const supabase = createSPAClient();
-      const { data, error } = await supabase
+      const { data, error } = await createSPAClient()
         .from('performance_metrics')
         .select('total_orders, delivered_orders, failed_deliveries')
         .eq('operator_id', operatorId!)
@@ -92,7 +96,7 @@ export function usePerformanceMetricsSummary(
       if (error) throw error;
       if (!data || data.length === 0) return null;
 
-      return data.reduce<NonNullable<MetricsSummary>>(
+      return (data as { total_orders: number; delivered_orders: number; failed_deliveries: number }[]).reduce<NonNullable<MetricsSummary>>(
         (acc, row) => ({
           totalOrders: acc.totalOrders + (row.total_orders ?? 0),
           deliveredOrders: acc.deliveredOrders + (row.delivered_orders ?? 0),
@@ -114,12 +118,12 @@ export function useSlaPreviousPeriod(
   return useQuery({
     queryKey: ['dashboard', operatorId, 'sla-prev', startDate, endDate],
     queryFn: async () => {
-      const supabase = createSPAClient();
-      const { data, error } = await supabase.rpc('calculate_sla', {
+      const args: SlaArgs = {
         p_operator_id: operatorId!,
         p_start_date: startDate,
         p_end_date: endDate,
-      });
+      };
+      const { data, error } = await (createSPAClient().rpc as CallableFunction)('calculate_sla', args);
       if (error) throw error;
       return data as number | null;
     },
