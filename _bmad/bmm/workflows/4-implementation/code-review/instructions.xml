@@ -224,4 +224,19 @@
     </output>
   </step>
 
+  <step n="6" goal="CI/CD verification gate — MANDATORY before declaring done">
+    <critical>NEVER declare a story done, complete, or ready until this step passes</critical>
+    <critical>This step MUST run after any commit+push</critical>
+
+    <action>After pushing to remote and creating PR with auto-merge, WAIT for CI to complete</action>
+    <action>Run `gh pr checks &lt;PR_NUMBER&gt;` to verify all CI checks pass</action>
+    <action if="any CI check fails">HALT — fix the failure, push again, and re-run this step</action>
+
+    <action>Run `gh pr view &lt;PR_NUMBER&gt; --json state,mergedAt` to confirm PR has merged</action>
+    <action if="state != MERGED">WAIT and re-check — do NOT report completion until state == MERGED</action>
+
+    <action>ONLY after state == MERGED: Report to user that the story is complete and deployed</action>
+    <output>✅ CI passed, PR merged. Story {{story_key}} is done.</output>
+  </step>
+
 </workflow>
