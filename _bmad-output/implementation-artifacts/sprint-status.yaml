@@ -57,7 +57,7 @@ development_status:
   2-3-set-up-vps-infrastructure-and-n8n: done  # All 5 phases complete. VPS at 187.77.48.107, n8n Docker at n8n.tractis.ai, deploy pipeline tested (PR #9), BetterStack + Sentry configured
   2-4-create-automation-worker-database-schema: done  # Code review: 6 issues fixed (3H, 3M), 20 SQL tests, 363 Vitest passing
   2-5-implement-easy-csv-email-connector: done  # n8n workflow live, upsert fix (on_conflict), error handler cascade fix, 140+ orders/150+ packages daily
-  2-6-implement-paris-beetrack-browser-connector: done  # Code review: 8 issues fixed (3H, 4M, 1L), 45 tests, Playwright connector + n8n workflow + crypto utility
+  2-6-implement-paris-beetrack-browser-connector: done  # n8n workflow e2e verified: Schedule Trigger → CSRF → Export API → IMAP → XLSX parse → UPSERT. 41 orders/42 packages (Feb 27). IMAP filters separate Easy/DispatchTrack emails.
   2-7-implement-job-queue-orchestration-and-monitoring: done  # Code review: 6 issues fixed (3H, 3M), 23 tests, deployed to VPS v0.2.0
   2-8-build-manual-order-entry-form-fallback: done  # Code review: 7 issues fixed (3H, 4M), 14 tests, 377 total passing
   epic-2-retrospective: optional
@@ -66,9 +66,9 @@ development_status:
   3-1-create-performance-metrics-tables-and-calculation-logic: done  # Code review: 7 issues fixed (3H, 4M), security DEFINER revoke, cron graceful fallback, metrics column completeness
   3-2-build-hero-sla-section-with-real-time-calculation: done
   3-3-implement-primary-metrics-cards-fadr-claims-efficiency: done
-  3-4-build-customer-performance-table-sortable-color-coded: backlog
-  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: backlog
-  3-6-add-secondary-metrics-dashboard: backlog
+  3-4-build-customer-performance-table-sortable-color-coded: ready-for-dev
+  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: ready-for-dev
+  3-6-add-secondary-metrics-dashboard: ready-for-dev
   3-7-implement-export-functionality-csv-pdf-reports: backlog
   3-8-set-up-tanstack-query-caching-for-dashboard-performance: backlog
   epic-3-retrospective: optional
