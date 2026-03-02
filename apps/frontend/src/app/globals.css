@@ -31,6 +31,10 @@
     --color-secondary-800: #1e293b;
     --color-secondary-900: #0f172a;
 
+    /* Tractis gold */
+    --gold-primary: #e6c15c;
+    --gold-light: #fef3c7;
+
     /* Accent colors */
     --color-accent-50: #fdf4ff;
     --color-accent-100: #fae8ff;
