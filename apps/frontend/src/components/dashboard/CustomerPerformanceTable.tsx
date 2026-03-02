@@ -132,7 +132,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
     const filename = `aureon-clientes-${format(new Date(), 'yyyy-MM-dd')}.csv`;
     exportCSV(processedData, filename);
     try {
-      await createSPAClient().from('audit_logs').insert({
+      await (createSPAClient().from('audit_logs').insert as CallableFunction)({
         action: 'EXPORT_DASHBOARD',
         resource_type: 'report',
         details: { filename, rows: processedData.length },
