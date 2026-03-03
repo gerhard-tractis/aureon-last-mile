@@ -77,7 +77,7 @@ export function generateCSV(
   const lines: string[] = [];
 
   if (sections.sla) {
-    lines.push('Resumen SLA');
+    lines.push(csvRow(['Resumen SLA']));
     lines.push(csvRow(['Métrica', 'Valor', 'Período anterior']));
     lines.push(
       csvRow([
@@ -96,7 +96,7 @@ export function generateCSV(
   }
 
   if (sections.primary) {
-    lines.push('Métricas Primarias');
+    lines.push(csvRow(['Métricas Primarias']));
     lines.push(csvRow(['Métrica', 'Valor', 'Período anterior']));
     lines.push(
       csvRow([
@@ -131,11 +131,11 @@ export function generateCSV(
 
   if (sections.customers) {
     if (data.customers.length === 0) {
-      lines.push('Tabla de Clientes');
-      lines.push('Sin datos para este período');
+      lines.push(csvRow(['Tabla de Clientes']));
+      lines.push(csvRow(['Sin datos para este período']));
       lines.push('');
     } else {
-      lines.push('Tabla de Clientes');
+      lines.push(csvRow(['Tabla de Clientes']));
       lines.push(
         csvRow([
           'Cliente',
@@ -164,11 +164,11 @@ export function generateCSV(
 
   if (sections.failures) {
     if (data.failures.length === 0) {
-      lines.push('Análisis de Fallos');
-      lines.push('Sin datos para este período');
+      lines.push(csvRow(['Análisis de Fallos']));
+      lines.push(csvRow(['Sin datos para este período']));
       lines.push('');
     } else {
-      lines.push('Análisis de Fallos');
+      lines.push(csvRow(['Análisis de Fallos']));
       lines.push(csvRow(['Razón', 'Cantidad', 'Porcentaje']));
       for (const r of data.failures) {
         lines.push(csvRow([r.reason, r.count, `${r.percentage.toFixed(1)}%`]));
@@ -179,11 +179,11 @@ export function generateCSV(
 
   if (sections.secondary) {
     if (!data.secondary) {
-      lines.push('Métricas Secundarias');
-      lines.push('Sin datos para este período');
+      lines.push(csvRow(['Métricas Secundarias']));
+      lines.push(csvRow(['Sin datos para este período']));
       lines.push('');
     } else {
-      lines.push('Métricas Secundarias');
+      lines.push(csvRow(['Métricas Secundarias']));
       lines.push(csvRow(['Métrica', 'Valor']));
       lines.push(
         csvRow([

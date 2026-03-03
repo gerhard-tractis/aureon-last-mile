@@ -1,6 +1,6 @@
 # Story 3.7: Implement Export Functionality (CSV/PDF Reports)
 
-Status: review
+Status: done
 
 ## Story
 
@@ -343,8 +343,23 @@ Claude Opus 4.6
 - Full suite: 540 tests passing (35 files), 0 regressions
 - Created `useExportData` hook in useDashboardMetrics.ts that aggregates all dashboard hooks with the modal's own date range + computed previous period
 
+### Senior Developer Review (AI)
+
+**Review Date:** 2026-03-03
+**Review Outcome:** Changes Requested → Fixed
+**Action Items:** 6 found (3H, 3M), all resolved
+
+#### Action Items
+- [x] [H1] useExportData fires 13 queries on modal open — gated operatorId with enabled flag
+- [x] [H2] computeDates not memoized — wrapped in useMemo
+- [x] [H3] PDF fallback preserves .pdf extension — strip .pdf before CSV download
+- [x] [M1] Abort mechanism is cosmetic dead code — removed abortRef
+- [x] [M2] CSV section headers not escaped — routed through csvRow()
+- [x] [M3] Inner hooks not gated by enabled — fixed via gatedOperatorId (same fix as H1)
+
 ### Change Log
 - 2026-03-03: Implemented export functionality (CSV/PDF) — Story 3.7
+- 2026-03-03: Code review fixes — 6 issues resolved (3H, 3M)
 
 ### File List
 - apps/frontend/package.json (MODIFIED — added jspdf dependency)

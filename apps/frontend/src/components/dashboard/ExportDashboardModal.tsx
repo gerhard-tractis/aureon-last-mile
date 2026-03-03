@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { format, subDays, differenceInDays, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import {
@@ -71,10 +71,12 @@ export default function ExportDashboardModal({
     `aureon-dashboard-${format(new Date(), 'yyyy-MM-dd')}`
   );
   const [isExporting, setIsExporting] = useState(false);
-  const abortRef = useRef(false);
 
   const days = Number(dateRange);
-  const { startDate, endDate, prevStartDate, prevEndDate } = computeDates(days);
+  const { startDate, endDate, prevStartDate, prevEndDate } = useMemo(
+    () => computeDates(days),
+    [days]
+  );
 
   const { data: exportData, isLoading: dataLoading } = useExportData(
     operatorId,
@@ -91,30 +93,25 @@ export default function ExportDashboardModal({
 
   const handleExport = useCallback(async () => {
     if (!exportData) return;
-    abortRef.current = false;
     setIsExporting(true);
 
     const dateRangeLabel = DATE_RANGE_LABELS[dateRange];
 
     try {
       if (exportFormat === 'csv') {
-        if (abortRef.current) return;
         const csv = generateCSV(exportData, sections, dateRangeLabel);
         downloadCSV(csv, filename);
       } else {
         try {
-          if (abortRef.current) return;
           generatePDF(exportData, sections, dateRangeLabel, filename);
         } catch {
-          // Fallback to CSV on PDF error
-          if (abortRef.current) return;
+          // Fallback to CSV on PDF error — strip .pdf extension if present
           toast.error('Error generando PDF. Descargando CSV.');
           const csv = generateCSV(exportData, sections, dateRangeLabel);
-          downloadCSV(csv, filename);
+          const csvFilename = filename.replace(/\.pdf$/i, '');
+          downloadCSV(csv, csvFilename);
         }
       }
-
-      if (abortRef.current) return;
 
       toast.success(`Reporte descargado: ${filename}`);
 
@@ -141,9 +138,6 @@ export default function ExportDashboardModal({
   }, [exportData, exportFormat, sections, filename, dateRange, onOpenChange]);
 
   const handleCancel = () => {
-    if (isExporting) {
-      abortRef.current = true;
-    }
     onOpenChange(false);
   };
 
