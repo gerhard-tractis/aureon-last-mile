@@ -66,6 +66,7 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
 
   return (
     <>
+      {hasError && <DashboardErrorBanner />}
       <div
         role="button"
         tabIndex={0}
@@ -77,7 +78,6 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
         {isPlaceholderData && (
           <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
         )}
-        {hasError && <DashboardErrorBanner />}
 
         <h2 className="text-xl font-semibold text-slate-700 uppercase tracking-wide mb-4">
           Cumplimiento SLA - Ultimos 7 Dias

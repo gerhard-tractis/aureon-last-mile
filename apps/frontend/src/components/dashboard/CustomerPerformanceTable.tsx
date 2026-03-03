@@ -169,7 +169,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
   return (
     <>
-      <div className={`relative bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-opacity${isPlaceholderData ? ' opacity-60' : ''}`}>
+      <div className={`relative bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
         {isPlaceholderData && (
           <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
         )}

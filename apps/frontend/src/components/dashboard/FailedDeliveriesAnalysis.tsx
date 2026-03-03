@@ -83,7 +83,7 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
           </div>
         </div>
       ) : (
-        <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-opacity${isPlaceholderData ? ' opacity-60' : ''}`}>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
           <FailureReasonsChart
             data={reasonsQuery.data ?? []}
             totalFailures={totalFailures}

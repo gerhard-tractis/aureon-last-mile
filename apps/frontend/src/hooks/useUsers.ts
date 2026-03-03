@@ -16,7 +16,7 @@ export const useUsers = () => {
   return useQuery({
     queryKey: ['users'],
     queryFn: getUsers,
-    staleTime: 60000, // Fresh for 60 seconds
+    staleTime: 300000, // Fresh for 5 minutes — matches refetchInterval per AC11
     refetchInterval: 300000, // Background refresh every 5 minutes
     refetchOnWindowFocus: false // Override global default — 60s stale data should not refetch on every tab switch
   });

@@ -69,7 +69,7 @@ export default function SecondaryMetricsGrid({ operatorId }: SecondaryMetricsGri
         MÉTRICAS SECUNDARIAS
       </h2>
       {isError && <DashboardErrorBanner />}
-      <div className={`relative grid grid-cols-1 sm:grid-cols-2 gap-6 transition-opacity${isPlaceholderData ? ' opacity-60' : ''}`}>
+      <div className={`relative grid grid-cols-1 sm:grid-cols-2 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
         {isPlaceholderData && (
           <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
         )}

@@ -1,8 +1,9 @@
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { initQueryBroadcast } from '@/lib/queryBroadcast';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -20,6 +21,34 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         },
       })
   );
+
+  useEffect(() => {
+    const handleOnline = () => onlineManager.setOnline(true);
+    const handleOffline = () => onlineManager.setOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  useEffect(() => {
+    const cleanup = initQueryBroadcast(queryClient);
+    return cleanup;
+  }, [queryClient]);
+
+  useEffect(() => {
+    const MAX_INACTIVE_QUERIES = 100;
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      const inactiveQueries = queryClient.getQueryCache().getAll()
+        .filter((query) => query.getObserversCount() === 0);
+      if (inactiveQueries.length > MAX_INACTIVE_QUERIES) {
+        queryClient.removeQueries({ type: 'inactive' });
+      }
+    });
+    return unsubscribe;
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>
