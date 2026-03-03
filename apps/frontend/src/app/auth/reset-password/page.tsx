@@ -13,7 +13,6 @@ export default function ResetPasswordPage() {
     const [success, setSuccess] = useState(false);
     const router = useRouter();
 
-    // Check if we have a valid recovery session
     useEffect(() => {
         const checkSession = async () => {
             try {
@@ -21,10 +20,10 @@ export default function ResetPasswordPage() {
                 const { data: { user }, error } = await supabase.getSupabaseClient().auth.getUser();
 
                 if (error || !user) {
-                    setError('Invalid or expired reset link. Please request a new password reset.');
+                    setError('Enlace inválido o expirado. Solicita un nuevo restablecimiento de contraseña.');
                 }
             } catch {
-                setError('Failed to verify reset session');
+                setError('Error al verificar la sesión');
             }
         };
 
@@ -36,12 +35,12 @@ export default function ResetPasswordPage() {
         setError('');
 
         if (newPassword !== confirmPassword) {
-            setError("Passwords don't match");
+            setError("Las contraseñas no coinciden");
             return;
         }
 
         if (newPassword.length < 6) {
-            setError('Password must be at least 6 characters long');
+            setError('La contraseña debe tener al menos 6 caracteres');
             return;
         }
 
@@ -63,7 +62,7 @@ export default function ResetPasswordPage() {
             if (err instanceof Error) {
                 setError(err.message);
             } else {
-                setError('Failed to reset password');
+                setError('Error al restablecer la contraseña');
             }
         } finally {
             setLoading(false);
@@ -72,91 +71,89 @@ export default function ResetPasswordPage() {
 
     if (success) {
         return (
-            <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-                <div className="text-center">
-                    <div className="flex justify-center mb-4">
-                        <CheckCircle className="h-16 w-16 text-green-500" />
+            <div className="text-center py-4">
+                <div className="flex justify-center mb-5">
+                    <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+                        <CheckCircle className="h-7 w-7 text-emerald-500" />
                     </div>
-
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        Password reset successful
-                    </h2>
-
-                    <p className="text-gray-600 mb-8">
-                        Your password has been successfully reset.
-                        You will be redirected to the app in a moment.
-                    </p>
                 </div>
+
+                <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-2">
+                    Contraseña actualizada
+                </h2>
+
+                <p className="text-sm text-stone-400 mb-8 leading-relaxed">
+                    Tu contraseña ha sido restablecida exitosamente.
+                    Serás redirigido en un momento.
+                </p>
             </div>
         );
     }
 
     return (
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <div className="sm:mx-auto sm:w-full sm:max-w-md">
-                <div className="flex justify-center mb-4">
-                    <Key className="h-12 w-12 text-primary-600" />
+        <div>
+            <div className="flex justify-center mb-5">
+                <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center">
+                    <Key className="h-5 w-5 text-stone-600" />
                 </div>
-                <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
-                    Create new password
-                </h2>
             </div>
 
+            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-1 text-center">
+                Nueva contraseña
+            </h2>
+            <p className="text-sm text-stone-400 mb-8 text-center">
+                Ingresa tu nueva contraseña
+            </p>
+
             {error && (
-                <div className="mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                    <label htmlFor="new-password" className="block text-sm font-medium text-gray-700">
-                        New Password
+                    <label htmlFor="new-password" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Nueva contraseña
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="new-password"
-                            name="new-password"
-                            type="password"
-                            autoComplete="new-password"
-                            required
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
+                    <input
+                        id="new-password"
+                        name="new-password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
                 </div>
 
                 <div>
-                    <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
-                        Confirm New Password
+                    <label htmlFor="confirm-password" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Confirmar contraseña
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="confirm-password"
-                            name="confirm-password"
-                            type="password"
-                            autoComplete="new-password"
-                            required
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
-                    <p className="mt-2 text-sm text-gray-500">
-                        Password must be at least 6 characters long
+                    <input
+                        id="confirm-password"
+                        name="confirm-password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
+                    <p className="mt-1.5 text-xs text-stone-400">
+                        Mínimo 6 caracteres
                     </p>
                 </div>
 
-                <div>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="flex w-full justify-center rounded-md border border-transparent bg-primary-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50"
-                    >
-                        {loading ? 'Resetting password...' : 'Reset password'}
-                    </button>
-                </div>
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-lg bg-stone-900 py-2.5 px-4 text-sm font-medium text-white hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                >
+                    {loading ? 'Actualizando...' : 'Actualizar contraseña'}
+                </button>
             </form>
         </div>
     );

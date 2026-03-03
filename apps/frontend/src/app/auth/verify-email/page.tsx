@@ -13,7 +13,7 @@ export default function VerifyEmailPage() {
 
     const resendVerificationEmail = async () => {
         if (!email) {
-            setError('Please enter your email address');
+            setError('Ingresa tu email');
             return;
         }
 
@@ -31,7 +31,7 @@ export default function VerifyEmailPage() {
             if (err instanceof Error) {
                 setError(err.message);
             } else {
-                setError('An unknown error occurred');
+                setError('Ocurrió un error inesperado');
             }
         } finally {
             setLoading(false);
@@ -39,65 +39,63 @@ export default function VerifyEmailPage() {
     }
 
     return (
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <div className="text-center">
-                <div className="flex justify-center mb-4">
-                    <CheckCircle className="h-16 w-16 text-green-500" />
+        <div className="text-center py-4">
+            <div className="flex justify-center mb-5">
+                <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+                    <CheckCircle className="h-7 w-7 text-emerald-500" />
                 </div>
+            </div>
 
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    Check your email
-                </h2>
+            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-2">
+                Revisa tu email
+            </h2>
 
-                <p className="text-gray-600 mb-8">
-                    We&#39;ve sent you an email with a verification link.
-                    Please check your inbox and click the link to verify your account.
+            <p className="text-sm text-stone-400 mb-8 leading-relaxed">
+                Te hemos enviado un enlace de verificación.
+                Revisa tu bandeja de entrada y haz clic en el enlace para verificar tu cuenta.
+            </p>
+
+            <div className="space-y-4">
+                <p className="text-xs text-stone-400">
+                    ¿No recibiste el email? Revisa spam o ingresa tu email para reenviar:
                 </p>
 
-                <div className="space-y-4">
-                    <p className="text-sm text-gray-500">
-                        Didn&#39;t receive the email? Check your spam folder or enter your email to resend:
-                    </p>
-
-                    {error && (
-                        <div className="text-sm text-red-600 bg-red-50 rounded-md p-3">
-                            {error}
-                        </div>
-                    )}
-
-                    {success && (
-                        <div className="text-sm text-green-600 bg-green-50 rounded-md p-3">
-                            Verification email has been resent successfully.
-                        </div>
-                    )}
-
-                    <div className="mt-4">
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            placeholder="Enter your email address"
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 text-sm"
-                        />
+                {error && (
+                    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                        {error}
                     </div>
+                )}
 
-                    <button
-                        className="text-primary-600 hover:text-primary-500 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        onClick={resendVerificationEmail}
-                        disabled={loading}
-                    >
-                        {loading ? 'Sending...' : 'Click here to resend'}
-                    </button>
-                </div>
+                {success && (
+                    <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+                        Email de verificación reenviado exitosamente.
+                    </div>
+                )}
 
-                <div className="mt-8 pt-6 border-t border-gray-200">
-                    <Link
-                        href="/auth/login"
-                        className="text-sm font-medium text-primary-600 hover:text-primary-500"
-                    >
-                        Return to login
-                    </Link>
-                </div>
+                <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="tu@empresa.cl"
+                    className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                />
+
+                <button
+                    className="text-sm font-medium text-stone-700 hover:text-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={resendVerificationEmail}
+                    disabled={loading}
+                >
+                    {loading ? 'Enviando...' : 'Reenviar email'}
+                </button>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-stone-200">
+                <Link
+                    href="/auth/login"
+                    className="text-sm font-medium text-stone-700 hover:text-amber-600 transition-colors"
+                >
+                    Volver al inicio de sesión
+                </Link>
             </div>
         </div>
     );

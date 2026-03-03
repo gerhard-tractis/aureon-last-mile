@@ -20,12 +20,12 @@ export default function RegisterPage() {
         setError('');
 
         if (!acceptedTerms) {
-            setError('You must accept the Terms of Service and Privacy Policy');
+            setError('Debes aceptar los Términos de Servicio y la Política de Privacidad');
             return;
         }
 
         if (password !== confirmPassword) {
-            setError("Passwords don't match");
+            setError("Las contraseñas no coinciden");
             return;
         }
 
@@ -42,7 +42,7 @@ export default function RegisterPage() {
             if(err instanceof Error) {
                 setError(err.message);
             } else {
-                setError('An unknown error occurred');
+                setError('Ocurrió un error inesperado');
             }
         } finally {
             setLoading(false);
@@ -50,122 +50,108 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+        <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-1">
+                Crear cuenta
+            </h2>
+            <p className="text-sm text-stone-400 mb-8">
+                Regístrate para acceder a la plataforma
+            </p>
+
             {error && (
-                <div className="mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                        Email address
+                    <label htmlFor="email" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Email
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
+                    <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="tu@empresa.cl"
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
                 </div>
 
                 <div>
-                    <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                        Password
+                    <label htmlFor="password" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Contraseña
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            autoComplete="new-password"
-                            required
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
+                    <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
                 </div>
 
                 <div>
-                    <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                        Confirm Password
+                    <label htmlFor="confirmPassword" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Confirmar contraseña
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="confirmPassword"
-                            name="confirmPassword"
-                            type="password"
-                            autoComplete="new-password"
-                            required
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
+                    <input
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
                 </div>
 
-                <div className="space-y-4">
-                    <div className="flex items-start">
-                        <div className="flex h-5 items-center">
-                            <input
-                                id="terms"
-                                name="terms"
-                                type="checkbox"
-                                checked={acceptedTerms}
-                                onChange={(e) => setAcceptedTerms(e.target.checked)}
-                                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                            />
-                        </div>
-                        <div className="ml-3 text-sm">
-                            <label htmlFor="terms" className="text-gray-600">
-                                I agree to the{' '}
-                                <Link
-                                    href="/legal/terms"
-                                    className="font-medium text-primary-600 hover:text-primary-500"
-                                    target="_blank"
-                                >
-                                    Terms of Service
-                                </Link>{' '}
-                                and{' '}
-                                <Link
-                                    href="/legal/privacy"
-                                    className="font-medium text-primary-600 hover:text-primary-500"
-                                    target="_blank"
-                                >
-                                    Privacy Policy
-                                </Link>
-                            </label>
-                        </div>
-                    </div>
+                <div className="flex items-start gap-2.5">
+                    <input
+                        id="terms"
+                        name="terms"
+                        type="checkbox"
+                        checked={acceptedTerms}
+                        onChange={(e) => setAcceptedTerms(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-amber-500"
+                    />
+                    <label htmlFor="terms" className="text-xs text-stone-500 leading-relaxed">
+                        Acepto los{' '}
+                        <Link href="/legal/terms" className="text-stone-700 hover:text-amber-600 underline underline-offset-2" target="_blank">
+                            Términos de Servicio
+                        </Link>{' '}
+                        y la{' '}
+                        <Link href="/legal/privacy" className="text-stone-700 hover:text-amber-600 underline underline-offset-2" target="_blank">
+                            Política de Privacidad
+                        </Link>
+                    </label>
                 </div>
-                <div>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="flex w-full justify-center rounded-md border border-transparent bg-primary-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50"
-                    >
-                        {loading ? 'Creating account...' : 'Create account'}
-                    </button>
-                </div>
+
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-lg bg-stone-900 py-2.5 px-4 text-sm font-medium text-white hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                >
+                    {loading ? 'Creando cuenta...' : 'Crear cuenta'}
+                </button>
             </form>
 
             <SSOButtons onError={setError}/>
 
-            <div className="mt-6 text-center text-sm">
-                <span className="text-gray-600">Already have an account?</span>
-                {' '}
-                <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-500">
-                    Sign in
+            <p className="mt-8 text-center text-sm text-stone-400">
+                ¿Ya tienes cuenta?{' '}
+                <Link href="/auth/login" className="font-medium text-stone-700 hover:text-amber-600 transition-colors">
+                    Iniciar sesión
                 </Link>
-            </div>
+            </p>
         </div>
     );
 }
