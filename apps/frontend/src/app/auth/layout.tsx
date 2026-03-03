@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { ArrowLeft, BarChart3, Zap, FileText } from 'lucide-react';
-import { AuthLogo } from '@/components/AuthLogo';
 
 export default function AuthLayout({
                                        children,
@@ -40,14 +39,21 @@ export default function AuthLayout({
                 </Link>
 
                 <div className="w-full max-w-sm mx-auto">
-                    <div className="flex items-center gap-3.5 mb-10">
-                        <AuthLogo productName={productName} />
+                    {/* Brand mark — T-symbol + product name */}
+                    <div className="flex items-center gap-3 mb-10">
+                        {/* Tractis T-symbol — raw, no container */}
+                        <svg width="28" height="26" viewBox="0 0 110 104" fill="#e6c15c" className="flex-shrink-0">
+                            <polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19"/>
+                            <polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"/>
+                            <polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"/>
+                        </svg>
+                        <div className="w-px h-7 bg-stone-300/60" />
                         <div>
-                            <h1 className="text-lg font-semibold tracking-tight text-stone-900">
+                            <h1 className="text-[15px] font-semibold tracking-tight text-stone-900 leading-none">
                                 {productName}
                             </h1>
-                            <p className="text-xs text-stone-400 tracking-wide">
-                                Gestión de última milla
+                            <p className="text-[10px] text-stone-400 tracking-widest uppercase mt-1">
+                                by Tractis
                             </p>
                         </div>
                     </div>
