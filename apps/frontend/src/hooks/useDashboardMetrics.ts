@@ -476,10 +476,51 @@ export type SecondaryMetrics = {
   ordersPerHour: number | null;
   totalOrders: number;
   totalDelivered: number;
+  daysInPeriod: number;
+  operationalHours: number;
 };
 
 const DAILY_CAPACITY = 1000; // TODO: make configurable via settings
 const OPERATIONAL_HOURS = 10; // TODO: make configurable via settings
+
+async function fetchSecondaryMetrics(
+  operatorId: string,
+  startDate: string,
+  endDate: string
+): Promise<SecondaryMetrics> {
+  const { data, error } = await createSPAClient()
+    .from('performance_metrics')
+    .select('total_orders, delivered_orders')
+    .eq('operator_id', operatorId)
+    .gte('metric_date', startDate)
+    .lte('metric_date', endDate)
+    .is('retailer_name', null);
+  if (error) throw error;
+
+  const totals = (data ?? []).reduce(
+    (acc, row) => ({
+      totalOrders: acc.totalOrders + ((row as { total_orders: number }).total_orders ?? 0),
+      totalDelivered: acc.totalDelivered + ((row as { delivered_orders: number }).delivered_orders ?? 0),
+    }),
+    { totalOrders: 0, totalDelivered: 0 }
+  );
+
+  const daysInPeriod = data?.length || 1;
+
+  return {
+    capacityPct: totals.totalOrders > 0
+      ? Math.round((totals.totalOrders / (daysInPeriod * DAILY_CAPACITY)) * 1000) / 10
+      : null,
+    capacityTarget: DAILY_CAPACITY,
+    ordersPerHour: totals.totalOrders > 0
+      ? Math.round((totals.totalOrders / (daysInPeriod * OPERATIONAL_HOURS)) * 10) / 10
+      : null,
+    totalOrders: totals.totalOrders,
+    totalDelivered: totals.totalDelivered,
+    daysInPeriod,
+    operationalHours: OPERATIONAL_HOURS,
+  };
+}
 
 export function useSecondaryMetrics(
   operatorId: string | null,
@@ -488,38 +529,7 @@ export function useSecondaryMetrics(
 ) {
   return useQuery({
     queryKey: ['dashboard', operatorId, 'secondary-metrics', startDate, endDate],
-    queryFn: async () => {
-      const { data, error } = await createSPAClient()
-        .from('performance_metrics')
-        .select('total_orders, delivered_orders')
-        .eq('operator_id', operatorId!)
-        .gte('metric_date', startDate)
-        .lte('metric_date', endDate)
-        .is('retailer_name', null);
-      if (error) throw error;
-
-      const totals = (data ?? []).reduce(
-        (acc, row) => ({
-          totalOrders: acc.totalOrders + ((row as { total_orders: number }).total_orders ?? 0),
-          totalDelivered: acc.totalDelivered + ((row as { delivered_orders: number }).delivered_orders ?? 0),
-        }),
-        { totalOrders: 0, totalDelivered: 0 }
-      );
-
-      const daysInPeriod = data?.length || 1;
-
-      return {
-        capacityPct: totals.totalOrders > 0
-          ? Math.round((totals.totalOrders / (daysInPeriod * DAILY_CAPACITY)) * 1000) / 10
-          : null,
-        capacityTarget: DAILY_CAPACITY,
-        ordersPerHour: totals.totalOrders > 0
-          ? Math.round((totals.totalOrders / (daysInPeriod * OPERATIONAL_HOURS)) * 10) / 10
-          : null,
-        totalOrders: totals.totalOrders,
-        totalDelivered: totals.totalDelivered,
-      } as SecondaryMetrics;
-    },
+    queryFn: () => fetchSecondaryMetrics(operatorId!, startDate, endDate),
     enabled: !!operatorId,
     ...DASHBOARD_QUERY_OPTIONS,
   });
@@ -532,41 +542,98 @@ export function useSecondaryMetricsPreviousPeriod(
 ) {
   return useQuery({
     queryKey: ['dashboard', operatorId, 'secondary-metrics-prev', startDate, endDate],
-    queryFn: async () => {
-      const { data, error } = await createSPAClient()
-        .from('performance_metrics')
-        .select('total_orders, delivered_orders')
-        .eq('operator_id', operatorId!)
-        .gte('metric_date', startDate)
-        .lte('metric_date', endDate)
-        .is('retailer_name', null);
-      if (error) throw error;
-
-      const totals = (data ?? []).reduce(
-        (acc, row) => ({
-          totalOrders: acc.totalOrders + ((row as { total_orders: number }).total_orders ?? 0),
-          totalDelivered: acc.totalDelivered + ((row as { delivered_orders: number }).delivered_orders ?? 0),
-        }),
-        { totalOrders: 0, totalDelivered: 0 }
-      );
-
-      const daysInPeriod = data?.length || 1;
-
-      return {
-        capacityPct: totals.totalOrders > 0
-          ? Math.round((totals.totalOrders / (daysInPeriod * DAILY_CAPACITY)) * 1000) / 10
-          : null,
-        capacityTarget: DAILY_CAPACITY,
-        ordersPerHour: totals.totalOrders > 0
-          ? Math.round((totals.totalOrders / (daysInPeriod * OPERATIONAL_HOURS)) * 10) / 10
-          : null,
-        totalOrders: totals.totalOrders,
-        totalDelivered: totals.totalDelivered,
-      } as SecondaryMetrics;
-    },
+    queryFn: () => fetchSecondaryMetrics(operatorId!, startDate, endDate),
     enabled: !!operatorId,
     ...DASHBOARD_QUERY_OPTIONS,
   });
+}
+
+// === Story 3.7 hooks ===
+
+export type DashboardExportData = {
+  sla: { value: number | null; prevValue: number | null; totalOrders: number; deliveredOrders: number };
+  primary: {
+    fadrValue: number | null;
+    fadrPrev: number | null;
+    fadrFirstAttempt: number;
+    fadrTotal: number;
+    claimsCount: number;
+    claimsAmount: number;
+    claimsPrevCount: number;
+    claimsPrevAmount: number;
+    avgDeliveryTime: number | null;
+    prevAvgDeliveryTime: number | null;
+  };
+  customers: CustomerPerformanceRow[];
+  failures: FailureReasonRow[];
+  secondary: SecondaryMetrics | null;
+  prevSecondary: SecondaryMetrics | null;
+};
+
+export function useExportData(
+  operatorId: string | null,
+  startDate: string,
+  endDate: string,
+  prevStartDate: string,
+  prevEndDate: string,
+  enabled: boolean
+) {
+  const sla = useSlaMetric(operatorId, startDate, endDate);
+  const slaPrev = useSlaPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  const perf = usePerformanceMetricsSummary(operatorId, startDate, endDate);
+  const fadrSummary = useFadrSummary(operatorId, startDate, endDate);
+  const fadrPrev = useFadrPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  const claims = useShortageClaimsMetric(operatorId, startDate, endDate);
+  const claimsPrev = useClaimsPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  const avgTime = useAvgDeliveryTimeMetric(operatorId, startDate, endDate);
+  const avgTimePrev = useDeliveryTimePreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  const customers = useCustomerPerformance(operatorId, startDate, endDate);
+  const failures = useFailureReasons(operatorId, startDate, endDate);
+  const secondary = useSecondaryMetrics(operatorId, startDate, endDate);
+  const secondaryPrev = useSecondaryMetricsPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+
+  const isLoading =
+    sla.isLoading || slaPrev.isLoading || perf.isLoading || fadrSummary.isLoading ||
+    fadrPrev.isLoading || claims.isLoading || claimsPrev.isLoading || avgTime.isLoading ||
+    avgTimePrev.isLoading || customers.isLoading || failures.isLoading ||
+    secondary.isLoading || secondaryPrev.isLoading;
+
+  const isError =
+    sla.isError || perf.isError || fadrSummary.isError || claims.isError ||
+    avgTime.isError || customers.isError || failures.isError || secondary.isError;
+
+  const data: DashboardExportData | null =
+    !enabled || isLoading
+      ? null
+      : {
+          sla: {
+            value: sla.data ?? null,
+            prevValue: slaPrev.data ?? null,
+            totalOrders: perf.data?.totalOrders ?? 0,
+            deliveredOrders: perf.data?.deliveredOrders ?? 0,
+          },
+          primary: {
+            fadrValue:
+              fadrSummary.data && fadrSummary.data.total > 0
+                ? Math.round((fadrSummary.data.firstAttempt / fadrSummary.data.total) * 1000) / 10
+                : null,
+            fadrPrev: fadrPrev.data ?? null,
+            fadrFirstAttempt: fadrSummary.data?.firstAttempt ?? 0,
+            fadrTotal: fadrSummary.data?.total ?? 0,
+            claimsCount: claims.data?.count ?? 0,
+            claimsAmount: claims.data?.amount ?? 0,
+            claimsPrevCount: claimsPrev.data?.count ?? 0,
+            claimsPrevAmount: claimsPrev.data?.amount ?? 0,
+            avgDeliveryTime: avgTime.data ?? null,
+            prevAvgDeliveryTime: avgTimePrev.data ?? null,
+          },
+          customers: customers.data ?? [],
+          failures: failures.data ?? [],
+          secondary: secondary.data ?? null,
+          prevSecondary: secondaryPrev.data ?? null,
+        };
+
+  return { data, isLoading, isError };
 }
 
 export function useFailureReasons(
