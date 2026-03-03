@@ -14,6 +14,7 @@ import {
   useDailyMetricsSeries,
   usePerformanceMetricsSummary,
 } from '@/hooks/useDashboardMetrics';
+import { Loader2 } from 'lucide-react';
 import MetricsCard, {
   getMetricColor,
   getMetricHexColor,
@@ -21,6 +22,7 @@ import MetricsCard, {
 } from './MetricsCard';
 import MetricsCardSkeleton from './MetricsCardSkeleton';
 import MetricDrillDownDialog from './MetricDrillDownDialog';
+import DashboardErrorBanner from './DashboardErrorBanner';
 
 interface PrimaryMetricsGridProps {
   operatorId: string;
@@ -93,6 +95,8 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
   const efficiencySeries = useDailyMetricsSeries(operatorId, startDate, endDate, 'avg_delivery_time_minutes');
 
   const isLoading = fadrQuery.isLoading || claimsQuery.isLoading || efficiencyQuery.isLoading;
+  const isError = fadrQuery.isError || claimsQuery.isError || efficiencyQuery.isError;
+  const isPlaceholderData = fadrQuery.isPlaceholderData || claimsQuery.isPlaceholderData || efficiencyQuery.isPlaceholderData;
 
   if (isLoading) {
     return (
@@ -140,7 +144,11 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {isError && <DashboardErrorBanner />}
+      <div className={`relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-opacity${isPlaceholderData ? ' opacity-60' : ''}`}>
+        {isPlaceholderData && (
+          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+        )}
         {/* FADR Card */}
         <MetricsCard
           title="FADR"

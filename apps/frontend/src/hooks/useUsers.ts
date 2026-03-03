@@ -18,7 +18,7 @@ export const useUsers = () => {
     queryFn: getUsers,
     staleTime: 60000, // Fresh for 60 seconds
     refetchInterval: 300000, // Background refresh every 5 minutes
-    refetchOnWindowFocus: true
+    refetchOnWindowFocus: false // Override global default — 60s stale data should not refetch on every tab switch
   });
 };
 

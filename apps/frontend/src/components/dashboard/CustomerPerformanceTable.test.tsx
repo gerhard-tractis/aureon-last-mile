@@ -296,7 +296,7 @@ describe('CustomerPerformanceTable', () => {
       mockCustomerQuery.isError = true;
       mockCustomerQuery.data = [];
       renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
-      expect(screen.getByText('Error al cargar datos.')).toBeDefined();
+      expect(screen.getByText('Los datos pueden estar desactualizados')).toBeDefined();
       expect(screen.getByText('Reintentar')).toBeDefined();
     });
 
@@ -421,7 +421,7 @@ describe('CustomerPerformanceTable', () => {
       mockCustomerQuery.isError = true;
       mockCustomerQuery.data = [];
       renderWithProvider(<CustomerPerformanceTable operatorId="op1" />);
-      expect(screen.getByText('Error al cargar datos.')).toBeDefined();
+      expect(screen.getByText('Los datos pueden estar desactualizados')).toBeDefined();
       expect(screen.queryByText('No hay datos de clientes para este periodo')).toBeNull();
     });
   });
