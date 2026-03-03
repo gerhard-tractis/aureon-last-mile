@@ -9,14 +9,6 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-// Mock AuthLogo component
-vi.mock('@/components/AuthLogo', () => ({
-  AuthLogo: ({ productName }: { productName: string }) => (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src="/icon.svg" alt={productName} />
-  ),
-}));
-
 // Mock lucide-react
 vi.mock('lucide-react', () => ({
   ArrowLeft: () => <span data-testid="arrow-left-icon" />,
@@ -30,11 +22,11 @@ describe('AuthLayout', () => {
     process.env.NEXT_PUBLIC_PRODUCTNAME = 'Aureon Last Mile';
   });
 
-  it('renders logo image above product name', () => {
+  it('renders T-symbol SVG and product name', () => {
     const { container } = render(<AuthLayout><div>child</div></AuthLayout>);
-    const logo = container.querySelector('img[alt="Aureon Last Mile"]');
-    expect(logo).toBeTruthy();
-    expect(logo?.getAttribute('src')).toBe('/icon.svg');
+    const svg = container.querySelector('svg[viewBox="0 0 110 104"]');
+    expect(svg).toBeTruthy();
+    expect(screen.getByText('by Tractis')).toBeTruthy();
   });
 
   it('renders product name', () => {
@@ -65,7 +57,7 @@ describe('AuthLayout', () => {
   it('renders Tractis footer instead of generic copy', () => {
     render(<AuthLayout><div>child</div></AuthLayout>);
     expect(screen.queryByText(/Join thousands/i)).toBeNull();
-    expect(screen.getByText(/Tractis/i)).toBeTruthy();
+    expect(screen.getByText(/Powered by/i)).toBeTruthy();
   });
 
   it('renders children', () => {
