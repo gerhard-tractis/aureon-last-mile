@@ -1,10 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// DispatchTrack status_id → delivery_attempt_status_enum
+// DispatchTrack webhook `status` field (number) → delivery_attempt_status_enum
+// Source: https://webhooks-lastmile.dispatchtrack.com/
+// 1 = Pending (skip — not terminal)
+// 2 = Success
+// 3 = Rejected
+// 4 = Partial delivery (treated as success)
 const STATUS_MAP: Record<number, { status: 'success' | 'failed' | 'returned'; failure_reason: string | null }> = {
-  2: { status: 'success', failure_reason: null },          // delivered
-  3: { status: 'failed', failure_reason: 'No entregado' }, // not delivered
-  4: { status: 'success', failure_reason: null },          // partial delivery (treated as success)
+  2: { status: 'success', failure_reason: null },
+  3: { status: 'failed', failure_reason: 'Rejected' },
+  4: { status: 'success', failure_reason: null },
 };
 
 // Musan operator_id (hardcoded — single operator account)
@@ -31,14 +36,19 @@ Deno.serve(async (req: Request) => {
     return new Response('Invalid JSON', { status: 400 });
   }
 
-  // DispatchTrack sends the dispatch object directly or nested under a key
-  // Handle both: { dispatch: {...} } and flat dispatch object
-  const dispatch = (body.dispatch ?? body) as Record<string, unknown>;
+  // Only process dispatch events — skip route, review, dispatch_guide
+  const resource = body.resource as string | undefined;
+  if (resource !== 'dispatch') {
+    console.log(`beetrack-webhook: skipping resource=${resource}`);
+    return new Response(JSON.stringify({ ok: true, skipped: `resource: ${resource}` }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 
-  const identifier = dispatch.identifier as string | undefined;
-  const statusId = dispatch.status_id as number | undefined;
-  const arrivedAt = dispatch.arrived_at as string | undefined;
-  const substatus = dispatch.substatus as string | undefined;
+  const identifier = body.identifier as string | undefined;
+  const status = body.status as number | undefined;
+  const arrivedAt = body.arrived_at as string | undefined;
+  const substatus = body.substatus as string | undefined;
 
   if (!identifier) {
     console.warn('beetrack-webhook: missing identifier, skipping');
@@ -47,10 +57,11 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  const mapped = statusId !== undefined ? STATUS_MAP[statusId] : undefined;
+  // Skip non-terminal statuses (1 = Pending)
+  const mapped = status !== undefined ? STATUS_MAP[status] : undefined;
   if (!mapped) {
-    console.warn(`beetrack-webhook: unmapped status_id ${statusId} for ${identifier}, skipping`);
-    return new Response(JSON.stringify({ ok: true, skipped: `unmapped status_id ${statusId}` }), {
+    console.log(`beetrack-webhook: skipping non-terminal status=${status} for identifier=${identifier}`);
+    return new Response(JSON.stringify({ ok: true, skipped: `non-terminal status: ${status}` }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -83,7 +94,7 @@ Deno.serve(async (req: Request) => {
     });
   }
 
-  // Use substatus as failure_reason if status is failed/returned and substatus is available
+  // Use substatus as failure_reason when available for failed deliveries
   const failure_reason = mapped.status !== 'success' && substatus
     ? substatus
     : mapped.failure_reason;
