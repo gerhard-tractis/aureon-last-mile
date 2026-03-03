@@ -38,10 +38,33 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
-  # ─── 2. Frontend (Vercel) ────────────────────────────────────────────────────
+  # ─── 2. Edge Functions ───────────────────────────────────────────────────────
+  deploy-edge-functions:
+    name: Deploy Supabase Edge Functions
+    needs: deploy-supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Edge Functions
+        run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+  # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
   deploy-vercel:
     name: Deploy to Vercel
-    needs: deploy-supabase
+    needs: [deploy-supabase, deploy-edge-functions]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -68,7 +91,7 @@ jobs:
   # ─── 3. Worker (VPS) ─────────────────────────────────────────────────────────
   deploy-worker:
     name: Deploy Worker to VPS
-    needs: deploy-supabase
+    needs: [deploy-supabase, deploy-edge-functions]
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
