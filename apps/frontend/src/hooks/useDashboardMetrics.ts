@@ -578,19 +578,22 @@ export function useExportData(
   prevEndDate: string,
   enabled: boolean
 ) {
-  const sla = useSlaMetric(operatorId, startDate, endDate);
-  const slaPrev = useSlaPreviousPeriod(operatorId, prevStartDate, prevEndDate);
-  const perf = usePerformanceMetricsSummary(operatorId, startDate, endDate);
-  const fadrSummary = useFadrSummary(operatorId, startDate, endDate);
-  const fadrPrev = useFadrPreviousPeriod(operatorId, prevStartDate, prevEndDate);
-  const claims = useShortageClaimsMetric(operatorId, startDate, endDate);
-  const claimsPrev = useClaimsPreviousPeriod(operatorId, prevStartDate, prevEndDate);
-  const avgTime = useAvgDeliveryTimeMetric(operatorId, startDate, endDate);
-  const avgTimePrev = useDeliveryTimePreviousPeriod(operatorId, prevStartDate, prevEndDate);
-  const customers = useCustomerPerformance(operatorId, startDate, endDate);
-  const failures = useFailureReasons(operatorId, startDate, endDate);
-  const secondary = useSecondaryMetrics(operatorId, startDate, endDate);
-  const secondaryPrev = useSecondaryMetricsPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  // Gate operatorId so inner hooks only fire when enabled
+  const gatedOperatorId = enabled ? operatorId : null;
+
+  const sla = useSlaMetric(gatedOperatorId, startDate, endDate);
+  const slaPrev = useSlaPreviousPeriod(gatedOperatorId, prevStartDate, prevEndDate);
+  const perf = usePerformanceMetricsSummary(gatedOperatorId, startDate, endDate);
+  const fadrSummary = useFadrSummary(gatedOperatorId, startDate, endDate);
+  const fadrPrev = useFadrPreviousPeriod(gatedOperatorId, prevStartDate, prevEndDate);
+  const claims = useShortageClaimsMetric(gatedOperatorId, startDate, endDate);
+  const claimsPrev = useClaimsPreviousPeriod(gatedOperatorId, prevStartDate, prevEndDate);
+  const avgTime = useAvgDeliveryTimeMetric(gatedOperatorId, startDate, endDate);
+  const avgTimePrev = useDeliveryTimePreviousPeriod(gatedOperatorId, prevStartDate, prevEndDate);
+  const customers = useCustomerPerformance(gatedOperatorId, startDate, endDate);
+  const failures = useFailureReasons(gatedOperatorId, startDate, endDate);
+  const secondary = useSecondaryMetrics(gatedOperatorId, startDate, endDate);
+  const secondaryPrev = useSecondaryMetricsPreviousPeriod(gatedOperatorId, prevStartDate, prevEndDate);
 
   const isLoading =
     sla.isLoading || slaPrev.isLoading || perf.isLoading || fadrSummary.isLoading ||
