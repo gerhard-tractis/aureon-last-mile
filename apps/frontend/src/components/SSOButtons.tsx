@@ -127,11 +127,11 @@ export default function SSOButtons({ onError }: SSOButtonsProps) {
             </div>
             <div className="mt-4 text-center text-xs text-gray-500">
                 By creating an account via selected provider, you agree to our{' '}
-                <Link href="/legal/terms" className="text-blue-600 hover:text-blue-800 underline">
+                <Link href="/legal/terms" className="text-primary-600 hover:text-primary-800 underline">
                     Terms and Conditions
                 </Link>
                 {' '}and{' '}
-                <Link href="/legal/privacy" className="text-blue-600 hover:text-blue-800 underline">
+                <Link href="/legal/privacy" className="text-primary-600 hover:text-primary-800 underline">
                     Privacy Policy
                 </Link>
             </div>

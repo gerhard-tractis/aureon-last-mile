@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import { AuthLogo } from '@/components/AuthLogo';
 
 export default function AuthLayout({
                                        children,
@@ -7,25 +8,22 @@ export default function AuthLayout({
     children: React.ReactNode;
 }) {
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
-    const testimonials = [
+    const featureCards = [
         {
-            quote: "This template helped us launch our SaaS product in just two weeks. The authentication and multi-tenancy features are rock solid.",
-            author: "Sarah Chen",
-            role: "CTO, TechStart",
-            avatar: "SC"
+            title: "Dashboard de rendimiento en tiempo real",
+            description: "SLA, FADR, análisis de fallas y métricas clave para tu operación",
+            icon: "📊",
         },
         {
-            quote: "The best part is how well thought out the organization management is. It saved us months of development time.",
-            author: "Michael Roberts",
-            role: "Founder, DataFlow",
-            avatar: "MR"
+            title: "Automatización de datos",
+            description: "Integración con DispatchTrack, Easy CSV y procesamiento automático",
+            icon: "⚡",
         },
         {
-            quote: "Clean code, great documentation, and excellent support. Exactly what we needed to get our MVP off the ground.",
-            author: "Jessica Kim",
-            role: "Lead Developer, CloudScale",
-            avatar: "JK"
-        }
+            title: "Reportes exportables",
+            description: "CSV y PDF para negociaciones contractuales y análisis operativo",
+            icon: "📄",
+        },
     ];
 
     return (
@@ -40,6 +38,9 @@ export default function AuthLayout({
                 </Link>
 
                 <div className="sm:mx-auto sm:w-full sm:max-w-md">
+                    <div className="flex justify-center mb-4">
+                        <AuthLogo productName={productName || 'Aureon Last Mile'} />
+                    </div>
                     <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
                         {productName}
                     </h2>
@@ -54,38 +55,33 @@ export default function AuthLayout({
                 <div className="w-full flex items-center justify-center p-12">
                     <div className="space-y-6 max-w-lg">
                         <h3 className="text-white text-2xl font-bold mb-8">
-                            Trusted by developers worldwide
+                            Gestión de última milla inteligente
                         </h3>
-                        {testimonials.map((testimonial, index) => (
+                        {featureCards.map((card, index) => (
                             <div
                                 key={index}
                                 className="relative bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10 shadow-xl"
                             >
                                 <div className="flex items-start space-x-4">
                                     <div className="flex-shrink-0">
-                                        <div className="w-10 h-10 rounded-full bg-primary-400/30 flex items-center justify-center text-white font-semibold">
-                                            {testimonial.avatar}
+                                        <div className="w-10 h-10 rounded-full bg-primary-400/30 flex items-center justify-center text-lg">
+                                            {card.icon}
                                         </div>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <p className="text-sm text-white/90 mb-2 font-light leading-relaxed">
-                                            &#34;{testimonial.quote}&#34;
+                                        <p className="text-sm font-medium text-white mb-1">
+                                            {card.title}
                                         </p>
-                                        <div className="mt-3">
-                                            <p className="text-sm font-medium text-white">
-                                                {testimonial.author}
-                                            </p>
-                                            <p className="text-sm text-primary-200">
-                                                {testimonial.role}
-                                            </p>
-                                        </div>
+                                        <p className="text-sm text-primary-200 leading-relaxed">
+                                            {card.description}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
                         ))}
                         <div className="mt-8 text-center">
                             <p className="text-primary-100 text-sm">
-                                Join thousands of developers building with {productName}
+                                Plataforma desarrollada por Tractis
                             </p>
                         </div>
                     </div>

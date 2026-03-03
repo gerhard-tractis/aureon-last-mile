@@ -10,7 +10,7 @@ import SentryUserProvider from "@/components/SentryUserProvider";
 
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_PRODUCTNAME,
-  description: "The best way to build your SaaS product.",
+  description: "Plataforma de gestión de última milla para operadores logísticos chilenos",
   manifest: "/manifest.json",
   themeColor: "#e6c15c",
   appleWebApp: {
