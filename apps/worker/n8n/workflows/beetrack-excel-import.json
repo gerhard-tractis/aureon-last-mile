@@ -228,8 +228,8 @@
       }
     },
     {
-      "id": "bt-link-packages",
-      "name": "Link Packages",
+      "id": "bt-map-delivery-attempts",
+      "name": "Map Delivery Attempts",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -237,7 +237,62 @@
         0
       ],
       "parameters": {
-        "jsCode": "// Map order_number -> order_id from UPSERT Orders response\nconst orders = $input.all().map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst linked = packages\n  .filter(p => orderIds[p.order_number])\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: linked,\n  orders_upserted: orders.length,\n  packages_count: linked.length\n}}];"
+        "jsCode": "// AC1/AC2: Map DispatchTrack Estado to delivery_attempts records\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';\n\nconst ESTADO_MAP = {\n  'Entregado': { status: 'success', failure_reason: null },\n  'Entregado con novedad': { status: 'success', failure_reason: null },\n  'No Entregado': { status: 'failed', failure_reason: 'No Entregado' },\n  'Fallido': { status: 'failed', failure_reason: 'Fallido' },\n  'Ausente': { status: 'failed', failure_reason: 'Ausente' },\n  'Dirección incorrecta': { status: 'failed', failure_reason: 'Dirección incorrecta' },\n  'Rechazado': { status: 'failed', failure_reason: 'Rechazado' },\n  'Devuelto': { status: 'returned', failure_reason: 'Devuelto' },\n  'Devolución': { status: 'returned', failure_reason: 'Devolución' },\n};\n\nconst NON_TERMINAL = new Set(['Ruta troncal', 'Reagendado']);\n\nconst orders = $input.all().map(i => i.json);\nconst attempts = [];\nlet skipped_count = 0;\nlet mapped_count = 0;\n\nfor (const order of orders) {\n  const estado = order.status_detail;\n  if (!estado) { skipped_count++; continue; }\n\n  const mapping = ESTADO_MAP[estado];\n  if (!mapping) {\n    if (!NON_TERMINAL.has(estado)) {\n      console.warn(`[MapDeliveryAttempts] Unknown Estado: \"${estado}\" for order ${order.order_number}`);\n    }\n    skipped_count++;\n    continue;\n  }\n\n  // AC2: preserve full datetime from raw_data (delivery_date is date-only)\n  const rawData = order.raw_data || {};\n  const fechaEstimada = rawData['Fecha estimada'] || order.delivery_date || null;\n\n  attempts.push({\n    operator_id: OPERATOR_ID,\n    order_id: order.id,\n    attempt_number: 1,\n    status: mapping.status,\n    failure_reason: mapping.failure_reason,\n    attempted_at: fechaEstimada,\n    driver_id: null,\n  });\n  mapped_count++;\n}\n\nreturn [{ json: { attempts, mapped_count, skipped_count } }];"
+      }
+    },
+    {
+      "id": "bt-upsert-delivery-attempts",
+      "name": "UPSERT Delivery Attempts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        0
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/delivery_attempts?on_conflict=operator_id,order_id,attempt_number",
+        "authentication": "none",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.attempts) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "bt-link-packages",
+      "name": "Link Packages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2420,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Map order_number -> order_id from UPSERT Orders response\n// Reads directly from UPSERT Orders (not $input) so it works\n// regardless of whether UPSERT Delivery Attempts succeeded or failed.\nconst orders = $('UPSERT Orders').all().map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst linked = packages\n  .filter(p => orderIds[p.order_number])\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: linked,\n  orders_upserted: orders.length,\n  packages_count: linked.length\n}}];"
       }
     },
     {
@@ -246,7 +301,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2200,
+        2640,
         0
       ],
       "parameters": {
@@ -282,11 +337,11 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2420,
+        2860,
         0
       ],
       "parameters": {
-        "jsCode": "const mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      rows_processed: mapData.rows_processed,\n      orders_upserted: linkData.orders_upserted,\n      packages_inserted: linkData.packages_count,\n      rows_skipped: mapData.rows_skipped,\n      errors: mapData.errors\n    }\n  }\n}}];"
+        "jsCode": "const mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\n// AC6: delivery_attempts counts\nlet delivery_attempts_upserted = 0;\nlet delivery_attempts_skipped = 0;\nlet delivery_attempts_error = null;\n\ntry {\n  const daMap = $('Map Delivery Attempts').first().json;\n  delivery_attempts_upserted = daMap.mapped_count || 0;\n  delivery_attempts_skipped = daMap.skipped_count || 0;\n} catch(e) {}\n\n// AC7: detect UPSERT Delivery Attempts failure (continueOnFail)\ntry {\n  const daResult = $('UPSERT Delivery Attempts').first().json;\n  if (daResult && daResult.error) {\n    delivery_attempts_error = String(daResult.error.message || JSON.stringify(daResult.error)).substring(0, 200);\n    delivery_attempts_upserted = 0;\n  }\n} catch(e) {}\n\nconst result = {\n  rows_processed: mapData.rows_processed,\n  orders_upserted: linkData.orders_upserted,\n  packages_inserted: linkData.packages_count,\n  rows_skipped: mapData.rows_skipped,\n  errors: mapData.errors,\n  delivery_attempts_upserted,\n  delivery_attempts_skipped,\n};\nif (delivery_attempts_error) {\n  result.delivery_attempts_error = true;\n  result.delivery_attempts_error_message = delivery_attempts_error;\n}\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result,\n  }\n}}];"
       }
     },
     {
@@ -295,7 +350,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2640,
+        3080,
         0
       ],
       "parameters": {
@@ -589,6 +644,28 @@
       ]
     },
     "UPSERT Orders": {
+      "main": [
+        [
+          {
+            "node": "Map Delivery Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Delivery Attempts": {
+      "main": [
+        [
+          {
+            "node": "UPSERT Delivery Attempts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "UPSERT Delivery Attempts": {
       "main": [
         [
           {
