@@ -29,7 +29,7 @@ export default function ForgotPasswordPage() {
             if (err instanceof Error) {
                 setError(err.message);
             } else {
-                setError('An unknown error occurred');
+                setError('Ocurrió un error inesperado');
             }
         } finally {
             setLoading(false);
@@ -38,85 +38,80 @@ export default function ForgotPasswordPage() {
 
     if (success) {
         return (
-            <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-                <div className="text-center">
-                    <div className="flex justify-center mb-4">
-                        <CheckCircle className="h-16 w-16 text-green-500" />
-                    </div>
-
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                        Check your email
-                    </h2>
-
-                    <p className="text-gray-600 mb-8">
-                        We have sent a password reset link to your email address.
-                        Please check your inbox and follow the instructions to reset your password.
-                    </p>
-
-                    <div className="mt-6 text-center text-sm">
-                        <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-500">
-                            Return to login
-                        </Link>
+            <div className="text-center py-4">
+                <div className="flex justify-center mb-5">
+                    <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
+                        <CheckCircle className="h-7 w-7 text-emerald-500" />
                     </div>
                 </div>
+
+                <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-2">
+                    Revisa tu email
+                </h2>
+
+                <p className="text-sm text-stone-400 mb-8 leading-relaxed">
+                    Hemos enviado un enlace de recuperación a tu correo electrónico.
+                    Revisa tu bandeja de entrada.
+                </p>
+
+                <Link
+                    href="/auth/login"
+                    className="text-sm font-medium text-stone-700 hover:text-amber-600 transition-colors"
+                >
+                    Volver al inicio de sesión
+                </Link>
             </div>
         );
     }
 
     return (
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <div className="sm:mx-auto sm:w-full sm:max-w-md">
-                <h2 className="text-2xl font-bold text-center text-gray-900 mb-8">
-                    Reset your password
-                </h2>
-            </div>
+        <div>
+            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-1">
+                Recuperar contraseña
+            </h2>
+            <p className="text-sm text-stone-400 mb-8">
+                Ingresa tu email y te enviaremos un enlace de recuperación
+            </p>
 
             {error && (
-                <div className="mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                        Email address
+                    <label htmlFor="email" className="block text-xs font-medium text-stone-600 mb-1.5">
+                        Email
                     </label>
-                    <div className="mt-1">
-                        <input
-                            id="email"
-                            name="email"
-                            type="email"
-                            autoComplete="email"
-                            required
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500"
-                        />
-                    </div>
-                    <p className="mt-2 text-sm text-gray-500">
-                        Enter your email address and we will send you a link to reset your password.
-                    </p>
+                    <input
+                        id="email"
+                        name="email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="tu@empresa.cl"
+                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    />
                 </div>
 
-                <div>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="flex w-full justify-center rounded-md border border-transparent bg-primary-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50"
-                    >
-                        {loading ? 'Sending reset link...' : 'Send reset link'}
-                    </button>
-                </div>
+                <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full rounded-lg bg-stone-900 py-2.5 px-4 text-sm font-medium text-white hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                >
+                    {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
+                </button>
             </form>
 
-            <div className="mt-6 text-center text-sm">
-                <span className="text-gray-600">Remember your password?</span>
-                {' '}
-                <Link href="/auth/login" className="font-medium text-primary-600 hover:text-primary-500">
-                    Sign in
+            <p className="mt-8 text-center text-sm text-stone-400">
+                ¿Recordaste tu contraseña?{' '}
+                <Link href="/auth/login" className="font-medium text-stone-700 hover:text-amber-600 transition-colors">
+                    Iniciar sesión
                 </Link>
-            </div>
+            </p>
         </div>
     );
 }

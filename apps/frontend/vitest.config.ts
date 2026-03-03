@@ -28,6 +28,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/__tests__/e2e/**',
       '**/dist/**',
+      'e2e/**',
     ],
 
     // Coverage configuration

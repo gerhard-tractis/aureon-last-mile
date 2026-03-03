@@ -20,6 +20,9 @@ vi.mock('@/components/AuthLogo', () => ({
 // Mock lucide-react
 vi.mock('lucide-react', () => ({
   ArrowLeft: () => <span data-testid="arrow-left-icon" />,
+  BarChart3: () => <span data-testid="barchart-icon" />,
+  Zap: () => <span data-testid="zap-icon" />,
+  FileText: () => <span data-testid="filetext-icon" />,
 }));
 
 describe('AuthLayout', () => {
@@ -44,7 +47,7 @@ describe('AuthLayout', () => {
     // Should NOT have generic copy
     expect(screen.queryByText('Trusted by developers worldwide')).toBeNull();
     // Should have logistics-focused Spanish headline
-    expect(screen.getByText(/[Gg]estión de última milla/i)).toBeTruthy();
+    expect(screen.getAllByText(/última milla/i).length).toBeGreaterThan(0);
   });
 
   it('renders feature value cards instead of fake testimonials', () => {
@@ -53,10 +56,10 @@ describe('AuthLayout', () => {
     expect(screen.queryByText('Sarah Chen')).toBeNull();
     expect(screen.queryByText('Michael Roberts')).toBeNull();
     expect(screen.queryByText('Jessica Kim')).toBeNull();
-    // Should have logistics feature cards
-    expect(screen.getByText(/[Dd]ashboard.*rendimiento/i)).toBeTruthy();
-    expect(screen.getByText(/[Aa]utomatización/i)).toBeTruthy();
-    expect(screen.getByText(/[Rr]eportes/i)).toBeTruthy();
+    // Should have logistics feature items
+    expect(screen.getByText(/Rendimiento en tiempo real/i)).toBeTruthy();
+    expect(screen.getByText(/Automatización de datos/i)).toBeTruthy();
+    expect(screen.getByText(/Reportes exportables/i)).toBeTruthy();
   });
 
   it('renders Tractis footer instead of generic copy', () => {
