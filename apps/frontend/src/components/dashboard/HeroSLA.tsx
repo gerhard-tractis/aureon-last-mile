@@ -1,9 +1,9 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2 } from 'lucide-react';
 import { getDashboardDates } from '@/hooks/useDashboardDates';
+import DashboardErrorBanner from './DashboardErrorBanner';
 import {
   useSlaMetric,
   useFadrMetric,
@@ -37,6 +37,8 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
     slaQuery.isLoading || prevSlaQuery.isLoading || fadrQuery.isLoading || perfQuery.isLoading;
   const hasError =
     slaQuery.isError || prevSlaQuery.isError || fadrQuery.isError || perfQuery.isError;
+  const isPlaceholderData =
+    slaQuery.isPlaceholderData || prevSlaQuery.isPlaceholderData || fadrQuery.isPlaceholderData || perfQuery.isPlaceholderData;
 
   if (isLoading) return <HeroSLASkeleton />;
 
@@ -64,19 +66,17 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
 
   return (
     <>
+      {hasError && <DashboardErrorBanner />}
       <div
         role="button"
         tabIndex={0}
         aria-label="Ver analisis detallado de SLA"
         onClick={handleOpen}
         onKeyDown={handleKeyDown}
-        className="bg-white rounded-xl p-6 md:p-12 shadow-sm w-full cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.01] text-center"
+        className={`relative bg-white rounded-xl p-6 md:p-12 shadow-sm w-full cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.01] text-center${isPlaceholderData ? ' opacity-60' : ''}`}
       >
-        {hasError && (
-          <Alert variant="destructive" className="mb-4 max-w-[800px] mx-auto">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>Los datos pueden estar desactualizados</AlertDescription>
-          </Alert>
+        {isPlaceholderData && (
+          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
         )}
 
         <h2 className="text-xl font-semibold text-slate-700 uppercase tracking-wide mb-4">

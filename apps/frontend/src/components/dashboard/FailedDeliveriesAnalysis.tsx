@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { subDays, format } from 'date-fns';
 import {
   useFailureReasons,
@@ -8,6 +9,7 @@ import {
 } from '@/hooks/useDashboardMetrics';
 import FailureReasonsChart from './FailureReasonsChart';
 import FailedDeliveriesTrendChart from './FailedDeliveriesTrendChart';
+import DashboardErrorBanner from './DashboardErrorBanner';
 
 interface FailedDeliveriesAnalysisProps {
   operatorId: string;
@@ -31,6 +33,7 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
 
   const isLoading = reasonsQuery.isLoading || trendQuery.isLoading;
   const isError = reasonsQuery.isError || trendQuery.isError;
+  const isPlaceholderData = reasonsQuery.isPlaceholderData || trendQuery.isPlaceholderData;
 
   const totalFailures = useMemo(() => {
     if (!reasonsQuery.data) return 0;
@@ -44,7 +47,10 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
   };
 
   return (
-    <div>
+    <div className="relative">
+      {isPlaceholderData && (
+        <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
@@ -62,17 +68,7 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
       </div>
 
       {/* Error banner */}
-      {isError && (
-        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
-          <span className="text-sm text-red-700">Error al cargar datos.</span>
-          <button
-            onClick={() => { reasonsQuery.refetch(); trendQuery.refetch(); }}
-            className="text-sm font-medium text-red-700 underline hover:text-red-900"
-          >
-            Reintentar
-          </button>
-        </div>
-      )}
+      {isError && <DashboardErrorBanner />}
 
       {/* Loading skeleton */}
       {isLoading ? (
@@ -87,7 +83,7 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
           <FailureReasonsChart
             data={reasonsQuery.data ?? []}
             totalFailures={totalFailures}
