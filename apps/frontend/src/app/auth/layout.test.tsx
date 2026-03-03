@@ -9,11 +9,11 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-// Mock next/image
-vi.mock('next/image', () => ({
-  default: ({ alt, onError, ...props }: { alt: string; onError?: () => void; [key: string]: unknown }) => (
+// Mock AuthLogo component
+vi.mock('@/components/AuthLogo', () => ({
+  AuthLogo: ({ productName }: { productName: string }) => (
     // eslint-disable-next-line @next/next/no-img-element
-    <img alt={alt} {...props} />
+    <img src="/icon.svg" alt={productName} />
   ),
 }));
 

@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { ArrowLeft } from 'lucide-react';
+import { AuthLogo } from '@/components/AuthLogo';
 
 export default function AuthLayout({
                                        children,
@@ -39,17 +39,7 @@ export default function AuthLayout({
 
                 <div className="sm:mx-auto sm:w-full sm:max-w-md">
                     <div className="flex justify-center mb-4">
-                        <Image
-                            src="/icon.svg"
-                            alt={productName || 'Aureon Last Mile'}
-                            width={80}
-                            height={80}
-                            className="w-16 h-16 sm:w-20 sm:h-20"
-                            priority
-                            onError={(e) => {
-                                (e.target as HTMLImageElement).style.display = 'none';
-                            }}
-                        />
+                        <AuthLogo productName={productName || 'Aureon Last Mile'} />
                     </div>
                     <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
                         {productName}
