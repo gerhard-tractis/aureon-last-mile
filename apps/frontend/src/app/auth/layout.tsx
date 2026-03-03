@@ -112,9 +112,15 @@ export default function AuthLayout({
 
                         {/* Footer */}
                         <div className="mt-16 pt-6 border-t border-stone-800">
-                            <p className="text-[11px] tracking-wider uppercase text-stone-600">
-                                Desarrollado por <span className="text-stone-500">Tractis</span>
-                            </p>
+                            <div className="inline-flex items-center gap-2.5 px-3.5 py-2 rounded-full bg-stone-800/60 border border-stone-700/40">
+                                <svg width="14" height="14" viewBox="0 0 110 104" fill="#e6c15c" className="flex-shrink-0">
+                                    <polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19"/>
+                                    <polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"/>
+                                    <polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"/>
+                                </svg>
+                                <span className="text-[10px] text-stone-500">Powered by</span>
+                                <span className="text-[11px] font-semibold tracking-wide text-stone-300">Tractis</span>
+                            </div>
                         </div>
                     </div>
                 </div>

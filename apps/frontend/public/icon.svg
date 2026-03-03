@@ -1,6 +1,9 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <!-- Tractis/Aureon brand mark: gold circle with slate "A" -->
-  <circle cx="256" cy="256" r="256" fill="#e6c15c"/>
-  <text x="256" y="295" font-family="'Georgia', 'Times New Roman', serif" font-size="200" font-weight="bold"
-        text-anchor="middle" fill="#2d3748" letter-spacing="-8">A</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Tractis T-symbol on brand slate background -->
+  <rect width="512" height="512" rx="96" fill="#5e6b7b"/>
+  <g transform="translate(106, 96) scale(2.73)" fill="#e6c15c">
+    <polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19"/>
+    <polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"/>
+    <polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"/>
+  </g>
 </svg>
