@@ -72,7 +72,7 @@ function fmtNum(v: number | null): string {
 export function generateCSV(
   data: DashboardExportPayload,
   sections: ExportSections,
-  dateRange: string
+  _dateRange: string
 ): string {
   const lines: string[] = [];
 
