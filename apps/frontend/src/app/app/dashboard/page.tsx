@@ -10,6 +10,7 @@ import CustomerPerformanceTable from '@/components/dashboard/CustomerPerformance
 import FailedDeliveriesAnalysis from '@/components/dashboard/FailedDeliveriesAnalysis';
 import SecondaryMetricsGrid from '@/components/dashboard/SecondaryMetricsGrid';
 import ExportDashboardModal from '@/components/dashboard/ExportDashboardModal';
+import OfflineBanner from '@/components/dashboard/OfflineBanner';
 
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
@@ -30,6 +31,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <OfflineBanner />
       <HeroSLA operatorId={operatorId} />
       <PrimaryMetricsGrid operatorId={operatorId} />
       <CustomerPerformanceTable operatorId={operatorId} />

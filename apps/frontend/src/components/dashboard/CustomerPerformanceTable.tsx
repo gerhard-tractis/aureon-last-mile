@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { subDays, format } from 'date-fns';
 import {
   useCustomerPerformance,
@@ -9,6 +10,7 @@ import {
 import { createSPAClient } from '@/lib/supabase/client';
 import CustomerPerformanceTableSkeleton from './CustomerPerformanceTableSkeleton';
 import MetricDrillDownDialog from './MetricDrillDownDialog';
+import DashboardErrorBanner from './DashboardErrorBanner';
 
 interface CustomerPerformanceTableProps {
   operatorId: string;
@@ -93,7 +95,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
   // Drill-down dialog
   const [selectedRetailer, setSelectedRetailer] = useState<CustomerPerformanceRow | null>(null);
 
-  const { data, isLoading, isError, refetch, isStale } = useCustomerPerformance(operatorId, startDate, endDate);
+  const { data, isLoading, isError, isPlaceholderData } = useCustomerPerformance(operatorId, startDate, endDate);
 
   // Reset pagination on date range change
   const handleDateRangeChange = (value: DateRangeOption) => {
@@ -167,7 +169,10 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
   return (
     <>
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+      <div className={`relative bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
+        {isPlaceholderData && (
+          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+        )}
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
@@ -238,20 +243,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
         </div>
 
         {/* Error banner */}
-        {isError && (
-          <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
-            <span className="text-sm text-red-700">Error al cargar datos.</span>
-            <button
-              onClick={() => refetch()}
-              className="text-sm font-medium text-red-700 underline hover:text-red-900"
-            >
-              Reintentar
-            </button>
-            {isStale && (
-              <span className="text-xs text-slate-400 ml-auto">Mostrando datos anteriores</span>
-            )}
-          </div>
-        )}
+        {isError && <DashboardErrorBanner />}
 
         {/* Table */}
         {processedData.length === 0 && !isLoading && !isError ? (

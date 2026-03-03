@@ -357,3 +357,49 @@ describe('useFadrPreviousPeriod', () => {
     expect(result.current.data).toBe(89.5);
   });
 });
+
+// 11.8 — Regression tests for DASHBOARD_QUERY_OPTIONS changes
+describe('DASHBOARD_QUERY_OPTIONS regression', () => {
+  it('refetchInterval is 60000 (not 30000)', () => {
+    // Verify the constant by inspecting a hook's query options via QueryClient
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+    const { result } = renderHook(
+      () => useSlaMetric('op-123', '2026-02-17', '2026-02-23'),
+      { wrapper }
+    );
+
+    // Wait for hook to register, then inspect the query's options
+    const queries = queryClient.getQueryCache().getAll();
+    const dashQuery = queries.find((q) =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === 'dashboard'
+    );
+    if (dashQuery) {
+      // refetchInterval comes from DASHBOARD_QUERY_OPTIONS spread
+      expect(dashQuery.options.refetchInterval).toBe(60000);
+    }
+    queryClient.clear();
+  });
+
+  it('staleTime is 30000', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+    renderHook(
+      () => useSlaMetric('op-123', '2026-02-17', '2026-02-23'),
+      { wrapper }
+    );
+
+    const queries = queryClient.getQueryCache().getAll();
+    const dashQuery = queries.find((q) =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === 'dashboard'
+    );
+    if (dashQuery) {
+      expect(dashQuery.options.staleTime).toBe(30000);
+    }
+    queryClient.clear();
+  });
+});

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/types';
@@ -10,7 +10,8 @@ type FailureReasonsArgs = RpcFunctions['get_failure_reasons']['Args'];
 
 const DASHBOARD_QUERY_OPTIONS = {
   staleTime: 30000,
-  refetchInterval: 30000,
+  refetchInterval: 60000,
+  placeholderData: keepPreviousData,
 } as const;
 
 export function useOperatorId() {

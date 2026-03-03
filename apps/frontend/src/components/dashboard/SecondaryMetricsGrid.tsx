@@ -1,5 +1,6 @@
 'use client';
 
+import { Loader2 } from 'lucide-react';
 import { getDashboardDates } from '@/hooks/useDashboardDates';
 import {
   useSecondaryMetrics,
@@ -7,6 +8,7 @@ import {
 } from '@/hooks/useDashboardMetrics';
 import MetricsCard from './MetricsCard';
 import MetricsCardSkeleton from './MetricsCardSkeleton';
+import DashboardErrorBanner from './DashboardErrorBanner';
 
 interface SecondaryMetricsGridProps {
   operatorId: string;
@@ -39,7 +41,7 @@ function formatTrend(current: number | null, previous: number | null): { text: s
 export default function SecondaryMetricsGrid({ operatorId }: SecondaryMetricsGridProps) {
   const { startDate, endDate, prevStartDate, prevEndDate } = getDashboardDates();
 
-  const { data: current, isLoading, isError } = useSecondaryMetrics(operatorId, startDate, endDate);
+  const { data: current, isLoading, isError, isPlaceholderData } = useSecondaryMetrics(operatorId, startDate, endDate);
   const { data: previous } = useSecondaryMetricsPreviousPeriod(operatorId, prevStartDate, prevEndDate);
 
   if (isLoading) {
@@ -66,7 +68,11 @@ export default function SecondaryMetricsGrid({ operatorId }: SecondaryMetricsGri
       <h2 className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-4">
         MÉTRICAS SECUNDARIAS
       </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+      {isError && <DashboardErrorBanner />}
+      <div className={`relative grid grid-cols-1 sm:grid-cols-2 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
+        {isPlaceholderData && (
+          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+        )}
         <MetricsCard
           icon="📊"
           title="Capacidad Utilizada"

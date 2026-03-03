@@ -116,7 +116,7 @@ describe('FailedDeliveriesAnalysis', () => {
   it('shows error banner with retry', () => {
     mockReasonsQuery.isError = true;
     renderWithProvider(<FailedDeliveriesAnalysis operatorId="op1" />);
-    expect(screen.getByText('Error al cargar datos.')).toBeDefined();
+    expect(screen.getByText('Los datos pueden estar desactualizados')).toBeDefined();
     expect(screen.getByText('Reintentar')).toBeDefined();
   });
 
