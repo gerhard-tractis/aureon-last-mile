@@ -56,6 +56,11 @@ export function isValidHexColor(hex: string): boolean {
 
 /**
  * Generates CSS variable entries for a color ramp.
+ * The input color is anchored at shade-600 (the primary UI shade used for
+ * buttons, links, text-primary-600, etc.) and the rest of the ramp is built
+ * proportionally around it. This ensures very dark or very light brand colors
+ * still produce a usable ramp where the most-used shade matches the brand.
+ *
  * @param prefix - CSS variable prefix (e.g., "primary" or "secondary")
  * @param baseHex - Base hex color (e.g., "#1e40af")
  * @returns Record of CSS variable name → hex value
@@ -66,27 +71,35 @@ export function generateColorRamp(
 ): Record<string, string> {
   if (!isValidHexColor(baseHex)) return {};
 
-  const [h, s] = hexToHsl(baseHex);
+  const [h, s, baseL] = hexToHsl(baseHex);
 
-  // shade → [lightness%, saturation multiplier]
-  const shades: [number, number, number][] = [
-    [50, 97, 0.3],
-    [100, 93, 0.5],
-    [200, 85, 0.6],
-    [300, 75, 0.7],
-    [400, 60, 0.85],
-    [500, 50, 1.0],
-    [600, 42, 1.0],
-    [700, 35, 0.9],
-    [800, 28, 0.8],
-    [900, 20, 0.7],
-    [950, 12, 0.6],
-  ];
+  const lightEnd = 97;
+  const darkEnd = 12;
+
+  // Anchor input color at shade 600, scale lighter/darker proportionally
+  const lightnessMap: Record<number, number> = {
+    50:  lightEnd,
+    100: baseL + (lightEnd - baseL) * 0.85,
+    200: baseL + (lightEnd - baseL) * 0.70,
+    300: baseL + (lightEnd - baseL) * 0.55,
+    400: baseL + (lightEnd - baseL) * 0.35,
+    500: baseL + (lightEnd - baseL) * 0.15,
+    600: baseL,
+    700: baseL - (baseL - darkEnd) * 0.25,
+    800: baseL - (baseL - darkEnd) * 0.50,
+    900: baseL - (baseL - darkEnd) * 0.75,
+    950: darkEnd,
+  };
+
+  const satMultipliers: Record<number, number> = {
+    50: 0.3, 100: 0.5, 200: 0.6, 300: 0.7, 400: 0.85,
+    500: 1.0, 600: 1.0, 700: 0.9, 800: 0.8, 900: 0.7, 950: 0.6,
+  };
 
   const ramp: Record<string, string> = {};
-  for (const [shade, lightness, satMul] of shades) {
-    const adjustedSat = Math.min(100, s * satMul);
-    ramp[`--color-${prefix}-${shade}`] = hslToHex(h, adjustedSat, lightness);
+  for (const shade of [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950]) {
+    const adjustedSat = Math.min(100, s * satMultipliers[shade]);
+    ramp[`--color-${prefix}-${shade}`] = hslToHex(h, adjustedSat, lightnessMap[shade]);
   }
 
   return ramp;
