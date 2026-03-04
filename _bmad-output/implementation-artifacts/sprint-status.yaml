@@ -81,6 +81,7 @@ development_status:
   3a-5-user-onboarding-verification: in-progress
   3a-6-operational-alerting-n8n-failures-and-cookie-expiry: backlog
   3a-7-implement-easy-wms-webhook-receiver: in-progress  # Course correction 2026-03-04: replace CSV email as primary ingestion with Easy WMS webhook (richer data, real-time, packages populated)
+  3a-8-dashboard-pipeline-navigation-and-loading-metrics-tab: done  # PR #61 merged 2026-03-04. Pipeline tabs + Loading Data tab with KPIs, charts, tables. 228 tests.
   epic-3a-retrospective: optional
 
   epic-4: backlog

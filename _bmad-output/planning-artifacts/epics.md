@@ -1838,3 +1838,190 @@ So that I always see the current state without manual reloads.
 - Mass update (100+ orders at once) → Batch UI updates, show summary toast: "100 orders updated"
 - User on different tab → Queue updates, apply when tab becomes active
 - WebSocket blocked by firewall → Graceful fallback to HTTP polling
+
+---
+
+## Epic 3A: Dashboard Data Pipeline & Onboarding Readiness
+
+**Added:** 2026-03-03 (Course Correction — Epic 3 Retrospective finding: dashboard has no live data, Beetrack missing, data pipeline gap)
+**Updated:** 2026-03-04 (Course Correction — Easy WMS webhook as Story 3A.7, Dashboard pipeline tabs as Story 3A.8)
+
+Operations managers can see real, live data on the Aureon dashboard. The pipeline from external systems (DispatchTrack, Easy WMS) to the `delivery_attempts` and `orders`/`packages` tables is fully operational. Transportes Musan can onboard and use the platform with their real data. The Tractis brand is applied throughout.
+
+**FR Coverage:** FR8, FR10 (webhook ingestion), FR47 (fallback), FR5 (SLA metrics with real data)
+
+---
+
+### Story 3A.1: Populate delivery_attempts from DispatchTrack Order Status
+
+As an operations manager at Transportes Musan,
+I want the system to automatically sync delivery attempt status from DispatchTrack into the delivery_attempts table,
+So that the dashboard metrics reflect real delivery outcomes.
+
+*(Full story in implementation-artifacts — status: review)*
+
+---
+
+### Story 3A.2: End-to-End Data Pipeline Validation and Metrics Calculation
+
+As an operations manager,
+I want to verify that orders flow correctly from ingestion through to dashboard metrics,
+So that the numbers on the dashboard are accurate and trustworthy.
+
+*(Full story in implementation-artifacts — status: ready-for-dev)*
+
+---
+
+### Story 3A.3: Tractis Branding on Auth Pages
+
+As a platform user,
+I want the login and auth pages to display Tractis branding,
+So that the product feels professional and on-brand.
+
+*(Completed — PRs #39, #42, #43, #45 merged)*
+
+---
+
+### Story 3A.4: Customer Branding Configuration on Dashboard
+
+As an operations manager,
+I want to see my operator's branding (logo, colors) on the dashboard,
+So that the platform feels like it belongs to my company.
+
+*(Completed — PR #49 + follow-ups #51, #54 merged)*
+
+---
+
+### Story 3A.5: User Onboarding Verification
+
+As a new user at Transportes Musan,
+I want to be able to create my account and access the platform without manual SQL setup,
+So that onboarding is self-service and repeatable.
+
+*(In progress)*
+
+---
+
+### Story 3A.6: Operational Alerting — n8n Failures and Cookie Expiry
+
+As an operations manager,
+I want to receive alerts when n8n workflows fail or Beetrack session cookies expire,
+So that data ingestion issues are caught before they affect the dashboard.
+
+*(Backlog)*
+
+---
+
+### Story 3A.7: Implement Easy WMS Webhook Receiver
+
+**Added:** 2026-03-04 (Course Correction — Easy WMS stakeholder meeting with Cencosud)
+
+As an operations manager at Transportes Musan,
+I want the system to automatically receive and process order dispatches pushed by Easy WMS via webhook,
+So that orders and packages are ingested in real-time with full carton-level detail as soon as Easy dispatches a load.
+
+**Acceptance Criteria:**
+
+**Given** the n8n webhook endpoint is active and Easy WMS is configured with our URL and API key
+**When** Easy WMS sends a POST request to `https://n8n.tractis.ai/webhook/easy-wms` with header `Token: <api_key>`
+**Then** n8n validates the `Token` header against the configured API key
+**And** returns HTTP 200 immediately upon receiving the request
+**And** for each `despacho` in the `despachos[]` array:
+  - Upserts one row in `orders` using `(operator_id, order_number)` conflict key where `order_number = entrega`
+  - Maps: `entrega → order_number`, `id_carga → external_load_id`, `fecha_compromiso → delivery_date`, `direccion → delivery_address`, `comuna → comuna`, `cliente_nombre → customer_name`, `cliente_telefono → customer_phone`
+  - Stores full despacho JSON in `raw_data`, sets `imported_via = 'API'`, links `tenant_client_id` to Easy WMS webhook client
+  - For each item in `despacho.items[]`, upserts one row in `packages`: `carton → label`, `bultos → declared_box_count`, `{sku, descripcion, cantidad, codigo_barra, mt3} → sku_items[]`
+**And** a job record is created tracking `orders_upserted` and `packages_upserted` counts
+**And** the raw webhook payload is stored to Supabase Storage: `raw-files/{operator_slug}/easy-webhook/{date}/carga-{id_carga}-{timestamp}.json`
+**When** the `Token` header is missing or invalid → HTTP 401
+
+**Edge Cases:**
+- Duplicate `entrega` (resend/reprint event) → UPSERT — no duplicate created
+- Empty `despachos[]` → HTTP 200, job recorded with 0 counts
+- `items[]` empty for a despacho → upsert order only, no packages
+- Supabase failure → log to Sentry, return HTTP 200 (avoid retry storm), job marked failed
+- `fecha_compromiso` missing → fall back to `fecha_carga`
+
+**Technical Requirements:**
+- n8n workflow: Webhook node (Header Auth: `Token`) → validate → iterate despachos → upsert orders → iterate items → upsert packages → store raw payload → log job
+- Staging URL: `https://n8n.tractis.ai/webhook-test/easy-wms` (share with Cencosud for testing)
+- Production URL: `https://n8n.tractis.ai/webhook/easy-wms`
+- New `tenant_clients` row: `slug = 'easy-webhook'`, `connector_type = 'api'`
+- VPS env vars: `EASY_WMS_WEBHOOK_API_KEY` (staging), rotated for production after validation
+- Workflow exported: `apps/worker/n8n/workflows/easy-wms-webhook.json`
+- Fallback: `easy-csv-import` workflow stays active — populates orders + packages via `Cartón` column when webhook is unavailable
+
+**Webhook payload reference:**
+```json
+{
+  "evento": "impresion por numero de carga",
+  "despachos": [{
+    "entrega": "2916909648",
+    "suborden": "23379215",
+    "numero_guia": "27233378",
+    "id_carga": "CARGACL30038696",
+    "cd_origen": "E599",
+    "tipo_guia": "despacho",
+    "fecha_guia": "2026-03-04",
+    "fecha_carga": "2026-03-04",
+    "fecha_compromiso": "2026-03-07",
+    "direccion": "PASAJE TIACA 1730 0",
+    "comuna": "RANCAGUA",
+    "cliente_rut": "18926544-1",
+    "cliente_nombre": "FELIPE MATUS",
+    "cliente_telefono": "982-058174",
+    "cliente_correo": "felipe.ignaciom@gmail.com",
+    "latitud": "",
+    "longitud": "",
+    "url_guia": "http://cencosud.paperless.cl:80/...",
+    "items": [{
+      "descripcion": "ESCRITORIO MADAGASCAR 43X121X76 BLANCO",
+      "sku": "1285269",
+      "mt3": "395.428",
+      "cantidad": "1",
+      "codigo_barra": "2082004256070",
+      "carton": "LPNCL0003305047",
+      "bultos": "1.00"
+    }]
+  }]
+}
+```
+
+### Story 3A.8: Dashboard Pipeline Navigation & Loading Metrics Tab
+
+**Added:** 2026-03-04 (Course Correction — dashboard restructure for pipeline visibility)
+
+As an operations manager at Transportes Musan,
+I want the dashboard restructured as a pipeline view with tabs for each operational stage, starting with a Loading Data tab showing order/package ingestion metrics,
+So that I can understand what data came into the system and what deliveries are committed per day.
+
+**Scope:**
+- Pipeline tab navigation (7 tabs, 2 active: Overview + Loading)
+- Desktop tabs / mobile dropdown (responsive, no horizontal scroll)
+- Loading tab: date filter bar, 5 KPI cards, 2 charts (daily orders by client, committed orders), 2 breakdown tables (by client, by comuna)
+- 5 Supabase RPC functions, 9 TanStack Query hooks
+- URL state via `?tab=` query param
+
+*(Completed — PR #61 merged 2026-03-04)*
+
+---
+
+## Epic 6: DispatchTrack Route Intelligence (Backlog)
+
+**Status:** backlog — needs full story breakdown by SM agent
+
+**Rationale:** The DispatchTrack (Beetrack) webhook sends a callback for EVERY status change in the delivery lifecycle — not just terminal states. We currently skip all non-terminal updates (En bodega, En reparto, En camino, Reagendado, etc.) and only store the final outcome in `delivery_attempts`. This means we're discarding ~90% of the operational data the webhook provides.
+
+**Key Insight:** The webhook is a real-time feed of the entire last-mile operation. Capturing every event unlocks route tracking, driver performance, SLA timing analysis, and proactive alerting.
+
+**High-Level Scope:**
+- **Route Events Table** — append-only table capturing every webhook status change (no upsert, no skip). Fields: order_id, status_code, status_label, timestamp, driver_id, GPS lat/lng, raw payload JSONB.
+- **State Machine Validation** — define valid state transitions, detect anomalies (e.g. order going backwards in pipeline).
+- **Route Timeline API** — query full history of an order's journey for the Operations Control Center (Epic 5).
+- **Driver Performance Metrics** — time-in-transit, stops per route, delivery speed by zone.
+- **Proactive Alerting** — detect stuck orders (no status change in X hours), failed delivery patterns in real-time.
+- **Backfill from XLSX** — optionally parse historical XLSX exports to populate route events retroactively.
+
+**Dependencies:** Epic 3A (webhook infrastructure), Epic 5 (Operations Control Center consumes this data).
+
+**Note:** `delivery_attempts` table remains for final outcome reporting (FADR, SLA). Route events is a separate, richer data layer.
