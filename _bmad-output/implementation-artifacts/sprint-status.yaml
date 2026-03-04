@@ -80,7 +80,7 @@ development_status:
   3a-4-customer-branding-configuration-on-dashboard: done  # PR #49 merged + follow-ups #51 (Musan seed data), #54 (dynamic favicon)
   3a-5-user-onboarding-verification: in-progress
   3a-6-operational-alerting-n8n-failures-and-cookie-expiry: backlog
-  3a-7-implement-easy-wms-webhook-receiver: done  # webhook live at /webhook/easy-wms, orders+packages e2e verified, PR #61 merged
+  3a-7-implement-easy-wms-webhook-receiver: in-progress  # Course correction 2026-03-04: replace CSV email as primary ingestion with Easy WMS webhook (richer data, real-time, packages populated)
   epic-3a-retrospective: optional
 
   epic-4: backlog
