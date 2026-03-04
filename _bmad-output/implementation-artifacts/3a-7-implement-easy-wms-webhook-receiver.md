@@ -1,6 +1,6 @@
 # Story 3A.7: Implement Easy WMS Webhook Receiver
 
-**Status:** review
+**Status:** done
 **Epic:** 3A — Dashboard Data Pipeline & Onboarding Readiness
 **Added:** 2026-03-04 (Course Correction — Easy WMS stakeholder meeting with Cencosud)
 **Sprint:** current
