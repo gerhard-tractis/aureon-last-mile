@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPAClient, createSPASassClient } from "@/lib/supabase/client";
+import { useBranding } from "@/providers/BrandingProvider";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -23,6 +24,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
 
     const { user } = useGlobal();
+    const { logoUrl, companyName } = useBranding();
+    const [logoError, setLogoError] = useState(false);
     const [userRole, setUserRole] = useState<string | null>(null);
 
     React.useEffect(() => {
@@ -81,7 +84,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
 
                 <div className="h-16 flex items-center justify-between px-4 border-b">
-                    <span className="text-xl font-semibold text-primary-600">{productName}</span>
+                    {logoUrl && !logoError ? (
+                        <img
+                            src={logoUrl}
+                            alt={companyName || productName || 'Logo'}
+                            className="max-h-10 max-w-40 object-contain"
+                            onError={() => setLogoError(true)}
+                        />
+                    ) : (
+                        <span className="text-xl font-semibold text-primary-600">
+                            {companyName || productName}
+                        </span>
+                    )}
                     <button
                         onClick={toggleSidebar}
                         className="lg:hidden text-gray-500 hover:text-gray-700"
