@@ -74,11 +74,11 @@ development_status:
   epic-3-retrospective: done  # Completed 2026-03-03, critical finding: dashboard has no live data, Beetrack missing, data pipeline gap. Epic 4 deferred. Course correction needed.
 
   epic-3a: in-progress  # Course correction 2026-03-03: Dashboard Data Pipeline & Onboarding Readiness
-  3a-1-populate-delivery-attempts-from-dispatchtrack-order-status: in-progress
-  3a-2-end-to-end-data-pipeline-validation-and-metrics-calculation: backlog
-  3a-3-tractis-branding-on-auth-pages: review
-  3a-4-customer-branding-configuration-on-dashboard: backlog
-  3a-5-user-onboarding-verification: backlog
+  3a-1-populate-delivery-attempts-from-dispatchtrack-order-status: review
+  3a-2-end-to-end-data-pipeline-validation-and-metrics-calculation: ready-for-dev
+  3a-3-tractis-branding-on-auth-pages: done  # PRs #39, #42, #43, #45 merged. Official Tractis branding, dark slate auth design, T-symbol favicon, Powered-by badge
+  3a-4-customer-branding-configuration-on-dashboard: review
+  3a-5-user-onboarding-verification: ready-for-dev
   epic-3a-retrospective: optional
 
   epic-4: backlog
