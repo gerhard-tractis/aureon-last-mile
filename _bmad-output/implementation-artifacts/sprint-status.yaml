@@ -75,7 +75,7 @@ development_status:
 
   epic-3a: in-progress  # Course correction 2026-03-03: Dashboard Data Pipeline & Onboarding Readiness
   3a-1-populate-delivery-attempts-from-dispatchtrack-order-status: review
-  3a-2-end-to-end-data-pipeline-validation-and-metrics-calculation: ready-for-dev
+  3a-2-end-to-end-data-pipeline-validation-and-metrics-calculation: done  # All ACs verified: delivery_attempts live, backfill complete, RPCs return data, dashboard confirmed, cron registered, metrics now refresh same-minute via n8n
   3a-3-tractis-branding-on-auth-pages: done  # PRs #39, #42, #43, #45 merged. Official Tractis branding, dark slate auth design, T-symbol favicon, Powered-by badge
   3a-4-customer-branding-configuration-on-dashboard: done  # PR #49 merged + follow-ups #51 (Musan seed data), #54 (dynamic favicon)
   3a-5-user-onboarding-verification: in-progress
