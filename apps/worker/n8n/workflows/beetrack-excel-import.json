@@ -391,19 +391,23 @@
         "rule": {
           "interval": [
             {
-              "triggerAtHour": 7,
+              "triggerAtHour": 11,
               "triggerAtMinute": 0
             },
             {
-              "triggerAtHour": 10,
+              "triggerAtHour": 14,
               "triggerAtMinute": 0
             },
             {
-              "triggerAtHour": 13,
+              "triggerAtHour": 17,
               "triggerAtMinute": 0
             },
             {
-              "triggerAtHour": 16,
+              "triggerAtHour": 20,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 23,
               "triggerAtMinute": 0
             },
             {
