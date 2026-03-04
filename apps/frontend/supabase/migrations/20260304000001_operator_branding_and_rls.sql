@@ -28,17 +28,17 @@ COMMENT ON COLUMN public.operators.settings IS
     }
   }';
 
--- 4. Seed Musan operator with initial branding config
+-- 4. Seed Musan operator with branding config
 UPDATE public.operators
 SET settings = jsonb_set(
   COALESCE(settings, '{}'::jsonb),
   '{branding}',
   '{
-    "company_name": "Musan Logistics",
-    "logo_url": null,
-    "favicon_url": null,
-    "primary_color": null,
-    "secondary_color": null
+    "company_name": "Transportes Musan",
+    "logo_url": "https://transportesmusan.com/wp-content/uploads/2022/03/logo-1.png",
+    "favicon_url": "https://transportesmusan.com/wp-content/uploads/2022/03/cropped-png-32x32.png",
+    "primary_color": "#001269",
+    "secondary_color": "#001a99"
   }'::jsonb
 )
 WHERE id = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
