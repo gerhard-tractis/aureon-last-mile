@@ -49,9 +49,9 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
         .from('operators')
         .select('settings')
         .eq('id', operatorId!)
-        .single();
+        .single() as { data: { settings: Record<string, unknown> | null } | null; error: unknown };
       if (error || !data) return null;
-      return (data.settings as Record<string, unknown>)?.branding as RawBranding ?? null;
+      return (data.settings?.branding as RawBranding) ?? null;
     },
     enabled: !!operatorId,
     staleTime: 5 * 60 * 1000,
