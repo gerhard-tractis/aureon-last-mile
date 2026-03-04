@@ -33,12 +33,12 @@ export default function DailyOrdersChart({ operatorId, startDate, endDate }: Dai
   const { data, isLoading } = useDailyOrdersByClient(operatorId, startDate, endDate);
 
   // Group by day, pivot retailers into columns
-  const dayMap = new Map<string, Record<string, number>>();
+  const dayMap = new Map<string, Record<string, string | number>>();
   const clientSet = new Set<string>();
 
   for (const row of data ?? []) {
     const dayLabel = row.day.slice(5); // MM-DD
-    if (!dayMap.has(dayLabel)) dayMap.set(dayLabel, { day: dayLabel } as Record<string, string | number>);
+    if (!dayMap.has(dayLabel)) dayMap.set(dayLabel, { day: dayLabel });
     dayMap.get(dayLabel)![row.retailer_name] = row.count;
     clientSet.add(row.retailer_name);
   }
