@@ -44,7 +44,7 @@ export async function executeBeetrack(job: JobRecord): Promise<JobResult> {
 
     const domain = new URL(baseUrl).hostname.replace(/^[^.]+/, '');
     await context.addCookies([
-      { name: '_cluster_1_dt_auth_session', value: sessionCookie, domain, path: '/' },
+      { name: '_cluster_4_dt_auth_session', value: sessionCookie, domain, path: '/' },
       { name: 'remember_user_token', value: rememberToken, domain, path: '/' },
     ]);
 
