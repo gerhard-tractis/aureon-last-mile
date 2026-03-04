@@ -79,6 +79,7 @@ development_status:
   3a-3-tractis-branding-on-auth-pages: done  # PRs #39, #42, #43, #45 merged. Official Tractis branding, dark slate auth design, T-symbol favicon, Powered-by badge
   3a-4-customer-branding-configuration-on-dashboard: review
   3a-5-user-onboarding-verification: ready-for-dev
+  3a-6-operational-alerting-n8n-failures-and-cookie-expiry: backlog
   epic-3a-retrospective: optional
 
   epic-4: backlog
