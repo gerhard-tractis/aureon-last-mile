@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useDashboardMetrics';
 import PipelineNav, { type PipelineTab } from '@/components/dashboard/PipelineNav';
@@ -16,7 +16,7 @@ import LoadingTab from '@/components/dashboard/LoadingTab';
 
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
-export default function DashboardPage() {
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { operatorId, role } = useOperatorId();
@@ -69,5 +69,13 @@ export default function DashboardPage() {
       )}
       {activeTab === 'loading' && <LoadingTab operatorId={operatorId} />}
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<HeroSLASkeleton />}>
+      <DashboardContent />
+    </Suspense>
   );
 }
