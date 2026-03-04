@@ -409,6 +409,10 @@
             {
               "triggerAtHour": 23,
               "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 19,
+              "triggerAtMinute": 0
             }
           ]
         }
