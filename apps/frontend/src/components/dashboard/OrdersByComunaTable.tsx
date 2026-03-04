@@ -27,7 +27,7 @@ export default function OrdersByComunaTable({ operatorId, startDate, endDate }: 
         .is('deleted_at', null)
         .not('recipient_region', 'is', null);
       if (error) throw error;
-      return [...new Set(data?.map(d => d.recipient_region).filter(Boolean))].sort() as string[];
+      return [...new Set((data as { recipient_region: string }[])?.map(d => d.recipient_region).filter(Boolean))].sort();
     },
     enabled: !!operatorId,
     staleTime: 30000,

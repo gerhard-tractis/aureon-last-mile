@@ -38,7 +38,7 @@ export default function DailyOrdersChart({ operatorId, startDate, endDate }: Dai
 
   for (const row of data ?? []) {
     const dayLabel = row.day.slice(5); // MM-DD
-    if (!dayMap.has(dayLabel)) dayMap.set(dayLabel, { day: dayLabel } as any);
+    if (!dayMap.has(dayLabel)) dayMap.set(dayLabel, { day: dayLabel } as Record<string, string | number>);
     dayMap.get(dayLabel)![row.retailer_name] = row.count;
     clientSet.add(row.retailer_name);
   }

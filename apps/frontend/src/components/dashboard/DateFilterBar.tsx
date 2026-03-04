@@ -20,7 +20,7 @@ const PRESETS: { id: DatePreset; label: string }[] = [
   { id: 'custom', label: 'Personalizado' },
 ];
 
-export function DateFilterBar({
+export default function DateFilterBar({
   preset,
   customStart,
   customEnd,
