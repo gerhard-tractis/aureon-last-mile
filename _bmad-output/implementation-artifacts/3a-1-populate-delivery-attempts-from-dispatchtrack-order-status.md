@@ -84,8 +84,8 @@ so that the dashboard metrics calculation has real data and I can see SLA, FADR,
 - [x] Task 1: Create Supabase migration for unique index (AC: #3)
   - [x] 1.1: Write migration `20260303000001_add_delivery_attempts_unique_index.sql`
   - [x] 1.2: Add unique partial index on `(operator_id, order_id, attempt_number) WHERE deleted_at IS NULL`
-  - [ ] 1.3: Test migration applies cleanly on empty table
-  - [ ] 1.4: Verify ON CONFLICT works with the partial unique index via REST API
+  - [x] 1.3: Test migration applies cleanly on empty table
+  - [x] 1.4: Verify ON CONFLICT works with the partial unique index via REST API
 
 - [x] Task 2: Add "Map Delivery Attempts" Code node to n8n workflow (AC: #1, #2, #4)
   - [x] 2.1: Define the Estado-to-enum mapping object
@@ -115,7 +115,7 @@ so that the dashboard metrics calculation has real data and I can see SLA, FADR,
   - [ ] 6.3: Re-run the same import and verify idempotency (no duplicate rows)
 
 - [ ] Task 7: End-to-end verification — Musan DispatchTrack webhook path
-  - [ ] 7.1: Confirm `beetrack-webhook` Edge Function is deployed and JWT verification is disabled
+  - [x] 7.1: Confirm `beetrack-webhook` Edge Function is deployed and JWT verification is disabled
   - [ ] 7.2: Wait for a real terminal delivery event (status 2/3/4) from Musan's DispatchTrack account
   - [ ] 7.3: Verify the matching order exists in the `orders` table (ingested via n8n)
   - [ ] 7.4: Verify a `delivery_attempts` row is created with correct `status`, `failure_reason`, and `attempted_at`
@@ -233,11 +233,13 @@ claude-sonnet-4-6
 ### Debug Log References
 
 - n8n MCP: `updateNode` requires `updates` wrapper (not direct `parameters`), and `removeConnection`/`addConnection` take flat `source`/`target` (not nested in `connection` object). Atomic rollback confirmed working.
-- Partial unique index (`WHERE deleted_at IS NULL`) used per story spec. Task 1.4 requires live verification that PostgREST handles ON CONFLICT with partial index correctly.
+- Task 1.4 FINDING: PostgREST `?on_conflict=` does NOT work with partial unique indexes. Added separate migration `20260304000002_add_delivery_attempts_unique_constraint.sql` with a plain `UNIQUE (operator_id, order_id, attempt_number)` constraint. Verified idempotency via REST API: 2 upserts → 1 row, `attempted_at` updated correctly.
+- Task 7.1: beetrack-webhook 401 response includes `x-deno-execution-id` → function IS executing (JWT disabled). 401 is from function's own `BEETRACK_WEBHOOK_SECRET` auth check — expected behavior.
+- beetrack-excel-import workflow was previously reverted (commit 28a5e52). Re-added `bt-map-delivery-attempts` + `bt-upsert-delivery-attempts` nodes via MCP (8 operations atomically applied 2026-03-04).
 
 ### Completion Notes List
 
-**Tasks 1-5 complete (2026-03-03):**
+**Tasks 1-5 complete (2026-03-03), Tasks 1.3/1.4/7.1 verified (2026-03-04):**
 
 - **Task 1**: Migration `20260303000001_add_delivery_attempts_unique_index.sql` written with partial unique index on `(operator_id, order_id, attempt_number) WHERE deleted_at IS NULL`. Requires `supabase db push` to apply; 1.3/1.4 are live-verification steps.
 
@@ -249,9 +251,19 @@ claude-sonnet-4-6
   - `bt-prepare-summary` updated with `delivery_attempts_upserted`, `delivery_attempts_skipped`, `delivery_attempts_error` fields in `result` JSONB.
   - Local JSON `beetrack-excel-import.json` synced with all changes.
 
-**Task 6 (E2E verification) pending** — requires real DispatchTrack trigger.
+**Task 1.3**: Migration `20260303000001` applied cleanly to production DB. Additional migration `20260304000002_add_delivery_attempts_unique_constraint.sql` added — plain unique constraint required because PostgREST ON CONFLICT doesn't support partial indexes.
+
+**Task 1.4**: Verified via REST API — POST to `/rest/v1/delivery_attempts?on_conflict=operator_id,order_id,attempt_number` with 2 identical upserts produced exactly 1 row with updated `attempted_at`.
+
+**Task 6 (Paris XLSX E2E)**: beetrack-excel-import workflow re-augmented with `bt-map-delivery-attempts` + `bt-upsert-delivery-attempts` nodes (8 MCP operations atomically applied). Previous revert (commit 28a5e52) was undone. Pending: live DispatchTrack export trigger.
+
+**Task 7.1**: beetrack-webhook confirmed deployed and JWT-disabled. `x-deno-execution-id` header in 401 response confirms function executes; 401 is from function's own BEETRACK_WEBHOOK_SECRET auth (correct behavior).
+
+**Tasks 7.2–7.5, 6.2–6.3, 8**: Require real DispatchTrack events/exports.
 
 ### File List
 
 - `apps/frontend/supabase/migrations/20260303000001_add_delivery_attempts_unique_index.sql` (new)
-- `apps/worker/n8n/workflows/beetrack-excel-import.json` (modified — 2 nodes added, 4 nodes repositioned, 3 connections rewired, 2 node JS bodies updated)
+- `apps/frontend/supabase/migrations/20260304000002_add_delivery_attempts_unique_constraint.sql` (new — plain unique constraint for PostgREST ON CONFLICT compatibility)
+- `apps/frontend/supabase/functions/beetrack-webhook/index.ts` (new — Musan webhook Edge Function)
+- `apps/worker/n8n/workflows/beetrack-excel-import.json` (modified — bt-map-delivery-attempts and bt-upsert-delivery-attempts nodes added, bt-link-packages and bt-prepare-summary updated)
