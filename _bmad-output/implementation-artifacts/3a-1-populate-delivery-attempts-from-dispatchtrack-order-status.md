@@ -109,12 +109,21 @@ so that the dashboard metrics calculation has real data and I can see SLA, FADR,
   - [x] 5.2: Ensure workflow continues to Link Packages even on failure (Link Packages reads from `$('UPSERT Orders').all()` directly)
   - [x] 5.3: Log error details in job summary (Prepare Summary try/catch on UPSERT Delivery Attempts output)
 
-- [ ] Task 6: End-to-end verification
-  - [ ] 6.1: Trigger a fresh DispatchTrack export with real data
-  - [ ] 6.2: Verify `delivery_attempts` table has rows after workflow completes
-  - [ ] 6.3: Verify `calculate_daily_metrics` cron produces non-zero metrics from the new data
-  - [ ] 6.4: Verify dashboard displays the calculated metrics
-  - [ ] 6.5: Re-run the same import and verify idempotency (no duplicate rows)
+- [ ] Task 6: End-to-end verification — n8n/XLSX path (Paris orders)
+  - [ ] 6.1: Trigger a fresh DispatchTrack export with real data (Paris account)
+  - [ ] 6.2: Verify `delivery_attempts` table has rows after n8n workflow completes
+  - [ ] 6.3: Re-run the same import and verify idempotency (no duplicate rows)
+
+- [ ] Task 7: End-to-end verification — Musan DispatchTrack webhook path
+  - [ ] 7.1: Confirm `beetrack-webhook` Edge Function is deployed and JWT verification is disabled
+  - [ ] 7.2: Wait for a real terminal delivery event (status 2/3/4) from Musan's DispatchTrack account
+  - [ ] 7.3: Verify the matching order exists in the `orders` table (ingested via n8n)
+  - [ ] 7.4: Verify a `delivery_attempts` row is created with correct `status`, `failure_reason`, and `attempted_at`
+  - [ ] 7.5: Re-send the same webhook event and verify idempotency (row updated, not duplicated)
+
+- [ ] Task 8: Metrics and dashboard verification (both paths)
+  - [ ] 8.1: Verify `calculate_daily_metrics` cron produces non-zero metrics from the new data
+  - [ ] 8.2: Verify dashboard displays the calculated metrics
 
 ## Dev Notes
 
