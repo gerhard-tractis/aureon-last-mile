@@ -104,6 +104,32 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     }
   }, [branding.companyName]);
 
+  // Dynamic favicon override
+  useEffect(() => {
+    if (!branding.faviconUrl) return;
+
+    const setFavicon = (rel: string, href: string) => {
+      let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = rel;
+        document.head.appendChild(link);
+      }
+      link.href = href;
+    };
+
+    const originalIcon = document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href;
+    const originalApple = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]')?.href;
+
+    setFavicon('icon', branding.faviconUrl);
+    setFavicon('apple-touch-icon', branding.faviconUrl);
+
+    return () => {
+      if (originalIcon) setFavicon('icon', originalIcon);
+      if (originalApple) setFavicon('apple-touch-icon', originalApple);
+    };
+  }, [branding.faviconUrl]);
+
   return (
     <BrandingContext.Provider value={branding}>
       {children}
