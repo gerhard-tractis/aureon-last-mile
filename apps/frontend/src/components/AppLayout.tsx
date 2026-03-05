@@ -3,13 +3,12 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import {usePathname, useRouter} from 'next/navigation';
 import {
-    Home,
     User,
     Menu,
     X,
     ChevronDown,
     LogOut,
-    Key, Files, LucideListTodo,
+    Key,
     BarChart3,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
@@ -62,9 +61,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ...(dashboardAllowed
             ? [{ name: 'Dashboard', href: '/app/dashboard', icon: BarChart3 }]
             : []),
-        { name: 'Homepage', href: '/app', icon: Home },
-        { name: 'Example Storage', href: '/app/storage', icon: Files },
-        { name: 'Example Table', href: '/app/table', icon: LucideListTodo },
         { name: 'User Settings', href: '/app/user-settings', icon: User },
     ];
 
