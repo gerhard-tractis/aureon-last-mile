@@ -52,8 +52,8 @@ export function useDatePreset(
         endDate = format(today, DATE_FMT);
         break;
       case 'custom':
-        startDate = customStart ?? format(today, DATE_FMT);
-        endDate = customEnd ?? format(today, DATE_FMT);
+        startDate = customStart || format(today, DATE_FMT);
+        endDate = customEnd || format(today, DATE_FMT);
         break;
     }
 
