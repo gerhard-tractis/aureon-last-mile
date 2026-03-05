@@ -60,8 +60,9 @@ export function useOrdersCommitted(
       const { count, error } = await createSPAClient()
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .gte('delivery_date', startDate)
-        .lte('delivery_date', endDate)
+        .gte('created_at', startDate + 'T00:00:00')
+        .lt('created_at', endDate + 'T23:59:59.999')
+        .not('delivery_date', 'is', null)
         .is('deleted_at', null);
       if (error) throw error;
       return count ?? 0;
