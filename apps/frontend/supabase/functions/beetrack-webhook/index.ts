@@ -142,6 +142,34 @@ async function handleDispatch(
     return json({ ok: false, error: error.message }, 500);
   }
 
+  // Update order status for terminal dispatches (AC1-AC5)
+  if (orderId && (status === 'delivered' || status === 'failed' || status === 'partial')) {
+    const orderStatus = status === 'delivered' ? 'delivered' : 'failed';
+    let statusDetail: string;
+    if (status === 'delivered') {
+      statusDetail = `Delivered via DispatchTrack dispatch #${dispatchId}`;
+    } else if (status === 'partial') {
+      statusDetail = `Partial delivery via DispatchTrack dispatch #${dispatchId}${substatus ? ` — ${substatus}` : ''}`;
+    } else {
+      statusDetail = substatus || `Failed via DispatchTrack dispatch #${dispatchId}`;
+    }
+
+    const { error: orderError } = await supabase
+      .from('orders')
+      .update({ status: orderStatus, status_detail: statusDetail })
+      .eq('id', orderId)
+      .neq('status', 'delivered'); // Never downgrade from delivered
+
+    if (orderError) {
+      console.warn(`beetrack-webhook: order status update failed for ${orderId}`, orderError);
+      // Non-blocking — dispatch is already saved
+    } else {
+      console.log(`beetrack-webhook: order ${orderId} status → ${orderStatus}`);
+    }
+  } else if (!orderId && identifier) {
+    console.warn(`beetrack-webhook: no order found for identifier=${identifier}, skipping status update`);
+  }
+
   console.log(`beetrack-webhook: dispatch/${body.event} dispatch_id=${dispatchId} status=${status}`);
   return json({ ok: true, resource: 'dispatch', dispatch_id: dispatchId, status });
 }
