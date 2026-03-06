@@ -47,7 +47,7 @@ export function getOrderStatusUpdate(
  */
 export function shouldSkipOrderUpdate(
   currentOrderStatus: string,
-  newStatus: 'delivered' | 'failed',
+  _newStatus: 'delivered' | 'failed',
 ): boolean {
   // Never downgrade from delivered
   if (currentOrderStatus === 'delivered') return true;
