@@ -36,6 +36,9 @@ Deno.serve(async (req: Request) => {
     return new Response('Invalid JSON', { status: 400 });
   }
 
+  // Log FULL payload for ALL resource types (temporary — schema discovery for Epic 3B)
+  console.log(`beetrack-webhook: FULL PAYLOAD resource=${body.resource} →`, JSON.stringify(body));
+
   // Only process dispatch events — skip route, review, dispatch_guide
   const resource = body.resource as string | undefined;
   if (resource !== 'dispatch') {
