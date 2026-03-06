@@ -166,12 +166,13 @@ async function handleRoute(
   if (started && ended) routeStatus = 'completed';
   else if (started) routeStatus = 'in_progress';
 
-  // Upsert fleet vehicle (if truck present)
+  // Upsert fleet vehicle (if truck present), include driver_name from route payload
   const truck = body.truck as string | undefined;
   const vehicleType = body.vehicle_type as string | undefined;
+  const truckDriver = body.truck_driver as string | undefined;
   let vehicleId: string | null = null;
   if (truck) {
-    vehicleId = await upsertFleetVehicle(supabase, truck, vehicleType);
+    vehicleId = await upsertFleetVehicle(supabase, truck, vehicleType, truckDriver);
   }
 
   const routeRow = {
@@ -226,14 +227,16 @@ async function upsertFleetVehicle(
   supabase: ReturnType<typeof createClient>,
   externalVehicleId: string,
   vehicleType?: string | null,
+  driverName?: string | null,
 ): Promise<string | null> {
-  const vehicleRow = {
+  const vehicleRow: Record<string, unknown> = {
     operator_id: MUSAN_OPERATOR_ID,
     provider: PROVIDER,
     external_vehicle_id: externalVehicleId,
     vehicle_type: vehicleType ?? null,
     raw_data: {},
   };
+  if (driverName) vehicleRow.driver_name = driverName;
 
   const { data, error } = await supabase
     .from('fleet_vehicles')
