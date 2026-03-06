@@ -86,7 +86,7 @@ development_status:
 
   epic-3b: in-progress  # Course correction 2026-03-06: Delivery & Fleet Intelligence
   3b-1-schema-design-routes-dispatches-fleet-vehicles: done  # PR #69 merged. 3 tables + 3 enums + RPCs rewritten. delivery_attempts dropped.
-  3b-2-ingest-all-dispatchtrack-events: backlog  # Update edge function to populate routes, dispatches, fleet_vehicles from ALL webhook resource types
+  3b-2-ingest-all-dispatchtrack-events: in-progress  # Edge function rewritten for new schema (routes, dispatches, fleet_vehicles)
   3b-3-simple-order-status-update: backlog  # created → delivered / failed_delivery from terminal dispatches only
   3b-4-otif-metrics-pending-orders-dashboard-widget: backlog  # OTIF calculation + overdue/urgent pending orders + dashboard widgets
   3b-5-intermediate-order-states: backlog  # created → in_route → out_for_delivery → delivered/failed
