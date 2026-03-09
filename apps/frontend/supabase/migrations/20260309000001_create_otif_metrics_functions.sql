@@ -24,7 +24,7 @@ AS $$
         SELECT 1 FROM dispatches d
         WHERE d.order_id = o.id
           AND d.status = 'delivered'
-          AND d.completed_at::date <= o.delivery_date
+          AND (d.completed_at AT TIME ZONE 'America/Santiago')::date <= o.delivery_date
           AND d.deleted_at IS NULL
       )
     ),
@@ -35,7 +35,7 @@ AS $$
           SELECT 1 FROM dispatches d
           WHERE d.order_id = o.id
             AND d.status = 'delivered'
-            AND d.completed_at::date <= o.delivery_date
+            AND (d.completed_at AT TIME ZONE 'America/Santiago')::date <= o.delivery_date
             AND d.deleted_at IS NULL
         )
       )::numeric / NULLIF(COUNT(*) FILTER (WHERE o.status = 'delivered'), 0) * 100,
@@ -60,9 +60,9 @@ SECURITY INVOKER
 SET search_path = public
 AS $$
   SELECT json_build_object(
-    'overdue_count', COUNT(*) FILTER (WHERE o.delivery_date < CURRENT_DATE),
-    'due_today_count', COUNT(*) FILTER (WHERE o.delivery_date = CURRENT_DATE),
-    'due_tomorrow_count', COUNT(*) FILTER (WHERE o.delivery_date = CURRENT_DATE + 1),
+    'overdue_count', COUNT(*) FILTER (WHERE o.delivery_date < (NOW() AT TIME ZONE 'America/Santiago')::date),
+    'due_today_count', COUNT(*) FILTER (WHERE o.delivery_date = (NOW() AT TIME ZONE 'America/Santiago')::date),
+    'due_tomorrow_count', COUNT(*) FILTER (WHERE o.delivery_date = (NOW() AT TIME ZONE 'America/Santiago')::date + 1),
     'total_pending', COUNT(*)
   )
   FROM orders o
