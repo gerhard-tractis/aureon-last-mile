@@ -1,9 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode } from 'react';
 
 vi.mock('./DateFilterBar', () => ({ default: () => <div data-testid="date-filter" /> }));
+vi.mock('./OtifByRetailerTable', () => ({ default: () => <div data-testid="otif-retailer-table" /> }));
+vi.mock('./LateDeliveriesTable', () => ({ default: () => <div data-testid="late-deliveries-table" /> }));
+vi.mock('./OrdersDetailTable', () => ({ default: (props: { initialStatus?: string; initialOverdueOnly?: boolean }) => (
+  <div data-testid="orders-detail-table" data-status={props.initialStatus ?? ''} data-overdue={String(props.initialOverdueOnly ?? false)} />
+)}));
 vi.mock('@/hooks/useDatePreset', () => ({
   useDatePreset: () => ({
     startDate: '2026-03-01',
@@ -159,5 +165,26 @@ describe('DeliveryTab', () => {
     expect(screen.getByTestId('otif-hero')).toHaveTextContent(
       '480 de 505 pedidos entregados a tiempo'
     );
+  });
+
+  it('renders all detail sections', () => {
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
+    mockPending.mockReturnValue({ data: PENDING_DATA, isLoading: false });
+    render(<DeliveryTab operatorId="test-op" />, { wrapper });
+
+    expect(screen.getByTestId('otif-retailer-table')).toBeInTheDocument();
+    expect(screen.getByTestId('late-deliveries-table')).toBeInTheDocument();
+    expect(screen.getByTestId('orders-detail-table')).toBeInTheDocument();
+  });
+
+  it('clicking outcome card sets status filter on orders table', async () => {
+    const user = userEvent.setup();
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
+    mockPending.mockReturnValue({ data: PENDING_DATA, isLoading: false });
+    render(<DeliveryTab operatorId="test-op" />, { wrapper });
+
+    await user.click(screen.getByTestId('outcome-failed'));
+    const table = screen.getByTestId('orders-detail-table');
+    expect(table.getAttribute('data-status')).toBe('failed');
   });
 });

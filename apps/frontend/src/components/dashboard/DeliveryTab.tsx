@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import DateFilterBar, { type DatePreset } from './DateFilterBar';
 import { useDatePreset } from '@/hooks/useDatePreset';
 import { useOtifMetrics, usePendingOrders } from '@/hooks/useDeliveryMetrics';
+import OtifByRetailerTable from './OtifByRetailerTable';
+import LateDeliveriesTable from './LateDeliveriesTable';
+import OrdersDetailTable from './OrdersDetailTable';
 
 interface DeliveryTabProps {
   operatorId: string;
@@ -106,6 +109,7 @@ function OutcomeCard({
   accent,
   isLoading,
   testId,
+  onClick,
 }: {
   label: string;
   count: number;
@@ -113,6 +117,7 @@ function OutcomeCard({
   accent: string;
   isLoading: boolean;
   testId: string;
+  onClick?: () => void;
 }) {
   const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
 
@@ -127,8 +132,9 @@ function OutcomeCard({
 
   return (
     <div
-      className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.01] transition-all duration-300"
+      className={`bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.01] transition-all duration-300 ${onClick ? 'cursor-pointer' : ''}`}
       data-testid={testId}
+      onClick={onClick}
     >
       <div className={`text-3xl font-bold leading-none mb-1 ${accent}`}>
         {count.toLocaleString('es-CL')}
@@ -147,6 +153,7 @@ function PendingAlertCard({
   pulse,
   isLoading,
   testId,
+  onClick,
 }: {
   label: string;
   count: number;
@@ -154,6 +161,7 @@ function PendingAlertCard({
   pulse: boolean;
   isLoading: boolean;
   testId: string;
+  onClick?: () => void;
 }) {
   if (isLoading) {
     return (
@@ -166,8 +174,9 @@ function PendingAlertCard({
 
   return (
     <div
-      className={`rounded-xl p-5 shadow-sm border transition-all duration-300 hover:shadow-lg hover:scale-[1.01] ${accent}`}
+      className={`rounded-xl p-5 shadow-sm border transition-all duration-300 hover:shadow-lg hover:scale-[1.01] ${accent} ${onClick ? 'cursor-pointer' : ''}`}
       data-testid={testId}
+      onClick={onClick}
     >
       <div className="flex items-center gap-2">
         <span className="text-3xl font-bold leading-none">
@@ -190,6 +199,9 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
   const [preset, setPreset] = useState<DatePreset>('this_month');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const ordersRef = useRef<HTMLDivElement>(null);
+  const [ordersStatusFilter, setOrdersStatusFilter] = useState<string | null>(null);
+  const [ordersOverdueOnly, setOrdersOverdueOnly] = useState(false);
 
   const { startDate, endDate } = useDatePreset(preset, customStart, customEnd);
 
@@ -198,6 +210,12 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
 
   const otifData = otif.data;
   const pendingData = pending.data;
+
+  const scrollToOrders = (status: string | null, overdue = false) => {
+    setOrdersStatusFilter(status);
+    setOrdersOverdueOnly(overdue);
+    setTimeout(() => ordersRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
 
   return (
     <div className="space-y-6" data-testid="delivery-tab">
@@ -227,6 +245,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           accent="text-emerald-600"
           isLoading={otif.isLoading}
           testId="outcome-delivered"
+          onClick={() => scrollToOrders('delivered')}
         />
         <OutcomeCard
           label="Fallidos"
@@ -235,6 +254,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           accent="text-red-600"
           isLoading={otif.isLoading}
           testId="outcome-failed"
+          onClick={() => scrollToOrders('failed')}
         />
         <OutcomeCard
           label="Pendientes"
@@ -243,6 +263,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           accent="text-amber-600"
           isLoading={otif.isLoading}
           testId="outcome-pending"
+          onClick={() => scrollToOrders('pending')}
         />
       </div>
 
@@ -255,6 +276,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           pulse={true}
           isLoading={pending.isLoading}
           testId="pending-overdue"
+          onClick={() => scrollToOrders(null, true)}
         />
         <PendingAlertCard
           label="Para Hoy"
@@ -271,6 +293,23 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           pulse={false}
           isLoading={pending.isLoading}
           testId="pending-tomorrow"
+        />
+      </div>
+
+      {/* OTIF by Retailer (detail) */}
+      <OtifByRetailerTable operatorId={operatorId} startDate={startDate} endDate={endDate} />
+
+      {/* Late Deliveries (detail) */}
+      <LateDeliveriesTable operatorId={operatorId} startDate={startDate} endDate={endDate} />
+
+      {/* Orders Detail Table (detail) */}
+      <div ref={ordersRef}>
+        <OrdersDetailTable
+          operatorId={operatorId}
+          startDate={startDate}
+          endDate={endDate}
+          initialStatus={ordersStatusFilter}
+          initialOverdueOnly={ordersOverdueOnly}
         />
       </div>
     </div>
