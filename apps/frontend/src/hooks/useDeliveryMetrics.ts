@@ -5,6 +5,7 @@ export interface OtifMetrics {
   total_orders: number;
   delivered_orders: number;
   failed_orders: number;
+  in_route_orders: number;
   pending_orders: number;
   on_time_deliveries: number;
   otif_percentage: number | null;

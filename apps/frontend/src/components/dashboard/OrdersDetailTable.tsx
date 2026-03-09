@@ -186,7 +186,13 @@ export default function OrdersDetailTable({
                   <td className="px-4 py-3 text-slate-600">{row.delivery_date}</td>
                   <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                   <td className="px-4 py-3 text-slate-600 text-xs">
-                    {row.completed_at ? row.completed_at.split(' ')[0] : '—'}
+                    {row.completed_at
+                      ? new Date(row.completed_at).toLocaleDateString('es-CL', {
+                          day: '2-digit', month: '2-digit', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit', second: '2-digit',
+                          hour12: false, timeZone: 'America/Santiago',
+                        })
+                      : '—'}
                   </td>
                 </tr>
                 {expandedId === row.id && <ExpandedRow row={row} />}
