@@ -18,27 +18,9 @@ AS $$
     'delivered_orders', COUNT(*) FILTER (WHERE o.status = 'delivered'),
     'failed_orders', COUNT(*) FILTER (WHERE o.status = 'failed'),
     'pending_orders', COUNT(*) FILTER (WHERE o.status NOT IN ('delivered', 'failed')),
-    'on_time_deliveries', COUNT(*) FILTER (
-      WHERE o.status = 'delivered'
-      AND EXISTS (
-        SELECT 1 FROM dispatches d
-        WHERE d.order_id = o.id
-          AND d.status = 'delivered'
-          AND (d.completed_at AT TIME ZONE 'America/Santiago')::date <= o.delivery_date
-          AND d.deleted_at IS NULL
-      )
-    ),
     'otif_percentage', ROUND(
-      COUNT(*) FILTER (
-        WHERE o.status = 'delivered'
-        AND EXISTS (
-          SELECT 1 FROM dispatches d
-          WHERE d.order_id = o.id
-            AND d.status = 'delivered'
-            AND (d.completed_at AT TIME ZONE 'America/Santiago')::date <= o.delivery_date
-            AND d.deleted_at IS NULL
-        )
-      )::numeric / NULLIF(COUNT(*) FILTER (WHERE o.status = 'delivered'), 0) * 100,
+      COUNT(*) FILTER (WHERE o.status = 'delivered')::numeric
+        / NULLIF(COUNT(*), 0) * 100,
       1
     )
   )

@@ -202,7 +202,7 @@ export default function OrdersDetailTable({
       {/* Pagination */}
       {data && data.total_count > 0 && (
         <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-600">
-          <span>{rangeStart}\u2013{rangeEnd} de {data.total_count.toLocaleString('es-CL')}</span>
+          <span>{rangeStart}–{rangeEnd} de {data.total_count.toLocaleString('es-CL')}</span>
           <div className="flex gap-2">
             <button
               disabled={page <= 1}
