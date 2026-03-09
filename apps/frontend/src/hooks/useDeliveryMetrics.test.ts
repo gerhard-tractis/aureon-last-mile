@@ -36,8 +36,7 @@ describe('useOtifMetrics', () => {
       delivered_orders: 80,
       failed_orders: 10,
       pending_orders: 10,
-      on_time_deliveries: 75,
-      otif_percentage: 93.8,
+      otif_percentage: 80.0,
     };
     mockRpc.mockResolvedValue({ data: mockData, error: null });
 

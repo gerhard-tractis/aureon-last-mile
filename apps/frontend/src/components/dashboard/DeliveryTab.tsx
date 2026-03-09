@@ -51,13 +51,13 @@ function Skeleton({ className = '' }: { className?: string }) {
 /* ── OTIF Hero Card (AC #4) ── */
 function OtifHeroCard({
   otifPct,
-  onTime,
   delivered,
+  total,
   isLoading,
 }: {
   otifPct: number | null;
-  onTime: number;
   delivered: number;
+  total: number;
   isLoading: boolean;
 }) {
   const color = getOtifColor(otifPct);
@@ -94,7 +94,7 @@ function OtifHeroCard({
           {otifPct !== null && <span className="text-3xl sm:text-4xl ml-1">%</span>}
         </div>
         <p className="text-sm text-slate-600">
-          {onTime.toLocaleString('es-CL')} de {delivered.toLocaleString('es-CL')} pedidos entregados a tiempo
+          {delivered.toLocaleString('es-CL')} de {total.toLocaleString('es-CL')} pedidos entregados
         </p>
       </div>
     </div>
@@ -231,8 +231,8 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
       {/* OTIF Hero (AC #4) */}
       <OtifHeroCard
         otifPct={otifData?.otif_percentage ?? null}
-        onTime={otifData?.on_time_deliveries ?? 0}
         delivered={otifData?.delivered_orders ?? 0}
+        total={otifData?.total_orders ?? 0}
         isLoading={otif.isLoading}
       />
 

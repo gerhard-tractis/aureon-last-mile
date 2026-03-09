@@ -38,8 +38,7 @@ const OTIF_DATA = {
   delivered_orders: 505,
   failed_orders: 25,
   pending_orders: 0,
-  on_time_deliveries: 480,
-  otif_percentage: 95.0,
+  otif_percentage: 95.3,
 };
 
 const PENDING_DATA = {
@@ -70,7 +69,7 @@ describe('DeliveryTab', () => {
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
 
     const hero = screen.getByTestId('otif-hero');
-    expect(hero).toHaveTextContent('95.0');
+    expect(hero).toHaveTextContent('95.3');
     expect(hero.className).toContain('bg-emerald');
   });
 
@@ -156,14 +155,14 @@ describe('DeliveryTab', () => {
     expect(screen.getByTestId('otif-hero-skeleton')).toBeInTheDocument();
   });
 
-  it('shows OTIF subtitle with on-time / delivered counts', () => {
+  it('shows OTIF subtitle with delivered / total counts', () => {
     mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
     mockPending.mockReturnValue({ data: PENDING_DATA, isLoading: false });
 
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
 
     expect(screen.getByTestId('otif-hero')).toHaveTextContent(
-      '480 de 505 pedidos entregados a tiempo'
+      '505 de 530 pedidos entregados'
     );
   });
 
