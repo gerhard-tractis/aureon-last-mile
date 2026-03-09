@@ -13,6 +13,7 @@ describe('PipelineNav', () => {
     render(<PipelineNav {...defaultProps} />);
     expect(screen.getAllByText(/Vista General/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Carga/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Entregas/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Retiro/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Recepción/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Distribución/).length).toBeGreaterThan(0);

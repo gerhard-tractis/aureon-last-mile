@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export type PipelineTab = 'overview' | 'loading' | 'pickup' | 'reception' | 'distribution' | 'routing' | 'lastmile';
+export type PipelineTab = 'overview' | 'loading' | 'delivery' | 'pickup' | 'reception' | 'distribution' | 'routing' | 'lastmile';
 
 interface PipelineNavProps {
   activeTab: PipelineTab;
@@ -12,6 +12,7 @@ interface PipelineNavProps {
 const TABS: { id: PipelineTab; step: string; label: string; enabled: boolean }[] = [
   { id: 'overview', step: '', label: 'Vista General', enabled: true },
   { id: 'loading', step: '①', label: 'Carga', enabled: true },
+  { id: 'delivery', step: '⑦', label: 'Entregas', enabled: true },
   { id: 'pickup', step: '②', label: 'Retiro', enabled: false },
   { id: 'reception', step: '③', label: 'Recepción', enabled: false },
   { id: 'distribution', step: '④', label: 'Distribución', enabled: false },
