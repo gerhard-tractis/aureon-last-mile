@@ -1,0 +1,29 @@
+-- Simplify OTIF: delivered / total (no dispatch cross-reference needed)
+CREATE OR REPLACE FUNCTION public.get_otif_metrics(
+  p_operator_id UUID,
+  p_start_date DATE,
+  p_end_date DATE
+)
+RETURNS JSON
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = public
+AS $$
+  SELECT json_build_object(
+    'total_orders', COUNT(*),
+    'delivered_orders', COUNT(*) FILTER (WHERE o.status = 'delivered'),
+    'failed_orders', COUNT(*) FILTER (WHERE o.status = 'failed'),
+    'pending_orders', COUNT(*) FILTER (WHERE o.status NOT IN ('delivered', 'failed')),
+    'otif_percentage', ROUND(
+      COUNT(*) FILTER (WHERE o.status = 'delivered')::numeric
+        / NULLIF(COUNT(*), 0) * 100,
+      1
+    )
+  )
+  FROM orders o
+  WHERE o.operator_id = p_operator_id
+    AND o.delivery_date BETWEEN p_start_date AND p_end_date
+    AND o.delivery_date IS NOT NULL
+    AND o.deleted_at IS NULL;
+$$;
