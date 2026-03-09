@@ -41,6 +41,9 @@ vi.mock('@/components/dashboard/OfflineBanner', () => ({
 vi.mock('@/components/dashboard/LoadingTab', () => ({
   default: () => <div data-testid="loading-tab">LoadingTab</div>,
 }));
+vi.mock('@/components/dashboard/DeliveryTab', () => ({
+  default: () => <div data-testid="delivery-tab">DeliveryTab</div>,
+}));
 
 describe('DashboardPage', () => {
   beforeEach(() => {
@@ -72,5 +75,13 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
     expect(screen.getByTestId('loading-tab')).toBeDefined();
     expect(screen.queryByTestId('hero-sla')).toBeNull();
+  });
+
+  it('shows delivery-tab content when tab=delivery', () => {
+    searchParams = new URLSearchParams('tab=delivery');
+    render(<DashboardPage />);
+    expect(screen.getByTestId('delivery-tab')).toBeDefined();
+    expect(screen.queryByTestId('hero-sla')).toBeNull();
+    expect(screen.queryByTestId('loading-tab')).toBeNull();
   });
 });

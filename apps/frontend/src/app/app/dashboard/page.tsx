@@ -13,6 +13,7 @@ import SecondaryMetricsGrid from '@/components/dashboard/SecondaryMetricsGrid';
 import ExportDashboardModal from '@/components/dashboard/ExportDashboardModal';
 import OfflineBanner from '@/components/dashboard/OfflineBanner';
 import LoadingTab from '@/components/dashboard/LoadingTab';
+import DeliveryTab from '@/components/dashboard/DeliveryTab';
 
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
@@ -68,6 +69,7 @@ function DashboardContent() {
         </>
       )}
       {activeTab === 'loading' && <LoadingTab operatorId={operatorId} />}
+      {activeTab === 'delivery' && <DeliveryTab operatorId={operatorId} />}
     </div>
   );
 }
