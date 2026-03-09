@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import DateFilterBar, { type DatePreset } from './DateFilterBar';
 import { useDatePreset } from '@/hooks/useDatePreset';
-import { useOtifMetrics, usePendingOrders } from '@/hooks/useDeliveryMetrics';
+import { useOtifMetrics } from '@/hooks/useDeliveryMetrics';
 import OtifByRetailerTable from './OtifByRetailerTable';
 import LateDeliveriesTable from './LateDeliveriesTable';
 import OrdersDetailTable from './OrdersDetailTable';
@@ -145,56 +145,7 @@ function OutcomeCard({
   );
 }
 
-/* ── Pending Alert Card (AC #6) ── */
-function PendingAlertCard({
-  label,
-  count,
-  accent,
-  pulse,
-  isLoading,
-  testId,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  accent: string;
-  pulse: boolean;
-  isLoading: boolean;
-  testId: string;
-  onClick?: () => void;
-}) {
-  if (isLoading) {
-    return (
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
-        <Skeleton className="h-8 w-16 mb-1" />
-        <Skeleton className="h-4 w-20" />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`rounded-xl p-5 shadow-sm border transition-all duration-300 hover:shadow-lg hover:scale-[1.01] ${accent} ${onClick ? 'cursor-pointer' : ''}`}
-      data-testid={testId}
-      onClick={onClick}
-    >
-      <div className="flex items-center gap-2">
-        <span className="text-3xl font-bold leading-none">
-          {count.toLocaleString('es-CL')}
-        </span>
-        {pulse && count > 0 && (
-          <span className="relative flex h-3 w-3" data-testid="overdue-pulse">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-          </span>
-        )}
-      </div>
-      <div className="text-sm mt-1 opacity-80">{label}</div>
-    </div>
-  );
-}
-
-/* ── Main DeliveryTab (AC #3-7) ── */
+/* ── Main DeliveryTab ── */
 export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
   const [preset, setPreset] = useState<DatePreset>('this_month');
   const [customStart, setCustomStart] = useState('');
@@ -206,10 +157,8 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
   const { startDate, endDate } = useDatePreset(preset, customStart, customEnd);
 
   const otif = useOtifMetrics(operatorId, startDate, endDate);
-  const pending = usePendingOrders(operatorId);
 
   const otifData = otif.data;
-  const pendingData = pending.data;
 
   const scrollToOrders = (status: string | null, overdue = false) => {
     setOrdersStatusFilter(status);
@@ -236,8 +185,8 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
         isLoading={otif.isLoading}
       />
 
-      {/* Delivery Outcome Strip (AC #5) */}
-      <div className="grid grid-cols-3 gap-4" data-testid="outcome-strip">
+      {/* Delivery Outcome Strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4" data-testid="outcome-strip">
         <OutcomeCard
           label="Entregados"
           count={otifData?.delivered_orders ?? 0}
@@ -257,6 +206,15 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           onClick={() => scrollToOrders('failed')}
         />
         <OutcomeCard
+          label="En Ruta"
+          count={otifData?.in_route_orders ?? 0}
+          total={otifData?.total_orders ?? 0}
+          accent="text-blue-600"
+          isLoading={otif.isLoading}
+          testId="outcome-in-route"
+          onClick={() => scrollToOrders('pending')}
+        />
+        <OutcomeCard
           label="Pendientes"
           count={otifData?.pending_orders ?? 0}
           total={otifData?.total_orders ?? 0}
@@ -264,35 +222,6 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           isLoading={otif.isLoading}
           testId="outcome-pending"
           onClick={() => scrollToOrders('pending')}
-        />
-      </div>
-
-      {/* Pending Orders Alert Strip (AC #6) */}
-      <div className="grid grid-cols-3 gap-4" data-testid="pending-strip">
-        <PendingAlertCard
-          label="Atrasados"
-          count={pendingData?.overdue_count ?? 0}
-          accent="bg-red-50 border-red-200 text-red-700"
-          pulse={true}
-          isLoading={pending.isLoading}
-          testId="pending-overdue"
-          onClick={() => scrollToOrders(null, true)}
-        />
-        <PendingAlertCard
-          label="Para Hoy"
-          count={pendingData?.due_today_count ?? 0}
-          accent="bg-amber-50 border-amber-200 text-amber-700"
-          pulse={false}
-          isLoading={pending.isLoading}
-          testId="pending-today"
-        />
-        <PendingAlertCard
-          label="Para Mañana"
-          count={pendingData?.due_tomorrow_count ?? 0}
-          accent="bg-slate-50 border-slate-200 text-slate-700"
-          pulse={false}
-          isLoading={pending.isLoading}
-          testId="pending-tomorrow"
         />
       </div>
 

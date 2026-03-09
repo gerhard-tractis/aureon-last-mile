@@ -35,7 +35,8 @@ describe('useOtifMetrics', () => {
       total_orders: 100,
       delivered_orders: 80,
       failed_orders: 10,
-      pending_orders: 10,
+      in_route_orders: 5,
+      pending_orders: 5,
       on_time_deliveries: 75,
       otif_percentage: 75.0,
     };
