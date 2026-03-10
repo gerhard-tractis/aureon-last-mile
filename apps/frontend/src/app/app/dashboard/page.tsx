@@ -23,7 +23,8 @@ function DashboardContent() {
   const { operatorId, role } = useOperatorId();
   const [exportOpen, setExportOpen] = useState(false);
 
-  const activeTab = (searchParams.get('tab') as PipelineTab) || 'overview';
+  const rawTab = searchParams.get('tab');
+  const activeTab: PipelineTab = (rawTab === 'delivery' ? 'lastmile' : rawTab as PipelineTab) || 'overview';
 
   const handleTabChange = useCallback(
     (tab: PipelineTab) => {
@@ -69,7 +70,7 @@ function DashboardContent() {
         </>
       )}
       {activeTab === 'loading' && <LoadingTab operatorId={operatorId} />}
-      {activeTab === 'delivery' && <DeliveryTab operatorId={operatorId} />}
+      {activeTab === 'lastmile' && <DeliveryTab operatorId={operatorId} />}
     </div>
   );
 }
