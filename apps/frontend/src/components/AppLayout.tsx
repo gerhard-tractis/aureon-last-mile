@@ -7,9 +7,11 @@ import {
     Menu,
     X,
     ChevronDown,
+    ChevronRight,
     LogOut,
     Key,
     BarChart3,
+    TrendingUp,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPAClient, createSPASassClient } from "@/lib/supabase/client";
@@ -57,11 +59,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
 
     const dashboardAllowed = userRole === 'operations_manager' || userRole === 'admin';
+    const isDashboardSection = pathname.startsWith('/app/dashboard');
+    const operacionesHref = '/app/dashboard/operaciones';
+    const analiticaHref = '/app/dashboard/analitica';
 
-    const navigation = [
-        ...(dashboardAllowed
-            ? [{ name: 'Dashboard', href: '/app/dashboard', icon: BarChart3 }]
-            : []),
+    const standaloneNav = [
         { name: 'User Settings', href: '/app/user-settings', icon: User },
     ];
 
@@ -103,7 +105,57 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                 {/* Navigation */}
                 <nav className="mt-4 px-2 space-y-1">
-                    {navigation.map((item) => {
+                    {dashboardAllowed && (
+                        <div>
+                            <button
+                                onClick={() => {
+                                    if (!isDashboardSection) router.push(operacionesHref);
+                                }}
+                                className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md ${
+                                    isDashboardSection
+                                        ? 'bg-primary-50 text-primary-600'
+                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                }`}
+                            >
+                                <div className="flex items-center">
+                                    <BarChart3 className={`mr-3 h-5 w-5 ${
+                                        isDashboardSection ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                                    }`} />
+                                    Dashboard
+                                </div>
+                                <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${
+                                    isDashboardSection ? 'rotate-90' : ''
+                                }`} />
+                            </button>
+                            {isDashboardSection && (
+                                <div className="ml-6 mt-1 space-y-1">
+                                    <Link
+                                        href={operacionesHref}
+                                        className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
+                                            pathname.startsWith(operacionesHref)
+                                                ? 'text-primary-600 font-medium'
+                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <BarChart3 className="mr-2 h-4 w-4" />
+                                        Operaciones
+                                    </Link>
+                                    <Link
+                                        href={analiticaHref}
+                                        className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
+                                            pathname.startsWith(analiticaHref)
+                                                ? 'text-primary-600 font-medium'
+                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <TrendingUp className="mr-2 h-4 w-4" />
+                                        Analítica
+                                    </Link>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                    {standaloneNav.map((item) => {
                         const isActive = pathname === item.href;
                         return (
                             <Link
@@ -115,11 +167,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                 }`}
                             >
-                                <item.icon
-                                    className={`mr-3 h-5 w-5 ${
-                                        isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                                    }`}
-                                />
+                                <item.icon className={`mr-3 h-5 w-5 ${
+                                    isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                                }`} />
                                 {item.name}
                             </Link>
                         );

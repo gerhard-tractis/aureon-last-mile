@@ -1,72 +1,41 @@
 'use client';
 
-import { Suspense, useCallback, useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useOperatorId } from '@/hooks/useDashboardMetrics';
-import PipelineNav, { type PipelineTab } from '@/components/dashboard/PipelineNav';
-import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
-import OfflineBanner from '@/components/dashboard/OfflineBanner';
-import LoadingTab from '@/components/dashboard/LoadingTab';
-import DeliveryTab from '@/components/dashboard/DeliveryTab';
-import OtifTab from '@/components/analytics/OtifTab';
-import UnitEconomicsTab from '@/components/analytics/UnitEconomicsTab';
-import CxTab from '@/components/analytics/CxTab';
 
-const ALLOWED_ROLES = ['operations_manager', 'admin'];
+const ANALYTICS_MAP: Record<string, string> = {
+  analytics_otif: 'otif',
+  analytics_unit_economics: 'unit_economics',
+  analytics_cx: 'cx',
+};
 
-const VALID_TABS: PipelineTab[] = [
-  'loading', 'pickup', 'reception', 'distribution', 'routing', 'lastmile',
-  'analytics_otif', 'analytics_unit_economics', 'analytics_cx',
-];
+const OPS_TABS = ['loading', 'pickup', 'reception', 'distribution', 'routing', 'lastmile'];
 
-function isValidTab(tab: string | null): tab is PipelineTab {
-  return VALID_TABS.includes(tab as PipelineTab);
-}
-
-function DashboardContent() {
+function DashboardRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { operatorId, role } = useOperatorId();
-
-  const rawTab = searchParams.get('tab');
-  // Legacy redirect: old 'delivery' param → 'lastmile'
-  const resolvedTab = rawTab === 'delivery' ? 'lastmile' : rawTab;
-  const activeTab: PipelineTab = isValidTab(resolvedTab) ? resolvedTab : 'loading';
-
-  const handleTabChange = useCallback(
-    (tab: PipelineTab) => {
-      router.push(`?tab=${tab}`);
-    },
-    [router],
-  );
 
   useEffect(() => {
-    if (role && !ALLOWED_ROLES.includes(role)) {
-      router.push('/app');
+    const tab = searchParams.get('tab');
+
+    if (tab && ANALYTICS_MAP[tab]) {
+      router.replace(`/app/dashboard/analitica?tab=${ANALYTICS_MAP[tab]}`);
+    } else if (tab === 'delivery') {
+      router.replace('/app/dashboard/operaciones?tab=lastmile');
+    } else if (tab && OPS_TABS.includes(tab)) {
+      router.replace(`/app/dashboard/operaciones?tab=${tab}`);
+    } else {
+      router.replace('/app/dashboard/operaciones');
     }
-  }, [role, router]);
+  }, [router, searchParams]);
 
-  if (!role) return <HeroSLASkeleton />;
-  if (!ALLOWED_ROLES.includes(role)) return null;
-  if (!operatorId) return <HeroSLASkeleton />;
-
-  return (
-    <div className="space-y-6">
-      <OfflineBanner />
-      <PipelineNav activeTab={activeTab} onTabChange={handleTabChange} />
-      {activeTab === 'loading' && <LoadingTab operatorId={operatorId} />}
-      {activeTab === 'lastmile' && <DeliveryTab operatorId={operatorId} />}
-      {activeTab === 'analytics_otif' && <OtifTab operatorId={operatorId} />}
-      {activeTab === 'analytics_unit_economics' && <UnitEconomicsTab operatorId={operatorId} />}
-      {activeTab === 'analytics_cx' && <CxTab operatorId={operatorId} />}
-    </div>
-  );
+  return null;
 }
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<HeroSLASkeleton />}>
-      <DashboardContent />
+    <Suspense fallback={null}>
+      <DashboardRedirect />
     </Suspense>
   );
 }
