@@ -22,7 +22,7 @@ gh pr merge --auto --squash   # MANDATORY — always enable auto-merge
 
 **Never modify SSH config, UFW firewall rules, or fail2ban on the production VPS.** Current VPS state (187.77.48.107): PermitRootLogin yes, UFW allow 22/tcp (not limit), aureon user has full sudo via sudo group. SSH hardening was attempted and caused lockout — reverted. Do not re-attempt.
 
-**Never assume credentials, emails, URLs, or any sensitive/config data** that the user hasn't explicitly provided. Always ask first.
+**Never guess or assume.** If you lack context, data, URLs, credentials, or any information — ask. Don't fabricate, don't infer, don't "try a few options." Ask first.
 
 **Before any story/deployment work**, read: `apps/frontend/docs/deployment-runbook.md`
 
