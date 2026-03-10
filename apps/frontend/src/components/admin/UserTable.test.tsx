@@ -22,9 +22,9 @@ vi.mock('@/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 
-// Mock date-fns format
-vi.mock('date-fns', () => ({
-  format: vi.fn((date, formatStr) => '16/02/2026 14:30'),
+// Mock dateFormat utility
+vi.mock('@/lib/utils/dateFormat', () => ({
+  formatDateTimeShort: vi.fn(() => '16/02/2026 14:30'),
 }));
 
 describe('UserTable', () => {
