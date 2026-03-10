@@ -122,7 +122,7 @@ async function handleDispatch(
     planned_sequence: (body.position as number) ?? null,
     estimated_at: (body.estimated_at as string) ?? null,
     arrived_at: (body.arrived_at as string) ?? null,
-    completed_at: (body.time_of_management as string) ?? null,
+    completed_at: (body.time_of_management as string) ?? (body.arrived_at as string) ?? null,
     failure_reason: failureReason,
     is_pickup: (body.is_pickup as boolean) ?? false,
     latitude: (body.management_latitude as number) ?? null,
