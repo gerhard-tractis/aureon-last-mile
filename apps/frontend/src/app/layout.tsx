@@ -33,6 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en">
     <head>
+      {/* Inline script runs before hydration to apply dark class immediately, preventing flash of light mode */}
       <script
         dangerouslySetInnerHTML={{
           __html: `(function(){try{var s=localStorage.getItem('aureon-theme');if(s==='dark'||(s===null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
