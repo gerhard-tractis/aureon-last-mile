@@ -5,7 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createSPASassClient } from '@/lib/supabase/client';
 import { formatDate } from '@/lib/utils/dateFormat';
 import { CheckCircle, Smartphone } from 'lucide-react';
-import { Factor } from '@supabase/auth-js';
+type Factor = { id: string; status: string; friendly_name?: string; created_at: string };
 
 interface MFAVerificationProps {
     onVerified: () => void;
