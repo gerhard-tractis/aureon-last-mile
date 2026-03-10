@@ -4,6 +4,7 @@ import { format, subDays, startOfWeek, startOfMonth, startOfYear, differenceInCa
 export type DatePreset =
   | 'today'
   | 'yesterday'
+  | 'last_7_days'
   | 'this_week'
   | 'this_month'
   | 'this_year'
@@ -39,6 +40,10 @@ export function useDatePreset(
         endDate = startDate;
         break;
       }
+      case 'last_7_days':
+        startDate = format(subDays(today, 6), DATE_FMT);
+        endDate = format(today, DATE_FMT);
+        break;
       case 'this_week':
         startDate = format(startOfWeek(today, { weekStartsOn: 1 }), DATE_FMT);
         endDate = format(today, DATE_FMT);

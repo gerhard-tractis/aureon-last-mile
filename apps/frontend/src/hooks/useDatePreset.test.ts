@@ -24,6 +24,12 @@ describe('useDatePreset', () => {
     expect(result.current.endDate).toBe('2026-03-14');
   });
 
+  it('resolves "last_7_days" as 7-day rolling window', () => {
+    const { result } = renderHook(() => useDatePreset('last_7_days'));
+    expect(result.current.startDate).toBe('2026-03-09');
+    expect(result.current.endDate).toBe('2026-03-15');
+  });
+
   it('resolves "this_week" starting Monday', () => {
     const { result } = renderHook(() => useDatePreset('this_week'));
     expect(result.current.startDate).toBe('2026-03-09');

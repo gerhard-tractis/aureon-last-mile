@@ -4,43 +4,10 @@ import { useState, useRef } from 'react';
 import DateFilterBar, { type DatePreset } from './DateFilterBar';
 import { useDatePreset } from '@/hooks/useDatePreset';
 import { useOtifMetrics } from '@/hooks/useDeliveryMetrics';
-import OtifByRetailerTable from './OtifByRetailerTable';
-import LateDeliveriesTable from './LateDeliveriesTable';
 import OrdersDetailTable from './OrdersDetailTable';
 
 interface DeliveryTabProps {
   operatorId: string;
-}
-
-/* ── Color thresholds for OTIF ── */
-function getOtifColor(pct: number | null): {
-  text: string;
-  bg: string;
-  ring: string;
-  glow: string;
-} {
-  if (pct === null || isNaN(pct))
-    return { text: 'text-slate-400', bg: 'bg-slate-50', ring: 'ring-slate-200', glow: '' };
-  if (pct >= 95)
-    return {
-      text: 'text-emerald-600',
-      bg: 'bg-emerald-50',
-      ring: 'ring-emerald-200',
-      glow: 'shadow-emerald-100',
-    };
-  if (pct >= 85)
-    return {
-      text: 'text-amber-600',
-      bg: 'bg-amber-50',
-      ring: 'ring-amber-200',
-      glow: 'shadow-amber-100',
-    };
-  return {
-    text: 'text-red-600',
-    bg: 'bg-red-50',
-    ring: 'ring-red-200',
-    glow: 'shadow-red-100',
-  };
 }
 
 /* ── Skeleton placeholder ── */
@@ -48,60 +15,7 @@ function Skeleton({ className = '' }: { className?: string }) {
   return <div className={`animate-pulse bg-slate-200 rounded ${className}`} />;
 }
 
-/* ── OTIF Hero Card (AC #4) ── */
-function OtifHeroCard({
-  otifPct,
-  onTime,
-  total,
-  isLoading,
-}: {
-  otifPct: number | null;
-  onTime: number;
-  total: number;
-  isLoading: boolean;
-}) {
-  const color = getOtifColor(otifPct);
-
-  if (isLoading) {
-    return (
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200" data-testid="otif-hero-skeleton">
-        <Skeleton className="h-4 w-32 mb-4" />
-        <Skeleton className="h-16 w-40 mb-3" />
-        <Skeleton className="h-4 w-56" />
-      </div>
-    );
-  }
-
-  const displayPct = otifPct !== null ? otifPct.toFixed(1) : '—';
-
-  return (
-    <div
-      className={`relative overflow-hidden rounded-2xl p-8 shadow-md ${color.bg} ring-1 ${color.ring} ${color.glow} transition-all duration-500`}
-      data-testid="otif-hero"
-    >
-      {/* Subtle background pattern */}
-      <div className="absolute inset-0 opacity-[0.04]" style={{
-        backgroundImage: 'repeating-linear-gradient(45deg, currentColor 0, currentColor 1px, transparent 0, transparent 50%)',
-        backgroundSize: '12px 12px',
-      }} />
-
-      <div className="relative">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
-          OTIF — Entregas a Tiempo
-        </h3>
-        <div className={`text-6xl sm:text-7xl font-black leading-none tracking-tight mb-3 ${color.text}`}>
-          {displayPct}
-          {otifPct !== null && <span className="text-3xl sm:text-4xl ml-1">%</span>}
-        </div>
-        <p className="text-sm text-slate-600">
-          {onTime.toLocaleString('es-CL')} de {total.toLocaleString('es-CL')} pedidos entregados a tiempo
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/* ── Delivery Outcome KPI Card (AC #5) ── */
+/* ── Delivery Outcome KPI Card ── */
 function OutcomeCard({
   label,
   count,
@@ -155,9 +69,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
   const [ordersOverdueOnly, setOrdersOverdueOnly] = useState(false);
 
   const { startDate, endDate } = useDatePreset(preset, customStart, customEnd);
-
   const otif = useOtifMetrics(operatorId, startDate, endDate);
-
   const otifData = otif.data;
 
   const scrollToOrders = (status: string | null, overdue = false) => {
@@ -175,14 +87,6 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
         onPresetChange={setPreset}
         onCustomStartChange={setCustomStart}
         onCustomEndChange={setCustomEnd}
-      />
-
-      {/* OTIF Hero (AC #4) */}
-      <OtifHeroCard
-        otifPct={otifData?.otif_percentage ?? null}
-        onTime={otifData?.on_time_deliveries ?? 0}
-        total={otifData?.total_orders ?? 0}
-        isLoading={otif.isLoading}
       />
 
       {/* Delivery Outcome Strip */}
@@ -225,13 +129,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
         />
       </div>
 
-      {/* OTIF by Retailer (detail) */}
-      <OtifByRetailerTable operatorId={operatorId} startDate={startDate} endDate={endDate} />
-
-      {/* Late Deliveries (detail) */}
-      <LateDeliveriesTable operatorId={operatorId} startDate={startDate} endDate={endDate} />
-
-      {/* Orders Detail Table (detail) */}
+      {/* Orders Detail Table */}
       <div ref={ordersRef}>
         <OrdersDetailTable
           operatorId={operatorId}

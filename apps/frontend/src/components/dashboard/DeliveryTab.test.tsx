@@ -5,8 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode } from 'react';
 
 vi.mock('./DateFilterBar', () => ({ default: () => <div data-testid="date-filter" /> }));
-vi.mock('./OtifByRetailerTable', () => ({ default: () => <div data-testid="otif-retailer-table" /> }));
-vi.mock('./LateDeliveriesTable', () => ({ default: () => <div data-testid="late-deliveries-table" /> }));
 vi.mock('./OrdersDetailTable', () => ({ default: (props: { initialStatus?: string; initialOverdueOnly?: boolean }) => (
   <div data-testid="orders-detail-table" data-status={props.initialStatus ?? ''} data-overdue={String(props.initialOverdueOnly ?? false)} />
 )}));
@@ -42,61 +40,30 @@ const OTIF_DATA = {
 };
 
 describe('DeliveryTab', () => {
-  it('renders all sections when data is loaded', () => {
-    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false, isSuccess: true });
-
+  it('does not render OtifHeroCard (moved to Analítica > OTIF)', () => {
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
+    expect(screen.queryByTestId('otif-hero')).not.toBeInTheDocument();
+  });
 
+  it('does not render OtifByRetailerTable (moved to Analítica > OTIF)', () => {
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
+    render(<DeliveryTab operatorId="test-op" />, { wrapper });
+    expect(screen.queryByTestId('otif-retailer-table')).not.toBeInTheDocument();
+  });
+
+  it('renders outcome strip and orders table', () => {
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false, isSuccess: true });
+    render(<DeliveryTab operatorId="test-op" />, { wrapper });
     expect(screen.getByTestId('delivery-tab')).toBeInTheDocument();
     expect(screen.getByTestId('date-filter')).toBeInTheDocument();
-    expect(screen.getByTestId('otif-hero')).toBeInTheDocument();
     expect(screen.getByTestId('outcome-strip')).toBeInTheDocument();
-  });
-
-  it('shows OTIF percentage with color coding', () => {
-    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
-
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    const hero = screen.getByTestId('otif-hero');
-    expect(hero).toHaveTextContent('90.6');
-    expect(hero.className).toContain('bg-amber');
-  });
-
-  it('shows yellow OTIF when between 85-95%', () => {
-    const data = { ...OTIF_DATA, otif_percentage: 90.0 };
-    mockOtif.mockReturnValue({ data, isLoading: false });
-
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    const hero = screen.getByTestId('otif-hero');
-    expect(hero.className).toContain('bg-amber');
-  });
-
-  it('shows red OTIF when below 85%', () => {
-    const data = { ...OTIF_DATA, otif_percentage: 80.0 };
-    mockOtif.mockReturnValue({ data, isLoading: false });
-
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    const hero = screen.getByTestId('otif-hero');
-    expect(hero.className).toContain('bg-red');
-  });
-
-  it('shows dash when OTIF is null', () => {
-    const data = { ...OTIF_DATA, otif_percentage: null };
-    mockOtif.mockReturnValue({ data, isLoading: false });
-
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    expect(screen.getByTestId('otif-hero')).toHaveTextContent('—');
+    expect(screen.getByTestId('orders-detail-table')).toBeInTheDocument();
   });
 
   it('renders all 4 outcome cards with correct counts', () => {
     mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
-
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
     expect(screen.getByTestId('outcome-delivered')).toHaveTextContent('505');
     expect(screen.getByTestId('outcome-failed')).toHaveTextContent('10');
     expect(screen.getByTestId('outcome-in-route')).toHaveTextContent('7');
@@ -105,36 +72,15 @@ describe('DeliveryTab', () => {
 
   it('shows skeletons during loading', () => {
     mockOtif.mockReturnValue({ data: undefined, isLoading: true });
-
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    expect(screen.getByTestId('otif-hero-skeleton')).toBeInTheDocument();
-  });
-
-  it('shows OTIF subtitle with on-time / total counts', () => {
-    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
-
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    expect(screen.getByTestId('otif-hero')).toHaveTextContent(
-      '480 de 530 pedidos entregados a tiempo'
-    );
-  });
-
-  it('renders all detail sections', () => {
-    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
-    render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
-    expect(screen.getByTestId('otif-retailer-table')).toBeInTheDocument();
-    expect(screen.getByTestId('late-deliveries-table')).toBeInTheDocument();
-    expect(screen.getByTestId('orders-detail-table')).toBeInTheDocument();
+    // Outcome cards are replaced by skeletons, outcome-strip still renders
+    expect(screen.getByTestId('outcome-strip')).toBeInTheDocument();
   });
 
   it('clicking outcome card sets status filter on orders table', async () => {
     const user = userEvent.setup();
     mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
-
     await user.click(screen.getByTestId('outcome-failed'));
     const table = screen.getByTestId('orders-detail-table');
     expect(table.getAttribute('data-status')).toBe('failed');
