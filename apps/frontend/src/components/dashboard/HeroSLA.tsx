@@ -4,12 +4,8 @@ import { useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { getDashboardDates } from '@/hooks/useDashboardDates';
 import DashboardErrorBanner from './DashboardErrorBanner';
-import {
-  useSlaMetric,
-  useFadrMetric,
-  usePerformanceMetricsSummary,
-  useSlaPreviousPeriod,
-} from '@/hooks/useDashboardMetrics';
+import { useFadrMetric } from '@/hooks/useDashboardMetrics';
+import { useOtifMetrics } from '@/hooks/useDeliveryMetrics';
 import HeroSLASkeleton from './HeroSLASkeleton';
 import SLADrillDownDialog from './SLADrillDownDialog';
 
@@ -24,36 +20,40 @@ function getSlaColor(sla: number | null): string {
   return 'text-[#ef4444]';
 }
 
+function computeSla(delivered: number, total: number): number | null {
+  if (total === 0) return null;
+  return Math.round((delivered / total) * 10000) / 100;
+}
+
 export default function HeroSLA({ operatorId }: HeroSLAProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const { startDate, endDate, prevStartDate, prevEndDate } = useMemo(() => getDashboardDates(), []);
 
-  const slaQuery = useSlaMetric(operatorId, startDate, endDate);
-  const prevSlaQuery = useSlaPreviousPeriod(operatorId, prevStartDate, prevEndDate);
+  const otifQuery = useOtifMetrics(operatorId, startDate, endDate);
+  const prevOtifQuery = useOtifMetrics(operatorId, prevStartDate, prevEndDate);
   const fadrQuery = useFadrMetric(operatorId, startDate, endDate);
-  const perfQuery = usePerformanceMetricsSummary(operatorId, startDate, endDate);
 
-  const isLoading =
-    slaQuery.isLoading || prevSlaQuery.isLoading || fadrQuery.isLoading || perfQuery.isLoading;
-  const hasError =
-    slaQuery.isError || prevSlaQuery.isError || fadrQuery.isError || perfQuery.isError;
+  const isLoading = otifQuery.isLoading || prevOtifQuery.isLoading || fadrQuery.isLoading;
+  const hasError = otifQuery.isError || prevOtifQuery.isError || fadrQuery.isError;
   const isPlaceholderData =
-    slaQuery.isPlaceholderData || prevSlaQuery.isPlaceholderData || fadrQuery.isPlaceholderData || perfQuery.isPlaceholderData;
+    otifQuery.isPlaceholderData || prevOtifQuery.isPlaceholderData || fadrQuery.isPlaceholderData;
 
   if (isLoading) return <HeroSLASkeleton />;
 
-  const sla = slaQuery.data ?? null;
-  const prevSla = prevSlaQuery.data ?? null;
+  const otif = otifQuery.data;
+  const prevOtif = prevOtifQuery.data;
   const fadr = fadrQuery.data ?? null;
-  const perf = perfQuery.data;
+
+  const sla = otif ? computeSla(otif.delivered_orders, otif.total_orders) : null;
+  const prevSla = prevOtif ? computeSla(prevOtif.delivered_orders, prevOtif.total_orders) : null;
 
   const hasTrend = sla !== null && prevSla !== null;
   const trendDelta = hasTrend ? sla - prevSla : 0;
   const trendUp = trendDelta >= 0;
 
   const failurePercent =
-    perf && perf.totalOrders > 0
-      ? (perf.failedDeliveries / perf.totalOrders) * 100
+    otif && otif.total_orders > 0
+      ? (otif.failed_orders / otif.total_orders) * 100
       : null;
 
   const handleOpen = () => setDialogOpen(true);
@@ -97,8 +97,8 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
 
         {/* Context Line */}
         <p className="text-2xl text-slate-600 mb-6">
-          {perf
-            ? `${perf.deliveredOrders} de ${perf.totalOrders} entregas cumplidas`
+          {otif
+            ? `${otif.delivered_orders} de ${otif.total_orders} entregas cumplidas`
             : 'Sin datos para este periodo'}
         </p>
 
@@ -117,9 +117,9 @@ export default function HeroSLA({ operatorId }: HeroSLAProps) {
         {/* Inline Sub-Metrics */}
         <div className="flex justify-center gap-12 text-lg text-slate-700">
           {fadr !== null && <span>Primera Entrega (FADR): {fadr.toFixed(1)}%</span>}
-          {failurePercent !== null && perf && (
+          {failurePercent !== null && otif && (
             <span>
-              Fallos: {perf.failedDeliveries} ({failurePercent.toFixed(1)}%)
+              Fallos: {otif.failed_orders} ({failurePercent.toFixed(1)}%)
             </span>
           )}
         </div>
