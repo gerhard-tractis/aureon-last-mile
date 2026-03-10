@@ -11,7 +11,7 @@ UPDATE public.dispatches
 SET
   completed_at = (raw_data->>'arrived_at')::timestamptz,
   updated_at   = NOW()
-WHERE status      = 'delivered'
+WHERE status      IN ('delivered', 'failed')
   AND completed_at IS NULL
   AND raw_data->>'arrived_at' IS NOT NULL
   AND deleted_at IS NULL;
