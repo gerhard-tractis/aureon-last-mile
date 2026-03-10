@@ -33,8 +33,6 @@ const ANALYTICS_TABS: { id: PipelineTab; label: string; enabled: boolean }[] = [
   { id: 'analytics_cx', label: 'CX', enabled: false },
 ];
 
-const ALL_TABS = [...OPERACIONES_TABS, ...ANALYTICS_TABS];
-
 export default function PipelineNav({ activeTab, onTabChange }: PipelineNavProps) {
   return (
     <div>
