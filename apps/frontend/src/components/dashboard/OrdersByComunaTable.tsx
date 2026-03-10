@@ -22,8 +22,8 @@ export default function OrdersByComunaTable({ operatorId, startDate, endDate }: 
       const { data, error } = await createSPAClient()
         .from('orders')
         .select('recipient_region')
-        .gte('created_at', `${startDate}T00:00:00`)
-        .lt('created_at', `${endDate}T23:59:59.999`)
+        .gte('created_at', `${startDate}T00:00:00-03:00`)
+        .lt('created_at', `${endDate}T23:59:59.999-03:00`)
         .is('deleted_at', null)
         .not('recipient_region', 'is', null);
       if (error) throw error;

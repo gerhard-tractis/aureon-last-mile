@@ -6,8 +6,8 @@
  */
 
 import { useMemo } from 'react';
-import { format } from 'date-fns';
 import { useAdminStore } from '@/stores/adminStore';
+import { formatDateTimeShort } from '@/lib/utils/dateFormat';
 import { getRoleColor, getRoleDisplayName } from '@/lib/validation/userSchema';
 import type { User } from '@/lib/api/users';
 
@@ -143,7 +143,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
                 </span>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                {format(new Date(user.created_at), 'dd/MM/yyyy HH:mm')}
+                {formatDateTimeShort(user.created_at)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                 <div className="flex gap-2">

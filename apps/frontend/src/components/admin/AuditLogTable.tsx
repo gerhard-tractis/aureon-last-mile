@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 import type { AuditLog } from '@/lib/api/auditLogs';
+import { formatDateTime } from '@/lib/utils/dateFormat';
 
 interface AuditLogTableProps {
   logs: AuditLog[];
@@ -36,17 +37,7 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
     setExpandedRows(newExpanded);
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-  };
+  const formatTimestamp = (timestamp: string) => formatDateTime(timestamp);
 
   const totalPages = Math.ceil(total / limit);
   const start = (page - 1) * limit + 1;
