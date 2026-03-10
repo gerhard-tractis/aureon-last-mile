@@ -11,7 +11,7 @@ _Last updated: 2026-03-10_
 
 | Rule | Detail |
 |------|--------|
-| **File size limit** | Keep files under 300 lines. Split into focused modules when approaching this limit. Exceed only if truly unavoidable. |
+| **File size limit** | No file may exceed 300 lines. Split into focused modules when approaching this limit. |
 | **TDD always** | Write a failing test before any production code. No exceptions. Use `superpowers:test-driven-development`. |
 | **Unidirectional dependencies** | `ui → hooks → services → db`. No reverse imports. No circular dependencies. |
 | **Monorepo structure** | All apps share the same git repo. Cross-app imports are forbidden — use shared packages only. |
