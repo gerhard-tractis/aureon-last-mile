@@ -11,6 +11,8 @@ import SLADrillDownDialog from './SLADrillDownDialog';
 
 interface HeroSLAProps {
   operatorId: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 function getSlaColor(sla: number | null): string {
@@ -25,9 +27,12 @@ function computeSla(delivered: number, total: number): number | null {
   return Math.round((delivered / total) * 10000) / 100;
 }
 
-export default function HeroSLA({ operatorId }: HeroSLAProps) {
+export default function HeroSLA({ operatorId, startDate: startDateProp, endDate: endDateProp }: HeroSLAProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { startDate, endDate, prevStartDate, prevEndDate } = useMemo(() => getDashboardDates(), []);
+  const defaults = useMemo(() => getDashboardDates(), []);
+  const startDate = startDateProp ?? defaults.startDate;
+  const endDate = endDateProp ?? defaults.endDate;
+  const { prevStartDate, prevEndDate } = defaults;
 
   const otifQuery = useOtifMetrics(operatorId, startDate, endDate);
   const prevOtifQuery = useOtifMetrics(operatorId, prevStartDate, prevEndDate);

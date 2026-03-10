@@ -165,6 +165,12 @@ describe('HeroSLA', () => {
     });
   });
 
+  it('uses provided startDate/endDate props instead of hardcoded dates', () => {
+    mockOtifQuery.data = makeOtif(95, 100);
+    renderWithProvider(<HeroSLA operatorId="op-123" startDate="2026-01-01" endDate="2026-01-07" />);
+    expect(screen.getAllByText('95.0%')[0]).toBeInTheDocument();
+  });
+
   it('renders context line with delivery counts when data is available', () => {
     mockOtifQuery.data = makeOtif(190, 200);
     renderWithProvider(<HeroSLA operatorId="op-123" />);
