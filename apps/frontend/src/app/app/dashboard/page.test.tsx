@@ -14,26 +14,8 @@ vi.mock('@/hooks/useDashboardMetrics', () => ({
   useOperatorId: () => ({ operatorId: 'test-op', role: 'admin' }),
 }));
 
-vi.mock('@/components/dashboard/HeroSLA', () => ({
-  default: () => <div data-testid="hero-sla">HeroSLA</div>,
-}));
 vi.mock('@/components/dashboard/HeroSLASkeleton', () => ({
   default: () => <div>Skeleton</div>,
-}));
-vi.mock('@/components/dashboard/PrimaryMetricsGrid', () => ({
-  default: () => <div data-testid="primary-metrics">PrimaryMetricsGrid</div>,
-}));
-vi.mock('@/components/dashboard/CustomerPerformanceTable', () => ({
-  default: () => <div>CustomerPerformanceTable</div>,
-}));
-vi.mock('@/components/dashboard/FailedDeliveriesAnalysis', () => ({
-  default: () => <div>FailedDeliveriesAnalysis</div>,
-}));
-vi.mock('@/components/dashboard/SecondaryMetricsGrid', () => ({
-  default: () => <div>SecondaryMetricsGrid</div>,
-}));
-vi.mock('@/components/dashboard/ExportDashboardModal', () => ({
-  default: () => <div>ExportDashboardModal</div>,
 }));
 vi.mock('@/components/dashboard/OfflineBanner', () => ({
   default: () => <div>OfflineBanner</div>,
@@ -44,6 +26,15 @@ vi.mock('@/components/dashboard/LoadingTab', () => ({
 vi.mock('@/components/dashboard/DeliveryTab', () => ({
   default: () => <div data-testid="delivery-tab">DeliveryTab</div>,
 }));
+vi.mock('@/components/analytics/OtifTab', () => ({
+  default: () => <div data-testid="otif-tab">OtifTab</div>,
+}));
+vi.mock('@/components/analytics/UnitEconomicsTab', () => ({
+  default: () => <div data-testid="unit-economics-tab">UnitEconomicsTab</div>,
+}));
+vi.mock('@/components/analytics/CxTab', () => ({
+  default: () => <div data-testid="cx-tab">CxTab</div>,
+}));
 
 describe('DashboardPage', () => {
   beforeEach(() => {
@@ -51,37 +42,47 @@ describe('DashboardPage', () => {
     searchParams = new URLSearchParams();
   });
 
-  it('renders PipelineNav', () => {
+  it('renders PipelineNav with Operaciones and Analítica sections', () => {
     render(<DashboardPage />);
-    expect(screen.getAllByText(/Vista General/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Operaciones/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Analítica/).length).toBeGreaterThan(0);
   });
 
-  it('shows overview content by default', () => {
+  it('shows loading-tab by default', () => {
     render(<DashboardPage />);
-    expect(screen.getByTestId('hero-sla')).toBeDefined();
-  });
-
-  it('shows loading-tab and hides hero-sla when Carga tab clicked', () => {
-    render(<DashboardPage />);
-    // Click the desktop tab button for Carga
-    const cargaButton = screen.getByRole('tab', { name: /Carga/ });
-    fireEvent.click(cargaButton);
-    // router.push should have been called with loading tab
-    expect(pushMock).toHaveBeenCalledWith('?tab=loading');
+    expect(screen.getByTestId('loading-tab')).toBeDefined();
   });
 
   it('shows loading-tab content when tab=loading', () => {
     searchParams = new URLSearchParams('tab=loading');
     render(<DashboardPage />);
     expect(screen.getByTestId('loading-tab')).toBeDefined();
-    expect(screen.queryByTestId('hero-sla')).toBeNull();
   });
 
-  it('shows delivery-tab content when tab=delivery', () => {
+  it('shows delivery-tab content when tab=lastmile', () => {
+    searchParams = new URLSearchParams('tab=lastmile');
+    render(<DashboardPage />);
+    expect(screen.getByTestId('delivery-tab')).toBeDefined();
+    expect(screen.queryByTestId('loading-tab')).toBeNull();
+  });
+
+  it('shows delivery-tab content when tab=delivery (legacy redirect)', () => {
     searchParams = new URLSearchParams('tab=delivery');
     render(<DashboardPage />);
     expect(screen.getByTestId('delivery-tab')).toBeDefined();
-    expect(screen.queryByTestId('hero-sla')).toBeNull();
+  });
+
+  it('shows otif-tab when tab=analytics_otif', () => {
+    searchParams = new URLSearchParams('tab=analytics_otif');
+    render(<DashboardPage />);
+    expect(screen.getByTestId('otif-tab')).toBeDefined();
     expect(screen.queryByTestId('loading-tab')).toBeNull();
+  });
+
+  it('clicking Carga tab calls router.push with loading', () => {
+    render(<DashboardPage />);
+    const cargaButton = screen.getByRole('tab', { name: /Carga/ });
+    fireEvent.click(cargaButton);
+    expect(pushMock).toHaveBeenCalledWith('?tab=loading');
   });
 });
