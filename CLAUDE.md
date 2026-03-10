@@ -34,7 +34,7 @@ Aureon Last Mile — last-mile logistics management platform.
 
 Read `docs/architecture.md` before any implementation task. Full stack and rules there.
 
-**Non-negotiable:** max 300 lines/file · TDD always · `app→components→hooks→lib→Supabase` · `operator_id` on every query/table · soft deletes only.
+**Non-negotiable:** TDD always · `app→components→hooks→lib→Supabase` · `operator_id` on every query/table · soft deletes only. Keep files under 300 lines — exceed only if truly unavoidable.
 
 ## Feature Workflow
 
