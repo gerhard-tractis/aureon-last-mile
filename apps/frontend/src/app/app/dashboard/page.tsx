@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 const ANALYTICS_MAP: Record<string, string> = {
@@ -11,7 +11,7 @@ const ANALYTICS_MAP: Record<string, string> = {
 
 const OPS_TABS = ['loading', 'pickup', 'reception', 'distribution', 'routing', 'lastmile'];
 
-export default function DashboardPage() {
+function DashboardRedirect() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -30,4 +30,12 @@ export default function DashboardPage() {
   }, [router, searchParams]);
 
   return null;
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardRedirect />
+    </Suspense>
+  );
 }
