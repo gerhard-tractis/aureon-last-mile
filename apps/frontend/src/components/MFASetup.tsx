@@ -4,8 +4,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Key, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { formatDate } from '@/lib/utils/dateFormat';
-import {Factor} from "@supabase/auth-js";
-import { MFAEnrollTOTPParams } from '@supabase/auth-js';
+type Factor = { id: string; status: string; friendly_name?: string; created_at: string };
+type MFAEnrollTOTPParams = { factorType: 'totp'; friendlyName?: string };
 
 
 interface MFASetupProps {
