@@ -41,6 +41,7 @@ export interface OrderDetailRow {
   retailer_name: string;
   comuna: string;
   delivery_date: string;
+  created_at: string;
   status: string;
   completed_at: string | null;
   driver_name: string | null;

@@ -39,7 +39,7 @@ function StatusBadge({ status }: { status: string }) {
 function ExpandedRow({ row }: { row: OrderDetailRow }) {
   return (
     <tr className="bg-slate-50 border-b border-slate-200">
-      <td colSpan={6} className="px-4 py-3">
+      <td colSpan={7} className="px-4 py-3">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
           <div>
             <span className="text-slate-400 text-xs block">Conductor</span>
@@ -169,6 +169,7 @@ export default function OrdersDetailTable({
               <th className="px-4 py-3 text-left font-medium text-slate-600">Orden</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600">Cliente</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600">Comuna</th>
+              <th className="px-4 py-3 text-left font-medium text-slate-600">Fecha de Carga</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600">Fecha Compromiso</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600">Estado</th>
               <th className="px-4 py-3 text-left font-medium text-slate-600">Completado</th>
@@ -184,6 +185,7 @@ export default function OrdersDetailTable({
                   <td className="px-4 py-3 text-slate-800 font-mono text-xs">{row.order_number}</td>
                   <td className="px-4 py-3 text-slate-600 truncate max-w-[160px]">{row.retailer_name}</td>
                   <td className="px-4 py-3 text-slate-600">{row.comuna}</td>
+                  <td className="px-4 py-3 text-slate-600 text-xs">{formatDateTime(row.created_at)}</td>
                   <td className="px-4 py-3 text-slate-600">{row.delivery_date}</td>
                   <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                   <td className="px-4 py-3 text-slate-600 text-xs">
@@ -196,7 +198,7 @@ export default function OrdersDetailTable({
               </Fragment>
             ))}
             {(data?.rows ?? []).length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Sin resultados</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Sin resultados</td></tr>
             )}
           </tbody>
         </table>
