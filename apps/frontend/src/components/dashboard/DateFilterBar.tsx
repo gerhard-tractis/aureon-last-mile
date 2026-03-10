@@ -1,6 +1,6 @@
 'use client';
 
-export type DatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'this_year' | 'custom';
+export type DatePreset = 'today' | 'yesterday' | 'last_7_days' | 'this_week' | 'this_month' | 'this_year' | 'custom';
 
 interface DateFilterBarProps {
   preset: DatePreset;
@@ -14,6 +14,7 @@ interface DateFilterBarProps {
 const PRESETS: { id: DatePreset; label: string }[] = [
   { id: 'today', label: 'Hoy' },
   { id: 'yesterday', label: 'Ayer' },
+  { id: 'last_7_days', label: 'Últimos 7 Días' },
   { id: 'this_week', label: 'Esta Semana' },
   { id: 'this_month', label: 'Este Mes' },
   { id: 'this_year', label: 'Este Año' },

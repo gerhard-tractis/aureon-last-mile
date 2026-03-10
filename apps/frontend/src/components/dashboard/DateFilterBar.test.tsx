@@ -13,10 +13,11 @@ const defaultProps = {
 };
 
 describe('DateFilterBar', () => {
-  it('renders all 6 preset buttons', () => {
+  it('renders all 7 preset buttons', () => {
     render(<DateFilterBar {...defaultProps} />);
     expect(screen.getByRole('button', { name: 'Hoy' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ayer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Últimos 7 Días' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Esta Semana' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Este Mes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Este Año' })).toBeInTheDocument();
