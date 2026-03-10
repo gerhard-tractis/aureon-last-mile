@@ -29,3 +29,13 @@ gh pr merge --auto --squash   # MANDATORY — always enable auto-merge
 ## Project
 
 Aureon Last Mile — last-mile logistics management platform.
+
+## Architecture
+
+Read `docs/architecture.md` before any implementation task. Full stack and rules there.
+
+**Non-negotiable:** max 300 lines/file · TDD always · `app→components→hooks→lib→Supabase` · `operator_id` on every query/table · soft deletes only.
+
+## Feature Workflow
+
+`brainstorming` → `writing-plans` (story in `docs/stories/`) → implement (TDD) → `requesting-code-review` → update `docs/sprint-status.yaml`

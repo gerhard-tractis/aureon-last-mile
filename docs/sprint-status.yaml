@@ -1,0 +1,117 @@
+# migrated: 2026-03-10
+# project: Aureon_Last_Mile
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: docs/stories
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-03-03
+project: Aureon_Last_Mile
+project_key: NOKEY
+tracking_system: file-system
+story_location: docs/stories
+
+development_status:
+  epic-1: done
+  1-1-clone-and-deploy-razikus-template-skeleton: done
+  1-2-configure-multi-tenant-database-schema-with-rls-policies: done
+  1-3-implement-role-based-authentication-5-roles: done  # Migration applied, RBAC validated (12/12), Auth Hook active
+  1-4-build-user-management-interface-create-users-assign-roles: done  # Full CRUD UI, 138 tests, TanStack Query + Zustand, soft delete
+  1-5-add-pwa-enhancement-layer-serwist-indexeddb-background-sync: done  # Code review complete: 9 issues found and fixed (3H, 4M, 2L), 15 tests passing
+  1-6-set-up-audit-logging-infrastructure: done  # Code review: 18 issues fixed (8 HIGH, 7 MEDIUM, 3 LOW), 5 test files, docs created, manual setup required
+  1-7-configure-ci-cd-pipeline-github-actions: done  # CI/CD workflows active, catching bugs in Story 1.4
+  1-8-set-up-monitoring-and-alerting-sentry-betterstack: done  # Sentry + BetterStack configured, Slack/email alerts working, CI/CD passing
+  epic-1-retrospective: done  # Completed 2026-02-17, comprehensive team review with 6 action items and 3 prep tasks
+
+  epic-2: done
+  2-1-create-orders-table-and-data-model: done  # Code review: 3 fixes applied (H1 packages types, H2 env fallback, M2 stale ref), 3 acknowledged
+  2-2-build-csv-excel-upload-interface-with-validation: done
+  2-3-set-up-vps-infrastructure-and-n8n: done  # All 5 phases complete. VPS at 187.77.48.107, n8n Docker at n8n.tractis.ai, deploy pipeline tested (PR #9), BetterStack + Sentry configured
+  2-4-create-automation-worker-database-schema: done  # Code review: 6 issues fixed (3H, 3M), 20 SQL tests, 363 Vitest passing
+  2-5-implement-easy-csv-email-connector: done  # n8n workflow live, upsert fix (on_conflict), error handler cascade fix, 140+ orders/150+ packages daily
+  2-6-implement-paris-beetrack-browser-connector: done  # n8n workflow e2e verified: Schedule Trigger → CSRF → Export API → IMAP → XLSX parse → UPSERT. 41 orders/42 packages (Feb 27). IMAP filters separate Easy/DispatchTrack emails.
+  2-7-implement-job-queue-orchestration-and-monitoring: done  # Code review: 6 issues fixed (3H, 3M), 23 tests, deployed to VPS v0.2.0
+  2-8-build-manual-order-entry-form-fallback: done  # Code review: 7 issues fixed (3H, 4M), 14 tests, 377 total passing
+  epic-2-retrospective: done  # Completed 2026-03-02, 8/8 stories, 377+ tests, 0 incidents, 7 action items, 3 team agreements
+
+  epic-3: done
+  3-1-create-performance-metrics-tables-and-calculation-logic: done  # Code review: 7 issues fixed (3H, 4M), security DEFINER revoke, cron graceful fallback, metrics column completeness
+  3-2-build-hero-sla-section-with-real-time-calculation: done
+  3-3-implement-primary-metrics-cards-fadr-claims-efficiency: done
+  3-4-build-customer-performance-table-sortable-color-coded: done  # Code review: 7 issues fixed (3H, 4M), 35 tests, 480 total passing
+  3-5-create-failed-deliveries-analysis-with-chart-js-visualizations: done  # PR #32 merged, 17 tests, recharts bar+trend charts, drill-down dialogs
+  3-6-add-secondary-metrics-dashboard: done  # PR #34 merged + code review: 6 issues fixed (3H, 3M), 25 tests, 522 total passing
+  3-7-implement-export-functionality-csv-pdf-reports: done  # Code review: 6 issues fixed (3H, 3M), 18 tests, 540 total passing
+  3-8-set-up-tanstack-query-caching-for-dashboard-performance: done  # PR #37 merged, TanStack Query caching optimization
+  epic-3-retrospective: done  # Completed 2026-03-03, critical finding: dashboard has no live data, Beetrack missing, data pipeline gap. Epic 4 deferred. Course correction needed.
+
+  epic-3a: done  # Course correction 2026-03-03: Dashboard Data Pipeline & Onboarding Readiness — all 8 stories complete
+  3a-1-populate-delivery-attempts-from-dispatchtrack-order-status: done  # All PRs merged (#41, #44, #56, #57). DispatchTrack webhook → delivery_attempts pipeline live.
+  3a-2-end-to-end-data-pipeline-validation-and-metrics-calculation: done  # All ACs verified: delivery_attempts live, backfill complete, RPCs return data, dashboard confirmed, cron registered, metrics now refresh same-minute via n8n
+  3a-3-tractis-branding-on-auth-pages: done  # PRs #39, #42, #43, #45 merged. Official Tractis branding, dark slate auth design, T-symbol favicon, Powered-by badge
+  3a-4-customer-branding-configuration-on-dashboard: done  # PR #49 merged + follow-ups #51 (Musan seed data), #54 (dynamic favicon)
+  3a-5-user-onboarding-verification: done  # Musan operator onboarded, branding configured, admin user created
+  3a-6-operational-alerting-n8n-failures-and-cookie-expiry: done  # PR #67 merged. Slack alerting workflow live (LCAdyXxLSeyMQk8d), 4 check types, enriched error details, Beetrack cookie expiry detection
+  3a-7-implement-easy-wms-webhook-receiver: done  # PRs #60, #61 merged. Easy WMS webhook live, orders+packages upserted e2e
+  3a-8-dashboard-pipeline-navigation-and-loading-metrics-tab: done  # PR #61 merged 2026-03-04. Pipeline tabs + Loading Data tab with KPIs, charts, tables. 228 tests.
+  epic-3a-retrospective: optional
+
+  epic-3b: in-progress  # Course correction 2026-03-06: Delivery & Fleet Intelligence
+  3b-1-schema-design-routes-dispatches-fleet-vehicles: done  # PR #69 merged. 3 tables + 3 enums + RPCs rewritten. delivery_attempts dropped.
+  3b-2-ingest-all-dispatchtrack-events: done  # PR #71+#72 merged. Live data flowing. PARKED: plate number enrichment blocked — Musan uses driver names as truck_identifier, DT API has no plate field. Musan must fix vehicle config.
+  3b-3-simple-order-status-update: done  # Verified 2026-03-09: 505 delivered, 25 failed orders in prod. All ACs confirmed.
+  3b-4-otif-metrics-pending-orders-dashboard-widget: in-progress  # OTIF calculation + overdue/urgent pending orders + dashboard widgets
+  3b-5-intermediate-order-states: backlog  # created → in_route → out_for_delivery → delivered/failed
+  3b-6-fleet-dashboard: backlog  # Optional: km driven, idle time, fleet utilization, cost-per-delivery
+  epic-3b-retrospective: optional
+
+  epic-4: backlog
+  4-1-create-manifests-and-pickup-scans-tables: backlog
+  4-2-build-screen-1-manifest-list-todays-pickups: backlog
+  4-3-build-screen-2-barcode-scanning-with-camera-integration: backlog
+  4-4-implement-multi-sensory-feedback-audio-haptic-visual: backlog
+  4-5-build-offline-scan-queue-with-indexeddb-storage: backlog
+  4-6-implement-background-sync-when-connectivity-restored: backlog
+  4-7-build-screen-3-completion-summary-with-digital-signature: backlog
+  4-8-generate-pdf-receipt-with-complete-audit-trail: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-create-order-status-tracking-and-capacity-forecast-tables: backlog
+  5-2-build-desktop-navigation-and-pipeline-overview-8-stages: backlog
+  5-3-build-desktop-orders-table-with-filters-search-live-updates: backlog
+  5-4-build-mobile-bottom-tab-navigation-and-status-summary-cards: backlog
+  5-5-build-mobile-orders-list-with-pull-to-refresh: backlog
+  5-6-implement-capacity-alerts-and-forecast-accuracy-tracking: backlog
+  5-7-build-audit-log-viewer-with-search-and-filters: backlog
+  5-8-set-up-platform-health-monitoring-dashboard-aureon-devops: backlog
+  5-9-configure-supabase-realtime-for-live-order-updates: backlog
+  epic-5-retrospective: optional
