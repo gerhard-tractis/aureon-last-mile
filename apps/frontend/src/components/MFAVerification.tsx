@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createSPASassClient } from '@/lib/supabase/client';
+import { formatDate } from '@/lib/utils/dateFormat';
 import { CheckCircle, Smartphone } from 'lucide-react';
 import { Factor } from '@supabase/auth-js';
 
@@ -145,7 +146,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                                                 {factor.friendly_name || 'Authenticator Device'}
                                             </p>
                                             <p className="text-sm text-gray-500">
-                                                Added on {new Date(factor.created_at).toLocaleDateString()}
+                                                Added on {formatDate(factor.created_at)}
                                             </p>
                                         </div>
                                         {selectedFactorId === factor.id && (

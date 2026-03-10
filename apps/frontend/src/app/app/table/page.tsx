@@ -8,6 +8,7 @@ import {
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { formatDate } from '@/lib/utils/dateFormat';
 import {
     Dialog,
     DialogContent,
@@ -275,7 +276,7 @@ export default function TaskManagementPage() {
                                             )}
                                             <div className="mt-2 flex items-center gap-2">
                                                 <span className="text-xs text-muted-foreground">
-                                                    Created: {new Date(task.created_at).toLocaleDateString()}
+                                                    Created: {formatDate(task.created_at)}
                                                 </span>
                                                 {task.urgent && !task.done && (
                                                     <span className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded-full">

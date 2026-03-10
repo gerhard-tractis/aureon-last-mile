@@ -4,22 +4,30 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import HeroSLA from './HeroSLA';
+import type { OtifMetrics } from '@/hooks/useDeliveryMetrics';
 
 // Mock hooks
-const mockSlaQuery = { data: null as number | null, isLoading: false, isError: false };
-const mockPrevSlaQuery = { data: null as number | null, isLoading: false, isError: false };
-const mockFadrQuery = { data: null as number | null, isLoading: false, isError: false };
-const mockPerfQuery = {
-  data: null as { totalOrders: number; deliveredOrders: number; failedDeliveries: number } | null,
+const mockOtifQuery = {
+  data: null as OtifMetrics | null,
   isLoading: false,
   isError: false,
+  isPlaceholderData: false,
 };
+const mockPrevOtifQuery = {
+  data: null as OtifMetrics | null,
+  isLoading: false,
+  isError: false,
+  isPlaceholderData: false,
+};
+const mockFadrQuery = { data: null as number | null, isLoading: false, isError: false, isPlaceholderData: false };
+
+vi.mock('@/hooks/useDeliveryMetrics', () => ({
+  useOtifMetrics: (_operatorId: string, startDate: string) =>
+    startDate === '2026-02-17' ? mockPrevOtifQuery : mockOtifQuery,
+}));
 
 vi.mock('@/hooks/useDashboardMetrics', () => ({
-  useSlaMetric: () => mockSlaQuery,
-  useSlaPreviousPeriod: () => mockPrevSlaQuery,
   useFadrMetric: () => mockFadrQuery,
-  usePerformanceMetricsSummary: () => mockPerfQuery,
   useOperatorId: () => ({ operatorId: 'op-123', role: 'admin' }),
 }));
 
@@ -32,6 +40,18 @@ vi.mock('@/hooks/useDashboardDates', () => ({
   }),
 }));
 
+function makeOtif(delivered: number, total: number, failed = 0): OtifMetrics {
+  return {
+    total_orders: total,
+    delivered_orders: delivered,
+    failed_orders: failed,
+    in_route_orders: 0,
+    pending_orders: 0,
+    on_time_deliveries: delivered,
+    otif_percentage: total > 0 ? (delivered / total) * 100 : null,
+  };
+}
+
 function renderWithProvider(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -41,22 +61,22 @@ function renderWithProvider(ui: React.ReactElement) {
 
 describe('HeroSLA', () => {
   beforeEach(() => {
-    mockSlaQuery.data = null;
-    mockSlaQuery.isLoading = false;
-    mockSlaQuery.isError = false;
-    mockPrevSlaQuery.data = null;
-    mockPrevSlaQuery.isLoading = false;
-    mockPrevSlaQuery.isError = false;
+    mockOtifQuery.data = null;
+    mockOtifQuery.isLoading = false;
+    mockOtifQuery.isError = false;
+    mockOtifQuery.isPlaceholderData = false;
+    mockPrevOtifQuery.data = null;
+    mockPrevOtifQuery.isLoading = false;
+    mockPrevOtifQuery.isError = false;
+    mockPrevOtifQuery.isPlaceholderData = false;
     mockFadrQuery.data = null;
     mockFadrQuery.isLoading = false;
     mockFadrQuery.isError = false;
-    mockPerfQuery.data = null;
-    mockPerfQuery.isLoading = false;
-    mockPerfQuery.isError = false;
+    mockFadrQuery.isPlaceholderData = false;
   });
 
   it('renders SLA percentage with green color for >= 95%', () => {
-    mockSlaQuery.data = 96.5;
+    mockOtifQuery.data = makeOtif(965, 1000); // 96.5%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     const elements = screen.getAllByText('96.5%');
     const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
@@ -64,7 +84,7 @@ describe('HeroSLA', () => {
   });
 
   it('renders SLA percentage with yellow color for 90-94.9%', () => {
-    mockSlaQuery.data = 92.3;
+    mockOtifQuery.data = makeOtif(923, 1000); // 92.3%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     const elements = screen.getAllByText('92.3%');
     const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
@@ -72,57 +92,56 @@ describe('HeroSLA', () => {
   });
 
   it('renders SLA percentage with red color for < 90%', () => {
-    mockSlaQuery.data = 85.0;
+    mockOtifQuery.data = makeOtif(85, 100); // 85.0%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     const elements = screen.getAllByText('85.0%');
     const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
     expect(heroDisplay).toHaveClass('text-[#ef4444]');
   });
 
-  it('renders "N/A" when SLA is null', () => {
-    mockSlaQuery.data = null;
+  it('renders "N/A" when data is null', () => {
+    mockOtifQuery.data = null;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText('N/A')).toBeInTheDocument();
     expect(screen.getByText('Sin datos para este periodo')).toBeInTheDocument();
   });
 
   it('shows trend arrow up with correct delta', () => {
-    mockSlaQuery.data = 95.0;
-    mockPrevSlaQuery.data = 92.7;
+    mockOtifQuery.data = makeOtif(95, 100);      // 95.0%
+    mockPrevOtifQuery.data = makeOtif(927, 1000); // 92.7%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText(/\+2\.3% vs semana anterior/)).toBeInTheDocument();
   });
 
   it('shows trend arrow down with negative delta', () => {
-    mockSlaQuery.data = 90.0;
-    mockPrevSlaQuery.data = 93.0;
+    mockOtifQuery.data = makeOtif(90, 100);      // 90.0%
+    mockPrevOtifQuery.data = makeOtif(930, 1000); // 93.0%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText(/-3\.0% vs semana anterior/)).toBeInTheDocument();
   });
 
   it('hides trend when previous period is null', () => {
-    mockSlaQuery.data = 95.0;
-    mockPrevSlaQuery.data = null;
+    mockOtifQuery.data = makeOtif(95, 100); // 95.0%
+    mockPrevOtifQuery.data = null;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.queryByText(/vs semana anterior/)).not.toBeInTheDocument();
   });
 
   it('shows skeleton when loading', () => {
-    mockSlaQuery.isLoading = true;
+    mockOtifQuery.isLoading = true;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    // Skeleton renders pulse animation divs, no SLA text
     expect(screen.queryByText('N/A')).not.toBeInTheDocument();
     expect(screen.queryByText(/Cumplimiento SLA/)).not.toBeInTheDocument();
   });
 
   it('shows error alert when query fails', () => {
-    mockSlaQuery.isError = true;
+    mockOtifQuery.isError = true;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText('Los datos pueden estar desactualizados')).toBeInTheDocument();
   });
 
   it('opens dialog on click', async () => {
-    mockSlaQuery.data = 95.0;
+    mockOtifQuery.data = makeOtif(95, 100);
     renderWithProvider(<HeroSLA operatorId="op-123" />);
 
     const hero = screen.getByRole('button', { name: /Ver analisis detallado de SLA/ });
@@ -134,7 +153,7 @@ describe('HeroSLA', () => {
   });
 
   it('opens dialog on Enter key', async () => {
-    mockSlaQuery.data = 95.0;
+    mockOtifQuery.data = makeOtif(95, 100);
     renderWithProvider(<HeroSLA operatorId="op-123" />);
 
     const hero = screen.getByRole('button', { name: /Ver analisis detallado de SLA/ });
@@ -147,16 +166,14 @@ describe('HeroSLA', () => {
   });
 
   it('renders context line with delivery counts when data is available', () => {
-    mockSlaQuery.data = 95.0;
-    mockPerfQuery.data = { totalOrders: 200, deliveredOrders: 190, failedDeliveries: 10 };
+    mockOtifQuery.data = makeOtif(190, 200);
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText('190 de 200 entregas cumplidas')).toBeInTheDocument();
   });
 
   it('renders FADR and failure count in inline metrics', () => {
-    mockSlaQuery.data = 95.0;
+    mockOtifQuery.data = makeOtif(190, 200, 10);
     mockFadrQuery.data = 88.5;
-    mockPerfQuery.data = { totalOrders: 200, deliveredOrders: 190, failedDeliveries: 10 };
     renderWithProvider(<HeroSLA operatorId="op-123" />);
 
     expect(screen.getByText(/Primera Entrega \(FADR\): 88\.5%/)).toBeInTheDocument();

@@ -4,6 +4,7 @@ import type {
   FailureReasonRow,
   SecondaryMetrics,
 } from '@/hooks/useDashboardMetrics';
+import { formatDateTime } from '@/lib/utils/dateFormat';
 
 export type ExportFormat = 'csv' | 'pdf';
 
@@ -304,7 +305,7 @@ export function generatePDF(
   doc.setFontSize(8);
   doc.setTextColor(SLATE);
   doc.text(
-    `Generado: ${new Date().toLocaleString('es-CL')}`,
+    `Generado: ${formatDateTime(new Date())}`,
     pageW / 2,
     y,
     { align: 'center' }

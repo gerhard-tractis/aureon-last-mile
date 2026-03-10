@@ -3,6 +3,7 @@ import { createSPASassClient } from '@/lib/supabase/client';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Key, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { formatDate } from '@/lib/utils/dateFormat';
 import {Factor} from "@supabase/auth-js";
 import { MFAEnrollTOTPParams } from '@supabase/auth-js';
 
@@ -172,7 +173,7 @@ export function MFASetup({ onStatusChange }: MFASetupProps) {
                                             {factor.friendly_name || 'Authenticator App'}
                                         </p>
                                         <p className="text-sm text-gray-500">
-                                            Added on {new Date(factor.created_at).toLocaleDateString()}
+                                            Added on {formatDate(factor.created_at)}
                                         </p>
                                     </div>
                                 </div>

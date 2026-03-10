@@ -18,8 +18,8 @@ export function useOrdersLoaded(
       const { count, error } = await createSPAClient()
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .gte('created_at', startDate + 'T00:00:00')
-        .lt('created_at', endDate + 'T23:59:59.999')
+        .gte('created_at', startDate + 'T00:00:00-03:00')
+        .lt('created_at', endDate + 'T23:59:59.999-03:00')
         .is('deleted_at', null);
       if (error) throw error;
       return count ?? 0;
@@ -60,8 +60,8 @@ export function useOrdersCommitted(
       const { count, error } = await createSPAClient()
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .gte('created_at', startDate + 'T00:00:00')
-        .lt('created_at', endDate + 'T23:59:59.999')
+        .gte('created_at', startDate + 'T00:00:00-03:00')
+        .lt('created_at', endDate + 'T23:59:59.999-03:00')
         .not('delivery_date', 'is', null)
         .is('deleted_at', null);
       if (error) throw error;
@@ -83,8 +83,8 @@ export function useActiveClients(
       const { data, error } = await createSPAClient()
         .from('orders')
         .select('retailer_name')
-        .gte('created_at', startDate + 'T00:00:00')
-        .lt('created_at', endDate + 'T23:59:59.999')
+        .gte('created_at', startDate + 'T00:00:00-03:00')
+        .lt('created_at', endDate + 'T23:59:59.999-03:00')
         .is('deleted_at', null)
         .not('retailer_name', 'is', null);
       if (error) throw error;
@@ -107,8 +107,8 @@ export function useComunasCovered(
       const { data, error } = await createSPAClient()
         .from('orders')
         .select('comuna')
-        .gte('created_at', startDate + 'T00:00:00')
-        .lt('created_at', endDate + 'T23:59:59.999')
+        .gte('created_at', startDate + 'T00:00:00-03:00')
+        .lt('created_at', endDate + 'T23:59:59.999-03:00')
         .is('deleted_at', null)
         .not('comuna', 'is', null);
       if (error) throw error;
