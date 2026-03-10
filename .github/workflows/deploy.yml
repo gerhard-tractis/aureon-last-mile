@@ -96,7 +96,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Pull latest code
-        run: cd ~/aureon-last-mile && git pull origin main
+        run: |
+          cd ~/aureon-last-mile
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git pull origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for worker changes
         id: worker-changes
