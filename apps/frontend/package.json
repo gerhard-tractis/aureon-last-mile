@@ -25,7 +25,6 @@
     "@sentry/nextjs": "^10.38.0",
     "@serwist/next": "^9.5.5",
     "@supabase/ssr": "^0.5.2",
-    "@supabase/storage-js": "^2.12.2",
     "@supabase/supabase-js": "^2.47.10",
     "@tanstack/react-query": "^5.90.21",
     "@vercel/analytics": "^1.4.1",
