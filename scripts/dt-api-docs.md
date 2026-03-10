@@ -1,0 +1,5090 @@
+- generic [ref=e3]:
+  - navigation [ref=e5]:
+    - generic [ref=e6]:
+      - textbox "Filter..." [active] [ref=e7]
+      - generic [ref=e8] [cursor=pointer]: x
+    - list [ref=e9]:
+      - listitem [ref=e10]:
+        - link "Dispatchtrack API" [ref=e11] [cursor=pointer]:
+          - /url: "#api-_header"
+      - listitem [ref=e12]:
+        - link "Route" [ref=e13] [cursor=pointer]:
+          - /url: "#api-Route"
+      - listitem [ref=e14]:
+        - link "Create Route" [ref=e15] [cursor=pointer]:
+          - /url: "#api-Route-CreateRoute"
+      - listitem [ref=e16]:
+        - link "Delete Route" [ref=e17] [cursor=pointer]:
+          - /url: "#api-Route-DeleteRoute"
+      - listitem [ref=e18]:
+        - link "List Routes" [ref=e19] [cursor=pointer]:
+          - /url: "#api-Route-ListRoutes"
+      - listitem [ref=e20]:
+        - link "Show Route" [ref=e21] [cursor=pointer]:
+          - /url: "#api-Route-ShowRoute"
+      - listitem [ref=e22]:
+        - link "Update Route" [ref=e23] [cursor=pointer]:
+          - /url: "#api-Route-UpdateRoute"
+      - listitem [ref=e24]:
+        - link "Dispatch" [ref=e25] [cursor=pointer]:
+          - /url: "#api-Dispatch"
+      - listitem [ref=e26]:
+        - link "Create Dispatch" [ref=e27] [cursor=pointer]:
+          - /url: "#api-Dispatch-CreateDispatch"
+      - listitem [ref=e28]:
+        - link "Filter Dispatches" [ref=e29] [cursor=pointer]:
+          - /url: "#api-Dispatch-FilterDispatches"
+      - listitem [ref=e30]:
+        - link "Show Dispatch" [ref=e31] [cursor=pointer]:
+          - /url: "#api-Dispatch-ShowDispatch"
+      - listitem [ref=e32]:
+        - link "Update Dispatch" [ref=e33] [cursor=pointer]:
+          - /url: "#api-Dispatch-UpdateDispatch"
+      - listitem [ref=e34]:
+        - link "Vehicle" [ref=e35] [cursor=pointer]:
+          - /url: "#api-Vehicle"
+      - listitem [ref=e36]:
+        - link "Create vehicle" [ref=e37] [cursor=pointer]:
+          - /url: "#api-Vehicle-CreateVehicle"
+      - listitem [ref=e38]:
+        - link "Delete Vehicle" [ref=e39] [cursor=pointer]:
+          - /url: "#api-Vehicle-DeleteVehicle"
+      - listitem [ref=e40]:
+        - link "List Vehicles" [ref=e41] [cursor=pointer]:
+          - /url: "#api-Vehicle-IndexVehicles"
+      - listitem [ref=e42]:
+        - link "Show vehicle" [ref=e43] [cursor=pointer]:
+          - /url: "#api-Vehicle-ShowVehicle"
+      - listitem [ref=e44]:
+        - link "GPS" [ref=e45] [cursor=pointer]:
+          - /url: "#api-GPS"
+      - listitem [ref=e46]:
+        - link "Create Waypoint" [ref=e47] [cursor=pointer]:
+          - /url: "#api-GPS-CreateWaypoint"
+      - listitem [ref=e48]:
+        - link "Data" [ref=e49] [cursor=pointer]:
+          - /url: "#api-Data"
+      - listitem [ref=e50]:
+        - link "Get the info for a specific export" [ref=e51] [cursor=pointer]:
+          - /url: "#api-Data-GetDataExport"
+      - listitem [ref=e52]:
+        - link "Import file" [ref=e53] [cursor=pointer]:
+          - /url: "#api-Data-Import"
+      - listitem [ref=e54]:
+        - link "List last data exports" [ref=e55] [cursor=pointer]:
+          - /url: "#api-Data-ListDataExports"
+      - listitem [ref=e56]:
+        - link "Start a new export" [ref=e57] [cursor=pointer]:
+          - /url: "#api-Data-CreateDataExport"
+      - listitem [ref=e58]:
+        - link "Contacts" [ref=e59] [cursor=pointer]:
+          - /url: "#api-Contacts"
+      - listitem [ref=e60]:
+        - link "List Contacts" [ref=e61] [cursor=pointer]:
+          - /url: "#api-Contacts-Contacts"
+      - listitem [ref=e62]:
+        - link "Show Contact with Guides." [ref=e63] [cursor=pointer]:
+          - /url: "#api-Contacts-showGuidesByContact"
+      - listitem [ref=e64]:
+        - link "Dispatch Guides" [ref=e65] [cursor=pointer]:
+          - /url: "#api-Dispatch_Guides"
+      - listitem [ref=e66]:
+        - link "Create Dispatch Guide" [ref=e67] [cursor=pointer]:
+          - /url: "#api-Dispatch_Guides-CreateDeliveryNote"
+      - listitem [ref=e68]:
+        - link "Delete Dispatch Guide" [ref=e69] [cursor=pointer]:
+          - /url: "#api-Dispatch_Guides-DeleteDispatchGuide"
+      - listitem [ref=e70]:
+        - link "Export Dispatch Guides" [ref=e71] [cursor=pointer]:
+          - /url: "#api-Dispatch_Guides-ExportDispatchGuide"
+      - listitem [ref=e72]:
+        - link "Group" [ref=e73] [cursor=pointer]:
+          - /url: "#api-Group"
+      - listitem [ref=e74]:
+        - link "Create group association" [ref=e75] [cursor=pointer]:
+          - /url: "#api-Group-Create_Group"
+      - listitem [ref=e76]:
+        - link "Get group categories" [ref=e77] [cursor=pointer]:
+          - /url: "#api-Group-List_Group_Categories"
+      - listitem [ref=e78]:
+        - link "Guide Items" [ref=e79] [cursor=pointer]:
+          - /url: "#api-Guide_Items"
+      - listitem [ref=e80]:
+        - link "Destroy Guide Item" [ref=e81] [cursor=pointer]:
+          - /url: "#api-Guide_Items-Destroy_Guide_Item"
+      - listitem [ref=e82]:
+        - link "Update Guide Item" [ref=e83] [cursor=pointer]:
+          - /url: "#api-Guide_Items-Update_Guide_Item"
+      - listitem [ref=e84]:
+        - link "Review" [ref=e85] [cursor=pointer]:
+          - /url: "#api-Review"
+      - listitem [ref=e86]:
+        - link "List Reviews" [ref=e87] [cursor=pointer]:
+          - /url: "#api-Review-IndexReviews"
+      - listitem [ref=e88]:
+        - link "SubStatus" [ref=e89] [cursor=pointer]:
+          - /url: "#api-SubStatus"
+      - listitem [ref=e90]:
+        - link "Show Substatus" [ref=e91] [cursor=pointer]:
+          - /url: "#api-SubStatus-showSubStatus"
+  - generic [ref=e92]:
+    - generic [ref=e93]:
+      - generic [ref=e94]:
+        - heading "Dispatchtrack API" [level=1] [ref=e95]
+        - heading "Basic API documentation to communicate with Dispatchtrack's services" [level=2] [ref=e96]
+      - button "1.0.0" [ref=e99] [cursor=pointer]:
+        - strong [ref=e100]: 1.0.0
+    - generic [ref=e104]:
+      - paragraph [ref=e105]:
+        - text: Beetrack's API will allow you to create and obtain information through a RESTful protocol. The lite version of the API will allow you to make 1,000 requests per day without having to pay for the use of the API. In case you need an upgrade please write us to
+        - link "support@dispatchtrack.com" [ref=e106] [cursor=pointer]:
+          - /url: mailto:support@dispatchtrack.com
+        - text: .
+      - paragraph [ref=e107]:
+        - text: This page shows in detail the steps needed for integrating with Beetrack though an HTTP webservice using a
+        - link "JSON" [ref=e108] [cursor=pointer]:
+          - /url: http://es.wikipedia.org/wiki/JSON
+        - text: format. If you need help please contact us at
+        - link "support@dispatchtrack.com" [ref=e109] [cursor=pointer]:
+          - /url: mailto:support@dispatchtrack.com
+        - text: .
+      - heading "Headers" [level=2] [ref=e110]
+      - paragraph [ref=e111]: "Headers must be set in order to authenticate and link the information to your account. Beetrack API requires the following headers:"
+      - list [ref=e112]:
+        - listitem [ref=e113]: "X-AUTH-TOKEN: Your API key in order to link all your API activity to your account, this can be created through the web interface in Settings -> Advanced Settings."
+        - listitem [ref=e114]:
+          - text: "Content-Type: As seen before, Beetrack's API is built to work in a JSON data format, so you must specify the request header to be"
+          - code [ref=e115]: "'Content-Type:application/json'"
+          - text: .
+      - heading "Webhooks" [level=2] [ref=e116]
+      - paragraph [ref=e117]: "Webhooks are the recommended way of keeping your system up to date with orders in Beetrack. We provide two types of webhooks:"
+      - list [ref=e118]:
+        - listitem [ref=e119]: "Route: Called when a route is created, started or ended."
+        - listitem [ref=e120]: "Dispatch: Called whenever a dispatch is managed, even if it's pending or the status didn't change (but the answers might have, for example)."
+      - paragraph [ref=e121]: In order to add a webhook endpoint you must contact support. A custom URL must be supplied, which will be used for both types of webhooks. Custom headers can also be added.
+      - paragraph [ref=e122]: For the wehbook payload, please use the parameters specification on each webhook's section.
+      - heading "Limits" [level=2] [ref=e123]
+      - paragraph [ref=e124]: "By default, the API has limits to prevent an overload of Beetrack' services. Please design your solution to comply with the following limits:"
+      - list [ref=e125]:
+        - listitem [ref=e126]: 1,000 requests per day.
+        - listitem [ref=e127]: 1 request per second.
+      - paragraph [ref=e128]:
+        - text: Failure to comply with these limits may result in denial of services due to a "To Many Requests" error. If you need to increase this limits, please contact
+        - link "support@dispatchtrack.com" [ref=e129] [cursor=pointer]:
+          - /url: mailto:support@dispatchtrack.com
+        - text: .
+    - generic [ref=e130]:
+      - generic [ref=e131]:
+        - heading "Route" [level=1] [ref=e132]
+        - article [ref=e134]:
+          - heading "Route | Create Route" [level=1] [ref=e136]
+          - button "1.0.0" [ref=e139] [cursor=pointer]:
+            - strong [ref=e140]: 1.0.0
+          - paragraph
+          - paragraph [ref=e143]: Used to create a new route with it's corresponding associated dispatches and associate it to a dispatch vehicle (truck).
+          - paragraph
+          - generic [ref=e144]: post
+          - generic [ref=e145]:
+            - code [ref=e147]:
+              - generic [ref=e148]: https://activationcode.dispatchtrack.com/api/external/v1/routes
+            - button "Copiar" [ref=e151] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e152]
+          - table [ref=e153]:
+            - rowgroup [ref=e154]:
+              - row "Campo Tipo Descripción" [ref=e155]:
+                - columnheader "Campo" [ref=e156]
+                - columnheader "Tipo" [ref=e157]
+                - columnheader "Descripción" [ref=e158]
+            - rowgroup [ref=e159]:
+              - row "truck_identifier String The identifier of each vehicle (can be the license plate)." [ref=e160]:
+                - cell "truck_identifier" [ref=e161]
+                - cell "String" [ref=e162]
+                - cell "The identifier of each vehicle (can be the license plate)." [ref=e163]:
+                  - paragraph [ref=e164]: The identifier of each vehicle (can be the license plate).
+              - row "date String Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e165]:
+                - cell "date" [ref=e166]
+                - cell "String" [ref=e167]
+                - cell "Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e168]:
+                  - paragraph [ref=e169]: Date in which the route is going to be managed (Format dd-mm-yyyy).
+              - row "dispatch_date opcional String Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e170]:
+                - cell "dispatch_date opcional" [ref=e171]:
+                  - text: dispatch_date
+                  - generic [ref=e172]: opcional
+                - cell "String" [ref=e173]
+                - cell "Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e174]:
+                  - paragraph [ref=e175]: Date in which the route is going to be managed (Format dd-mm-yyyy).
+              - row "driver_identifier opcional String The identifier of the person doing the deliveries." [ref=e176]:
+                - cell "driver_identifier opcional" [ref=e177]:
+                  - text: driver_identifier
+                  - generic [ref=e178]: opcional
+                - cell "String" [ref=e179]
+                - cell "The identifier of the person doing the deliveries." [ref=e180]:
+                  - paragraph [ref=e181]: The identifier of the person doing the deliveries.
+              - 'row "enable_estimations opcional Boolean True if estimated times should be recalculated. Valor por defecto: True" [ref=e182]':
+                - cell "enable_estimations opcional" [ref=e183]:
+                  - text: enable_estimations
+                  - generic [ref=e184]: opcional
+                - cell "Boolean" [ref=e185]
+                - 'cell "True if estimated times should be recalculated. Valor por defecto: True" [ref=e186]':
+                  - paragraph [ref=e187]: True if estimated times should be recalculated.
+                  - paragraph [ref=e188]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e189]: "True"
+              - row "started_at opcional Datetime Time at which the route started." [ref=e190]:
+                - cell "started_at opcional" [ref=e191]:
+                  - text: started_at
+                  - generic [ref=e192]: opcional
+                - cell "Datetime" [ref=e193]
+                - cell "Time at which the route started." [ref=e194]:
+                  - paragraph [ref=e195]: Time at which the route started.
+              - row "started opcional Boolean Flag to indicate route started." [ref=e196]:
+                - cell "started opcional" [ref=e197]:
+                  - text: started
+                  - generic [ref=e198]: opcional
+                - cell "Boolean" [ref=e199]
+                - cell "Flag to indicate route started." [ref=e200]:
+                  - paragraph [ref=e201]: Flag to indicate route started.
+              - row "start_latitude opcional String Latitude where the route is started." [ref=e202]:
+                - cell "start_latitude opcional" [ref=e203]:
+                  - text: start_latitude
+                  - generic [ref=e204]: opcional
+                - cell "String" [ref=e205]
+                - cell "Latitude where the route is started." [ref=e206]:
+                  - paragraph [ref=e207]: Latitude where the route is started.
+              - row "start_longitude opcional String Longitude where the route is started." [ref=e208]:
+                - cell "start_longitude opcional" [ref=e209]:
+                  - text: start_longitude
+                  - generic [ref=e210]: opcional
+                - cell "String" [ref=e211]
+                - cell "Longitude where the route is started." [ref=e212]:
+                  - paragraph [ref=e213]: Longitude where the route is started.
+              - row "dispatches JSON[] Array with dispatch guides associated to the route that is being created." [ref=e214]:
+                - cell "dispatches" [ref=e215]
+                - cell "JSON[]" [ref=e216]
+                - cell "Array with dispatch guides associated to the route that is being created." [ref=e217]:
+                  - paragraph [ref=e218]: Array with dispatch guides associated to the route that is being created.
+              - row "dispatches.identifier Integer Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e219]:
+                - cell "dispatches.identifier" [ref=e220]
+                - cell "Integer" [ref=e221]
+                - cell "Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e222]:
+                  - paragraph [ref=e223]: Dispatch identifier, guide or invoice number of the product(s) that are being delivered.
+              - row "dispatches.contact_name opcional String Name of the person to whom the guide is addressed." [ref=e224]:
+                - cell "dispatches.contact_name opcional" [ref=e225]:
+                  - text: dispatches.contact_name
+                  - generic [ref=e226]: opcional
+                - cell "String" [ref=e227]
+                - cell "Name of the person to whom the guide is addressed." [ref=e228]:
+                  - paragraph [ref=e229]: Name of the person to whom the guide is addressed.
+              - row "dispatches.contact_address opcional String Address to where the guide is directed." [ref=e230]:
+                - cell "dispatches.contact_address opcional" [ref=e231]:
+                  - text: dispatches.contact_address
+                  - generic [ref=e232]: opcional
+                - cell "String" [ref=e233]
+                - cell "Address to where the guide is directed." [ref=e234]:
+                  - paragraph [ref=e235]: Address to where the guide is directed.
+              - row "dispatches.contact_phone opcional String Phone of the person to whom the guide is addressed." [ref=e236]:
+                - cell "dispatches.contact_phone opcional" [ref=e237]:
+                  - text: dispatches.contact_phone
+                  - generic [ref=e238]: opcional
+                - cell "String" [ref=e239]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e240]:
+                  - paragraph [ref=e241]: Phone of the person to whom the guide is addressed.
+              - row "dispatches.contact_id opcional String Identification of the person to whom the guide is addressed." [ref=e242]:
+                - cell "dispatches.contact_id opcional" [ref=e243]:
+                  - text: dispatches.contact_id
+                  - generic [ref=e244]: opcional
+                - cell "String" [ref=e245]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e246]:
+                  - paragraph [ref=e247]: Identification of the person to whom the guide is addressed.
+              - row "dispatches.contact_identifier opcional String Identification of the person to whom the guide is addressed." [ref=e248]:
+                - cell "dispatches.contact_identifier opcional" [ref=e249]:
+                  - text: dispatches.contact_identifier
+                  - generic [ref=e250]: opcional
+                - cell "String" [ref=e251]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e252]:
+                  - paragraph [ref=e253]: Identification of the person to whom the guide is addressed.
+              - row "dispatches.contact_email opcional String Email of the person to whom the guide is addressed." [ref=e254]:
+                - cell "dispatches.contact_email opcional" [ref=e255]:
+                  - text: dispatches.contact_email
+                  - generic [ref=e256]: opcional
+                - cell "String" [ref=e257]
+                - cell "Email of the person to whom the guide is addressed." [ref=e258]:
+                  - paragraph [ref=e259]: Email of the person to whom the guide is addressed.
+              - row "dispatches.latitude opcional String Latitude where the dispatch is directed." [ref=e260]:
+                - cell "dispatches.latitude opcional" [ref=e261]:
+                  - text: dispatches.latitude
+                  - generic [ref=e262]: opcional
+                - cell "String" [ref=e263]
+                - cell "Latitude where the dispatch is directed." [ref=e264]:
+                  - paragraph [ref=e265]: Latitude where the dispatch is directed.
+              - row "dispatches.longitude opcional String Longitude where the dispatch is directed." [ref=e266]:
+                - cell "dispatches.longitude opcional" [ref=e267]:
+                  - text: dispatches.longitude
+                  - generic [ref=e268]: opcional
+                - cell "String" [ref=e269]
+                - cell "Longitude where the dispatch is directed." [ref=e270]:
+                  - paragraph [ref=e271]: Longitude where the dispatch is directed.
+              - row "dispatches.slot opcional Integer Slot (position) of this dispatch in its route." [ref=e272]:
+                - cell "dispatches.slot opcional" [ref=e273]:
+                  - text: dispatches.slot
+                  - generic [ref=e274]: opcional
+                - cell "Integer" [ref=e275]
+                - cell "Slot (position) of this dispatch in its route." [ref=e276]:
+                  - paragraph [ref=e277]: Slot (position) of this dispatch in its route.
+              - row "dispatches.current_state opcional Integer Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e278]:
+                - cell "dispatches.current_state opcional" [ref=e279]:
+                  - text: dispatches.current_state
+                  - generic [ref=e280]: opcional
+                - cell "Integer" [ref=e281]
+                - cell "Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e282]:
+                  - paragraph [ref=e283]: Current state for dispatch guide (in_preparation = 0, Ready to go = 1)
+              - row "dispatches.estimated_at opcional Datetime Estimated time of delivery. Must be in UTC, ISO8601 format." [ref=e284]:
+                - cell "dispatches.estimated_at opcional" [ref=e285]:
+                  - text: dispatches.estimated_at
+                  - generic [ref=e286]: opcional
+                - cell "Datetime" [ref=e287]
+                - cell "Estimated time of delivery. Must be in UTC, ISO8601 format." [ref=e288]:
+                  - paragraph [ref=e289]: Estimated time of delivery. Must be in UTC, ISO8601 format.
+              - 'row "dispatches.is_trunk opcional Boolean True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e290]':
+                - cell "dispatches.is_trunk opcional" [ref=e291]:
+                  - text: dispatches.is_trunk
+                  - generic [ref=e292]: opcional
+                - cell "Boolean" [ref=e293]
+                - 'cell "True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e294]':
+                  - paragraph [ref=e295]: True if this is a trunk movement (not last mile).
+                  - paragraph [ref=e296]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e297]: "false"
+              - 'row "dispatches.is_pickup opcional Boolean True if this is a pickup movement. Valor por defecto: false" [ref=e298]':
+                - cell "dispatches.is_pickup opcional" [ref=e299]:
+                  - text: dispatches.is_pickup
+                  - generic [ref=e300]: opcional
+                - cell "Boolean" [ref=e301]
+                - 'cell "True if this is a pickup movement. Valor por defecto: false" [ref=e302]':
+                  - paragraph [ref=e303]: True if this is a pickup movement.
+                  - paragraph [ref=e304]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e305]: "false"
+              - 'row "dispatches.mode opcional Integer Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e306]':
+                - cell "dispatches.mode opcional" [ref=e307]:
+                  - text: dispatches.mode
+                  - generic [ref=e308]: opcional
+                - cell "Integer" [ref=e309]
+                - 'cell "Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e310]':
+                  - paragraph [ref=e311]: Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only).
+                  - paragraph [ref=e312]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e313]: "0"
+              - row "dispatches.pincode_enabled opcional Boolean Indicates if the guide has delivery with PIN code." [ref=e314]:
+                - cell "dispatches.pincode_enabled opcional" [ref=e315]:
+                  - text: dispatches.pincode_enabled
+                  - generic [ref=e316]: opcional
+                - cell "Boolean" [ref=e317]
+                - cell "Indicates if the guide has delivery with PIN code." [ref=e318]:
+                  - paragraph [ref=e319]: Indicates if the guide has delivery with PIN code.
+              - row "dispatches.status_id opcional Integer Id of the Status." [ref=e320]:
+                - cell "dispatches.status_id opcional" [ref=e321]:
+                  - text: dispatches.status_id
+                  - generic [ref=e322]: opcional
+                - cell "Integer" [ref=e323]
+                - cell "Id of the Status." [ref=e324]:
+                  - paragraph [ref=e325]: Id of the Status.
+              - row "dispatches.pickup_address opcional JSON Address where the order will be picked up." [ref=e326]:
+                - cell "dispatches.pickup_address opcional" [ref=e327]:
+                  - text: dispatches.pickup_address
+                  - generic [ref=e328]: opcional
+                - cell "JSON" [ref=e329]
+                - cell "Address where the order will be picked up." [ref=e330]:
+                  - paragraph [ref=e331]: Address where the order will be picked up.
+              - row "dispatches.pickup_address.name String Name of the address." [ref=e332]:
+                - cell "dispatches.pickup_address.name" [ref=e333]
+                - cell "String" [ref=e334]
+                - cell "Name of the address." [ref=e335]:
+                  - paragraph [ref=e336]: Name of the address.
+              - row "dispatches.items opcional JSON[] Array containing items associated to the guide." [ref=e337]:
+                - cell "dispatches.items opcional" [ref=e338]:
+                  - text: dispatches.items
+                  - generic [ref=e339]: opcional
+                - cell "JSON[]" [ref=e340]
+                - cell "Array containing items associated to the guide." [ref=e341]:
+                  - paragraph [ref=e342]: Array containing items associated to the guide.
+              - row "dispatches.items.name opcional String Name for this item (SKU, for example)." [ref=e343]:
+                - cell "dispatches.items.name opcional" [ref=e344]:
+                  - text: dispatches.items.name
+                  - generic [ref=e345]: opcional
+                - cell "String" [ref=e346]
+                - cell "Name for this item (SKU, for example)." [ref=e347]:
+                  - paragraph [ref=e348]: Name for this item (SKU, for example).
+              - row "dispatches.items.code opcional String Unique code for this item (SKU, for example)." [ref=e349]:
+                - cell "dispatches.items.code opcional" [ref=e350]:
+                  - text: dispatches.items.code
+                  - generic [ref=e351]: opcional
+                - cell "String" [ref=e352]
+                - cell "Unique code for this item (SKU, for example)." [ref=e353]:
+                  - paragraph [ref=e354]: Unique code for this item (SKU, for example).
+              - row "dispatches.items.unit_price opcional String Price for this item." [ref=e355]:
+                - cell "dispatches.items.unit_price opcional" [ref=e356]:
+                  - text: dispatches.items.unit_price
+                  - generic [ref=e357]: opcional
+                - cell "String" [ref=e358]
+                - cell "Price for this item." [ref=e359]:
+                  - paragraph [ref=e360]: Price for this item.
+              - row "dispatches.items.description opcional String Description of the item being delivered." [ref=e361]:
+                - cell "dispatches.items.description opcional" [ref=e362]:
+                  - text: dispatches.items.description
+                  - generic [ref=e363]: opcional
+                - cell "String" [ref=e364]
+                - cell "Description of the item being delivered." [ref=e365]:
+                  - paragraph [ref=e366]: Description of the item being delivered.
+              - row "dispatches.items.quantity opcional String Quantity of the item being delivered." [ref=e367]:
+                - cell "dispatches.items.quantity opcional" [ref=e368]:
+                  - text: dispatches.items.quantity
+                  - generic [ref=e369]: opcional
+                - cell "String" [ref=e370]
+                - cell "Quantity of the item being delivered." [ref=e371]:
+                  - paragraph [ref=e372]: Quantity of the item being delivered.
+              - row "dispatches.items.quantity_ref opcional Decimal Quantity ref of the item being delivered." [ref=e373]:
+                - cell "dispatches.items.quantity_ref opcional" [ref=e374]:
+                  - text: dispatches.items.quantity_ref
+                  - generic [ref=e375]: opcional
+                - cell "Decimal" [ref=e376]
+                - cell "Quantity ref of the item being delivered." [ref=e377]:
+                  - paragraph [ref=e378]: Quantity ref of the item being delivered.
+              - row "dispatches.items.extras opcional JSON[] Extra information associated to the items." [ref=e379]:
+                - cell "dispatches.items.extras opcional" [ref=e380]:
+                  - text: dispatches.items.extras
+                  - generic [ref=e381]: opcional
+                - cell "JSON[]" [ref=e382]
+                - cell "Extra information associated to the items." [ref=e383]:
+                  - paragraph [ref=e384]: Extra information associated to the items.
+              - row "dispatches.items.extras.name opcional String Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e385]:
+                - cell "dispatches.items.extras.name opcional" [ref=e386]:
+                  - text: dispatches.items.extras.name
+                  - generic [ref=e387]: opcional
+                - cell "String" [ref=e388]
+                - cell "Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e389]:
+                  - paragraph [ref=e390]: Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page.
+              - row "dispatches.items.extras.value opcional String Field value." [ref=e391]:
+                - cell "dispatches.items.extras.value opcional" [ref=e392]:
+                  - text: dispatches.items.extras.value
+                  - generic [ref=e393]: opcional
+                - cell "String" [ref=e394]
+                - cell "Field value." [ref=e395]:
+                  - paragraph [ref=e396]: Field value.
+              - row "dispatches.tags opcional JSON[] Array containing tags associated to the guide." [ref=e397]:
+                - cell "dispatches.tags opcional" [ref=e398]:
+                  - text: dispatches.tags
+                  - generic [ref=e399]: opcional
+                - cell "JSON[]" [ref=e400]
+                - cell "Array containing tags associated to the guide." [ref=e401]:
+                  - paragraph [ref=e402]: Array containing tags associated to the guide.
+              - row "dispatches.tags.name opcional String Name of the tag associated to the guide." [ref=e403]:
+                - cell "dispatches.tags.name opcional" [ref=e404]:
+                  - text: dispatches.tags.name
+                  - generic [ref=e405]: opcional
+                - cell "String" [ref=e406]
+                - cell "Name of the tag associated to the guide." [ref=e407]:
+                  - paragraph [ref=e408]: Name of the tag associated to the guide.
+              - row "dispatches.tags.value opcional String Value of the tag associated to the guide." [ref=e409]:
+                - cell "dispatches.tags.value opcional" [ref=e410]:
+                  - text: dispatches.tags.value
+                  - generic [ref=e411]: opcional
+                - cell "String" [ref=e412]
+                - cell "Value of the tag associated to the guide." [ref=e413]:
+                  - paragraph [ref=e414]: Value of the tag associated to the guide.
+              - row "dispatches.tags.type opcional String Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e415]:
+                - cell "dispatches.tags.type opcional" [ref=e416]:
+                  - text: dispatches.tags.type
+                  - generic [ref=e417]: opcional
+                - cell "String" [ref=e418]
+                - cell "Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e419]:
+                  - paragraph [ref=e420]: Type(string/date) of the tag associated to the guide. "string" => custom field and "date" => custom date field
+              - row "dispatches.groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e421]:
+                - cell "dispatches.groups opcional" [ref=e422]:
+                  - text: dispatches.groups
+                  - generic [ref=e423]: opcional
+                - cell "JSON[]" [ref=e424]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e425]:
+                  - paragraph [ref=e426]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "dispatches.groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e427]:
+                - cell "dispatches.groups.category opcional" [ref=e428]:
+                  - text: dispatches.groups.category
+                  - generic [ref=e429]: opcional
+                - cell "String" [ref=e430]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e431]:
+                  - paragraph [ref=e432]: Name of the category of the group to which the guide is associated.
+              - row "dispatches.groups.name opcional String Name of the group to which the guide is associated." [ref=e433]:
+                - cell "dispatches.groups.name opcional" [ref=e434]:
+                  - text: dispatches.groups.name
+                  - generic [ref=e435]: opcional
+                - cell "String" [ref=e436]
+                - cell "Name of the group to which the guide is associated." [ref=e437]:
+                  - paragraph [ref=e438]: Name of the group to which the guide is associated.
+              - 'row "dispatches.groups.force_create opcional Boolean True if it has to be created if it is not found. Valor por defecto: false" [ref=e439]':
+                - cell "dispatches.groups.force_create opcional" [ref=e440]:
+                  - text: dispatches.groups.force_create
+                  - generic [ref=e441]: opcional
+                - cell "Boolean" [ref=e442]
+                - 'cell "True if it has to be created if it is not found. Valor por defecto: false" [ref=e443]':
+                  - paragraph [ref=e444]: True if it has to be created if it is not found.
+                  - paragraph [ref=e445]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e446]: "false"
+          - tablist [ref=e447]:
+            - listitem [ref=e448]:
+              - tab "Request-Example:" [ref=e449]
+          - generic [ref=e452]:
+            - code [ref=e454]: "{ \"truck_identifier\": \"A4677\", \"date\": \"22-04-2022\", \"driver_identifier\": \"19674530-4\", \"dispatches\": [ { \"identifier\": 264849672, \"current_state\": 1, \"contact_name\": \"Patrick Hamford\", \"contact_address\": \"6616 Washington Ave., Ocean Springs, MS\", \"contact_phone\": \"202-555-0111\", \"contact_id\": \"15289364\", \"contact_email\": \"patrick.hamford@hamford.com\", \"latitude\": \"30.438086\", \"longitude\": \"-88.832390\", \"items\": [ { \"name\": \"Computador\", \"code\": \"121233\", \"unit_price\": 120, \"quantity\": \"123\", \"description\": \"25 inch TV set\", } ]}, \"tags\": [ { \"name\": \"Tag name\", \"value\": \"Tag value\", \"type\": \"Tag type(string/date)\" }], \"groups\": [ { \"category\": \"Group category\", \"name\": \"Group name\" }] } ] }"
+            - button "Copiar" [ref=e457] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e458]
+          - table [ref=e459]:
+            - rowgroup [ref=e460]:
+              - row "Campo Tipo Descripción" [ref=e461]:
+                - columnheader "Campo" [ref=e462]
+                - columnheader "Tipo" [ref=e463]
+                - columnheader "Descripción" [ref=e464]
+            - rowgroup [ref=e465]:
+              - row "status String Status of the response ok/already reported." [ref=e466]:
+                - cell "status" [ref=e467]
+                - cell "String" [ref=e468]
+                - cell "Status of the response ok/already reported." [ref=e469]:
+                  - paragraph [ref=e470]: Status of the response ok/already reported.
+              - row "response JSON JSON with the response of the API." [ref=e471]:
+                - cell "response" [ref=e472]
+                - cell "JSON" [ref=e473]
+                - cell "JSON with the response of the API." [ref=e474]:
+                  - paragraph [ref=e475]: JSON with the response of the API.
+              - row "response.route_id String Id of the created route." [ref=e476]:
+                - cell "response.route_id" [ref=e477]
+                - cell "String" [ref=e478]
+                - cell "Id of the created route." [ref=e479]:
+                  - paragraph [ref=e480]: Id of the created route.
+          - tablist [ref=e481]:
+            - listitem [ref=e482]:
+              - tab "200 OK:" [ref=e483]
+            - listitem [ref=e484]:
+              - tab "208 OK:" [ref=e485] [cursor=pointer]
+          - generic [ref=e488]:
+            - code [ref=e490]: "{ \"status\": \"ok\", \"response\": { \"route_id\": 164972 } }"
+            - button "Copiar" [ref=e493] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e494]
+          - table [ref=e495]:
+            - rowgroup [ref=e496]:
+              - row "Nombre Tipo Descripción" [ref=e497]:
+                - columnheader "Nombre" [ref=e498]
+                - columnheader "Tipo" [ref=e499]
+                - columnheader "Descripción" [ref=e500]
+            - rowgroup [ref=e501]:
+              - row "status String Status of the response." [ref=e502]:
+                - cell "status" [ref=e503]
+                - cell "String" [ref=e504]
+                - cell "Status of the response." [ref=e505]:
+                  - paragraph [ref=e506]: Status of the response.
+              - 'row "String } response Error message." [ref=e507]':
+                - cell "String" [ref=e508]
+                - cell [ref=e509]
+                - 'cell "} response Error message." [ref=e510]':
+                  - paragraph [ref=e511]: "} response Error message."
+          - tablist [ref=e512]:
+            - listitem [ref=e513]:
+              - tab "400 Error:" [ref=e514]
+            - listitem [ref=e515]:
+              - tab "400 Error:" [ref=e516] [cursor=pointer]
+            - listitem [ref=e517]:
+              - tab "400 Error:" [ref=e518] [cursor=pointer]
+            - listitem [ref=e519]:
+              - tab "400 Error:" [ref=e520] [cursor=pointer]
+            - listitem [ref=e521]:
+              - tab "400 Error:" [ref=e522] [cursor=pointer]
+            - listitem [ref=e523]:
+              - tab "400 Error:" [ref=e524] [cursor=pointer]
+            - listitem [ref=e525]:
+              - tab "400 Error:" [ref=e526] [cursor=pointer]
+          - generic [ref=e529]:
+            - code [ref=e531]: "User can not modify dispatches statuses { \"status\": \"Bad_request\", \"response\": \"Permission denied\" }"
+            - button "Copiar" [ref=e534] [cursor=pointer]
+        - article [ref=e536]:
+          - heading "Route | Delete Route" [level=1] [ref=e538]
+          - button "1.0.0" [ref=e541] [cursor=pointer]:
+            - strong [ref=e542]: 1.0.0
+          - paragraph
+          - paragraph [ref=e545]: Used to delete a route specified by its id.
+          - paragraph
+          - generic [ref=e546]: delete
+          - generic [ref=e547]:
+            - code [ref=e549]:
+              - generic [ref=e550]: https://activationcode.dispatchtrack.com/api/external/v1/routes/:route_id
+            - button "Copiar" [ref=e553] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e554]
+          - table [ref=e555]:
+            - rowgroup [ref=e556]:
+              - row "Campo Tipo Descripción" [ref=e557]:
+                - columnheader "Campo" [ref=e558]
+                - columnheader "Tipo" [ref=e559]
+                - columnheader "Descripción" [ref=e560]
+            - rowgroup [ref=e561]:
+              - row "route_id Url_Parameter Id of the route that you want to delete." [ref=e562]:
+                - cell "route_id" [ref=e563]
+                - cell "Url_Parameter" [ref=e564]
+                - cell "Id of the route that you want to delete." [ref=e565]:
+                  - paragraph [ref=e566]: Id of the route that you want to delete.
+          - heading "Success 200" [level=2] [ref=e567]
+          - table [ref=e568]:
+            - rowgroup [ref=e569]:
+              - row "Campo Tipo Descripción" [ref=e570]:
+                - columnheader "Campo" [ref=e571]
+                - columnheader "Tipo" [ref=e572]
+                - columnheader "Descripción" [ref=e573]
+            - rowgroup [ref=e574]:
+              - row "status String Status of the response (ok/error)." [ref=e575]:
+                - cell "status" [ref=e576]
+                - cell "String" [ref=e577]
+                - cell "Status of the response (ok/error)." [ref=e578]:
+                  - paragraph [ref=e579]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e580]:
+                - cell "response" [ref=e581]
+                - cell "JSON" [ref=e582]
+                - cell "JSON with API response." [ref=e583]:
+                  - paragraph [ref=e584]: JSON with API response.
+              - row "response.action String 'Route Deleted' in case the route was deleted." [ref=e585]:
+                - cell "response.action" [ref=e586]
+                - cell "String" [ref=e587]
+                - cell "'Route Deleted' in case the route was deleted." [ref=e588]:
+                  - paragraph [ref=e589]: "'Route Deleted' in case the route was deleted."
+          - tablist [ref=e590]:
+            - listitem [ref=e591]:
+              - tab "200 OK:" [ref=e592]
+          - generic [ref=e595]:
+            - code [ref=e597]: "{ \"status\": \"ok\", \"response\": { \"action\": \"Route Deleted\" } }"
+            - button "Copiar" [ref=e600] [cursor=pointer]
+          - heading "Error 404" [level=2] [ref=e601]
+          - table [ref=e602]:
+            - rowgroup [ref=e603]:
+              - row "Nombre Tipo Descripción" [ref=e604]:
+                - columnheader "Nombre" [ref=e605]
+                - columnheader "Tipo" [ref=e606]
+                - columnheader "Descripción" [ref=e607]
+            - rowgroup [ref=e608]:
+              - row "message String Invalid route as response." [ref=e609]:
+                - cell "message" [ref=e610]
+                - cell "String" [ref=e611]
+                - cell "Invalid route as response." [ref=e612]:
+                  - paragraph [ref=e613]: Invalid route as response.
+          - tablist [ref=e614]:
+            - listitem [ref=e615]:
+              - tab "404 Error:" [ref=e616]
+          - generic [ref=e619]:
+            - code [ref=e621]: "{ \"message\": \"Invalid route\" }"
+            - button "Copiar" [ref=e624] [cursor=pointer]
+        - article [ref=e626]:
+          - heading "Route | List Routes" [level=1] [ref=e628]
+          - button "1.0.0" [ref=e631] [cursor=pointer]:
+            - strong [ref=e632]: 1.0.0
+          - paragraph
+          - paragraph [ref=e635]: Used to get the information of all routes of the specified date.
+          - paragraph
+          - generic [ref=e636]: get
+          - generic [ref=e637]:
+            - code [ref=e639]:
+              - generic [ref=e640]: https://activationcode.dispatchtrack.com/api/external/v1/routes?date=:date
+            - button "Copiar" [ref=e643] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e644]
+          - table [ref=e645]:
+            - rowgroup [ref=e646]:
+              - row "Campo Tipo Descripción" [ref=e647]:
+                - columnheader "Campo" [ref=e648]
+                - columnheader "Tipo" [ref=e649]
+                - columnheader "Descripción" [ref=e650]
+            - rowgroup [ref=e651]:
+              - 'row "date String Date you want to get route information in format yyyy-mm-dd Example: 2017-05-01." [ref=e652]':
+                - cell "date" [ref=e653]
+                - cell "String" [ref=e654]
+                - 'cell "Date you want to get route information in format yyyy-mm-dd Example: 2017-05-01." [ref=e655]':
+                  - paragraph [ref=e656]:
+                    - text: Date you want to get route information in format
+                    - code [ref=e657]: yyyy-mm-dd
+                    - text: "Example:"
+                    - code [ref=e658]: 2017-05-01
+                    - text: .
+              - row "truck_identifier opcional String Identifier of the dispatch vehicle associated to that route." [ref=e659]:
+                - cell "truck_identifier opcional" [ref=e660]:
+                  - text: truck_identifier
+                  - generic [ref=e661]: opcional
+                - cell "String" [ref=e662]
+                - cell "Identifier of the dispatch vehicle associated to that route." [ref=e663]:
+                  - paragraph [ref=e664]: Identifier of the dispatch vehicle associated to that route.
+              - row "page opcional Integer If you want paginate results, you can send number paginate to get values." [ref=e665]:
+                - cell "page opcional" [ref=e666]:
+                  - text: page
+                  - generic [ref=e667]: opcional
+                - cell "Integer" [ref=e668]
+                - cell "If you want paginate results, you can send number paginate to get values." [ref=e669]:
+                  - paragraph [ref=e670]: If you want paginate results, you can send number paginate to get values.
+              - 'row "limit opcional Integer If you paginate, send limit by page. Default is 10. Tamaño de rango: 10..20" [ref=e671]':
+                - cell "limit opcional" [ref=e672]:
+                  - text: limit
+                  - generic [ref=e673]: opcional
+                - cell "Integer" [ref=e674]
+                - 'cell "If you paginate, send limit by page. Default is 10. Tamaño de rango: 10..20" [ref=e675]':
+                  - paragraph [ref=e676]:
+                    - text: If you paginate, send limit by page. Default is
+                    - code [ref=e677]: "10"
+                    - text: .
+                  - paragraph [ref=e678]:
+                    - text: "Tamaño de rango:"
+                    - code [ref=e679]: 10..20
+              - 'row "order opcional String If you paginate, send order. Default is ASC. Valores permitidos: \"ASC\", \"DESC\"" [ref=e680]':
+                - cell "order opcional" [ref=e681]:
+                  - text: order
+                  - generic [ref=e682]: opcional
+                - cell "String" [ref=e683]
+                - 'cell "If you paginate, send order. Default is ASC. Valores permitidos: \"ASC\", \"DESC\"" [ref=e684]':
+                  - paragraph [ref=e685]:
+                    - text: If you paginate, send order. Default is
+                    - code [ref=e686]: ASC
+                    - text: .
+                  - paragraph [ref=e687]:
+                    - text: "Valores permitidos:"
+                    - code [ref=e688]: "\"ASC\""
+                    - text: ","
+                    - code [ref=e689]: "\"DESC\""
+              - row "minified opcional Boolean Version minified, doesn't include tags and guide items. Default is false." [ref=e690]:
+                - cell "minified opcional" [ref=e691]:
+                  - text: minified
+                  - generic [ref=e692]: opcional
+                - cell "Boolean" [ref=e693]
+                - cell "Version minified, doesn't include tags and guide items. Default is false." [ref=e694]:
+                  - paragraph [ref=e695]:
+                    - text: Version minified, doesn't include tags and guide items. Default is
+                    - code [ref=e696]: "false"
+                    - text: .
+          - heading "Success 200" [level=2] [ref=e697]
+          - table [ref=e698]:
+            - rowgroup [ref=e699]:
+              - row "Campo Tipo Descripción" [ref=e700]:
+                - columnheader "Campo" [ref=e701]
+                - columnheader "Tipo" [ref=e702]
+                - columnheader "Descripción" [ref=e703]
+            - rowgroup [ref=e704]:
+              - row "status String Status of the response (ok/error)." [ref=e705]:
+                - cell "status" [ref=e706]
+                - cell "String" [ref=e707]
+                - cell "Status of the response (ok/error)." [ref=e708]:
+                  - paragraph [ref=e709]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e710]:
+                - cell "response" [ref=e711]
+                - cell "JSON" [ref=e712]
+                - cell "JSON with API response." [ref=e713]:
+                  - paragraph [ref=e714]: JSON with API response.
+              - row "response.routes JSON[] Array with all the routes of the date specified by the request's paramenters." [ref=e715]:
+                - cell "response.routes" [ref=e716]
+                - cell "JSON[]" [ref=e717]
+                - cell "Array with all the routes of the date specified by the request's paramenters." [ref=e718]:
+                  - paragraph [ref=e719]: Array with all the routes of the date specified by the request's paramenters.
+              - row "response.routes.id Integer Id of the route." [ref=e720]:
+                - cell "response.routes.id" [ref=e721]
+                - cell "Integer" [ref=e722]
+                - cell "Id of the route." [ref=e723]:
+                  - paragraph [ref=e724]: Id of the route.
+              - row "response.routes.dispatch_date String Date of dispatch of the route." [ref=e725]:
+                - cell "response.routes.dispatch_date" [ref=e726]
+                - cell "String" [ref=e727]
+                - cell "Date of dispatch of the route." [ref=e728]:
+                  - paragraph [ref=e729]: Date of dispatch of the route.
+              - row "response.routes.truck String Truck information, this include groups." [ref=e730]:
+                - cell "response.routes.truck" [ref=e731]
+                - cell "String" [ref=e732]
+                - cell "Truck information, this include groups." [ref=e733]:
+                  - paragraph [ref=e734]: Truck information, this include groups.
+              - row "response.routes.truck.identifier String Identifier of the dispatch vehicle associated to that route." [ref=e735]:
+                - cell "response.routes.truck.identifier" [ref=e736]
+                - cell "String" [ref=e737]
+                - cell "Identifier of the dispatch vehicle associated to that route." [ref=e738]:
+                  - paragraph [ref=e739]: Identifier of the dispatch vehicle associated to that route.
+              - 'row "response.routes.truck.vehicle_type Integer Vehicly type of the dispatch vehicle associated. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11" [ref=e740]':
+                - cell "response.routes.truck.vehicle_type" [ref=e741]
+                - cell "Integer" [ref=e742]
+                - 'cell "Vehicly type of the dispatch vehicle associated. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11" [ref=e743]':
+                  - paragraph [ref=e744]: "Vehicly type of the dispatch vehicle associated. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11"
+              - row "response.routes.truck.groups JSON[] Array of truck groups." [ref=e745]:
+                - cell "response.routes.truck.groups" [ref=e746]
+                - cell "JSON[]" [ref=e747]
+                - cell "Array of truck groups." [ref=e748]:
+                  - paragraph [ref=e749]: Array of truck groups.
+              - row "response.routes.truck.groups.name String name of this group." [ref=e750]:
+                - cell "response.routes.truck.groups.name" [ref=e751]
+                - cell "String" [ref=e752]
+                - cell "name of this group." [ref=e753]:
+                  - paragraph [ref=e754]: name of this group.
+              - row "response.routes.truck.groups.value String value of this group." [ref=e755]:
+                - cell "response.routes.truck.groups.value" [ref=e756]
+                - cell "String" [ref=e757]
+                - cell "value of this group." [ref=e758]:
+                  - paragraph [ref=e759]: value of this group.
+              - row "response.routes.driver_identifier String Identifier of the driver or deliveryman associated to that vehicle and route." [ref=e760]:
+                - cell "response.routes.driver_identifier" [ref=e761]
+                - cell "String" [ref=e762]
+                - cell "Identifier of the driver or deliveryman associated to that vehicle and route." [ref=e763]:
+                  - paragraph [ref=e764]: Identifier of the driver or deliveryman associated to that vehicle and route.
+              - row "response.routes.driver_name String Name of the driver or deliveryman associated to that vehicle and route." [ref=e765]:
+                - cell "response.routes.driver_name" [ref=e766]
+                - cell "String" [ref=e767]
+                - cell "Name of the driver or deliveryman associated to that vehicle and route." [ref=e768]:
+                  - paragraph [ref=e769]: Name of the driver or deliveryman associated to that vehicle and route.
+              - row "response.routes.driver_app_version String App version of the person doing the deliveries." [ref=e770]:
+                - cell "response.routes.driver_app_version" [ref=e771]
+                - cell "String" [ref=e772]
+                - cell "App version of the person doing the deliveries." [ref=e773]:
+                  - paragraph [ref=e774]: App version of the person doing the deliveries.
+              - row "response.routes.start_time String Time at which the route was initialized." [ref=e775]:
+                - cell "response.routes.start_time" [ref=e776]
+                - cell "String" [ref=e777]
+                - cell "Time at which the route was initialized." [ref=e778]:
+                  - paragraph [ref=e779]: Time at which the route was initialized.
+              - row "response.routes.end_time String Time at which the route was finished." [ref=e780]:
+                - cell "response.routes.end_time" [ref=e781]
+                - cell "String" [ref=e782]
+                - cell "Time at which the route was finished." [ref=e783]:
+                  - paragraph [ref=e784]: Time at which the route was finished.
+              - row "response.routes.started_at String Time at which the route was started." [ref=e785]:
+                - cell "response.routes.started_at" [ref=e786]
+                - cell "String" [ref=e787]
+                - cell "Time at which the route was started." [ref=e788]:
+                  - paragraph [ref=e789]: Time at which the route was started.
+              - row "response.routes.dispatches JSON[] Array of dispatches contained in that route." [ref=e790]:
+                - cell "response.routes.dispatches" [ref=e791]
+                - cell "JSON[]" [ref=e792]
+                - cell "Array of dispatches contained in that route." [ref=e793]:
+                  - paragraph [ref=e794]: Array of dispatches contained in that route.
+              - row "response.routes.dispatches.identifier String Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e795]:
+                - cell "response.routes.dispatches.identifier" [ref=e796]
+                - cell "String" [ref=e797]
+                - cell "Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e798]:
+                  - paragraph [ref=e799]: Dispatch identifier, guide or invoice number of the product(s) that are being delivered.
+              - row "response.routes.dispatches.contact_name String Name of the person to whom the guide is addressed." [ref=e800]:
+                - cell "response.routes.dispatches.contact_name" [ref=e801]
+                - cell "String" [ref=e802]
+                - cell "Name of the person to whom the guide is addressed." [ref=e803]:
+                  - paragraph [ref=e804]: Name of the person to whom the guide is addressed.
+              - row "response.routes.dispatches.contact_address String Address to where the guide is directed." [ref=e805]:
+                - cell "response.routes.dispatches.contact_address" [ref=e806]
+                - cell "String" [ref=e807]
+                - cell "Address to where the guide is directed." [ref=e808]:
+                  - paragraph [ref=e809]: Address to where the guide is directed.
+              - row "response.routes.dispatches.contact_phone String Phone of the person to whom the guide is addressed." [ref=e810]:
+                - cell "response.routes.dispatches.contact_phone" [ref=e811]
+                - cell "String" [ref=e812]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e813]:
+                  - paragraph [ref=e814]: Phone of the person to whom the guide is addressed.
+              - row "response.routes.dispatches.contact_id String Identification of the person to whom the guide is addressed." [ref=e815]:
+                - cell "response.routes.dispatches.contact_id" [ref=e816]
+                - cell "String" [ref=e817]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e818]:
+                  - paragraph [ref=e819]: Identification of the person to whom the guide is addressed.
+              - row "response.routes.dispatches.contact_email String Email of the person to whom the guide is addressed." [ref=e820]:
+                - cell "response.routes.dispatches.contact_email" [ref=e821]
+                - cell "String" [ref=e822]
+                - cell "Email of the person to whom the guide is addressed." [ref=e823]:
+                  - paragraph [ref=e824]: Email of the person to whom the guide is addressed.
+              - row "response.routes.dispatches.latitude String Latitude where the dispatch was deliverred." [ref=e825]:
+                - cell "response.routes.dispatches.latitude" [ref=e826]
+                - cell "String" [ref=e827]
+                - cell "Latitude where the dispatch was deliverred." [ref=e828]:
+                  - paragraph [ref=e829]: Latitude where the dispatch was deliverred.
+              - row "response.routes.dispatches.longitude String Longitude where the dispatch was deliverred." [ref=e830]:
+                - cell "response.routes.dispatches.longitude" [ref=e831]
+                - cell "String" [ref=e832]
+                - cell "Longitude where the dispatch was deliverred." [ref=e833]:
+                  - paragraph [ref=e834]: Longitude where the dispatch was deliverred.
+              - row "response.routes.dispatches.status String Status of the dispatch (delivered, not delivered, partial delivery or on route)." [ref=e835]:
+                - cell "response.routes.dispatches.status" [ref=e836]
+                - cell "String" [ref=e837]
+                - cell "Status of the dispatch (delivered, not delivered, partial delivery or on route)." [ref=e838]:
+                  - paragraph [ref=e839]: Status of the dispatch (delivered, not delivered, partial delivery or on route).
+              - row "response.routes.dispatches.status_id Integer Status Id of the dispatch." [ref=e840]:
+                - cell "response.routes.dispatches.status_id" [ref=e841]
+                - cell "Integer" [ref=e842]
+                - cell "Status Id of the dispatch." [ref=e843]:
+                  - paragraph [ref=e844]: Status Id of the dispatch.
+              - row "response.routes.dispatches.substatus String Substatus of the dispatch (this is created in your account's settings." [ref=e845]:
+                - cell "response.routes.dispatches.substatus" [ref=e846]
+                - cell "String" [ref=e847]
+                - cell "Substatus of the dispatch (this is created in your account's settings." [ref=e848]:
+                  - paragraph [ref=e849]: Substatus of the dispatch (this is created in your account's settings.
+              - row "response.routes.dispatches.substatus_code String Substatus Code of the dispatch." [ref=e850]:
+                - cell "response.routes.dispatches.substatus_code" [ref=e851]
+                - cell "String" [ref=e852]
+                - cell "Substatus Code of the dispatch." [ref=e853]:
+                  - paragraph [ref=e854]: Substatus Code of the dispatch.
+              - row "response.routes.dispatches.is_trunk Boolean True if this is a trunk movement (not last mile)." [ref=e855]:
+                - cell "response.routes.dispatches.is_trunk" [ref=e856]
+                - cell "Boolean" [ref=e857]
+                - cell "True if this is a trunk movement (not last mile)." [ref=e858]:
+                  - paragraph [ref=e859]: True if this is a trunk movement (not last mile).
+              - row "response.routes.dispatches.is_pickup Boolean True if this is a pickup movement." [ref=e860]:
+                - cell "response.routes.dispatches.is_pickup" [ref=e861]
+                - cell "Boolean" [ref=e862]
+                - cell "True if this is a pickup movement." [ref=e863]:
+                  - paragraph [ref=e864]: True if this is a pickup movement.
+              - row "response.routes.dispatches.arrived_at String Time at which the dispatch was delivered." [ref=e865]:
+                - cell "response.routes.dispatches.arrived_at" [ref=e866]
+                - cell "String" [ref=e867]
+                - cell "Time at which the dispatch was delivered." [ref=e868]:
+                  - paragraph [ref=e869]: Time at which the dispatch was delivered.
+              - row "response.routes.dispatches.estimated_at String Time at which the dispatch is/was estimated." [ref=e870]:
+                - cell "response.routes.dispatches.estimated_at" [ref=e871]
+                - cell "String" [ref=e872]
+                - cell "Time at which the dispatch is/was estimated." [ref=e873]:
+                  - paragraph [ref=e874]: Time at which the dispatch is/was estimated.
+              - row "response.routes.dispatches.min_delivery_time String Minimal delivery time." [ref=e875]:
+                - cell "response.routes.dispatches.min_delivery_time" [ref=e876]
+                - cell "String" [ref=e877]
+                - cell "Minimal delivery time." [ref=e878]:
+                  - paragraph [ref=e879]: Minimal delivery time.
+              - row "response.routes.dispatches.max_delivery_time String Maximal delivery time." [ref=e880]:
+                - cell "response.routes.dispatches.max_delivery_time" [ref=e881]
+                - cell "String" [ref=e882]
+                - cell "Maximal delivery time." [ref=e883]:
+                  - paragraph [ref=e884]: Maximal delivery time.
+              - row "response.routes.dispatches.beecode String Beetrack code to dispatch." [ref=e885]:
+                - cell "response.routes.dispatches.beecode" [ref=e886]
+                - cell "String" [ref=e887]
+                - cell "Beetrack code to dispatch." [ref=e888]:
+                  - paragraph [ref=e889]: Beetrack code to dispatch.
+              - row "response.routes.dispatches.items JSON[] Array containing items associated to the guide." [ref=e890]:
+                - cell "response.routes.dispatches.items" [ref=e891]
+                - cell "JSON[]" [ref=e892]
+                - cell "Array containing items associated to the guide." [ref=e893]:
+                  - paragraph [ref=e894]: Array containing items associated to the guide.
+              - row "response.routes.dispatches.items.id Integer ID of this item." [ref=e895]:
+                - cell "response.routes.dispatches.items.id" [ref=e896]
+                - cell "Integer" [ref=e897]
+                - cell "ID of this item." [ref=e898]:
+                  - paragraph [ref=e899]: ID of this item.
+              - row "response.routes.dispatches.items.name String Name of this item." [ref=e900]:
+                - cell "response.routes.dispatches.items.name" [ref=e901]
+                - cell "String" [ref=e902]
+                - cell "Name of this item." [ref=e903]:
+                  - paragraph [ref=e904]: Name of this item.
+              - row "response.routes.dispatches.items.description String Description of this item." [ref=e905]:
+                - cell "response.routes.dispatches.items.description" [ref=e906]
+                - cell "String" [ref=e907]
+                - cell "Description of this item." [ref=e908]:
+                  - paragraph [ref=e909]: Description of this item.
+              - row "response.routes.dispatches.items.quantity Integer Quantity of this item." [ref=e910]:
+                - cell "response.routes.dispatches.items.quantity" [ref=e911]
+                - cell "Integer" [ref=e912]
+                - cell "Quantity of this item." [ref=e913]:
+                  - paragraph [ref=e914]: Quantity of this item.
+              - row "response.routes.dispatches.items.original_quantity Integer Original Quantity of this item." [ref=e915]:
+                - cell "response.routes.dispatches.items.original_quantity" [ref=e916]
+                - cell "Integer" [ref=e917]
+                - cell "Original Quantity of this item." [ref=e918]:
+                  - paragraph [ref=e919]: Original Quantity of this item.
+              - row "response.routes.dispatches.items.delivered_quantity Integer Delivered Quantity of this item." [ref=e920]:
+                - cell "response.routes.dispatches.items.delivered_quantity" [ref=e921]
+                - cell "Integer" [ref=e922]
+                - cell "Delivered Quantity of this item." [ref=e923]:
+                  - paragraph [ref=e924]: Delivered Quantity of this item.
+              - row "response.routes.dispatches.items.quantity_ref String Quantity ref of this item." [ref=e925]:
+                - cell "response.routes.dispatches.items.quantity_ref" [ref=e926]
+                - cell "String" [ref=e927]
+                - cell "Quantity ref of this item." [ref=e928]:
+                  - paragraph [ref=e929]: Quantity ref of this item.
+              - row "response.routes.dispatches.items.delivered_quantity_ref String Delivered Quantity ref of this item." [ref=e930]:
+                - cell "response.routes.dispatches.items.delivered_quantity_ref" [ref=e931]
+                - cell "String" [ref=e932]
+                - cell "Delivered Quantity ref of this item." [ref=e933]:
+                  - paragraph [ref=e934]: Delivered Quantity ref of this item.
+              - row "response.routes.dispatches.items.code String Item code." [ref=e935]:
+                - cell "response.routes.dispatches.items.code" [ref=e936]
+                - cell "String" [ref=e937]
+                - cell "Item code." [ref=e938]:
+                  - paragraph [ref=e939]: Item code.
+              - row "response.routes.dispatches.items.extras JSON[] Items extras." [ref=e940]:
+                - cell "response.routes.dispatches.items.extras" [ref=e941]
+                - cell "JSON[]" [ref=e942]
+                - cell "Items extras." [ref=e943]:
+                  - paragraph [ref=e944]: Items extras.
+              - row "response.routes.dispatches.tags JSON[] Array containing tags associated to the guide." [ref=e945]:
+                - cell "response.routes.dispatches.tags" [ref=e946]
+                - cell "JSON[]" [ref=e947]
+                - cell "Array containing tags associated to the guide." [ref=e948]:
+                  - paragraph [ref=e949]: Array containing tags associated to the guide.
+              - row "response.routes.dispatches.tags.name String Name of the tag associated to the guide." [ref=e950]:
+                - cell "response.routes.dispatches.tags.name" [ref=e951]
+                - cell "String" [ref=e952]
+                - cell "Name of the tag associated to the guide." [ref=e953]:
+                  - paragraph [ref=e954]: Name of the tag associated to the guide.
+              - row "response.routes.dispatches.tags.value String Value of the tag associated to the guide." [ref=e955]:
+                - cell "response.routes.dispatches.tags.value" [ref=e956]
+                - cell "String" [ref=e957]
+                - cell "Value of the tag associated to the guide." [ref=e958]:
+                  - paragraph [ref=e959]: Value of the tag associated to the guide.
+          - tablist [ref=e960]:
+            - listitem [ref=e961]:
+              - tab "200 OK:" [ref=e962]
+          - generic [ref=e965]:
+            - code [ref=e967]: "{ \"status\": \"ok\", \"response\": { \"routes\": [ { \"id\": 164027, \"dispatch_date\": \"30-03-2015\", \"truck\": { \"identifier\": \"UH5658\", \"vehicle_type\": 0, \"groups\": [ { \"name\": \"Operadores ABD\", \"value\": \"Transportes LCA Tienda\" } ] }, \"driver_identifier\": \"10006\", \"driver_name\": \"John Doe\", \"driver_app_version\": \"1.0.3\", \"start_time\": \"2015-03-30T08:44:43.000-03:0\", \"end_time\": \"2015-03-30T10:57:17.000-03:0\", \"started_at\": \"2015-03-30T10:57:17.000-03:0\", \"dispatches\": [ { \"identifier\": \"6484967\", \"contact_name\": \"Patrick Hamford\", \"contact_address\": \"6616 Washington Ave., Ocean Springs, MS\", \"contact_phone\": \"202-555-0111\", \"contact_id\": \"15289364\", \"contact_email\": \"patrick.hamford@hamford.com\", \"latitude\": \"30.438086\", \"longitude\": \"-88.832390\", \"status\": \"delivered\", \"status_id\": 2, \"substatus\": \"No one at home\", \"substatus_code\": \"234\", \"is_trunk\": true, \"is_pickup\": true, \"arrived_at\": \"2015-03-30T09:56:52.000-03:00\", \"estimated_at\": \"2015-03-30T09:56:52.000-03:00\", \"min_delivery_time\": \"2016-07-22 23:59:59-0400\", \"max_delivery_time\": \"2016-07-22 23:59:59-0400\", \"beecode\": \"6a77bfe9201b58\", \"tags\": [ { \"name\": \"Dispatch Type\", \"value\": \"Priority\" } ], \"items\": [ { \"id\": 18220660, \"name\": \"LAV_AUTOMA MIDEA MLS-100BS1 702\", \"description\": \"LAV_AUTOMA MIDEA MLS-100BS1 702\", \"quantity\": 1, \"original_quantity\": 1, \"delivered_quantity\": 1, \"code\": null, \"extras\": [] } ] } ] } ] } }"
+            - button "Copiar" [ref=e970] [cursor=pointer]
+        - article [ref=e972]:
+          - heading "Route | Show Route" [level=1] [ref=e974]
+          - button "1.0.0" [ref=e977] [cursor=pointer]:
+            - strong [ref=e978]: 1.0.0
+          - paragraph
+          - paragraph [ref=e981]: Used to show information of a route specified by its id.
+          - paragraph
+          - generic [ref=e982]: get
+          - generic [ref=e983]:
+            - code [ref=e985]:
+              - generic [ref=e986]: https://activationcode.dispatchtrack.com/api/external/v1/routes/:route_id
+            - button "Copiar" [ref=e989] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e990]
+          - table [ref=e991]:
+            - rowgroup [ref=e992]:
+              - row "Campo Tipo Descripción" [ref=e993]:
+                - columnheader "Campo" [ref=e994]
+                - columnheader "Tipo" [ref=e995]
+                - columnheader "Descripción" [ref=e996]
+            - rowgroup [ref=e997]:
+              - row "route_id Url_Parameter Id of the route that you want get the info from" [ref=e998]:
+                - cell "route_id" [ref=e999]
+                - cell "Url_Parameter" [ref=e1000]
+                - cell "Id of the route that you want get the info from" [ref=e1001]:
+                  - paragraph [ref=e1002]: Id of the route that you want get the info from
+              - 'row "evaluations opcional Boolean If true, include evaluations in the JSON output Valor por defecto: false" [ref=e1003]':
+                - cell "evaluations opcional" [ref=e1004]:
+                  - text: evaluations
+                  - generic [ref=e1005]: opcional
+                - cell "Boolean" [ref=e1006]
+                - 'cell "If true, include evaluations in the JSON output Valor por defecto: false" [ref=e1007]':
+                  - paragraph [ref=e1008]: If true, include evaluations in the JSON output
+                  - paragraph [ref=e1009]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1010]: "false"
+          - heading "Success 200" [level=2] [ref=e1011]
+          - table [ref=e1012]:
+            - rowgroup [ref=e1013]:
+              - row "Campo Tipo Descripción" [ref=e1014]:
+                - columnheader "Campo" [ref=e1015]
+                - columnheader "Tipo" [ref=e1016]
+                - columnheader "Descripción" [ref=e1017]
+            - rowgroup [ref=e1018]:
+              - row "status String Status of the response (ok/error)." [ref=e1019]:
+                - cell "status" [ref=e1020]
+                - cell "String" [ref=e1021]
+                - cell "Status of the response (ok/error)." [ref=e1022]:
+                  - paragraph [ref=e1023]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e1024]:
+                - cell "response" [ref=e1025]
+                - cell "JSON" [ref=e1026]
+                - cell "JSON with API response." [ref=e1027]:
+                  - paragraph [ref=e1028]: JSON with API response.
+              - row "response.route JSON JSON with route's data." [ref=e1029]:
+                - cell "response.route" [ref=e1030]
+                - cell "JSON" [ref=e1031]
+                - cell "JSON with route's data." [ref=e1032]:
+                  - paragraph [ref=e1033]: JSON with route's data.
+              - row "response.route.id Integer Id of the route." [ref=e1034]:
+                - cell "response.route.id" [ref=e1035]
+                - cell "Integer" [ref=e1036]
+                - cell "Id of the route." [ref=e1037]:
+                  - paragraph [ref=e1038]: Id of the route.
+              - row "response.route.dispatch_date String Date of dispatch of the route." [ref=e1039]:
+                - cell "response.route.dispatch_date" [ref=e1040]
+                - cell "String" [ref=e1041]
+                - cell "Date of dispatch of the route." [ref=e1042]:
+                  - paragraph [ref=e1043]: Date of dispatch of the route.
+              - row "response.route.truck_identifier String Identifier of the dispatch vehicle associated to that route." [ref=e1044]:
+                - cell "response.route.truck_identifier" [ref=e1045]
+                - cell "String" [ref=e1046]
+                - cell "Identifier of the dispatch vehicle associated to that route." [ref=e1047]:
+                  - paragraph [ref=e1048]: Identifier of the dispatch vehicle associated to that route.
+              - row "response.route.truck JSON Additional data for this route." [ref=e1049]:
+                - cell "response.route.truck" [ref=e1050]
+                - cell "JSON" [ref=e1051]
+                - cell "Additional data for this route." [ref=e1052]:
+                  - paragraph [ref=e1053]: Additional data for this route.
+              - row "response.route.truck.identifier String This truck's identifier." [ref=e1054]:
+                - cell "response.route.truck.identifier" [ref=e1055]
+                - cell "String" [ref=e1056]
+                - cell "This truck's identifier." [ref=e1057]:
+                  - paragraph [ref=e1058]: This truck's identifier.
+              - 'row "response.route.truck.vehicle_type Integer This truck''s vehicle_type. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11" [ref=e1059]':
+                - cell "response.route.truck.vehicle_type" [ref=e1060]
+                - cell "Integer" [ref=e1061]
+                - 'cell "This truck''s vehicle_type. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11" [ref=e1062]':
+                  - paragraph [ref=e1063]: "This truck's vehicle_type. Possible values: truck: 0, pickup: 1, car: 2, motorcycle: 3,bicycle: 4, other: 5, electric: 6, electric_motorcycle: 7, electric_bicycle: 8, electric_cart: 9, electric_car: 10, motorbike: 11"
+              - row "response.route.truck.groups JSON[] Groups for this trucks." [ref=e1064]:
+                - cell "response.route.truck.groups" [ref=e1065]
+                - cell "JSON[]" [ref=e1066]
+                - cell "Groups for this trucks." [ref=e1067]:
+                  - paragraph [ref=e1068]: Groups for this trucks.
+              - row "response.route.truck.groups.name String Category's name." [ref=e1069]:
+                - cell "response.route.truck.groups.name" [ref=e1070]
+                - cell "String" [ref=e1071]
+                - cell "Category's name." [ref=e1072]:
+                  - paragraph [ref=e1073]: Category's name.
+              - row "response.route.truck.groups.value String Group name." [ref=e1074]:
+                - cell "response.route.truck.groups.value" [ref=e1075]
+                - cell "String" [ref=e1076]
+                - cell "Group name." [ref=e1077]:
+                  - paragraph [ref=e1078]: Group name.
+              - row "response.route.driver_identifier String Identifier of the driver or deliveryman associated to that vehicle and route." [ref=e1079]:
+                - cell "response.route.driver_identifier" [ref=e1080]
+                - cell "String" [ref=e1081]
+                - cell "Identifier of the driver or deliveryman associated to that vehicle and route." [ref=e1082]:
+                  - paragraph [ref=e1083]: Identifier of the driver or deliveryman associated to that vehicle and route.
+              - row "response.route.driver_name String Name of the driver or deliveryman associated to that vehicle and route." [ref=e1084]:
+                - cell "response.route.driver_name" [ref=e1085]
+                - cell "String" [ref=e1086]
+                - cell "Name of the driver or deliveryman associated to that vehicle and route." [ref=e1087]:
+                  - paragraph [ref=e1088]: Name of the driver or deliveryman associated to that vehicle and route.
+              - row "response.route.driver_app_version String App version of the person doing the deliveries." [ref=e1089]:
+                - cell "response.route.driver_app_version" [ref=e1090]
+                - cell "String" [ref=e1091]
+                - cell "App version of the person doing the deliveries." [ref=e1092]:
+                  - paragraph [ref=e1093]: App version of the person doing the deliveries.
+              - row "response.route.start_time String Time at which the route is programmed to start." [ref=e1094]:
+                - cell "response.route.start_time" [ref=e1095]
+                - cell "String" [ref=e1096]
+                - cell "Time at which the route is programmed to start." [ref=e1097]:
+                  - paragraph [ref=e1098]: Time at which the route is programmed to start.
+              - row "response.route.end_time String Time at which the route is programmed to finished." [ref=e1099]:
+                - cell "response.route.end_time" [ref=e1100]
+                - cell "String" [ref=e1101]
+                - cell "Time at which the route is programmed to finished." [ref=e1102]:
+                  - paragraph [ref=e1103]: Time at which the route is programmed to finished.
+              - row "response.route.started_at DateTime Route start timestamp." [ref=e1104]:
+                - cell "response.route.started_at" [ref=e1105]
+                - cell "DateTime" [ref=e1106]
+                - cell "Route start timestamp." [ref=e1107]:
+                  - paragraph [ref=e1108]: Route start timestamp.
+              - row "response.route.ended_at DateTime Route end timestamp." [ref=e1109]:
+                - cell "response.route.ended_at" [ref=e1110]
+                - cell "DateTime" [ref=e1111]
+                - cell "Route end timestamp." [ref=e1112]:
+                  - paragraph [ref=e1113]: Route end timestamp.
+              - row "response.route.dispatches JSON[] Array of dispatches contained in that route." [ref=e1114]:
+                - cell "response.route.dispatches" [ref=e1115]
+                - cell "JSON[]" [ref=e1116]
+                - cell "Array of dispatches contained in that route." [ref=e1117]:
+                  - paragraph [ref=e1118]: Array of dispatches contained in that route.
+              - row "response.route.dispatches.identifier Integer Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1119]:
+                - cell "response.route.dispatches.identifier" [ref=e1120]
+                - cell "Integer" [ref=e1121]
+                - cell "Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1122]:
+                  - paragraph [ref=e1123]: Dispatch identifier, guide or invoice number of the product(s) that are being delivered.
+              - row "response.route.dispatches.position Integer position of the guide." [ref=e1124]:
+                - cell "response.route.dispatches.position" [ref=e1125]
+                - cell "Integer" [ref=e1126]
+                - cell "position of the guide." [ref=e1127]:
+                  - paragraph [ref=e1128]: position of the guide.
+              - row "response.route.dispatches.contact_name String Name of the person to whom the guide is addressed." [ref=e1129]:
+                - cell "response.route.dispatches.contact_name" [ref=e1130]
+                - cell "String" [ref=e1131]
+                - cell "Name of the person to whom the guide is addressed." [ref=e1132]:
+                  - paragraph [ref=e1133]: Name of the person to whom the guide is addressed.
+              - row "response.route.dispatches.contact_address String Address to where the guide is directed." [ref=e1134]:
+                - cell "response.route.dispatches.contact_address" [ref=e1135]
+                - cell "String" [ref=e1136]
+                - cell "Address to where the guide is directed." [ref=e1137]:
+                  - paragraph [ref=e1138]: Address to where the guide is directed.
+              - row "response.route.dispatches.contact_phone String Phone of the person to whom the guide is addressed." [ref=e1139]:
+                - cell "response.route.dispatches.contact_phone" [ref=e1140]
+                - cell "String" [ref=e1141]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e1142]:
+                  - paragraph [ref=e1143]: Phone of the person to whom the guide is addressed.
+              - row "response.route.dispatches.contact_id String Identification of the person to whom the guide is addressed." [ref=e1144]:
+                - cell "response.route.dispatches.contact_id" [ref=e1145]
+                - cell "String" [ref=e1146]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e1147]:
+                  - paragraph [ref=e1148]: Identification of the person to whom the guide is addressed.
+              - row "response.route.dispatches.contact_email String Email of the person to whom the guide is addressed." [ref=e1149]:
+                - cell "response.route.dispatches.contact_email" [ref=e1150]
+                - cell "String" [ref=e1151]
+                - cell "Email of the person to whom the guide is addressed." [ref=e1152]:
+                  - paragraph [ref=e1153]: Email of the person to whom the guide is addressed.
+              - row "response.route.dispatches.latitude String Latitude where the dispatch was deliverred." [ref=e1154]:
+                - cell "response.route.dispatches.latitude" [ref=e1155]
+                - cell "String" [ref=e1156]
+                - cell "Latitude where the dispatch was deliverred." [ref=e1157]:
+                  - paragraph [ref=e1158]: Latitude where the dispatch was deliverred.
+              - row "response.route.dispatches.longitude String Longitude where the dispatch was deliverred." [ref=e1159]:
+                - cell "response.route.dispatches.longitude" [ref=e1160]
+                - cell "String" [ref=e1161]
+                - cell "Longitude where the dispatch was deliverred." [ref=e1162]:
+                  - paragraph [ref=e1163]: Longitude where the dispatch was deliverred.
+              - row "response.route.dispatches.route_id Integer Id of the route." [ref=e1164]:
+                - cell "response.route.dispatches.route_id" [ref=e1165]
+                - cell "Integer" [ref=e1166]
+                - cell "Id of the route." [ref=e1167]:
+                  - paragraph [ref=e1168]: Id of the route.
+              - row "response.route.dispatches.status String Status of the dispatch (delivered, not delivered, partial delivery or on route)." [ref=e1169]:
+                - cell "response.route.dispatches.status" [ref=e1170]
+                - cell "String" [ref=e1171]
+                - cell "Status of the dispatch (delivered, not delivered, partial delivery or on route)." [ref=e1172]:
+                  - paragraph [ref=e1173]: Status of the dispatch (delivered, not delivered, partial delivery or on route).
+              - row "response.route.dispatches.status_id Integer Id of the Status." [ref=e1174]:
+                - cell "response.route.dispatches.status_id" [ref=e1175]
+                - cell "Integer" [ref=e1176]
+                - cell "Id of the Status." [ref=e1177]:
+                  - paragraph [ref=e1178]: Id of the Status.
+              - row "response.route.dispatches.substatus String Substatus of the dispatch (this is created in your account's settings." [ref=e1179]:
+                - cell "response.route.dispatches.substatus" [ref=e1180]
+                - cell "String" [ref=e1181]
+                - cell "Substatus of the dispatch (this is created in your account's settings." [ref=e1182]:
+                  - paragraph [ref=e1183]: Substatus of the dispatch (this is created in your account's settings.
+              - row "response.route.dispatches.substatus_code String Code of Substatus." [ref=e1184]:
+                - cell "response.route.dispatches.substatus_code" [ref=e1185]
+                - cell "String" [ref=e1186]
+                - cell "Code of Substatus." [ref=e1187]:
+                  - paragraph [ref=e1188]: Code of Substatus.
+              - row "response.route.dispatches.tags JSON[] Array containing tags associated to the guide." [ref=e1189]:
+                - cell "response.route.dispatches.tags" [ref=e1190]
+                - cell "JSON[]" [ref=e1191]
+                - cell "Array containing tags associated to the guide." [ref=e1192]:
+                  - paragraph [ref=e1193]: Array containing tags associated to the guide.
+              - row "response.route.dispatches.tags.name String Name of the tag associated to the guide." [ref=e1194]:
+                - cell "response.route.dispatches.tags.name" [ref=e1195]
+                - cell "String" [ref=e1196]
+                - cell "Name of the tag associated to the guide." [ref=e1197]:
+                  - paragraph [ref=e1198]: Name of the tag associated to the guide.
+              - row "response.route.dispatches.tags.value String Value of the tag associated to the guide." [ref=e1199]:
+                - cell "response.route.dispatches.tags.value" [ref=e1200]
+                - cell "String" [ref=e1201]
+                - cell "Value of the tag associated to the guide." [ref=e1202]:
+                  - paragraph [ref=e1203]: Value of the tag associated to the guide.
+              - row "response.route.dispatches.is_trunk Boolean True if this is a trunk movement (not last mile)." [ref=e1204]:
+                - cell "response.route.dispatches.is_trunk" [ref=e1205]
+                - cell "Boolean" [ref=e1206]
+                - cell "True if this is a trunk movement (not last mile)." [ref=e1207]:
+                  - paragraph [ref=e1208]: True if this is a trunk movement (not last mile).
+              - row "response.route.dispatches.is_pickup Boolean True if this is a pickup movement." [ref=e1209]:
+                - cell "response.route.dispatches.is_pickup" [ref=e1210]
+                - cell "Boolean" [ref=e1211]
+                - cell "True if this is a pickup movement." [ref=e1212]:
+                  - paragraph [ref=e1213]: True if this is a pickup movement.
+              - row "response.route.delivered_in_client Boolean True if the dispatch was delivered inside a geofence." [ref=e1214]:
+                - cell "response.route.delivered_in_client" [ref=e1215]
+                - cell "Boolean" [ref=e1216]
+                - cell "True if the dispatch was delivered inside a geofence." [ref=e1217]:
+                  - paragraph [ref=e1218]: True if the dispatch was delivered inside a geofence.
+              - row "response.route.dispatches.arrived_at String Time at which the dispatch was delivered." [ref=e1219]:
+                - cell "response.route.dispatches.arrived_at" [ref=e1220]
+                - cell "String" [ref=e1221]
+                - cell "Time at which the dispatch was delivered." [ref=e1222]:
+                  - paragraph [ref=e1223]: Time at which the dispatch was delivered.
+              - row "response.route.dispatches.estimated_at String Time at which the dispatch is (or was) estimated for delivery." [ref=e1224]:
+                - cell "response.route.dispatches.estimated_at" [ref=e1225]
+                - cell "String" [ref=e1226]
+                - cell "Time at which the dispatch is (or was) estimated for delivery." [ref=e1227]:
+                  - paragraph [ref=e1228]: Time at which the dispatch is (or was) estimated for delivery.
+              - row "response.route.dispatches.min_delivery_time String Minimal delivery time." [ref=e1229]:
+                - cell "response.route.dispatches.min_delivery_time" [ref=e1230]
+                - cell "String" [ref=e1231]
+                - cell "Minimal delivery time." [ref=e1232]:
+                  - paragraph [ref=e1233]: Minimal delivery time.
+              - row "response.route.dispatches.max_delivery_time String Maximal delivery time." [ref=e1234]:
+                - cell "response.route.dispatches.max_delivery_time" [ref=e1235]
+                - cell "String" [ref=e1236]
+                - cell "Maximal delivery time." [ref=e1237]:
+                  - paragraph [ref=e1238]: Maximal delivery time.
+              - row "response.route.dispatches.beecode String Beetrack code to dispatch." [ref=e1239]:
+                - cell "response.route.dispatches.beecode" [ref=e1240]
+                - cell "String" [ref=e1241]
+                - cell "Beetrack code to dispatch." [ref=e1242]:
+                  - paragraph [ref=e1243]: Beetrack code to dispatch.
+              - row "response.route.dispatches.locked Boolean True if the Guide is locked." [ref=e1244]:
+                - cell "response.route.dispatches.locked" [ref=e1245]
+                - cell "Boolean" [ref=e1246]
+                - cell "True if the Guide is locked." [ref=e1247]:
+                  - paragraph [ref=e1248]: True if the Guide is locked.
+              - 'row "response.route.dispatches.end_type Integer Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4" [ref=e1249]':
+                - cell "response.route.dispatches.end_type" [ref=e1250]
+                - cell "Integer" [ref=e1251]
+                - 'cell "Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4" [ref=e1252]':
+                  - paragraph [ref=e1253]: "Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4"
+              - row "response.route.number_of_retries Integer Number of times an attempt was made to manage the guide" [ref=e1254]:
+                - cell "response.route.number_of_retries" [ref=e1255]
+                - cell "Integer" [ref=e1256]
+                - cell "Number of times an attempt was made to manage the guide" [ref=e1257]:
+                  - paragraph [ref=e1258]: Number of times an attempt was made to manage the guide
+              - row "response.route.dispatches.items JSON[] Array containing items associated to the guide." [ref=e1259]:
+                - cell "response.route.dispatches.items" [ref=e1260]
+                - cell "JSON[]" [ref=e1261]
+                - cell "Array containing items associated to the guide." [ref=e1262]:
+                  - paragraph [ref=e1263]: Array containing items associated to the guide.
+              - row "response.route.dispatches.items.id Integer ID of this item." [ref=e1264]:
+                - cell "response.route.dispatches.items.id" [ref=e1265]
+                - cell "Integer" [ref=e1266]
+                - cell "ID of this item." [ref=e1267]:
+                  - paragraph [ref=e1268]: ID of this item.
+              - row "response.route.dispatches.items.name String Name of this item." [ref=e1269]:
+                - cell "response.route.dispatches.items.name" [ref=e1270]
+                - cell "String" [ref=e1271]
+                - cell "Name of this item." [ref=e1272]:
+                  - paragraph [ref=e1273]: Name of this item.
+              - row "response.route.dispatches.items.description String Description of this item." [ref=e1274]:
+                - cell "response.route.dispatches.items.description" [ref=e1275]
+                - cell "String" [ref=e1276]
+                - cell "Description of this item." [ref=e1277]:
+                  - paragraph [ref=e1278]: Description of this item.
+              - row "response.route.dispatches.items.quantity String Quantity of the item being delivered." [ref=e1279]:
+                - cell "response.route.dispatches.items.quantity" [ref=e1280]
+                - cell "String" [ref=e1281]
+                - cell "Quantity of the item being delivered." [ref=e1282]:
+                  - paragraph [ref=e1283]: Quantity of the item being delivered.
+              - row "response.route.dispatches.items.original_quantity Integer Original Quantity of this item." [ref=e1284]:
+                - cell "response.route.dispatches.items.original_quantity" [ref=e1285]
+                - cell "Integer" [ref=e1286]
+                - cell "Original Quantity of this item." [ref=e1287]:
+                  - paragraph [ref=e1288]: Original Quantity of this item.
+              - row "response.route.dispatches.items.delivered_quantity Integer Delivered Quantity of this item." [ref=e1289]:
+                - cell "response.route.dispatches.items.delivered_quantity" [ref=e1290]
+                - cell "Integer" [ref=e1291]
+                - cell "Delivered Quantity of this item." [ref=e1292]:
+                  - paragraph [ref=e1293]: Delivered Quantity of this item.
+              - row "response.route.dispatches.items.code String Item code." [ref=e1294]:
+                - cell "response.route.dispatches.items.code" [ref=e1295]
+                - cell "String" [ref=e1296]
+                - cell "Item code." [ref=e1297]:
+                  - paragraph [ref=e1298]: Item code.
+              - row "response.route.dispatches.items.extras JSON[] Items extras." [ref=e1299]:
+                - cell "response.route.dispatches.items.extras" [ref=e1300]
+                - cell "JSON[]" [ref=e1301]
+                - cell "Items extras." [ref=e1302]:
+                  - paragraph [ref=e1303]: Items extras.
+              - row "response.route.dispatches.destination JSON Destination of this item." [ref=e1304]:
+                - cell "response.route.dispatches.destination" [ref=e1305]
+                - cell "JSON" [ref=e1306]
+                - cell "Destination of this item." [ref=e1307]:
+                  - paragraph [ref=e1308]: Destination of this item.
+              - row "response.route.dispatches.destination.id Integer ID of Destination." [ref=e1309]:
+                - cell "response.route.dispatches.destination.id" [ref=e1310]
+                - cell "Integer" [ref=e1311]
+                - cell "ID of Destination." [ref=e1312]:
+                  - paragraph [ref=e1313]: ID of Destination.
+              - row "response.route.dispatches.destination.name String Name of Destination." [ref=e1314]:
+                - cell "response.route.dispatches.destination.name" [ref=e1315]
+                - cell "String" [ref=e1316]
+                - cell "Name of Destination." [ref=e1317]:
+                  - paragraph [ref=e1318]: Name of Destination.
+              - row "response.dispatches.groups JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e1319]:
+                - cell "response.dispatches.groups" [ref=e1320]
+                - cell "JSON[]" [ref=e1321]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e1322]:
+                  - paragraph [ref=e1323]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "response.dispatches.groups.group_category String Name of the category of the group to which the guide is associated." [ref=e1324]:
+                - cell "response.dispatches.groups.group_category" [ref=e1325]
+                - cell "String" [ref=e1326]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e1327]:
+                  - paragraph [ref=e1328]: Name of the category of the group to which the guide is associated.
+              - row "response.dispatches.groups.group_category_id Integer ID of the category of the group to which the guide is associated." [ref=e1329]:
+                - cell "response.dispatches.groups.group_category_id" [ref=e1330]
+                - cell "Integer" [ref=e1331]
+                - cell "ID of the category of the group to which the guide is associated." [ref=e1332]:
+                  - paragraph [ref=e1333]: ID of the category of the group to which the guide is associated.
+              - row "response.dispatches.groups.name String Name of the group to which the guide is associated." [ref=e1334]:
+                - cell "response.dispatches.groups.name" [ref=e1335]
+                - cell "String" [ref=e1336]
+                - cell "Name of the group to which the guide is associated." [ref=e1337]:
+                  - paragraph [ref=e1338]: Name of the group to which the guide is associated.
+              - row "response.dispatches.associated_at DateTime Timestamp when the group was associated with this guide." [ref=e1339]:
+                - cell "response.dispatches.associated_at" [ref=e1340]
+                - cell "DateTime" [ref=e1341]
+                - cell "Timestamp when the group was associated with this guide." [ref=e1342]:
+                  - paragraph [ref=e1343]: Timestamp when the group was associated with this guide.
+          - tablist [ref=e1344]:
+            - listitem [ref=e1345]:
+              - tab "200 OK:" [ref=e1346]
+          - generic [ref=e1349]:
+            - code [ref=e1351]: "{ \"status\": \"ok\", \"response\": \"route\":{ \"id\": 164027, \"dispatch_date\": \"30-03-2015\", \"truck_identifier\": \"BEE004\", \"truck\": { \"identifier\": \"BEE004\", \"vehicle_type\": 0, \"groups\": [ { \"name\": \"Categoría\", \"value\": \"Transportes S.A\" } ] }, \"driver_identifier\": \"10006\", \"driver_name\": \"John Doe\", \"driver_app_version\": \"1.0.3\", \"dispatches\": [ { \"id\": 1, \"dispatch_id\": 1, \"identifier\": \"264849672\", \"position\": 1, \"contact_name\": \"Patrick Hamford\", \"contact_address\": \"6616 Washington Ave., Ocean Springs, MS\", \"contact_phone\": \"202-555-0111\", \"contact_id\": \"15289364\", \"contact_email\": \"patrick.hamford@hamford.com\", \"latitude\": \"30.438086\", \"longitude\": \"-88.832390\", \"route_id\": 1102706, \"status\": \"on_route\", \"status_id\": 1, \"substatus\": null, \"substatus_code\": null, \"tags\": [ { \"name\": \"Dispatch Type\", \"value\": \"Priority\" } ], \"is_trunk\": true, \"is_pickup\": false, \"delivered_in_client\": true, \"arrived_at\": \"2015-03-30T09:56:52.000-03:00\", \"estimated_at\": \"2015-03-30T09:55:52.000-03:00\", \"min_delivery_time\": \"2014-11-12 15:30:00-0300\", \"max_delivery_time\": \"2014-11-12 16:30:00-0300\", \"beecode\": \"04ee6dcb45cbb59dc8308f8d\",\" \"locked\": false, \"end_type\": 0, \"number_of_retries\": 0, \"items\": [ { \"id\": 18675467, \"name\": \"Computador\", \"description\": \"25 inch TV set\", \"quantity\": 1, \"original_quantity\": 1, \"delivered_quantity\": 0, \"code\": \"CDF\", \"extras\": [] } ], \"destination\": { \"id\": 336, \"name\": \"CT1\" }, \"groups\": [{ \"group_category\": \"test\", \"group_category_id\": 1, \"name\": \"group\", \"associated_at\": \"2014-11-12 16:30:00-0300\" }], \"COD\": [ { \"type_movement\" : \"income_order\" \"transactions\": [{ \"value\": \"Cash\", \"ammount\": 2000, \"observation\": \"Nothing to said\"}, {\"value\": \"Card\", \"amount\": 3000, \"observation\": \"Nothing to said 2\"}], \"suggested_amount\": 5000 } ] } ] \"start_time\": \"08:44:43\", \"end_time\": \"10:57:17\", \"started_at\": \"2015-03-30T08:44:43.000-03:00\", \"ended_at\": \"2015-03-30T10:57:17.000-03:00\", \"COD\": [ { \"type_movement\" : \"income_route\" \"transactions\": [{ \"value\": \"Cash\", \"ammount\": 2000, \"observation\": \"Nothing to said\"}], \"address\": \"location 1\" }, { \"type_movement\" : \"outcome_on_route\" \"transactions\": [[{ \"value\": \"Cash\", \"ammount\": 2000, \"observation\": \"Nothing to said\"}, {\"value\": \"Card\", \"amount\": 3000, \"observation\": \"Nothing to said 2\"}], \"address\": \"location 2\" }, { \"type_movement\" : \"outcome_out_route\" \"transactions\": [{ \"value\": \"Cash\", \"ammount\": 2000, \"observation\": \"Nothing to said\"}], \"address\": \"location 3\" } ] } }"
+            - button "Copiar" [ref=e1354] [cursor=pointer]
+        - article [ref=e1356]:
+          - heading "Route | Update Route" [level=1] [ref=e1358]
+          - button "1.0.0" [ref=e1361] [cursor=pointer]:
+            - strong [ref=e1362]: 1.0.0
+          - paragraph
+          - paragraph [ref=e1365]: Used to update a route by adding/deleting dispatches in it.
+          - paragraph
+          - generic [ref=e1366]: put
+          - generic [ref=e1367]:
+            - code [ref=e1369]:
+              - generic [ref=e1370]: https://activationcode.dispatchtrack.com/api/external/v1/routes/:route_id
+            - button "Copiar" [ref=e1373] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e1374]
+          - table [ref=e1375]:
+            - rowgroup [ref=e1376]:
+              - row "Campo Tipo Descripción" [ref=e1377]:
+                - columnheader "Campo" [ref=e1378]
+                - columnheader "Tipo" [ref=e1379]
+                - columnheader "Descripción" [ref=e1380]
+            - rowgroup [ref=e1381]:
+              - row "id Url_Parameter Id of the route that you want to modify (add dispatches)." [ref=e1382]:
+                - cell "id" [ref=e1383]
+                - cell "Url_Parameter" [ref=e1384]
+                - cell "Id of the route that you want to modify (add dispatches)." [ref=e1385]:
+                  - paragraph [ref=e1386]: Id of the route that you want to modify (add dispatches).
+              - row "truck_id opcional String The id of each vehicle (can be the license plate)." [ref=e1387]:
+                - cell "truck_id opcional" [ref=e1388]:
+                  - text: truck_id
+                  - generic [ref=e1389]: opcional
+                - cell "String" [ref=e1390]
+                - cell "The id of each vehicle (can be the license plate)." [ref=e1391]:
+                  - paragraph [ref=e1392]: The id of each vehicle (can be the license plate).
+              - row "truck_driver_id opcional String The id of each truck_driver." [ref=e1393]:
+                - cell "truck_driver_id opcional" [ref=e1394]:
+                  - text: truck_driver_id
+                  - generic [ref=e1395]: opcional
+                - cell "String" [ref=e1396]
+                - cell "The id of each truck_driver." [ref=e1397]:
+                  - paragraph [ref=e1398]: The id of each truck_driver.
+              - row "started_at opcional Datetime Time at which the route started." [ref=e1399]:
+                - cell "started_at opcional" [ref=e1400]:
+                  - text: started_at
+                  - generic [ref=e1401]: opcional
+                - cell "Datetime" [ref=e1402]
+                - cell "Time at which the route started." [ref=e1403]:
+                  - paragraph [ref=e1404]: Time at which the route started.
+              - row "started opcional Boolean Flag to indicate route started." [ref=e1405]:
+                - cell "started opcional" [ref=e1406]:
+                  - text: started
+                  - generic [ref=e1407]: opcional
+                - cell "Boolean" [ref=e1408]
+                - cell "Flag to indicate route started." [ref=e1409]:
+                  - paragraph [ref=e1410]: Flag to indicate route started.
+              - row "ended_at opcional Datetime Time at which the route ended." [ref=e1411]:
+                - cell "ended_at opcional" [ref=e1412]:
+                  - text: ended_at
+                  - generic [ref=e1413]: opcional
+                - cell "Datetime" [ref=e1414]
+                - cell "Time at which the route ended." [ref=e1415]:
+                  - paragraph [ref=e1416]: Time at which the route ended.
+              - row "ended opcional Boolean Flag to indicate route ended." [ref=e1417]:
+                - cell "ended opcional" [ref=e1418]:
+                  - text: ended
+                  - generic [ref=e1419]: opcional
+                - cell "Boolean" [ref=e1420]
+                - cell "Flag to indicate route ended." [ref=e1421]:
+                  - paragraph [ref=e1422]: Flag to indicate route ended.
+              - row "dispatches JSON[] Array with dispatch guides associated to the route that is being created." [ref=e1423]:
+                - cell "dispatches" [ref=e1424]
+                - cell "JSON[]" [ref=e1425]
+                - cell "Array with dispatch guides associated to the route that is being created." [ref=e1426]:
+                  - paragraph [ref=e1427]: Array with dispatch guides associated to the route that is being created.
+              - row "dispatches.identifier Number Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1428]:
+                - cell "dispatches.identifier" [ref=e1429]
+                - cell "Number" [ref=e1430]
+                - cell "Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1431]:
+                  - paragraph [ref=e1432]: Dispatch identifier, guide or invoice number of the product(s) that are being delivered.
+              - row "dispatches.contact_name opcional String Name of the person to whom the guide is addressed." [ref=e1433]:
+                - cell "dispatches.contact_name opcional" [ref=e1434]:
+                  - text: dispatches.contact_name
+                  - generic [ref=e1435]: opcional
+                - cell "String" [ref=e1436]
+                - cell "Name of the person to whom the guide is addressed." [ref=e1437]:
+                  - paragraph [ref=e1438]: Name of the person to whom the guide is addressed.
+              - row "dispatches.contact_address opcional String Address to where the guide is directed." [ref=e1439]:
+                - cell "dispatches.contact_address opcional" [ref=e1440]:
+                  - text: dispatches.contact_address
+                  - generic [ref=e1441]: opcional
+                - cell "String" [ref=e1442]
+                - cell "Address to where the guide is directed." [ref=e1443]:
+                  - paragraph [ref=e1444]: Address to where the guide is directed.
+              - row "dispatches.contact_phone opcional String Phone of the person to whom the guide is addressed." [ref=e1445]:
+                - cell "dispatches.contact_phone opcional" [ref=e1446]:
+                  - text: dispatches.contact_phone
+                  - generic [ref=e1447]: opcional
+                - cell "String" [ref=e1448]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e1449]:
+                  - paragraph [ref=e1450]: Phone of the person to whom the guide is addressed.
+              - row "dispatches.contact_id opcional String Identification of the person to whom the guide is addressed." [ref=e1451]:
+                - cell "dispatches.contact_id opcional" [ref=e1452]:
+                  - text: dispatches.contact_id
+                  - generic [ref=e1453]: opcional
+                - cell "String" [ref=e1454]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e1455]:
+                  - paragraph [ref=e1456]: Identification of the person to whom the guide is addressed.
+              - row "dispatches.contact_email opcional String Email of the person to whom the guide is addressed." [ref=e1457]:
+                - cell "dispatches.contact_email opcional" [ref=e1458]:
+                  - text: dispatches.contact_email
+                  - generic [ref=e1459]: opcional
+                - cell "String" [ref=e1460]
+                - cell "Email of the person to whom the guide is addressed." [ref=e1461]:
+                  - paragraph [ref=e1462]: Email of the person to whom the guide is addressed.
+              - row "dispatches.latitude opcional String Latitude where the dispatch is directed." [ref=e1463]:
+                - cell "dispatches.latitude opcional" [ref=e1464]:
+                  - text: dispatches.latitude
+                  - generic [ref=e1465]: opcional
+                - cell "String" [ref=e1466]
+                - cell "Latitude where the dispatch is directed." [ref=e1467]:
+                  - paragraph [ref=e1468]: Latitude where the dispatch is directed.
+              - row "dispatches.longitude opcional String Longitude where the dispatch is directed." [ref=e1469]:
+                - cell "dispatches.longitude opcional" [ref=e1470]:
+                  - text: dispatches.longitude
+                  - generic [ref=e1471]: opcional
+                - cell "String" [ref=e1472]
+                - cell "Longitude where the dispatch is directed." [ref=e1473]:
+                  - paragraph [ref=e1474]: Longitude where the dispatch is directed.
+              - 'row "dispatches.status opcional Integer Status of the order: 1: pending, 2: delivered, 3: rejected: 4: partial." [ref=e1475]':
+                - cell "dispatches.status opcional" [ref=e1476]:
+                  - text: dispatches.status
+                  - generic [ref=e1477]: opcional
+                - cell "Integer" [ref=e1478]
+                - 'cell "Status of the order: 1: pending, 2: delivered, 3: rejected: 4: partial." [ref=e1479]':
+                  - paragraph [ref=e1480]: "Status of the order: 1: pending, 2: delivered, 3: rejected: 4: partial."
+              - row "dispatches.substatus opcional String SubStatus of the order." [ref=e1481]:
+                - cell "dispatches.substatus opcional" [ref=e1482]:
+                  - text: dispatches.substatus
+                  - generic [ref=e1483]: opcional
+                - cell "String" [ref=e1484]
+                - cell "SubStatus of the order." [ref=e1485]:
+                  - paragraph [ref=e1486]: SubStatus of the order.
+              - row "dispatches.substatus_code opcional String SubStatus (code) of the order." [ref=e1487]:
+                - cell "dispatches.substatus_code opcional" [ref=e1488]:
+                  - text: dispatches.substatus_code
+                  - generic [ref=e1489]: opcional
+                - cell "String" [ref=e1490]
+                - cell "SubStatus (code) of the order." [ref=e1491]:
+                  - paragraph [ref=e1492]: SubStatus (code) of the order.
+              - row "dispatches.slot opcional Integer Slot (position) of this dispatch in its route." [ref=e1493]:
+                - cell "dispatches.slot opcional" [ref=e1494]:
+                  - text: dispatches.slot
+                  - generic [ref=e1495]: opcional
+                - cell "Integer" [ref=e1496]
+                - cell "Slot (position) of this dispatch in its route." [ref=e1497]:
+                  - paragraph [ref=e1498]: Slot (position) of this dispatch in its route.
+              - row "dispatches.estimated_at opcional Datetime Estimated time of delivery. Must be in UTC, ISO8601 format." [ref=e1499]:
+                - cell "dispatches.estimated_at opcional" [ref=e1500]:
+                  - text: dispatches.estimated_at
+                  - generic [ref=e1501]: opcional
+                - cell "Datetime" [ref=e1502]
+                - cell "Estimated time of delivery. Must be in UTC, ISO8601 format." [ref=e1503]:
+                  - paragraph [ref=e1504]: Estimated time of delivery. Must be in UTC, ISO8601 format.
+              - row "dispatches.arrived_at opcional Datetime Management time of delivery. Must be in UTC, ISO8601 format." [ref=e1505]:
+                - cell "dispatches.arrived_at opcional" [ref=e1506]:
+                  - text: dispatches.arrived_at
+                  - generic [ref=e1507]: opcional
+                - cell "Datetime" [ref=e1508]
+                - cell "Management time of delivery. Must be in UTC, ISO8601 format." [ref=e1509]:
+                  - paragraph [ref=e1510]: Management time of delivery. Must be in UTC, ISO8601 format.
+              - row "dispatches.items opcional JSON[] Array containing items associated to the guide." [ref=e1511]:
+                - cell "dispatches.items opcional" [ref=e1512]:
+                  - text: dispatches.items
+                  - generic [ref=e1513]: opcional
+                - cell "JSON[]" [ref=e1514]
+                - cell "Array containing items associated to the guide." [ref=e1515]:
+                  - paragraph [ref=e1516]: Array containing items associated to the guide.
+              - row "dispatches.items.description opcional String Description of the item being delivered." [ref=e1517]:
+                - cell "dispatches.items.description opcional" [ref=e1518]:
+                  - text: dispatches.items.description
+                  - generic [ref=e1519]: opcional
+                - cell "String" [ref=e1520]
+                - cell "Description of the item being delivered." [ref=e1521]:
+                  - paragraph [ref=e1522]: Description of the item being delivered.
+              - row "dispatches.items.code opcional String Unique code for this item (SKU, for example)." [ref=e1523]:
+                - cell "dispatches.items.code opcional" [ref=e1524]:
+                  - text: dispatches.items.code
+                  - generic [ref=e1525]: opcional
+                - cell "String" [ref=e1526]
+                - cell "Unique code for this item (SKU, for example)." [ref=e1527]:
+                  - paragraph [ref=e1528]: Unique code for this item (SKU, for example).
+              - row "dispatches.items.unit_price opcional Integer Price for this item." [ref=e1529]:
+                - cell "dispatches.items.unit_price opcional" [ref=e1530]:
+                  - text: dispatches.items.unit_price
+                  - generic [ref=e1531]: opcional
+                - cell "Integer" [ref=e1532]
+                - cell "Price for this item." [ref=e1533]:
+                  - paragraph [ref=e1534]: Price for this item.
+              - row "dispatches.items.quantity opcional String Quantity of the item being delivered." [ref=e1535]:
+                - cell "dispatches.items.quantity opcional" [ref=e1536]:
+                  - text: dispatches.items.quantity
+                  - generic [ref=e1537]: opcional
+                - cell "String" [ref=e1538]
+                - cell "Quantity of the item being delivered." [ref=e1539]:
+                  - paragraph [ref=e1540]: Quantity of the item being delivered.
+              - row "dispatches.items.quantity_ref opcional String Quantity ref of the item being delivered." [ref=e1541]:
+                - cell "dispatches.items.quantity_ref opcional" [ref=e1542]:
+                  - text: dispatches.items.quantity_ref
+                  - generic [ref=e1543]: opcional
+                - cell "String" [ref=e1544]
+                - cell "Quantity ref of the item being delivered." [ref=e1545]:
+                  - paragraph [ref=e1546]: Quantity ref of the item being delivered.
+              - row "dispatches.items.extras opcional JSON[] Extra information associated to the items." [ref=e1547]:
+                - cell "dispatches.items.extras opcional" [ref=e1548]:
+                  - text: dispatches.items.extras
+                  - generic [ref=e1549]: opcional
+                - cell "JSON[]" [ref=e1550]
+                - cell "Extra information associated to the items." [ref=e1551]:
+                  - paragraph [ref=e1552]: Extra information associated to the items.
+              - row "dispatches.items.extras.name opcional String Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e1553]:
+                - cell "dispatches.items.extras.name opcional" [ref=e1554]:
+                  - text: dispatches.items.extras.name
+                  - generic [ref=e1555]: opcional
+                - cell "String" [ref=e1556]
+                - cell "Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e1557]:
+                  - paragraph [ref=e1558]: Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page.
+              - row "dispatches.items.extras.value opcional String Field value." [ref=e1559]:
+                - cell "dispatches.items.extras.value opcional" [ref=e1560]:
+                  - text: dispatches.items.extras.value
+                  - generic [ref=e1561]: opcional
+                - cell "String" [ref=e1562]
+                - cell "Field value." [ref=e1563]:
+                  - paragraph [ref=e1564]: Field value.
+              - row "dispatches.extras opcional JSON[] Array containing extra information associated to the guide." [ref=e1565]:
+                - cell "dispatches.extras opcional" [ref=e1566]:
+                  - text: dispatches.extras
+                  - generic [ref=e1567]: opcional
+                - cell "JSON[]" [ref=e1568]
+                - cell "Array containing extra information associated to the guide." [ref=e1569]:
+                  - paragraph [ref=e1570]: Array containing extra information associated to the guide.
+              - row "dispatches.extras.name opcional String Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e1571]:
+                - cell "dispatches.extras.name opcional" [ref=e1572]:
+                  - text: dispatches.extras.name
+                  - generic [ref=e1573]: opcional
+                - cell "String" [ref=e1574]
+                - cell "Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e1575]:
+                  - paragraph [ref=e1576]: Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page.
+              - row "dispatches.extras.value opcional String Field value." [ref=e1577]:
+                - cell "dispatches.extras.value opcional" [ref=e1578]:
+                  - text: dispatches.extras.value
+                  - generic [ref=e1579]: opcional
+                - cell "String" [ref=e1580]
+                - cell "Field value." [ref=e1581]:
+                  - paragraph [ref=e1582]: Field value.
+              - row "dispatches.groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e1583]:
+                - cell "dispatches.groups opcional" [ref=e1584]:
+                  - text: dispatches.groups
+                  - generic [ref=e1585]: opcional
+                - cell "JSON[]" [ref=e1586]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e1587]:
+                  - paragraph [ref=e1588]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "dispatches.groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e1589]:
+                - cell "dispatches.groups.category opcional" [ref=e1590]:
+                  - text: dispatches.groups.category
+                  - generic [ref=e1591]: opcional
+                - cell "String" [ref=e1592]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e1593]:
+                  - paragraph [ref=e1594]: Name of the category of the group to which the guide is associated.
+              - row "dispatches.groups.name opcional String Name of the group to which the guide is associated." [ref=e1595]:
+                - cell "dispatches.groups.name opcional" [ref=e1596]:
+                  - text: dispatches.groups.name
+                  - generic [ref=e1597]: opcional
+                - cell "String" [ref=e1598]
+                - cell "Name of the group to which the guide is associated." [ref=e1599]:
+                  - paragraph [ref=e1600]: Name of the group to which the guide is associated.
+              - row "dispatches.form opcional JSON Form answer for this dispatch. Only applicable to non-pending statuses." [ref=e1601]:
+                - cell "dispatches.form opcional" [ref=e1602]:
+                  - text: dispatches.form
+                  - generic [ref=e1603]: opcional
+                - cell "JSON" [ref=e1604]
+                - cell "Form answer for this dispatch. Only applicable to non-pending statuses." [ref=e1605]:
+                  - paragraph [ref=e1606]: Form answer for this dispatch. Only applicable to non-pending statuses.
+              - row "dispatches.form.img_url opcional String[] An array of urls containing images for this dispatch. If a single url is present then it can also be supplied in String format. Each image must be accesible with a GET request." [ref=e1607]:
+                - cell "dispatches.form.img_url opcional" [ref=e1608]:
+                  - text: dispatches.form.img_url
+                  - generic [ref=e1609]: opcional
+                - cell "String[]" [ref=e1610]
+                - cell "An array of urls containing images for this dispatch. If a single url is present then it can also be supplied in String format. Each image must be accesible with a GET request." [ref=e1611]:
+                  - paragraph [ref=e1612]: An array of urls containing images for this dispatch. If a single url is present then it can also be supplied in String format. Each image must be accesible with a GET request.
+              - row "dispatches.form.any_key opcional String Every other key present in the form JSON object will be inserted with key as title and value as answer, in text format." [ref=e1613]:
+                - cell "dispatches.form.any_key opcional" [ref=e1614]:
+                  - text: dispatches.form.any_key
+                  - generic [ref=e1615]: opcional
+                - cell "String" [ref=e1616]
+                - cell "Every other key present in the form JSON object will be inserted with key as title and value as answer, in text format." [ref=e1617]:
+                  - paragraph [ref=e1618]: Every other key present in the form JSON object will be inserted with key as title and value as answer, in text format.
+              - row "dispatches.pickup_address opcional JSON Address where the order will be picked up." [ref=e1619]:
+                - cell "dispatches.pickup_address opcional" [ref=e1620]:
+                  - text: dispatches.pickup_address
+                  - generic [ref=e1621]: opcional
+                - cell "JSON" [ref=e1622]
+                - cell "Address where the order will be picked up." [ref=e1623]:
+                  - paragraph [ref=e1624]: Address where the order will be picked up.
+              - row "dispatches.pickup_address.name String Name of the address." [ref=e1625]:
+                - cell "dispatches.pickup_address.name" [ref=e1626]
+                - cell "String" [ref=e1627]
+                - cell "Name of the address." [ref=e1628]:
+                  - paragraph [ref=e1629]: Name of the address.
+              - 'row "dispatches.is_trunk opcional Boolean True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e1630]':
+                - cell "dispatches.is_trunk opcional" [ref=e1631]:
+                  - text: dispatches.is_trunk
+                  - generic [ref=e1632]: opcional
+                - cell "Boolean" [ref=e1633]
+                - 'cell "True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e1634]':
+                  - paragraph [ref=e1635]: True if this is a trunk movement (not last mile).
+                  - paragraph [ref=e1636]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1637]: "false"
+              - 'row "dispatches.is_pickup opcional Boolean True if this is a pickup movement. Valor por defecto: false" [ref=e1638]':
+                - cell "dispatches.is_pickup opcional" [ref=e1639]:
+                  - text: dispatches.is_pickup
+                  - generic [ref=e1640]: opcional
+                - cell "Boolean" [ref=e1641]
+                - 'cell "True if this is a pickup movement. Valor por defecto: false" [ref=e1642]':
+                  - paragraph [ref=e1643]: True if this is a pickup movement.
+                  - paragraph [ref=e1644]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1645]: "false"
+              - 'row "dispatches.mode opcional Integer Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e1646]':
+                - cell "dispatches.mode opcional" [ref=e1647]:
+                  - text: dispatches.mode
+                  - generic [ref=e1648]: opcional
+                - cell "Integer" [ref=e1649]
+                - 'cell "Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e1650]':
+                  - paragraph [ref=e1651]: Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only).
+                  - paragraph [ref=e1652]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1653]: "0"
+              - row "dispatches.pincode_enabled opcional Boolean Indicates if the guide has delivery with PIN code." [ref=e1654]:
+                - cell "dispatches.pincode_enabled opcional" [ref=e1655]:
+                  - text: dispatches.pincode_enabled
+                  - generic [ref=e1656]: opcional
+                - cell "Boolean" [ref=e1657]
+                - cell "Indicates if the guide has delivery with PIN code." [ref=e1658]:
+                  - paragraph [ref=e1659]: Indicates if the guide has delivery with PIN code.
+          - tablist [ref=e1660]:
+            - listitem [ref=e1661]:
+              - tab "Request-Example:" [ref=e1662]
+            - listitem [ref=e1663]:
+              - tab "Request-Example:" [ref=e1664] [cursor=pointer]
+            - listitem [ref=e1665]:
+              - tab "Request-Example:" [ref=e1666] [cursor=pointer]
+          - generic [ref=e1669]:
+            - code [ref=e1671]: "{ \"id\": \"191712\", \"truck_id\": \"A4677\", \"started_at\": \"2022-04-13 08:30:46\", \"ended_at\": \"2022-04-13 18:30:46\", \"dispatches\": [ { \"identifier\": \"12937738\", \"contact_name\": \"Patrick Hamford\", \"contact_address\": \"6616 Washington Ave., Ocean Springs, MS\", \"contact_phone\": \"202-555-0111\", \"contact_id\": \"15289364\", \"contact_email\": \"patrick.hamford@hamford.com\", \"latitude\": \"30.438086\", \"longitude\": \"-88.832390\", \"status\": 2, \"substatus\": \"Successful Delivery\", \"substatus_code\": \"01\" \"items\": [ { \"name\": \"apple\", \"code\": \"121233\", \"unit_price\": 130, \"quantity\": \"130\", \"description\": \"25 inch TV set\" } ], \"form\": { \"form_question_name\": \"form question answer\", \"img_url\": [\"image url\"] } } ] }"
+            - button "Copiar" [ref=e1674] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e1675]
+          - table [ref=e1676]:
+            - rowgroup [ref=e1677]:
+              - row "Campo Tipo Descripción" [ref=e1678]:
+                - columnheader "Campo" [ref=e1679]
+                - columnheader "Tipo" [ref=e1680]
+                - columnheader "Descripción" [ref=e1681]
+            - rowgroup [ref=e1682]:
+              - row "status String Status of the response (ok/error)." [ref=e1683]:
+                - cell "status" [ref=e1684]
+                - cell "String" [ref=e1685]
+                - cell "Status of the response (ok/error)." [ref=e1686]:
+                  - paragraph [ref=e1687]: Status of the response (ok/error).
+              - row "response JSON JSON with the response of the API." [ref=e1688]:
+                - cell "response" [ref=e1689]
+                - cell "JSON" [ref=e1690]
+                - cell "JSON with the response of the API." [ref=e1691]:
+                  - paragraph [ref=e1692]: JSON with the response of the API.
+              - row "response.route_id String Id of the created route." [ref=e1693]:
+                - cell "response.route_id" [ref=e1694]
+                - cell "String" [ref=e1695]
+                - cell "Id of the created route." [ref=e1696]:
+                  - paragraph [ref=e1697]: Id of the created route.
+          - tablist [ref=e1698]:
+            - listitem [ref=e1699]:
+              - tab "200 OK:" [ref=e1700]
+          - generic [ref=e1703]:
+            - code [ref=e1705]: "{ \"status\": \"ok\", \"response\": { \"route_id\": 164972 } }"
+            - button "Copiar" [ref=e1708] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e1709]
+          - table [ref=e1710]:
+            - rowgroup [ref=e1711]:
+              - row "Nombre Tipo Descripción" [ref=e1712]:
+                - columnheader "Nombre" [ref=e1713]
+                - columnheader "Tipo" [ref=e1714]
+                - columnheader "Descripción" [ref=e1715]
+            - rowgroup [ref=e1716]:
+              - row "status String Status of the response." [ref=e1717]:
+                - cell "status" [ref=e1718]
+                - cell "String" [ref=e1719]
+                - cell "Status of the response." [ref=e1720]:
+                  - paragraph [ref=e1721]: Status of the response.
+              - row "response String Error message." [ref=e1722]:
+                - cell "response" [ref=e1723]
+                - cell "String" [ref=e1724]
+                - cell "Error message." [ref=e1725]:
+                  - paragraph [ref=e1726]: Error message.
+          - tablist [ref=e1727]:
+            - listitem [ref=e1728]:
+              - tab "500 Error:" [ref=e1729]
+            - listitem [ref=e1730]:
+              - tab "500 Error:" [ref=e1731] [cursor=pointer]
+            - listitem [ref=e1732]:
+              - tab "500 Error:" [ref=e1733] [cursor=pointer]
+            - listitem [ref=e1734]:
+              - tab "500 Error:" [ref=e1735] [cursor=pointer]
+            - listitem [ref=e1736]:
+              - tab "500 Error:" [ref=e1737] [cursor=pointer]
+            - listitem [ref=e1738]:
+              - tab "500 Error:" [ref=e1739] [cursor=pointer]
+            - listitem [ref=e1740]:
+              - tab "500 Error:" [ref=e1741] [cursor=pointer]
+            - listitem [ref=e1742]:
+              - tab "500 Error:" [ref=e1743] [cursor=pointer]
+            - listitem [ref=e1744]:
+              - tab "403 Error:" [ref=e1745] [cursor=pointer]
+          - generic [ref=e1748]:
+            - code [ref=e1750]: "User can not modify dispatches statuses { \"status\": \"Error\", \"response\": \"Permission denied\" }"
+            - button "Copiar" [ref=e1753] [cursor=pointer]
+      - generic [ref=e1754]:
+        - heading "Dispatch" [level=1] [ref=e1755]
+        - article [ref=e1757]:
+          - heading "Dispatch | Create Dispatch" [level=1] [ref=e1759]
+          - button "1.0.0" [ref=e1762] [cursor=pointer]:
+            - strong [ref=e1763]: 1.0.0
+          - paragraph
+          - paragraph [ref=e1766]: Used to create a dispatch guide
+          - paragraph
+          - generic [ref=e1767]: post
+          - generic [ref=e1768]:
+            - code [ref=e1770]:
+              - generic [ref=e1771]: https://activationcode.dispatchtrack.com/api/external/v1/dispatches
+            - button "Copiar" [ref=e1774] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e1775]
+          - table [ref=e1776]:
+            - rowgroup [ref=e1777]:
+              - row "Campo Tipo Descripción" [ref=e1778]:
+                - columnheader "Campo" [ref=e1779]
+                - columnheader "Tipo" [ref=e1780]
+                - columnheader "Descripción" [ref=e1781]
+            - rowgroup [ref=e1782]:
+              - row "id Number Dispatch id of the product(s) that are being delivered." [ref=e1783]:
+                - cell "id" [ref=e1784]
+                - cell "Number" [ref=e1785]
+                - cell "Dispatch id of the product(s) that are being delivered." [ref=e1786]:
+                  - paragraph [ref=e1787]: Dispatch id of the product(s) that are being delivered.
+              - row "identifier integer Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1788]:
+                - cell "identifier" [ref=e1789]
+                - cell "integer" [ref=e1790]
+                - cell "Dispatch identifier, guide or invoice number of the product(s) that are being delivered." [ref=e1791]:
+                  - paragraph [ref=e1792]: Dispatch identifier, guide or invoice number of the product(s) that are being delivered.
+              - 'row "random opcional Boolean If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e1793]':
+                - cell "random opcional" [ref=e1794]:
+                  - text: random
+                  - generic [ref=e1795]: opcional
+                - cell "Boolean" [ref=e1796]
+                - 'cell "If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e1797]':
+                  - paragraph [ref=e1798]: If true generates a random number as the guide identifier.
+                  - paragraph [ref=e1799]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1800]: "false"
+              - row "current_state opcional Integer Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e1801]:
+                - cell "current_state opcional" [ref=e1802]:
+                  - text: current_state
+                  - generic [ref=e1803]: opcional
+                - cell "Integer" [ref=e1804]
+                - cell "Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e1805]:
+                  - paragraph [ref=e1806]: Current state for dispatch guide (in_preparation = 0, Ready to go = 1)
+              - 'row "auto_code opcional Boolean If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e1807]':
+                - cell "auto_code opcional" [ref=e1808]:
+                  - text: auto_code
+                  - generic [ref=e1809]: opcional
+                - cell "Boolean" [ref=e1810]
+                - 'cell "If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e1811]':
+                  - paragraph [ref=e1812]: If true generates a random number as the guide identifier.
+                  - paragraph [ref=e1813]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1814]: "false"
+              - row "contact_name opcional String Name of the person to whom the guide is addressed." [ref=e1815]:
+                - cell "contact_name opcional" [ref=e1816]:
+                  - text: contact_name
+                  - generic [ref=e1817]: opcional
+                - cell "String" [ref=e1818]
+                - cell "Name of the person to whom the guide is addressed." [ref=e1819]:
+                  - paragraph [ref=e1820]: Name of the person to whom the guide is addressed.
+              - row "contact_address opcional String Address to where the guide is directed." [ref=e1821]:
+                - cell "contact_address opcional" [ref=e1822]:
+                  - text: contact_address
+                  - generic [ref=e1823]: opcional
+                - cell "String" [ref=e1824]
+                - cell "Address to where the guide is directed." [ref=e1825]:
+                  - paragraph [ref=e1826]: Address to where the guide is directed.
+              - row "contact_phone opcional String Phone of the person to whom the guide is addressed." [ref=e1827]:
+                - cell "contact_phone opcional" [ref=e1828]:
+                  - text: contact_phone
+                  - generic [ref=e1829]: opcional
+                - cell "String" [ref=e1830]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e1831]:
+                  - paragraph [ref=e1832]: Phone of the person to whom the guide is addressed.
+              - row "contact_id opcional String Contact id of the person to whom the guide is addressed." [ref=e1833]:
+                - cell "contact_id opcional" [ref=e1834]:
+                  - text: contact_id
+                  - generic [ref=e1835]: opcional
+                - cell "String" [ref=e1836]
+                - cell "Contact id of the person to whom the guide is addressed." [ref=e1837]:
+                  - paragraph [ref=e1838]: Contact id of the person to whom the guide is addressed.
+              - row "contact_identifier opcional String Identification of the person to whom the guide is addressed." [ref=e1839]:
+                - cell "contact_identifier opcional" [ref=e1840]:
+                  - text: contact_identifier
+                  - generic [ref=e1841]: opcional
+                - cell "String" [ref=e1842]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e1843]:
+                  - paragraph [ref=e1844]: Identification of the person to whom the guide is addressed.
+              - row "contact_email opcional String Email of the person to whom the guide is addressed." [ref=e1845]:
+                - cell "contact_email opcional" [ref=e1846]:
+                  - text: contact_email
+                  - generic [ref=e1847]: opcional
+                - cell "String" [ref=e1848]
+                - cell "Email of the person to whom the guide is addressed." [ref=e1849]:
+                  - paragraph [ref=e1850]: Email of the person to whom the guide is addressed.
+              - row "latitude opcional Float Latitude where the dispatch is directed." [ref=e1851]:
+                - cell "latitude opcional" [ref=e1852]:
+                  - text: latitude
+                  - generic [ref=e1853]: opcional
+                - cell "Float" [ref=e1854]
+                - cell "Latitude where the dispatch is directed." [ref=e1855]:
+                  - paragraph [ref=e1856]: Latitude where the dispatch is directed.
+              - row "longitude opcional Float Longitude where the dispatch is directed." [ref=e1857]:
+                - cell "longitude opcional" [ref=e1858]:
+                  - text: longitude
+                  - generic [ref=e1859]: opcional
+                - cell "Float" [ref=e1860]
+                - cell "Longitude where the dispatch is directed." [ref=e1861]:
+                  - paragraph [ref=e1862]: Longitude where the dispatch is directed.
+              - row "load opcional Integer Load (planner) is a dimensionless variable. Could be kg, m3, money, etc." [ref=e1863]:
+                - cell "load opcional" [ref=e1864]:
+                  - text: load
+                  - generic [ref=e1865]: opcional
+                - cell "Integer" [ref=e1866]
+                - cell "Load (planner) is a dimensionless variable. Could be kg, m3, money, etc." [ref=e1867]:
+                  - paragraph [ref=e1868]: Load (planner) is a dimensionless variable. Could be kg, m3, money, etc.
+              - row "slot opcional Integer Slot (position) of this dispatch in its route" [ref=e1869]:
+                - cell "slot opcional" [ref=e1870]:
+                  - text: slot
+                  - generic [ref=e1871]: opcional
+                - cell "Integer" [ref=e1872]
+                - cell "Slot (position) of this dispatch in its route" [ref=e1873]:
+                  - paragraph [ref=e1874]: Slot (position) of this dispatch in its route
+              - row "priority opcional Integer Priority (planner) is a variable that allows handling overcapacity." [ref=e1875]:
+                - cell "priority opcional" [ref=e1876]:
+                  - text: priority
+                  - generic [ref=e1877]: opcional
+                - cell "Integer" [ref=e1878]
+                - cell "Priority (planner) is a variable that allows handling overcapacity." [ref=e1879]:
+                  - paragraph [ref=e1880]: Priority (planner) is a variable that allows handling overcapacity.
+              - row "service_time opcional Integer Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes." [ref=e1881]:
+                - cell "service_time opcional" [ref=e1882]:
+                  - text: service_time
+                  - generic [ref=e1883]: opcional
+                - cell "Integer" [ref=e1884]
+                - cell "Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes." [ref=e1885]:
+                  - paragraph [ref=e1886]: Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes.
+              - row "estimated_at opcional Datetime Time at which the dispatch is (or was) estimated for delivery." [ref=e1887]:
+                - cell "estimated_at opcional" [ref=e1888]:
+                  - text: estimated_at
+                  - generic [ref=e1889]: opcional
+                - cell "Datetime" [ref=e1890]
+                - cell "Time at which the dispatch is (or was) estimated for delivery." [ref=e1891]:
+                  - paragraph [ref=e1892]: Time at which the dispatch is (or was) estimated for delivery.
+              - row "min_delivery_time opcional Datetime Minimal delivery time." [ref=e1893]:
+                - cell "min_delivery_time opcional" [ref=e1894]:
+                  - text: min_delivery_time
+                  - generic [ref=e1895]: opcional
+                - cell "Datetime" [ref=e1896]
+                - cell "Minimal delivery time." [ref=e1897]:
+                  - paragraph [ref=e1898]: Minimal delivery time.
+              - row "max_delivery_time opcional Datetime Maximal delivery time." [ref=e1899]:
+                - cell "max_delivery_time opcional" [ref=e1900]:
+                  - text: max_delivery_time
+                  - generic [ref=e1901]: opcional
+                - cell "Datetime" [ref=e1902]
+                - cell "Maximal delivery time." [ref=e1903]:
+                  - paragraph [ref=e1904]: Maximal delivery time.
+              - 'row "is_trunk opcional Boolean True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e1905]':
+                - cell "is_trunk opcional" [ref=e1906]:
+                  - text: is_trunk
+                  - generic [ref=e1907]: opcional
+                - cell "Boolean" [ref=e1908]
+                - 'cell "True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e1909]':
+                  - paragraph [ref=e1910]: True if this is a trunk movement (not last mile).
+                  - paragraph [ref=e1911]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1912]: "false"
+              - 'row "is_pickup opcional Boolean True if this is a pickup movement. Valor por defecto: false" [ref=e1913]':
+                - cell "is_pickup opcional" [ref=e1914]:
+                  - text: is_pickup
+                  - generic [ref=e1915]: opcional
+                - cell "Boolean" [ref=e1916]
+                - 'cell "True if this is a pickup movement. Valor por defecto: false" [ref=e1917]':
+                  - paragraph [ref=e1918]: True if this is a pickup movement.
+                  - paragraph [ref=e1919]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1920]: "false"
+              - 'row "mode opcional Integer Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e1921]':
+                - cell "mode opcional" [ref=e1922]:
+                  - text: mode
+                  - generic [ref=e1923]: opcional
+                - cell "Integer" [ref=e1924]
+                - 'cell "Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e1925]':
+                  - paragraph [ref=e1926]: Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only).
+                  - paragraph [ref=e1927]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e1928]: "0"
+              - row "pincode_enabled opcional Boolean Indicates if the guide has delivery with PIN code." [ref=e1929]:
+                - cell "pincode_enabled opcional" [ref=e1930]:
+                  - text: pincode_enabled
+                  - generic [ref=e1931]: opcional
+                - cell "Boolean" [ref=e1932]
+                - cell "Indicates if the guide has delivery with PIN code." [ref=e1933]:
+                  - paragraph [ref=e1934]: Indicates if the guide has delivery with PIN code.
+              - row "status_id opcional Integer Id of the Status." [ref=e1935]:
+                - cell "status_id opcional" [ref=e1936]:
+                  - text: status_id
+                  - generic [ref=e1937]: opcional
+                - cell "Integer" [ref=e1938]
+                - cell "Id of the Status." [ref=e1939]:
+                  - paragraph [ref=e1940]: Id of the Status.
+              - row "status opcional String Status of the dispatch (this is created in your account's settings)." [ref=e1941]:
+                - cell "status opcional" [ref=e1942]:
+                  - text: status
+                  - generic [ref=e1943]: opcional
+                - cell "String" [ref=e1944]
+                - cell "Status of the dispatch (this is created in your account's settings)." [ref=e1945]:
+                  - paragraph [ref=e1946]: Status of the dispatch (this is created in your account's settings).
+              - row "arrived_at opcional Datetime Management time of delivery. Must be in UTC, ISO8601 format." [ref=e1947]:
+                - cell "arrived_at opcional" [ref=e1948]:
+                  - text: arrived_at
+                  - generic [ref=e1949]: opcional
+                - cell "Datetime" [ref=e1950]
+                - cell "Management time of delivery. Must be in UTC, ISO8601 format." [ref=e1951]:
+                  - paragraph [ref=e1952]: Management time of delivery. Must be in UTC, ISO8601 format.
+              - row "substatus opcional String SubStatus (id) of the order." [ref=e1953]:
+                - cell "substatus opcional" [ref=e1954]:
+                  - text: substatus
+                  - generic [ref=e1955]: opcional
+                - cell "String" [ref=e1956]
+                - cell "SubStatus (id) of the order." [ref=e1957]:
+                  - paragraph [ref=e1958]: SubStatus (id) of the order.
+              - row "substatus_code opcional String SubStatus (code) of the order." [ref=e1959]:
+                - cell "substatus_code opcional" [ref=e1960]:
+                  - text: substatus_code
+                  - generic [ref=e1961]: opcional
+                - cell "String" [ref=e1962]
+                - cell "SubStatus (code) of the order." [ref=e1963]:
+                  - paragraph [ref=e1964]: SubStatus (code) of the order.
+              - row "destination opcional String Destination of this item." [ref=e1965]:
+                - cell "destination opcional" [ref=e1966]:
+                  - text: destination
+                  - generic [ref=e1967]: opcional
+                - cell "String" [ref=e1968]
+                - cell "Destination of this item." [ref=e1969]:
+                  - paragraph [ref=e1970]: Destination of this item.
+              - row "destination_id opcional String Destination id of this item." [ref=e1971]:
+                - cell "destination_id opcional" [ref=e1972]:
+                  - text: destination_id
+                  - generic [ref=e1973]: opcional
+                - cell "String" [ref=e1974]
+                - cell "Destination id of this item." [ref=e1975]:
+                  - paragraph [ref=e1976]: Destination id of this item.
+              - row "place_id opcional String Place id of the guide." [ref=e1977]:
+                - cell "place_id opcional" [ref=e1978]:
+                  - text: place_id
+                  - generic [ref=e1979]: opcional
+                - cell "String" [ref=e1980]
+                - cell "Place id of the guide." [ref=e1981]:
+                  - paragraph [ref=e1982]: Place id of the guide.
+              - row "place opcional String Place of the guide." [ref=e1983]:
+                - cell "place opcional" [ref=e1984]:
+                  - text: place
+                  - generic [ref=e1985]: opcional
+                - cell "String" [ref=e1986]
+                - cell "Place of the guide." [ref=e1987]:
+                  - paragraph [ref=e1988]: Place of the guide.
+              - row "pickup_address opcional JSON Address where the order will be picked up." [ref=e1989]:
+                - cell "pickup_address opcional" [ref=e1990]:
+                  - text: pickup_address
+                  - generic [ref=e1991]: opcional
+                - cell "JSON" [ref=e1992]
+                - cell "Address where the order will be picked up." [ref=e1993]:
+                  - paragraph [ref=e1994]: Address where the order will be picked up.
+              - row "pickup_address.name String Name of the address." [ref=e1995]:
+                - cell "pickup_address.name" [ref=e1996]
+                - cell "String" [ref=e1997]
+                - cell "Name of the address." [ref=e1998]:
+                  - paragraph [ref=e1999]: Name of the address.
+              - row "waypoints opcional JSON" [ref=e2000]:
+                - cell "waypoints opcional" [ref=e2001]:
+                  - text: waypoints
+                  - generic [ref=e2002]: opcional
+                - cell "JSON" [ref=e2003]
+                - cell [ref=e2004]
+              - row "form opcional JSON" [ref=e2005]:
+                - cell "form opcional" [ref=e2006]:
+                  - text: form
+                  - generic [ref=e2007]: opcional
+                - cell "JSON" [ref=e2008]
+                - cell [ref=e2009]
+              - row "items JSON[] Array containing items associated to the guide." [ref=e2010]:
+                - cell "items" [ref=e2011]
+                - cell "JSON[]" [ref=e2012]
+                - cell "Array containing items associated to the guide." [ref=e2013]:
+                  - paragraph [ref=e2014]: Array containing items associated to the guide.
+              - row "items.name opcional String Name for this item (SKU, for example)." [ref=e2015]:
+                - cell "items.name opcional" [ref=e2016]:
+                  - text: items.name
+                  - generic [ref=e2017]: opcional
+                - cell "String" [ref=e2018]
+                - cell "Name for this item (SKU, for example)." [ref=e2019]:
+                  - paragraph [ref=e2020]: Name for this item (SKU, for example).
+              - row "items.code opcional String Unique code for this item (SKU, for example)." [ref=e2021]:
+                - cell "items.code opcional" [ref=e2022]:
+                  - text: items.code
+                  - generic [ref=e2023]: opcional
+                - cell "String" [ref=e2024]
+                - cell "Unique code for this item (SKU, for example)." [ref=e2025]:
+                  - paragraph [ref=e2026]: Unique code for this item (SKU, for example).
+              - row "Items.price opcional String Price for this item." [ref=e2027]:
+                - cell "Items.price opcional" [ref=e2028]:
+                  - text: Items.price
+                  - generic [ref=e2029]: opcional
+                - cell "String" [ref=e2030]
+                - cell "Price for this item." [ref=e2031]:
+                  - paragraph [ref=e2032]: Price for this item.
+              - row "items.unit_price opcional String Price for this item." [ref=e2033]:
+                - cell "items.unit_price opcional" [ref=e2034]:
+                  - text: items.unit_price
+                  - generic [ref=e2035]: opcional
+                - cell "String" [ref=e2036]
+                - cell "Price for this item." [ref=e2037]:
+                  - paragraph [ref=e2038]: Price for this item.
+              - row "items.description opcional String Description of the item being delivered." [ref=e2039]:
+                - cell "items.description opcional" [ref=e2040]:
+                  - text: items.description
+                  - generic [ref=e2041]: opcional
+                - cell "String" [ref=e2042]
+                - cell "Description of the item being delivered." [ref=e2043]:
+                  - paragraph [ref=e2044]: Description of the item being delivered.
+              - row "items.quantity opcional String Quantity of the item being delivered." [ref=e2045]:
+                - cell "items.quantity opcional" [ref=e2046]:
+                  - text: items.quantity
+                  - generic [ref=e2047]: opcional
+                - cell "String" [ref=e2048]
+                - cell "Quantity of the item being delivered." [ref=e2049]:
+                  - paragraph [ref=e2050]: Quantity of the item being delivered.
+              - row "items.quantity_ref opcional Decimal Quantity ref of the item being delivered." [ref=e2051]:
+                - cell "items.quantity_ref opcional" [ref=e2052]:
+                  - text: items.quantity_ref
+                  - generic [ref=e2053]: opcional
+                - cell "Decimal" [ref=e2054]
+                - cell "Quantity ref of the item being delivered." [ref=e2055]:
+                  - paragraph [ref=e2056]: Quantity ref of the item being delivered.
+              - row "items.extras opcional JSON[] Extra information associated to the items" [ref=e2057]:
+                - cell "items.extras opcional" [ref=e2058]:
+                  - text: items.extras
+                  - generic [ref=e2059]: opcional
+                - cell "JSON[]" [ref=e2060]
+                - cell "Extra information associated to the items" [ref=e2061]:
+                  - paragraph [ref=e2062]: Extra information associated to the items
+              - row "items.extras.name opcional String Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e2063]:
+                - cell "items.extras.name opcional" [ref=e2064]:
+                  - text: items.extras.name
+                  - generic [ref=e2065]: opcional
+                - cell "String" [ref=e2066]
+                - cell "Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e2067]:
+                  - paragraph [ref=e2068]: Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page.
+              - row "items.extras.value opcional String Field value." [ref=e2069]:
+                - cell "items.extras.value opcional" [ref=e2070]:
+                  - text: items.extras.value
+                  - generic [ref=e2071]: opcional
+                - cell "String" [ref=e2072]
+                - cell "Field value." [ref=e2073]:
+                  - paragraph [ref=e2074]: Field value.
+              - row "tags opcional JSON[] Array containing tags associated to the guide." [ref=e2075]:
+                - cell "tags opcional" [ref=e2076]:
+                  - text: tags
+                  - generic [ref=e2077]: opcional
+                - cell "JSON[]" [ref=e2078]
+                - cell "Array containing tags associated to the guide." [ref=e2079]:
+                  - paragraph [ref=e2080]: Array containing tags associated to the guide.
+              - row "tags.name opcional String Name of the tag associated to the guide." [ref=e2081]:
+                - cell "tags.name opcional" [ref=e2082]:
+                  - text: tags.name
+                  - generic [ref=e2083]: opcional
+                - cell "String" [ref=e2084]
+                - cell "Name of the tag associated to the guide." [ref=e2085]:
+                  - paragraph [ref=e2086]: Name of the tag associated to the guide.
+              - row "tags.value opcional String Value of the tag associated to the guide." [ref=e2087]:
+                - cell "tags.value opcional" [ref=e2088]:
+                  - text: tags.value
+                  - generic [ref=e2089]: opcional
+                - cell "String" [ref=e2090]
+                - cell "Value of the tag associated to the guide." [ref=e2091]:
+                  - paragraph [ref=e2092]: Value of the tag associated to the guide.
+              - row "tags.type opcional String Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e2093]:
+                - cell "tags.type opcional" [ref=e2094]:
+                  - text: tags.type
+                  - generic [ref=e2095]: opcional
+                - cell "String" [ref=e2096]
+                - cell "Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e2097]:
+                  - paragraph [ref=e2098]: Type(string/date) of the tag associated to the guide. "string" => custom field and "date" => custom date field
+              - row "groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e2099]:
+                - cell "groups opcional" [ref=e2100]:
+                  - text: groups
+                  - generic [ref=e2101]: opcional
+                - cell "JSON[]" [ref=e2102]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e2103]:
+                  - paragraph [ref=e2104]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e2105]:
+                - cell "groups.category opcional" [ref=e2106]:
+                  - text: groups.category
+                  - generic [ref=e2107]: opcional
+                - cell "String" [ref=e2108]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e2109]:
+                  - paragraph [ref=e2110]: Name of the category of the group to which the guide is associated.
+              - row "groups.name opcional String Name of the group to which the guide is associated." [ref=e2111]:
+                - cell "groups.name opcional" [ref=e2112]:
+                  - text: groups.name
+                  - generic [ref=e2113]: opcional
+                - cell "String" [ref=e2114]
+                - cell "Name of the group to which the guide is associated." [ref=e2115]:
+                  - paragraph [ref=e2116]: Name of the group to which the guide is associated.
+              - 'row "groups.force_create opcional Boolean True if it has to be created if it is not found. Valor por defecto: false" [ref=e2117]':
+                - cell "groups.force_create opcional" [ref=e2118]:
+                  - text: groups.force_create
+                  - generic [ref=e2119]: opcional
+                - cell "Boolean" [ref=e2120]
+                - 'cell "True if it has to be created if it is not found. Valor por defecto: false" [ref=e2121]':
+                  - paragraph [ref=e2122]: True if it has to be created if it is not found.
+                  - paragraph [ref=e2123]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2124]: "false"
+          - tablist [ref=e2125]:
+            - listitem [ref=e2126]:
+              - tab "Request-Example:" [ref=e2127]
+          - generic [ref=e2130]:
+            - code [ref=e2132]: "{ \"identifier\": \"39424321\", \"current_state\": \"1\", \"contact_name\": \"Eric Doe\", \"contact_address\": \"458 Fairway Drive, Schererville, IN 46375\", \"contact_phone\": \"34543534\", \"contact_id\": \"173945062\", \"contact_email\": \"dev@dispatchtrack.com\", \"latitude\": -33.414355, \"longitude\": -70.584493, \"load\": 1, \"priority\": 1, \"service_time\": 30, \"items\": [ { \"code\": \"SKU123\", \"description\": \"LED Monitor\", \"quantity\": 1, \"extras\": [ { \"name\": \"Custom Item ID\", \"value\": \"23543\" } ] }, { \"code\": \"SKU123\", \"description\": \"LED Monitor\", \"quantity\": 1 } ], \"tags\": [ { \"name\": \"Custom Guide Code\", \"value\": \"8932034\", \"type\": \"Tag type (string/date)\" } ] }"
+            - button "Copiar" [ref=e2135] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e2136]
+          - table [ref=e2137]:
+            - rowgroup [ref=e2138]:
+              - row "Campo Tipo Descripción" [ref=e2139]:
+                - columnheader "Campo" [ref=e2140]
+                - columnheader "Tipo" [ref=e2141]
+                - columnheader "Descripción" [ref=e2142]
+            - rowgroup [ref=e2143]:
+              - row "status String Status of the response (ok/error)." [ref=e2144]:
+                - cell "status" [ref=e2145]
+                - cell "String" [ref=e2146]
+                - cell "Status of the response (ok/error)." [ref=e2147]:
+                  - paragraph [ref=e2148]: Status of the response (ok/error).
+              - row "response JSON JSON with the response of the API." [ref=e2149]:
+                - cell "response" [ref=e2150]
+                - cell "JSON" [ref=e2151]
+                - cell "JSON with the response of the API." [ref=e2152]:
+                  - paragraph [ref=e2153]: JSON with the response of the API.
+              - row "response.identifier String Id of the created/updated dispatch." [ref=e2154]:
+                - cell "response.identifier" [ref=e2155]
+                - cell "String" [ref=e2156]
+                - cell "Id of the created/updated dispatch." [ref=e2157]:
+                  - paragraph [ref=e2158]: Id of the created/updated dispatch.
+          - tablist [ref=e2159]:
+            - listitem [ref=e2160]:
+              - tab "200 OK:" [ref=e2161]
+          - generic [ref=e2164]:
+            - code [ref=e2166]: "{ \"status\": \"ok\", \"response\": { \"identifier\": \"39424321\" } }"
+            - button "Copiar" [ref=e2169] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e2170]
+          - table [ref=e2171]:
+            - rowgroup [ref=e2172]:
+              - row "Nombre Tipo Descripción" [ref=e2173]:
+                - columnheader "Nombre" [ref=e2174]
+                - columnheader "Tipo" [ref=e2175]
+                - columnheader "Descripción" [ref=e2176]
+            - rowgroup [ref=e2177]:
+              - 'row "425 Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }" [ref=e2178]':
+                - cell "425" [ref=e2179]
+                - cell [ref=e2180]
+                - 'cell "Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }" [ref=e2181]':
+                  - paragraph [ref=e2182]: "Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }"
+          - heading "Error 500" [level=2] [ref=e2183]
+          - table [ref=e2184]:
+            - rowgroup [ref=e2185]:
+              - row "Nombre Tipo Descripción" [ref=e2186]:
+                - columnheader "Nombre" [ref=e2187]
+                - columnheader "Tipo" [ref=e2188]
+                - columnheader "Descripción" [ref=e2189]
+            - rowgroup [ref=e2190]:
+              - row "status String Status of the response." [ref=e2191]:
+                - cell "status" [ref=e2192]
+                - cell "String" [ref=e2193]
+                - cell "Status of the response." [ref=e2194]:
+                  - paragraph [ref=e2195]: Status of the response.
+              - row "response String Error message." [ref=e2196]:
+                - cell "response" [ref=e2197]
+                - cell "String" [ref=e2198]
+                - cell "Error message." [ref=e2199]:
+                  - paragraph [ref=e2200]: Error message.
+          - tablist [ref=e2201]:
+            - listitem [ref=e2202]:
+              - tab "500 Error:" [ref=e2203]
+            - listitem [ref=e2204]:
+              - tab "500 Error:" [ref=e2205] [cursor=pointer]
+            - listitem [ref=e2206]:
+              - tab "500 Error:" [ref=e2207] [cursor=pointer]
+          - generic [ref=e2210]:
+            - code [ref=e2212]: "User can not modify dispatches statuses { \"status\": \"Error\", \"response\": \"Permission denied\" }"
+            - button "Copiar" [ref=e2215] [cursor=pointer]
+        - article [ref=e2217]:
+          - heading "Dispatch | Filter Dispatches" [level=1] [ref=e2219]
+          - button "1.0.0" [ref=e2222] [cursor=pointer]:
+            - strong [ref=e2223]: 1.0.0
+          - paragraph
+          - paragraph [ref=e2226]: Used to filter dispatches by other parameters rather than the dispatch guide's code. On the following table you can find the possible values for param_filter and param_value.
+          - paragraph
+          - generic [ref=e2227]: get
+          - generic [ref=e2228]:
+            - code [ref=e2230]:
+              - generic [ref=e2231]: https://activationcode.dispatchtrack.com/api/external/v1/dispatches?param_filter=:param_value
+            - button "Copiar" [ref=e2234] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e2235]
+          - table [ref=e2236]:
+            - rowgroup [ref=e2237]:
+              - row "Campo Tipo Descripción" [ref=e2238]:
+                - columnheader "Campo" [ref=e2239]
+                - columnheader "Tipo" [ref=e2240]
+                - columnheader "Descripción" [ref=e2241]
+            - rowgroup [ref=e2242]:
+              - row "i opcional Url_Parameter Identifier of the contact whom you want to get dispatches from." [ref=e2243]:
+                - cell "i opcional" [ref=e2244]:
+                  - text: i
+                  - generic [ref=e2245]: opcional
+                - cell "Url_Parameter" [ref=e2246]
+                - cell "Identifier of the contact whom you want to get dispatches from." [ref=e2247]:
+                  - paragraph [ref=e2248]: Identifier of the contact whom you want to get dispatches from.
+              - 'row "s opcional Url_Parameter Date at which you want to start the search for dispatches (format. yyyy-mm-dd). Valor por defecto: 3 days ago" [ref=e2249]':
+                - cell "s opcional" [ref=e2250]:
+                  - text: s
+                  - generic [ref=e2251]: opcional
+                - cell "Url_Parameter" [ref=e2252]
+                - 'cell "Date at which you want to start the search for dispatches (format. yyyy-mm-dd). Valor por defecto: 3 days ago" [ref=e2253]':
+                  - paragraph [ref=e2254]: Date at which you want to start the search for dispatches (format. yyyy-mm-dd).
+                  - paragraph [ref=e2255]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2256]: 3 days ago
+              - 'row "e opcional Url_Parameter Date at which you want to end the search for dispatches (format. yyyy-mm-dd). Valor por defecto: now" [ref=e2257]':
+                - cell "e opcional" [ref=e2258]:
+                  - text: e
+                  - generic [ref=e2259]: opcional
+                - cell "Url_Parameter" [ref=e2260]
+                - 'cell "Date at which you want to end the search for dispatches (format. yyyy-mm-dd). Valor por defecto: now" [ref=e2261]':
+                  - paragraph [ref=e2262]: Date at which you want to end the search for dispatches (format. yyyy-mm-dd).
+                  - paragraph [ref=e2263]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2264]: now
+              - row "rd opcional Url_Parameter Number of days counted back from now, until when data will be queried." [ref=e2265]:
+                - cell "rd opcional" [ref=e2266]:
+                  - text: rd
+                  - generic [ref=e2267]: opcional
+                - cell "Url_Parameter" [ref=e2268]
+                - cell "Number of days counted back from now, until when data will be queried." [ref=e2269]:
+                  - paragraph [ref=e2270]: Number of days counted back from now, until when data will be queried.
+              - row "st opcional Url_Parameter Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery)." [ref=e2271]:
+                - cell "st opcional" [ref=e2272]:
+                  - text: st
+                  - generic [ref=e2273]: opcional
+                - cell "Url_Parameter" [ref=e2274]
+                - cell "Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery)." [ref=e2275]:
+                  - paragraph [ref=e2276]: Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery).
+        - article [ref=e2278]:
+          - heading "Dispatch | Show Dispatch" [level=1] [ref=e2280]
+          - button "1.0.0" [ref=e2283] [cursor=pointer]:
+            - strong [ref=e2284]: 1.0.0
+          - paragraph
+          - paragraph [ref=e2287]: Used to get the information of a dispatch guide given its guide id.
+          - paragraph
+          - generic [ref=e2288]: get
+          - generic [ref=e2289]:
+            - code [ref=e2291]:
+              - generic [ref=e2292]: https://activationcode.dispatchtrack.com/api/external/v1/dispatches/:identifier
+            - button "Copiar" [ref=e2295] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e2296]
+          - table [ref=e2297]:
+            - rowgroup [ref=e2298]:
+              - row "Campo Tipo Descripción" [ref=e2299]:
+                - columnheader "Campo" [ref=e2300]
+                - columnheader "Tipo" [ref=e2301]
+                - columnheader "Descripción" [ref=e2302]
+            - rowgroup [ref=e2303]:
+              - row "identifier Url_Parameter Identifier of the guide which you want to consult." [ref=e2304]:
+                - cell "identifier" [ref=e2305]
+                - cell "Url_Parameter" [ref=e2306]
+                - cell "Identifier of the guide which you want to consult." [ref=e2307]:
+                  - paragraph [ref=e2308]: Identifier of the guide which you want to consult.
+              - 'row "histories opcional Boolean If true, include histories in the JSON output Valor por defecto: false" [ref=e2309]':
+                - cell "histories opcional" [ref=e2310]:
+                  - text: histories
+                  - generic [ref=e2311]: opcional
+                - cell "Boolean" [ref=e2312]
+                - 'cell "If true, include histories in the JSON output Valor por defecto: false" [ref=e2313]':
+                  - paragraph [ref=e2314]: If true, include histories in the JSON output
+                  - paragraph [ref=e2315]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2316]: "false"
+              - 'row "evaluations opcional Boolean If true, include evaluations in the JSON output Valor por defecto: false" [ref=e2317]':
+                - cell "evaluations opcional" [ref=e2318]:
+                  - text: evaluations
+                  - generic [ref=e2319]: opcional
+                - cell "Boolean" [ref=e2320]
+                - 'cell "If true, include evaluations in the JSON output Valor por defecto: false" [ref=e2321]':
+                  - paragraph [ref=e2322]: If true, include evaluations in the JSON output
+                  - paragraph [ref=e2323]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2324]: "false"
+              - 'row "cod opcional Boolean If true, include cod in the JSON output Valor por defecto: false" [ref=e2325]':
+                - cell "cod opcional" [ref=e2326]:
+                  - text: cod
+                  - generic [ref=e2327]: opcional
+                - cell "Boolean" [ref=e2328]
+                - 'cell "If true, include cod in the JSON output Valor por defecto: false" [ref=e2329]':
+                  - paragraph [ref=e2330]: If true, include cod in the JSON output
+                  - paragraph [ref=e2331]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2332]: "false"
+              - row "route_id opcional Integer If given, filter dispatch for given route_id only" [ref=e2333]:
+                - cell "route_id opcional" [ref=e2334]:
+                  - text: route_id
+                  - generic [ref=e2335]: opcional
+                - cell "Integer" [ref=e2336]
+                - cell "If given, filter dispatch for given route_id only" [ref=e2337]:
+                  - paragraph [ref=e2338]: If given, filter dispatch for given route_id only
+          - heading "Success 200" [level=2] [ref=e2339]
+          - table [ref=e2340]:
+            - rowgroup [ref=e2341]:
+              - row "Campo Tipo Descripción" [ref=e2342]:
+                - columnheader "Campo" [ref=e2343]
+                - columnheader "Tipo" [ref=e2344]
+                - columnheader "Descripción" [ref=e2345]
+            - rowgroup [ref=e2346]:
+              - row "status String Status of the response (ok/error)." [ref=e2347]:
+                - cell "status" [ref=e2348]
+                - cell "String" [ref=e2349]
+                - cell "Status of the response (ok/error)." [ref=e2350]:
+                  - paragraph [ref=e2351]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e2352]:
+                - cell "response" [ref=e2353]
+                - cell "JSON" [ref=e2354]
+                - cell "JSON with API response." [ref=e2355]:
+                  - paragraph [ref=e2356]: JSON with API response.
+              - row "response.id Integer Guide Internal id." [ref=e2357]:
+                - cell "response.id" [ref=e2358]
+                - cell "Integer" [ref=e2359]
+                - cell "Guide Internal id." [ref=e2360]:
+                  - paragraph [ref=e2361]: Guide Internal id.
+              - row "response.dispatch_id Integer Dispatch Internal id." [ref=e2362]:
+                - cell "response.dispatch_id" [ref=e2363]
+                - cell "Integer" [ref=e2364]
+                - cell "Dispatch Internal id." [ref=e2365]:
+                  - paragraph [ref=e2366]: Dispatch Internal id.
+              - row "response.identifier String Guide identification number." [ref=e2367]:
+                - cell "response.identifier" [ref=e2368]
+                - cell "String" [ref=e2369]
+                - cell "Guide identification number." [ref=e2370]:
+                  - paragraph [ref=e2371]: Guide identification number.
+              - row "response.mode Integer Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only)." [ref=e2372]:
+                - cell "response.mode" [ref=e2373]
+                - cell "Integer" [ref=e2374]
+                - cell "Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only)." [ref=e2375]:
+                  - paragraph [ref=e2376]: Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only).
+              - row "response.position Integet Slot(position) of this dispatch in its route." [ref=e2377]:
+                - cell "response.position" [ref=e2378]
+                - cell "Integet" [ref=e2379]
+                - cell "Slot(position) of this dispatch in its route." [ref=e2380]:
+                  - paragraph [ref=e2381]: Slot(position) of this dispatch in its route.
+              - row "response.contact_name String Name of the person to whom the guide is addressed." [ref=e2382]:
+                - cell "response.contact_name" [ref=e2383]
+                - cell "String" [ref=e2384]
+                - cell "Name of the person to whom the guide is addressed." [ref=e2385]:
+                  - paragraph [ref=e2386]: Name of the person to whom the guide is addressed.
+              - row "response.contact_address String Address to where the guide is directed." [ref=e2387]:
+                - cell "response.contact_address" [ref=e2388]
+                - cell "String" [ref=e2389]
+                - cell "Address to where the guide is directed." [ref=e2390]:
+                  - paragraph [ref=e2391]: Address to where the guide is directed.
+              - row "response.contact_phone String Phone of the person to whom the guide is addressed." [ref=e2392]:
+                - cell "response.contact_phone" [ref=e2393]
+                - cell "String" [ref=e2394]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e2395]:
+                  - paragraph [ref=e2396]: Phone of the person to whom the guide is addressed.
+              - row "response.contact_id String Identification of the person to whom the guide is addressed." [ref=e2397]:
+                - cell "response.contact_id" [ref=e2398]
+                - cell "String" [ref=e2399]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e2400]:
+                  - paragraph [ref=e2401]: Identification of the person to whom the guide is addressed.
+              - row "response.contact_email String Email of the person to whom the guide is addressed." [ref=e2402]:
+                - cell "response.contact_email" [ref=e2403]
+                - cell "String" [ref=e2404]
+                - cell "Email of the person to whom the guide is addressed." [ref=e2405]:
+                  - paragraph [ref=e2406]: Email of the person to whom the guide is addressed.
+              - row "response.latitude String Latitude where the dispatch was deliverred." [ref=e2407]:
+                - cell "response.latitude" [ref=e2408]
+                - cell "String" [ref=e2409]
+                - cell "Latitude where the dispatch was deliverred." [ref=e2410]:
+                  - paragraph [ref=e2411]: Latitude where the dispatch was deliverred.
+              - row "response.longitude String Longitude where the dispatch was deliverred." [ref=e2412]:
+                - cell "response.longitude" [ref=e2413]
+                - cell "String" [ref=e2414]
+                - cell "Longitude where the dispatch was deliverred." [ref=e2415]:
+                  - paragraph [ref=e2416]: Longitude where the dispatch was deliverred.
+              - row "response.route_id Integer Id number of the route to which the current dispatch is associated." [ref=e2417]:
+                - cell "response.route_id" [ref=e2418]
+                - cell "Integer" [ref=e2419]
+                - cell "Id number of the route to which the current dispatch is associated." [ref=e2420]:
+                  - paragraph [ref=e2421]: Id number of the route to which the current dispatch is associated.
+              - row "response.status String Status of the dispatch (delivered, not delivered, partial delivery or on route)" [ref=e2422]:
+                - cell "response.status" [ref=e2423]
+                - cell "String" [ref=e2424]
+                - cell "Status of the dispatch (delivered, not delivered, partial delivery or on route)" [ref=e2425]:
+                  - paragraph [ref=e2426]: Status of the dispatch (delivered, not delivered, partial delivery or on route)
+              - row "response.status_id Integer Id of the Status." [ref=e2427]:
+                - cell "response.status_id" [ref=e2428]
+                - cell "Integer" [ref=e2429]
+                - cell "Id of the Status." [ref=e2430]:
+                  - paragraph [ref=e2431]: Id of the Status.
+              - row "response.substatus String Substatus of the dispatch (this is created in your account's settings." [ref=e2432]:
+                - cell "response.substatus" [ref=e2433]
+                - cell "String" [ref=e2434]
+                - cell "Substatus of the dispatch (this is created in your account's settings." [ref=e2435]:
+                  - paragraph [ref=e2436]: Substatus of the dispatch (this is created in your account's settings.
+              - row "response.arrived_at String Time at which the dispatch was delivered." [ref=e2437]:
+                - cell "response.arrived_at" [ref=e2438]
+                - cell "String" [ref=e2439]
+                - cell "Time at which the dispatch was delivered." [ref=e2440]:
+                  - paragraph [ref=e2441]: Time at which the dispatch was delivered.
+              - row "response.substatus_code String Code of Substatus." [ref=e2442]:
+                - cell "response.substatus_code" [ref=e2443]
+                - cell "String" [ref=e2444]
+                - cell "Code of Substatus." [ref=e2445]:
+                  - paragraph [ref=e2446]: Code of Substatus.
+              - row "response.tags JSON[] Array containing tags associated to the guide" [ref=e2447]:
+                - cell "response.tags" [ref=e2448]
+                - cell "JSON[]" [ref=e2449]
+                - cell "Array containing tags associated to the guide" [ref=e2450]:
+                  - paragraph [ref=e2451]: Array containing tags associated to the guide
+              - row "response.tags.name String Name of the tag associated to the guide." [ref=e2452]:
+                - cell "response.tags.name" [ref=e2453]
+                - cell "String" [ref=e2454]
+                - cell "Name of the tag associated to the guide." [ref=e2455]:
+                  - paragraph [ref=e2456]: Name of the tag associated to the guide.
+              - row "response.tags.value String Value of the tag associated to the guide." [ref=e2457]:
+                - cell "response.tags.value" [ref=e2458]
+                - cell "String" [ref=e2459]
+                - cell "Value of the tag associated to the guide." [ref=e2460]:
+                  - paragraph [ref=e2461]: Value of the tag associated to the guide.
+              - row "response.is_trunk Boolean True if this is a trunk movement (not last mile)" [ref=e2462]:
+                - cell "response.is_trunk" [ref=e2463]
+                - cell "Boolean" [ref=e2464]
+                - cell "True if this is a trunk movement (not last mile)" [ref=e2465]:
+                  - paragraph [ref=e2466]: True if this is a trunk movement (not last mile)
+              - row "response.is_pickup Boolean True if this is a pickup movement" [ref=e2467]:
+                - cell "response.is_pickup" [ref=e2468]
+                - cell "Boolean" [ref=e2469]
+                - cell "True if this is a pickup movement" [ref=e2470]:
+                  - paragraph [ref=e2471]: True if this is a pickup movement
+              - row "response.delivered_in_client Boolean True if the guide was delivered inside a geofence." [ref=e2472]:
+                - cell "response.delivered_in_client" [ref=e2473]
+                - cell "Boolean" [ref=e2474]
+                - cell "True if the guide was delivered inside a geofence." [ref=e2475]:
+                  - paragraph [ref=e2476]: True if the guide was delivered inside a geofence.
+              - row "response.estimated_at String Time at which the dispatch is (or was) estimated for delivery." [ref=e2477]:
+                - cell "response.estimated_at" [ref=e2478]
+                - cell "String" [ref=e2479]
+                - cell "Time at which the dispatch is (or was) estimated for delivery." [ref=e2480]:
+                  - paragraph [ref=e2481]: Time at which the dispatch is (or was) estimated for delivery.
+              - row "response.min_delivery_time String Minimal delivery time." [ref=e2482]:
+                - cell "response.min_delivery_time" [ref=e2483]
+                - cell "String" [ref=e2484]
+                - cell "Minimal delivery time." [ref=e2485]:
+                  - paragraph [ref=e2486]: Minimal delivery time.
+              - row "response.max_delivery_time String Maximal delivery time." [ref=e2487]:
+                - cell "response.max_delivery_time" [ref=e2488]
+                - cell "String" [ref=e2489]
+                - cell "Maximal delivery time." [ref=e2490]:
+                  - paragraph [ref=e2491]: Maximal delivery time.
+              - row "response.beecode String Unique identifier of the Dispatch Guide in Beetrack's System" [ref=e2492]:
+                - cell "response.beecode" [ref=e2493]
+                - cell "String" [ref=e2494]
+                - cell "Unique identifier of the Dispatch Guide in Beetrack's System" [ref=e2495]:
+                  - paragraph [ref=e2496]: Unique identifier of the Dispatch Guide in Beetrack's System
+              - row "response.locked Boolean True if the Guide is locked" [ref=e2497]:
+                - cell "response.locked" [ref=e2498]
+                - cell "Boolean" [ref=e2499]
+                - cell "True if the Guide is locked" [ref=e2500]:
+                  - paragraph [ref=e2501]: True if the Guide is locked
+              - 'row "response.end_type Integer Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4" [ref=e2502]':
+                - cell "response.end_type" [ref=e2503]
+                - cell "Integer" [ref=e2504]
+                - 'cell "Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4" [ref=e2505]':
+                  - paragraph [ref=e2506]: "Code for this element. Possible values: normal: 0, massive: 1, close_route: 2, web: 3, api: 4"
+              - row "response.number_of_retries Integer Number of times an attempt was made to manage the guide" [ref=e2507]:
+                - cell "response.number_of_retries" [ref=e2508]
+                - cell "Integer" [ref=e2509]
+                - cell "Number of times an attempt was made to manage the guide" [ref=e2510]:
+                  - paragraph [ref=e2511]: Number of times an attempt was made to manage the guide
+              - row "response.items JSON[] Items associated to the guide" [ref=e2512]:
+                - cell "response.items" [ref=e2513]
+                - cell "JSON[]" [ref=e2514]
+                - cell "Items associated to the guide" [ref=e2515]:
+                  - paragraph [ref=e2516]: Items associated to the guide
+              - row "response.items.id Integer ID of this item." [ref=e2517]:
+                - cell "response.items.id" [ref=e2518]
+                - cell "Integer" [ref=e2519]
+                - cell "ID of this item." [ref=e2520]:
+                  - paragraph [ref=e2521]: ID of this item.
+              - row "response.items.name String Name of this item." [ref=e2522]:
+                - cell "response.items.name" [ref=e2523]
+                - cell "String" [ref=e2524]
+                - cell "Name of this item." [ref=e2525]:
+                  - paragraph [ref=e2526]: Name of this item.
+              - row "response.items.description String Description of this item." [ref=e2527]:
+                - cell "response.items.description" [ref=e2528]
+                - cell "String" [ref=e2529]
+                - cell "Description of this item." [ref=e2530]:
+                  - paragraph [ref=e2531]: Description of this item.
+              - row "response.items.quantity String Quantity of the item being delivered." [ref=e2532]:
+                - cell "response.items.quantity" [ref=e2533]
+                - cell "String" [ref=e2534]
+                - cell "Quantity of the item being delivered." [ref=e2535]:
+                  - paragraph [ref=e2536]: Quantity of the item being delivered.
+              - row "response.items.original_quantity Integer Original Quantity of this item." [ref=e2537]:
+                - cell "response.items.original_quantity" [ref=e2538]
+                - cell "Integer" [ref=e2539]
+                - cell "Original Quantity of this item." [ref=e2540]:
+                  - paragraph [ref=e2541]: Original Quantity of this item.
+              - row "response.items.delivered_quantity Integer Delivered Quantity of this item." [ref=e2542]:
+                - cell "response.items.delivered_quantity" [ref=e2543]
+                - cell "Integer" [ref=e2544]
+                - cell "Delivered Quantity of this item." [ref=e2545]:
+                  - paragraph [ref=e2546]: Delivered Quantity of this item.
+              - row "response.items.code String Item code." [ref=e2547]:
+                - cell "response.items.code" [ref=e2548]
+                - cell "String" [ref=e2549]
+                - cell "Item code." [ref=e2550]:
+                  - paragraph [ref=e2551]: Item code.
+              - row "response.groups JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e2552]:
+                - cell "response.groups" [ref=e2553]
+                - cell "JSON[]" [ref=e2554]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e2555]:
+                  - paragraph [ref=e2556]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "response.groups.group_category String Name of the category of the group to which the guide is associated." [ref=e2557]:
+                - cell "response.groups.group_category" [ref=e2558]
+                - cell "String" [ref=e2559]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e2560]:
+                  - paragraph [ref=e2561]: Name of the category of the group to which the guide is associated.
+              - row "response.groups.group_category_id Integer ID of the category of the group to which the guide is associated." [ref=e2562]:
+                - cell "response.groups.group_category_id" [ref=e2563]
+                - cell "Integer" [ref=e2564]
+                - cell "ID of the category of the group to which the guide is associated." [ref=e2565]:
+                  - paragraph [ref=e2566]: ID of the category of the group to which the guide is associated.
+              - row "response.groups.name String Name of the group to which the guide is associated." [ref=e2567]:
+                - cell "response.groups.name" [ref=e2568]
+                - cell "String" [ref=e2569]
+                - cell "Name of the group to which the guide is associated." [ref=e2570]:
+                  - paragraph [ref=e2571]: Name of the group to which the guide is associated.
+              - row "response.associated_at DateTime Timestamp when the group was associated with this guide." [ref=e2572]:
+                - cell "response.associated_at" [ref=e2573]
+                - cell "DateTime" [ref=e2574]
+                - cell "Timestamp when the group was associated with this guide." [ref=e2575]:
+                  - paragraph [ref=e2576]: Timestamp when the group was associated with this guide.
+              - row "response.items.extras JSON[] Items extras." [ref=e2577]:
+                - cell "response.items.extras" [ref=e2578]
+                - cell "JSON[]" [ref=e2579]
+                - cell "Items extras." [ref=e2580]:
+                  - paragraph [ref=e2581]: Items extras.
+              - row "response.histories opcional JSON[] An array of milestones for this element. Oldest first." [ref=e2582]:
+                - cell "response.histories opcional" [ref=e2583]:
+                  - text: response.histories
+                  - generic [ref=e2584]: opcional
+                - cell "JSON[]" [ref=e2585]
+                - cell "An array of milestones for this element. Oldest first." [ref=e2586]:
+                  - paragraph [ref=e2587]: An array of milestones for this element. Oldest first.
+              - row "response.histories.status_id opcional Integer Status id of this element" [ref=e2588]:
+                - cell "response.histories.status_id opcional" [ref=e2589]:
+                  - text: response.histories.status_id
+                  - generic [ref=e2590]: opcional
+                - cell "Integer" [ref=e2591]
+                - cell "Status id of this element" [ref=e2592]:
+                  - paragraph [ref=e2593]: Status id of this element
+              - row "response.histories.substatus opcional String Substatus name of this element" [ref=e2594]:
+                - cell "response.histories.substatus opcional" [ref=e2595]:
+                  - text: response.histories.substatus
+                  - generic [ref=e2596]: opcional
+                - cell "String" [ref=e2597]
+                - cell "Substatus name of this element" [ref=e2598]:
+                  - paragraph [ref=e2599]: Substatus name of this element
+              - row "response.histories.substatus_code opcional Integer Substatus code for this element" [ref=e2600]:
+                - cell "response.histories.substatus_code opcional" [ref=e2601]:
+                  - text: response.histories.substatus_code
+                  - generic [ref=e2602]: opcional
+                - cell "Integer" [ref=e2603]
+                - cell "Substatus code for this element" [ref=e2604]:
+                  - paragraph [ref=e2605]: Substatus code for this element
+              - 'row "response.histories.code Integer Code for this element. Possible values: entered: 0, in_transit: 1, on_delivery: 2, assigned: 3, on_delivery_out: 4, arrived_at_place: 5, transfer: 6, arrived: 7, exception: 8, deleted: 9, locked: 10, unlocked: 11" [ref=e2606]':
+                - cell "response.histories.code" [ref=e2607]
+                - cell "Integer" [ref=e2608]
+                - 'cell "Code for this element. Possible values: entered: 0, in_transit: 1, on_delivery: 2, assigned: 3, on_delivery_out: 4, arrived_at_place: 5, transfer: 6, arrived: 7, exception: 8, deleted: 9, locked: 10, unlocked: 11" [ref=e2609]':
+                  - paragraph [ref=e2610]: "Code for this element. Possible values: entered: 0, in_transit: 1, on_delivery: 2, assigned: 3, on_delivery_out: 4, arrived_at_place: 5, transfer: 6, arrived: 7, exception: 8, deleted: 9, locked: 10, unlocked: 11"
+              - row "response.histories.description String A text description for this history, may be subject to change" [ref=e2611]:
+                - cell "response.histories.description" [ref=e2612]
+                - cell "String" [ref=e2613]
+                - cell "A text description for this history, may be subject to change" [ref=e2614]:
+                  - paragraph [ref=e2615]: A text description for this history, may be subject to change
+              - row "response.histories.happened_at DateTime Datetime of ocurrence in UTC" [ref=e2616]:
+                - cell "response.histories.happened_at" [ref=e2617]
+                - cell "DateTime" [ref=e2618]
+                - cell "Datetime of ocurrence in UTC" [ref=e2619]:
+                  - paragraph [ref=e2620]: Datetime of ocurrence in UTC
+              - row "response.histories.owner opcional JSON The entity responsible for this change" [ref=e2621]:
+                - cell "response.histories.owner opcional" [ref=e2622]:
+                  - text: response.histories.owner
+                  - generic [ref=e2623]: opcional
+                - cell "JSON" [ref=e2624]
+                - cell "The entity responsible for this change" [ref=e2625]:
+                  - paragraph [ref=e2626]: The entity responsible for this change
+              - row "response.histories.owner.id opcional Integer" [ref=e2627]:
+                - cell "response.histories.owner.id opcional" [ref=e2628]:
+                  - text: response.histories.owner.id
+                  - generic [ref=e2629]: opcional
+                - cell "Integer" [ref=e2630]
+                - cell [ref=e2631]
+              - row "response.histories.owner.name opcional String" [ref=e2632]:
+                - cell "response.histories.owner.name opcional" [ref=e2633]:
+                  - text: response.histories.owner.name
+                  - generic [ref=e2634]: opcional
+                - cell "String" [ref=e2635]
+                - cell [ref=e2636]
+              - 'row "response.histories.owner.type opcional String apiSuccess {JSON[]} response.COD Cash on delivery transactions associated to the dispatch only if cod=true in url" [ref=e2637]':
+                - cell "response.histories.owner.type opcional" [ref=e2638]:
+                  - text: response.histories.owner.type
+                  - generic [ref=e2639]: opcional
+                - cell "String" [ref=e2640]
+                - 'cell "apiSuccess {JSON[]} response.COD Cash on delivery transactions associated to the dispatch only if cod=true in url" [ref=e2641]':
+                  - paragraph [ref=e2642]: "apiSuccess {JSON[]} response.COD Cash on delivery transactions associated to the dispatch only if cod=true in url"
+              - row "response.COD.type_movement Integer movement_type (which is income_order) for this dispatch" [ref=e2643]:
+                - cell "response.COD.type_movement" [ref=e2644]
+                - cell "Integer" [ref=e2645]
+                - cell "movement_type (which is income_order) for this dispatch" [ref=e2646]:
+                  - paragraph [ref=e2647]: movement_type (which is income_order) for this dispatch
+              - row "response.COD.suggested_amount Float transaction suggested_amount" [ref=e2648]:
+                - cell "response.COD.suggested_amount" [ref=e2649]
+                - cell "Float" [ref=e2650]
+                - cell "transaction suggested_amount" [ref=e2651]:
+                  - paragraph [ref=e2652]: transaction suggested_amount
+              - row "response.COD.transactions JSON[] individual transaction mediums for this movement type" [ref=e2653]:
+                - cell "response.COD.transactions" [ref=e2654]
+                - cell "JSON[]" [ref=e2655]
+                - cell "individual transaction mediums for this movement type" [ref=e2656]:
+                  - paragraph [ref=e2657]: individual transaction mediums for this movement type
+              - row "response.COD.transactions.value String transaction medium" [ref=e2658]:
+                - cell "response.COD.transactions.value" [ref=e2659]
+                - cell "String" [ref=e2660]
+                - cell "transaction medium" [ref=e2661]:
+                  - paragraph [ref=e2662]: transaction medium
+              - row "response.COD.transactions.amount Float transaction amount for the above mentioned medium" [ref=e2663]:
+                - cell "response.COD.transactions.amount" [ref=e2664]
+                - cell "Float" [ref=e2665]
+                - cell "transaction amount for the above mentioned medium" [ref=e2666]:
+                  - paragraph [ref=e2667]: transaction amount for the above mentioned medium
+              - row "response.COD.observation String transaction observation" [ref=e2668]:
+                - cell "response.COD.observation" [ref=e2669]
+                - cell "String" [ref=e2670]
+                - cell "transaction observation" [ref=e2671]:
+                  - paragraph [ref=e2672]: transaction observation
+          - tablist [ref=e2673]:
+            - listitem [ref=e2674]:
+              - tab "200 OK:" [ref=e2675]
+          - generic [ref=e2678]:
+            - code [ref=e2680]: "{ \"status\": \"ok\", \"response\": { \"id\": 1, \"dispatch_id\": 1, \"identifier\": 6484967, \"mode\" : 2, \"position\": 1, \"contact_name\": \"Patrick Hamford\", \"contact_address\": \"6616 Washington Ave., Ocean Springs, MS\", \"contact_phone\": \"202-555-0111\", \"contact_id\": \"15289364\", \"contact_email\": \"patrick.hamford@hamford.com\", \"latitude\": \"30.438086\", \"longitude\": \"-88.832390\", \"route_id\": 164027, \"status\": \"not delivered\", \"status_id\": 1, \"substatus\": \"No one at home\", \"substatus_code\": 1, \"tags\": [], \"is_trunk\": true, \"is_pickup\": false, \"delivered_in_client\": false, \"arrived_at\": \"2015-03-30T09:56:52.000-03:0\", \"estimated_at\": \"2015-03-30T08:56:52.000-03:0\", \"min_delivery_time\": \"2014-11-12 15:30:00-0300\", \"max_delivery_time\": \"2014-11-12 16:30:00-0300\", \"beecode\": \"04ee6dcb45cbb59dc8308f8d\", \"locked\": false, \"end_type\": 0, \"number_of_retries\": 0, \"items\": [ { \"id\": 18675468, \"name\": \"iPop\", \"description\": \"25 inch TV set\", \"quantity\": 1, \"original_quantity\": 20, \"delivered_quantity\": 0, \"code\": \"AFG\", \"extras\": [] } ], \"groups\": [ { \"group_category\": \"test\", \"group_category_id\": 1, \"name\": \"group\", \"associated_at\": \"2014-11-12 16:30:00-0300\" } ], \"COD\": [ { \"type_movement\" : \"income_order\" \"transactions\": [{ \"value\": \"Cash\", \"ammount\": 2000, \"observation\": \"Nothing to said\"}, {\"value\": \"Card\", \"amount\": 3000, \"observation\": \"Nothing to said 2\"}], \"suggested_amount\": 5000 } ] } }"
+            - button "Copiar" [ref=e2683] [cursor=pointer]
+        - article [ref=e2685]:
+          - heading "Dispatch | Update Dispatch" [level=1] [ref=e2687]
+          - button "1.0.0" [ref=e2690] [cursor=pointer]:
+            - strong [ref=e2691]: 1.0.0
+          - paragraph
+          - paragraph [ref=e2694]: Used to update an existing dispatch guide
+          - paragraph
+          - generic [ref=e2695]: put
+          - generic [ref=e2696]:
+            - code [ref=e2698]:
+              - generic [ref=e2699]: https://activationcode.dispatchtrack.com/api/external/v1/dispatches/:dispatch_identifier
+            - button "Copiar" [ref=e2702] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e2703]
+          - table [ref=e2704]:
+            - rowgroup [ref=e2705]:
+              - row "Campo Tipo Descripción" [ref=e2706]:
+                - columnheader "Campo" [ref=e2707]
+                - columnheader "Tipo" [ref=e2708]
+                - columnheader "Descripción" [ref=e2709]
+            - rowgroup [ref=e2710]:
+              - row "dispatch_identifier String Identifier of the dispatch to update" [ref=e2711]:
+                - cell "dispatch_identifier" [ref=e2712]
+                - cell "String" [ref=e2713]
+                - cell "Identifier of the dispatch to update" [ref=e2714]:
+                  - paragraph [ref=e2715]: Identifier of the dispatch to update
+              - 'row "random opcional Boolean If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e2716]':
+                - cell "random opcional" [ref=e2717]:
+                  - text: random
+                  - generic [ref=e2718]: opcional
+                - cell "Boolean" [ref=e2719]
+                - 'cell "If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e2720]':
+                  - paragraph [ref=e2721]: If true generates a random number as the guide identifier.
+                  - paragraph [ref=e2722]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2723]: "false"
+              - 'row "auto_code opcional Boolean If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e2724]':
+                - cell "auto_code opcional" [ref=e2725]:
+                  - text: auto_code
+                  - generic [ref=e2726]: opcional
+                - cell "Boolean" [ref=e2727]
+                - 'cell "If true generates a random number as the guide identifier. Valor por defecto: false" [ref=e2728]':
+                  - paragraph [ref=e2729]: If true generates a random number as the guide identifier.
+                  - paragraph [ref=e2730]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2731]: "false"
+              - row "contact_name opcional String Name of the person to whom the guide is addressed." [ref=e2732]:
+                - cell "contact_name opcional" [ref=e2733]:
+                  - text: contact_name
+                  - generic [ref=e2734]: opcional
+                - cell "String" [ref=e2735]
+                - cell "Name of the person to whom the guide is addressed." [ref=e2736]:
+                  - paragraph [ref=e2737]: Name of the person to whom the guide is addressed.
+              - row "contact_address opcional String Address to where the guide is directed." [ref=e2738]:
+                - cell "contact_address opcional" [ref=e2739]:
+                  - text: contact_address
+                  - generic [ref=e2740]: opcional
+                - cell "String" [ref=e2741]
+                - cell "Address to where the guide is directed." [ref=e2742]:
+                  - paragraph [ref=e2743]: Address to where the guide is directed.
+              - row "contact_phone opcional String Phone of the person to whom the guide is addressed." [ref=e2744]:
+                - cell "contact_phone opcional" [ref=e2745]:
+                  - text: contact_phone
+                  - generic [ref=e2746]: opcional
+                - cell "String" [ref=e2747]
+                - cell "Phone of the person to whom the guide is addressed." [ref=e2748]:
+                  - paragraph [ref=e2749]: Phone of the person to whom the guide is addressed.
+              - row "contact_id opcional String Contact id of the person to whom the guide is addressed." [ref=e2750]:
+                - cell "contact_id opcional" [ref=e2751]:
+                  - text: contact_id
+                  - generic [ref=e2752]: opcional
+                - cell "String" [ref=e2753]
+                - cell "Contact id of the person to whom the guide is addressed." [ref=e2754]:
+                  - paragraph [ref=e2755]: Contact id of the person to whom the guide is addressed.
+              - row "contact_identifier opcional String Identification of the person to whom the guide is addressed." [ref=e2756]:
+                - cell "contact_identifier opcional" [ref=e2757]:
+                  - text: contact_identifier
+                  - generic [ref=e2758]: opcional
+                - cell "String" [ref=e2759]
+                - cell "Identification of the person to whom the guide is addressed." [ref=e2760]:
+                  - paragraph [ref=e2761]: Identification of the person to whom the guide is addressed.
+              - row "contact_email opcional String Email of the person to whom the guide is addressed." [ref=e2762]:
+                - cell "contact_email opcional" [ref=e2763]:
+                  - text: contact_email
+                  - generic [ref=e2764]: opcional
+                - cell "String" [ref=e2765]
+                - cell "Email of the person to whom the guide is addressed." [ref=e2766]:
+                  - paragraph [ref=e2767]: Email of the person to whom the guide is addressed.
+              - row "latitude opcional Float Latitude where the dispatch is directed." [ref=e2768]:
+                - cell "latitude opcional" [ref=e2769]:
+                  - text: latitude
+                  - generic [ref=e2770]: opcional
+                - cell "Float" [ref=e2771]
+                - cell "Latitude where the dispatch is directed." [ref=e2772]:
+                  - paragraph [ref=e2773]: Latitude where the dispatch is directed.
+              - row "longitude opcional Float Longitude where the dispatch is directed." [ref=e2774]:
+                - cell "longitude opcional" [ref=e2775]:
+                  - text: longitude
+                  - generic [ref=e2776]: opcional
+                - cell "Float" [ref=e2777]
+                - cell "Longitude where the dispatch is directed." [ref=e2778]:
+                  - paragraph [ref=e2779]: Longitude where the dispatch is directed.
+              - row "load opcional Integer Load (planner) is a dimensionless variable. Could be kg, m3, money, etc." [ref=e2780]:
+                - cell "load opcional" [ref=e2781]:
+                  - text: load
+                  - generic [ref=e2782]: opcional
+                - cell "Integer" [ref=e2783]
+                - cell "Load (planner) is a dimensionless variable. Could be kg, m3, money, etc." [ref=e2784]:
+                  - paragraph [ref=e2785]: Load (planner) is a dimensionless variable. Could be kg, m3, money, etc.
+              - row "slot opcional Integer Slot (position) of this dispatch in its route" [ref=e2786]:
+                - cell "slot opcional" [ref=e2787]:
+                  - text: slot
+                  - generic [ref=e2788]: opcional
+                - cell "Integer" [ref=e2789]
+                - cell "Slot (position) of this dispatch in its route" [ref=e2790]:
+                  - paragraph [ref=e2791]: Slot (position) of this dispatch in its route
+              - row "priority opcional Integer Priority (planner) is a variable that allows handling overcapacity." [ref=e2792]:
+                - cell "priority opcional" [ref=e2793]:
+                  - text: priority
+                  - generic [ref=e2794]: opcional
+                - cell "Integer" [ref=e2795]
+                - cell "Priority (planner) is a variable that allows handling overcapacity." [ref=e2796]:
+                  - paragraph [ref=e2797]: Priority (planner) is a variable that allows handling overcapacity.
+              - row "service_time opcional Integer Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes." [ref=e2798]:
+                - cell "service_time opcional" [ref=e2799]:
+                  - text: service_time
+                  - generic [ref=e2800]: opcional
+                - cell "Integer" [ref=e2801]
+                - cell "Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes." [ref=e2802]:
+                  - paragraph [ref=e2803]: Service Time (planner) is the time to takes the transporter to manage the delivery expressed in minutes.
+              - row "estimated_at opcional Datetime Time at which the dispatch is (or was) estimated for delivery." [ref=e2804]:
+                - cell "estimated_at opcional" [ref=e2805]:
+                  - text: estimated_at
+                  - generic [ref=e2806]: opcional
+                - cell "Datetime" [ref=e2807]
+                - cell "Time at which the dispatch is (or was) estimated for delivery." [ref=e2808]:
+                  - paragraph [ref=e2809]: Time at which the dispatch is (or was) estimated for delivery.
+              - row "min_delivery_time opcional Datetime Minimal delivery time." [ref=e2810]:
+                - cell "min_delivery_time opcional" [ref=e2811]:
+                  - text: min_delivery_time
+                  - generic [ref=e2812]: opcional
+                - cell "Datetime" [ref=e2813]
+                - cell "Minimal delivery time." [ref=e2814]:
+                  - paragraph [ref=e2815]: Minimal delivery time.
+              - row "max_delivery_time opcional Datetime Maximal delivery time." [ref=e2816]:
+                - cell "max_delivery_time opcional" [ref=e2817]:
+                  - text: max_delivery_time
+                  - generic [ref=e2818]: opcional
+                - cell "Datetime" [ref=e2819]
+                - cell "Maximal delivery time." [ref=e2820]:
+                  - paragraph [ref=e2821]: Maximal delivery time.
+              - 'row "is_trunk opcional Boolean True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e2822]':
+                - cell "is_trunk opcional" [ref=e2823]:
+                  - text: is_trunk
+                  - generic [ref=e2824]: opcional
+                - cell "Boolean" [ref=e2825]
+                - 'cell "True if this is a trunk movement (not last mile). Valor por defecto: false" [ref=e2826]':
+                  - paragraph [ref=e2827]: True if this is a trunk movement (not last mile).
+                  - paragraph [ref=e2828]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2829]: "false"
+              - 'row "is_pickup opcional Boolean True if this is a pickup movement. Valor por defecto: false" [ref=e2830]':
+                - cell "is_pickup opcional" [ref=e2831]:
+                  - text: is_pickup
+                  - generic [ref=e2832]: opcional
+                - cell "Boolean" [ref=e2833]
+                - 'cell "True if this is a pickup movement. Valor por defecto: false" [ref=e2834]':
+                  - paragraph [ref=e2835]: True if this is a pickup movement.
+                  - paragraph [ref=e2836]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2837]: "false"
+              - 'row "mode opcional Integer Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e2838]':
+                - cell "mode opcional" [ref=e2839]:
+                  - text: mode
+                  - generic [ref=e2840]: opcional
+                - cell "Integer" [ref=e2841]
+                - 'cell "Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only). Valor por defecto: 0" [ref=e2842]':
+                  - paragraph [ref=e2843]: Available modes (0=defaults, 1=pickup_only, 2=pickup_and_delivery, 3=pickup_and_drop, 4=delivery_only).
+                  - paragraph [ref=e2844]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e2845]: "0"
+              - row "pincode_enabled opcional Boolean Indicates if the guide has delivery with PIN code." [ref=e2846]:
+                - cell "pincode_enabled opcional" [ref=e2847]:
+                  - text: pincode_enabled
+                  - generic [ref=e2848]: opcional
+                - cell "Boolean" [ref=e2849]
+                - cell "Indicates if the guide has delivery with PIN code." [ref=e2850]:
+                  - paragraph [ref=e2851]: Indicates if the guide has delivery with PIN code.
+              - row "status_id opcional Integer Id of the Status." [ref=e2852]:
+                - cell "status_id opcional" [ref=e2853]:
+                  - text: status_id
+                  - generic [ref=e2854]: opcional
+                - cell "Integer" [ref=e2855]
+                - cell "Id of the Status." [ref=e2856]:
+                  - paragraph [ref=e2857]: Id of the Status.
+              - row "status opcional String Status of the dispatch (this is created in your account's settings)." [ref=e2858]:
+                - cell "status opcional" [ref=e2859]:
+                  - text: status
+                  - generic [ref=e2860]: opcional
+                - cell "String" [ref=e2861]
+                - cell "Status of the dispatch (this is created in your account's settings)." [ref=e2862]:
+                  - paragraph [ref=e2863]: Status of the dispatch (this is created in your account's settings).
+              - row "arrived_at opcional Datetime Management time of delivery. Must be in UTC, ISO8601 format." [ref=e2864]:
+                - cell "arrived_at opcional" [ref=e2865]:
+                  - text: arrived_at
+                  - generic [ref=e2866]: opcional
+                - cell "Datetime" [ref=e2867]
+                - cell "Management time of delivery. Must be in UTC, ISO8601 format." [ref=e2868]:
+                  - paragraph [ref=e2869]: Management time of delivery. Must be in UTC, ISO8601 format.
+              - row "substatus opcional String SubStatus (id) of the order." [ref=e2870]:
+                - cell "substatus opcional" [ref=e2871]:
+                  - text: substatus
+                  - generic [ref=e2872]: opcional
+                - cell "String" [ref=e2873]
+                - cell "SubStatus (id) of the order." [ref=e2874]:
+                  - paragraph [ref=e2875]: SubStatus (id) of the order.
+              - row "substatus_code opcional String SubStatus (code) of the order." [ref=e2876]:
+                - cell "substatus_code opcional" [ref=e2877]:
+                  - text: substatus_code
+                  - generic [ref=e2878]: opcional
+                - cell "String" [ref=e2879]
+                - cell "SubStatus (code) of the order." [ref=e2880]:
+                  - paragraph [ref=e2881]: SubStatus (code) of the order.
+              - row "destination opcional String Destination of this item." [ref=e2882]:
+                - cell "destination opcional" [ref=e2883]:
+                  - text: destination
+                  - generic [ref=e2884]: opcional
+                - cell "String" [ref=e2885]
+                - cell "Destination of this item." [ref=e2886]:
+                  - paragraph [ref=e2887]: Destination of this item.
+              - row "destination_id opcional String Destination id of this item." [ref=e2888]:
+                - cell "destination_id opcional" [ref=e2889]:
+                  - text: destination_id
+                  - generic [ref=e2890]: opcional
+                - cell "String" [ref=e2891]
+                - cell "Destination id of this item." [ref=e2892]:
+                  - paragraph [ref=e2893]: Destination id of this item.
+              - row "place_id opcional String Place id of the guide." [ref=e2894]:
+                - cell "place_id opcional" [ref=e2895]:
+                  - text: place_id
+                  - generic [ref=e2896]: opcional
+                - cell "String" [ref=e2897]
+                - cell "Place id of the guide." [ref=e2898]:
+                  - paragraph [ref=e2899]: Place id of the guide.
+              - row "place opcional String Place of the guide." [ref=e2900]:
+                - cell "place opcional" [ref=e2901]:
+                  - text: place
+                  - generic [ref=e2902]: opcional
+                - cell "String" [ref=e2903]
+                - cell "Place of the guide." [ref=e2904]:
+                  - paragraph [ref=e2905]: Place of the guide.
+              - row "pickup_address opcional JSON Address where the order will be picked up." [ref=e2906]:
+                - cell "pickup_address opcional" [ref=e2907]:
+                  - text: pickup_address
+                  - generic [ref=e2908]: opcional
+                - cell "JSON" [ref=e2909]
+                - cell "Address where the order will be picked up." [ref=e2910]:
+                  - paragraph [ref=e2911]: Address where the order will be picked up.
+              - row "pickup_address.name String Name of the address." [ref=e2912]:
+                - cell "pickup_address.name" [ref=e2913]
+                - cell "String" [ref=e2914]
+                - cell "Name of the address." [ref=e2915]:
+                  - paragraph [ref=e2916]: Name of the address.
+              - row "waypoints opcional JSON" [ref=e2917]:
+                - cell "waypoints opcional" [ref=e2918]:
+                  - text: waypoints
+                  - generic [ref=e2919]: opcional
+                - cell "JSON" [ref=e2920]
+                - cell [ref=e2921]
+              - row "form opcional JSON" [ref=e2922]:
+                - cell "form opcional" [ref=e2923]:
+                  - text: form
+                  - generic [ref=e2924]: opcional
+                - cell "JSON" [ref=e2925]
+                - cell [ref=e2926]
+              - row "items opcional JSON[] Array containing items associated to the guide." [ref=e2927]:
+                - cell "items opcional" [ref=e2928]:
+                  - text: items
+                  - generic [ref=e2929]: opcional
+                - cell "JSON[]" [ref=e2930]
+                - cell "Array containing items associated to the guide." [ref=e2931]:
+                  - paragraph [ref=e2932]: Array containing items associated to the guide.
+              - row "items.name opcional String Name for this item (SKU, for example)." [ref=e2933]:
+                - cell "items.name opcional" [ref=e2934]:
+                  - text: items.name
+                  - generic [ref=e2935]: opcional
+                - cell "String" [ref=e2936]
+                - cell "Name for this item (SKU, for example)." [ref=e2937]:
+                  - paragraph [ref=e2938]: Name for this item (SKU, for example).
+              - row "items.code opcional String Unique code for this item (SKU, for example)." [ref=e2939]:
+                - cell "items.code opcional" [ref=e2940]:
+                  - text: items.code
+                  - generic [ref=e2941]: opcional
+                - cell "String" [ref=e2942]
+                - cell "Unique code for this item (SKU, for example)." [ref=e2943]:
+                  - paragraph [ref=e2944]: Unique code for this item (SKU, for example).
+              - row "Items.price opcional String Price for this item." [ref=e2945]:
+                - cell "Items.price opcional" [ref=e2946]:
+                  - text: Items.price
+                  - generic [ref=e2947]: opcional
+                - cell "String" [ref=e2948]
+                - cell "Price for this item." [ref=e2949]:
+                  - paragraph [ref=e2950]: Price for this item.
+              - row "items.unit_price opcional String Price for this item." [ref=e2951]:
+                - cell "items.unit_price opcional" [ref=e2952]:
+                  - text: items.unit_price
+                  - generic [ref=e2953]: opcional
+                - cell "String" [ref=e2954]
+                - cell "Price for this item." [ref=e2955]:
+                  - paragraph [ref=e2956]: Price for this item.
+              - row "items.description opcional String Description of the item being delivered." [ref=e2957]:
+                - cell "items.description opcional" [ref=e2958]:
+                  - text: items.description
+                  - generic [ref=e2959]: opcional
+                - cell "String" [ref=e2960]
+                - cell "Description of the item being delivered." [ref=e2961]:
+                  - paragraph [ref=e2962]: Description of the item being delivered.
+              - row "items.quantity opcional String Quantity of the item being delivered." [ref=e2963]:
+                - cell "items.quantity opcional" [ref=e2964]:
+                  - text: items.quantity
+                  - generic [ref=e2965]: opcional
+                - cell "String" [ref=e2966]
+                - cell "Quantity of the item being delivered." [ref=e2967]:
+                  - paragraph [ref=e2968]: Quantity of the item being delivered.
+              - row "items.quantity_ref opcional Decimal Quantity ref of the item being delivered." [ref=e2969]:
+                - cell "items.quantity_ref opcional" [ref=e2970]:
+                  - text: items.quantity_ref
+                  - generic [ref=e2971]: opcional
+                - cell "Decimal" [ref=e2972]
+                - cell "Quantity ref of the item being delivered." [ref=e2973]:
+                  - paragraph [ref=e2974]: Quantity ref of the item being delivered.
+              - row "items.extras opcional JSON[] Extra information associated to the items" [ref=e2975]:
+                - cell "items.extras opcional" [ref=e2976]:
+                  - text: items.extras
+                  - generic [ref=e2977]: opcional
+                - cell "JSON[]" [ref=e2978]
+                - cell "Extra information associated to the items" [ref=e2979]:
+                  - paragraph [ref=e2980]: Extra information associated to the items
+              - row "items.extras.name opcional String Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e2981]:
+                - cell "items.extras.name opcional" [ref=e2982]:
+                  - text: items.extras.name
+                  - generic [ref=e2983]: opcional
+                - cell "String" [ref=e2984]
+                - cell "Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page." [ref=e2985]:
+                  - paragraph [ref=e2986]: Name of the extra field. Must be previously created on the Custom Attributes section on your account's Settings page.
+              - row "items.extras.value opcional String Field value." [ref=e2987]:
+                - cell "items.extras.value opcional" [ref=e2988]:
+                  - text: items.extras.value
+                  - generic [ref=e2989]: opcional
+                - cell "String" [ref=e2990]
+                - cell "Field value." [ref=e2991]:
+                  - paragraph [ref=e2992]: Field value.
+              - row "tags opcional JSON[] Array containing tags associated to the guide." [ref=e2993]:
+                - cell "tags opcional" [ref=e2994]:
+                  - text: tags
+                  - generic [ref=e2995]: opcional
+                - cell "JSON[]" [ref=e2996]
+                - cell "Array containing tags associated to the guide." [ref=e2997]:
+                  - paragraph [ref=e2998]: Array containing tags associated to the guide.
+              - row "tags.name opcional String Name of the tag associated to the guide." [ref=e2999]:
+                - cell "tags.name opcional" [ref=e3000]:
+                  - text: tags.name
+                  - generic [ref=e3001]: opcional
+                - cell "String" [ref=e3002]
+                - cell "Name of the tag associated to the guide." [ref=e3003]:
+                  - paragraph [ref=e3004]: Name of the tag associated to the guide.
+              - row "tags.value opcional String Value of the tag associated to the guide." [ref=e3005]:
+                - cell "tags.value opcional" [ref=e3006]:
+                  - text: tags.value
+                  - generic [ref=e3007]: opcional
+                - cell "String" [ref=e3008]
+                - cell "Value of the tag associated to the guide." [ref=e3009]:
+                  - paragraph [ref=e3010]: Value of the tag associated to the guide.
+              - row "tags.type opcional String Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e3011]:
+                - cell "tags.type opcional" [ref=e3012]:
+                  - text: tags.type
+                  - generic [ref=e3013]: opcional
+                - cell "String" [ref=e3014]
+                - cell "Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e3015]:
+                  - paragraph [ref=e3016]: Type(string/date) of the tag associated to the guide. "string" => custom field and "date" => custom date field
+              - row "groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e3017]:
+                - cell "groups opcional" [ref=e3018]:
+                  - text: groups
+                  - generic [ref=e3019]: opcional
+                - cell "JSON[]" [ref=e3020]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e3021]:
+                  - paragraph [ref=e3022]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e3023]:
+                - cell "groups.category opcional" [ref=e3024]:
+                  - text: groups.category
+                  - generic [ref=e3025]: opcional
+                - cell "String" [ref=e3026]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e3027]:
+                  - paragraph [ref=e3028]: Name of the category of the group to which the guide is associated.
+              - row "groups.name opcional String Name of the group to which the guide is associated." [ref=e3029]:
+                - cell "groups.name opcional" [ref=e3030]:
+                  - text: groups.name
+                  - generic [ref=e3031]: opcional
+                - cell "String" [ref=e3032]
+                - cell "Name of the group to which the guide is associated." [ref=e3033]:
+                  - paragraph [ref=e3034]: Name of the group to which the guide is associated.
+              - 'row "groups.force_create opcional Boolean True if it has to be created if it is not found. Valor por defecto: false" [ref=e3035]':
+                - cell "groups.force_create opcional" [ref=e3036]:
+                  - text: groups.force_create
+                  - generic [ref=e3037]: opcional
+                - cell "Boolean" [ref=e3038]
+                - 'cell "True if it has to be created if it is not found. Valor por defecto: false" [ref=e3039]':
+                  - paragraph [ref=e3040]: True if it has to be created if it is not found.
+                  - paragraph [ref=e3041]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e3042]: "false"
+          - tablist [ref=e3043]:
+            - listitem [ref=e3044]:
+              - tab "Request-Example:" [ref=e3045]
+          - generic [ref=e3048]:
+            - code [ref=e3050]: "{ \"contact_name\": \"Eric Smith\", \"contact_phone\": \"34543535\", \"latitude\": -33.414355, \"longitude\": -70.584493, \"service_time\": 45, \"items\": [ { \"code\": \"SKU123\", \"description\": \"Updated LED Monitor Description\", \"quantity\": 2 } ], \"tags\": [ { \"name\": \"Priority\", \"value\": \"High\", \"type\": \"string\" } ] }"
+            - button "Copiar" [ref=e3053] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e3054]
+          - table [ref=e3055]:
+            - rowgroup [ref=e3056]:
+              - row "Campo Tipo Descripción" [ref=e3057]:
+                - columnheader "Campo" [ref=e3058]
+                - columnheader "Tipo" [ref=e3059]
+                - columnheader "Descripción" [ref=e3060]
+            - rowgroup [ref=e3061]:
+              - row "status String Status of the response (ok/error)." [ref=e3062]:
+                - cell "status" [ref=e3063]
+                - cell "String" [ref=e3064]
+                - cell "Status of the response (ok/error)." [ref=e3065]:
+                  - paragraph [ref=e3066]: Status of the response (ok/error).
+              - row "response JSON JSON with the response of the API." [ref=e3067]:
+                - cell "response" [ref=e3068]
+                - cell "JSON" [ref=e3069]
+                - cell "JSON with the response of the API." [ref=e3070]:
+                  - paragraph [ref=e3071]: JSON with the response of the API.
+              - row "response.identifier String Id of the updated dispatch." [ref=e3072]:
+                - cell "response.identifier" [ref=e3073]
+                - cell "String" [ref=e3074]
+                - cell "Id of the updated dispatch." [ref=e3075]:
+                  - paragraph [ref=e3076]: Id of the updated dispatch.
+          - tablist [ref=e3077]:
+            - listitem [ref=e3078]:
+              - tab "200 OK:" [ref=e3079]
+          - generic [ref=e3082]:
+            - code [ref=e3084]: "{ \"status\": \"ok\", \"response\": { \"identifier\": \"39424321\" } }"
+            - button "Copiar" [ref=e3087] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e3088]
+          - table [ref=e3089]:
+            - rowgroup [ref=e3090]:
+              - row "Nombre Tipo Descripción" [ref=e3091]:
+                - columnheader "Nombre" [ref=e3092]
+                - columnheader "Tipo" [ref=e3093]
+                - columnheader "Descripción" [ref=e3094]
+            - rowgroup [ref=e3095]:
+              - 'row "404 Not Found: The requested dispatch was not found { \"status\": \"error\", \"response\": \"Not found\" }" [ref=e3096]':
+                - cell "404" [ref=e3097]
+                - cell [ref=e3098]
+                - 'cell "Not Found: The requested dispatch was not found { \"status\": \"error\", \"response\": \"Not found\" }" [ref=e3099]':
+                  - paragraph [ref=e3100]: "Not Found: The requested dispatch was not found { \"status\": \"error\", \"response\": \"Not found\" }"
+              - 'row "425 Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }" [ref=e3101]':
+                - cell "425" [ref=e3102]
+                - cell [ref=e3103]
+                - 'cell "Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }" [ref=e3104]':
+                  - paragraph [ref=e3105]: "Too Early: Request already processed. This means that the request has already been processed before, and cached, so there is no need to redo it. { \"status\": \"too_early\", \"response\": { \"identifier\": \"39424321\" } }"
+          - heading "Error 500" [level=2] [ref=e3106]
+          - table [ref=e3107]:
+            - rowgroup [ref=e3108]:
+              - row "Nombre Tipo Descripción" [ref=e3109]:
+                - columnheader "Nombre" [ref=e3110]
+                - columnheader "Tipo" [ref=e3111]
+                - columnheader "Descripción" [ref=e3112]
+            - rowgroup [ref=e3113]:
+              - row "status String Status of the response." [ref=e3114]:
+                - cell "status" [ref=e3115]
+                - cell "String" [ref=e3116]
+                - cell "Status of the response." [ref=e3117]:
+                  - paragraph [ref=e3118]: Status of the response.
+              - row "response String Error message." [ref=e3119]:
+                - cell "response" [ref=e3120]
+                - cell "String" [ref=e3121]
+                - cell "Error message." [ref=e3122]:
+                  - paragraph [ref=e3123]: Error message.
+          - tablist [ref=e3124]:
+            - listitem [ref=e3125]:
+              - tab "500 Error:" [ref=e3126]
+            - listitem [ref=e3127]:
+              - tab "500 Error:" [ref=e3128] [cursor=pointer]
+            - listitem [ref=e3129]:
+              - tab "500 Error:" [ref=e3130] [cursor=pointer]
+          - generic [ref=e3133]:
+            - code [ref=e3135]: "User can not modify dispatches statuses { \"status\": \"Error\", \"response\": \"Permission denied\" }"
+            - button "Copiar" [ref=e3138] [cursor=pointer]
+      - generic [ref=e3139]:
+        - heading "Vehicle" [level=1] [ref=e3140]
+        - article [ref=e3142]:
+          - heading "Vehicle | Create vehicle" [level=1] [ref=e3144]
+          - button "1.0.0" [ref=e3147] [cursor=pointer]:
+            - strong [ref=e3148]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3151]: Create a new vehicle
+          - paragraph
+          - generic [ref=e3152]: post
+          - generic [ref=e3153]:
+            - code [ref=e3155]:
+              - generic [ref=e3156]: https://activationcode.dispatchtrack.com/api/external/v1/trucks
+            - button "Copiar" [ref=e3159] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3160]
+          - table [ref=e3161]:
+            - rowgroup [ref=e3162]:
+              - row "Campo Tipo Descripción" [ref=e3163]:
+                - columnheader "Campo" [ref=e3164]
+                - columnheader "Tipo" [ref=e3165]
+                - columnheader "Descripción" [ref=e3166]
+            - rowgroup [ref=e3167]:
+              - row "identifier String identifier/name of the vehicle that you want to create" [ref=e3168]:
+                - cell "identifier" [ref=e3169]
+                - cell "String" [ref=e3170]
+                - cell "identifier/name of the vehicle that you want to create" [ref=e3171]:
+                  - paragraph [ref=e3172]: identifier/name of the vehicle that you want to create
+              - 'row "vehicle_type String The vehicle''s type. Possible values: truck, pickup, car, motorcycle, bicycle, other, electric, electric_motorcycle, electric_bicycle, electric_cart, electric_car, motorbike" [ref=e3173]':
+                - cell "vehicle_type" [ref=e3174]
+                - cell "String" [ref=e3175]
+                - 'cell "The vehicle''s type. Possible values: truck, pickup, car, motorcycle, bicycle, other, electric, electric_motorcycle, electric_bicycle, electric_cart, electric_car, motorbike" [ref=e3176]':
+                  - paragraph [ref=e3177]: "The vehicle's type. Possible values: truck, pickup, car, motorcycle, bicycle, other, electric, electric_motorcycle, electric_bicycle, electric_cart, electric_car, motorbike"
+              - row "groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e3178]:
+                - cell "groups opcional" [ref=e3179]:
+                  - text: groups
+                  - generic [ref=e3180]: opcional
+                - cell "JSON[]" [ref=e3181]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e3182]:
+                  - paragraph [ref=e3183]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e3184]:
+                - cell "groups.category opcional" [ref=e3185]:
+                  - text: groups.category
+                  - generic [ref=e3186]: opcional
+                - cell "String" [ref=e3187]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e3188]:
+                  - paragraph [ref=e3189]: Name of the category of the group to which the guide is associated.
+              - row "groups.name opcional String Name of the group to which the truck is associated." [ref=e3190]:
+                - cell "groups.name opcional" [ref=e3191]:
+                  - text: groups.name
+                  - generic [ref=e3192]: opcional
+                - cell "String" [ref=e3193]
+                - cell "Name of the group to which the truck is associated." [ref=e3194]:
+                  - paragraph [ref=e3195]: Name of the group to which the truck is associated.
+              - 'row "groups.force_create opcional Boolean True if it has to be created if it is not found. Valor por defecto: false" [ref=e3196]':
+                - cell "groups.force_create opcional" [ref=e3197]:
+                  - text: groups.force_create
+                  - generic [ref=e3198]: opcional
+                - cell "Boolean" [ref=e3199]
+                - 'cell "True if it has to be created if it is not found. Valor por defecto: false" [ref=e3200]':
+                  - paragraph [ref=e3201]: True if it has to be created if it is not found.
+                  - paragraph [ref=e3202]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e3203]: "false"
+          - heading "Success 200" [level=2] [ref=e3204]
+          - table [ref=e3205]:
+            - rowgroup [ref=e3206]:
+              - row "Campo Tipo Descripción" [ref=e3207]:
+                - columnheader "Campo" [ref=e3208]
+                - columnheader "Tipo" [ref=e3209]
+                - columnheader "Descripción" [ref=e3210]
+            - rowgroup [ref=e3211]:
+              - row "status String Status of the response (ok/error)." [ref=e3212]:
+                - cell "status" [ref=e3213]
+                - cell "String" [ref=e3214]
+                - cell "Status of the response (ok/error)." [ref=e3215]:
+                  - paragraph [ref=e3216]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e3217]:
+                - cell "response" [ref=e3218]
+                - cell "JSON" [ref=e3219]
+                - cell "JSON with API response." [ref=e3220]:
+                  - paragraph [ref=e3221]: JSON with API response.
+              - row "response.id String The vehicle's ID" [ref=e3222]:
+                - cell "response.id" [ref=e3223]
+                - cell "String" [ref=e3224]
+                - cell "The vehicle's ID" [ref=e3225]:
+                  - paragraph [ref=e3226]: The vehicle's ID
+              - row "response.truck String The vehicle's identifier" [ref=e3227]:
+                - cell "response.truck" [ref=e3228]
+                - cell "String" [ref=e3229]
+                - cell "The vehicle's identifier" [ref=e3230]:
+                  - paragraph [ref=e3231]: The vehicle's identifier
+              - row "response.vehicle_type String The vehicle's type" [ref=e3232]:
+                - cell "response.vehicle_type" [ref=e3233]
+                - cell "String" [ref=e3234]
+                - cell "The vehicle's type" [ref=e3235]:
+                  - paragraph [ref=e3236]: The vehicle's type
+              - row "response.groups JSON[]" [ref=e3237]:
+                - cell "response.groups" [ref=e3238]
+                - cell "JSON[]" [ref=e3239]
+                - cell [ref=e3240]
+              - row "response.groups.group_category_id Integer Group Category id" [ref=e3241]:
+                - cell "response.groups.group_category_id" [ref=e3242]
+                - cell "Integer" [ref=e3243]
+                - cell "Group Category id" [ref=e3244]:
+                  - paragraph [ref=e3245]: Group Category id
+              - row "response.groups.group_category String Group Category name" [ref=e3246]:
+                - cell "response.groups.group_category" [ref=e3247]
+                - cell "String" [ref=e3248]
+                - cell "Group Category name" [ref=e3249]:
+                  - paragraph [ref=e3250]: Group Category name
+              - row "response.groups.name String Group name" [ref=e3251]:
+                - cell "response.groups.name" [ref=e3252]
+                - cell "String" [ref=e3253]
+                - cell "Group name" [ref=e3254]:
+                  - paragraph [ref=e3255]: Group name
+              - row "response.truck_created Boolean True if the vehicle was succesfully created" [ref=e3256]:
+                - cell "response.truck_created" [ref=e3257]
+                - cell "Boolean" [ref=e3258]
+                - cell "True if the vehicle was succesfully created" [ref=e3259]:
+                  - paragraph [ref=e3260]: True if the vehicle was succesfully created
+              - row "response.created Boolean True if the vehicle was succesfully created" [ref=e3261]:
+                - cell "response.created" [ref=e3262]
+                - cell "Boolean" [ref=e3263]
+                - cell "True if the vehicle was succesfully created" [ref=e3264]:
+                  - paragraph [ref=e3265]: True if the vehicle was succesfully created
+          - tablist [ref=e3266]:
+            - listitem [ref=e3267]:
+              - tab "200 OK:" [ref=e3268]
+          - generic [ref=e3271]:
+            - code [ref=e3273]: "{ \"status\": \"ok\", \"response\": { \"id\": 123, \"truck\": \"AB1234\", \"vehicle_type\": \"truck\", \"groups\": [ { \"group_category_id\": 769, \"group_category\": \"Agrupacion Marilin\", \"name\": \"Group\" } ], \"truck_created\": true, \"created\": true } }"
+            - button "Copiar" [ref=e3276] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e3277]
+          - table [ref=e3278]:
+            - rowgroup [ref=e3279]:
+              - row "Nombre Descripción" [ref=e3280]:
+                - columnheader "Nombre" [ref=e3281]
+                - columnheader "Descripción" [ref=e3282]
+            - rowgroup [ref=e3283]:
+              - row "Unauthorized The vehicle already exists but this key doesn't have permissions to see it" [ref=e3284]:
+                - cell "Unauthorized" [ref=e3285]
+                - cell "The vehicle already exists but this key doesn't have permissions to see it" [ref=e3286]:
+                  - paragraph [ref=e3287]: The vehicle already exists but this key doesn't have permissions to see it
+        - article [ref=e3289]:
+          - heading "Vehicle | Delete Vehicle" [level=1] [ref=e3291]
+          - button "1.0.0" [ref=e3294] [cursor=pointer]:
+            - strong [ref=e3295]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3298]: Delete a vehicle
+          - paragraph
+          - generic [ref=e3299]: delete
+          - generic [ref=e3300]:
+            - code [ref=e3302]:
+              - generic [ref=e3303]: https://activationcode.dispatchtrack.com/api/external/v1/trucks/:identifier
+            - button "Copiar" [ref=e3306] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3307]
+          - table [ref=e3308]:
+            - rowgroup [ref=e3309]:
+              - row "Campo Tipo Descripción" [ref=e3310]:
+                - columnheader "Campo" [ref=e3311]
+                - columnheader "Tipo" [ref=e3312]
+                - columnheader "Descripción" [ref=e3313]
+            - rowgroup [ref=e3314]:
+              - row "identifier String identifier/name of the vehicle that you want to delete" [ref=e3315]:
+                - cell "identifier" [ref=e3316]
+                - cell "String" [ref=e3317]
+                - cell "identifier/name of the vehicle that you want to delete" [ref=e3318]:
+                  - paragraph [ref=e3319]: identifier/name of the vehicle that you want to delete
+          - heading "Success 200" [level=2] [ref=e3320]
+          - table [ref=e3321]:
+            - rowgroup [ref=e3322]:
+              - row "Campo Tipo Descripción" [ref=e3323]:
+                - columnheader "Campo" [ref=e3324]
+                - columnheader "Tipo" [ref=e3325]
+                - columnheader "Descripción" [ref=e3326]
+            - rowgroup [ref=e3327]:
+              - row "status String Status of the response (ok/error)." [ref=e3328]:
+                - cell "status" [ref=e3329]
+                - cell "String" [ref=e3330]
+                - cell "Status of the response (ok/error)." [ref=e3331]:
+                  - paragraph [ref=e3332]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e3333]:
+                - cell "response" [ref=e3334]
+                - cell "JSON" [ref=e3335]
+                - cell "JSON with API response." [ref=e3336]:
+                  - paragraph [ref=e3337]: JSON with API response.
+              - row "response.message String" [ref=e3338]:
+                - cell "response.message" [ref=e3339]
+                - cell "String" [ref=e3340]
+                - cell [ref=e3341]
+          - tablist [ref=e3342]:
+            - listitem [ref=e3343]:
+              - tab "200 OK:" [ref=e3344]
+          - generic [ref=e3347]:
+            - code [ref=e3349]: "{ \"status\": \"ok\", \"response\": { \"message\": \"Truck Destroyed\" } }"
+            - button "Copiar" [ref=e3352] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e3353]
+          - table [ref=e3354]:
+            - rowgroup [ref=e3355]:
+              - row "Nombre Descripción" [ref=e3356]:
+                - columnheader "Nombre" [ref=e3357]
+                - columnheader "Descripción" [ref=e3358]
+            - rowgroup [ref=e3359]:
+              - row "NotFound The vehicle doesn't exist or this key doesn't have permissions to see it" [ref=e3360]:
+                - cell "NotFound" [ref=e3361]
+                - cell "The vehicle doesn't exist or this key doesn't have permissions to see it" [ref=e3362]:
+                  - paragraph [ref=e3363]: The vehicle doesn't exist or this key doesn't have permissions to see it
+        - article [ref=e3365]:
+          - heading "Vehicle | List Vehicles" [level=1] [ref=e3367]
+          - button "1.0.0" [ref=e3370] [cursor=pointer]:
+            - strong [ref=e3371]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3374]: Get a list of available vehicles
+          - paragraph
+          - generic [ref=e3375]: get
+          - generic [ref=e3376]:
+            - code [ref=e3378]:
+              - generic [ref=e3379]: https://activationcode.dispatchtrack.com/api/external/v1/trucks
+            - button "Copiar" [ref=e3382] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e3383]
+          - table [ref=e3384]:
+            - rowgroup [ref=e3385]:
+              - row "Campo Tipo Descripción" [ref=e3386]:
+                - columnheader "Campo" [ref=e3387]
+                - columnheader "Tipo" [ref=e3388]
+                - columnheader "Descripción" [ref=e3389]
+            - rowgroup [ref=e3390]:
+              - row "status String Status of the response (ok/error)." [ref=e3391]:
+                - cell "status" [ref=e3392]
+                - cell "String" [ref=e3393]
+                - cell "Status of the response (ok/error)." [ref=e3394]:
+                  - paragraph [ref=e3395]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e3396]:
+                - cell "response" [ref=e3397]
+                - cell "JSON" [ref=e3398]
+                - cell "JSON with API response." [ref=e3399]:
+                  - paragraph [ref=e3400]: JSON with API response.
+              - row "response.trucks String[] A list of available vehicle identifiers" [ref=e3401]:
+                - cell "response.trucks" [ref=e3402]
+                - cell "String[]" [ref=e3403]
+                - cell "A list of available vehicle identifiers" [ref=e3404]:
+                  - paragraph [ref=e3405]: A list of available vehicle identifiers
+          - tablist [ref=e3406]:
+            - listitem [ref=e3407]:
+              - tab "200 OK:" [ref=e3408]
+          - generic [ref=e3411]:
+            - code [ref=e3413]: "{ \"status\": \"ok\", \"response\": { \"trucks\": [ \"AB1234\", \"AB1235\" ] } }"
+            - button "Copiar" [ref=e3416] [cursor=pointer]
+        - article [ref=e3418]:
+          - heading "Vehicle | Show vehicle" [level=1] [ref=e3420]
+          - button "1.0.0" [ref=e3423] [cursor=pointer]:
+            - strong [ref=e3424]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3427]: Check if a vehicle exists
+          - paragraph
+          - generic [ref=e3428]: get
+          - generic [ref=e3429]:
+            - code [ref=e3431]:
+              - generic [ref=e3432]: https://activationcode.dispatchtrack.com/api/external/v1/trucks/:id
+            - button "Copiar" [ref=e3435] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e3436]
+          - table [ref=e3437]:
+            - rowgroup [ref=e3438]:
+              - row "Campo Tipo Descripción" [ref=e3439]:
+                - columnheader "Campo" [ref=e3440]
+                - columnheader "Tipo" [ref=e3441]
+                - columnheader "Descripción" [ref=e3442]
+            - rowgroup [ref=e3443]:
+              - row "status String Status of the response (ok/error)." [ref=e3444]:
+                - cell "status" [ref=e3445]
+                - cell "String" [ref=e3446]
+                - cell "Status of the response (ok/error)." [ref=e3447]:
+                  - paragraph [ref=e3448]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e3449]:
+                - cell "response" [ref=e3450]
+                - cell "JSON" [ref=e3451]
+                - cell "JSON with API response." [ref=e3452]:
+                  - paragraph [ref=e3453]: JSON with API response.
+              - row "response.id String The vehicle's ID" [ref=e3454]:
+                - cell "response.id" [ref=e3455]
+                - cell "String" [ref=e3456]
+                - cell "The vehicle's ID" [ref=e3457]:
+                  - paragraph [ref=e3458]: The vehicle's ID
+              - row "response.truck String The vehicle's identifier" [ref=e3459]:
+                - cell "response.truck" [ref=e3460]
+                - cell "String" [ref=e3461]
+                - cell "The vehicle's identifier" [ref=e3462]:
+                  - paragraph [ref=e3463]: The vehicle's identifier
+              - row "response.vehicle_type String The vehicle's type" [ref=e3464]:
+                - cell "response.vehicle_type" [ref=e3465]
+                - cell "String" [ref=e3466]
+                - cell "The vehicle's type" [ref=e3467]:
+                  - paragraph [ref=e3468]: The vehicle's type
+              - row "response.groups JSON[]" [ref=e3469]:
+                - cell "response.groups" [ref=e3470]
+                - cell "JSON[]" [ref=e3471]
+                - cell [ref=e3472]
+              - row "response.groups.group_category_id Integer Group Category id" [ref=e3473]:
+                - cell "response.groups.group_category_id" [ref=e3474]
+                - cell "Integer" [ref=e3475]
+                - cell "Group Category id" [ref=e3476]:
+                  - paragraph [ref=e3477]: Group Category id
+              - row "response.groups.group_category String Group Category name" [ref=e3478]:
+                - cell "response.groups.group_category" [ref=e3479]
+                - cell "String" [ref=e3480]
+                - cell "Group Category name" [ref=e3481]:
+                  - paragraph [ref=e3482]: Group Category name
+              - row "response.groups.name String Group name" [ref=e3483]:
+                - cell "response.groups.name" [ref=e3484]
+                - cell "String" [ref=e3485]
+                - cell "Group name" [ref=e3486]:
+                  - paragraph [ref=e3487]: Group name
+          - tablist [ref=e3488]:
+            - listitem [ref=e3489]:
+              - tab "200 OK:" [ref=e3490]
+          - generic [ref=e3493]:
+            - code [ref=e3495]: "{ \"status\": \"ok\", \"response\": { \"id\": 123, \"truck\": \"AB1234\", \"vehicle_type\": \"truck\", \"groups\": [ { \"group_category_id\": 769, \"group_category\": \"Agrupacion Marilin\", \"name\": \"Group\" } ] } }"
+            - button "Copiar" [ref=e3498] [cursor=pointer]
+          - heading "Error 4xx" [level=2] [ref=e3499]
+          - table [ref=e3500]:
+            - rowgroup [ref=e3501]:
+              - row "Nombre Descripción" [ref=e3502]:
+                - columnheader "Nombre" [ref=e3503]
+                - columnheader "Descripción" [ref=e3504]
+            - rowgroup [ref=e3505]:
+              - row "VehicleNotFound The vehicle doesn't exists or the API key doesn't have permissions to see it" [ref=e3506]:
+                - cell "VehicleNotFound" [ref=e3507]
+                - cell "The vehicle doesn't exists or the API key doesn't have permissions to see it" [ref=e3508]:
+                  - paragraph [ref=e3509]: The vehicle doesn't exists or the API key doesn't have permissions to see it
+          - generic [ref=e3510]:
+            - heading "Enviar una petición de ejemplo" [level=3] [ref=e3511]
+            - group [ref=e3513]:
+              - generic [ref=e3514]:
+                - generic [ref=e3515]: URL
+                - generic [ref=e3516]:
+                  - generic [ref=e3517]: url
+                  - textbox "URL" [ref=e3518]: localhost:3000/api/external/v1/trucks
+              - generic [ref=e3520]:
+                - button "Enviar" [ref=e3521] [cursor=pointer]
+                - button "Reset" [ref=e3522] [cursor=pointer]
+      - generic [ref=e3523]:
+        - heading "GPS" [level=1] [ref=e3524]
+        - article [ref=e3526]:
+          - heading "GPS | Create Waypoint" [level=1] [ref=e3528]
+          - button "1.0.0" [ref=e3531] [cursor=pointer]:
+            - strong [ref=e3532]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3535]: Create waypoint for route or vehicle. The route (or any route for the vehicle) must be active in order to create the waypoint. Either a route_id or a (previously created vehicle) identifier must be specified.
+          - paragraph
+          - generic [ref=e3536]: post
+          - generic [ref=e3537]:
+            - code [ref=e3539]:
+              - generic [ref=e3540]: https://activationcode.dispatchtrack.com/api/external/v1/gps
+            - button "Copiar" [ref=e3543] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3544]
+          - table [ref=e3545]:
+            - rowgroup [ref=e3546]:
+              - row "Campo Tipo Descripción" [ref=e3547]:
+                - columnheader "Campo" [ref=e3548]
+                - columnheader "Tipo" [ref=e3549]
+                - columnheader "Descripción" [ref=e3550]
+            - rowgroup [ref=e3551]:
+              - row "route_id opcional Number The route id for the waypoint" [ref=e3552]:
+                - cell "route_id opcional" [ref=e3553]:
+                  - text: route_id
+                  - generic [ref=e3554]: opcional
+                - cell "Number" [ref=e3555]
+                - cell "The route id for the waypoint" [ref=e3556]:
+                  - paragraph [ref=e3557]: The route id for the waypoint
+              - row "identifier opcional String The vehicle identifier for the waypoint" [ref=e3558]:
+                - cell "identifier opcional" [ref=e3559]:
+                  - text: identifier
+                  - generic [ref=e3560]: opcional
+                - cell "String" [ref=e3561]
+                - cell "The vehicle identifier for the waypoint" [ref=e3562]:
+                  - paragraph [ref=e3563]: The vehicle identifier for the waypoint
+              - row "waypoints JSON[] A waypoint array to be added" [ref=e3564]:
+                - cell "waypoints" [ref=e3565]
+                - cell "JSON[]" [ref=e3566]
+                - cell "A waypoint array to be added" [ref=e3567]:
+                  - paragraph [ref=e3568]: A waypoint array to be added
+              - row "waypoints.latitude Decimal Latitude in decimal degrees" [ref=e3569]:
+                - cell "waypoints.latitude" [ref=e3570]
+                - cell "Decimal" [ref=e3571]
+                - cell "Latitude in decimal degrees" [ref=e3572]:
+                  - paragraph [ref=e3573]: Latitude in decimal degrees
+              - row "waypoints.longitude Decimal Longitude in decimal degrees" [ref=e3574]:
+                - cell "waypoints.longitude" [ref=e3575]
+                - cell "Decimal" [ref=e3576]
+                - cell "Longitude in decimal degrees" [ref=e3577]:
+                  - paragraph [ref=e3578]: Longitude in decimal degrees
+              - row "waypoints.sent_at opcional Datetime Timestamp of waypoint, in UTC. Default value is current time" [ref=e3579]:
+                - cell "waypoints.sent_at opcional" [ref=e3580]:
+                  - text: waypoints.sent_at
+                  - generic [ref=e3581]: opcional
+                - cell "Datetime" [ref=e3582]
+                - cell "Timestamp of waypoint, in UTC. Default value is current time" [ref=e3583]:
+                  - paragraph [ref=e3584]: Timestamp of waypoint, in UTC. Default value is current time
+              - row "waypoints.speed opcional Decimal Speed in km/h" [ref=e3585]:
+                - cell "waypoints.speed opcional" [ref=e3586]:
+                  - text: waypoints.speed
+                  - generic [ref=e3587]: opcional
+                - cell "Decimal" [ref=e3588]
+                - cell "Speed in km/h" [ref=e3589]:
+                  - paragraph [ref=e3590]: Speed in km/h
+              - row "waypoints.heading opcional Decimal Heading (course over ground) in degrees, from 0 to 360" [ref=e3591]:
+                - cell "waypoints.heading opcional" [ref=e3592]:
+                  - text: waypoints.heading
+                  - generic [ref=e3593]: opcional
+                - cell "Decimal" [ref=e3594]
+                - cell "Heading (course over ground) in degrees, from 0 to 360" [ref=e3595]:
+                  - paragraph [ref=e3596]: Heading (course over ground) in degrees, from 0 to 360
+              - row "waypoints.altitude opcional Decimal Altitude in meters" [ref=e3597]:
+                - cell "waypoints.altitude opcional" [ref=e3598]:
+                  - text: waypoints.altitude
+                  - generic [ref=e3599]: opcional
+                - cell "Decimal" [ref=e3600]
+                - cell "Altitude in meters" [ref=e3601]:
+                  - paragraph [ref=e3602]: Altitude in meters
+              - row "waypoints.custom_fields opcional JSON[] Custom fields for this waypoint." [ref=e3603]:
+                - cell "waypoints.custom_fields opcional" [ref=e3604]:
+                  - text: waypoints.custom_fields
+                  - generic [ref=e3605]: opcional
+                - cell "JSON[]" [ref=e3606]
+                - cell "Custom fields for this waypoint." [ref=e3607]:
+                  - paragraph [ref=e3608]: Custom fields for this waypoint.
+              - row "waypoints.custom_fields.name String The parent custom field type. Must be previously created in the account." [ref=e3609]:
+                - cell "waypoints.custom_fields.name" [ref=e3610]
+                - cell "String" [ref=e3611]
+                - cell "The parent custom field type. Must be previously created in the account." [ref=e3612]:
+                  - paragraph [ref=e3613]: The parent custom field type. Must be previously created in the account.
+              - row "waypoints.custom_fields.value String The associated value" [ref=e3614]:
+                - cell "waypoints.custom_fields.value" [ref=e3615]
+                - cell "String" [ref=e3616]
+                - cell "The associated value" [ref=e3617]:
+                  - paragraph [ref=e3618]: The associated value
+              - row "waypoints.alerts opcional JSON[] Alerts associated with this waypoint" [ref=e3619]:
+                - cell "waypoints.alerts opcional" [ref=e3620]:
+                  - text: waypoints.alerts
+                  - generic [ref=e3621]: opcional
+                - cell "JSON[]" [ref=e3622]
+                - cell "Alerts associated with this waypoint" [ref=e3623]:
+                  - paragraph [ref=e3624]: Alerts associated with this waypoint
+              - row "waypoints.alerts.msg String Message to be displayed with this waypoint's alert" [ref=e3625]:
+                - cell "waypoints.alerts.msg" [ref=e3626]
+                - cell "String" [ref=e3627]
+                - cell "Message to be displayed with this waypoint's alert" [ref=e3628]:
+                  - paragraph [ref=e3629]: Message to be displayed with this waypoint's alert
+      - generic [ref=e3630]:
+        - heading "Data" [level=1] [ref=e3631]
+        - article [ref=e3633]:
+          - heading "Data | Get the info for a specific export" [level=1] [ref=e3635]
+          - button "1.0.0" [ref=e3638] [cursor=pointer]:
+            - strong [ref=e3639]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3642]: Get the info for a specific export
+          - paragraph
+          - generic [ref=e3643]: get
+          - generic [ref=e3644]:
+            - code [ref=e3646]:
+              - generic [ref=e3647]: https://activationcode.dispatchtrack.com/api/external/v1/data_exports/:id
+            - button "Copiar" [ref=e3650] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3651]
+          - table [ref=e3652]:
+            - rowgroup [ref=e3653]:
+              - row "Campo Tipo Descripción" [ref=e3654]:
+                - columnheader "Campo" [ref=e3655]
+                - columnheader "Tipo" [ref=e3656]
+                - columnheader "Descripción" [ref=e3657]
+            - rowgroup [ref=e3658]:
+              - row "id Url_Parameter Id of the data export to query." [ref=e3659]:
+                - cell "id" [ref=e3660]
+                - cell "Url_Parameter" [ref=e3661]
+                - cell "Id of the data export to query." [ref=e3662]:
+                  - paragraph [ref=e3663]: Id of the data export to query.
+          - heading "Success 200" [level=2] [ref=e3664]
+          - table [ref=e3665]:
+            - rowgroup [ref=e3666]:
+              - row "Campo Tipo Descripción" [ref=e3667]:
+                - columnheader "Campo" [ref=e3668]
+                - columnheader "Tipo" [ref=e3669]
+                - columnheader "Descripción" [ref=e3670]
+            - rowgroup [ref=e3671]:
+              - row "status String Status of the response (ok/error)." [ref=e3672]:
+                - cell "status" [ref=e3673]
+                - cell "String" [ref=e3674]
+                - cell "Status of the response (ok/error)." [ref=e3675]:
+                  - paragraph [ref=e3676]: Status of the response (ok/error).
+              - row "response JSON JSON object with API response. See the GET / endpoint for output format." [ref=e3677]:
+                - cell "response" [ref=e3678]
+                - cell "JSON" [ref=e3679]
+                - cell "JSON object with API response. See the GET / endpoint for output format." [ref=e3680]:
+                  - paragraph [ref=e3681]: JSON object with API response. See the GET / endpoint for output format.
+          - tablist [ref=e3682]:
+            - listitem [ref=e3683]:
+              - tab "200 OK:" [ref=e3684]
+          - generic [ref=e3687]:
+            - code [ref=e3689]: "{ \"status\": \"ok\", \"response\": { \"id\": \"5508f4cc352e610f010000\", \"status\": \"success\", \"params\": { \"export_items\": false, \"date_start\": \"2015-03-25\", \"date_end\": \"2015-03-25\" }, \"file_url\": \"http://beetrack.s3.amazonaws.com/exporter/2015/03/26/341-3f215776fdbc3f968ed9d7c00e61e7.xls\" } }"
+            - button "Copiar" [ref=e3692] [cursor=pointer]
+        - article [ref=e3694]:
+          - heading "Data | Import file" [level=1] [ref=e3696]
+          - button "1.0.0" [ref=e3699] [cursor=pointer]:
+            - strong [ref=e3700]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3703]: Import a file with the account's format. The process is completed asynchronously, processing time may vary.
+          - paragraph
+          - generic [ref=e3704]: Multipart POST
+          - generic [ref=e3705]:
+            - code [ref=e3707]:
+              - generic [ref=e3708]: https://activationcode.dispatchtrack.com/api/external/v1/import
+            - button "Copiar" [ref=e3711] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3712]
+          - table [ref=e3713]:
+            - rowgroup [ref=e3714]:
+              - row "Campo Tipo Descripción" [ref=e3715]:
+                - columnheader "Campo" [ref=e3716]
+                - columnheader "Tipo" [ref=e3717]
+                - columnheader "Descripción" [ref=e3718]
+            - rowgroup [ref=e3719]:
+              - row "file File A multipart/form-data reference to the uploaded file." [ref=e3720]:
+                - cell "file" [ref=e3721]
+                - cell "File" [ref=e3722]
+                - cell "A multipart/form-data reference to the uploaded file." [ref=e3723]:
+                  - paragraph [ref=e3724]: A multipart/form-data reference to the uploaded file.
+              - row "date opcional Date Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e3725]:
+                - cell "date opcional" [ref=e3726]:
+                  - text: date
+                  - generic [ref=e3727]: opcional
+                - cell "Date" [ref=e3728]
+                - cell "Date in which the route is going to be managed (Format dd-mm-yyyy)." [ref=e3729]:
+                  - paragraph [ref=e3730]: Date in which the route is going to be managed (Format dd-mm-yyyy).
+          - tablist [ref=e3731]:
+            - listitem [ref=e3732]:
+              - 'tab "Request example via `curl`:" [ref=e3733]'
+          - generic [ref=e3736]:
+            - code [ref=e3738]: "curl -X POST -F file=@./local_file.xls -H 'X-AUTH-TOKEN: $API_KEY' https://activationcode.dispatchtrack.com/api/external/v1/import"
+            - button "Copiar" [ref=e3741] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e3742]
+          - table [ref=e3743]:
+            - rowgroup [ref=e3744]:
+              - row "Campo Tipo Descripción" [ref=e3745]:
+                - columnheader "Campo" [ref=e3746]
+                - columnheader "Tipo" [ref=e3747]
+                - columnheader "Descripción" [ref=e3748]
+            - rowgroup [ref=e3749]:
+              - row "status String Status of the response (ok/error)." [ref=e3750]:
+                - cell "status" [ref=e3751]
+                - cell "String" [ref=e3752]
+                - cell "Status of the response (ok/error)." [ref=e3753]:
+                  - paragraph [ref=e3754]: Status of the response (ok/error).
+              - row "response String Message with result" [ref=e3755]:
+                - cell "response" [ref=e3756]
+                - cell "String" [ref=e3757]
+                - cell "Message with result" [ref=e3758]:
+                  - paragraph [ref=e3759]: Message with result
+          - tablist [ref=e3760]:
+            - listitem [ref=e3761]:
+              - tab "200 OK:" [ref=e3762]
+          - generic [ref=e3765]:
+            - code [ref=e3767]: "{ \"status\": \"ok\", \"response\": \"Added to queue\" }"
+            - button "Copiar" [ref=e3770] [cursor=pointer]
+        - article [ref=e3772]:
+          - heading "Data | List last data exports" [level=1] [ref=e3774]
+          - button "1.0.0" [ref=e3777] [cursor=pointer]:
+            - strong [ref=e3778]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3781]: Get the last exports for your account
+          - paragraph
+          - generic [ref=e3782]: get
+          - generic [ref=e3783]:
+            - code [ref=e3785]:
+              - generic [ref=e3786]: https://activationcode.dispatchtrack.com/api/external/v1/data_exports
+            - button "Copiar" [ref=e3789] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e3790]
+          - table [ref=e3791]:
+            - rowgroup [ref=e3792]:
+              - row "Campo Tipo Descripción" [ref=e3793]:
+                - columnheader "Campo" [ref=e3794]
+                - columnheader "Tipo" [ref=e3795]
+                - columnheader "Descripción" [ref=e3796]
+            - rowgroup [ref=e3797]:
+              - row "status String Status of the response (ok/error)." [ref=e3798]:
+                - cell "status" [ref=e3799]
+                - cell "String" [ref=e3800]
+                - cell "Status of the response (ok/error)." [ref=e3801]:
+                  - paragraph [ref=e3802]: Status of the response (ok/error).
+              - row "response JSON JSON object with API response." [ref=e3803]:
+                - cell "response" [ref=e3804]
+                - cell "JSON" [ref=e3805]
+                - cell "JSON object with API response." [ref=e3806]:
+                  - paragraph [ref=e3807]: JSON object with API response.
+              - row "response.data_exports JSON[] Array with all the exports for your account" [ref=e3808]:
+                - cell "response.data_exports" [ref=e3809]
+                - cell "JSON[]" [ref=e3810]
+                - cell "Array with all the exports for your account" [ref=e3811]:
+                  - paragraph [ref=e3812]: Array with all the exports for your account
+              - row "response.data_exports.id String Unique identifier of the export" [ref=e3813]:
+                - cell "response.data_exports.id" [ref=e3814]
+                - cell "String" [ref=e3815]
+                - cell "Unique identifier of the export" [ref=e3816]:
+                  - paragraph [ref=e3817]: Unique identifier of the export
+              - row "response.data_exports.status String The status of this export (queued/error/success/processing)" [ref=e3818]:
+                - cell "response.data_exports.status" [ref=e3819]
+                - cell "String" [ref=e3820]
+                - cell "The status of this export (queued/error/success/processing)" [ref=e3821]:
+                  - paragraph [ref=e3822]: The status of this export (queued/error/success/processing)
+              - row "response.data_exports.user_id Number The user that requested this export. null for API-requested exports." [ref=e3823]:
+                - cell "response.data_exports.user_id" [ref=e3824]
+                - cell "Number" [ref=e3825]
+                - cell "The user that requested this export. null for API-requested exports." [ref=e3826]:
+                  - paragraph [ref=e3827]: The user that requested this export. null for API-requested exports.
+              - row "response.data_exports.params JSON Additional params for this export." [ref=e3828]:
+                - cell "response.data_exports.params" [ref=e3829]
+                - cell "JSON" [ref=e3830]
+                - cell "Additional params for this export." [ref=e3831]:
+                  - paragraph [ref=e3832]: Additional params for this export.
+              - row "response.data_exports.params.export_items Boolean True if item info is included in this export." [ref=e3833]:
+                - cell "response.data_exports.params.export_items" [ref=e3834]
+                - cell "Boolean" [ref=e3835]
+                - cell "True if item info is included in this export." [ref=e3836]:
+                  - paragraph [ref=e3837]: True if item info is included in this export.
+              - row "response.data_exports.params.date_start DateTime Beginning of date range for this export." [ref=e3838]:
+                - cell "response.data_exports.params.date_start" [ref=e3839]
+                - cell "DateTime" [ref=e3840]
+                - cell "Beginning of date range for this export." [ref=e3841]:
+                  - paragraph [ref=e3842]: Beginning of date range for this export.
+              - row "response.data_exports.params.date_end DateTime End of date range for this export." [ref=e3843]:
+                - cell "response.data_exports.params.date_end" [ref=e3844]
+                - cell "DateTime" [ref=e3845]
+                - cell "End of date range for this export." [ref=e3846]:
+                  - paragraph [ref=e3847]: End of date range for this export.
+              - row "response.data_exports.file_url String The URL that contains this file. The integrity of the file is guaranteed only if the status is success." [ref=e3848]:
+                - cell "response.data_exports.file_url" [ref=e3849]
+                - cell "String" [ref=e3850]
+                - cell "The URL that contains this file. The integrity of the file is guaranteed only if the status is success." [ref=e3851]:
+                  - paragraph [ref=e3852]: The URL that contains this file. The integrity of the file is guaranteed only if the status is success.
+          - tablist [ref=e3853]:
+            - listitem [ref=e3854]:
+              - tab "200 OK:" [ref=e3855]
+          - generic [ref=e3858]:
+            - code [ref=e3860]: "{ \"status\": \"ok\", \"response\": { \"data_exports\": [ { \"id\": \"5508f4cc352e610f010000\", \"status\": \"success\", \"params\": { \"export_items\": false, \"date_start\": \"2015-03-25\", \"date_end\": \"2015-03-25\" }, \"file_url\": \"http://beetrack.s3.amazonaws.com/exporter/2015/03/26/341-3f215776fdbc3f968ed9d7c00e61e7.xls\" } ] } }"
+            - button "Copiar" [ref=e3863] [cursor=pointer]
+        - article [ref=e3865]:
+          - heading "Data | Start a new export" [level=1] [ref=e3867]
+          - button "1.0.0" [ref=e3870] [cursor=pointer]:
+            - strong [ref=e3871]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3874]: Start a new export for a given date range and options.
+          - paragraph
+          - generic [ref=e3875]: post
+          - generic [ref=e3876]:
+            - code [ref=e3878]:
+              - generic [ref=e3879]: https://activationcode.dispatchtrack.com/api/external/v1/data_exports
+            - button "Copiar" [ref=e3882] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3883]
+          - table [ref=e3884]:
+            - rowgroup [ref=e3885]:
+              - row "Campo Tipo Descripción" [ref=e3886]:
+                - columnheader "Campo" [ref=e3887]
+                - columnheader "Tipo" [ref=e3888]
+                - columnheader "Descripción" [ref=e3889]
+            - rowgroup [ref=e3890]:
+              - 'row "export_items opcional Boolean True if item info should be included. Valor por defecto: false" [ref=e3891]':
+                - cell "export_items opcional" [ref=e3892]:
+                  - text: export_items
+                  - generic [ref=e3893]: opcional
+                - cell "Boolean" [ref=e3894]
+                - 'cell "True if item info should be included. Valor por defecto: false" [ref=e3895]':
+                  - paragraph [ref=e3896]: True if item info should be included.
+                  - paragraph [ref=e3897]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e3898]: "false"
+              - 'row "date_start opcional DateTime Start date for the export. Valor por defecto: Date.today.beginning_of_day" [ref=e3899]':
+                - cell "date_start opcional" [ref=e3900]:
+                  - text: date_start
+                  - generic [ref=e3901]: opcional
+                - cell "DateTime" [ref=e3902]
+                - 'cell "Start date for the export. Valor por defecto: Date.today.beginning_of_day" [ref=e3903]':
+                  - paragraph [ref=e3904]: Start date for the export.
+                  - paragraph [ref=e3905]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e3906]: Date.today.beginning_of_day
+              - 'row "date_end opcional DateTime End date for the export. Valor por defecto: Date.today.end_of_day" [ref=e3907]':
+                - cell "date_end opcional" [ref=e3908]:
+                  - text: date_end
+                  - generic [ref=e3909]: opcional
+                - cell "DateTime" [ref=e3910]
+                - 'cell "End date for the export. Valor por defecto: Date.today.end_of_day" [ref=e3911]':
+                  - paragraph [ref=e3912]: End date for the export.
+                  - paragraph [ref=e3913]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e3914]: Date.today.end_of_day
+          - heading "Success 200" [level=2] [ref=e3915]
+          - table [ref=e3916]:
+            - rowgroup [ref=e3917]:
+              - row "Campo Tipo Descripción" [ref=e3918]:
+                - columnheader "Campo" [ref=e3919]
+                - columnheader "Tipo" [ref=e3920]
+                - columnheader "Descripción" [ref=e3921]
+            - rowgroup [ref=e3922]:
+              - row "status String Status of the response (ok/error)." [ref=e3923]:
+                - cell "status" [ref=e3924]
+                - cell "String" [ref=e3925]
+                - cell "Status of the response (ok/error)." [ref=e3926]:
+                  - paragraph [ref=e3927]: Status of the response (ok/error).
+              - row "response JSON JSON with the response of the API." [ref=e3928]:
+                - cell "response" [ref=e3929]
+                - cell "JSON" [ref=e3930]
+                - cell "JSON with the response of the API." [ref=e3931]:
+                  - paragraph [ref=e3932]: JSON with the response of the API.
+              - row "response.id String Unique identifier of the export. Keep this id to use one of the GET APIs." [ref=e3933]:
+                - cell "response.id" [ref=e3934]
+                - cell "String" [ref=e3935]
+                - cell "Unique identifier of the export. Keep this id to use one of the GET APIs." [ref=e3936]:
+                  - paragraph [ref=e3937]: Unique identifier of the export. Keep this id to use one of the GET APIs.
+          - tablist [ref=e3938]:
+            - listitem [ref=e3939]:
+              - tab "200 OK:" [ref=e3940]
+          - generic [ref=e3943]:
+            - code [ref=e3945]: "{ \"status\": \"ok\", \"response\": { \"id\": \"5508f4cc352e610f010000\" } }"
+            - button "Copiar" [ref=e3948] [cursor=pointer]
+      - generic [ref=e3949]:
+        - heading "Contacts" [level=1] [ref=e3950]
+        - article [ref=e3952]:
+          - heading "Contacts | List Contacts" [level=1] [ref=e3954]
+          - button "1.0.0" [ref=e3957] [cursor=pointer]:
+            - strong [ref=e3958]: 1.0.0
+          - paragraph
+          - paragraph [ref=e3961]: Used to list all contacts by account.
+          - paragraph
+          - generic [ref=e3962]: get
+          - generic [ref=e3963]:
+            - code [ref=e3965]:
+              - generic [ref=e3966]: https://activationcode.dispatchtrack.com/api/external/v1/contacts
+            - button "Copiar" [ref=e3969] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e3970]
+          - table [ref=e3971]:
+            - rowgroup [ref=e3972]:
+              - row "Campo Tipo Descripción" [ref=e3973]:
+                - columnheader "Campo" [ref=e3974]
+                - columnheader "Tipo" [ref=e3975]
+                - columnheader "Descripción" [ref=e3976]
+            - rowgroup [ref=e3977]:
+              - row "page opcional Integer Page number of the contacts." [ref=e3978]:
+                - cell "page opcional" [ref=e3979]:
+                  - text: page
+                  - generic [ref=e3980]: opcional
+                - cell "Integer" [ref=e3981]
+                - cell "Page number of the contacts." [ref=e3982]:
+                  - paragraph [ref=e3983]: Page number of the contacts.
+              - row "limit opcional Integer Total contacts per page. Default is 10 and max value is 20." [ref=e3984]:
+                - cell "limit opcional" [ref=e3985]:
+                  - text: limit
+                  - generic [ref=e3986]: opcional
+                - cell "Integer" [ref=e3987]
+                - cell "Total contacts per page. Default is 10 and max value is 20." [ref=e3988]:
+                  - paragraph [ref=e3989]: Total contacts per page. Default is 10 and max value is 20.
+          - heading "Success 200" [level=2] [ref=e3990]
+          - table [ref=e3991]:
+            - rowgroup [ref=e3992]:
+              - row "Campo Tipo Descripción" [ref=e3993]:
+                - columnheader "Campo" [ref=e3994]
+                - columnheader "Tipo" [ref=e3995]
+                - columnheader "Descripción" [ref=e3996]
+            - rowgroup [ref=e3997]:
+              - row "contacts JSON[] List all contacts by account." [ref=e3998]:
+                - cell "contacts" [ref=e3999]
+                - cell "JSON[]" [ref=e4000]
+                - cell "List all contacts by account." [ref=e4001]:
+                  - paragraph [ref=e4002]: List all contacts by account.
+              - row "contacts.email String Email of the contact." [ref=e4003]:
+                - cell "contacts.email" [ref=e4004]
+                - cell "String" [ref=e4005]
+                - cell "Email of the contact." [ref=e4006]:
+                  - paragraph [ref=e4007]: Email of the contact.
+              - row "contacts.phone String Phone of the contact." [ref=e4008]:
+                - cell "contacts.phone" [ref=e4009]
+                - cell "String" [ref=e4010]
+                - cell "Phone of the contact." [ref=e4011]:
+                  - paragraph [ref=e4012]: Phone of the contact.
+              - row "contacts.identifier String Identifier of the contact." [ref=e4013]:
+                - cell "contacts.identifier" [ref=e4014]
+                - cell "String" [ref=e4015]
+                - cell "Identifier of the contact." [ref=e4016]:
+                  - paragraph [ref=e4017]: Identifier of the contact.
+              - row "contacts.name String Name of the contact." [ref=e4018]:
+                - cell "contacts.name" [ref=e4019]
+                - cell "String" [ref=e4020]
+                - cell "Name of the contact." [ref=e4021]:
+                  - paragraph [ref=e4022]: Name of the contact.
+              - row "contacts.created_at DateTime created time of the contact." [ref=e4023]:
+                - cell "contacts.created_at" [ref=e4024]
+                - cell "DateTime" [ref=e4025]
+                - cell "created time of the contact." [ref=e4026]:
+                  - paragraph [ref=e4027]: created time of the contact.
+              - row "contacts.updated_at DateTime updated time of the contact." [ref=e4028]:
+                - cell "contacts.updated_at" [ref=e4029]
+                - cell "DateTime" [ref=e4030]
+                - cell "updated time of the contact." [ref=e4031]:
+                  - paragraph [ref=e4032]: updated time of the contact.
+          - tablist [ref=e4033]:
+            - listitem [ref=e4034]:
+              - tab "200 OK:" [ref=e4035]
+          - generic [ref=e4038]:
+            - code [ref=e4040]: "{ \"status\": \"ok\", \"response\": { \"contacts\": [ { \"id\":null, \"email\":\"test@test.com\", \"phone\":\"56971807003\", \"identifier\":123412313, \"name\":\"Test\", \"created_at\":\"2015-06-18T04:26:20.000-03:00\", \"updated_at\":\"2015-06-18T21:10:23.000-03:00\" } ] \"page\": 1, \"limit\": 10 } }"
+            - button "Copiar" [ref=e4043] [cursor=pointer]
+        - article [ref=e4045]:
+          - heading "Contacts | Show Contact with Guides." [level=1] [ref=e4047]
+          - button "1.0.0" [ref=e4050] [cursor=pointer]:
+            - strong [ref=e4051]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4054]: List all guides by contact.
+          - paragraph
+          - generic [ref=e4055]: get
+          - generic [ref=e4056]:
+            - code [ref=e4058]:
+              - generic [ref=e4059]: https://activationcode.dispatchtrack.com/api/external/v1/contacts/:id
+            - button "Copiar" [ref=e4062] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4063]
+          - table [ref=e4064]:
+            - rowgroup [ref=e4065]:
+              - row "Campo Tipo Descripción" [ref=e4066]:
+                - columnheader "Campo" [ref=e4067]
+                - columnheader "Tipo" [ref=e4068]
+                - columnheader "Descripción" [ref=e4069]
+            - rowgroup [ref=e4070]:
+              - row "contact String Identifier of the contact." [ref=e4071]:
+                - cell "contact" [ref=e4072]
+                - cell "String" [ref=e4073]
+                - cell "Identifier of the contact." [ref=e4074]:
+                  - paragraph [ref=e4075]: Identifier of the contact.
+              - row "page opcional Integer Page number of the guides." [ref=e4076]:
+                - cell "page opcional" [ref=e4077]:
+                  - text: page
+                  - generic [ref=e4078]: opcional
+                - cell "Integer" [ref=e4079]
+                - cell "Page number of the guides." [ref=e4080]:
+                  - paragraph [ref=e4081]: Page number of the guides.
+              - row "limit opcional Integer Total guides per page. Default is 10 and max value is 20." [ref=e4082]:
+                - cell "limit opcional" [ref=e4083]:
+                  - text: limit
+                  - generic [ref=e4084]: opcional
+                - cell "Integer" [ref=e4085]
+                - cell "Total guides per page. Default is 10 and max value is 20." [ref=e4086]:
+                  - paragraph [ref=e4087]: Total guides per page. Default is 10 and max value is 20.
+          - heading "Success 200" [level=2] [ref=e4088]
+          - table [ref=e4089]:
+            - rowgroup [ref=e4090]:
+              - row "Campo Tipo Descripción" [ref=e4091]:
+                - columnheader "Campo" [ref=e4092]
+                - columnheader "Tipo" [ref=e4093]
+                - columnheader "Descripción" [ref=e4094]
+            - rowgroup [ref=e4095]:
+              - row "guides JSON[] List all guides by contact." [ref=e4096]:
+                - cell "guides" [ref=e4097]
+                - cell "JSON[]" [ref=e4098]
+                - cell "List all guides by contact." [ref=e4099]:
+                  - paragraph [ref=e4100]: List all guides by contact.
+              - row "guides.identifier String Identifier of the guide." [ref=e4101]:
+                - cell "guides.identifier" [ref=e4102]
+                - cell "String" [ref=e4103]
+                - cell "Identifier of the guide." [ref=e4104]:
+                  - paragraph [ref=e4105]: Identifier of the guide.
+              - row "guides.code Integer Code of the guide." [ref=e4106]:
+                - cell "guides.code" [ref=e4107]
+                - cell "Integer" [ref=e4108]
+                - cell "Code of the guide." [ref=e4109]:
+                  - paragraph [ref=e4110]: Code of the guide.
+              - row "guides.place String Place of the guide." [ref=e4111]:
+                - cell "guides.place" [ref=e4112]
+                - cell "String" [ref=e4113]
+                - cell "Place of the guide." [ref=e4114]:
+                  - paragraph [ref=e4115]: Place of the guide.
+              - row "guides.address String Address of the guide." [ref=e4116]:
+                - cell "guides.address" [ref=e4117]
+                - cell "String" [ref=e4118]
+                - cell "Address of the guide." [ref=e4119]:
+                  - paragraph [ref=e4120]: Address of the guide.
+              - row "guides.dispatches_count Integer Total dispatches in guide." [ref=e4121]:
+                - cell "guides.dispatches_count" [ref=e4122]
+                - cell "Integer" [ref=e4123]
+                - cell "Total dispatches in guide." [ref=e4124]:
+                  - paragraph [ref=e4125]: Total dispatches in guide.
+              - row "guides.status String Status of the guide." [ref=e4126]:
+                - cell "guides.status" [ref=e4127]
+                - cell "String" [ref=e4128]
+                - cell "Status of the guide." [ref=e4129]:
+                  - paragraph [ref=e4130]: Status of the guide.
+              - row "guides.status_id Integer Status of the guide." [ref=e4131]:
+                - cell "guides.status_id" [ref=e4132]
+                - cell "Integer" [ref=e4133]
+                - cell "Status of the guide." [ref=e4134]:
+                  - paragraph [ref=e4135]: Status of the guide.
+              - row "guides.substatus String Substatus of the guide." [ref=e4136]:
+                - cell "guides.substatus" [ref=e4137]
+                - cell "String" [ref=e4138]
+                - cell "Substatus of the guide." [ref=e4139]:
+                  - paragraph [ref=e4140]: Substatus of the guide.
+              - row "guides.is_trunk Boolean Check if the guide is a trunk." [ref=e4141]:
+                - cell "guides.is_trunk" [ref=e4142]
+                - cell "Boolean" [ref=e4143]
+                - cell "Check if the guide is a trunk." [ref=e4144]:
+                  - paragraph [ref=e4145]: Check if the guide is a trunk.
+              - row "guides.is_pickup Boolean Check if the guide is a pickup." [ref=e4146]:
+                - cell "guides.is_pickup" [ref=e4147]
+                - cell "Boolean" [ref=e4148]
+                - cell "Check if the guide is a pickup." [ref=e4149]:
+                  - paragraph [ref=e4150]: Check if the guide is a pickup.
+              - row "guides.arrived_at DateTime Arrived time of the guide." [ref=e4151]:
+                - cell "guides.arrived_at" [ref=e4152]
+                - cell "DateTime" [ref=e4153]
+                - cell "Arrived time of the guide." [ref=e4154]:
+                  - paragraph [ref=e4155]: Arrived time of the guide.
+              - row "guides.estimated_at DateTime Estimated time of the guide." [ref=e4156]:
+                - cell "guides.estimated_at" [ref=e4157]
+                - cell "DateTime" [ref=e4158]
+                - cell "Estimated time of the guide." [ref=e4159]:
+                  - paragraph [ref=e4160]: Estimated time of the guide.
+              - row "guides.min_delivery_time DateTime Delivery time of the guide." [ref=e4161]:
+                - cell "guides.min_delivery_time" [ref=e4162]
+                - cell "DateTime" [ref=e4163]
+                - cell "Delivery time of the guide." [ref=e4164]:
+                  - paragraph [ref=e4165]: Delivery time of the guide.
+              - row "guides.beecode String Beecode of the guide." [ref=e4166]:
+                - cell "guides.beecode" [ref=e4167]
+                - cell "String" [ref=e4168]
+                - cell "Beecode of the guide." [ref=e4169]:
+                  - paragraph [ref=e4170]: Beecode of the guide.
+              - row "guides.items JSON[] List items in the guide." [ref=e4171]:
+                - cell "guides.items" [ref=e4172]
+                - cell "JSON[]" [ref=e4173]
+                - cell "List items in the guide." [ref=e4174]:
+                  - paragraph [ref=e4175]: List items in the guide.
+              - row "guides.items.id Integer Id of the item." [ref=e4176]:
+                - cell "guides.items.id" [ref=e4177]
+                - cell "Integer" [ref=e4178]
+                - cell "Id of the item." [ref=e4179]:
+                  - paragraph [ref=e4180]: Id of the item.
+              - row "guides.items.name String Name of the item in the guide." [ref=e4181]:
+                - cell "guides.items.name" [ref=e4182]
+                - cell "String" [ref=e4183]
+                - cell "Name of the item in the guide." [ref=e4184]:
+                  - paragraph [ref=e4185]: Name of the item in the guide.
+              - row "guides.items.description String Description of the item in the guide." [ref=e4186]:
+                - cell "guides.items.description" [ref=e4187]
+                - cell "String" [ref=e4188]
+                - cell "Description of the item in the guide." [ref=e4189]:
+                  - paragraph [ref=e4190]: Description of the item in the guide.
+              - row "guides.items.quantity Integer Quantity of the item in the guide." [ref=e4191]:
+                - cell "guides.items.quantity" [ref=e4192]
+                - cell "Integer" [ref=e4193]
+                - cell "Quantity of the item in the guide." [ref=e4194]:
+                  - paragraph [ref=e4195]: Quantity of the item in the guide.
+              - row "guides.items.original_quantity Integer Original quantity of the item in the guide." [ref=e4196]:
+                - cell "guides.items.original_quantity" [ref=e4197]
+                - cell "Integer" [ref=e4198]
+                - cell "Original quantity of the item in the guide." [ref=e4199]:
+                  - paragraph [ref=e4200]: Original quantity of the item in the guide.
+              - row "guides.items.delivery_quantity Integer Delivery quantity of the item in the guide." [ref=e4201]:
+                - cell "guides.items.delivery_quantity" [ref=e4202]
+                - cell "Integer" [ref=e4203]
+                - cell "Delivery quantity of the item in the guide." [ref=e4204]:
+                  - paragraph [ref=e4205]: Delivery quantity of the item in the guide.
+              - row "guides.items.code String Code of the item in the guide." [ref=e4206]:
+                - cell "guides.items.code" [ref=e4207]
+                - cell "String" [ref=e4208]
+                - cell "Code of the item in the guide." [ref=e4209]:
+                  - paragraph [ref=e4210]: Code of the item in the guide.
+              - row "guides.items.extras JSON[] Extra data of the item in the guide." [ref=e4211]:
+                - cell "guides.items.extras" [ref=e4212]
+                - cell "JSON[]" [ref=e4213]
+                - cell "Extra data of the item in the guide." [ref=e4214]:
+                  - paragraph [ref=e4215]: Extra data of the item in the guide.
+          - tablist [ref=e4216]:
+            - listitem [ref=e4217]:
+              - tab "200 OK:" [ref=e4218]
+          - generic [ref=e4221]:
+            - code [ref=e4223]: "{ \"status\": \"ok\", \"response\": { \"guides\":[ { \"identifier\": 25579, \"code\": \"6\", \"place\": \"CT Santiago\", \"address\": \"puerto madero 9710, pudahuel\", \"dispatches_count\": 32, \"status\": \"not_delivered\", \"status_id\": 3, \"substatus\": \"Sin moradores\", \"is_trunk\": true, \"is_pickup\": true, \"arrived_at\": \"2016-07-27 11:59:16-0400\", \"estimated_at\": \"2016-07-27 12:53:04-0400\", \"min_delivery_time\": \"2014-11-12 15:15:00-0300\", \"max_delivery_time\": \"2014-11-12 16:30:00-0300\", \"beecode\": \"ce322f1e1c7c\", \"items\": [ { \"id\": 18676073, \"name\": \"Computador\", \"description\": \"Computador\", \"quantity\": 1, \"original_quantity\": 1, \"delivered_quantity\": 0, \"code\": \"WASWS123\", \"extras\": [] } ] } ] \"page\": 1, \"limit\": 10 } }"
+            - button "Copiar" [ref=e4226] [cursor=pointer]
+      - generic [ref=e4227]:
+        - heading "Dispatch Guides" [level=1] [ref=e4228]
+        - article [ref=e4230]:
+          - heading "Dispatch Guides | Create Dispatch Guide" [level=1] [ref=e4232]
+          - button "1.0.0" [ref=e4235] [cursor=pointer]:
+            - strong [ref=e4236]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4239]: Used to create a delivery guide with an associated contact, address before associating it with an active route for delivery.
+          - paragraph
+          - generic [ref=e4240]: post
+          - generic [ref=e4241]:
+            - code [ref=e4243]:
+              - generic [ref=e4244]: https://activationcode.dispatchtrack.com/api/external/v1/dispatch_guides
+            - button "Copiar" [ref=e4247] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4248]
+          - table [ref=e4249]:
+            - rowgroup [ref=e4250]:
+              - row "Campo Tipo Descripción" [ref=e4251]:
+                - columnheader "Campo" [ref=e4252]
+                - columnheader "Tipo" [ref=e4253]
+                - columnheader "Descripción" [ref=e4254]
+            - rowgroup [ref=e4255]:
+              - row "random opcional Boolean If true generates a random number as the guide identifier." [ref=e4256]:
+                - cell "random opcional" [ref=e4257]:
+                  - text: random
+                  - generic [ref=e4258]: opcional
+                - cell "Boolean" [ref=e4259]
+                - cell "If true generates a random number as the guide identifier." [ref=e4260]:
+                  - paragraph [ref=e4261]: If true generates a random number as the guide identifier.
+              - row "id opcional String Guide id number." [ref=e4262]:
+                - cell "id opcional" [ref=e4263]:
+                  - text: id
+                  - generic [ref=e4264]: opcional
+                - cell "String" [ref=e4265]
+                - cell "Guide id number." [ref=e4266]:
+                  - paragraph [ref=e4267]: Guide id number.
+              - row "identifier opcional String Guide identification number." [ref=e4268]:
+                - cell "identifier opcional" [ref=e4269]:
+                  - text: identifier
+                  - generic [ref=e4270]: opcional
+                - cell "String" [ref=e4271]
+                - cell "Guide identification number." [ref=e4272]:
+                  - paragraph [ref=e4273]: Guide identification number.
+              - row "contact_id opcional String Id of the guide's contact." [ref=e4274]:
+                - cell "contact_id opcional" [ref=e4275]:
+                  - text: contact_id
+                  - generic [ref=e4276]: opcional
+                - cell "String" [ref=e4277]
+                - cell "Id of the guide's contact." [ref=e4278]:
+                  - paragraph [ref=e4279]: Id of the guide's contact.
+              - row "contact_identifier opcional String Identifier of the guide's contact." [ref=e4280]:
+                - cell "contact_identifier opcional" [ref=e4281]:
+                  - text: contact_identifier
+                  - generic [ref=e4282]: opcional
+                - cell "String" [ref=e4283]
+                - cell "Identifier of the guide's contact." [ref=e4284]:
+                  - paragraph [ref=e4285]: Identifier of the guide's contact.
+              - row "contact_name opcional String The name of the contact guide's contact." [ref=e4286]:
+                - cell "contact_name opcional" [ref=e4287]:
+                  - text: contact_name
+                  - generic [ref=e4288]: opcional
+                - cell "String" [ref=e4289]
+                - cell "The name of the contact guide's contact." [ref=e4290]:
+                  - paragraph [ref=e4291]: The name of the contact guide's contact.
+              - row "contact_address opcional String The address of the guide's contact." [ref=e4292]:
+                - cell "contact_address opcional" [ref=e4293]:
+                  - text: contact_address
+                  - generic [ref=e4294]: opcional
+                - cell "String" [ref=e4295]
+                - cell "The address of the guide's contact." [ref=e4296]:
+                  - paragraph [ref=e4297]: The address of the guide's contact.
+              - row "contact_phone opcional String The telephone number of the guide's contact." [ref=e4298]:
+                - cell "contact_phone opcional" [ref=e4299]:
+                  - text: contact_phone
+                  - generic [ref=e4300]: opcional
+                - cell "String" [ref=e4301]
+                - cell "The telephone number of the guide's contact." [ref=e4302]:
+                  - paragraph [ref=e4303]: The telephone number of the guide's contact.
+              - row "promised_date opcional Datetime The date estimated." [ref=e4304]:
+                - cell "promised_date opcional" [ref=e4305]:
+                  - text: promised_date
+                  - generic [ref=e4306]: opcional
+                - cell "Datetime" [ref=e4307]
+                - cell "The date estimated." [ref=e4308]:
+                  - paragraph [ref=e4309]: The date estimated.
+              - row "current_state opcional Integer Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e4310]:
+                - cell "current_state opcional" [ref=e4311]:
+                  - text: current_state
+                  - generic [ref=e4312]: opcional
+                - cell "Integer" [ref=e4313]
+                - cell "Current state for dispatch guide (in_preparation = 0, Ready to go = 1)" [ref=e4314]:
+                  - paragraph [ref=e4315]: Current state for dispatch guide (in_preparation = 0, Ready to go = 1)
+              - row "pickup_address opcional JSON Address where the order will be picked up." [ref=e4316]:
+                - cell "pickup_address opcional" [ref=e4317]:
+                  - text: pickup_address
+                  - generic [ref=e4318]: opcional
+                - cell "JSON" [ref=e4319]
+                - cell "Address where the order will be picked up." [ref=e4320]:
+                  - paragraph [ref=e4321]: Address where the order will be picked up.
+              - row "pickup_address.name opcional String Name of the address." [ref=e4322]:
+                - cell "pickup_address.name opcional" [ref=e4323]:
+                  - text: pickup_address.name
+                  - generic [ref=e4324]: opcional
+                - cell "String" [ref=e4325]
+                - cell "Name of the address." [ref=e4326]:
+                  - paragraph [ref=e4327]: Name of the address.
+              - row "pincode_enabled Boolean Indicates if the guide has delivery with PIN code." [ref=e4328]:
+                - cell "pincode_enabled" [ref=e4329]
+                - cell "Boolean" [ref=e4330]
+                - cell "Indicates if the guide has delivery with PIN code." [ref=e4331]:
+                  - paragraph [ref=e4332]: Indicates if the guide has delivery with PIN code.
+              - row "items opcional JSON[]" [ref=e4333]:
+                - cell "items opcional" [ref=e4334]:
+                  - text: items
+                  - generic [ref=e4335]: opcional
+                - cell "JSON[]" [ref=e4336]
+                - cell [ref=e4337]
+              - row "items.name opcional String Name of a guide item." [ref=e4338]:
+                - cell "items.name opcional" [ref=e4339]:
+                  - text: items.name
+                  - generic [ref=e4340]: opcional
+                - cell "String" [ref=e4341]
+                - cell "Name of a guide item." [ref=e4342]:
+                  - paragraph [ref=e4343]: Name of a guide item.
+              - row "items.quantity opcional Integer Quantity of the item." [ref=e4344]:
+                - cell "items.quantity opcional" [ref=e4345]:
+                  - text: items.quantity
+                  - generic [ref=e4346]: opcional
+                - cell "Integer" [ref=e4347]
+                - cell "Quantity of the item." [ref=e4348]:
+                  - paragraph [ref=e4349]: Quantity of the item.
+              - row "items.quantity_ref opcional Decimal Quantity ref of the item." [ref=e4350]:
+                - cell "items.quantity_ref opcional" [ref=e4351]:
+                  - text: items.quantity_ref
+                  - generic [ref=e4352]: opcional
+                - cell "Decimal" [ref=e4353]
+                - cell "Quantity ref of the item." [ref=e4354]:
+                  - paragraph [ref=e4355]: Quantity ref of the item.
+              - row "items.unit_price opcional Decimal Price of the item." [ref=e4356]:
+                - cell "items.unit_price opcional" [ref=e4357]:
+                  - text: items.unit_price
+                  - generic [ref=e4358]: opcional
+                - cell "Decimal" [ref=e4359]
+                - cell "Price of the item." [ref=e4360]:
+                  - paragraph [ref=e4361]: Price of the item.
+              - row "items.price opcional Decimal Price of the item." [ref=e4362]:
+                - cell "items.price opcional" [ref=e4363]:
+                  - text: items.price
+                  - generic [ref=e4364]: opcional
+                - cell "Decimal" [ref=e4365]
+                - cell "Price of the item." [ref=e4366]:
+                  - paragraph [ref=e4367]: Price of the item.
+              - 'row "items.code opcional String Code for identifying the item. @@apiParam {String} [items.description] Description of the item being delivered." [ref=e4368]':
+                - cell "items.code opcional" [ref=e4369]:
+                  - text: items.code
+                  - generic [ref=e4370]: opcional
+                - cell "String" [ref=e4371]
+                - 'cell "Code for identifying the item. @@apiParam {String} [items.description] Description of the item being delivered." [ref=e4372]':
+                  - paragraph [ref=e4373]: "Code for identifying the item. @@apiParam {String} [items.description] Description of the item being delivered."
+              - row "tags opcional JSON[] Array containing tags associated to the guide." [ref=e4374]:
+                - cell "tags opcional" [ref=e4375]:
+                  - text: tags
+                  - generic [ref=e4376]: opcional
+                - cell "JSON[]" [ref=e4377]
+                - cell "Array containing tags associated to the guide." [ref=e4378]:
+                  - paragraph [ref=e4379]: Array containing tags associated to the guide.
+              - row "tags.name opcional String Name of the tag associated to the guide." [ref=e4380]:
+                - cell "tags.name opcional" [ref=e4381]:
+                  - text: tags.name
+                  - generic [ref=e4382]: opcional
+                - cell "String" [ref=e4383]
+                - cell "Name of the tag associated to the guide." [ref=e4384]:
+                  - paragraph [ref=e4385]: Name of the tag associated to the guide.
+              - row "tags.value opcional String Value of the tag associated to the guide." [ref=e4386]:
+                - cell "tags.value opcional" [ref=e4387]:
+                  - text: tags.value
+                  - generic [ref=e4388]: opcional
+                - cell "String" [ref=e4389]
+                - cell "Value of the tag associated to the guide." [ref=e4390]:
+                  - paragraph [ref=e4391]: Value of the tag associated to the guide.
+              - row "tags.type opcional String Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e4392]:
+                - cell "tags.type opcional" [ref=e4393]:
+                  - text: tags.type
+                  - generic [ref=e4394]: opcional
+                - cell "String" [ref=e4395]
+                - cell "Type(string/date) of the tag associated to the guide. \"string\" => custom field and \"date\" => custom date field" [ref=e4396]:
+                  - paragraph [ref=e4397]: Type(string/date) of the tag associated to the guide. "string" => custom field and "date" => custom date field
+              - row "groups opcional JSON[] Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e4398]:
+                - cell "groups opcional" [ref=e4399]:
+                  - text: groups
+                  - generic [ref=e4400]: opcional
+                - cell "JSON[]" [ref=e4401]
+                - cell "Array containing the groups to which the guide is associated (The groups are created in your account's settings)." [ref=e4402]:
+                  - paragraph [ref=e4403]: Array containing the groups to which the guide is associated (The groups are created in your account's settings).
+              - row "groups.category opcional String Name of the category of the group to which the guide is associated." [ref=e4404]:
+                - cell "groups.category opcional" [ref=e4405]:
+                  - text: groups.category
+                  - generic [ref=e4406]: opcional
+                - cell "String" [ref=e4407]
+                - cell "Name of the category of the group to which the guide is associated." [ref=e4408]:
+                  - paragraph [ref=e4409]: Name of the category of the group to which the guide is associated.
+              - row "groups.name opcional String Name of the group to which the guide is associated." [ref=e4410]:
+                - cell "groups.name opcional" [ref=e4411]:
+                  - text: groups.name
+                  - generic [ref=e4412]: opcional
+                - cell "String" [ref=e4413]
+                - cell "Name of the group to which the guide is associated." [ref=e4414]:
+                  - paragraph [ref=e4415]: Name of the group to which the guide is associated.
+              - 'row "groups.force_create opcional Boolean True if it has to be created if it is not found. Valor por defecto: false" [ref=e4416]':
+                - cell "groups.force_create opcional" [ref=e4417]:
+                  - text: groups.force_create
+                  - generic [ref=e4418]: opcional
+                - cell "Boolean" [ref=e4419]
+                - 'cell "True if it has to be created if it is not found. Valor por defecto: false" [ref=e4420]':
+                  - paragraph [ref=e4421]: True if it has to be created if it is not found.
+                  - paragraph [ref=e4422]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e4423]: "false"
+          - heading "Success 200" [level=2] [ref=e4424]
+          - table [ref=e4425]:
+            - rowgroup [ref=e4426]:
+              - row "Campo Tipo Descripción" [ref=e4427]:
+                - columnheader "Campo" [ref=e4428]
+                - columnheader "Tipo" [ref=e4429]
+                - columnheader "Descripción" [ref=e4430]
+            - rowgroup [ref=e4431]:
+              - row "status String Status of the response ok." [ref=e4432]:
+                - cell "status" [ref=e4433]
+                - cell "String" [ref=e4434]
+                - cell "Status of the response ok." [ref=e4435]:
+                  - paragraph [ref=e4436]: Status of the response ok.
+          - tablist [ref=e4437]:
+            - listitem [ref=e4438]:
+              - tab "200 OK:" [ref=e4439]
+          - generic [ref=e4442]:
+            - code [ref=e4444]: "{ \"status\": \"ok\", }"
+            - button "Copiar" [ref=e4447] [cursor=pointer]
+        - article [ref=e4449]:
+          - heading "Dispatch Guides | Delete Dispatch Guide" [level=1] [ref=e4451]
+          - button "1.0.0" [ref=e4454] [cursor=pointer]:
+            - strong [ref=e4455]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4458]: Used to delete a dispatch guide and all dispatches that it has.
+          - paragraph
+          - generic [ref=e4459]: delete
+          - generic [ref=e4460]:
+            - code [ref=e4462]:
+              - generic [ref=e4463]: https://activationcode.dispatchtrack.com/api/external/v1/dispatch_guides/:identifier
+            - button "Copiar" [ref=e4466] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4467]
+          - table [ref=e4468]:
+            - rowgroup [ref=e4469]:
+              - row "Campo Tipo Descripción" [ref=e4470]:
+                - columnheader "Campo" [ref=e4471]
+                - columnheader "Tipo" [ref=e4472]
+                - columnheader "Descripción" [ref=e4473]
+            - rowgroup [ref=e4474]:
+              - row "identifier Url_Parameter Identifier of the guide which you want to destroy." [ref=e4475]:
+                - cell "identifier" [ref=e4476]
+                - cell "Url_Parameter" [ref=e4477]
+                - cell "Identifier of the guide which you want to destroy." [ref=e4478]:
+                  - paragraph [ref=e4479]: Identifier of the guide which you want to destroy.
+          - heading "Success 200" [level=2] [ref=e4480]
+          - table [ref=e4481]:
+            - rowgroup [ref=e4482]:
+              - row "Campo Tipo Descripción" [ref=e4483]:
+                - columnheader "Campo" [ref=e4484]
+                - columnheader "Tipo" [ref=e4485]
+                - columnheader "Descripción" [ref=e4486]
+            - rowgroup [ref=e4487]:
+              - row "status String Status of the response (ok/error)." [ref=e4488]:
+                - cell "status" [ref=e4489]
+                - cell "String" [ref=e4490]
+                - cell "Status of the response (ok/error)." [ref=e4491]:
+                  - paragraph [ref=e4492]: Status of the response (ok/error).
+          - tablist [ref=e4493]:
+            - listitem [ref=e4494]:
+              - tab "200 OK:" [ref=e4495]
+          - generic [ref=e4498]:
+            - code [ref=e4500]: "{ \"status\": \"ok\", }"
+            - button "Copiar" [ref=e4503] [cursor=pointer]
+          - tablist [ref=e4504]:
+            - listitem [ref=e4505]:
+              - tab "404 Error:" [ref=e4506]
+            - listitem [ref=e4507]:
+              - tab "401 Error:" [ref=e4508] [cursor=pointer]
+          - generic [ref=e4511]:
+            - code [ref=e4513]: "{}"
+            - button "Copiar" [ref=e4516] [cursor=pointer]
+        - article [ref=e4518]:
+          - heading "Dispatch Guides | Export Dispatch Guides" [level=1] [ref=e4520]
+          - button "1.0.0" [ref=e4523] [cursor=pointer]:
+            - strong [ref=e4524]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4527]: Used to export dispatch guides on excel.
+          - paragraph
+          - generic [ref=e4528]: post
+          - generic [ref=e4529]:
+            - code [ref=e4531]:
+              - generic [ref=e4532]: https://activationcode.dispatchtrack.com/api/external/v1/dispatch_guides/export
+            - button "Copiar" [ref=e4535] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4536]
+          - table [ref=e4537]:
+            - rowgroup [ref=e4538]:
+              - row "Campo Tipo Descripción" [ref=e4539]:
+                - columnheader "Campo" [ref=e4540]
+                - columnheader "Tipo" [ref=e4541]
+                - columnheader "Descripción" [ref=e4542]
+            - rowgroup [ref=e4543]:
+              - row "i opcional String Identifier of the contact whom you want to get dispatches from." [ref=e4544]:
+                - cell "i opcional" [ref=e4545]:
+                  - text: i
+                  - generic [ref=e4546]: opcional
+                - cell "String" [ref=e4547]
+                - cell "Identifier of the contact whom you want to get dispatches from." [ref=e4548]:
+                  - paragraph [ref=e4549]: Identifier of the contact whom you want to get dispatches from.
+              - 'row "s opcional DateTime Date at which you want to start the search for dispatches (format. yyyy-mm-dd). Valor por defecto: 3 days ago" [ref=e4550]':
+                - cell "s opcional" [ref=e4551]:
+                  - text: s
+                  - generic [ref=e4552]: opcional
+                - cell "DateTime" [ref=e4553]
+                - 'cell "Date at which you want to start the search for dispatches (format. yyyy-mm-dd). Valor por defecto: 3 days ago" [ref=e4554]':
+                  - paragraph [ref=e4555]: Date at which you want to start the search for dispatches (format. yyyy-mm-dd).
+                  - paragraph [ref=e4556]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e4557]: 3 days ago
+              - 'row "e opcional DateTime Date at which you want to end the search for dispatches (format. yyyy-mm-dd). Valor por defecto: now" [ref=e4558]':
+                - cell "e opcional" [ref=e4559]:
+                  - text: e
+                  - generic [ref=e4560]: opcional
+                - cell "DateTime" [ref=e4561]
+                - 'cell "Date at which you want to end the search for dispatches (format. yyyy-mm-dd). Valor por defecto: now" [ref=e4562]':
+                  - paragraph [ref=e4563]: Date at which you want to end the search for dispatches (format. yyyy-mm-dd).
+                  - paragraph [ref=e4564]:
+                    - text: "Valor por defecto:"
+                    - code [ref=e4565]: now
+              - row "rd opcional Integer Number of days counted back from now, until when data will be queried." [ref=e4566]:
+                - cell "rd opcional" [ref=e4567]:
+                  - text: rd
+                  - generic [ref=e4568]: opcional
+                - cell "Integer" [ref=e4569]
+                - cell "Number of days counted back from now, until when data will be queried." [ref=e4570]:
+                  - paragraph [ref=e4571]: Number of days counted back from now, until when data will be queried.
+              - row "st opcional Integer Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery)." [ref=e4572]:
+                - cell "st opcional" [ref=e4573]:
+                  - text: st
+                  - generic [ref=e4574]: opcional
+                - cell "Integer" [ref=e4575]
+                - cell "Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery)." [ref=e4576]:
+                  - paragraph [ref=e4577]: Status ID of the dispatches that you want to filter (available ids, 2=delivered, 3=no delivered, 4=partial delivery).
+              - row "c opcional String Dispatch Code." [ref=e4578]:
+                - cell "c opcional" [ref=e4579]:
+                  - text: c
+                  - generic [ref=e4580]: opcional
+                - cell "String" [ref=e4581]
+                - cell "Dispatch Code." [ref=e4582]:
+                  - paragraph [ref=e4583]: Dispatch Code.
+              - row "v opcional String[] Vehicles Identifier." [ref=e4584]:
+                - cell "v opcional" [ref=e4585]:
+                  - text: v
+                  - generic [ref=e4586]: opcional
+                - cell "String[]" [ref=e4587]
+                - cell "Vehicles Identifier." [ref=e4588]:
+                  - paragraph [ref=e4589]: Vehicles Identifier.
+          - heading "Success 200" [level=2] [ref=e4590]
+          - table [ref=e4591]:
+            - rowgroup [ref=e4592]:
+              - row "Campo Tipo Descripción" [ref=e4593]:
+                - columnheader "Campo" [ref=e4594]
+                - columnheader "Tipo" [ref=e4595]
+                - columnheader "Descripción" [ref=e4596]
+            - rowgroup [ref=e4597]:
+              - row "status String Status of the response (ok/error)." [ref=e4598]:
+                - cell "status" [ref=e4599]
+                - cell "String" [ref=e4600]
+                - cell "Status of the response (ok/error)." [ref=e4601]:
+                  - paragraph [ref=e4602]: Status of the response (ok/error).
+              - row "response JSON JSON with the response of the API." [ref=e4603]:
+                - cell "response" [ref=e4604]
+                - cell "JSON" [ref=e4605]
+                - cell "JSON with the response of the API." [ref=e4606]:
+                  - paragraph [ref=e4607]: JSON with the response of the API.
+              - row "response.id String Unique identifier of the export. Keep this id to use one of the GET APIs." [ref=e4608]:
+                - cell "response.id" [ref=e4609]
+                - cell "String" [ref=e4610]
+                - cell "Unique identifier of the export. Keep this id to use one of the GET APIs." [ref=e4611]:
+                  - paragraph [ref=e4612]: Unique identifier of the export. Keep this id to use one of the GET APIs.
+          - tablist [ref=e4613]:
+            - listitem [ref=e4614]:
+              - tab "200 OK:" [ref=e4615]
+          - generic [ref=e4618]:
+            - code [ref=e4620]: "{ \"status\": \"ok\", \"response\": { \"id\": \"5508f4cc352e610f010000\" } }"
+            - button "Copiar" [ref=e4623] [cursor=pointer]
+      - generic [ref=e4624]:
+        - heading "Group" [level=1] [ref=e4625]
+        - article [ref=e4627]:
+          - heading "Group | Create group association" [level=1] [ref=e4629]
+          - button "1.0.0" [ref=e4632] [cursor=pointer]:
+            - strong [ref=e4633]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4636]: Used to create group for a group category.
+          - paragraph
+          - generic [ref=e4637]: post
+          - generic [ref=e4638]:
+            - code [ref=e4640]:
+              - generic [ref=e4641]: https://activationcode.dispatchtrack.com/api/external/v1/groups
+            - button "Copiar" [ref=e4644] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4645]
+          - table [ref=e4646]:
+            - rowgroup [ref=e4647]:
+              - row "Campo Tipo Descripción" [ref=e4648]:
+                - columnheader "Campo" [ref=e4649]
+                - columnheader "Tipo" [ref=e4650]
+                - columnheader "Descripción" [ref=e4651]
+            - rowgroup [ref=e4652]:
+              - row "id Number Identifier of group_category." [ref=e4653]:
+                - cell "id" [ref=e4654]
+                - cell "Number" [ref=e4655]
+                - cell "Identifier of group_category." [ref=e4656]:
+                  - paragraph [ref=e4657]: Identifier of group_category.
+              - row "name String Name of group" [ref=e4658]:
+                - cell "name" [ref=e4659]
+                - cell "String" [ref=e4660]
+                - cell "Name of group" [ref=e4661]:
+                  - paragraph [ref=e4662]: Name of group
+          - tablist [ref=e4663]:
+            - listitem [ref=e4664]:
+              - tab "200 OK:" [ref=e4665]
+          - generic [ref=e4668]:
+            - code [ref=e4670]: "{ \"status\": \"ok\", \"response\": { \"id\": 163808, \"name\": \"prueba-2\" } }"
+            - button "Copiar" [ref=e4673] [cursor=pointer]
+        - article [ref=e4675]:
+          - heading "Group | Get group categories" [level=1] [ref=e4677]
+          - button "1.0.0" [ref=e4680] [cursor=pointer]:
+            - strong [ref=e4681]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4684]: Used to list all group_categories by account.
+          - paragraph
+          - generic [ref=e4685]: get
+          - generic [ref=e4686]:
+            - code [ref=e4688]:
+              - generic [ref=e4689]: https://activationcode.dispatchtrack.com/api/external/v1/groups
+            - button "Copiar" [ref=e4692] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e4693]
+          - table [ref=e4694]:
+            - rowgroup [ref=e4695]:
+              - row "Campo Tipo Descripción" [ref=e4696]:
+                - columnheader "Campo" [ref=e4697]
+                - columnheader "Tipo" [ref=e4698]
+                - columnheader "Descripción" [ref=e4699]
+            - rowgroup [ref=e4700]:
+              - row "Array JSON[] return all group categories." [ref=e4701]:
+                - cell "Array" [ref=e4702]
+                - cell "JSON[]" [ref=e4703]
+                - cell "return all group categories." [ref=e4704]:
+                  - paragraph [ref=e4705]: return all group categories.
+              - row "Array.id Number" [ref=e4706]:
+                - cell "Array.id" [ref=e4707]
+                - cell "Number" [ref=e4708]
+                - cell [ref=e4709]
+              - row "Array.name String" [ref=e4710]:
+                - cell "Array.name" [ref=e4711]
+                - cell "String" [ref=e4712]
+                - cell [ref=e4713]
+              - row "Array.groupable_type String" [ref=e4714]:
+                - cell "Array.groupable_type" [ref=e4715]
+                - cell "String" [ref=e4716]
+                - cell [ref=e4717]
+          - tablist [ref=e4718]:
+            - listitem [ref=e4719]:
+              - tab "200 OK:" [ref=e4720]
+          - generic [ref=e4723]:
+            - code [ref=e4725]: "[ { \"id\": 768, \"name\": \"PILOTO NOTIFICACION\", \"groupable_type\": \"DispatchGuide\" }, { \"id\": 33, \"name\": \"Hojas de Ruta\", \"groupable_type\": \"DispatchGuide\" }, { \"id\": 759, \"name\": \"LOCALDESPA\", \"groupable_type\": \"DispatchGuide\" }, { \"id\": 39, \"name\": \"Operadores Logisticos\", \"groupable_type\": \"Truck\" }, { \"id\": 218, \"name\": \"Transportes\", \"groupable_type\": \"Truck\" } ]"
+            - button "Copiar" [ref=e4728] [cursor=pointer]
+      - generic [ref=e4729]:
+        - heading "Guide Items" [level=1] [ref=e4730]
+        - article [ref=e4732]:
+          - heading "Guide Items | Destroy Guide Item" [level=1] [ref=e4734]
+          - button "1.0.0" [ref=e4737] [cursor=pointer]:
+            - strong [ref=e4738]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4741]: Used to delete a guide item.
+          - paragraph
+          - generic [ref=e4742]: DELETE
+          - generic [ref=e4743]:
+            - code [ref=e4745]:
+              - generic [ref=e4746]: https://activationcode.dispatchtrack.com/api/external/v1/dispatch_guides/:dispatch_guide_code/guide_items/:id
+            - button "Copiar" [ref=e4749] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4750]
+          - table [ref=e4751]:
+            - rowgroup [ref=e4752]:
+              - row "Campo Tipo Descripción" [ref=e4753]:
+                - columnheader "Campo" [ref=e4754]
+                - columnheader "Tipo" [ref=e4755]
+                - columnheader "Descripción" [ref=e4756]
+            - rowgroup [ref=e4757]:
+              - row "dispatch_guide_code Url_parameter Dispatch Guide identifier code." [ref=e4758]:
+                - cell "dispatch_guide_code" [ref=e4759]
+                - cell "Url_parameter" [ref=e4760]
+                - cell "Dispatch Guide identifier code." [ref=e4761]:
+                  - paragraph [ref=e4762]: Dispatch Guide identifier code.
+              - row "id Url_parameter Guide Item identifier number." [ref=e4763]:
+                - cell "id" [ref=e4764]
+                - cell "Url_parameter" [ref=e4765]
+                - cell "Guide Item identifier number." [ref=e4766]:
+                  - paragraph [ref=e4767]: Guide Item identifier number.
+          - heading "Success 200" [level=2] [ref=e4768]
+          - table [ref=e4769]:
+            - rowgroup [ref=e4770]:
+              - row "Campo Tipo Descripción" [ref=e4771]:
+                - columnheader "Campo" [ref=e4772]
+                - columnheader "Tipo" [ref=e4773]
+                - columnheader "Descripción" [ref=e4774]
+            - rowgroup [ref=e4775]:
+              - row "status String Status of the response (ok/error)." [ref=e4776]:
+                - cell "status" [ref=e4777]
+                - cell "String" [ref=e4778]
+                - cell "Status of the response (ok/error)." [ref=e4779]:
+                  - paragraph [ref=e4780]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e4781]:
+                - cell "response" [ref=e4782]
+                - cell "JSON" [ref=e4783]
+                - cell "JSON with API response." [ref=e4784]:
+                  - paragraph [ref=e4785]: JSON with API response.
+              - row "action String response" [ref=e4786]:
+                - cell "action" [ref=e4787]
+                - cell "String" [ref=e4788]
+                - cell "response" [ref=e4789]:
+                  - paragraph [ref=e4790]: response
+          - tablist [ref=e4791]:
+            - listitem [ref=e4792]:
+              - tab "200 OK:" [ref=e4793]
+          - generic [ref=e4796]:
+            - code [ref=e4798]: "{ \"status\": \"ok\", \"response\": { \"destroy\": \"Item has been destroyed\" } }"
+            - button "Copiar" [ref=e4801] [cursor=pointer]
+        - article [ref=e4803]:
+          - heading "Guide Items | Update Guide Item" [level=1] [ref=e4805]
+          - button "1.0.0" [ref=e4808] [cursor=pointer]:
+            - strong [ref=e4809]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4812]: Used to update a guide item.
+          - paragraph
+          - generic [ref=e4813]: PATCH
+          - generic [ref=e4814]:
+            - code [ref=e4816]:
+              - generic [ref=e4817]: https://activationcode.dispatchtrack.com/api/external/v1/dispatch_guides/:dispatch_guide_code/guide_items/:id
+            - button "Copiar" [ref=e4820] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4821]
+          - table [ref=e4822]:
+            - rowgroup [ref=e4823]:
+              - row "Campo Tipo Descripción" [ref=e4824]:
+                - columnheader "Campo" [ref=e4825]
+                - columnheader "Tipo" [ref=e4826]
+                - columnheader "Descripción" [ref=e4827]
+            - rowgroup [ref=e4828]:
+              - row "dispatch_guide_code Url_parameter Dispatch Guide identifier code." [ref=e4829]:
+                - cell "dispatch_guide_code" [ref=e4830]
+                - cell "Url_parameter" [ref=e4831]
+                - cell "Dispatch Guide identifier code." [ref=e4832]:
+                  - paragraph [ref=e4833]: Dispatch Guide identifier code.
+              - row "id Url_parameter Guide Item identifier number." [ref=e4834]:
+                - cell "id" [ref=e4835]
+                - cell "Url_parameter" [ref=e4836]
+                - cell "Guide Item identifier number." [ref=e4837]:
+                  - paragraph [ref=e4838]: Guide Item identifier number.
+              - row "quantity Integer Guide Item quantity." [ref=e4839]:
+                - cell "quantity" [ref=e4840]
+                - cell "Integer" [ref=e4841]
+                - cell "Guide Item quantity." [ref=e4842]:
+                  - paragraph [ref=e4843]: Guide Item quantity.
+          - tablist [ref=e4844]:
+            - listitem [ref=e4845]:
+              - tab "Request-Example:" [ref=e4846]
+          - generic [ref=e4849]:
+            - code [ref=e4851]: "{ \"quantity\": 22 }"
+            - button "Copiar" [ref=e4854] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e4855]
+          - table [ref=e4856]:
+            - rowgroup [ref=e4857]:
+              - row "Campo Tipo Descripción" [ref=e4858]:
+                - columnheader "Campo" [ref=e4859]
+                - columnheader "Tipo" [ref=e4860]
+                - columnheader "Descripción" [ref=e4861]
+            - rowgroup [ref=e4862]:
+              - row "status String Status of the response (ok/error)." [ref=e4863]:
+                - cell "status" [ref=e4864]
+                - cell "String" [ref=e4865]
+                - cell "Status of the response (ok/error)." [ref=e4866]:
+                  - paragraph [ref=e4867]: Status of the response (ok/error).
+              - row "response JSON JSON with API response." [ref=e4868]:
+                - cell "response" [ref=e4869]
+                - cell "JSON" [ref=e4870]
+                - cell "JSON with API response." [ref=e4871]:
+                  - paragraph [ref=e4872]: JSON with API response.
+              - row "action String response" [ref=e4873]:
+                - cell "action" [ref=e4874]
+                - cell "String" [ref=e4875]
+                - cell "response" [ref=e4876]:
+                  - paragraph [ref=e4877]: response
+          - tablist [ref=e4878]:
+            - listitem [ref=e4879]:
+              - tab "200 OK:" [ref=e4880]
+          - generic [ref=e4883]:
+            - code [ref=e4885]: "{ \"status\": \"ok\", \"response\": { \"update\": \"Item has been updated\" } }"
+            - button "Copiar" [ref=e4888] [cursor=pointer]
+      - generic [ref=e4889]:
+        - heading "Review" [level=1] [ref=e4890]
+        - article [ref=e4892]:
+          - heading "Review | List Reviews" [level=1] [ref=e4894]
+          - button "1.0.0" [ref=e4897] [cursor=pointer]:
+            - strong [ref=e4898]: 1.0.0
+          - paragraph
+          - paragraph [ref=e4901]: Get a list of reviews
+          - paragraph
+          - generic [ref=e4902]: get
+          - generic [ref=e4903]:
+            - code [ref=e4905]:
+              - generic [ref=e4906]: https://activationcode.dispatchtrack.com/api/external/v1/reviews
+            - button "Copiar" [ref=e4909] [cursor=pointer]
+          - heading "Parámetro" [level=2] [ref=e4910]
+          - table [ref=e4911]:
+            - rowgroup [ref=e4912]:
+              - row "Campo Tipo Descripción" [ref=e4913]:
+                - columnheader "Campo" [ref=e4914]
+                - columnheader "Tipo" [ref=e4915]
+                - columnheader "Descripción" [ref=e4916]
+            - rowgroup [ref=e4917]:
+              - row "code opcional String Dispatch guide code" [ref=e4918]:
+                - cell "code opcional" [ref=e4919]:
+                  - text: code
+                  - generic [ref=e4920]: opcional
+                - cell "String" [ref=e4921]
+                - cell "Dispatch guide code" [ref=e4922]:
+                  - paragraph [ref=e4923]: Dispatch guide code
+              - 'row "date opcional String Initial Date in format yyyy-mm-dd example: 2016-01-01" [ref=e4924]':
+                - cell "date opcional" [ref=e4925]:
+                  - text: date
+                  - generic [ref=e4926]: opcional
+                - cell "String" [ref=e4927]
+                - 'cell "Initial Date in format yyyy-mm-dd example: 2016-01-01" [ref=e4928]':
+                  - paragraph [ref=e4929]:
+                    - text: Initial Date in format
+                    - code [ref=e4930]: yyyy-mm-dd
+                    - text: "example:"
+                    - code [ref=e4931]: 2016-01-01
+              - row "page opcional Integer If you want paginate results, you can send number paginate to get values." [ref=e4932]:
+                - cell "page opcional" [ref=e4933]:
+                  - text: page
+                  - generic [ref=e4934]: opcional
+                - cell "Integer" [ref=e4935]
+                - cell "If you want paginate results, you can send number paginate to get values." [ref=e4936]:
+                  - paragraph [ref=e4937]: If you want paginate results, you can send number paginate to get values.
+              - 'row "limit opcional Integer If you paginate, send limit by page. Default is 10. Tamaño de rango: 10..20" [ref=e4938]':
+                - cell "limit opcional" [ref=e4939]:
+                  - text: limit
+                  - generic [ref=e4940]: opcional
+                - cell "Integer" [ref=e4941]
+                - 'cell "If you paginate, send limit by page. Default is 10. Tamaño de rango: 10..20" [ref=e4942]':
+                  - paragraph [ref=e4943]:
+                    - text: If you paginate, send limit by page. Default is
+                    - code [ref=e4944]: "10"
+                    - text: .
+                  - paragraph [ref=e4945]:
+                    - text: "Tamaño de rango:"
+                    - code [ref=e4946]: 10..20
+              - 'row "order opcional String If you paginate, send order. Default is ASC. Valores permitidos: \"ASC\", \"DESC\"" [ref=e4947]':
+                - cell "order opcional" [ref=e4948]:
+                  - text: order
+                  - generic [ref=e4949]: opcional
+                - cell "String" [ref=e4950]
+                - 'cell "If you paginate, send order. Default is ASC. Valores permitidos: \"ASC\", \"DESC\"" [ref=e4951]':
+                  - paragraph [ref=e4952]:
+                    - text: If you paginate, send order. Default is
+                    - code [ref=e4953]: ASC
+                    - text: .
+                  - paragraph [ref=e4954]:
+                    - text: "Valores permitidos:"
+                    - code [ref=e4955]: "\"ASC\""
+                    - text: ","
+                    - code [ref=e4956]: "\"DESC\""
+          - heading "Success 200" [level=2] [ref=e4957]
+          - table [ref=e4958]:
+            - rowgroup [ref=e4959]:
+              - row "Campo Tipo Descripción" [ref=e4960]:
+                - columnheader "Campo" [ref=e4961]
+                - columnheader "Tipo" [ref=e4962]
+                - columnheader "Descripción" [ref=e4963]
+            - rowgroup [ref=e4964]:
+              - row "reviews String[] A list of reviews" [ref=e4965]:
+                - cell "reviews" [ref=e4966]
+                - cell "String[]" [ref=e4967]
+                - cell "A list of reviews" [ref=e4968]:
+                  - paragraph [ref=e4969]: A list of reviews
+              - row "reviews.contact JSON JSON contact payload" [ref=e4970]:
+                - cell "reviews.contact" [ref=e4971]
+                - cell "JSON" [ref=e4972]
+                - cell "JSON contact payload" [ref=e4973]:
+                  - paragraph [ref=e4974]: JSON contact payload
+              - row "reviews.contact.name String Contact name" [ref=e4975]:
+                - cell "reviews.contact.name" [ref=e4976]
+                - cell "String" [ref=e4977]
+                - cell "Contact name" [ref=e4978]:
+                  - paragraph [ref=e4979]: Contact name
+              - row "reviews.contact.identifier String Contact identifier" [ref=e4980]:
+                - cell "reviews.contact.identifier" [ref=e4981]
+                - cell "String" [ref=e4982]
+                - cell "Contact identifier" [ref=e4983]:
+                  - paragraph [ref=e4984]: Contact identifier
+              - row "reviews.general_score Number General score value" [ref=e4985]:
+                - cell "reviews.general_score" [ref=e4986]
+                - cell "Number" [ref=e4987]
+                - cell "General score value" [ref=e4988]:
+                  - paragraph [ref=e4989]: General score value
+              - row "reviews.shipping_score Number Shipping score value" [ref=e4990]:
+                - cell "reviews.shipping_score" [ref=e4991]
+                - cell "Number" [ref=e4992]
+                - cell "Shipping score value" [ref=e4993]:
+                  - paragraph [ref=e4994]: Shipping score value
+              - row "reviews.service_score Number Service score value" [ref=e4995]:
+                - cell "reviews.service_score" [ref=e4996]
+                - cell "Number" [ref=e4997]
+                - cell "Service score value" [ref=e4998]:
+                  - paragraph [ref=e4999]: Service score value
+              - row "reviews.product_score Number Product score value" [ref=e5000]:
+                - cell "reviews.product_score" [ref=e5001]
+                - cell "Number" [ref=e5002]
+                - cell "Product score value" [ref=e5003]:
+                  - paragraph [ref=e5004]: Product score value
+              - row "reviews.comments String Contact comments" [ref=e5005]:
+                - cell "reviews.comments" [ref=e5006]
+                - cell "String" [ref=e5007]
+                - cell "Contact comments" [ref=e5008]:
+                  - paragraph [ref=e5009]: Contact comments
+              - row "page Integer Page number" [ref=e5010]:
+                - cell "page" [ref=e5011]
+                - cell "Integer" [ref=e5012]
+                - cell "Page number" [ref=e5013]:
+                  - paragraph [ref=e5014]: Page number
+              - row "limit Integer Limit by page" [ref=e5015]:
+                - cell "limit" [ref=e5016]
+                - cell "Integer" [ref=e5017]
+                - cell "Limit by page" [ref=e5018]:
+                  - paragraph [ref=e5019]: Limit by page
+              - row "order String Order results" [ref=e5020]:
+                - cell "order" [ref=e5021]
+                - cell "String" [ref=e5022]
+                - cell "Order results" [ref=e5023]:
+                  - paragraph [ref=e5024]: Order results
+          - tablist [ref=e5025]:
+            - listitem [ref=e5026]:
+              - tab "200 OK:" [ref=e5027]
+          - generic [ref=e5030]:
+            - code [ref=e5032]: "{ \"reviews\": [ { \"contact\": { \"name\": \"Juan Perez\", \"identifier\": 1-9 }, \"general_score\": 4, \"shipping_score\": 4, \"service_score\": 4, \"product_score\": 4, \"comments\": \"lorem ipsum\" } ], \"page\": 1, \"limit\": 10, \"order\": 'asc' }"
+            - button "Copiar" [ref=e5035] [cursor=pointer]
+      - generic [ref=e5036]:
+        - heading "SubStatus" [level=1] [ref=e5037]
+        - article [ref=e5039]:
+          - heading "SubStatus | Show Substatus" [level=1] [ref=e5041]
+          - button "1.0.0" [ref=e5044] [cursor=pointer]:
+            - strong [ref=e5045]: 1.0.0
+          - paragraph
+          - paragraph [ref=e5048]: List all substatus.
+          - paragraph
+          - generic [ref=e5049]: get
+          - generic [ref=e5050]:
+            - code [ref=e5052]:
+              - generic [ref=e5053]: https://activationcode.dispatchtrack.com/api/external/v1/sub_statuses
+            - button "Copiar" [ref=e5056] [cursor=pointer]
+          - heading "Success 200" [level=2] [ref=e5057]
+          - table [ref=e5058]:
+            - rowgroup [ref=e5059]:
+              - row "Campo Tipo Descripción" [ref=e5060]:
+                - columnheader "Campo" [ref=e5061]
+                - columnheader "Tipo" [ref=e5062]
+                - columnheader "Descripción" [ref=e5063]
+            - rowgroup [ref=e5064]:
+              - row "status String Status of the response (ok/error)." [ref=e5065]:
+                - cell "status" [ref=e5066]
+                - cell "String" [ref=e5067]
+                - cell "Status of the response (ok/error)." [ref=e5068]:
+                  - paragraph [ref=e5069]: Status of the response (ok/error).
+              - row "sub_substatuses JSON[] List all substatus." [ref=e5070]:
+                - cell "sub_substatuses" [ref=e5071]
+                - cell "JSON[]" [ref=e5072]
+                - cell "List all substatus." [ref=e5073]:
+                  - paragraph [ref=e5074]: List all substatus.
+              - row "sub_substatuses.id Number Id of the substatus." [ref=e5075]:
+                - cell "sub_substatuses.id" [ref=e5076]
+                - cell "Number" [ref=e5077]
+                - cell "Id of the substatus." [ref=e5078]:
+                  - paragraph [ref=e5079]: Id of the substatus.
+              - row "sub_substatuses.status_id Number Status of the substatus (delivered, not delivered, partial delivery or on route)." [ref=e5080]:
+                - cell "sub_substatuses.status_id" [ref=e5081]
+                - cell "Number" [ref=e5082]
+                - cell "Status of the substatus (delivered, not delivered, partial delivery or on route)." [ref=e5083]:
+                  - paragraph [ref=e5084]: Status of the substatus (delivered, not delivered, partial delivery or on route).
+              - row "sub_substatuses.name String Name of the substatus." [ref=e5085]:
+                - cell "sub_substatuses.name" [ref=e5086]
+                - cell "String" [ref=e5087]
+                - cell "Name of the substatus." [ref=e5088]:
+                  - paragraph [ref=e5089]: Name of the substatus.
+              - row "sub_substatuses.code Number Code of the substatus." [ref=e5090]:
+                - cell "sub_substatuses.code" [ref=e5091]
+                - cell "Number" [ref=e5092]
+                - cell "Code of the substatus." [ref=e5093]:
+                  - paragraph [ref=e5094]: Code of the substatus.
+              - row "sub_substatuses.mode String If the substatus is a final state (default, pickup_only)." [ref=e5095]:
+                - cell "sub_substatuses.mode" [ref=e5096]
+                - cell "String" [ref=e5097]
+                - cell "If the substatus is a final state (default, pickup_only)." [ref=e5098]:
+                  - paragraph [ref=e5099]: If the substatus is a final state (default, pickup_only).
+              - row "sub_substatuses.locks Boolean True if this substatus produce a lock dispatch." [ref=e5100]:
+                - cell "sub_substatuses.locks" [ref=e5101]
+                - cell "Boolean" [ref=e5102]
+                - cell "True if this substatus produce a lock dispatch." [ref=e5103]:
+                  - paragraph [ref=e5104]: True if this substatus produce a lock dispatch.
+          - tablist [ref=e5105]:
+            - listitem [ref=e5106]:
+              - tab "200 OK:" [ref=e5107]
+          - generic [ref=e5110]:
+            - code [ref=e5112]: "{ \"status\": \"ok\", \"response\": { \"sub_statuses\": [ { \"id\": 636, \"status_id\": 3, \"parent_code\": 2, \"name\": \"Cliente No Está\", \"code\": \"03\", \"mode\": \"default\", \"locks\": false }, , { \"id\": 637, \"status_id\": 3, \"parent_code\": 2, \"name\": \"Dirección Errónea\", \"code\": \"02\", \"mode\": \"default\", \"locks\": false } ] } }"
+            - button "Copiar" [ref=e5115] [cursor=pointer]
+    - paragraph [ref=e5118]:
+      - text: Generado con
+      - link "apidoc" [ref=e5119] [cursor=pointer]:
+        - /url: https://apidocjs.com
+      - text: 1.2.0 - Thu Mar 27 2025 17:31:00 GMT+0530 (India Standard Time)
