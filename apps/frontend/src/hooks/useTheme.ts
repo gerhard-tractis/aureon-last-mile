@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
-const STORAGE_KEY = 'aureon-theme';
+export const STORAGE_KEY = 'aureon-theme';
 
 function getInitialDark(): boolean {
   if (typeof window === 'undefined') return false;
@@ -23,21 +23,20 @@ export function useTheme() {
   }, [isDark]);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored !== null) return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
+    const handler = (e: MediaQueryListEvent) => {
+      if (localStorage.getItem(STORAGE_KEY) !== null) return; // user has manual override
+      setIsDark(e.matches);
+    };
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);
 
-  function toggle() {
-    setIsDark((prev) => {
-      const next = !prev;
-      localStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light');
-      return next;
-    });
-  }
+  const toggle = useCallback(() => {
+    const next = !isDark;
+    localStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light');
+    setIsDark(next);
+  }, [isDark]);
 
   return { isDark, toggle };
 }
