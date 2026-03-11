@@ -2,14 +2,16 @@
 'use client';
 
 import { createSPASassClient } from '@/lib/supabase/client';
-import {useEffect, useState} from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SSOButtons from '@/components/SSOButtons';
+import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/cookies';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [rememberMe, setRememberMe] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const [showMFAPrompt, setShowMFAPrompt] = useState(false);
@@ -33,8 +35,12 @@ export default function LoginPage() {
             if (mfaError) throw mfaError;
 
             if (mfaData.nextLevel === 'aal2' && mfaData.nextLevel !== mfaData.currentLevel) {
+                // Store rememberMe preference for the 2FA page to pick up
+                sessionStorage.setItem('remember_me_pending', rememberMe ? '1' : '0');
                 setShowMFAPrompt(true);
             } else {
+                // Full login complete — write the remember_me cookie now
+                document.cookie = rememberMe ? getSetRememberMeCookie() : getClearRememberMeCookie();
                 router.push('/app');
                 return;
             }
@@ -49,13 +55,11 @@ export default function LoginPage() {
         }
     };
 
-
     useEffect(() => {
-        if(showMFAPrompt) {
+        if (showMFAPrompt) {
             router.push('/auth/2fa');
         }
     }, [showMFAPrompt, router]);
-
 
     return (
         <div>
@@ -109,6 +113,17 @@ export default function LoginPage() {
                         onChange={(e) => setPassword(e.target.value)}
                         className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
                     />
+                    <div className="flex items-center justify-between mt-3">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={rememberMe}
+                                onChange={(e) => setRememberMe(e.target.checked)}
+                                className="h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-amber-500"
+                            />
+                            <span className="text-xs text-stone-500">Recordarme</span>
+                        </label>
+                    </div>
                 </div>
 
                 <button
