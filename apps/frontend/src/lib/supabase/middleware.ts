@@ -1,10 +1,30 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+export const REMEMBER_ME_MAX_AGE = 2592000 // 30 days in seconds
+
+export function applyRememberMe(
+    cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[],
+    rememberMe: boolean
+) {
+    return cookiesToSet.map(({ name, value, options }) => ({
+        name,
+        value,
+        options: rememberMe ? { ...options, maxAge: REMEMBER_ME_MAX_AGE } : options,
+    }))
+}
+
+export function getSetRememberMeCookie() {
+    return `remember_me=1; path=/; max-age=${REMEMBER_ME_MAX_AGE}; SameSite=Strict`
+}
+
+export function getClearRememberMeCookie() {
+    return 'remember_me=0; path=/; max-age=0; SameSite=Strict'
+}
+
 export async function updateSession(request: NextRequest) {
-    let supabaseResponse = NextResponse.next({
-        request,
-    })
+    let supabaseResponse = NextResponse.next({ request })
+    const rememberMe = request.cookies.get('remember_me')?.value === '1'
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,11 +35,10 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
-                    cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-                    supabaseResponse = NextResponse.next({
-                        request,
-                    })
-                    cookiesToSet.forEach(({ name, value, options }) =>
+                    const resolved = applyRememberMe(cookiesToSet, rememberMe)
+                    resolved.forEach(({ name, value }) => request.cookies.set(name, value))
+                    supabaseResponse = NextResponse.next({ request })
+                    resolved.forEach(({ name, value, options }) =>
                         supabaseResponse.cookies.set(name, value, options)
                     )
                 },
@@ -33,27 +52,13 @@ export async function updateSession(request: NextRequest) {
 
     // IMPORTANT: DO NOT REMOVE auth.getUser()
 
-    const {data: user} = await supabase.auth.getUser()
-    if (
-        (!user || !user.user) && request.nextUrl.pathname.startsWith('/app')
-    ) {
+    const { data: user } = await supabase.auth.getUser()
+    if ((!user || !user.user) && request.nextUrl.pathname.startsWith('/app')) {
         const url = request.nextUrl.clone()
         url.pathname = '/auth/login'
         return NextResponse.redirect(url)
     }
 
     // IMPORTANT: You *must* return the supabaseResponse object as it is.
-    // If you're creating a new response object with NextResponse.next() make sure to:
-    // 1. Pass the request in it, like so:
-    //    const myNewResponse = NextResponse.next({ request })
-    // 2. Copy over the cookies, like so:
-    //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
-    // 3. Change the myNewResponse object to fit your needs, but avoid changing
-    //    the cookies!
-    // 4. Finally:
-    //    return myNewResponse
-    // If this is not done, you may be causing the browser and server to go out
-    // of sync and terminate the user's session prematurely!
-
     return supabaseResponse
 }
