@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSPASassClient } from '@/lib/supabase/client';
 import { MFAVerification } from '@/components/MFAVerification';
-import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/middleware';
+import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/cookies';
 
 export default function TwoFactorAuthPage() {
     const router = useRouter();

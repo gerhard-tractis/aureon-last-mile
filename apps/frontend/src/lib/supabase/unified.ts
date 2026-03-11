@@ -1,5 +1,6 @@
 import {SupabaseClient} from "@supabase/supabase-js";
 import {Database} from "@/lib/types";
+import { getClearRememberMeCookie } from '@/lib/supabase/cookies';
 
 export enum ClientType {
     SERVER = 'server',
@@ -43,11 +44,14 @@ export class SassClient {
     }
 
     async logout() {
+        if (this.clientType === ClientType.SPA) {
+            document.cookie = getClearRememberMeCookie();
+        }
         const { error } = await this.client.auth.signOut({
             scope: 'local',
         });
         if (error) throw error;
-        if(this.clientType === ClientType.SPA) {
+        if (this.clientType === ClientType.SPA) {
             window.location.href = '/auth/login';
         }
     }

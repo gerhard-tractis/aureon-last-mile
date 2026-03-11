@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { applyRememberMe, REMEMBER_ME_MAX_AGE, getClearRememberMeCookie, getSetRememberMeCookie } from '@/lib/supabase/middleware'
+import { applyRememberMe } from '@/lib/supabase/middleware'
+import { REMEMBER_ME_MAX_AGE, getClearRememberMeCookie, getSetRememberMeCookie } from '@/lib/supabase/cookies'
 
 describe('applyRememberMe', () => {
   it('adds maxAge to all cookies when rememberMe=true', () => {

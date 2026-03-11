@@ -1,7 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-
-export const REMEMBER_ME_MAX_AGE = 2592000 // 30 days in seconds
+import { REMEMBER_ME_MAX_AGE } from '@/lib/supabase/cookies'
 
 export function applyRememberMe(
     cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[],
@@ -12,14 +11,6 @@ export function applyRememberMe(
         value,
         options: rememberMe ? { ...options, maxAge: REMEMBER_ME_MAX_AGE } : options,
     }))
-}
-
-export function getSetRememberMeCookie() {
-    return `remember_me=1; path=/; max-age=${REMEMBER_ME_MAX_AGE}; SameSite=Strict`
-}
-
-export function getClearRememberMeCookie() {
-    return 'remember_me=0; path=/; max-age=0; SameSite=Strict'
 }
 
 export async function updateSession(request: NextRequest) {

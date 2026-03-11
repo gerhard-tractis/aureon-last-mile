@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SSOButtons from '@/components/SSOButtons';
-import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/middleware';
+import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/cookies';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
