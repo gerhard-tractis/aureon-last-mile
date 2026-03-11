@@ -17,6 +17,7 @@ const DASHBOARD_QUERY_OPTIONS = {
 export function useOperatorId() {
   const [operatorId, setOperatorId] = useState<string | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   useEffect(() => {
     const supabase = createSPAClient();
@@ -24,10 +25,11 @@ export function useOperatorId() {
       const claims = session?.user?.app_metadata?.claims;
       setOperatorId(claims?.operator_id ?? null);
       setRole(claims?.role ?? null);
+      setPermissions(claims?.permissions ?? []);
     });
   }, []);
 
-  return { operatorId, role };
+  return { operatorId, role, permissions };
 }
 
 export function useSlaMetric(

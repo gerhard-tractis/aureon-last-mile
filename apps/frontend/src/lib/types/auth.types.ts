@@ -50,6 +50,9 @@ export interface CustomClaims {
 
   /** User's role from users table */
   role: UserRole;
+
+  /** User's permissions array */
+  permissions: string[];
 }
 
 /**
@@ -67,6 +70,9 @@ export interface UserProfile {
 
   /** User's role (ENUM) */
   role: UserRole;
+
+  /** User's permissions array */
+  permissions: string[];
 
   /** User's email (synced from auth.users) */
   email: string;
@@ -178,6 +184,13 @@ export const RolePermissions = {
     return roleNames[role];
   },
 } as const;
+
+export type Permission = 'pickup' | 'warehouse' | 'loading' | 'operations' | 'admin';
+
+export function hasPermission(permissions: string[] | undefined, permission: Permission): boolean {
+  if (!permissions) return false;
+  return permissions.includes(permission);
+}
 
 /**
  * Signup metadata structure
