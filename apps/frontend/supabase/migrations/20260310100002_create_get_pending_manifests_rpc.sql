@@ -2,7 +2,11 @@
 -- Story: 4.2 - Manifest List Screen
 -- Epic: 4A - Pickup Verification
 
-CREATE OR REPLACE FUNCTION public.get_pending_manifests(p_operator_id UUID)
+-- Drop old parameterized versions
+DROP FUNCTION IF EXISTS public.get_pending_manifests(UUID);
+DROP FUNCTION IF EXISTS public.get_completed_manifests(UUID);
+
+CREATE OR REPLACE FUNCTION public.get_pending_manifests()
 RETURNS TABLE (
   external_load_id VARCHAR(100),
   retailer_name VARCHAR(50),
@@ -20,22 +24,22 @@ AS $$
     COUNT(p.id) as package_count
   FROM orders o
   LEFT JOIN packages p ON p.order_id = o.id AND p.deleted_at IS NULL
-  WHERE o.operator_id = p_operator_id
+  WHERE o.operator_id = public.get_operator_id()
     AND o.external_load_id IS NOT NULL
     AND o.deleted_at IS NULL
     AND o.external_load_id NOT IN (
       SELECT m.external_load_id FROM manifests m
-      WHERE m.operator_id = p_operator_id
+      WHERE m.operator_id = public.get_operator_id()
         AND m.status = 'completed'
         AND m.deleted_at IS NULL
     )
   GROUP BY o.external_load_id, o.retailer_name
 $$;
 
-COMMENT ON FUNCTION public.get_pending_manifests(UUID) IS 'Get unconsumed manifests (loads not yet completed) for the manifest list screen (Story 4.2)';
+COMMENT ON FUNCTION public.get_pending_manifests() IS 'Get unconsumed manifests (loads not yet completed) for the manifest list screen (Story 4.2)';
 
 -- Also create a function for completed manifests (history tab)
-CREATE OR REPLACE FUNCTION public.get_completed_manifests(p_operator_id UUID)
+CREATE OR REPLACE FUNCTION public.get_completed_manifests()
 RETURNS TABLE (
   id UUID,
   external_load_id VARCHAR(100),
@@ -56,13 +60,13 @@ AS $$
     m.total_packages,
     m.completed_at
   FROM manifests m
-  WHERE m.operator_id = p_operator_id
+  WHERE m.operator_id = public.get_operator_id()
     AND m.status = 'completed'
     AND m.deleted_at IS NULL
   ORDER BY m.completed_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_completed_manifests(UUID) IS 'Get completed manifests for history tab (Story 4.2)';
+COMMENT ON FUNCTION public.get_completed_manifests() IS 'Get completed manifests for history tab (Story 4.2)';
 
 -- Validation
 DO $$

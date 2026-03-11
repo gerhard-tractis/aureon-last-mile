@@ -37,6 +37,7 @@ describe('usePendingManifests', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
+    expect(mockRpc).toHaveBeenCalledWith('get_pending_manifests');
   });
 
   it('handles errors', async () => {
@@ -65,5 +66,6 @@ describe('useCompletedManifests', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
+    expect(mockRpc).toHaveBeenCalledWith('get_completed_manifests');
   });
 });

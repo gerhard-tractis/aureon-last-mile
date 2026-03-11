@@ -4,7 +4,8 @@ export type ScanResult = 'verified' | 'not_found' | 'duplicate';
 
 export interface ScanValidationResult {
   scanResult: ScanResult;
-  packageId: string | null;
+  packageId: string | null;       // Primary package (for single matches)
+  packageIds: string[];           // All packages (for order-number matches)
   packageLabel: string | null;
 }
 
@@ -27,7 +28,7 @@ export async function validateScan(
     .limit(1);
 
   if (existing && existing.length > 0) {
-    return { scanResult: 'duplicate', packageId: null, packageLabel: barcode };
+    return { scanResult: 'duplicate', packageId: null, packageIds: [], packageLabel: barcode };
   }
 
   // 2. Search packages.label matching barcode within this load
@@ -54,6 +55,7 @@ export async function validateScan(
       return {
         scanResult: 'verified',
         packageId: packageMatch[0].id,
+        packageIds: [packageMatch[0].id],
         packageLabel: packageMatch[0].label,
       };
     }
@@ -70,21 +72,22 @@ export async function validateScan(
     .limit(1);
 
   if (orderByNumber && orderByNumber.length > 0) {
-    // Get first package of this order to record in the scan
+    // Get all packages of this order
     const { data: orderPackages } = await supabase
       .from('packages')
       .select('id, label')
       .eq('order_id', orderByNumber[0].id)
-      .is('deleted_at', null)
-      .limit(1);
+      .is('deleted_at', null);
 
+    const pkgs = orderPackages ?? [];
     return {
       scanResult: 'verified',
-      packageId: orderPackages?.[0]?.id ?? null,
-      packageLabel: orderPackages?.[0]?.label ?? barcode,
+      packageId: pkgs[0]?.id ?? null,
+      packageIds: pkgs.map(p => p.id),
+      packageLabel: pkgs[0]?.label ?? barcode,
     };
   }
 
   // 4. No match
-  return { scanResult: 'not_found', packageId: null, packageLabel: null };
+  return { scanResult: 'not_found', packageId: null, packageIds: [], packageLabel: null };
 }

@@ -8,8 +8,7 @@ import { Input } from '@/components/ui/input';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
-import { useOperatorId } from '@/hooks/useDashboardMetrics';
-import { hasPermission } from '@/lib/types/auth.types';
+import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 
@@ -17,7 +16,7 @@ export default function CompletionPage() {
   const params = useParams();
   const router = useRouter();
   const loadId = decodeURIComponent(params.loadId as string);
-  const { operatorId, permissions } = useOperatorId();
+  const { operatorId } = useOperatorId();
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [manifestStartedAt, setManifestStartedAt] = useState<string | null>(
@@ -31,12 +30,6 @@ export default function CompletionPage() {
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-      router.push('/app');
-    }
-  }, [permissions, router]);
 
   useEffect(() => {
     if (!operatorId) return;
@@ -124,10 +117,6 @@ export default function CompletionPage() {
       setIsSubmitting(false);
     }
   };
-
-  if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-    return null;
-  }
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">

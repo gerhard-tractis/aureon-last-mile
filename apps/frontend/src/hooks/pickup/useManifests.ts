@@ -27,10 +27,7 @@ export function usePendingManifests(operatorId: string | null) {
     queryKey: ['pickup', 'manifests', 'pending', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data, error } = await (supabase.rpc as CallableFunction)(
-        'get_pending_manifests',
-        { p_operator_id: operatorId! }
-      );
+      const { data, error } = await (supabase.rpc as CallableFunction)('get_pending_manifests');
       if (error) throw error;
       return data as PendingManifest[];
     },
@@ -44,10 +41,7 @@ export function useCompletedManifests(operatorId: string | null) {
     queryKey: ['pickup', 'manifests', 'completed', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data, error } = await (supabase.rpc as CallableFunction)(
-        'get_completed_manifests',
-        { p_operator_id: operatorId! }
-      );
+      const { data, error } = await (supabase.rpc as CallableFunction)('get_completed_manifests');
       if (error) throw error;
       return data as CompletedManifest[];
     },

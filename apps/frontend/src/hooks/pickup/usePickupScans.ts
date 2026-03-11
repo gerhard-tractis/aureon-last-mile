@@ -56,17 +56,33 @@ export function useScanMutation() {
         input.externalLoadId
       );
 
-      // Record the scan
+      // Record the scan(s)
       const supabase = createSPAClient();
-      await supabase.from('pickup_scans').insert({
-        operator_id: input.operatorId,
-        manifest_id: input.manifestId,
-        package_id: result.packageId,
-        barcode_scanned: input.barcode,
-        scan_result: result.scanResult,
-        scanned_by_user_id: input.userId,
-        scanned_at: new Date().toISOString(),
-      });
+      if (result.packageIds.length > 1) {
+        // Order-number scan: create a verified scan for each package
+        const rows = result.packageIds.map(pkgId => ({
+          operator_id: input.operatorId,
+          manifest_id: input.manifestId,
+          package_id: pkgId,
+          barcode_scanned: input.barcode,
+          scan_result: result.scanResult,
+          scanned_by_user_id: input.userId,
+          scanned_at: new Date().toISOString(),
+        }));
+        const { error: insertError } = await supabase.from('pickup_scans').insert(rows);
+        if (insertError) throw insertError;
+      } else {
+        const { error: insertError } = await supabase.from('pickup_scans').insert({
+          operator_id: input.operatorId,
+          manifest_id: input.manifestId,
+          package_id: result.packageId,
+          barcode_scanned: input.barcode,
+          scan_result: result.scanResult,
+          scanned_by_user_id: input.userId,
+          scanned_at: new Date().toISOString(),
+        });
+        if (insertError) throw insertError;
+      }
 
       // Play feedback
       playFeedback(result.scanResult);

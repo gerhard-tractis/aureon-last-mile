@@ -11,8 +11,7 @@ import {
   useDiscrepancyNotes,
   useSaveDiscrepancyNote,
 } from '@/hooks/pickup/useDiscrepancies';
-import { useOperatorId } from '@/hooks/useDashboardMetrics';
-import { hasPermission } from '@/lib/types/auth.types';
+import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 
@@ -20,16 +19,10 @@ export default function DiscrepancyReviewPage() {
   const params = useParams();
   const router = useRouter();
   const loadId = decodeURIComponent(params.loadId as string);
-  const { operatorId, permissions } = useOperatorId();
+  const { operatorId } = useOperatorId();
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-      router.push('/app');
-    }
-  }, [permissions, router]);
 
   useEffect(() => {
     if (!operatorId) return;
@@ -92,10 +85,6 @@ export default function DiscrepancyReviewPage() {
       userId,
     });
   };
-
-  if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-    return null;
-  }
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">

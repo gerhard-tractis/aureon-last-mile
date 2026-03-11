@@ -1,25 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ManifestCard } from '@/components/pickup/ManifestCard';
 import { usePendingManifests, useCompletedManifests } from '@/hooks/pickup/useManifests';
-import { useOperatorId } from '@/hooks/useDashboardMetrics';
-import { hasPermission } from '@/lib/types/auth.types';
+import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 
 export default function PickupPage() {
   const router = useRouter();
-  const { operatorId, permissions } = useOperatorId();
+  const { operatorId } = useOperatorId();
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
-
-  // Permission guard
-  useEffect(() => {
-    if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-      router.push('/app');
-    }
-  }, [permissions, router]);
 
   const { data: pendingManifests, isLoading: pendingLoading } = usePendingManifests(operatorId);
   const { data: completedManifests, isLoading: completedLoading } = useCompletedManifests(
@@ -32,32 +24,36 @@ export default function PickupPage() {
     orderCount: number,
     packageCount: number
   ) => {
-    // Upsert manifest record (create if not exists)
     const supabase = createSPAClient();
-    const { error } = await supabase
+
+    // Check if manifest already exists
+    const { data: existing } = await supabase
       .from('manifests')
-      .upsert(
-        {
-          operator_id: operatorId!,
-          external_load_id: externalLoadId,
-          retailer_name: retailerName,
-          total_orders: orderCount,
-          total_packages: packageCount,
-          status: 'in_progress' as const,
-          started_at: new Date().toISOString(),
-        },
-        { onConflict: 'operator_id,external_load_id' }
-      );
-    if (error) {
-      console.error('Failed to upsert manifest:', error);
-      return;
+      .select('id')
+      .eq('operator_id', operatorId!)
+      .eq('external_load_id', externalLoadId)
+      .is('deleted_at', null)
+      .limit(1);
+
+    if (!existing || existing.length === 0) {
+      // Create new manifest
+      const { error } = await supabase.from('manifests').insert({
+        operator_id: operatorId!,
+        external_load_id: externalLoadId,
+        retailer_name: retailerName,
+        total_orders: orderCount,
+        total_packages: packageCount,
+        status: 'in_progress',
+        started_at: new Date().toISOString(),
+      });
+      if (error) {
+        console.error('Failed to create manifest:', error);
+        return;
+      }
     }
+
     router.push(`/app/pickup/scan/${encodeURIComponent(externalLoadId)}`);
   };
-
-  if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-    return null;
-  }
 
   return (
     <div className="space-y-4 p-4">
