@@ -12,6 +12,7 @@ import {
     Key,
     BarChart3,
     TrendingUp,
+    ClipboardCheck,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPAClient, createSPASassClient } from "@/lib/supabase/client";
@@ -29,11 +30,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const { logoUrl, companyName } = useBranding();
     const [logoError, setLogoError] = useState(false);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userPermissions, setUserPermissions] = useState<string[]>([]);
 
     React.useEffect(() => {
         const supabase = createSPAClient();
         supabase.auth.getSession().then(({ data: { session } }) => {
             setUserRole(session?.user?.app_metadata?.claims?.role ?? null);
+            setUserPermissions(session?.user?.app_metadata?.claims?.permissions ?? []);
         });
     }, []);
 
@@ -59,6 +62,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
 
     const dashboardAllowed = userRole === 'operations_manager' || userRole === 'admin';
+    const pickupAllowed = userPermissions.includes('pickup');
     const isDashboardSection = pathname.startsWith('/app/dashboard');
     const operacionesHref = '/app/dashboard/operaciones';
     const analiticaHref = '/app/dashboard/analitica';
@@ -154,6 +158,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 </div>
                             )}
                         </div>
+                    )}
+                    {pickupAllowed && (
+                        <Link
+                            href="/app/pickup"
+                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                pathname.startsWith('/app/pickup')
+                                    ? 'bg-primary-50 text-primary-600'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                        >
+                            <ClipboardCheck className={`mr-3 h-5 w-5 ${
+                                pathname.startsWith('/app/pickup') ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                            }`} />
+                            Pickup
+                        </Link>
                     )}
                     {standaloneNav.map((item) => {
                         const isActive = pathname === item.href;
