@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { applyRememberMe, REMEMBER_ME_MAX_AGE } from '@/lib/supabase/middleware'
+import { applyRememberMe, REMEMBER_ME_MAX_AGE, getClearRememberMeCookie, getSetRememberMeCookie } from '@/lib/supabase/middleware'
 
 describe('applyRememberMe', () => {
   it('adds maxAge to all cookies when rememberMe=true', () => {
@@ -25,5 +25,20 @@ describe('applyRememberMe', () => {
     )
     expect(result[0].options?.httpOnly).toBe(true)
     expect(result[0].options?.maxAge).toBe(REMEMBER_ME_MAX_AGE)
+  })
+})
+
+describe('remember_me cookie strings', () => {
+  it('getSetRememberMeCookie returns a persistent cookie string', () => {
+    const s = getSetRememberMeCookie()
+    expect(s).toContain('remember_me=1')
+    expect(s).toContain(`max-age=${REMEMBER_ME_MAX_AGE}`)
+    expect(s).toContain('SameSite=Strict')
+  })
+
+  it('getClearRememberMeCookie returns an expiring cookie string', () => {
+    const s = getClearRememberMeCookie()
+    expect(s).toContain('remember_me=0')
+    expect(s).toContain('max-age=0')
   })
 })
