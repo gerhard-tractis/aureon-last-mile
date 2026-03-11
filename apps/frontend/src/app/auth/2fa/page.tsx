@@ -43,10 +43,13 @@ export default function TwoFactorAuthPage() {
         }
     };
 
-    const handleVerified = () => {
+    const handleVerified = async () => {
         const pending = sessionStorage.getItem('remember_me_pending');
         sessionStorage.removeItem('remember_me_pending');
         document.cookie = pending === '1' ? getSetRememberMeCookie() : getClearRememberMeCookie();
+        if (pending === '1') {
+            await fetch('/api/auth/persist-session', { method: 'POST' })
+        }
         router.push('/app');
     };
 

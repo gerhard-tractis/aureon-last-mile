@@ -41,6 +41,11 @@ export default function LoginPage() {
             } else {
                 // Full login complete — write the remember_me cookie now
                 document.cookie = rememberMe ? getSetRememberMeCookie() : getClearRememberMeCookie();
+                if (rememberMe) {
+                    // Force server-side session refresh so auth cookies are re-set with maxAge.
+                    // The browser Supabase client sets them as session cookies by default.
+                    await fetch('/api/auth/persist-session', { method: 'POST' })
+                }
                 router.push('/app');
                 return;
             }
