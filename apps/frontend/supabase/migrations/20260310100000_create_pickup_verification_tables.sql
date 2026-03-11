@@ -11,6 +11,20 @@
 --   - 20260223000001_create_automation_worker_schema.sql (set_updated_at, packages table)
 
 -- ============================================================================
+-- PART 0: Drop legacy scaffolding tables from 20260209_multi_tenant_rls.sql
+-- ============================================================================
+-- The initial RLS migration created placeholder manifests + barcode_scans tables
+-- with a different schema (manifest_number, driver_id, etc.). These tables are
+-- empty in production — they were scaffolding, never used. Drop them so we can
+-- recreate with the correct Epic 4A schema.
+
+-- Drop barcode_scans first (FK → manifests)
+DROP TABLE IF EXISTS public.barcode_scans CASCADE;
+
+-- Drop legacy manifests (triggers, policies, indexes dropped via CASCADE)
+DROP TABLE IF EXISTS public.manifests CASCADE;
+
+-- ============================================================================
 -- PART 1: Create ENUM Types (idempotent)
 -- ============================================================================
 
