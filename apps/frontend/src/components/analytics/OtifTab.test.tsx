@@ -12,6 +12,10 @@ vi.mock('@/components/dashboard/DateFilterBar', () => ({
 }));
 vi.mock('@/components/dashboard/OtifByRetailerTable', () => ({ default: () => <div data-testid="otif-retailer" /> }));
 vi.mock('@/components/dashboard/LateDeliveriesTable', () => ({ default: () => <div data-testid="late-deliveries" /> }));
+vi.mock('@/components/dashboard/FailureReasonsChart', () => ({ default: () => <div data-testid="failure-reasons-chart" /> }));
+vi.mock('@/hooks/useDashboardMetrics', () => ({
+  useFailureReasons: () => ({ data: [], isLoading: false }),
+}));
 
 function renderWithProvider(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -29,5 +33,10 @@ describe('OtifTab', () => {
     renderWithProvider(<OtifTab operatorId="op-1" />);
     expect(screen.getByTestId('otif-retailer')).toBeInTheDocument();
     expect(screen.getByTestId('late-deliveries')).toBeInTheDocument();
+  });
+
+  it('renders failure reasons chart using shared date filter', () => {
+    renderWithProvider(<OtifTab operatorId="op-1" />);
+    expect(screen.getByTestId('failure-reasons-chart')).toBeInTheDocument();
   });
 });
