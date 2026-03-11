@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSPASassClient } from '@/lib/supabase/client';
 import { MFAVerification } from '@/components/MFAVerification';
+import { getSetRememberMeCookie, getClearRememberMeCookie } from '@/lib/supabase/middleware';
 
 export default function TwoFactorAuthPage() {
     const router = useRouter();
@@ -43,6 +44,9 @@ export default function TwoFactorAuthPage() {
     };
 
     const handleVerified = () => {
+        const pending = sessionStorage.getItem('remember_me_pending');
+        sessionStorage.removeItem('remember_me_pending');
+        document.cookie = pending === '1' ? getSetRememberMeCookie() : getClearRememberMeCookie();
         router.push('/app');
     };
 
