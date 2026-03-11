@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { type ReactNode } from 'react';
 
+vi.mock('./ActiveRoutesSection', () => ({ default: () => <div data-testid="active-routes-section" /> }));
 vi.mock('./DateFilterBar', () => ({ default: () => <div data-testid="date-filter" /> }));
 vi.mock('./OrdersDetailTable', () => ({ default: (props: { initialStatus?: string; initialOverdueOnly?: boolean }) => (
   <div data-testid="orders-detail-table" data-status={props.initialStatus ?? ''} data-overdue={String(props.initialOverdueOnly ?? false)} />
@@ -59,6 +60,12 @@ describe('DeliveryTab', () => {
     expect(screen.getByTestId('date-filter')).toBeInTheDocument();
     expect(screen.getByTestId('outcome-strip')).toBeInTheDocument();
     expect(screen.getByTestId('orders-detail-table')).toBeInTheDocument();
+  });
+
+  it('renders ActiveRoutesSection above outcome strip', () => {
+    mockOtif.mockReturnValue({ data: OTIF_DATA, isLoading: false });
+    render(<DeliveryTab operatorId="test-op" />, { wrapper });
+    expect(screen.getByTestId('active-routes-section')).toBeInTheDocument();
   });
 
   it('renders all 4 outcome cards with correct counts', () => {

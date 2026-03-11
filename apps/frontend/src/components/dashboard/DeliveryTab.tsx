@@ -5,6 +5,7 @@ import DateFilterBar, { type DatePreset } from './DateFilterBar';
 import { useDatePreset } from '@/hooks/useDatePreset';
 import { useOtifMetrics } from '@/hooks/useDeliveryMetrics';
 import OrdersDetailTable from './OrdersDetailTable';
+import ActiveRoutesSection from './ActiveRoutesSection';
 
 interface DeliveryTabProps {
   operatorId: string;
@@ -80,6 +81,8 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
 
   return (
     <div className="space-y-6" data-testid="delivery-tab">
+      <ActiveRoutesSection operatorId={operatorId} />
+
       <DateFilterBar
         preset={preset}
         customStart={customStart}
