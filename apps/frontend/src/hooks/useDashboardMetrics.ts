@@ -1,5 +1,5 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+
 import { createSPAClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/types';
 
@@ -14,21 +14,7 @@ const DASHBOARD_QUERY_OPTIONS = {
   placeholderData: keepPreviousData,
 } as const;
 
-export function useOperatorId() {
-  const [operatorId, setOperatorId] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    const supabase = createSPAClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const claims = session?.user?.app_metadata?.claims;
-      setOperatorId(claims?.operator_id ?? null);
-      setRole(claims?.role ?? null);
-    });
-  }, []);
-
-  return { operatorId, role };
-}
+export { useOperatorId } from './useOperatorId';
 
 export function useSlaMetric(
   operatorId: string | null,
