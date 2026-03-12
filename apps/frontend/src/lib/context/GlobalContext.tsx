@@ -3,6 +3,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { createSPASassClientAuthenticated as createSPASassClient } from '@/lib/supabase/client';
+import { createSPAClient } from '@/lib/supabase/client';
 
 
 type User = {
@@ -13,14 +14,20 @@ type User = {
 
 interface GlobalContextType {
     loading: boolean;
-    user: User | null;  // Add this
+    user: User | null;
+    operatorId: string | null;
+    role: string | null;
+    permissions: string[];
 }
 
 const GlobalContext = createContext<GlobalContextType | undefined>(undefined);
 
 export function GlobalProvider({ children }: { children: React.ReactNode }) {
     const [loading, setLoading] = useState(true);
-    const [user, setUser] = useState<User | null>(null);  // Add this
+    const [user, setUser] = useState<User | null>(null);
+    const [operatorId, setOperatorId] = useState<string | null>(null);
+    const [role, setRole] = useState<string | null>(null);
+    const [permissions, setPermissions] = useState<string[]>([]);
 
     useEffect(() => {
         async function loadData() {
@@ -40,6 +47,13 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
                     throw new Error('User not found');
                 }
 
+                // Get claims from session (app_metadata.claims is synced from public.users)
+                const spaClient = createSPAClient();
+                const { data: { session } } = await spaClient.auth.getSession();
+                const claims = session?.user?.app_metadata?.claims;
+                setOperatorId(claims?.operator_id ?? null);
+                setRole(claims?.role ?? null);
+                setPermissions(claims?.permissions ?? []);
             } catch (error) {
                 console.error('Error loading data:', error);
             } finally {
@@ -51,7 +65,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     return (
-        <GlobalContext.Provider value={{ loading, user }}>
+        <GlobalContext.Provider value={{ loading, user, operatorId, role, permissions }}>
             {children}
         </GlobalContext.Provider>
     );

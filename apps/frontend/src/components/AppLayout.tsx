@@ -15,7 +15,7 @@ import {
     ClipboardCheck,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
-import { createSPAClient, createSPASassClient } from "@/lib/supabase/client";
+import { createSPASassClient } from "@/lib/supabase/client";
 import { useBranding } from "@/providers/BrandingProvider";
 import ThemeToggle from '@/components/ThemeToggle';
 
@@ -25,20 +25,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
 
-
-    const { user } = useGlobal();
+    const { user, role: userRole, permissions: userPermissions } = useGlobal();
     const { logoUrl, companyName } = useBranding();
     const [logoError, setLogoError] = useState(false);
-    const [userRole, setUserRole] = useState<string | null>(null);
-    const [userPermissions, setUserPermissions] = useState<string[]>([]);
-
-    React.useEffect(() => {
-        const supabase = createSPAClient();
-        supabase.auth.getSession().then(({ data: { session } }) => {
-            setUserRole(session?.user?.app_metadata?.claims?.role ?? null);
-            setUserPermissions(session?.user?.app_metadata?.claims?.permissions ?? []);
-        });
-    }, []);
 
     const handleLogout = async () => {
         try {

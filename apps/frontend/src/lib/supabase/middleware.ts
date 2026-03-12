@@ -50,6 +50,13 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url)
     }
 
+    // Redirect authenticated users away from /auth routes to /app
+    if (user?.user && request.nextUrl.pathname.startsWith('/auth')) {
+        const url = request.nextUrl.clone()
+        url.pathname = '/app'
+        return NextResponse.redirect(url)
+    }
+
     // IMPORTANT: You *must* return the supabaseResponse object as it is.
     return supabaseResponse
 }

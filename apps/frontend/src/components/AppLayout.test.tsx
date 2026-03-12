@@ -9,17 +9,10 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/context/GlobalContext', () => ({
-  useGlobal: () => ({ user: { email: 'test@example.com' } }),
+  useGlobal: () => ({ user: { email: 'test@example.com' }, role: 'admin', permissions: [] }),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
-  createSPAClient: () => ({
-    auth: {
-      getSession: () => Promise.resolve({
-        data: { session: { user: { app_metadata: { claims: { role: 'admin' } } } } },
-      }),
-    },
-  }),
   createSPASassClient: () => Promise.resolve({ logout: vi.fn() }),
 }));
 
