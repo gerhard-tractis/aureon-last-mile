@@ -149,51 +149,124 @@ export type Database = {
           },
         ]
       }
-      manifests: {
+      discrepancy_notes: {
         Row: {
-          created_at: string | null
-          driver_id: string | null
-          expected_packages: number | null
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
           id: string
-          manifest_number: string
+          manifest_id: string
+          note: string
           operator_id: string
-          route_name: string | null
-          scanned_packages: number | null
-          signature_data: string | null
-          signed_at: string | null
-          status: string
-          updated_at: string | null
-          vehicle_plate: string | null
+          package_id: string
+          updated_at: string
         }
         Insert: {
-          created_at?: string | null
-          driver_id?: string | null
-          expected_packages?: number | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
           id?: string
-          manifest_number: string
+          manifest_id: string
+          note: string
           operator_id: string
-          route_name?: string | null
-          scanned_packages?: number | null
-          signature_data?: string | null
-          signed_at?: string | null
-          status?: string
-          updated_at?: string | null
-          vehicle_plate?: string | null
+          package_id: string
+          updated_at?: string
         }
         Update: {
-          created_at?: string | null
-          driver_id?: string | null
-          expected_packages?: number | null
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
           id?: string
-          manifest_number?: string
+          manifest_id?: string
+          note?: string
           operator_id?: string
-          route_name?: string | null
-          scanned_packages?: number | null
-          signature_data?: string | null
-          signed_at?: string | null
+          package_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "discrepancy_notes_manifest_id_fkey"
+            columns: ["manifest_id"]
+            isOneToOne: false
+            referencedRelation: "manifests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discrepancy_notes_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "discrepancy_notes_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      manifests: {
+        Row: {
+          assigned_to_user_id: string | null
+          completed_at: string | null
+          created_at: string
+          deleted_at: string | null
+          external_load_id: string
+          id: string
+          operator_id: string
+          pickup_location: string | null
+          retailer_name: string | null
+          signature_client: string | null
+          signature_client_name: string | null
+          signature_operator: string | null
+          signature_operator_name: string | null
+          started_at: string | null
+          status: string
+          total_orders: number | null
+          total_packages: number | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_to_user_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          external_load_id: string
+          id?: string
+          operator_id: string
+          pickup_location?: string | null
+          retailer_name?: string | null
+          signature_client?: string | null
+          signature_client_name?: string | null
+          signature_operator?: string | null
+          signature_operator_name?: string | null
+          started_at?: string | null
           status?: string
-          updated_at?: string | null
-          vehicle_plate?: string | null
+          total_orders?: number | null
+          total_packages?: number | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_to_user_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          external_load_id?: string
+          id?: string
+          operator_id?: string
+          pickup_location?: string | null
+          retailer_name?: string | null
+          signature_client?: string | null
+          signature_client_name?: string | null
+          signature_operator?: string | null
+          signature_operator_name?: string | null
+          started_at?: string | null
+          status?: string
+          total_orders?: number | null
+          total_packages?: number | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -316,6 +389,70 @@ export type Database = {
           },
         ]
       }
+      pickup_scans: {
+        Row: {
+          barcode_scanned: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          manifest_id: string
+          operator_id: string
+          package_id: string | null
+          scan_result: string
+          scanned_at: string
+          scanned_by_user_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          barcode_scanned: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          manifest_id: string
+          operator_id: string
+          package_id?: string | null
+          scan_result: string
+          scanned_at: string
+          scanned_by_user_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          barcode_scanned?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          manifest_id?: string
+          operator_id?: string
+          package_id?: string | null
+          scan_result?: string
+          scanned_at?: string
+          scanned_by_user_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_scans_manifest_id_fkey"
+            columns: ["manifest_id"]
+            isOneToOne: false
+            referencedRelation: "manifests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_scans_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_scans_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           id: string
@@ -329,6 +466,8 @@ export type Database = {
           delivery_window_start: string | null
           delivery_window_end: string | null
           retailer_name: string | null
+          external_load_id: string | null
+          recipient_region: string | null
           raw_data: Json
           metadata: Json | null
           imported_via: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
@@ -348,6 +487,8 @@ export type Database = {
           delivery_window_start?: string | null
           delivery_window_end?: string | null
           retailer_name?: string | null
+          external_load_id?: string | null
+          recipient_region?: string | null
           raw_data: Json
           metadata?: Json | null
           imported_via: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
@@ -367,6 +508,8 @@ export type Database = {
           delivery_window_start?: string | null
           delivery_window_end?: string | null
           retailer_name?: string | null
+          external_load_id?: string | null
+          recipient_region?: string | null
           raw_data?: Json
           metadata?: Json | null
           imported_via?: 'API' | 'EMAIL' | 'MANUAL' | 'CSV'
