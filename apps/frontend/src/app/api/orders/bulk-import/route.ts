@@ -198,7 +198,6 @@ export async function POST(request: NextRequest) {
 
     const { error: insertError } = await supabase
       .from('orders')
-      // @ts-expect-error -- createServerClient third generic causes .insert() to resolve as never
       .insert(ordersToInsert);
 
     if (insertError) {
@@ -215,7 +214,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Audit log
-    // @ts-expect-error -- createServerClient third generic causes .insert() to resolve as never
     await supabase.from('audit_logs').insert({
       operator_id: operatorId,
       user_id: userId,

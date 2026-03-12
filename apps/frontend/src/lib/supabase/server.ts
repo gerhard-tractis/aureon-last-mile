@@ -1,12 +1,15 @@
 import {createServerClient} from '@supabase/ssr'
+import {SupabaseClient} from '@supabase/supabase-js'
 import {cookies} from 'next/headers'
 import {ClientType, SassClient} from "@/lib/supabase/unified";
 import {Database} from "@/lib/types";
 
-export async function createSSRClient() {
+export async function createSSRClient(): Promise<SupabaseClient<Database>> {
     const cookieStore = await cookies()
 
-    return createServerClient<Database, "public", Database["public"]>(
+    // Cast needed: same @supabase/ssr version mismatch as client.ts — see comment there.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
@@ -27,7 +30,7 @@ export async function createSSRClient() {
                 },
             }
         }
-    )
+    ) as unknown as SupabaseClient<Database>
 }
 
 

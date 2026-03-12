@@ -88,7 +88,7 @@ export function useActiveClients(
         .is('deleted_at', null)
         .not('retailer_name', 'is', null);
       if (error) throw error;
-      const unique = new Set((data ?? []).map((r: { retailer_name: string }) => r.retailer_name));
+      const unique = new Set((data ?? []).map((r: { retailer_name: string | null }) => r.retailer_name).filter((v): v is string => v !== null));
       return unique.size;
     },
     enabled: !!operatorId,
