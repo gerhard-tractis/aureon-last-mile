@@ -52,6 +52,20 @@ export async function validateScan(
       .limit(1);
 
     if (orderMatch && orderMatch.length > 0) {
+      // 2b. Check if this package_id already has a verified scan (prevents double-counting)
+      const { data: pkgDuplicate } = await supabase
+        .from('pickup_scans')
+        .select('id')
+        .eq('manifest_id', manifestId)
+        .eq('package_id', packageMatch[0].id)
+        .eq('scan_result', 'verified')
+        .is('deleted_at', null)
+        .limit(1);
+
+      if (pkgDuplicate && pkgDuplicate.length > 0) {
+        return { scanResult: 'duplicate', packageId: packageMatch[0].id, packageIds: [], packageLabel: packageMatch[0].label };
+      }
+
       return {
         scanResult: 'verified',
         packageId: packageMatch[0].id,
@@ -80,11 +94,32 @@ export async function validateScan(
       .is('deleted_at', null);
 
     const pkgs = orderPackages ?? [];
+
+    // Filter out already-verified packages by package_id
+    const unverifiedPkgs: typeof pkgs = [];
+    for (const pkg of pkgs) {
+      const { data: existingScan } = await supabase
+        .from('pickup_scans')
+        .select('id')
+        .eq('manifest_id', manifestId)
+        .eq('package_id', pkg.id)
+        .eq('scan_result', 'verified')
+        .is('deleted_at', null)
+        .limit(1);
+      if (!existingScan || existingScan.length === 0) {
+        unverifiedPkgs.push(pkg);
+      }
+    }
+
+    if (unverifiedPkgs.length === 0) {
+      return { scanResult: 'duplicate', packageId: pkgs[0]?.id ?? null, packageIds: [], packageLabel: pkgs[0]?.label ?? barcode };
+    }
+
     return {
       scanResult: 'verified',
-      packageId: pkgs[0]?.id ?? null,
-      packageIds: pkgs.map(p => p.id),
-      packageLabel: pkgs[0]?.label ?? barcode,
+      packageId: unverifiedPkgs[0]?.id ?? null,
+      packageIds: unverifiedPkgs.map(p => p.id),
+      packageLabel: unverifiedPkgs[0]?.label ?? barcode,
     };
   }
 
