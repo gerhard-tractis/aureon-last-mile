@@ -193,23 +193,19 @@ it('returns duplicate when package_id already verified (different barcode)', asy
     orders: [{ id: 'order-1' }],
   };
 
-  // Override: after package match, the package_id duplicate check finds existing scan
-  // We need a more granular mock for this test — pickup_scans returns [] for barcode check
-  // but returns [{ id: 'scan-1' }] for package_id check
+  // Override the module-level mock to return different data per pickup_scans call:
+  // First call (barcode check) → empty, second call (package_id check) → found
   let pickupScansCallCount = 0;
-  vi.mocked(createSPAClient).mockReturnValue({
-    from: (table: string) => {
+  const origQueryResponses = { ...queryResponses };
+  queryResponses = new Proxy({} as Record<string, unknown[]>, {
+    get(_target, table: string) {
       if (table === 'pickup_scans') {
         pickupScansCallCount++;
-        // First call: barcode duplicate check → empty
-        // Second call: package_id duplicate check → found
-        const data = pickupScansCallCount === 1 ? [] : [{ id: 'scan-1' }];
-        return createChain(data);
+        return pickupScansCallCount === 1 ? [] : [{ id: 'scan-1' }];
       }
-      const data = queryResponses[table] ?? [];
-      return createChain(data);
+      return origQueryResponses[table] ?? [];
     },
-  } as ReturnType<typeof createSPAClient>);
+  }) as Record<string, unknown[]>;
 
   const result = await validateScan('CTN001', 'manifest-1', 'op-1', 'LOAD-1');
   expect(result.scanResult).toBe('duplicate');
@@ -423,7 +419,7 @@ export function useManifestOrders(
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('orders')
-        .select('id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg)')
+        .select('id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg, deleted_at)')
         .eq('operator_id', operatorId!)
         .eq('external_load_id', externalLoadId!)
         .is('deleted_at', null)
@@ -1047,8 +1043,78 @@ git commit -m "feat: add ManifestDetailList component with loading/error/empty s
 
 **Files:**
 - Modify: `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx`
+- Create: `apps/frontend/src/app/app/pickup/scan/[loadId]/page.test.tsx`
 
-- [ ] **Step 1: Add back arrow to header**
+- [ ] **Step 1: Write the failing page tests**
+
+Create `apps/frontend/src/app/app/pickup/scan/[loadId]/page.test.tsx`:
+
+```tsx
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+
+// Mock next/navigation
+const mockPush = vi.fn();
+const mockParams = { loadId: 'CARGA-001' };
+vi.mock('next/navigation', () => ({
+  useParams: () => mockParams,
+  useRouter: () => ({ push: mockPush }),
+}));
+
+// Mock hooks
+vi.mock('@/hooks/useOperatorId', () => ({
+  useOperatorId: () => ({ operatorId: 'op-1' }),
+}));
+
+vi.mock('@/lib/supabase/client', () => ({
+  createSPAClient: () => ({
+    from: () => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'manifest-1', total_packages: 10 } }),
+      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }),
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+  }),
+}));
+
+vi.mock('@/hooks/pickup/usePickupScans', () => ({
+  usePickupScans: () => ({ data: [] }),
+  useScanMutation: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+vi.mock('@/hooks/pickup/useManifestOrders', () => ({
+  useManifestOrders: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
+}));
+
+vi.mock('@/components/pickup/ManifestDetailList', () => ({
+  ManifestDetailList: () => <div data-testid="manifest-detail-list" />,
+}));
+
+import ScanningPage from './page';
+
+describe('ScanningPage', () => {
+  it('renders back arrow that navigates to /app/pickup', () => {
+    render(<ScanningPage />);
+    const backButton = screen.getByLabelText('Back to manifests');
+    fireEvent.click(backButton);
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup');
+  });
+
+  it('renders ManifestDetailList', () => {
+    render(<ScanningPage />);
+    expect(screen.getByTestId('manifest-detail-list')).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd apps/frontend && npx vitest run src/app/app/pickup/scan/\\[loadId\\]/page.test.tsx --reporter=verbose`
+Expected: FAIL — back arrow and ManifestDetailList don't exist yet in the page.
+
+- [ ] **Step 3: Add back arrow to header**
 
 In `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx`:
 
@@ -1079,7 +1145,7 @@ Replace the header `<div>` (lines 96-104):
 </div>
 ```
 
-- [ ] **Step 2: Fix verifiedCount to deduplicate by package_id**
+- [ ] **Step 4: Fix verifiedCount to deduplicate by package_id**
 
 Replace the `verifiedCount` useMemo (lines 63-66):
 ```ts
@@ -1096,7 +1162,7 @@ const verifiedCount = useMemo(
 );
 ```
 
-- [ ] **Step 3: Add useManifestOrders and ManifestDetailList**
+- [ ] **Step 5: Add useManifestOrders and ManifestDetailList**
 
 Add imports at the top:
 ```ts
@@ -1114,27 +1180,20 @@ const {
 } = useManifestOrders(loadId, operatorId);
 ```
 
-Create the manual verify callback after `handleScan`:
+Create the manual verify callback after `handleScan`. Note: manual verify uses a known package label, so `not_found` should not happen — no popup needed:
 ```ts
 const handleManualVerify = useCallback(
   (packageLabel: string) => {
     if (!manifestId || !operatorId || !userId) return;
     scanMutation.mutate(
-      { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId },
-      {
-        onSuccess: (result) => {
-          if (result.scanResult === 'not_found') {
-            setShowNotFoundPopup(true);
-          }
-        },
-      }
+      { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId }
     );
   },
   [manifestId, operatorId, userId, loadId, scanMutation]
 );
 ```
 
-Add the `ManifestDetailList` after the "Complete Pickup" button (before the closing `</div>`):
+Add the `ManifestDetailList` **after the "Recent Scans" card (line ~137) and before the "Complete Pickup" button**:
 ```tsx
 <ManifestDetailList
   orders={orders}
@@ -1146,15 +1205,15 @@ Add the `ManifestDetailList` after the "Complete Pickup" button (before the clos
 />
 ```
 
-- [ ] **Step 4: Run all pickup tests**
+- [ ] **Step 6: Run all pickup tests**
 
 Run: `cd apps/frontend && npx vitest run src/ --reporter=verbose`
-Expected: ALL PASS
+Expected: ALL PASS (including the new page tests from Step 1)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx
+git add apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx apps/frontend/src/app/app/pickup/scan/[loadId]/page.test.tsx
 git commit -m "feat: add back arrow, manifest detail list, and fix verifiedCount deduplication"
 ```
 
