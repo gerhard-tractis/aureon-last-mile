@@ -72,8 +72,17 @@ Orders & Packages                    12/18 verified
 ### 3.3 Data Flow
 
 1. Scanning page loads existing queries (manifest metadata + scans).
-2. New `useManifestOrders` hook fetches orders + packages: `SELECT orders.*, packages.* FROM orders JOIN packages ON packages.order_id = orders.id WHERE orders.external_load_id = :loadId`.
-3. Verified status derived client-side by cross-referencing the already-loaded `scans` array — a package is verified if any scan with `scan_result = 'verified'` references its `package_id`.
+2. New `useManifestOrders` hook fetches orders + packages using Supabase embedded relations:
+   ```ts
+   supabase
+     .from('orders')
+     .select('*, packages(*)')
+     .eq('operator_id', operatorId)
+     .eq('external_load_id', loadId)
+     .is('deleted_at', null)
+   ```
+   The `packages(*)` syntax uses PostgREST's foreign-key detection (`packages.order_id → orders.id`). Packages are also filtered with `.is('deleted_at', null)` via a nested filter modifier. This follows the project convention of explicit `operator_id` + `deleted_at` filtering on every query (defense-in-depth on top of RLS).
+3. Verified status derived client-side by cross-referencing the already-loaded `scans` array — a package is verified if any scan with `scan_result = 'verified'` references its `package_id`. **Important:** verification is checked by `package_id`, not by `barcode_scanned`, to avoid double-counting when a package was verified via order-number scan (where `barcode_scanned` is the order number, not the package label).
 4. "Mark Verified" calls `useScanMutation({ barcode: packageLabel, manifestId, operatorId, externalLoadId, userId })`. The existing `validateScan` matches the label and creates a scan record. Query invalidation updates everything.
 
 ### 3.4 Manual Verification — No Schema Changes
@@ -83,6 +92,22 @@ Manual verification reuses the existing scan pipeline entirely:
 - A `pickup_scans` row is created with `scan_result = 'verified'`.
 - No new columns, no new tables, no migration needed.
 - Manual vs scanned is not distinguished at the DB level (both are verified scans). This is intentional — the discrepancy review and completion screens treat all verified packages the same.
+
+### 3.5 Duplicate/Double-Count Prevention
+
+The existing `validateScan` checks duplicates by `barcode_scanned`. This means a package verified via order-number scan (where `barcode_scanned` = order number) would not be caught as a duplicate if manually verified by label. To prevent double-counting:
+- The `verifiedCount` in the scanning page must count **unique verified package_ids**, not total scan records. Update: `scans.filter(s => s.scan_result === 'verified')` → deduplicate by `package_id` before counting.
+- The manifest detail list derives verified status by `package_id` (Section 3.3 point 3), so it is already correct.
+- The `validateScan` function should add a `package_id`-based duplicate check before creating a new scan. This is a small addition to the existing function: after the barcode-based duplicate check, also check if any verified scan exists for the matched `package_id`.
+
+### 3.6 Props Threading
+
+The scanning page owns `manifestId`, `operatorId`, `externalLoadId`, `userId`, and `scanMutation`. These are passed to `ManifestDetailList` as props, which passes the verify callback down:
+- `ManifestDetailList` receives: `orders`, `scans`, `onManualVerify(packageLabel: string)`
+- `OrderCard` receives: `order`, `scans` (filtered to this order's packages), `onManualVerify`
+- `PackageRow` receives: `package`, `isVerified`, `onManualVerify`
+
+The `onManualVerify` callback is created at the page level, wrapping `scanMutation.mutate`. This avoids prop-drilling raw mutation/state — components only know about a simple callback.
 
 ## 4. File Plan
 
@@ -104,16 +129,23 @@ All files under 300 lines.
 | `ManifestDetailList.test.tsx` | Renders orders; summary badge shows correct counts |
 | `OrderCard.test.tsx` | Expand/collapse; badge color logic (green/yellow/gray) |
 | `PackageRow.test.tsx` | Displays package info; verify button calls mutation; button hidden after verification |
-| `scan/[loadId]/page.test.tsx` | Back arrow navigates to `/app/pickup` |
+| `scan/[loadId]/page.test.tsx` | Back arrow navigates to `/app/pickup`; ManifestDetailList renders |
 
-## 6. Edge Cases
+## 6. Loading & Error States
+
+- **Loading:** Show skeleton cards (same pattern as manifest selection page) while `useManifestOrders` is loading.
+- **Error:** Show a subtle error banner: "Failed to load manifest details" with a retry button.
+- **0 orders for load:** Show "No orders found for this load" — possible if manifest was created before order ingestion completed.
+
+## 7. Edge Cases
 
 - **Order with 0 packages:** Render order card with "No packages" empty state.
 - **All packages verified:** Green badge, no verify buttons shown.
-- **Manual verify on already-verified package:** `validateScan` returns `duplicate`, plays duplicate feedback, no double-counting.
+- **Manual verify on already-verified package:** `validateScan` checks `package_id` duplicate (Section 3.5), returns `duplicate`, plays duplicate feedback, no double-counting.
 - **Order-number scan while detail list is open:** Query invalidation updates package checkmarks in real time.
+- **Package verified via order-number scan then manual verify by label:** Prevented by `package_id`-based duplicate check in `validateScan` (Section 3.5).
 
-## 7. Out of Scope
+## 8. Out of Scope
 
 - Distinguishing manual vs scanner verification in the DB.
 - Filtering or searching within the manifest detail list.
