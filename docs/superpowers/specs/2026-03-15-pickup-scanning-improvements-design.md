@@ -83,7 +83,7 @@ Orders & Packages                    12/18 verified
    ```
    The `packages(*)` syntax uses PostgREST's foreign-key detection (`packages.order_id → orders.id`). Packages are also filtered with `.is('deleted_at', null)` via a nested filter modifier. This follows the project convention of explicit `operator_id` + `deleted_at` filtering on every query (defense-in-depth on top of RLS).
 3. Verified status derived client-side by cross-referencing the already-loaded `scans` array — a package is verified if any scan with `scan_result = 'verified'` references its `package_id`. **Important:** verification is checked by `package_id`, not by `barcode_scanned`, to avoid double-counting when a package was verified via order-number scan (where `barcode_scanned` is the order number, not the package label).
-4. "Mark Verified" calls `useScanMutation({ barcode: packageLabel, manifestId, operatorId, externalLoadId, userId })`. The existing `validateScan` matches the label and creates a scan record. Query invalidation updates everything.
+4. "Mark Verified" calls `scanMutation.mutate({ barcode: packageLabel, manifestId, operatorId, externalLoadId, userId })` (where `scanMutation` is the return value of `useScanMutation()`). The existing `validateScan` matches the label and creates a scan record. Query invalidation updates everything.
 
 ### 3.4 Manual Verification — No Schema Changes
 
@@ -119,7 +119,8 @@ All files under 300 lines.
 | `src/components/pickup/ManifestDetailList.tsx` | New | Accordion container with summary badge |
 | `src/components/pickup/OrderCard.tsx` | New | Collapsible order header with progress |
 | `src/components/pickup/PackageRow.tsx` | New | Package info + verify button |
-| `src/app/app/pickup/scan/[loadId]/page.tsx` | Edit | Add back arrow + `<ManifestDetailList>` |
+| `src/lib/pickup/scan-validator.ts` | Edit | Add `package_id`-based duplicate check (Section 3.5) |
+| `src/app/app/pickup/scan/[loadId]/page.tsx` | Edit | Add back arrow, `<ManifestDetailList>`, fix `verifiedCount` to deduplicate by `package_id` (Section 3.5) |
 
 ## 5. Testing Plan
 
