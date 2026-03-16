@@ -58,7 +58,7 @@ export function useCapacityCalendar(
 
       // Fetch IDs from retailer_daily_capacities directly
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: idRows, error: idError } = await (client.from('retailer_daily_capacities') as any)
+      const { data: idRows, error: idError } = await (client as any).from('retailer_daily_capacities')
         .select('id, capacity_date')
         .eq('operator_id', operatorId!)
         .eq('client_id', clientId!)

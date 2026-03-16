@@ -15,7 +15,7 @@ export function useTenantClients(operatorId: string | null) {
     queryKey: ['tenantClients', operatorId],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (createSPAClient().from('tenant_clients') as any)
+      const { data, error } = await (createSPAClient() as any).from('tenant_clients')
         .select('id, name')
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)

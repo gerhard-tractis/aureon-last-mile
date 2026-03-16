@@ -32,7 +32,7 @@ export function useBulkFillCapacity() {
       }));
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (createSPAClient().from('retailer_daily_capacities') as any)
+      const { data, error } = await (createSPAClient() as any).from('retailer_daily_capacities')
         .upsert(insertRows, {
           onConflict: 'operator_id,client_id,capacity_date',
           ignoreDuplicates: false,
@@ -62,7 +62,7 @@ export function useUpdateCapacity() {
   return useMutation({
     mutationFn: async ({ id, daily_capacity }: UpdateCapacityInput) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (createSPAClient().from('retailer_daily_capacities') as any)
+      const { data, error } = await (createSPAClient() as any).from('retailer_daily_capacities')
         .update({ daily_capacity })
         .eq('id', id);
 

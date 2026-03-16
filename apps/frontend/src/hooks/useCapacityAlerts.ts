@@ -24,7 +24,7 @@ export function useCapacityAlerts(operatorId: string | null) {
     queryKey: ['capacityAlerts', operatorId],
     queryFn: async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (createSPAClient().from('capacity_alerts') as any)
+      const { data, error } = await (createSPAClient() as any).from('capacity_alerts')
         .select('*')
         .eq('operator_id', operatorId!)
         .is('dismissed_at', null)
@@ -49,7 +49,7 @@ export function useDismissAlert() {
   return useMutation({
     mutationFn: async (alertId: string) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (createSPAClient().from('capacity_alerts') as any)
+      const { data, error } = await (createSPAClient() as any).from('capacity_alerts')
         .update({ dismissed_at: new Date().toISOString() })
         .eq('id', alertId);
       if (error) throw error;
