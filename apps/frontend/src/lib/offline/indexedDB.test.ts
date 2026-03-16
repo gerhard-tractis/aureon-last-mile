@@ -299,7 +299,7 @@ describe('AureonOfflineDB', () => {
         id: 'order-1',
         orderNumber: 'ORD-001',
         operatorId: 'op-1',
-        status: 'pending',
+        status: 'ingresado',
         customerName: 'John Doe',
         address: '123 Main St',
         barcode: 'ORDER123',
@@ -317,7 +317,7 @@ describe('AureonOfflineDB', () => {
         id: 'order-1',
         orderNumber: 'ORD-001',
         operatorId: 'op-1',
-        status: 'pending',
+        status: 'ingresado',
         customerName: 'John Doe',
         address: '123 Main St',
         barcode: 'ORDER123',
@@ -327,7 +327,7 @@ describe('AureonOfflineDB', () => {
         id: 'order-1',
         orderNumber: 'ORD-001',
         operatorId: 'op-1',
-        status: 'delivered', // Updated
+        status: 'entregado', // Updated
         customerName: 'John Doe',
         address: '123 Main St',
         barcode: 'ORDER123',
@@ -335,7 +335,7 @@ describe('AureonOfflineDB', () => {
 
       const orders = await db.orders.toArray();
       expect(orders).toHaveLength(1);
-      expect(orders[0].status).toBe('delivered');
+      expect(orders[0].status).toBe('entregado');
     });
   });
 
@@ -398,7 +398,7 @@ describe('AureonOfflineDB', () => {
         id: 'old-order',
         orderNumber: 'OLD-ORD',
         operatorId: 'op-1',
-        status: 'delivered',
+        status: 'entregado',
         customerName: 'Old Customer',
         address: '456 Old St',
         barcode: 'OLD123',
@@ -410,7 +410,7 @@ describe('AureonOfflineDB', () => {
         id: 'recent-order',
         orderNumber: 'RECENT-ORD',
         operatorId: 'op-1',
-        status: 'pending',
+        status: 'ingresado',
         customerName: 'Recent Customer',
         address: '789 New St',
         barcode: 'RECENT123',

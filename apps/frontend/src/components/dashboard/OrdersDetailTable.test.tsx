@@ -18,13 +18,13 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const MOCK_ROWS = [
   { id: 'u1', order_number: 'ORD-001', retailer_name: 'Falabella', comuna: 'Santiago',
-    delivery_date: '2026-03-05', status: 'delivered', completed_at: '2026-03-05 14:30',
+    delivery_date: '2026-03-05', status: 'entregado', completed_at: '2026-03-05 14:30',
     driver_name: 'ALEJANDRO', route_id: 'R-123', failure_reason: null, days_delta: 0 },
   { id: 'u2', order_number: 'ORD-002', retailer_name: 'Ripley', comuna: 'Providencia',
-    delivery_date: '2026-03-06', status: 'failed', completed_at: '2026-03-06 16:00',
+    delivery_date: '2026-03-06', status: 'cancelado', completed_at: '2026-03-06 16:00',
     driver_name: 'CARLOS', route_id: 'R-124', failure_reason: 'Cliente ausente', days_delta: null },
   { id: 'u3', order_number: 'ORD-003', retailer_name: 'Paris', comuna: 'Las Condes',
-    delivery_date: '2026-03-04', status: 'pending', completed_at: null,
+    delivery_date: '2026-03-04', status: 'ingresado', completed_at: null,
     driver_name: null, route_id: null, failure_reason: null, days_delta: null },
 ];
 
@@ -49,8 +49,8 @@ describe('OrdersDetailTable', () => {
 
     const deliveredBadge = screen.getAllByText('Entregado').find(el => el.tagName === 'SPAN')!;
     expect(deliveredBadge.className).toContain('emerald');
-    const failedBadge = screen.getAllByText('Fallido').find(el => el.tagName === 'SPAN')!;
-    expect(failedBadge.className).toContain('red');
+    const canceladoBadge = screen.getAllByText('Cancelado').find(el => el.tagName === 'SPAN')!;
+    expect(canceladoBadge.className).toContain('red');
   });
 
   it('expands row on click to show details', async () => {
@@ -83,10 +83,10 @@ describe('OrdersDetailTable', () => {
 
   it('accepts initialStatus filter prop', () => {
     mockOrdersDetail.mockReturnValue({ data: { rows: [], total_count: 0 }, isLoading: false });
-    render(<OrdersDetailTable operatorId="op-1" startDate="2026-03-01" endDate="2026-03-09" initialStatus="failed" />, { wrapper });
+    render(<OrdersDetailTable operatorId="op-1" startDate="2026-03-01" endDate="2026-03-09" initialStatus="cancelado" />, { wrapper });
 
     const select = screen.getByTestId('status-filter') as HTMLSelectElement;
-    expect(select.value).toBe('failed');
+    expect(select.value).toBe('cancelado');
   });
 
   it('accepts initialOverdueOnly filter prop', () => {
