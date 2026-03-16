@@ -7,7 +7,8 @@ import { log } from '../logger';
 
 interface ConnectorConfig {
   dispatchtrack_url: string;
-  session_cookie: string;
+  session_cookie_cluster1: string;
+  session_cookie_cluster4: string;
   remember_token: string;
   report_email_to: string;
   [key: string]: unknown;
@@ -32,7 +33,8 @@ export async function executeBeetrack(job: JobRecord): Promise<JobResult> {
   let browser: Browser | null = null;
 
   try {
-    const sessionCookie = decryptField(config.session_cookie);
+    const cluster1Cookie = decryptField(config.session_cookie_cluster1);
+    const cluster4Cookie = decryptField(config.session_cookie_cluster4);
     const rememberToken = decryptField(config.remember_token);
 
     // Launch browser just for cookie-authenticated page load + export trigger
@@ -44,7 +46,8 @@ export async function executeBeetrack(job: JobRecord): Promise<JobResult> {
 
     const domain = new URL(baseUrl).hostname.replace(/^[^.]+/, '');
     await context.addCookies([
-      { name: '_cluster_4_dt_auth_session', value: sessionCookie, domain, path: '/' },
+      { name: '_cluster_1_dt_auth_session', value: cluster1Cookie, domain, path: '/' },
+      { name: '_cluster_4_dt_auth_session', value: cluster4Cookie, domain, path: '/' },
       { name: 'remember_user_token', value: rememberToken, domain, path: '/' },
     ]);
 
@@ -87,16 +90,22 @@ export async function executeBeetrack(job: JobRecord): Promise<JobResult> {
 
     // Click "Generar reporte"
     await page.locator('.hp-modal__surface button').filter({ hasText: 'Generar reporte' }).click();
-    await page.waitForTimeout(2000);
 
-    // Verify success toast (evaluate runs in browser context — use string to avoid DOM types)
-    const feedback = await page.evaluate(`
-      (() => {
-        const toasts = document.querySelectorAll("[class*='toast'], [role='alert']");
-        return Array.from(toasts).map(t => (t.textContent || '').trim()).filter(t => t.length > 0);
-      })()
-    `) as string[];
-    const success = feedback.some(f => f.includes('correo electrónico'));
+    // Poll for success toast up to 5s — toast is transient
+    let success = false;
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(500);
+      const feedback = await page.evaluate(`
+        (() => {
+          const els = document.querySelectorAll("[class*='toast'], [role='alert'], [class*='notification'], [class*='snack']");
+          return Array.from(els).map(t => (t.textContent || '').trim()).filter(t => t.length > 0);
+        })()
+      `) as string[];
+      if (feedback.some((f: string) => f.includes('correo'))) {
+        success = true;
+        break;
+      }
+    }
 
     if (success) {
       log('info', 'beetrack_export_triggered', {
