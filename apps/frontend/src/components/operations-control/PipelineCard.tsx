@@ -1,5 +1,6 @@
 "use client";
 
+import type { ComponentType } from 'react';
 import {
   PackagePlus,
   ScanSearch,
@@ -13,7 +14,7 @@ import {
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
 import type { PipelineStageCount } from '@/hooks/usePipelineCounts';
 
-const STAGE_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+const STAGE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   PackagePlus,
   ScanSearch,
   Warehouse,
