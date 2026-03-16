@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
@@ -8,8 +8,15 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+let mockRole = 'admin';
+let mockPermissions: string[] = [];
+
 vi.mock('@/lib/context/GlobalContext', () => ({
-  useGlobal: () => ({ user: { email: 'test@example.com' }, role: 'admin', permissions: [] }),
+  useGlobal: () => ({
+    user: { email: 'test@example.com' },
+    role: mockRole,
+    permissions: mockPermissions
+  }),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -30,6 +37,11 @@ vi.mock('@/providers/BrandingProvider', () => ({
 }));
 
 import AppLayout from './AppLayout';
+
+beforeEach(() => {
+  mockRole = 'admin';
+  mockPermissions = [];
+});
 
 describe('AppLayout sidebar branding', () => {
   it('renders default product name when no branding', () => {
@@ -79,5 +91,39 @@ describe('AppLayout sidebar branding', () => {
 
     // After error, should show text instead
     expect(screen.getByText('Fallback Corp')).toBeTruthy();
+  });
+});
+
+describe('AppLayout - Ops Control nav item', () => {
+  it('shows Ops Control link for admin role', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByText('Ops Control')).toBeTruthy();
+  });
+
+  it('shows Ops Control link for operations_manager role', () => {
+    mockRole = 'operations_manager';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByText('Ops Control')).toBeTruthy();
+  });
+
+  it('hides Ops Control link for driver role', () => {
+    mockRole = 'driver';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByText('Ops Control')).toBeNull();
+  });
+
+  it('hides Ops Control link for viewer role', () => {
+    mockRole = 'viewer';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByText('Ops Control')).toBeNull();
   });
 });
