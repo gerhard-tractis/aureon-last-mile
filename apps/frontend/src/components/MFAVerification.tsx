@@ -126,7 +126,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                 <div className="space-y-4">
                     {factors.length > 1 && (
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-gray-700">
+                            <label className="block text-sm font-medium text-foreground">
                                 Select Authentication Device
                             </label>
                             <div className="grid gap-3">
@@ -137,7 +137,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                                         className={`flex items-center space-x-3 p-3 border rounded-lg transition-colors ${
                                             selectedFactorId === factor.id
                                                 ? 'border-primary-500 bg-primary-50 text-primary-700'
-                                                : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50'
+                                                : 'border-border hover:border-primary-200 hover:bg-muted'
                                         }`}
                                     >
                                         <Smartphone className="h-5 w-5" />
@@ -145,7 +145,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                                             <p className="font-medium">
                                                 {factor.friendly_name || 'Authenticator Device'}
                                             </p>
-                                            <p className="text-sm text-gray-500">
+                                            <p className="text-sm text-muted-foreground">
                                                 Added on {formatDate(factor.created_at)}
                                             </p>
                                         </div>
@@ -159,18 +159,18 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                     )}
 
                     <div className="space-y-2">
-                        <label className="block text-sm font-medium text-gray-700">
+                        <label className="block text-sm font-medium text-foreground">
                             Verification Code
                         </label>
                         <input
                             type="text"
                             value={verifyCode}
                             onChange={(e) => setVerifyCode(e.target.value.trim())}
-                            className="block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                            className="block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
                             placeholder="Enter 6-digit code"
                             maxLength={6}
                         />
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-muted-foreground">
                             Enter the 6-digit code from your authenticator app
                         </p>
                     </div>

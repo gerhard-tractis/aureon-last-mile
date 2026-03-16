@@ -94,10 +94,10 @@ export default function ScanningPage() {
       />
 
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">
+        <h1 className="text-xl font-bold text-foreground">
           Scanning: {loadId}
         </h1>
-        <div className="flex items-center gap-1 text-sm text-gray-500">
+        <div className="flex items-center gap-1 text-sm text-muted-foreground">
           <Clock className="h-4 w-4" />
           {elapsed}
         </div>
@@ -112,7 +112,7 @@ export default function ScanningPage() {
             <CheckCircle className="h-5 w-5 text-green-500" />
             <div>
               <p className="text-2xl font-bold">{verifiedCount}</p>
-              <p className="text-xs text-gray-500">Verified</p>
+              <p className="text-xs text-muted-foreground">Verified</p>
             </div>
           </CardContent>
         </Card>
@@ -121,7 +121,7 @@ export default function ScanningPage() {
             <XCircle className="h-5 w-5 text-red-500" />
             <div>
               <p className="text-2xl font-bold">{notFoundCount}</p>
-              <p className="text-xs text-gray-500">Not Found</p>
+              <p className="text-xs text-muted-foreground">Not Found</p>
             </div>
           </CardContent>
         </Card>

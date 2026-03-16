@@ -13,7 +13,7 @@ type SortColumn = 'retailer_name' | 'total_orders' | 'delivered' | 'on_time' | '
 type SortDir = 'asc' | 'desc';
 
 function getOtifCellColor(pct: number | null): string {
-  if (pct === null) return 'text-slate-400';
+  if (pct === null) return 'text-muted-foreground';
   if (pct >= 95) return 'text-emerald-600 font-semibold';
   if (pct >= 85) return 'text-amber-600 font-semibold';
   return 'text-red-600 font-semibold';
@@ -42,10 +42,10 @@ export default function OtifByRetailerTable({ operatorId, startDate, endDate }: 
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200" data-testid="otif-retailer-skeleton">
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-border" data-testid="otif-retailer-skeleton">
         <div className="animate-pulse space-y-3">
-          <div className="h-5 w-48 bg-slate-200 rounded" />
-          {[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-slate-100 rounded" />)}
+          <div className="h-5 w-48 bg-muted rounded" />
+          {[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-muted rounded" />)}
         </div>
       </div>
     );
@@ -60,18 +60,18 @@ export default function OtifByRetailerTable({ operatorId, startDate, endDate }: 
   ];
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" data-testid="otif-retailer-table">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-base font-semibold text-slate-800">OTIF por Cliente</h3>
+    <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden" data-testid="otif-retailer-table">
+      <div className="px-6 py-4 border-b border-border">
+        <h3 className="text-base font-semibold text-foreground">OTIF por Cliente</h3>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
+            <tr className="bg-muted border-b border-border">
               {COLS.map(({ key, label, align }) => (
                 <th
                   key={key}
-                  className={`px-4 py-3 font-medium text-slate-600 cursor-pointer hover:bg-slate-100 select-none ${align}`}
+                  className={`px-4 py-3 font-medium text-muted-foreground cursor-pointer hover:bg-muted/80 select-none ${align}`}
                   onClick={() => handleSort(key)}
                   aria-sort={sortCol === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
@@ -82,20 +82,20 @@ export default function OtifByRetailerTable({ operatorId, startDate, endDate }: 
           </thead>
           <tbody>
             {sorted.map((row, i) => (
-              <tr key={row.retailer_name} className={i % 2 === 1 ? 'bg-slate-50/50' : ''}>
-                <td className="px-4 py-3 text-slate-800">{row.retailer_name}</td>
-                <td className="px-4 py-3 text-right text-slate-600" data-testid="retailer-total">
+              <tr key={row.retailer_name} className={i % 2 === 1 ? 'bg-muted/50' : ''}>
+                <td className="px-4 py-3 text-foreground">{row.retailer_name}</td>
+                <td className="px-4 py-3 text-right text-muted-foreground" data-testid="retailer-total">
                   {row.total_orders.toLocaleString('es-CL')}
                 </td>
-                <td className="px-4 py-3 text-right text-slate-600">{row.delivered.toLocaleString('es-CL')}</td>
-                <td className="px-4 py-3 text-right text-slate-600">{row.on_time.toLocaleString('es-CL')}</td>
+                <td className="px-4 py-3 text-right text-muted-foreground">{row.delivered.toLocaleString('es-CL')}</td>
+                <td className="px-4 py-3 text-right text-muted-foreground">{row.on_time.toLocaleString('es-CL')}</td>
                 <td className={`px-4 py-3 text-right ${getOtifCellColor(row.otif_pct)}`}>
                   {row.otif_pct !== null ? row.otif_pct.toFixed(1) : '\u2014'}
                 </td>
               </tr>
             ))}
             {sorted.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Sin datos para el periodo seleccionado</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Sin datos para el periodo seleccionado</td></tr>
             )}
           </tbody>
         </table>

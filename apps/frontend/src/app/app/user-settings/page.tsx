@@ -90,11 +90,11 @@ export default function UserSettingsPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="text-sm font-medium text-gray-500">User ID</label>
+                                <label className="text-sm font-medium text-muted-foreground">User ID</label>
                                 <p className="mt-1 text-sm">{user?.id}</p>
                             </div>
                             <div>
-                                <label className="text-sm font-medium text-gray-500">Email</label>
+                                <label className="text-sm font-medium text-muted-foreground">Email</label>
                                 <p className="mt-1 text-sm">{user?.email}</p>
                             </div>
                         </CardContent>
@@ -111,7 +111,7 @@ export default function UserSettingsPage() {
                         <CardContent>
                             <form onSubmit={handlePasswordChange} className="space-y-4">
                                 <div>
-                                    <label htmlFor="new-password" className="block text-sm font-medium text-gray-700">
+                                    <label htmlFor="new-password" className="block text-sm font-medium text-foreground">
                                         New Password
                                     </label>
                                     <input
@@ -119,12 +119,12 @@ export default function UserSettingsPage() {
                                         id="new-password"
                                         value={newPassword}
                                         onChange={(e) => setNewPassword(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 text-sm"
+                                        className="mt-1 block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 text-sm"
                                         required
                                     />
                                 </div>
                                 <div>
-                                    <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
+                                    <label htmlFor="confirm-password" className="block text-sm font-medium text-foreground">
                                         Confirm New Password
                                     </label>
                                     <input
@@ -132,7 +132,7 @@ export default function UserSettingsPage() {
                                         id="confirm-password"
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
-                                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 text-sm"
+                                        className="mt-1 block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 text-sm"
                                         required
                                     />
                                 </div>

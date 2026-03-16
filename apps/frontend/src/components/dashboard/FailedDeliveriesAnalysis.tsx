@@ -49,17 +49,17 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
   return (
     <div className="relative">
       {isPlaceholderData && (
-        <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+        <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
       )}
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
           Análisis de Entregas Fallidas
         </h2>
         <select
           value={dateRange}
           onChange={e => setDateRange(e.target.value as DateRangeOption)}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
           {Object.entries(dateRangeLabels).map(([val, label]) => (
             <option key={val} value={val}>{label}</option>
@@ -73,13 +73,13 @@ export default function FailedDeliveriesAnalysis({ operatorId }: FailedDeliverie
       {/* Loading skeleton */}
       {isLoading ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-            <div className="h-5 w-48 bg-slate-200 rounded animate-pulse mb-4" />
-            <div className="h-52 bg-slate-200 rounded animate-pulse" />
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+            <div className="h-5 w-48 bg-muted rounded animate-pulse mb-4" />
+            <div className="h-52 bg-muted rounded animate-pulse" />
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-            <div className="h-5 w-48 bg-slate-200 rounded animate-pulse mb-4" />
-            <div className="h-72 bg-slate-200 rounded animate-pulse" />
+          <div className="bg-card rounded-xl border border-border shadow-sm p-6">
+            <div className="h-5 w-48 bg-muted rounded animate-pulse mb-4" />
+            <div className="h-72 bg-muted rounded animate-pulse" />
           </div>
         </div>
       ) : (

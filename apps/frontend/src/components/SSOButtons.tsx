@@ -31,9 +31,9 @@ const PROVIDER_CONFIGS = {
                 <path d="M10 3.98c1.48 0 2.79.51 3.83 1.5l2.78-2.78C14.93 1.03 12.7 0 10 0 6.09 0 2.72 2.25 1.07 5.54l3.3 2.51C5.17 5.68 7.39 3.98 10 3.98z" fill="#EA4335"/>
             </svg>
         ),
-        bgColor: 'bg-white hover:bg-gray-50',
-        textColor: 'text-gray-700',
-        borderColor: 'border-gray-300'
+        bgColor: 'bg-card hover:bg-muted',
+        textColor: 'text-foreground',
+        borderColor: 'border-border'
     },
     facebook: {
         name: 'Facebook',
@@ -97,10 +97,10 @@ export default function SSOButtons({ onError }: SSOButtonsProps) {
         <div className="mt-6">
             <div className="relative">
                 <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300"/>
+                    <div className="w-full border-t border-border"/>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                    <span className="bg-white px-2 text-gray-500">Or continue with</span>
+                    <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
                 </div>
             </div>
 
@@ -125,7 +125,7 @@ export default function SSOButtons({ onError }: SSOButtonsProps) {
                     );
                 })}
             </div>
-            <div className="mt-4 text-center text-xs text-gray-500">
+            <div className="mt-4 text-center text-xs text-muted-foreground">
                 By creating an account via selected provider, you agree to our{' '}
                 <Link href="/legal/terms" className="text-primary-600 hover:text-primary-800 underline">
                     Terms and Conditions

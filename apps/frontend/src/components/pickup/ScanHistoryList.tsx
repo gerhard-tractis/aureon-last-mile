@@ -17,7 +17,7 @@ export function ScanHistoryList({ scans, maxItems = 5 }: ScanHistoryListProps) {
 
   if (recentScans.length === 0) {
     return (
-      <p className="text-sm text-gray-400 text-center py-4">No scans yet</p>
+      <p className="text-sm text-muted-foreground text-center py-4">No scans yet</p>
     );
   }
 
@@ -26,13 +26,13 @@ export function ScanHistoryList({ scans, maxItems = 5 }: ScanHistoryListProps) {
       {recentScans.map((scan) => (
         <div
           key={scan.id}
-          className="flex items-center gap-3 p-2 bg-gray-50 rounded-md"
+          className="flex items-center gap-3 p-2 bg-muted rounded-md"
         >
           {ICONS[scan.scan_result]}
           <span className="font-mono text-sm flex-1">
             {scan.barcode_scanned}
           </span>
-          <span className="text-xs text-gray-400">
+          <span className="text-xs text-muted-foreground">
             {new Date(scan.scanned_at).toLocaleTimeString()}
           </span>
         </div>

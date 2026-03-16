@@ -31,12 +31,12 @@ export function ManifestCard({
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-semibold text-gray-900">
+            <h3 className="font-semibold text-foreground">
               {retailerName || 'Unknown Retailer'}
             </h3>
-            <p className="text-sm text-gray-500">{externalLoadId}</p>
+            <p className="text-sm text-muted-foreground">{externalLoadId}</p>
           </div>
-          <div className="flex gap-4 text-sm text-gray-600">
+          <div className="flex gap-4 text-sm text-muted-foreground">
             <div className="flex items-center gap-1">
               <ShoppingCart className="h-4 w-4" />
               <span>{orderCount}</span>
@@ -48,7 +48,7 @@ export function ManifestCard({
           </div>
         </div>
         {completedAt && (
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-muted-foreground mt-2">
             Completed {new Date(completedAt).toLocaleDateString()}
           </p>
         )}

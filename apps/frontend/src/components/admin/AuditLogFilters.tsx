@@ -75,17 +75,17 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4">
+    <div className="bg-card rounded-lg border border-border p-4 mb-4">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Date range preset */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Date Range
           </label>
           <select
             value={datePreset}
             onChange={(e) => applyDatePreset(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
           >
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
@@ -99,25 +99,25 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
         {datePreset === 'custom' && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 From
               </label>
               <input
                 type="datetime-local"
                 value={filters.date_from ? new Date(filters.date_from).toISOString().slice(0, 16) : ''}
                 onChange={(e) => onFiltersChange({ ...filters, date_from: new Date(e.target.value).toISOString() })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-foreground mb-1">
                 To
               </label>
               <input
                 type="datetime-local"
                 value={filters.date_to ? new Date(filters.date_to).toISOString().slice(0, 16) : ''}
                 onChange={(e) => onFiltersChange({ ...filters, date_to: new Date(e.target.value).toISOString() })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
               />
             </div>
           </>
@@ -125,13 +125,13 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
 
         {/* User filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             User
           </label>
           <select
             value={filters.user_id || ''}
             onChange={(e) => onFiltersChange({ ...filters, user_id: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
           >
             <option value="">All Users</option>
             {users?.map(user => (
@@ -144,13 +144,13 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
 
         {/* Action filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Action
           </label>
           <select
             value={filters.action || ''}
             onChange={(e) => onFiltersChange({ ...filters, action: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
           >
             <option value="">All Actions</option>
             <option value="INSERT_users">INSERT users</option>
@@ -167,13 +167,13 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
 
         {/* Resource type filter */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Resource Type
           </label>
           <select
             value={filters.resource_type || ''}
             onChange={(e) => onFiltersChange({ ...filters, resource_type: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
           >
             <option value="">All Resources</option>
             <option value="users">Users</option>
@@ -184,7 +184,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
 
         {/* Search input */}
         <div className="md:col-span-2 lg:col-span-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-foreground mb-1">
             Search
           </label>
           <div className="flex gap-2">
@@ -193,12 +193,12 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
               placeholder="Search resource ID, action, or changes..."
               value={filters.search || ''}
               onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined, page: 1 })}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent"
+              className="flex-1 px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
             />
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="px-4 py-2 bg-[#e6c15c] text-gray-900 rounded-md hover:bg-[#d4b04a] font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
             >
               {isExporting ? (
                 <>

@@ -15,14 +15,14 @@ interface SecondaryMetricsGridProps {
 }
 
 function getCapacityColor(value: number | null): string {
-  if (value === null) return 'text-slate-400';
+  if (value === null) return 'text-muted-foreground';
   if (value > 95 || value < 60) return 'text-[#ef4444]';
   if (value > 85) return 'text-[#f59e0b]';
   return 'text-[#10b981]';
 }
 
 function getOrdersPerHourColor(value: number | null): string {
-  if (value === null) return 'text-slate-400';
+  if (value === null) return 'text-muted-foreground';
   if (value >= 40) return 'text-[#10b981]';
   if (value >= 30) return 'text-[#f59e0b]';
   return 'text-[#ef4444]';
@@ -47,7 +47,7 @@ export default function SecondaryMetricsGrid({ operatorId }: SecondaryMetricsGri
   if (isLoading) {
     return (
       <section>
-        <h2 className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-4">
+        <h2 className="text-xs font-bold tracking-widest text-muted-foreground uppercase mb-4">
           MÉTRICAS SECUNDARIAS
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -65,13 +65,13 @@ export default function SecondaryMetricsGrid({ operatorId }: SecondaryMetricsGri
 
   return (
     <section>
-      <h2 className="text-xs font-bold tracking-widest text-slate-400 uppercase mb-4">
+      <h2 className="text-xs font-bold tracking-widest text-muted-foreground uppercase mb-4">
         MÉTRICAS SECUNDARIAS
       </h2>
       {isError && <DashboardErrorBanner />}
       <div className={`relative grid grid-cols-1 sm:grid-cols-2 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
         {isPlaceholderData && (
-          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
         )}
         <MetricsCard
           icon="📊"

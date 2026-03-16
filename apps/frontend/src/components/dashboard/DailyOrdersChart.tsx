@@ -47,13 +47,13 @@ export default function DailyOrdersChart({ operatorId, startDate, endDate }: Dai
   const clients = Array.from(clientSet);
 
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-      <h3 className="text-lg font-semibold text-slate-700 mb-4">
+    <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
+      <h3 className="text-lg font-semibold text-foreground mb-4">
         Evolución Diaria de Órdenes Cargadas
       </h3>
 
       {isLoading ? (
-        <div className="h-64 animate-pulse bg-slate-100 rounded-lg" />
+        <div className="h-64 animate-pulse bg-muted rounded-lg" />
       ) : (
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData}>

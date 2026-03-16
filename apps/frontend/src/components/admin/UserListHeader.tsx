@@ -13,15 +13,15 @@ export const UserListHeader = () => {
   return (
     <div className="flex items-center justify-between mb-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">User Management</h1>
-        <p className="text-sm text-gray-600 mt-1">
+        <h1 className="text-2xl font-semibold text-foreground">User Management</h1>
+        <p className="text-sm text-muted-foreground mt-1">
           Create and manage user accounts and roles
         </p>
       </div>
 
       <button
         onClick={() => setCreateFormOpen(true)}
-        className="px-4 py-2 bg-[#e6c15c] text-gray-900 rounded-md hover:bg-[#d4b04a] font-medium transition-colors"
+        className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium transition-colors"
         style={{ minHeight: '44px' }} // Touch target minimum
       >
         Create User

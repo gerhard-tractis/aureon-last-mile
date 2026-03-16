@@ -14,13 +14,13 @@ export function ProgressBar({ scanned, total }: ProgressBarProps) {
 
   return (
     <div className="space-y-1">
-      <div className="flex justify-between text-sm text-gray-600">
+      <div className="flex justify-between text-sm text-muted-foreground">
         <span>
           {scanned} / {total} packages
         </span>
         <span>{Math.round(percentage)}%</span>
       </div>
-      <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+      <div className="h-3 bg-muted rounded-full overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-300 ${getColor()}`}
           style={{ width: `${percentage}%` }}

@@ -20,7 +20,7 @@ describe('OfflinePage', () => {
 
       const svg = container.querySelector('svg');
       expect(svg).toBeInTheDocument();
-      expect(svg).toHaveClass('mx-auto', 'h-16', 'w-16', 'text-gray-400');
+      expect(svg).toHaveClass('mx-auto', 'h-16', 'w-16', 'text-muted-foreground');
     });
 
     it('displays Spanish heading "Sin Conexión"', () => {
@@ -28,7 +28,7 @@ describe('OfflinePage', () => {
 
       const heading = screen.getByRole('heading', { name: /sin conexión/i });
       expect(heading).toBeInTheDocument();
-      expect(heading).toHaveClass('text-2xl', 'font-bold', 'text-gray-900');
+      expect(heading).toHaveClass('text-2xl', 'font-bold', 'text-foreground');
     });
 
     it('displays offline mode information in Spanish', () => {
@@ -84,7 +84,7 @@ describe('OfflinePage', () => {
       render(<OfflinePage />);
 
       const backButton = screen.getByRole('button', { name: /volver/i });
-      expect(backButton).toHaveClass('border', 'border-gray-300', 'bg-white');
+      expect(backButton).toHaveClass('border', 'border-border', 'bg-card');
     });
   });
 });

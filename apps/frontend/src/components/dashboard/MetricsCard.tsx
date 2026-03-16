@@ -10,7 +10,7 @@ export type ColorThresholds = {
 };
 
 export function getMetricColor(value: number | null, thresholds: ColorThresholds): string {
-  if (value === null || isNaN(value)) return 'text-slate-400';
+  if (value === null || isNaN(value)) return 'text-muted-foreground';
   const { green, yellow, direction } = thresholds;
   if (direction === 'higher-better') {
     if (value >= green) return 'text-[#10b981]';
@@ -93,7 +93,7 @@ export default function MetricsCard({
       onKeyDown={handleKeyDown}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
-      className="relative bg-white rounded-xl p-6 shadow-sm border border-slate-200 min-h-[240px] cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-300"
+      className="relative bg-card rounded-xl p-6 shadow-sm border border-border min-h-[240px] cursor-pointer hover:shadow-lg hover:scale-[1.01] transition-all duration-300"
     >
       {/* Tooltip */}
       {showTooltip && tooltipText && (
@@ -105,7 +105,7 @@ export default function MetricsCard({
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">{icon}</span>
-        <h3 className="text-lg font-semibold text-slate-700">{title}</h3>
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
         {isStale && (
           <span className="text-amber-500 text-sm" title="Los datos pueden estar desactualizados">⚠️</span>
         )}
@@ -125,17 +125,17 @@ export default function MetricsCard({
 
       {/* Benchmark / ROI / Capacity */}
       {benchmarkBadge && (
-        <div className="text-sm text-slate-600 mb-1">{benchmarkBadge}</div>
+        <div className="text-sm text-muted-foreground mb-1">{benchmarkBadge}</div>
       )}
       {roiLine && (
-        <div className="text-sm text-slate-600 mb-1">{roiLine}</div>
+        <div className="text-sm text-muted-foreground mb-1">{roiLine}</div>
       )}
       {capacityLine && (
-        <div className="text-sm text-slate-600 mb-1">{capacityLine}</div>
+        <div className="text-sm text-muted-foreground mb-1">{capacityLine}</div>
       )}
 
       {/* Context */}
-      <p className="text-sm text-slate-500 mb-3">{context}</p>
+      <p className="text-sm text-muted-foreground mb-3">{context}</p>
 
       {/* Sparkline */}
       {sparklineData && sparklineData.length > 0 && (

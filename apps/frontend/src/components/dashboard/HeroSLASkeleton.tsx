@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function HeroSLASkeleton() {
   return (
-    <div className="bg-white rounded-xl p-6 md:p-12 shadow-sm w-full">
+    <div className="bg-card rounded-xl p-6 md:p-12 shadow-sm w-full">
       <Skeleton className="h-5 w-64 mx-auto mb-6" />
       <Skeleton className="h-16 w-40 mx-auto mb-4" />
       <Skeleton className="h-6 w-48 mx-auto mb-6" />

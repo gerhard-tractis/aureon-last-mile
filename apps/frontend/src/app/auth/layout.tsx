@@ -29,10 +29,10 @@ export default function AuthLayout({
     return (
         <div className="flex min-h-screen">
             {/* Left panel — form area */}
-            <div className="w-full lg:w-[45%] flex flex-col justify-center py-12 px-6 sm:px-12 lg:px-16 bg-stone-50 relative">
+            <div className="w-full lg:w-[45%] flex flex-col justify-center py-12 px-6 sm:px-12 lg:px-16 bg-muted relative">
                 <Link
                     href="/"
-                    className="absolute left-6 top-6 sm:left-8 sm:top-8 flex items-center text-xs font-medium tracking-wide uppercase text-stone-400 hover:text-stone-700 transition-colors"
+                    className="absolute left-6 top-6 sm:left-8 sm:top-8 flex items-center text-xs font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors"
                 >
                     <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
                     Volver
@@ -47,12 +47,12 @@ export default function AuthLayout({
                             <polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19"/>
                             <polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38"/>
                         </svg>
-                        <div className="w-px h-7 bg-stone-300/60" />
+                        <div className="w-px h-7 bg-border" />
                         <div>
-                            <h1 className="text-[15px] font-semibold tracking-tight text-stone-900 leading-none">
+                            <h1 className="text-[15px] font-semibold tracking-tight text-foreground leading-none">
                                 {productName}
                             </h1>
-                            <p className="text-[10px] text-stone-400 tracking-widest uppercase mt-1">
+                            <p className="text-[10px] text-muted-foreground tracking-widest uppercase mt-1">
                                 by Tractis
                             </p>
                         </div>

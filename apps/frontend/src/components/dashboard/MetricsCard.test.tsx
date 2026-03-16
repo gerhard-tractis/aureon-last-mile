@@ -38,12 +38,12 @@ describe('getMetricColor', () => {
     expect(getMetricColor(70, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[#ef4444]');
   });
 
-  it('returns slate for null', () => {
-    expect(getMetricColor(null, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-slate-400');
+  it('returns muted-foreground for null', () => {
+    expect(getMetricColor(null, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-muted-foreground');
   });
 
-  it('returns slate for NaN', () => {
-    expect(getMetricColor(NaN, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-slate-400');
+  it('returns muted-foreground for NaN', () => {
+    expect(getMetricColor(NaN, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-muted-foreground');
   });
 });
 

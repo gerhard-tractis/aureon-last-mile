@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 export default function MetricsCardSkeleton() {
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 min-h-[240px]">
+    <div className="bg-card rounded-xl p-6 shadow-sm border border-border min-h-[240px]">
       <div className="flex items-center gap-2 mb-4">
         <Skeleton className="h-5 w-5" />
         <Skeleton className="h-5 w-20" />

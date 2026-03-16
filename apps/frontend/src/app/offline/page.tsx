@@ -7,11 +7,11 @@
 
 export default function OfflinePage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-gray-50 p-4">
-      <div className="w-full max-w-md rounded-lg bg-white p-8 text-center shadow-lg">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-muted p-4">
+      <div className="w-full max-w-md rounded-lg bg-card p-8 text-center shadow-lg">
         <div className="mb-4">
           <svg
-            className="mx-auto h-16 w-16 text-gray-400"
+            className="mx-auto h-16 w-16 text-muted-foreground"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -25,9 +25,9 @@ export default function OfflinePage() {
           </svg>
         </div>
 
-        <h1 className="mb-2 text-2xl font-bold text-gray-900">Sin Conexión</h1>
+        <h1 className="mb-2 text-2xl font-bold text-foreground">Sin Conexión</h1>
 
-        <p className="mb-6 text-gray-600">
+        <p className="mb-6 text-muted-foreground">
           No se pudo conectar al servidor. Verifica tu conexión a internet.
         </p>
 
@@ -47,7 +47,7 @@ export default function OfflinePage() {
 
         <button
           onClick={() => window.history.back()}
-          className="mt-3 w-full rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="mt-3 w-full rounded-md border border-border bg-card px-4 py-2 text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
         >
           Volver
         </button>

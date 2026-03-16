@@ -77,50 +77,50 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
 
   if (logs.length === 0) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
-        <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="bg-card rounded-lg border border-border p-8 text-center">
+        <svg className="mx-auto h-12 w-12 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No audit logs found</h3>
-        <p className="mt-1 text-sm text-gray-500">Try adjusting your filters or date range.</p>
+        <h3 className="mt-2 text-sm font-medium text-foreground">No audit logs found</h3>
+        <p className="mt-1 text-sm text-muted-foreground">Try adjusting your filters or date range.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <div className="bg-card rounded-lg border border-border overflow-hidden">
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-border">
+          <thead className="bg-muted">
             <tr>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Timestamp
               </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 User
               </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Action
               </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Resource
               </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 IP Address
               </th>
-              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Details
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-card divide-y divide-border">
             {logs.map((log) => (
               <>
                 <tr
                   key={log.id}
                   onClick={() => toggleRow(log.id)}
-                  className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="hover:bg-muted cursor-pointer transition-colors"
                   role="button"
                   tabIndex={0}
                   aria-expanded={expandedRows.has(log.id)}
@@ -132,39 +132,39 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                     }
                   }}
                 >
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-foreground">
                     {formatTimestamp(log.timestamp)}
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-900">
+                  <td className="px-4 py-3 text-sm text-foreground">
                     <div className="font-medium">{log.user?.full_name || 'Unknown'}</div>
-                    <div className="text-gray-500 text-xs">{log.user?.role || 'N/A'}</div>
+                    <div className="text-muted-foreground text-xs">{log.user?.role || 'N/A'}</div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       log.action.startsWith('INSERT') ? 'bg-green-100 text-green-800' :
                       log.action.startsWith('UPDATE') ? 'bg-blue-100 text-blue-800' :
                       log.action.startsWith('DELETE') ? 'bg-red-100 text-red-800' :
-                      'bg-gray-100 text-gray-800'
+                      'bg-muted text-foreground'
                     }`}>
                       {log.action}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-900">
+                  <td className="px-4 py-3 text-sm text-foreground">
                     <div className="font-medium">{log.resource_type || 'N/A'}</div>
-                    <div className="text-gray-500 text-xs font-mono truncate max-w-xs">
+                    <div className="text-muted-foreground text-xs font-mono truncate max-w-xs">
                       {log.resource_id || 'N/A'}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                     {log.ip_address || 'unknown'}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-muted-foreground">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleRow(log.id);
                       }}
-                      className="text-[#e6c15c] hover:text-[#d4b04a] font-medium"
+                      className="text-gold hover:text-primary-600 font-medium"
                       aria-label={expandedRows.has(log.id) ? 'Hide details' : 'Show details'}
                       aria-expanded={expandedRows.has(log.id)}
                     >
@@ -174,15 +174,15 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                 </tr>
                 {expandedRows.has(log.id) && (
                   <tr key={`${log.id}-details`}>
-                    <td colSpan={6} className="px-4 py-3 bg-gray-50">
+                    <td colSpan={6} className="px-4 py-3 bg-muted">
                       <div className="text-sm">
-                        <div className="font-medium text-gray-900 mb-2">Changes JSON:</div>
+                        <div className="font-medium text-foreground mb-2">Changes JSON:</div>
                         {log.changes_json ? (
-                          <pre className="bg-white p-3 rounded border border-gray-200 overflow-x-auto text-xs font-mono">
+                          <pre className="bg-card p-3 rounded border border-border overflow-x-auto text-xs font-mono">
                             {JSON.stringify(log.changes_json, null, 2)}
                           </pre>
                         ) : (
-                          <div className="text-gray-500 italic">No changes recorded</div>
+                          <div className="text-muted-foreground italic">No changes recorded</div>
                         )}
                       </div>
                     </td>
@@ -195,9 +195,9 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
       </div>
 
       {/* Pagination */}
-      <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 sm:px-6">
+      <div className="bg-muted px-4 py-3 border-t border-border sm:px-6">
         <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-700">
+          <div className="text-sm text-foreground">
             Showing <span className="font-medium">{start}</span> to <span className="font-medium">{end}</span> of{' '}
             <span className="font-medium">{total}</span> logs
           </div>
@@ -205,22 +205,22 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
             <button
               onClick={() => onPageChange(page - 1)}
               disabled={page === 1}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-border rounded-md text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Go to previous page"
             >
               Previous
             </button>
             {getPageNumbers().map((pageNum, idx) => (
               pageNum === '...' ? (
-                <span key={`ellipsis-${idx}`} className="px-3 py-1 text-gray-500" aria-hidden="true">...</span>
+                <span key={`ellipsis-${idx}`} className="px-3 py-1 text-muted-foreground" aria-hidden="true">...</span>
               ) : (
                 <button
                   key={pageNum}
                   onClick={() => onPageChange(pageNum as number)}
                   className={`px-3 py-1 border rounded-md text-sm font-medium ${
                     page === pageNum
-                      ? 'bg-[#e6c15c] text-gray-900 border-[#e6c15c]'
-                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                      ? 'bg-gold text-foreground border-gold'
+                      : 'border-border text-foreground hover:bg-muted'
                   }`}
                   aria-label={`Go to page ${pageNum}`}
                   aria-current={page === pageNum ? 'page' : undefined}
@@ -232,7 +232,7 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
             <button
               onClick={() => onPageChange(page + 1)}
               disabled={page === totalPages}
-              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 border border-border rounded-md text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Go to next page"
             >
               Next

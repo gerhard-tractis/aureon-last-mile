@@ -31,7 +31,7 @@ export default function MetricDrillDownDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         {children ?? (
-          <p className="text-sm text-slate-500">Proximamente disponible</p>
+          <p className="text-sm text-muted-foreground">Proximamente disponible</p>
         )}
       </DialogContent>
     </Dialog>

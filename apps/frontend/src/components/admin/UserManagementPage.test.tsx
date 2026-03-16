@@ -98,7 +98,7 @@ describe('UserManagementPage', () => {
       const { container } = render(<UserManagementPage />);
 
       expect(container.querySelector('.min-h-screen')).toBeTruthy();
-      expect(container.querySelector('.bg-gray-50')).toBeTruthy();
+      expect(container.querySelector('.bg-background')).toBeTruthy();
       expect(container.querySelector('.max-w-7xl')).toBeTruthy();
     });
 

@@ -54,14 +54,14 @@ describe('UserListHeader', () => {
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
-      expect(createButton.className).toContain('bg-[#e6c15c]');
+      expect(createButton.className).toContain('bg-gold');
     });
 
     it('should have hover state', () => {
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
-      expect(createButton.className).toContain('hover:bg-[#d4b04a]');
+      expect(createButton.className).toContain('hover:bg-primary-600');
     });
 
     it('should have minimum touch target size', () => {

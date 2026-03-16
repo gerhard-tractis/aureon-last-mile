@@ -81,7 +81,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-700">{label}</label>
+        <label className="text-sm font-medium text-foreground">{label}</label>
         {hasSignature && (
           <button
             type="button"
@@ -94,7 +94,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-crosshair touch-none bg-white"
+        className="w-full h-32 border-2 border-dashed border-border rounded-lg cursor-crosshair touch-none bg-card"
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={stopDrawing}

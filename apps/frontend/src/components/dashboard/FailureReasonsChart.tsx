@@ -36,18 +36,18 @@ export default function FailureReasonsChart({ data, totalFailures }: FailureReas
   return (
     <>
       <div
-        className="bg-white rounded-xl border border-slate-200 shadow-sm p-6"
+        className="bg-card rounded-xl border border-border shadow-sm p-6"
         role="img"
         aria-label="Gráfico de barras mostrando las principales razones de fallo en entregas"
       >
-        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
           Top 5 Razones de Fallo
         </h3>
 
         {top5.length === 0 ? (
           <div className="flex items-center justify-center py-8 gap-2">
             <span className="text-green-500 text-xl">✓</span>
-            <p className="text-sm text-slate-500">Sin entregas fallidas en este periodo</p>
+            <p className="text-sm text-muted-foreground">Sin entregas fallidas en este periodo</p>
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={chartHeight}>
@@ -105,15 +105,15 @@ export default function FailureReasonsChart({ data, totalFailures }: FailureReas
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-slate-500 uppercase">Cantidad</p>
-                <p className="text-lg font-semibold text-slate-900">{selectedReason.count}</p>
+                <p className="text-xs text-muted-foreground uppercase">Cantidad</p>
+                <p className="text-lg font-semibold text-foreground">{selectedReason.count}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">Porcentaje</p>
-                <p className="text-lg font-semibold text-slate-900">{selectedReason.percentage.toFixed(1)}%</p>
+                <p className="text-xs text-muted-foreground uppercase">Porcentaje</p>
+                <p className="text-lg font-semibold text-foreground">{selectedReason.percentage.toFixed(1)}%</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted-foreground">
               {selectedReason.count} de {totalFailures} entregas fallidas en este periodo
             </p>
           </div>

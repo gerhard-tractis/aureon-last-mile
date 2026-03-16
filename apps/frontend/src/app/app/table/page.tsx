@@ -112,7 +112,7 @@ function CreateTaskDialog({ onTaskCreated }: CreateTaskDialogProps) {
                                 type="checkbox"
                                 checked={isUrgent}
                                 onChange={(e) => setIsUrgent(e.target.checked)}
-                                className="rounded border-gray-300 focus:ring-primary-500"
+                                className="rounded border-border focus:ring-primary-500"
                             />
                             <span className="text-sm">Mark as urgent</span>
                         </label>

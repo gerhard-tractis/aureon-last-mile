@@ -120,7 +120,7 @@ export default function CompletionPage() {
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold text-gray-900">
+      <h1 className="text-xl font-bold text-foreground">
         Complete Pickup: {loadId}
       </h1>
 
@@ -131,7 +131,7 @@ export default function CompletionPage() {
             <CheckCircle className="h-5 w-5 text-green-500" />
             <div>
               <p className="text-xl font-bold">{verifiedCount}</p>
-              <p className="text-xs text-gray-500">Verified</p>
+              <p className="text-xs text-muted-foreground">Verified</p>
             </div>
           </CardContent>
         </Card>
@@ -140,7 +140,7 @@ export default function CompletionPage() {
             <XCircle className="h-5 w-5 text-red-500" />
             <div>
               <p className="text-xl font-bold">{missingPackages.length}</p>
-              <p className="text-xs text-gray-500">Missing (noted)</p>
+              <p className="text-xs text-muted-foreground">Missing (noted)</p>
             </div>
           </CardContent>
         </Card>
@@ -149,7 +149,7 @@ export default function CompletionPage() {
             <Target className="h-5 w-5 text-blue-500" />
             <div>
               <p className="text-xl font-bold">{precision}%</p>
-              <p className="text-xs text-gray-500">Precision</p>
+              <p className="text-xs text-muted-foreground">Precision</p>
             </div>
           </CardContent>
         </Card>
@@ -158,7 +158,7 @@ export default function CompletionPage() {
             <Shield className="h-5 w-5 text-purple-500" />
             <div>
               <p className="text-xl font-bold">{elapsed}</p>
-              <p className="text-xs text-gray-500">Time Elapsed</p>
+              <p className="text-xs text-muted-foreground">Time Elapsed</p>
             </div>
           </CardContent>
         </Card>
@@ -178,7 +178,7 @@ export default function CompletionPage() {
 
       {/* Operator Signature (required) */}
       <div className="space-y-2">
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           Operator: <strong>{operatorName}</strong>
         </p>
         <SignaturePad
@@ -196,7 +196,7 @@ export default function CompletionPage() {
             onChange={(e) => setShowClientSig(e.target.checked)}
             className="rounded"
           />
-          <span className="text-sm text-gray-700">Add client signature</span>
+          <span className="text-sm text-foreground">Add client signature</span>
         </label>
         {showClientSig && (
           <div className="space-y-2 ml-6">
