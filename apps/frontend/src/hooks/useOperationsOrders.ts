@@ -31,7 +31,7 @@ type FilterProps = Pick<
 
 export function useOperationsOrders(operatorId: string | null, filters: FilterProps) {
   return useQuery<OperationsOrder[]>({
-    queryKey: ['operations-orders', operatorId, filters],
+    queryKey: ['operations-orders', operatorId, { datePreset: filters.datePreset, dateRange: filters.dateRange, stageFilter: filters.stageFilter }],
     queryFn: async () => {
       const today = getDateStr(0);
       const tomorrow = getDateStr(1);
@@ -67,7 +67,7 @@ export function useOperationsOrders(operatorId: string | null, filters: FilterPr
       const result = await query
         .order('delivery_window_start', { ascending: true, nullsFirst: false })
         .order('delivery_date', { ascending: true })
-        .limit(25);
+        .limit(200);
 
       if (result.error) throw result.error;
       return (result.data as OperationsOrder[] | null) ?? [];

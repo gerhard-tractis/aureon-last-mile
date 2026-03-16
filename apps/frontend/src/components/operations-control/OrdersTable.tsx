@@ -73,7 +73,7 @@ function sortByDeadline(orders: OperationsOrder[]): OperationsOrder[] {
 export function OrdersTable({ operatorId, onOpenDetail }: OrdersTableProps) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
-  const { search, datePreset, statusFilter, stageFilter } = useOpsControlFilterStore();
+  const { search, datePreset, statusFilter, stageFilter, clearAllFilters } = useOpsControlFilterStore();
 
   const { data, isLoading, isError } = useOperationsOrders(operatorId, {
     datePreset,
@@ -117,7 +117,7 @@ export function OrdersTable({ operatorId, onOpenDetail }: OrdersTableProps) {
         No hay órdenes que coincidan.{' '}
         <button
           className="text-blue-600 hover:underline"
-          onClick={() => useOpsControlFilterStore.getState().clearAllFilters()}
+          onClick={() => clearAllFilters()}
         >
           Limpiar filtros
         </button>

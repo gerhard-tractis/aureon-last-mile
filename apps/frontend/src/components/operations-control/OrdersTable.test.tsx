@@ -20,6 +20,7 @@ vi.mock('@/stores/useOpsControlFilterStore', () => ({
     stageFilter: null,
     setSearch: vi.fn(),
     setDatePreset: vi.fn(),
+    setDateRange: vi.fn(),
     setStatusFilter: vi.fn(),
     setStageFilter: vi.fn(),
     clearAllFilters: vi.fn(),
@@ -68,6 +69,7 @@ const defaultStoreState = {
   stageFilter: null,
   setSearch: vi.fn(),
   setDatePreset: vi.fn(),
+  setDateRange: vi.fn(),
   setStatusFilter: vi.fn(),
   setStageFilter: vi.fn(),
   clearAllFilters: vi.fn(),
@@ -212,6 +214,42 @@ describe('OrdersTable', () => {
       vi.mocked(useOpsControlFilterStore).mockReturnValue({
         ...defaultStoreState,
         search: 'beta',
+      });
+      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
+      expect(screen.queryByText('ORD-001')).toBeNull();
+      expect(screen.getByText('ORD-002')).toBeTruthy();
+    });
+
+    it('filters orders by retailer_name', () => {
+      vi.mocked(useOperationsOrders).mockReturnValue({
+        data: [
+          makeOrder({ id: '1', order_number: 'ORD-001', retailer_name: 'RetailerX', customer_name: 'Alpha' }),
+          makeOrder({ id: '2', order_number: 'ORD-002', retailer_name: 'RetailerY', customer_name: 'Beta' }),
+        ],
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof useOperationsOrders>);
+      vi.mocked(useOpsControlFilterStore).mockReturnValue({
+        ...defaultStoreState,
+        search: 'retailerx',
+      });
+      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
+      expect(screen.getByText('ORD-001')).toBeTruthy();
+      expect(screen.queryByText('ORD-002')).toBeNull();
+    });
+
+    it('filters orders by comuna', () => {
+      vi.mocked(useOperationsOrders).mockReturnValue({
+        data: [
+          makeOrder({ id: '1', order_number: 'ORD-001', customer_name: 'Alpha', comuna: 'Providencia' }),
+          makeOrder({ id: '2', order_number: 'ORD-002', customer_name: 'Beta', comuna: 'Las Condes' }),
+        ],
+        isLoading: false,
+        isError: false,
+      } as unknown as ReturnType<typeof useOperationsOrders>);
+      vi.mocked(useOpsControlFilterStore).mockReturnValue({
+        ...defaultStoreState,
+        search: 'las condes',
       });
       render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
       expect(screen.queryByText('ORD-001')).toBeNull();
