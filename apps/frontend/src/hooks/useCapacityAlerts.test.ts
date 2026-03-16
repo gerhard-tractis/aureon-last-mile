@@ -5,6 +5,7 @@ import React from 'react';
 import { useCapacityAlerts, useDismissAlert } from './useCapacityAlerts';
 
 const mockSelect = vi.fn();
+const mockEqOperatorId = vi.fn();
 const mockUpdate = vi.fn();
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -13,11 +14,16 @@ vi.mock('@/lib/supabase/client', () => ({
       if (table === 'capacity_alerts') {
         return {
           select: () => ({
-            is: () => ({
-              is: () => ({
-                order: mockSelect,
-              }),
-            }),
+            eq: (col: string, val: string) => {
+              mockEqOperatorId(col, val);
+              return {
+                is: () => ({
+                  is: () => ({
+                    order: mockSelect,
+                  }),
+                }),
+              };
+            },
           }),
           update: () => ({
             eq: mockUpdate,
@@ -57,6 +63,7 @@ const MOCK_ALERT = {
 describe('useCapacityAlerts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEqOperatorId.mockReturnValue(undefined); // reset between tests
   });
 
   it('is disabled when operatorId is null', () => {
@@ -77,6 +84,7 @@ describe('useCapacityAlerts', () => {
     expect(result.current.data).toHaveLength(1);
     expect(result.current.data![0].id).toBe('alert-1');
     expect(result.current.data![0].alert_type).toBe('over_capacity');
+    expect(mockEqOperatorId).toHaveBeenCalledWith('operator_id', 'op-1');
   });
 
   it('returns empty array when no alerts', async () => {

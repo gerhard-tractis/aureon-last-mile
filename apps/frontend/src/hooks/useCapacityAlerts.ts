@@ -16,7 +16,7 @@ export interface CapacityAlert {
 
 /**
  * useCapacityAlerts — fetches active (non-dismissed, non-deleted) capacity alerts.
- * Queries: SELECT * FROM capacity_alerts WHERE dismissed_at IS NULL AND deleted_at IS NULL ORDER BY created_at DESC
+ * Queries: SELECT * FROM capacity_alerts WHERE operator_id = ? AND dismissed_at IS NULL AND deleted_at IS NULL ORDER BY created_at DESC
  */
 export function useCapacityAlerts(operatorId: string | null) {
   return useQuery<CapacityAlert[]>({
@@ -25,6 +25,7 @@ export function useCapacityAlerts(operatorId: string | null) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data, error } = await (createSPAClient().from('capacity_alerts') as any)
         .select('*')
+        .eq('operator_id', operatorId!)
         .is('dismissed_at', null)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
