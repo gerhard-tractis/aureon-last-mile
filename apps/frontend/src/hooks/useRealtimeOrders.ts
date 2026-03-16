@@ -4,7 +4,7 @@ import { createSPAClient } from '@/lib/supabase/client';
 
 export function useRealtimeOrders(operatorId: string) {
   const queryClient = useQueryClient();
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     const supabase = createSPAClient();
