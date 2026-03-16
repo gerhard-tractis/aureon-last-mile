@@ -16,7 +16,7 @@ CREATE TABLE capacity_alerts (
   daily_capacity INT NOT NULL,
   utilization_pct NUMERIC NOT NULL,
   dismissed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
   CONSTRAINT unique_alert_per_threshold
@@ -118,7 +118,9 @@ BEGIN
 
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+-- SECURITY DEFINER: required so the trigger can INSERT into capacity_alerts
+-- even when executed by service_role or background workers without JWT claims.
 
 CREATE TRIGGER check_orders_capacity_alert
   AFTER INSERT ON orders
@@ -166,10 +168,10 @@ CREATE OR REPLACE FUNCTION get_forecast_accuracy(
       ABS(actual_orders::NUMERIC - daily_capacity)
       / NULLIF(daily_capacity, 0) * 100
     ), 1) AS avg_variance_pct,
-    ROUND(100 - AVG(
+    GREATEST(0, ROUND(100 - AVG(
       ABS(actual_orders::NUMERIC - daily_capacity)
       / NULLIF(daily_capacity, 0) * 100
-    ), 1) AS accuracy_score,
+    ), 1)) AS accuracy_score,
     COUNT(DISTINCT capacity_date) AS days_measured
   FROM daily_counts
   GROUP BY client_id, retailer_name;
