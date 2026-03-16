@@ -50,6 +50,7 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
         aria-label="Toggle order details"
         className="w-full flex items-center gap-3 p-3 text-left"
         onClick={() => setExpanded(!expanded)}
+        onMouseDown={(e) => e.preventDefault()}
         aria-expanded={expanded}
       >
         {expanded ? (
