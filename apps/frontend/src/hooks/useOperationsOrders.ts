@@ -66,7 +66,7 @@ export function useOperationsOrders(operatorId: string | null, filters: FilterPr
       const result = await query
         .order('delivery_window_start', { ascending: true, nullsFirst: false })
         .order('delivery_date', { ascending: true })
-        .limit(50);
+        .limit(25);
 
       if (result.error) throw result.error;
       return (result.data as OperationsOrder[] | null) ?? [];

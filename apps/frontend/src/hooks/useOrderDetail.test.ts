@@ -63,7 +63,6 @@ describe('useOrderDetail', () => {
   });
 
   it('returns order detail with packages and audit logs', async () => {
-    let callCount = 0;
     mockFrom.mockImplementation((table: string) => {
       if (table === 'orders') {
         return {
@@ -73,7 +72,6 @@ describe('useOrderDetail', () => {
         };
       }
       if (table === 'audit_logs') {
-        callCount++;
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),

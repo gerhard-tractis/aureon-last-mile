@@ -55,6 +55,8 @@ export function useOrderDetail(orderId: string | null) {
       if (orderError) throw orderError;
       if (!orderData) return null;
 
+      // Supabase's generated types cannot infer nested join results; OrderRow includes
+      // manually-defined packages[] that diverges from the generated schema shape.
       const order = orderData as unknown as OrderRow;
 
       // 2. Fetch audit logs

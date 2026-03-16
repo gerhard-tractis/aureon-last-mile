@@ -5,13 +5,6 @@ import React from 'react';
 import { useOperationsOrders, type OperationsOrder } from './useOperationsOrders';
 import type { OpsControlFilterState } from '@/stores/useOpsControlFilterStore';
 
-const mockSelect = vi.fn();
-const mockEq = vi.fn();
-const mockIs = vi.fn();
-const mockGte = vi.fn();
-const mockLte = vi.fn();
-const mockOrder = vi.fn();
-const mockLimit = vi.fn();
 const mockFrom = vi.fn();
 
 // Build a chainable mock
@@ -67,13 +60,6 @@ const DEFAULT_FILTERS: Pick<
 describe('useOperationsOrders', () => {
   beforeEach(() => {
     mockFrom.mockReset();
-    mockSelect.mockReset();
-    mockEq.mockReset();
-    mockIs.mockReset();
-    mockGte.mockReset();
-    mockLte.mockReset();
-    mockOrder.mockReset();
-    mockLimit.mockReset();
   });
 
   it('returns orders for operator', async () => {
@@ -196,5 +182,28 @@ describe('useOperationsOrders', () => {
 
     expect(chain.gte).toHaveBeenCalledWith('delivery_date', '2026-03-10');
     expect(chain.lte).toHaveBeenCalledWith('delivery_date', '2026-03-20');
+  });
+
+  it('filters with next7 preset: today to today+6 days', async () => {
+    const chain = buildChain({ data: [], error: null });
+    mockFrom.mockReturnValue(chain);
+
+    const filters = { ...DEFAULT_FILTERS, datePreset: 'next7' as const };
+
+    const { result } = renderHook(
+      () => useOperationsOrders('op-1', filters),
+      { wrapper: wrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const next6 = new Date();
+    next6.setDate(next6.getDate() + 6);
+    const next6Str = next6.toISOString().split('T')[0];
+
+    expect(chain.gte).toHaveBeenCalledWith('delivery_date', todayStr);
+    expect(chain.lte).toHaveBeenCalledWith('delivery_date', next6Str);
   });
 });
