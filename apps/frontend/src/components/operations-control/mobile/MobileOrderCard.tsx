@@ -24,6 +24,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
   const dotColor = PRIORITY_CONFIG[priority].dotColor;
   const showEscalar = priority === 'late' && !!onEscalar;
   const hasCountdown = !!order.delivery_window_end;
+  const countdownText = hasCountdown ? getCountdownText(order.delivery_window_end!) : null;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-3 min-h-[60px]">
@@ -54,12 +55,12 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
         <span
           data-testid="countdown"
           className={`text-xs font-medium ${
-            getCountdownText(order.delivery_window_end!) === 'Pasado'
+            countdownText === 'Pasado'
               ? 'text-red-500'
               : 'text-gray-600'
           } ${priority === 'urgent' ? 'animate-pulse' : ''}`}
         >
-          {getCountdownText(order.delivery_window_end!)}
+          {countdownText}
         </span>
       )}
 

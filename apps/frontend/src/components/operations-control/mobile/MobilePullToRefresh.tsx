@@ -34,10 +34,6 @@ export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
     startYRef.current = e.touches[0].clientY;
   }
 
-  function handleTouchMove(_e: React.TouchEvent<HTMLDivElement>) {
-    // delta is evaluated on touchend
-  }
-
   function handleTouchEnd(e: React.TouchEvent<HTMLDivElement>) {
     if (startYRef.current === null) return;
     const endY = e.changedTouches[0].clientY;
@@ -53,7 +49,6 @@ export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
     <div
       data-testid="pull-to-refresh-container"
       onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       className="relative"
     >

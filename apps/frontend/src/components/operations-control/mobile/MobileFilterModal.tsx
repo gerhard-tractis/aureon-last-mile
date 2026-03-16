@@ -126,7 +126,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 type="button"
                 data-testid={`stage-pill-${status}`}
                 data-active={stageFilter === status ? 'true' : 'false'}
-                onClick={() => setStageFilter(status as OrderStatus)}
+                onClick={() => setStageFilter(status)}
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   stageFilter === status
                     ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
