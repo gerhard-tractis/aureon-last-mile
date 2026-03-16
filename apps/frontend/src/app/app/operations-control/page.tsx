@@ -33,7 +33,7 @@ export default function OpsControlPage() {
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Ops Control</h1>
+        <h1 className="text-xl font-semibold text-foreground">Ops Control</h1>
       </div>
 
       {/* Pipeline Overview — TODO wire lastFetchedAt from usePipelineCounts data callback */}
