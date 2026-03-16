@@ -64,7 +64,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
       )}
 
       {/* Row 4: action buttons */}
-      <div className="flex gap-2 mt-2">
+      <div className="flex gap-2 mt-2 min-h-[60px] items-center">
         <button
           type="button"
           data-testid="btn-ver"
