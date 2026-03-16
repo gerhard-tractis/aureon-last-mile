@@ -70,7 +70,6 @@ export function PipelineCard({ stage, isSelected, onClick }: PipelineCardProps) 
   return (
     <button
       type="button"
-      role="button"
       className={`
         flex flex-col items-start p-3 rounded-lg border-2 bg-card text-card-foreground
         transition-all w-full text-left
