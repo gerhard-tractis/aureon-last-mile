@@ -1,7 +1,7 @@
 # Pickup Scanning Improvements — Design Spec
 
 **Date:** 2026-03-15
-**Status:** backlog
+**Status:** in progress
 **Epic:** 4A — Pickup Verification
 **Scope:** Two improvements to the pickup scanning screen
 

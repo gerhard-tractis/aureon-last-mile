@@ -90,6 +90,6 @@ describe('DeliveryTab', () => {
     render(<DeliveryTab operatorId="test-op" />, { wrapper });
     await user.click(screen.getByTestId('outcome-failed'));
     const table = screen.getByTestId('orders-detail-table');
-    expect(table.getAttribute('data-status')).toBe('failed');
+    expect(table.getAttribute('data-status')).toBe('cancelado');
   });
 });

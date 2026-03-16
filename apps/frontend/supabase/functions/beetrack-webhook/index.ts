@@ -144,7 +144,7 @@ async function handleDispatch(
 
   // Update order status for terminal dispatches (AC1-AC5)
   if (orderId && (status === 'delivered' || status === 'failed' || status === 'partial')) {
-    const orderStatus = status === 'delivered' ? 'delivered' : 'failed';
+    const orderStatus = status === 'delivered' ? 'entregado' : 'cancelado';
     let statusDetail: string;
     if (status === 'delivered') {
       statusDetail = `Delivered via DispatchTrack dispatch #${dispatchId}`;
@@ -158,7 +158,7 @@ async function handleDispatch(
       .from('orders')
       .update({ status: orderStatus, status_detail: statusDetail })
       .eq('id', orderId)
-      .neq('status', 'delivered'); // Never downgrade from delivered
+      .neq('status', 'entregado'); // Never downgrade from entregado
 
     if (orderError) {
       console.warn(`beetrack-webhook: order status update failed for ${orderId}`, orderError);

@@ -9,7 +9,7 @@ describe('getOrderStatusUpdate', () => {
   it('returns delivered status with dispatch context for delivered dispatches', () => {
     const result = getOrderStatusUpdate('delivered', 12345);
     expect(result).toEqual({
-      orderStatus: 'delivered',
+      orderStatus: 'entregado',
       statusDetail: 'Delivered via DispatchTrack dispatch #12345',
     });
   });
@@ -18,7 +18,7 @@ describe('getOrderStatusUpdate', () => {
   it('returns failed status with substatus text for failed dispatches', () => {
     const result = getOrderStatusUpdate('failed', 99, 'No se encuentra dirección');
     expect(result).toEqual({
-      orderStatus: 'failed',
+      orderStatus: 'cancelado',
       statusDetail: 'No se encuentra dirección',
     });
   });
@@ -27,7 +27,7 @@ describe('getOrderStatusUpdate', () => {
   it('returns failed status with fallback text when no substatus', () => {
     const result = getOrderStatusUpdate('failed', 99);
     expect(result).toEqual({
-      orderStatus: 'failed',
+      orderStatus: 'cancelado',
       statusDetail: 'Failed via DispatchTrack dispatch #99',
     });
   });
@@ -35,7 +35,7 @@ describe('getOrderStatusUpdate', () => {
   it('returns failed status with fallback when substatus is null', () => {
     const result = getOrderStatusUpdate('failed', 42, null);
     expect(result).toEqual({
-      orderStatus: 'failed',
+      orderStatus: 'cancelado',
       statusDetail: 'Failed via DispatchTrack dispatch #42',
     });
   });
@@ -44,7 +44,7 @@ describe('getOrderStatusUpdate', () => {
   it('maps partial dispatch to failed order status', () => {
     const result = getOrderStatusUpdate('partial', 55);
     expect(result).toEqual({
-      orderStatus: 'failed',
+      orderStatus: 'cancelado',
       statusDetail: 'Partial delivery via DispatchTrack dispatch #55',
     });
   });
@@ -52,7 +52,7 @@ describe('getOrderStatusUpdate', () => {
   it('includes substatus in partial delivery detail', () => {
     const result = getOrderStatusUpdate('partial', 55, 'Cliente ausente');
     expect(result).toEqual({
-      orderStatus: 'failed',
+      orderStatus: 'cancelado',
       statusDetail: 'Partial delivery via DispatchTrack dispatch #55 — Cliente ausente',
     });
   });
@@ -67,27 +67,27 @@ describe('getOrderStatusUpdate', () => {
 describe('shouldSkipOrderUpdate', () => {
   // AC1/AC2: Idempotency — don't downgrade from delivered
   it('skips update when order is already delivered', () => {
-    expect(shouldSkipOrderUpdate('delivered', 'failed')).toBe(true);
-    expect(shouldSkipOrderUpdate('delivered', 'delivered')).toBe(true);
+    expect(shouldSkipOrderUpdate('entregado', 'cancelado')).toBe(true);
+    expect(shouldSkipOrderUpdate('entregado', 'entregado')).toBe(true);
   });
 
   it('allows update from pending to delivered', () => {
-    expect(shouldSkipOrderUpdate('pending', 'delivered')).toBe(false);
+    expect(shouldSkipOrderUpdate('ingresado', 'entregado')).toBe(false);
   });
 
   it('allows update from pending to failed', () => {
-    expect(shouldSkipOrderUpdate('pending', 'failed')).toBe(false);
+    expect(shouldSkipOrderUpdate('ingresado', 'cancelado')).toBe(false);
   });
 
   it('allows update from failed to delivered', () => {
-    expect(shouldSkipOrderUpdate('failed', 'delivered')).toBe(false);
+    expect(shouldSkipOrderUpdate('cancelado', 'entregado')).toBe(false);
   });
 
   it('allows update from processing to failed', () => {
-    expect(shouldSkipOrderUpdate('processing', 'failed')).toBe(false);
+    expect(shouldSkipOrderUpdate('asignado', 'cancelado')).toBe(false);
   });
 
   it('allows update from dispatched to delivered', () => {
-    expect(shouldSkipOrderUpdate('dispatched', 'delivered')).toBe(false);
+    expect(shouldSkipOrderUpdate('en_ruta', 'entregado')).toBe(false);
   });
 });

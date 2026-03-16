@@ -3,16 +3,16 @@
  * Extracted from beetrack-webhook edge function for testability.
  *
  * Status mapping:
- *   dispatch delivered (2) → order delivered
- *   dispatch failed (3)    → order failed
- *   dispatch partial (4)   → order failed
+ *   dispatch delivered (2) → order entregado
+ *   dispatch failed (3)    → order cancelado
+ *   dispatch partial (4)   → order cancelado
  *   dispatch pending (1)   → no order update
  */
 
 export type DispatchStatus = 'pending' | 'delivered' | 'failed' | 'partial';
 
 export interface OrderStatusUpdate {
-  orderStatus: 'delivered' | 'failed';
+  orderStatus: 'entregado' | 'cancelado';
   statusDetail: string;
 }
 
@@ -27,7 +27,7 @@ export function getOrderStatusUpdate(
 ): OrderStatusUpdate | null {
   if (status === 'pending') return null;
 
-  const orderStatus = status === 'delivered' ? 'delivered' : 'failed';
+  const orderStatus = status === 'delivered' ? 'entregado' : 'cancelado';
 
   let statusDetail: string;
   if (status === 'delivered') {
@@ -47,9 +47,9 @@ export function getOrderStatusUpdate(
  */
 export function shouldSkipOrderUpdate(
   currentOrderStatus: string,
-  _newStatus: 'delivered' | 'failed',
+  _newStatus: 'entregado' | 'cancelado',
 ): boolean {
-  // Never downgrade from delivered
-  if (currentOrderStatus === 'delivered') return true;
+  // Never downgrade from entregado
+  if (currentOrderStatus === 'entregado') return true;
   return false;
 }

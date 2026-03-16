@@ -11,7 +11,9 @@ import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
-import { CheckCircle, XCircle, Clock } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, ArrowLeft } from 'lucide-react';
+import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
+import { ManifestDetailList } from '@/components/pickup/ManifestDetailList';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -60,8 +62,22 @@ export default function ScanningPage() {
   const { data: scans = [] } = usePickupScans(manifestId, operatorId);
   const scanMutation = useScanMutation();
 
+  const {
+    data: orders = [],
+    isLoading: ordersLoading,
+    isError: ordersError,
+    refetch: refetchOrders,
+  } = useManifestOrders(loadId, operatorId);
+
   const verifiedCount = useMemo(
-    () => scans.filter((s) => s.scan_result === 'verified').length,
+    () => {
+      const verifiedPkgIds = new Set(
+        scans
+          .filter((s) => s.scan_result === 'verified' && s.package_id)
+          .map((s) => s.package_id!)
+      );
+      return verifiedPkgIds.size;
+    },
     [scans]
   );
   const notFoundCount = useMemo(
@@ -86,6 +102,16 @@ export default function ScanningPage() {
     [manifestId, operatorId, userId, loadId, scanMutation]
   );
 
+  const handleManualVerify = useCallback(
+    (packageLabel: string) => {
+      if (!manifestId || !operatorId || !userId) return;
+      scanMutation.mutate(
+        { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId }
+      );
+    },
+    [manifestId, operatorId, userId, loadId, scanMutation]
+  );
+
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
       <ScanResultPopup
@@ -94,9 +120,18 @@ export default function ScanningPage() {
       />
 
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-foreground">
-          Scanning: {loadId}
-        </h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push('/app/pickup')}
+            className="p-1 rounded-md hover:bg-muted transition-colors"
+            aria-label="Back to manifests"
+          >
+            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+          </button>
+          <h1 className="text-xl font-bold text-foreground">
+            Scanning: {loadId}
+          </h1>
+        </div>
         <div className="flex items-center gap-1 text-sm text-muted-foreground">
           <Clock className="h-4 w-4" />
           {elapsed}
@@ -135,6 +170,15 @@ export default function ScanningPage() {
           <ScanHistoryList scans={scans} />
         </CardContent>
       </Card>
+
+      <ManifestDetailList
+        orders={orders}
+        scans={scans}
+        onManualVerify={handleManualVerify}
+        isLoading={ordersLoading}
+        isError={ordersError}
+        onRetry={() => refetchOrders()}
+      />
 
       <Button
         onClick={() =>
