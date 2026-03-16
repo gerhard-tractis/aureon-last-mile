@@ -13,19 +13,27 @@ interface OrdersDetailTableProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  pending: 'Pendiente',
-  processing: 'Procesando',
-  dispatched: 'Despachado',
-  delivered: 'Entregado',
-  failed: 'Fallido',
+  ingresado: 'Ingresado',
+  verificado: 'Verificado',
+  en_bodega: 'En Bodega',
+  asignado: 'Asignado',
+  en_carga: 'En Carga',
+  listo: 'Listo',
+  en_ruta: 'En Ruta',
+  entregado: 'Entregado',
+  cancelado: 'Cancelado',
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: 'bg-slate-100 text-slate-700',
-  processing: 'bg-blue-100 text-blue-700',
-  dispatched: 'bg-indigo-100 text-indigo-700',
-  delivered: 'bg-emerald-100 text-emerald-700',
-  failed: 'bg-red-100 text-red-700',
+  ingresado: 'bg-slate-100 text-slate-700',
+  verificado: 'bg-blue-100 text-blue-700',
+  en_bodega: 'bg-cyan-100 text-cyan-700',
+  asignado: 'bg-indigo-100 text-indigo-700',
+  en_carga: 'bg-purple-100 text-purple-700',
+  listo: 'bg-teal-100 text-teal-700',
+  en_ruta: 'bg-amber-100 text-amber-700',
+  entregado: 'bg-emerald-100 text-emerald-700',
+  cancelado: 'bg-red-100 text-red-700',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -132,11 +140,12 @@ export default function OrdersDetailTable({
             className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-[#e6c15c]"
           >
             <option value="">Todos los estados</option>
-            <option value="delivered">Entregado</option>
-            <option value="failed">Fallido</option>
-            <option value="pending">Pendiente</option>
-            <option value="processing">Procesando</option>
-            <option value="dispatched">Despachado</option>
+            <option value="entregado">Entregado</option>
+            <option value="cancelado">Cancelado</option>
+            <option value="ingresado">Ingresado</option>
+            <option value="en_ruta">En Ruta</option>
+            <option value="en_bodega">En Bodega</option>
+            <option value="asignado">Asignado</option>
           </select>
 
           <label className="sr-only" htmlFor="order-search">Buscar orden</label>
