@@ -49,6 +49,7 @@ function CapacityPlanningContent() {
 
   return (
     <div className="space-y-8 p-4">
+      <title>Planificación de Capacidad | Aureon Last Mile</title>
       <h1 className="text-2xl font-bold text-foreground">Planificación de Capacidad</h1>
 
       {/* Calendar section */}

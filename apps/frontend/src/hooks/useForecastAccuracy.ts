@@ -2,15 +2,16 @@ import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 
 export interface ForecastAccuracyRow {
-  capacity_date: string;
-  forecasted: number;
-  actual: number;
-  accuracy_pct: number;
+  client_id: string;
+  retailer_name: string;
+  avg_variance_pct: number;
+  accuracy_score: number;
+  days_measured: number;
 }
 
 /**
  * useForecastAccuracy — fetches forecast accuracy data for a date range.
- * Calls get_forecast_accuracy RPC.
+ * Calls get_forecast_accuracy RPC which returns one aggregated row per retailer.
  * Uses a longer staleTime (60s) since accuracy data is slower-moving.
  */
 export function useForecastAccuracy(

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCapacityCalendar } from '@/hooks/useCapacityCalendar';
-import { createSPAClient } from '@/lib/supabase/client';
+import { useTenantClients } from '@/hooks/useTenantClients';
 import CapacityCell from './CapacityCell';
 import CapacityBulkFill from './CapacityBulkFill';
 import type { CapacityRow } from '@/hooks/useCapacityCalendar';
@@ -12,11 +12,6 @@ import type { CapacityRow } from '@/hooks/useCapacityCalendar';
 interface CapacityCalendarProps {
   operatorId: string;
   initialMonth?: string; // 'YYYY-MM'
-}
-
-interface RetailerOption {
-  id: string;
-  name: string;
 }
 
 const MONTH_NAMES_ES = [
@@ -78,35 +73,22 @@ export default function CapacityCalendar({
   initialMonth,
 }: CapacityCalendarProps) {
   const [month, setMonth] = useState<string>(initialMonth ?? getCurrentMonth());
-  const [retailers, setRetailers] = useState<RetailerOption[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+
+  const { data: retailers } = useTenantClients(operatorId);
+
+  // Auto-select first retailer when list loads
+  useEffect(() => {
+    if (retailers && retailers.length > 0 && !selectedClientId) {
+      setSelectedClientId(retailers[0].id);
+    }
+  }, [retailers, selectedClientId]);
 
   const { data, isLoading, dataUpdatedAt } = useCapacityCalendar(
     operatorId,
     selectedClientId,
     month
   );
-
-  // Load retailers on mount
-  useEffect(() => {
-    async function loadRetailers() {
-      const supabase = createSPAClient();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: clients } = await (supabase.from('tenant_clients') as any)
-        .select('id, name')
-        .eq('operator_id', operatorId)
-        .is('deleted_at', null)
-        .order('name');
-      if (clients) {
-        setRetailers(clients as RetailerOption[]);
-        if (clients.length > 0 && !selectedClientId) {
-          setSelectedClientId(clients[0].id);
-        }
-      }
-    }
-    loadRetailers();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operatorId]);
 
   const [year, mon] = month.split('-').map(Number);
   const monthLabel = `${MONTH_NAMES_ES[mon - 1]} ${year}`;
@@ -141,10 +123,10 @@ export default function CapacityCalendar({
           onChange={(e) => setSelectedClientId(e.target.value || null)}
           aria-label="Seleccionar retailer"
         >
-          {retailers.length === 0 && (
+          {(!retailers || retailers.length === 0) && (
             <option value="">Sin retailers</option>
           )}
-          {retailers.map((r) => (
+          {(retailers ?? []).map((r) => (
             <option key={r.id} value={r.id}>
               {r.name}
             </option>
@@ -218,7 +200,7 @@ export default function CapacityCalendar({
                         capacity={cell?.daily_capacity ?? null}
                         actualOrders={cell ? (cell.actual_orders ?? null) : null}
                         utilizationPct={cell?.utilization_pct ?? null}
-                        rowId={null}
+                        rowId={cell?.id ?? null}
                       />
                     </div>
                   );

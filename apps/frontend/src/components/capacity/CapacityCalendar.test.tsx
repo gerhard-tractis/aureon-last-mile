@@ -6,6 +6,9 @@ vi.mock('@/hooks/useCapacityCalendar', () => ({
   useCapacityCalendar: () => ({
     data: [
       {
+        id: 'row-1',
+        client_id: 'c-1',
+        retailer_name: 'Retailer A',
         capacity_date: '2026-03-02',
         daily_capacity: 300,
         actual_orders: 278,
@@ -18,23 +21,12 @@ vi.mock('@/hooks/useCapacityCalendar', () => ({
   }),
 }));
 
-vi.mock('@/lib/supabase/client', () => ({
-  createSPAClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          is: () => ({
-            order: () => ({
-              data: [
-                { id: 'c-1', name: 'Retailer A' },
-                { id: 'c-2', name: 'Retailer B' },
-              ],
-              error: null,
-            }),
-          }),
-        }),
-      }),
-    }),
+vi.mock('@/hooks/useTenantClients', () => ({
+  useTenantClients: () => ({
+    data: [
+      { id: 'c-1', name: 'Retailer A' },
+      { id: 'c-2', name: 'Retailer B' },
+    ],
   }),
 }));
 
@@ -42,6 +34,10 @@ vi.mock('@/components/capacity/CapacityCell', () => ({
   default: ({ date, capacity }: { date: string; capacity: number | null }) => (
     <div data-testid={`cell-${date}`}>{capacity ?? '—'}</div>
   ),
+}));
+
+vi.mock('@/components/capacity/CapacityBulkFill', () => ({
+  default: () => <div data-testid="capacity-bulk-fill">BulkFill</div>,
 }));
 
 describe('CapacityCalendar', () => {

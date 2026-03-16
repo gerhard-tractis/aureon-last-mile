@@ -2,6 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 
 export interface CapacityRow {
+  id: string | null;
+  client_id: string;
+  retailer_name: string;
   capacity_date: string;
   daily_capacity: number;
   actual_orders: number;
@@ -23,7 +26,8 @@ function getMonthDateRange(month: string): { dateFrom: string; dateTo: string } 
 
 /**
  * useCapacityCalendar — fetches capacity utilization for a specific retailer/month.
- * Calls get_capacity_utilization RPC with the full month date range.
+ * Calls get_capacity_utilization RPC and also queries retailer_daily_capacities
+ * directly to obtain row IDs (needed for editing).
  */
 export function useCapacityCalendar(
   operatorId: string | null,
@@ -35,7 +39,10 @@ export function useCapacityCalendar(
   return useQuery<CapacityRow[]>({
     queryKey: ['capacityCalendar', operatorId, clientId, month],
     queryFn: async () => {
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      const client = createSPAClient();
+
+      // Fetch utilization data via RPC
+      const { data: rpcData, error: rpcError } = await (client.rpc as CallableFunction)(
         'get_capacity_utilization',
         {
           p_operator_id: operatorId!,
@@ -44,8 +51,34 @@ export function useCapacityCalendar(
           p_date_to: dateTo,
         }
       );
-      if (error) throw error;
-      return (data as CapacityRow[]) ?? [];
+      if (rpcError) throw rpcError;
+
+      // Fetch IDs from retailer_daily_capacities directly
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: idRows, error: idError } = await (client.from('retailer_daily_capacities') as any)
+        .select('id, capacity_date')
+        .eq('operator_id', operatorId!)
+        .eq('client_id', clientId!)
+        .gte('capacity_date', dateFrom)
+        .lte('capacity_date', dateTo)
+        .is('deleted_at', null);
+      if (idError) throw idError;
+
+      // Build a map of date → id
+      const idByDate = new Map<string, string>();
+      if (idRows) {
+        for (const row of idRows as { id: string; capacity_date: string }[]) {
+          idByDate.set(row.capacity_date, row.id);
+        }
+      }
+
+      // Merge RPC rows with IDs
+      const rows = ((rpcData as CapacityRow[]) ?? []).map((row) => ({
+        ...row,
+        id: idByDate.get(row.capacity_date) ?? null,
+      }));
+
+      return rows;
     },
     enabled: !!operatorId && !!clientId,
     staleTime: 30_000,

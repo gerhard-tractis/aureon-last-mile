@@ -20,6 +20,9 @@ function createWrapper() {
 }
 
 const MOCK_UTILIZATION_ROW = {
+  id: null,
+  client_id: 'c-1',
+  retailer_name: 'Retailer A',
   capacity_date: '2026-03-01',
   daily_capacity: 150,
   actual_orders: 120,

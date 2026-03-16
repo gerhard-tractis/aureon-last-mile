@@ -39,14 +39,13 @@ export default function CapacityUtilizationSummary({
     // Group by client_id
     const byClient = new Map<string, typeof data>();
     for (const row of data) {
-      const key = (row as unknown as { client_id: string }).client_id ?? 'unknown';
+      const key = row.client_id ?? 'unknown';
       if (!byClient.has(key)) byClient.set(key, []);
       byClient.get(key)!.push(row);
     }
 
     return Array.from(byClient.entries()).map(([clientId, rows]) => {
-      const retailerName =
-        (rows[0] as unknown as { retailer_name: string }).retailer_name ?? clientId;
+      const retailerName = rows[0].retailer_name ?? clientId;
       const totalOrders = rows.reduce((s, r) => s + (r.actual_orders ?? 0), 0);
       const totalCapacity = rows.reduce((s, r) => s + (r.daily_capacity ?? 0), 0);
       const totalUtil = rows.reduce((s, r) => s + (r.utilization_pct ?? 0), 0);
