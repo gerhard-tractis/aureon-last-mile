@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { OrderStatus } from '@/lib/types/pipeline';
 import { useOpsControlFilterStore } from './useOpsControlFilterStore';
 
 describe('useOpsControlFilterStore', () => {
@@ -130,7 +131,7 @@ describe('useOpsControlFilterStore', () => {
 
     it('accepts various OrderStatus values', () => {
       const { setStageFilter } = useOpsControlFilterStore.getState();
-      const statuses = [
+      const statuses: OrderStatus[] = [
         'ingresado',
         'verificado',
         'en_bodega',
@@ -143,7 +144,7 @@ describe('useOpsControlFilterStore', () => {
       ];
 
       for (const status of statuses) {
-        setStageFilter(status as any);
+        setStageFilter(status);
         expect(useOpsControlFilterStore.getState().stageFilter).toBe(status);
       }
     });
