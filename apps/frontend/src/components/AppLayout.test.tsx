@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
@@ -8,15 +8,17 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-const mockGlobal = {
-  user: { email: 'test@example.com' },
-  role: 'admin' as string | null,
-  permissions: [] as string[],
-  operatorId: 'op-test' as string | null,
-};
+let mockRole = 'admin';
+let mockPermissions: string[] = [];
+let mockOperatorId: string | null = 'op-test';
 
 vi.mock('@/lib/context/GlobalContext', () => ({
-  useGlobal: () => mockGlobal,
+  useGlobal: () => ({
+    user: { email: 'test@example.com' },
+    role: mockRole,
+    permissions: mockPermissions,
+    operatorId: mockOperatorId,
+  }),
 }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -46,6 +48,12 @@ vi.mock('@/components/capacity/CapacityAlertBell', () => ({
 }));
 
 import AppLayout from './AppLayout';
+
+beforeEach(() => {
+  mockRole = 'admin';
+  mockPermissions = [];
+  mockOperatorId = 'op-test';
+});
 
 describe('AppLayout sidebar branding', () => {
   it('renders default product name when no branding', () => {
@@ -98,11 +106,43 @@ describe('AppLayout sidebar branding', () => {
   });
 });
 
+describe('AppLayout - Ops Control nav item', () => {
+  it('shows Ops Control link for admin role', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByText('Ops Control')).toBeTruthy();
+  });
+
+  it('shows Ops Control link for operations_manager role', () => {
+    mockRole = 'operations_manager';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByText('Ops Control')).toBeTruthy();
+  });
+
+  it('hides Ops Control link for driver role', () => {
+    mockRole = 'driver';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByText('Ops Control')).toBeNull();
+  });
+
+  it('hides Ops Control link for viewer role', () => {
+    mockRole = 'viewer';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByText('Ops Control')).toBeNull();
+  });
+});
+
 describe('AppLayout nav items – Capacidad and Auditoría', () => {
   it('shows Capacidad link for admin role', () => {
-    mockGlobal.role = 'admin';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -110,9 +150,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('shows Capacidad link for operations_manager role', () => {
-    mockGlobal.role = 'operations_manager';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'operations_manager';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -120,9 +158,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('hides Capacidad link for other roles', () => {
-    mockGlobal.role = 'driver';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'driver';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -130,9 +166,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('Capacidad link points to /app/capacity-planning', () => {
-    mockGlobal.role = 'admin';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -141,9 +175,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('shows Auditoría link for admin role', () => {
-    mockGlobal.role = 'admin';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -151,9 +183,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('shows Auditoría link for operations_manager role', () => {
-    mockGlobal.role = 'operations_manager';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'operations_manager';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -161,9 +191,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('hides Auditoría link for other roles', () => {
-    mockGlobal.role = 'driver';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'driver';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -171,9 +199,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
   });
 
   it('Auditoría link points to /app/audit-logs', () => {
-    mockGlobal.role = 'admin';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -184,9 +210,7 @@ describe('AppLayout nav items – Capacidad and Auditoría', () => {
 
 describe('AppLayout CapacityAlertBell', () => {
   it('renders the bell for admin role', () => {
-    mockGlobal.role = 'admin';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -194,9 +218,7 @@ describe('AppLayout CapacityAlertBell', () => {
   });
 
   it('renders the bell for operations_manager role', () => {
-    mockGlobal.role = 'operations_manager';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'operations_manager';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -204,9 +226,7 @@ describe('AppLayout CapacityAlertBell', () => {
   });
 
   it('does not render the bell for other roles', () => {
-    mockGlobal.role = 'driver';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'driver';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
@@ -214,10 +234,8 @@ describe('AppLayout CapacityAlertBell', () => {
   });
 
   it('passes operatorId to CapacityAlertBell', () => {
-    mockGlobal.role = 'admin';
-    mockGlobal.operatorId = 'op-test';
-    mockBranding.logoUrl = null;
-    mockBranding.companyName = null;
+    mockRole = 'admin';
+    mockOperatorId = 'op-test';
 
     render(<AppLayout><div>content</div></AppLayout>);
 
