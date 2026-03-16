@@ -18,6 +18,7 @@ import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPASassClient } from "@/lib/supabase/client";
 import { useBranding } from "@/providers/BrandingProvider";
 import ThemeToggle from '@/components/ThemeToggle';
+import CapacityAlertBell from '@/components/capacity/CapacityAlertBell';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -25,7 +26,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
 
-    const { user, role: userRole, permissions: userPermissions } = useGlobal();
+    const { user, role: userRole, permissions: userPermissions, operatorId } = useGlobal();
     const { logoUrl, companyName } = useBranding();
     const [logoError, setLogoError] = useState(false);
 
@@ -197,6 +198,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                     <div className="flex items-center gap-2 ml-auto">
                         <ThemeToggle />
+                        {(userRole === 'operations_manager' || userRole === 'admin') && (
+                            <CapacityAlertBell operatorId={operatorId} />
+                        )}
                         <div className="relative">
                             <button
                                 onClick={() => setUserDropdownOpen(!isUserDropdownOpen)}
