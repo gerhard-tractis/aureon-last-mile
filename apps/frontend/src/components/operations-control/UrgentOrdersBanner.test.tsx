@@ -90,5 +90,27 @@ describe('UrgentOrdersBanner', () => {
         '5 pedidos requieren atención inmediata',
       );
     });
+
+    it('stays hidden after dismiss when total count remains the same', () => {
+      const onViewUrgent = vi.fn();
+      const { rerender } = render(
+        <UrgentOrdersBanner urgentCount={3} lateCount={2} onViewUrgent={onViewUrgent} />,
+      );
+
+      // Verify banner is visible
+      expect(screen.getByTestId('urgent-banner')).toBeTruthy();
+
+      // Dismiss the banner
+      fireEvent.click(screen.getByTestId('urgent-banner-dismiss'));
+      expect(screen.queryByTestId('urgent-banner')).toBeNull();
+
+      // Re-render with same total count (5 urgent+late, same as dismissed total)
+      rerender(
+        <UrgentOrdersBanner urgentCount={4} lateCount={1} onViewUrgent={onViewUrgent} />,
+      );
+
+      // Banner should still be hidden (total = 5, same as when dismissed)
+      expect(screen.queryByTestId('urgent-banner')).toBeNull();
+    });
   });
 });
