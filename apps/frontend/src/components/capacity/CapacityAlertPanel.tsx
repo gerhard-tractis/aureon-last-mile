@@ -75,8 +75,8 @@ export default function CapacityAlertPanel({ alerts, onClose }: Props) {
                       {alert.client_id ?? '—'}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {alert.actual_pct !== null ? `${alert.actual_pct}%` : '—'}{' '}
-                      · {formatDate(alert.capacity_date)}
+                      {`${alert.utilization_pct}%`}{' '}
+                      · {formatDate(alert.alert_date)}
                     </p>
                   </div>
                   <div className="flex flex-col gap-1 flex-shrink-0">

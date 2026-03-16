@@ -193,7 +193,7 @@ describe('useAuditLogsOps', () => {
     expect(mockIlike).toHaveBeenCalledWith('resource_id', '%abc%');
   });
 
-  it('orders by timestamp descending', async () => {
+  it('orders by timestamp descending by default', async () => {
     mockRange.mockResolvedValue({ data: [], error: null, count: 0 });
 
     const { wrapper } = createWrapper();
@@ -201,6 +201,32 @@ describe('useAuditLogsOps', () => {
 
     await waitFor(() => expect(mockOrder).toHaveBeenCalled());
     expect(mockOrder).toHaveBeenCalledWith('timestamp', { ascending: false });
+  });
+
+  it('orders by custom column ascending when sortColumn and sortDirection provided', async () => {
+    mockRange.mockResolvedValue({ data: [], error: null, count: 0 });
+
+    const { wrapper } = createWrapper();
+    renderHook(
+      () => useAuditLogsOps('op-1', { sortColumn: 'action', sortDirection: 'asc' }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(mockOrder).toHaveBeenCalled());
+    expect(mockOrder).toHaveBeenCalledWith('action', { ascending: true });
+  });
+
+  it('orders by custom column descending when sortDirection is desc', async () => {
+    mockRange.mockResolvedValue({ data: [], error: null, count: 0 });
+
+    const { wrapper } = createWrapper();
+    renderHook(
+      () => useAuditLogsOps('op-1', { sortColumn: 'resource_type', sortDirection: 'desc' }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(mockOrder).toHaveBeenCalled());
+    expect(mockOrder).toHaveBeenCalledWith('resource_type', { ascending: false });
   });
 
   it('applies actionType ilike filter when not ALL', async () => {

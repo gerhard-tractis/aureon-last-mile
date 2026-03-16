@@ -133,6 +133,8 @@ function AuditLogsInner({
     search: filters.search,
     page,
     pageSize: PAGE_SIZE,
+    sortColumn,
+    sortDirection,
   });
 
   const { data: users, isLoading: usersLoading } = useAuditLogUsers(operatorId);

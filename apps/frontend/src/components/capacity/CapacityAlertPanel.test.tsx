@@ -23,10 +23,11 @@ const baseAlert = {
   id: 'alert-1',
   operator_id: 'op-1',
   client_id: 'client-abc',
-  alert_type: 'capacity_threshold',
-  capacity_date: '2026-03-15',
+  alert_date: '2026-03-15',
   threshold_pct: 80,
-  actual_pct: 85,
+  actual_orders: 85,
+  daily_capacity: 100,
+  utilization_pct: 85,
   dismissed_at: null,
   deleted_at: null,
   created_at: '2026-03-15T10:00:00Z',
@@ -88,7 +89,7 @@ describe('CapacityAlertPanel', () => {
   });
 
   it('shows yellow severity indicator for 80% threshold alerts', () => {
-    const alert80 = { ...baseAlert, threshold_pct: 80, actual_pct: 82 };
+    const alert80 = { ...baseAlert, threshold_pct: 80, utilization_pct: 82 };
     render(<CapacityAlertPanel alerts={[alert80]} onClose={onClose} />);
     const indicator = document.querySelector('[data-testid="severity-indicator"]');
     expect(indicator).toBeDefined();
@@ -96,14 +97,14 @@ describe('CapacityAlertPanel', () => {
   });
 
   it('shows orange severity indicator for 100% threshold alerts', () => {
-    const alert100 = { ...baseAlert, threshold_pct: 100, actual_pct: 105 };
+    const alert100 = { ...baseAlert, threshold_pct: 100, utilization_pct: 105 };
     render(<CapacityAlertPanel alerts={[alert100]} onClose={onClose} />);
     const indicator = document.querySelector('[data-testid="severity-indicator"]');
     expect(indicator?.className).toContain('orange');
   });
 
   it('shows red severity indicator for 120% threshold alerts', () => {
-    const alert120 = { ...baseAlert, threshold_pct: 120, actual_pct: 125 };
+    const alert120 = { ...baseAlert, threshold_pct: 120, utilization_pct: 125 };
     render(<CapacityAlertPanel alerts={[alert120]} onClose={onClose} />);
     const indicator = document.querySelector('[data-testid="severity-indicator"]');
     expect(indicator?.className).toContain('red');

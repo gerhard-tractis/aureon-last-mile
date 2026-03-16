@@ -47,6 +47,10 @@ export interface AuditLogsOpsFilter {
   page?: number;
   /** Records per page (default: 50) */
   pageSize?: number;
+  /** Column to sort by (default: 'timestamp') */
+  sortColumn?: string;
+  /** Sort direction (default: 'desc') */
+  sortDirection?: 'asc' | 'desc';
 }
 
 // ── Default helpers ───────────────────────────────────────────────────────────
@@ -82,6 +86,8 @@ export function useAuditLogsOps(
     search,
     page = 1,
     pageSize = 50,
+    sortColumn,
+    sortDirection,
   } = filters;
 
   const query = useQuery({
@@ -125,7 +131,7 @@ export function useAuditLogsOps(
         q = q.ilike('resource_id', `%${search}%`);
       }
 
-      q = q.order('timestamp', { ascending: false });
+      q = q.order(sortColumn ?? 'timestamp', { ascending: (sortDirection ?? 'desc') === 'asc' });
       q = q.range(offset, offset + pageSize - 1);
 
       const { data, error, count } = await q;

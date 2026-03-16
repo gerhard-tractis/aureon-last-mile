@@ -64,7 +64,7 @@ describe('useCapacityCalendar', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
-  it('calls get_capacity_utilization RPC with correct date range for month', async () => {
+  it('calls get_capacity_utilization RPC with correct date range for month (no p_client_id)', async () => {
     mockRpc.mockResolvedValue({ data: [MOCK_CAPACITY_ROW], error: null });
     buildFromMock([{ id: 'row-1', capacity_date: '2026-03-01' }]);
 
@@ -77,7 +77,6 @@ describe('useCapacityCalendar', () => {
 
     expect(mockRpc).toHaveBeenCalledWith('get_capacity_utilization', {
       p_operator_id: 'op-1',
-      p_client_id: 'client-1',
       p_date_from: '2026-03-01',
       p_date_to: '2026-03-31',
     });
@@ -135,6 +134,23 @@ describe('useCapacityCalendar', () => {
     );
 
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it('filters RPC results client-side to the selected clientId', async () => {
+    const otherRow = { ...MOCK_CAPACITY_ROW, client_id: 'client-other' };
+    mockRpc.mockResolvedValue({ data: [MOCK_CAPACITY_ROW, otherRow], error: null });
+    buildFromMock([{ id: 'row-1', capacity_date: '2026-03-01' }]);
+
+    const { result } = renderHook(
+      () => useCapacityCalendar('op-1', 'client-1', '2026-03'),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Only the row matching client-1 should be returned
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data![0].client_id).toBe('client-1');
   });
 
   it('derives correct last day for February in a leap year', async () => {

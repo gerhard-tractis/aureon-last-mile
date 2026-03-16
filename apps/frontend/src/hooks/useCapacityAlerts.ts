@@ -5,10 +5,11 @@ export interface CapacityAlert {
   id: string;
   operator_id: string;
   client_id: string | null;
-  alert_type: string;
-  capacity_date: string;
-  threshold_pct: number | null;
-  actual_pct: number | null;
+  alert_date: string;
+  threshold_pct: number;
+  actual_orders: number;
+  daily_capacity: number;
+  utilization_pct: number;
   dismissed_at: string | null;
   deleted_at: string | null;
   created_at: string;

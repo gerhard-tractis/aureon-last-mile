@@ -42,16 +42,19 @@ export function useCapacityCalendar(
       const client = createSPAClient();
 
       // Fetch utilization data via RPC
+      // Note: get_capacity_utilization does not accept p_client_id; filter client-side below.
       const { data: rpcData, error: rpcError } = await (client.rpc as CallableFunction)(
         'get_capacity_utilization',
         {
           p_operator_id: operatorId!,
-          p_client_id: clientId!,
           p_date_from: dateFrom,
           p_date_to: dateTo,
         }
       );
       if (rpcError) throw rpcError;
+
+      // Filter to the selected retailer only
+      const filtered = (rpcData ?? []).filter((row: CapacityRow) => row.client_id === clientId);
 
       // Fetch IDs from retailer_daily_capacities directly
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,8 +75,8 @@ export function useCapacityCalendar(
         }
       }
 
-      // Merge RPC rows with IDs
-      const rows = ((rpcData as CapacityRow[]) ?? []).map((row) => ({
+      // Merge filtered RPC rows with IDs
+      const rows = (filtered as CapacityRow[]).map((row) => ({
         ...row,
         id: idByDate.get(row.capacity_date) ?? null,
       }));

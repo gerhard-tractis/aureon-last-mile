@@ -51,10 +51,11 @@ const MOCK_ALERT = {
   id: 'alert-1',
   operator_id: 'op-1',
   client_id: 'client-1',
-  alert_type: 'over_capacity',
-  capacity_date: '2026-03-15',
-  threshold_pct: 90,
-  actual_pct: 95,
+  alert_date: '2026-03-15',
+  threshold_pct: 100,
+  actual_orders: 95,
+  daily_capacity: 100,
+  utilization_pct: 95,
   dismissed_at: null,
   deleted_at: null,
   created_at: '2026-03-15T10:00:00Z',
@@ -83,7 +84,8 @@ describe('useCapacityAlerts', () => {
 
     expect(result.current.data).toHaveLength(1);
     expect(result.current.data![0].id).toBe('alert-1');
-    expect(result.current.data![0].alert_type).toBe('over_capacity');
+    expect(result.current.data![0].alert_date).toBe('2026-03-15');
+    expect(result.current.data![0].utilization_pct).toBe(95);
     expect(mockEqOperatorId).toHaveBeenCalledWith('operator_id', 'op-1');
   });
 
