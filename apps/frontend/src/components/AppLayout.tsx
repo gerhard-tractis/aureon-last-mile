@@ -13,6 +13,7 @@ import {
     BarChart3,
     TrendingUp,
     ClipboardCheck,
+    Activity,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPASassClient } from "@/lib/supabase/client";
@@ -51,6 +52,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
 
     const dashboardAllowed = userRole === 'operations_manager' || userRole === 'admin';
+    const opsControlAllowed = userRole === 'operations_manager' || userRole === 'admin';
     const pickupAllowed = userPermissions.includes('pickup');
     const isDashboardSection = pathname.startsWith('/app/dashboard');
     const operacionesHref = '/app/dashboard/operaciones';
@@ -147,6 +149,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 </div>
                             )}
                         </div>
+                    )}
+                    {opsControlAllowed && (
+                        <Link
+                            href="/app/operations-control"
+                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                pathname.startsWith('/app/operations-control')
+                                    ? 'bg-primary-50 text-primary-600'
+                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                        >
+                            <Activity className={`mr-3 h-5 w-5 ${
+                                pathname.startsWith('/app/operations-control') ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                            }`} />
+                            Ops Control
+                        </Link>
                     )}
                     {pickupAllowed && (
                         <Link
