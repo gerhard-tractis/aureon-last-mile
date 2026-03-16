@@ -95,21 +95,19 @@ export async function validateScan(
 
     const pkgs = orderPackages ?? [];
 
-    // Filter out already-verified packages by package_id
-    const unverifiedPkgs: typeof pkgs = [];
-    for (const pkg of pkgs) {
-      const { data: existingScan } = await supabase
-        .from('pickup_scans')
-        .select('id')
-        .eq('manifest_id', manifestId)
-        .eq('package_id', pkg.id)
-        .eq('scan_result', 'verified')
-        .is('deleted_at', null)
-        .limit(1);
-      if (!existingScan || existingScan.length === 0) {
-        unverifiedPkgs.push(pkg);
-      }
-    }
+    // Get all already-verified package_ids for this manifest in one query
+    const packageIds = pkgs.map(p => p.id);
+    const { data: verifiedScans } = await supabase
+      .from('pickup_scans')
+      .select('package_id')
+      .eq('manifest_id', manifestId)
+      .in('package_id', packageIds)
+      .eq('scan_result', 'verified')
+      .is('deleted_at', null)
+      .limit(packageIds.length);
+
+    const verifiedPkgIds = new Set((verifiedScans ?? []).map((s: { package_id: string }) => s.package_id));
+    const unverifiedPkgs = pkgs.filter(p => !verifiedPkgIds.has(p.id));
 
     if (unverifiedPkgs.length === 0) {
       return { scanResult: 'duplicate', packageId: pkgs[0]?.id ?? null, packageIds: [], packageLabel: pkgs[0]?.label ?? barcode };

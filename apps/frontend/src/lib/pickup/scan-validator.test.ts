@@ -50,21 +50,19 @@ describe('validateScan', () => {
   });
 
   it('returns duplicate when package_id already verified (different barcode)', async () => {
-    const origPackages = [{ id: 'pkg-1', label: 'CTN001', order_id: 'order-1' }];
-    const origOrders = [{ id: 'order-1' }];
+    queryResponses['packages'] = [{ id: 'pkg-1', label: 'CTN001', order_id: 'order-1' }];
+    queryResponses['orders'] = [{ id: 'order-1' }];
 
     let pickupScansCallCount = 0;
-    queryResponses = new Proxy({} as Record<string, unknown[]>, {
-      get(_target, table: string) {
-        if (table === 'pickup_scans') {
-          pickupScansCallCount++;
-          return pickupScansCallCount === 1 ? [] : [{ id: 'scan-1' }];
-        }
-        if (table === 'packages') return origPackages;
-        if (table === 'orders') return origOrders;
-        return [];
+    Object.defineProperty(queryResponses, 'pickup_scans', {
+      configurable: true,
+      get() {
+        pickupScansCallCount++;
+        // First call: barcode duplicate check → no duplicate
+        // Second call: IN query for verified package_ids → pkg-1 already verified
+        return pickupScansCallCount === 1 ? [] : [{ package_id: 'pkg-1' }];
       },
-    }) as Record<string, unknown[]>;
+    });
 
     const result = await validateScan('CTN001', 'manifest-1', 'op-1', 'LOAD-1');
     expect(result.scanResult).toBe('duplicate');
