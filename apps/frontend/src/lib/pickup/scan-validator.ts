@@ -106,7 +106,7 @@ export async function validateScan(
       .is('deleted_at', null)
       .limit(packageIds.length);
 
-    const verifiedPkgIds = new Set((verifiedScans ?? []).map((s: { package_id: string }) => s.package_id));
+    const verifiedPkgIds = new Set((verifiedScans ?? []).map((s: { package_id: string | null }) => s.package_id).filter((id): id is string => id !== null));
     const unverifiedPkgs = pkgs.filter(p => !verifiedPkgIds.has(p.id));
 
     if (unverifiedPkgs.length === 0) {
