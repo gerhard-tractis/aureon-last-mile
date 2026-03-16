@@ -69,7 +69,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
           type="button"
           data-testid="btn-ver"
           onClick={onView}
-          className="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-md font-medium"
+          className="min-h-[60px] text-xs bg-blue-50 text-blue-600 px-3 rounded-md font-medium"
         >
           Ver
         </button>
@@ -78,7 +78,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
             type="button"
             data-testid="btn-escalar"
             onClick={onEscalar}
-            className="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-md font-medium"
+            className="min-h-[60px] text-xs bg-red-50 text-red-600 px-3 rounded-md font-medium"
           >
             Escalar
           </button>
