@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Search, Filter } from 'lucide-react';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
 import type { OrderPriority } from '@/lib/types/pipeline';
@@ -38,7 +38,6 @@ const GROUP_LABELS: Record<OrderPriority, string> = {
 interface MobileOrdersListProps {
   orders: OperationsOrder[];
   isLoading: boolean;
-  operatorId: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -56,41 +55,51 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
 
   // ── Search filter ────────────────────────────────────────────────────────
 
-  const lowerQuery = searchQuery.toLowerCase();
-  const searchFiltered =
-    lowerQuery
+  const filteredOrders = useMemo(() => {
+    const lowerQuery = searchQuery.toLowerCase();
+    return lowerQuery
       ? orders.filter(
           (o) =>
             o.order_number.toLowerCase().includes(lowerQuery) ||
             (o.retailer_name ?? '').toLowerCase().includes(lowerQuery),
         )
       : orders;
+  }, [orders, searchQuery]);
 
   // ── Priority grouping ────────────────────────────────────────────────────
 
-  const grouped: Record<OrderPriority, OperationsOrder[]> = {
-    urgent: [],
-    alert: [],
-    ok: [],
-    late: [],
-  };
+  const grouped = useMemo(() => {
+    const result: Record<OrderPriority, OperationsOrder[]> = {
+      urgent: [],
+      alert: [],
+      ok: [],
+      late: [],
+    };
+    for (const order of filteredOrders) {
+      result[computePriority(order)].push(order);
+    }
+    return result;
+  }, [filteredOrders]);
 
-  for (const order of searchFiltered) {
-    grouped[computePriority(order)].push(order);
-  }
+  // ── Flat filtered list (respects statusFilter) ───────────────────────────
 
-  // Apply statusFilter (only show matching group when not 'all')
+  const flatFiltered = useMemo(() => {
+    const visibleGroups: OrderPriority[] =
+      statusFilter === 'all'
+        ? GROUP_ORDER.filter((g) => grouped[g].length > 0)
+        : GROUP_ORDER.filter((g) => g === statusFilter && grouped[g].length > 0);
+    return visibleGroups.flatMap((g) => grouped[g]);
+  }, [grouped, statusFilter]);
+
   const visibleGroups: OrderPriority[] =
     statusFilter === 'all'
       ? GROUP_ORDER.filter((g) => grouped[g].length > 0)
       : GROUP_ORDER.filter((g) => g === statusFilter && grouped[g].length > 0);
 
-  // Flatten in display order for pagination
-  const flatOrders = visibleGroups.flatMap((g) => grouped[g]);
-  const paginatedOrders = flatOrders.slice(0, visibleCount);
-  const hasMore = flatOrders.length > visibleCount;
+  const paginatedOrders = flatFiltered.slice(0, visibleCount);
+  const hasMore = flatFiltered.length > visibleCount;
 
-  const isEmpty = !isLoading && flatOrders.length === 0;
+  const isEmpty = !isLoading && flatFiltered.length === 0;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -105,7 +114,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar pedido..."
-            className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="flex-1 border border-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             autoFocus
           />
         )}
@@ -116,19 +125,19 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
             setSearchOpen((v) => !v);
             if (searchOpen) setSearchQuery('');
           }}
-          className="p-2 rounded-full hover:bg-gray-100"
+          className="p-2 rounded-full hover:bg-muted"
           aria-label="Buscar"
         >
-          <Search className="w-5 h-5 text-gray-600" />
+          <Search className="w-5 h-5 text-muted-foreground" />
         </button>
         <button
           type="button"
           data-testid="filter-btn"
           onClick={() => setFilterModalOpen(true)}
-          className="p-2 rounded-full hover:bg-gray-100"
+          className="p-2 rounded-full hover:bg-muted"
           aria-label="Filtros"
         >
-          <Filter className="w-5 h-5 text-gray-600" />
+          <Filter className="w-5 h-5 text-muted-foreground" />
         </button>
       </div>
 
@@ -136,9 +145,9 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
       {searchQuery && (
         <p
           data-testid="search-results-label"
-          className="text-xs text-gray-500 px-4 pb-2"
+          className="text-xs text-muted-foreground px-4 pb-2"
         >
-          {flatOrders.length} resultados para &apos;{searchQuery}&apos;
+          {flatFiltered.length} resultados para &apos;{searchQuery}&apos;
         </p>
       )}
 
@@ -149,7 +158,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
             <div
               key={i}
               data-testid="order-skeleton"
-              className="animate-pulse bg-gray-200 h-[80px] rounded-lg"
+              className="bg-muted animate-pulse h-[80px] rounded-lg"
             />
           ))}
         </div>
@@ -159,7 +168,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
       {isEmpty && (
         <p
           data-testid="empty-state"
-          className="text-sm text-gray-500 text-center py-8 px-4"
+          className="text-sm text-muted-foreground text-center py-8 px-4"
         >
           No hay órdenes con estos filtros
         </p>
@@ -182,7 +191,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
                 <div key={priority}>
                   <p
                     data-testid={`group-header-${priority}`}
-                    className="text-xs font-semibold text-gray-500 mb-2"
+                    className="text-xs font-semibold text-muted-foreground mb-2"
                   >
                     ── {GROUP_LABELS[priority]} ({grouped[priority].length}) ──
                   </p>
@@ -206,7 +215,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
                 type="button"
                 data-testid="load-more-btn"
                 onClick={() => setVisibleCount((c) => c + 20)}
-                className="w-full py-3 text-sm text-blue-600 font-medium border border-blue-200 rounded-lg hover:bg-blue-50"
+                className="w-full py-3 text-sm text-primary font-medium border border-primary rounded-lg hover:bg-primary/10"
               >
                 Cargar más pedidos
               </button>
