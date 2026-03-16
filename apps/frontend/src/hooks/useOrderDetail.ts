@@ -76,5 +76,6 @@ export function useOrderDetail(orderId: string | null) {
     },
     enabled: !!orderId,
     staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }

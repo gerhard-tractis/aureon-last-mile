@@ -92,7 +92,8 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
             {/* Placeholder action */}
             <section className="mt-4 pt-4 border-t border-gray-100">
               <button
-                onClick={() => alert('Funcionalidad próximamente')}
+                onClick={() => {}}
+                aria-label="Reasignar zona"
                 className="px-4 py-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
               >
                 Reasignar zona
