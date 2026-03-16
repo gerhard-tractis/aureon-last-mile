@@ -37,8 +37,9 @@ export function useOperationsOrders(operatorId: string | null, filters: FilterPr
       const tomorrow = getDateStr(1);
       const next6 = getDateStr(6);
 
-      let query = createSPAClient()
-        .from('orders')
+      const supabase = createSPAClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let query = (supabase.from('orders') as any)
         .select(
           'id, order_number, retailer_name, customer_name, comuna, delivery_date, delivery_window_start, delivery_window_end, status, leading_status, status_updated_at, operator_id, deleted_at',
         )

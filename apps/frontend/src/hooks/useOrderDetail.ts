@@ -44,8 +44,8 @@ export function useOrderDetail(orderId: string | null) {
       const client = createSPAClient();
 
       // 1. Fetch order with packages
-      const { data: orderData, error: orderError } = await client
-        .from('orders')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: orderData, error: orderError } = await (client.from('orders') as any)
         .select(
           'id, order_number, retailer_name, customer_name, customer_phone, delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end, status, leading_status, packages(id, label, package_number, status, status_updated_at)',
         )
