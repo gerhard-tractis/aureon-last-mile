@@ -98,6 +98,90 @@ describe('AppLayout sidebar branding', () => {
   });
 });
 
+describe('AppLayout nav items – Capacidad and Auditoría', () => {
+  it('shows Capacidad link for admin role', () => {
+    mockGlobal.role = 'admin';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
+  });
+
+  it('shows Capacidad link for operations_manager role', () => {
+    mockGlobal.role = 'operations_manager';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
+  });
+
+  it('hides Capacidad link for other roles', () => {
+    mockGlobal.role = 'driver';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByRole('link', { name: /capacidad/i })).toBeNull();
+  });
+
+  it('Capacidad link points to /app/capacity-planning', () => {
+    mockGlobal.role = 'admin';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    const link = screen.getByRole('link', { name: /capacidad/i }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/app/capacity-planning');
+  });
+
+  it('shows Auditoría link for admin role', () => {
+    mockGlobal.role = 'admin';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
+  });
+
+  it('shows Auditoría link for operations_manager role', () => {
+    mockGlobal.role = 'operations_manager';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
+  });
+
+  it('hides Auditoría link for other roles', () => {
+    mockGlobal.role = 'driver';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByRole('link', { name: /auditor[ií]a/i })).toBeNull();
+  });
+
+  it('Auditoría link points to /app/audit-logs', () => {
+    mockGlobal.role = 'admin';
+    mockBranding.logoUrl = null;
+    mockBranding.companyName = null;
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    const link = screen.getByRole('link', { name: /auditor[ií]a/i }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/app/audit-logs');
+  });
+});
+
 describe('AppLayout CapacityAlertBell', () => {
   it('renders the bell for admin role', () => {
     mockGlobal.role = 'admin';
