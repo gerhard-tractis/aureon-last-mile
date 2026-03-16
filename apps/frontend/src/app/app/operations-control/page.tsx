@@ -31,7 +31,7 @@ export default function OpsControlPage() {
         <h1 className="text-xl font-semibold text-gray-900">Ops Control</h1>
       </div>
 
-      {/* Pipeline Overview */}
+      {/* Pipeline Overview — TODO wire lastFetchedAt from usePipelineCounts data callback */}
       <PipelineOverview
         operatorId={operatorId}
         realtimeStatus={realtimeStatus}

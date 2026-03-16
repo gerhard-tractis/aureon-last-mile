@@ -26,7 +26,7 @@ vi.mock('@/components/operations-control/PipelineOverview', () => ({
 }));
 
 vi.mock('@/components/operations-control/UrgentOrdersBanner', () => ({
-  UrgentOrdersBanner: () => null,
+  UrgentOrdersBanner: () => <div data-testid="urgent-orders-banner" />,
 }));
 
 vi.mock('@/components/operations-control/OrdersFilterToolbar', () => ({
@@ -72,6 +72,11 @@ describe('OpsControlPage', () => {
   it('renders PipelineOverview when operatorId is present', () => {
     render(<OpsControlPage />);
     expect(screen.getByTestId('pipeline-overview')).toBeDefined();
+  });
+
+  it('renders UrgentOrdersBanner', () => {
+    render(<OpsControlPage />);
+    expect(screen.getByTestId('urgent-orders-banner')).toBeDefined();
   });
 
   it('renders OrdersFilterToolbar', () => {
