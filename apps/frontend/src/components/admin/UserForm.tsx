@@ -82,13 +82,13 @@ const CreateUserFormInternal = () => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Create New User</h2>
+      <div className="bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-semibold text-foreground mb-4">Create New User</h2>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Email field */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
               Email *
             </label>
             <input
@@ -96,7 +96,7 @@ const CreateUserFormInternal = () => {
               type="email"
               {...register('email')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.email || emailCheckError ? 'email-error' : undefined}
               aria-invalid={!!(errors.email || emailCheckError)}
             />
@@ -110,14 +110,14 @@ const CreateUserFormInternal = () => {
                 {emailCheckError}
               </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               User will receive a password setup email
             </p>
           </div>
 
           {/* Full Name field */}
           <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="full_name" className="block text-sm font-medium text-foreground mb-1">
               Full Name *
             </label>
             <input
@@ -125,7 +125,7 @@ const CreateUserFormInternal = () => {
               type="text"
               {...register('full_name')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.full_name ? 'full_name-error' : undefined}
               aria-invalid={!!errors.full_name}
             />
@@ -138,14 +138,14 @@ const CreateUserFormInternal = () => {
 
           {/* Role field */}
           <div>
-            <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="role" className="block text-sm font-medium text-foreground mb-1">
               Role *
             </label>
             <select
               id="role"
               {...register('role')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
@@ -165,7 +165,7 @@ const CreateUserFormInternal = () => {
 
           {/* Operator ID field */}
           <div>
-            <label htmlFor="operator_id" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="operator_id" className="block text-sm font-medium text-foreground mb-1">
               Operator ID *
             </label>
             <input
@@ -174,7 +174,7 @@ const CreateUserFormInternal = () => {
               {...register('operator_id')}
               disabled={isPending}
               placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.operator_id ? 'operator_id-error' : undefined}
               aria-invalid={!!errors.operator_id}
             />
@@ -183,7 +183,7 @@ const CreateUserFormInternal = () => {
                 {errors.operator_id.message}
               </p>
             )}
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               UUID of the operator this user belongs to
             </p>
           </div>
@@ -194,14 +194,14 @@ const CreateUserFormInternal = () => {
               type="button"
               onClick={handleCancel}
               disabled={isPending}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPending || !!emailCheckError}
-              className="px-4 py-2 bg-[#e6c15c] text-gray-900 rounded-md hover:bg-[#d4b04a] font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isPending && (
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -269,26 +269,26 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">Edit User</h2>
+      <div className="bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-semibold text-foreground mb-4">Edit User</h2>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Show email as read-only */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Email
             </label>
-            <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600">
+            <div className="w-full px-3 py-2 border border-border rounded-md bg-muted text-muted-foreground">
               {user.email}
             </div>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Email cannot be changed
             </p>
           </div>
 
           {/* Full Name field */}
           <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="full_name" className="block text-sm font-medium text-foreground mb-1">
               Full Name *
             </label>
             <input
@@ -296,7 +296,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               type="text"
               {...register('full_name')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.full_name ? 'full_name-error' : undefined}
               aria-invalid={!!errors.full_name}
             />
@@ -309,14 +309,14 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
 
           {/* Role field */}
           <div>
-            <label htmlFor="role" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="role" className="block text-sm font-medium text-foreground mb-1">
               Role *
             </label>
             <select
               id="role"
               {...register('role')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
@@ -336,13 +336,13 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
 
           {/* Show operator_id as read-only */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-foreground mb-1">
               Operator ID
             </label>
-            <div className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-600 text-sm font-mono">
+            <div className="w-full px-3 py-2 border border-border rounded-md bg-muted text-muted-foreground text-sm font-mono">
               {user.operator_id}
             </div>
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Operator ID cannot be changed
             </p>
           </div>
@@ -353,14 +353,14 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               type="button"
               onClick={handleCancel}
               disabled={isPending}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isPending}
-              className="px-4 py-2 bg-[#e6c15c] text-gray-900 rounded-md hover:bg-[#d4b04a] font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isPending && (
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

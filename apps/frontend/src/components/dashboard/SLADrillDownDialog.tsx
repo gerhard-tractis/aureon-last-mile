@@ -24,7 +24,7 @@ export default function SLADrillDownDialog({
           <DialogTitle>Analisis Detallado de SLA</DialogTitle>
           <DialogDescription>Proximamente disponible</DialogDescription>
         </DialogHeader>
-        <ul className="space-y-2 text-slate-700">
+        <ul className="space-y-2 text-foreground">
           <li>Desglose horario</li>
           <li>Rendimiento por comuna/zona</li>
           <li>Rendimiento por conductor</li>

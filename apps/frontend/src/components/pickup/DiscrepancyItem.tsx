@@ -35,7 +35,7 @@ export function DiscrepancyItem({
       <div className="flex items-center gap-2">
         <Package className="h-4 w-4 text-red-500" />
         <span className="font-mono text-sm font-medium">{packageLabel}</span>
-        <span className="text-xs text-gray-400">Order: {orderNumber}</span>
+        <span className="text-xs text-muted-foreground">Order: {orderNumber}</span>
       </div>
       <textarea
         value={note}

@@ -102,12 +102,12 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
   return (
     <div className="space-y-4">
       <label
-        className={`w-full flex flex-col items-center px-4 py-8 bg-white rounded-lg shadow-sm tracking-wide border-2 cursor-pointer transition-colors ${
+        className={`w-full flex flex-col items-center px-4 py-8 bg-card rounded-lg shadow-sm tracking-wide border-2 cursor-pointer transition-colors ${
           isDragging
             ? 'border-blue-500 border-dashed bg-blue-50'
             : displayError
               ? 'border-red-300 hover:border-red-400'
-              : 'border-gray-300 hover:border-blue-400'
+              : 'border-border hover:border-blue-400'
         }`}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -117,14 +117,14 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
         {isLoading ? (
           <>
             <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-            <span className="mt-2 text-sm text-gray-600">Parsing file...</span>
+            <span className="mt-2 text-sm text-muted-foreground">Parsing file...</span>
           </>
         ) : selectedFile ? (
           <div className="flex items-center gap-3">
-            <FileIcon className="w-6 h-6 text-gray-500" />
+            <FileIcon className="w-6 h-6 text-muted-foreground" />
             <div>
-              <p className="text-sm font-medium text-gray-700">{selectedFile.name}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
+              <p className="text-xs text-muted-foreground">
                 {(selectedFile.size / 1024).toFixed(1)} KB
               </p>
             </div>
@@ -134,20 +134,20 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
                 e.preventDefault();
                 clearFile();
               }}
-              className="p-1 rounded-full hover:bg-gray-100"
+              className="p-1 rounded-full hover:bg-muted"
             >
-              <X className="w-4 h-4 text-gray-400" />
+              <X className="w-4 h-4 text-muted-foreground" />
             </button>
           </div>
         ) : (
           <>
-            <Upload className="w-8 h-8 text-gray-400" />
-            <span className="mt-2 text-sm text-gray-600">
+            <Upload className="w-8 h-8 text-muted-foreground" />
+            <span className="mt-2 text-sm text-muted-foreground">
               {isDragging
                 ? 'Drop your file here'
                 : 'Drag and drop or click to select a file'}
             </span>
-            <span className="mt-1 text-xs text-gray-400">
+            <span className="mt-1 text-xs text-muted-foreground">
               CSV, XLSX, or XLS (max 10MB)
             </span>
           </>

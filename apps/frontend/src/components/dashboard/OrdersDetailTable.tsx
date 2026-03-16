@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  ingresado: 'bg-slate-100 text-slate-700',
+  ingresado: 'bg-muted text-foreground',
   verificado: 'bg-blue-100 text-blue-700',
   en_bodega: 'bg-cyan-100 text-cyan-700',
   asignado: 'bg-indigo-100 text-indigo-700',
@@ -38,7 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? 'bg-slate-100 text-slate-600'}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[status] ?? 'bg-muted text-muted-foreground'}`}>
       {STATUS_LABELS[status] ?? status}
     </span>
   );
@@ -46,25 +46,25 @@ function StatusBadge({ status }: { status: string }) {
 
 function ExpandedRow({ row }: { row: OrderDetailRow }) {
   return (
-    <tr className="bg-slate-50 border-b border-slate-200">
+    <tr className="bg-muted border-b border-border">
       <td colSpan={7} className="px-4 py-3">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
           <div>
-            <span className="text-slate-400 text-xs block">Conductor</span>
-            <span className="text-slate-700">{row.driver_name ?? '—'}</span>
+            <span className="text-muted-foreground text-xs block">Conductor</span>
+            <span className="text-foreground">{row.driver_name ?? '—'}</span>
           </div>
           <div>
-            <span className="text-slate-400 text-xs block">Ruta</span>
-            <span className="text-slate-700 font-mono text-xs">{row.route_id ?? '—'}</span>
+            <span className="text-muted-foreground text-xs block">Ruta</span>
+            <span className="text-foreground font-mono text-xs">{row.route_id ?? '—'}</span>
           </div>
           <div>
-            <span className="text-slate-400 text-xs block">Razón de Fallo</span>
-            <span className="text-slate-700">{row.failure_reason ?? '—'}</span>
+            <span className="text-muted-foreground text-xs block">Razón de Fallo</span>
+            <span className="text-foreground">{row.failure_reason ?? '—'}</span>
           </div>
           <div>
-            <span className="text-slate-400 text-xs block">Delta</span>
+            <span className="text-muted-foreground text-xs block">Delta</span>
             <span className={`font-semibold ${
-              row.days_delta === null ? 'text-slate-400' :
+              row.days_delta === null ? 'text-muted-foreground' :
               row.days_delta <= 0 ? 'text-emerald-600' : 'text-red-600'
             }`}>
               {row.days_delta === null ? '—' :
@@ -116,20 +116,20 @@ export default function OrdersDetailTable({
 
   if (isLoading && !data) {
     return (
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200" data-testid="orders-detail-skeleton">
+      <div className="bg-card rounded-xl p-6 shadow-sm border border-border" data-testid="orders-detail-skeleton">
         <div className="animate-pulse space-y-3">
-          <div className="h-5 w-48 bg-slate-200 rounded" />
-          <div className="h-10 bg-slate-100 rounded" />
-          {[...Array(5)].map((_, i) => <div key={i} className="h-10 bg-slate-100 rounded" />)}
+          <div className="h-5 w-48 bg-muted rounded" />
+          <div className="h-10 bg-muted rounded" />
+          {[...Array(5)].map((_, i) => <div key={i} className="h-10 bg-muted rounded" />)}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden" ref={tableRef} data-testid="orders-detail-table">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-base font-semibold text-slate-800 mb-3">Detalle de Órdenes</h3>
+    <div className="bg-card rounded-xl shadow-sm border border-border overflow-hidden" ref={tableRef} data-testid="orders-detail-table">
+      <div className="px-6 py-4 border-b border-border">
+        <h3 className="text-base font-semibold text-foreground mb-3">Detalle de Órdenes</h3>
 
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
@@ -137,7 +137,7 @@ export default function OrdersDetailTable({
             data-testid="status-filter"
             value={statusFilter ?? ''}
             onChange={(e) => setStatusFilter(e.target.value || null)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-[#e6c15c]"
+            className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-gold"
           >
             <option value="">Todos los estados</option>
             <option value="entregado">Entregado</option>
@@ -155,16 +155,16 @@ export default function OrdersDetailTable({
             placeholder="Buscar por N° orden..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-[#e6c15c] w-48"
+            className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-[#e6c15c] w-48"
           />
 
-          <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer">
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer">
             <input
               type="checkbox"
               data-testid="overdue-filter"
               checked={overdueOnly}
               onChange={(e) => setOverdueOnly(e.target.checked)}
-              className="rounded border-slate-300 text-[#e6c15c] focus:ring-[#e6c15c]"
+              className="rounded border-border text-gold focus:ring-gold"
             />
             Solo atrasados
           </label>
@@ -174,30 +174,30 @@ export default function OrdersDetailTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Orden</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Cliente</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Comuna</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Fecha de Carga</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Fecha Compromiso</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Estado</th>
-              <th className="px-4 py-3 text-left font-medium text-slate-600">Completado</th>
+            <tr className="bg-muted border-b border-border">
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Orden</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Cliente</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Comuna</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Fecha de Carga</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Fecha Compromiso</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Estado</th>
+              <th className="px-4 py-3 text-left font-medium text-muted-foreground">Completado</th>
             </tr>
           </thead>
           <tbody>
             {(data?.rows ?? []).map((row, i) => (
               <Fragment key={row.id}>
                 <tr
-                  className={`cursor-pointer hover:bg-slate-50 transition-colors ${i % 2 === 1 ? 'bg-slate-50/50' : ''} ${expandedId === row.id ? 'bg-slate-100' : ''}`}
+                  className={`cursor-pointer hover:bg-muted transition-colors ${i % 2 === 1 ? 'bg-muted/50' : ''} ${expandedId === row.id ? 'bg-muted' : ''}`}
                   onClick={() => setExpandedId(expandedId === row.id ? null : row.id)}
                 >
-                  <td className="px-4 py-3 text-slate-800 font-mono text-xs">{row.order_number}</td>
-                  <td className="px-4 py-3 text-slate-600 truncate max-w-[160px]">{row.retailer_name}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.comuna}</td>
-                  <td className="px-4 py-3 text-slate-600 text-xs">{formatDateTime(row.created_at)}</td>
-                  <td className="px-4 py-3 text-slate-600">{row.delivery_date}</td>
+                  <td className="px-4 py-3 text-foreground font-mono text-xs">{row.order_number}</td>
+                  <td className="px-4 py-3 text-muted-foreground truncate max-w-[160px]">{row.retailer_name}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.comuna}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{formatDateTime(row.created_at)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{row.delivery_date}</td>
                   <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
-                  <td className="px-4 py-3 text-slate-600 text-xs">
+                  <td className="px-4 py-3 text-muted-foreground text-xs">
                     {row.completed_at
                       ? formatDateTime(row.completed_at)
                       : '—'}
@@ -207,7 +207,7 @@ export default function OrdersDetailTable({
               </Fragment>
             ))}
             {(data?.rows ?? []).length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Sin resultados</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">Sin resultados</td></tr>
             )}
           </tbody>
         </table>
@@ -215,20 +215,20 @@ export default function OrdersDetailTable({
 
       {/* Pagination */}
       {data && data.total_count > 0 && (
-        <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between text-sm text-slate-600">
+        <div className="px-6 py-3 border-t border-border flex items-center justify-between text-sm text-muted-foreground">
           <span>{rangeStart}–{rangeEnd} de {data.total_count.toLocaleString('es-CL')}</span>
           <div className="flex gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage(page - 1)}
-              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1 rounded border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
             >
               &larr; Anterior
             </button>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(page + 1)}
-              className="px-3 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-3 py-1 rounded border border-border hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Siguiente &rarr;
             </button>

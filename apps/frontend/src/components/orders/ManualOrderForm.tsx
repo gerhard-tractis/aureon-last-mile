@@ -142,13 +142,13 @@ export default function ManualOrderForm() {
     setDateWarning(null);
   };
 
-  const inputClassName = 'w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#e6c15c] focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed';
+  const inputClassName = 'w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed';
 
   return (
     <form onSubmit={handleSubmit(onSubmit, handleInvalidSubmit)} className="space-y-4 max-w-2xl">
       {/* Order Number */}
       <div>
-        <label htmlFor="order_number" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="order_number" className="block text-sm font-medium text-foreground mb-1">
           Order Number *
         </label>
         <input
@@ -174,7 +174,7 @@ export default function ManualOrderForm() {
 
       {/* Customer Name */}
       <div>
-        <label htmlFor="customer_name" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="customer_name" className="block text-sm font-medium text-foreground mb-1">
           Customer Name *
         </label>
         <input
@@ -195,7 +195,7 @@ export default function ManualOrderForm() {
 
       {/* Customer Phone */}
       <div>
-        <label htmlFor="customer_phone" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="customer_phone" className="block text-sm font-medium text-foreground mb-1">
           Customer Phone *
         </label>
         <input
@@ -217,7 +217,7 @@ export default function ManualOrderForm() {
 
       {/* Delivery Address */}
       <div>
-        <label htmlFor="delivery_address" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="delivery_address" className="block text-sm font-medium text-foreground mb-1">
           Delivery Address *
         </label>
         <textarea
@@ -238,7 +238,7 @@ export default function ManualOrderForm() {
 
       {/* Comuna */}
       <div>
-        <label htmlFor="comuna" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="comuna" className="block text-sm font-medium text-foreground mb-1">
           Comuna *
         </label>
         <input
@@ -265,7 +265,7 @@ export default function ManualOrderForm() {
 
       {/* Delivery Date */}
       <div>
-        <label htmlFor="delivery_date" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="delivery_date" className="block text-sm font-medium text-foreground mb-1">
           Delivery Date *
         </label>
         <input
@@ -293,7 +293,7 @@ export default function ManualOrderForm() {
       {/* Delivery Window Start / End */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="delivery_window_start" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="delivery_window_start" className="block text-sm font-medium text-foreground mb-1">
             Delivery Window Start
           </label>
           <input
@@ -305,7 +305,7 @@ export default function ManualOrderForm() {
           />
         </div>
         <div>
-          <label htmlFor="delivery_window_end" className="block text-sm font-medium text-gray-700 mb-1">
+          <label htmlFor="delivery_window_end" className="block text-sm font-medium text-foreground mb-1">
             Delivery Window End
           </label>
           <input
@@ -327,7 +327,7 @@ export default function ManualOrderForm() {
 
       {/* Retailer Name */}
       <div>
-        <label htmlFor="retailer_name" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="retailer_name" className="block text-sm font-medium text-foreground mb-1">
           Retailer Name
         </label>
         <select
@@ -347,7 +347,7 @@ export default function ManualOrderForm() {
 
       {/* Notes */}
       <div>
-        <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
+        <label htmlFor="notes" className="block text-sm font-medium text-foreground mb-1">
           Notes
         </label>
         <textarea
@@ -364,7 +364,7 @@ export default function ManualOrderForm() {
         <button
           type="submit"
           disabled={!isValid || isPending || !!orderNumberError}
-          className="px-4 py-2 bg-[#e6c15c] text-gray-900 rounded-md hover:bg-[#d4b04a] font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {isPending && (
             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -379,7 +379,7 @@ export default function ManualOrderForm() {
           <button
             type="button"
             onClick={handleAddAnother}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+            className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted"
           >
             Add Another Order
           </button>

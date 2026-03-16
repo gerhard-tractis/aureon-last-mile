@@ -26,7 +26,7 @@ describe('DateFilterBar', () => {
 
   it('active preset has gold bg class', () => {
     render(<DateFilterBar {...defaultProps} preset="this_week" />);
-    expect(screen.getByRole('button', { name: 'Esta Semana' }).className).toContain('bg-[#e6c15c]');
+    expect(screen.getByRole('button', { name: 'Esta Semana' }).className).toContain('bg-gold');
   });
 
   it('clicking a preset calls onPresetChange with correct id', async () => {

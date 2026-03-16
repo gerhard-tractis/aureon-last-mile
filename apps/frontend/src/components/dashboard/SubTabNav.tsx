@@ -20,7 +20,7 @@ export default function SubTabNav({ tabs, activeTab, onTabChange }: SubTabNavPro
     <div>
       {/* Mobile dropdown */}
       <select
-        className="md:hidden w-full text-sm font-medium border border-slate-200 rounded-lg px-4 py-3 bg-white focus:ring-2 focus:ring-[#e6c15c]"
+        className="md:hidden w-full text-sm font-medium border border-border rounded-lg px-4 py-3 bg-card focus:ring-2 focus:ring-gold"
         value={activeTab}
         onChange={(e) => onTabChange(e.target.value)}
         role="combobox"
@@ -34,11 +34,11 @@ export default function SubTabNav({ tabs, activeTab, onTabChange }: SubTabNavPro
       </select>
 
       {/* Desktop tab bar */}
-      <div className="hidden md:block border-b border-slate-200">
+      <div className="hidden md:block border-b border-border">
         <div className="flex items-center" role="tablist">
           {tabs.map((tab, i) => (
             <React.Fragment key={tab.id}>
-              {i > 0 && <div className="w-3 h-px bg-slate-300" />}
+              {i > 0 && <div className="w-3 h-px bg-border" />}
               <button
                 role="tab"
                 aria-selected={activeTab === tab.id}
@@ -47,10 +47,10 @@ export default function SubTabNav({ tabs, activeTab, onTabChange }: SubTabNavPro
                 onClick={() => onTabChange(tab.id)}
                 className={`whitespace-nowrap px-4 py-2 text-sm border-b-2 -mb-px ${
                   activeTab === tab.id
-                    ? 'border-[#e6c15c] text-slate-900 font-semibold'
+                    ? 'border-gold text-foreground font-semibold'
                     : tab.enabled
-                      ? 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                      : 'border-transparent text-slate-300 cursor-not-allowed'
+                      ? 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                      : 'border-transparent text-muted-foreground/50 cursor-not-allowed'
                 }`}
               >
                 {tab.step ? `${tab.step} ` : ''}{tab.label}

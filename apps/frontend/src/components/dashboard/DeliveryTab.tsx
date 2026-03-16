@@ -13,7 +13,7 @@ interface DeliveryTabProps {
 
 /* ── Skeleton placeholder ── */
 function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`animate-pulse bg-slate-200 rounded ${className}`} />;
+  return <div className={`animate-pulse bg-muted rounded ${className}`} />;
 }
 
 /* ── Delivery Outcome KPI Card ── */
@@ -38,7 +38,7 @@ function OutcomeCard({
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200">
+      <div className="bg-card rounded-xl p-5 shadow-sm border border-border">
         <Skeleton className="h-8 w-16 mb-1" />
         <Skeleton className="h-4 w-24" />
       </div>
@@ -47,15 +47,15 @@ function OutcomeCard({
 
   return (
     <div
-      className={`bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.01] transition-all duration-300 ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-card rounded-xl p-5 shadow-sm border border-border hover:shadow-lg hover:scale-[1.01] transition-all duration-300 ${onClick ? 'cursor-pointer' : ''}`}
       data-testid={testId}
       onClick={onClick}
     >
       <div className={`text-3xl font-bold leading-none mb-1 ${accent}`}>
         {count.toLocaleString('es-CL')}
       </div>
-      <div className="text-sm text-slate-500">{label}</div>
-      <div className="text-xs text-slate-400 mt-1">{pct}% del total</div>
+      <div className="text-sm text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground mt-1">{pct}% del total</div>
     </div>
   );
 }

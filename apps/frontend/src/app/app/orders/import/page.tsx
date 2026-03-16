@@ -145,7 +145,7 @@ export default function ImportOrdersPage() {
   if (roleCheck === 'loading') {
     return (
       <div className="flex items-center justify-center p-12">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -208,7 +208,7 @@ export default function ImportOrdersPage() {
                 {state.errors.length > 0 && (
                   <button
                     onClick={handleExportErrors}
-                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-muted transition-colors"
                   >
                     <Download className="w-4 h-4" />
                     Export Failed Rows

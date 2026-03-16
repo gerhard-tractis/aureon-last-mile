@@ -23,7 +23,7 @@ export default function NewOrderPage() {
   if (roleCheck === 'loading') {
     return (
       <div className="flex items-center justify-center p-12">
-        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }

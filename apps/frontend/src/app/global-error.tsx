@@ -29,38 +29,21 @@ export default function GlobalError({
   return (
     <html>
       <body>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          fontFamily: 'system-ui, sans-serif',
-          padding: '2rem',
-          textAlign: 'center',
-        }}>
-          <h1 style={{ fontSize: '2rem', marginBottom: '1rem' }}>
+        <div className="flex flex-col items-center justify-center h-screen font-sans p-8 text-center">
+          <h1 className="text-[2rem] mb-4">
             Algo salió mal
           </h1>
-          <p style={{ marginBottom: '2rem', color: '#666' }}>
+          <p className="mb-8 text-muted-foreground">
             Lo sentimos, ocurrió un error inesperado.
           </p>
           <button
             onClick={reset}
-            style={{
-              padding: '0.75rem 1.5rem',
-              backgroundColor: '#0070f3',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              cursor: 'pointer',
-              fontSize: '1rem',
-            }}
+            className="py-3 px-6 bg-primary-600 text-white border-none rounded-lg cursor-pointer text-base"
           >
             Reintentar
           </button>
           {process.env.NODE_ENV === 'development' && error.digest && (
-            <p style={{ marginTop: '2rem', fontSize: '0.875rem', color: '#999' }}>
+            <p className="mt-8 text-sm text-muted-foreground">
               Error ID: {error.digest}
             </p>
           )}

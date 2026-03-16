@@ -78,11 +78,11 @@ export default function ResetPasswordPage() {
                     </div>
                 </div>
 
-                <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-2">
+                <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">
                     Contraseña actualizada
                 </h2>
 
-                <p className="text-sm text-stone-400 mb-8 leading-relaxed">
+                <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
                     Tu contraseña ha sido restablecida exitosamente.
                     Serás redirigido en un momento.
                 </p>
@@ -93,15 +93,15 @@ export default function ResetPasswordPage() {
     return (
         <div>
             <div className="flex justify-center mb-5">
-                <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center">
-                    <Key className="h-5 w-5 text-stone-600" />
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                    <Key className="h-5 w-5 text-muted-foreground" />
                 </div>
             </div>
 
-            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-1 text-center">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-1 text-center">
                 Nueva contraseña
             </h2>
-            <p className="text-sm text-stone-400 mb-8 text-center">
+            <p className="text-sm text-muted-foreground mb-8 text-center">
                 Ingresa tu nueva contraseña
             </p>
 
@@ -113,7 +113,7 @@ export default function ResetPasswordPage() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                    <label htmlFor="new-password" className="block text-xs font-medium text-stone-600 mb-1.5">
+                    <label htmlFor="new-password" className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Nueva contraseña
                     </label>
                     <input
@@ -124,12 +124,12 @@ export default function ResetPasswordPage() {
                         required
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
                     />
                 </div>
 
                 <div>
-                    <label htmlFor="confirm-password" className="block text-xs font-medium text-stone-600 mb-1.5">
+                    <label htmlFor="confirm-password" className="block text-xs font-medium text-muted-foreground mb-1.5">
                         Confirmar contraseña
                     </label>
                     <input
@@ -140,9 +140,9 @@ export default function ResetPasswordPage() {
                         required
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
                     />
-                    <p className="mt-1.5 text-xs text-stone-400">
+                    <p className="mt-1.5 text-xs text-muted-foreground">
                         Mínimo 6 caracteres
                     </p>
                 </div>
@@ -150,7 +150,7 @@ export default function ResetPasswordPage() {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-lg bg-stone-900 py-2.5 px-4 text-sm font-medium text-white hover:bg-stone-800 focus:outline-none focus:ring-2 focus:ring-stone-900 focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                    className="w-full rounded-lg bg-foreground py-2.5 px-4 text-sm font-medium text-background hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 disabled:opacity-50 transition-colors"
                 >
                     {loading ? 'Actualizando...' : 'Actualizar contraseña'}
                 </button>

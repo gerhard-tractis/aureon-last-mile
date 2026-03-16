@@ -147,7 +147,7 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
       {isError && <DashboardErrorBanner />}
       <div className={`relative grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
         {isPlaceholderData && (
-          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-0 right-0 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
         )}
         {/* FADR Card */}
         <MetricsCard
@@ -211,7 +211,7 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
         title="FADR - Analisis Detallado"
         description="Historial de 30 dias y desglose por retailer"
       >
-        <ul className="space-y-2 text-slate-700 text-sm">
+        <ul className="space-y-2 text-foreground text-sm">
           <li>Grafico historico de 30 dias</li>
           <li>Desglose por retailer</li>
           <li>Indicador benchmark: {getFadrBenchmark(fadr)}</li>
@@ -224,7 +224,7 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
         title="Reclamos - Analisis Detallado"
         description="Desglose de reclamos y tendencias"
       >
-        <ul className="space-y-2 text-slate-700 text-sm">
+        <ul className="space-y-2 text-foreground text-sm">
           <li>Cantidad de reclamos: {claims?.count ?? 0}</li>
           <li>Monto promedio: {claims && claims.count > 0 ? clpFormatter.format(Math.round(claimsAmount / claims.count)) : 'N/A'}</li>
           <li>Grafico historico de 30 dias</li>
@@ -238,7 +238,7 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
         title="Eficiencia - Analisis Detallado"
         description="Tiempo promedio de carga y tendencias"
       >
-        <ul className="space-y-2 text-slate-700 text-sm">
+        <ul className="space-y-2 text-foreground text-sm">
           <li>Tiempo promedio: {efficiency !== null ? `${Math.round(efficiency)} min` : 'N/A'}</li>
           <li>Tendencia de 30 dias</li>
           <li>Comparacion manual vs Aureon</li>

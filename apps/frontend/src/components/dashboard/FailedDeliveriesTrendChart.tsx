@@ -50,18 +50,18 @@ export default function FailedDeliveriesTrendChart({ data, operatorId }: FailedD
   return (
     <>
       <div
-        className="bg-white rounded-xl border border-slate-200 shadow-sm p-6"
+        className="bg-card rounded-xl border border-border shadow-sm p-6"
         role="img"
         aria-label="Gráfico de tendencia de entregas fallidas por día"
       >
-        <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">
+        <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
           Tendencia de Entregas Fallidas
         </h3>
 
         {data.length === 0 ? (
           <div className="flex items-center justify-center py-8 gap-2">
             <span className="text-green-500 text-xl">✓</span>
-            <p className="text-sm text-slate-500">Sin entregas fallidas en este periodo</p>
+            <p className="text-sm text-muted-foreground">Sin entregas fallidas en este periodo</p>
           </div>
         ) : (
           <>
@@ -159,16 +159,16 @@ export default function FailedDeliveriesTrendChart({ data, operatorId }: FailedD
         {selectedPoint && (
           <div className="space-y-3">
             <div>
-              <p className="text-xs text-slate-500 uppercase">Entregas fallidas</p>
-              <p className="text-lg font-semibold text-slate-900">{selectedPoint.value}</p>
+              <p className="text-xs text-muted-foreground uppercase">Entregas fallidas</p>
+              <p className="text-lg font-semibold text-foreground">{selectedPoint.value}</p>
             </div>
-            {dayQuery.isLoading && <p className="text-sm text-slate-400">Cargando razones...</p>}
+            {dayQuery.isLoading && <p className="text-sm text-muted-foreground">Cargando razones...</p>}
             {dayQuery.data && dayQuery.data.length > 0 && (
               <div>
-                <p className="text-xs text-slate-500 uppercase mb-2">Razones principales</p>
+                <p className="text-xs text-muted-foreground uppercase mb-2">Razones principales</p>
                 <ul className="space-y-1">
                   {(dayQuery.data as FailureReasonRow[]).map((r) => (
-                    <li key={r.reason} className="flex justify-between text-sm text-slate-700">
+                    <li key={r.reason} className="flex justify-between text-sm text-foreground">
                       <span>{r.reason}</span>
                       <span className="font-medium">{r.count} ({r.percentage.toFixed(1)}%)</span>
                     </li>

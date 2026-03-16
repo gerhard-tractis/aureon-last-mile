@@ -48,11 +48,11 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
   // Loading skeleton
   if (isLoading) {
     return (
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-card rounded-lg shadow overflow-hidden">
         <div className="animate-pulse">
-          <div className="h-12 bg-gray-200"></div>
+          <div className="h-12 bg-muted"></div>
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="h-16 bg-gray-100 border-t border-gray-200"></div>
+            <div key={i} className="h-16 bg-muted border-t border-border"></div>
           ))}
         </div>
       </div>
@@ -62,34 +62,34 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
   // Empty state
   if (!users || users.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow p-12 text-center">
-        <p className="text-gray-500">No users found</p>
+      <div className="bg-card rounded-lg shadow p-12 text-center">
+        <p className="text-muted-foreground">No users found</p>
       </div>
     );
   }
 
   const SortIcon = ({ column }: { column: typeof sortBy }) => {
     if (sortBy !== column) {
-      return <span className="text-gray-400">↕</span>;
+      return <span className="text-muted-foreground">↕</span>;
     }
     return <span>{sortOrder === 'asc' ? '↑' : '↓'}</span>;
   };
 
   const getRoleBadgeColor = (role: string) => {
     const color = getRoleColor(role);
-    if (color === 'gold') return 'bg-[#e6c15c] text-gray-900';
+    if (color === 'gold') return 'bg-gold text-foreground';
     if (color === 'blue') return 'bg-blue-100 text-blue-800';
-    return 'bg-gray-100 text-gray-800';
+    return 'bg-muted text-foreground';
   };
 
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
-      <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-[#5e6b7b]">
+    <div className="bg-card rounded-lg shadow overflow-hidden">
+      <table className="min-w-full divide-y divide-border">
+        <thead className="bg-secondary-600">
           <tr>
             <th
               scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#4e5b6b]"
+              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-secondary-700"
               onClick={() => toggleSort('email')}
             >
               <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
             </th>
             <th
               scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#4e5b6b]"
+              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-secondary-700"
               onClick={() => toggleSort('full_name')}
             >
               <div className="flex items-center gap-2">
@@ -107,7 +107,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
             </th>
             <th
               scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#4e5b6b]"
+              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-secondary-700"
               onClick={() => toggleSort('role')}
             >
               <div className="flex items-center gap-2">
@@ -116,7 +116,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
             </th>
             <th
               scope="col"
-              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-[#4e5b6b]"
+              className="px-6 py-3 text-left text-xs font-medium text-white uppercase tracking-wider cursor-pointer hover:bg-secondary-700"
               onClick={() => toggleSort('created_at')}
             >
               <div className="flex items-center gap-2">
@@ -128,13 +128,13 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-card divide-y divide-border">
           {sortedUsers.map((user) => (
-            <tr key={user.id} className="hover:bg-[#5e6b7b]/5 transition-colors">
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+            <tr key={user.id} className="hover:bg-secondary-600/5 transition-colors">
+              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-foreground">
                 {user.email}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                 {user.full_name}
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
@@ -142,7 +142,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
                   {getRoleDisplayName(user.role)}
                 </span>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                 {formatDateTimeShort(user.created_at)}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">

@@ -29,12 +29,12 @@ export default function LegalLayout({ children } : { children: React.ReactNode }
     const router = useRouter();
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-muted">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="py-6">
                     <button
                         onClick={() => router.back()}
-                        className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900"
+                        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
                     >
                         <ArrowLeft className="w-4 h-4 mr-2" />
                         Back
@@ -44,23 +44,23 @@ export default function LegalLayout({ children } : { children: React.ReactNode }
                 <div className="flex flex-col lg:flex-row gap-8">
                     {/* Sidebar Navigation */}
                     <div className="w-full lg:w-64 flex-shrink-0">
-                        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-                            <div className="p-4 border-b border-gray-200">
-                                <h2 className="text-lg font-semibold text-gray-900">Legal Documents</h2>
-                                <p className="text-sm text-gray-500 mt-1">Important information about our services</p>
+                        <div className="bg-card rounded-lg shadow-sm border border-border">
+                            <div className="p-4 border-b border-border">
+                                <h2 className="text-lg font-semibold text-foreground">Legal Documents</h2>
+                                <p className="text-sm text-muted-foreground mt-1">Important information about our services</p>
                             </div>
                             <nav className="p-4 space-y-2">
                                 {legalDocuments.map((doc) => (
                                     <Link
                                         key={doc.id}
                                         href={`/legal/${doc.id}`}
-                                        className="block p-3 rounded-md hover:bg-gray-50 transition-colors"
+                                        className="block p-3 rounded-md hover:bg-muted transition-colors"
                                     >
                                         <div className="flex items-center gap-3">
-                                            <doc.icon className="w-5 h-5 text-gray-400" />
+                                            <doc.icon className="w-5 h-5 text-muted-foreground" />
                                             <div>
-                                                <div className="text-sm font-medium text-gray-900">{doc.title}</div>
-                                                <div className="text-xs text-gray-500">{doc.description}</div>
+                                                <div className="text-sm font-medium text-foreground">{doc.title}</div>
+                                                <div className="text-xs text-muted-foreground">{doc.description}</div>
                                             </div>
                                         </div>
                                     </Link>

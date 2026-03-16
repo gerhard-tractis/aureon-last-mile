@@ -88,7 +88,7 @@ export default function DiscrepancyReviewPage() {
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold text-gray-900">
+      <h1 className="text-xl font-bold text-foreground">
         Discrepancy Review: {loadId}
       </h1>
 
@@ -98,21 +98,21 @@ export default function DiscrepancyReviewPage() {
           <CardContent className="p-3 text-center">
             <CheckCircle className="h-5 w-5 text-green-500 mx-auto mb-1" />
             <p className="text-2xl font-bold">{verifiedCount}</p>
-            <p className="text-xs text-gray-500">Verified</p>
+            <p className="text-xs text-muted-foreground">Verified</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3 text-center">
             <XCircle className="h-5 w-5 text-red-500 mx-auto mb-1" />
             <p className="text-2xl font-bold">{missingPackages.length}</p>
-            <p className="text-xs text-gray-500">Missing</p>
+            <p className="text-xs text-muted-foreground">Missing</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-3 text-center">
             <AlertTriangle className="h-5 w-5 text-yellow-500 mx-auto mb-1" />
             <p className="text-2xl font-bold">{notFoundScans.length}</p>
-            <p className="text-xs text-gray-500">Not in Manifest</p>
+            <p className="text-xs text-muted-foreground">Not in Manifest</p>
           </CardContent>
         </Card>
       </div>
@@ -120,7 +120,7 @@ export default function DiscrepancyReviewPage() {
       {/* Missing Packages — notes required */}
       {missingPackages.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">
+          <h2 className="text-sm font-semibold text-foreground">
             Missing Packages — notes required ({missingPackages.length})
           </h2>
           {missingPackages.map((pkg) => (
@@ -139,7 +139,7 @@ export default function DiscrepancyReviewPage() {
       {/* Not in Manifest scans — informational */}
       {notFoundScans.length > 0 && (
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-gray-700">
+          <h2 className="text-sm font-semibold text-foreground">
             Not in Manifest ({notFoundScans.length})
           </h2>
           {notFoundScans.map((scan) => (

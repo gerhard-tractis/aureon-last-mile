@@ -33,26 +33,26 @@ export default function ValidationErrorDisplay({
     <div className="space-y-4">
       {/* Preview Table */}
       <div className="overflow-x-auto border rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-muted">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">
                 Status
               </th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase">
                 Row
               </th>
               {columns.map((col) => (
                 <th
                   key={col}
-                  className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase"
+                  className="px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase"
                 >
                   {col}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-card divide-y divide-border">
             {previewData.map((row, index) => {
               const rowNum = index + 2; // row 1 = header
               const rowErrors = errorsByRow.get(rowNum) || [];
@@ -69,14 +69,14 @@ export default function ValidationErrorDisplay({
                         <CheckCircle className="w-4 h-4 text-green-500" />
                       )}
                     </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-gray-500">
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
                       {rowNum}
                     </td>
                     {columns.map((col) => (
                       <td
                         key={col}
                         className={`px-3 py-2 whitespace-nowrap ${
-                          errorFields.has(col) ? 'text-red-700 font-medium' : 'text-gray-700'
+                          errorFields.has(col) ? 'text-red-700 font-medium' : 'text-foreground'
                         }`}
                       >
                         {row[col] || ''}
@@ -107,13 +107,13 @@ export default function ValidationErrorDisplay({
       </div>
 
       {data.length > previewLimit && (
-        <p className="text-xs text-gray-500 text-center">
+        <p className="text-xs text-muted-foreground text-center">
           Showing first {previewLimit} of {data.length} rows
         </p>
       )}
 
       {/* Summary */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg border">
+      <div className="flex items-center justify-between px-4 py-3 bg-muted rounded-lg border">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1 text-sm">
             <CheckCircle className="w-4 h-4 text-green-500" />

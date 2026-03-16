@@ -28,37 +28,21 @@ export default function GlobalError({
   return (
     <html>
       <body>
-        <div style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          padding: '20px',
-          fontFamily: 'system-ui, -apple-system, sans-serif',
-        }}>
-          <h1 style={{ fontSize: '24px', marginBottom: '16px' }}>
+        <div className="flex flex-col items-center justify-center min-h-screen p-5 font-sans">
+          <h1 className="text-2xl mb-4">
             Something went wrong
           </h1>
-          <p style={{ color: '#666', marginBottom: '24px', maxWidth: '500px', textAlign: 'center' }}>
+          <p className="text-muted-foreground mb-6 max-w-[500px] text-center">
             We&apos;re sorry for the inconvenience. Our team has been notified and is working to fix the issue.
           </p>
           {error.digest && (
-            <p style={{ fontSize: '12px', color: '#999', marginBottom: '24px' }}>
+            <p className="text-xs text-muted-foreground mb-6">
               Error ID: {error.digest}
             </p>
           )}
           <button
             onClick={reset}
-            style={{
-              padding: '12px 24px',
-              backgroundColor: '#0070f3',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '16px',
-              cursor: 'pointer',
-            }}
+            className="px-6 py-3 bg-primary-600 text-white border-none rounded-md text-base cursor-pointer"
           >
             Try again
           </button>

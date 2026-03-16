@@ -124,7 +124,7 @@ describe('UserTable', () => {
 
       // Admin badge should have gold background
       const adminBadge = screen.getByText('Administrator').closest('span');
-      expect(adminBadge?.className).toContain('bg-[#e6c15c]');
+      expect(adminBadge?.className).toContain('bg-gold');
 
       // Operations manager badge should have blue background
       const managerBadge = screen.getByText('Operations Manager').closest('span');
@@ -132,7 +132,7 @@ describe('UserTable', () => {
 
       // Pickup crew badge should have gray background
       const crewBadge = screen.getByText('Pickup Crew').closest('span');
-      expect(crewBadge?.className).toContain('bg-gray-100');
+      expect(crewBadge?.className).toContain('bg-muted');
     });
 
     it('should format dates correctly', () => {

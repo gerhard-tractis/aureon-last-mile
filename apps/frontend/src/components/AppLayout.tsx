@@ -63,7 +63,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
 
     return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen bg-muted">
             {isSidebarOpen && (
                 <div
                     className="fixed inset-0 bg-gray-600 bg-opacity-75 z-20 lg:hidden"
@@ -72,7 +72,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
 
             {/* Sidebar */}
-            <div className={`fixed inset-y-0 left-0 w-64 bg-white shadow-lg transform transition-transform duration-200 ease-in-out z-30 
+            <div className={`fixed inset-y-0 left-0 w-64 bg-card shadow-lg transform transition-transform duration-200 ease-in-out z-30
                 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
 
                 <div className="h-16 flex items-center justify-between px-4 border-b">
@@ -90,7 +90,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     )}
                     <button
                         onClick={toggleSidebar}
-                        className="lg:hidden text-gray-500 hover:text-gray-700"
+                        className="lg:hidden text-muted-foreground hover:text-foreground"
                     >
                         <X className="h-6 w-6" />
                     </button>
@@ -107,12 +107,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md ${
                                     isDashboardSection
                                         ? 'bg-primary-50 text-primary-600'
-                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                 }`}
                             >
                                 <div className="flex items-center">
                                     <BarChart3 className={`mr-3 h-5 w-5 ${
-                                        isDashboardSection ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                                        isDashboardSection ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
                                     }`} />
                                     Dashboard
                                 </div>
@@ -127,7 +127,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
                                             pathname.startsWith(operacionesHref)
                                                 ? 'text-primary-600 font-medium'
-                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                                         }`}
                                     >
                                         <BarChart3 className="mr-2 h-4 w-4" />
@@ -138,7 +138,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                         className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
                                             pathname.startsWith(analiticaHref)
                                                 ? 'text-primary-600 font-medium'
-                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                                         }`}
                                     >
                                         <TrendingUp className="mr-2 h-4 w-4" />
@@ -154,11 +154,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
                                 pathname.startsWith('/app/pickup')
                                     ? 'bg-primary-50 text-primary-600'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                             }`}
                         >
                             <ClipboardCheck className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/pickup') ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                                pathname.startsWith('/app/pickup') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
                             }`} />
                             Pickup
                         </Link>
@@ -172,11 +172,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
                                     isActive
                                         ? 'bg-primary-50 text-primary-600'
-                                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                                 }`}
                             >
                                 <item.icon className={`mr-3 h-5 w-5 ${
-                                    isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                                    isActive ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
                                 }`} />
                                 {item.name}
                             </Link>
@@ -187,10 +187,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="lg:pl-64">
-                <div className="sticky top-0 z-10 flex items-center justify-between h-16 bg-white dark:bg-gray-900 shadow-sm dark:shadow-gray-800 px-4">
+                <div className="sticky top-0 z-10 flex items-center justify-between h-16 bg-card shadow-sm px-4">
                     <button
                         onClick={toggleSidebar}
-                        className="lg:hidden text-gray-500 hover:text-gray-700"
+                        className="lg:hidden text-muted-foreground hover:text-foreground"
                     >
                         <Menu className="h-6 w-6"/>
                     </button>
@@ -200,7 +200,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         <div className="relative">
                             <button
                                 onClick={() => setUserDropdownOpen(!isUserDropdownOpen)}
-                                className="flex items-center space-x-2 text-sm text-gray-700 hover:text-gray-900"
+                                className="flex items-center space-x-2 text-sm text-foreground hover:text-foreground"
                             >
                                 <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
                                     <span className="text-primary-700 font-medium">
@@ -212,10 +212,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             </button>
 
                             {isUserDropdownOpen && (
-                                <div className="absolute right-0 mt-2 w-64 bg-white rounded-md shadow-lg border">
-                                    <div className="p-2 border-b border-gray-100">
-                                        <p className="text-xs text-gray-500">Signed in as</p>
-                                        <p className="text-sm font-medium text-gray-900 truncate">
+                                <div className="absolute right-0 mt-2 w-64 bg-card rounded-md shadow-lg border border-border">
+                                    <div className="p-2 border-b border-border">
+                                        <p className="text-xs text-muted-foreground">Signed in as</p>
+                                        <p className="text-sm font-medium text-foreground truncate">
                                             {user?.email}
                                         </p>
                                     </div>
@@ -225,9 +225,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                                 setUserDropdownOpen(false);
                                                 handleChangePassword()
                                             }}
-                                            className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                            className="w-full flex items-center px-4 py-2 text-sm text-foreground hover:bg-muted"
                                         >
-                                            <Key className="mr-3 h-4 w-4 text-gray-400"/>
+                                            <Key className="mr-3 h-4 w-4 text-muted-foreground"/>
                                             Change Password
                                         </button>
                                         <button

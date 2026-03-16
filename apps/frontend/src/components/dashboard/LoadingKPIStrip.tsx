@@ -26,19 +26,19 @@ function KPICard({
   isLoading: boolean;
 }) {
   return (
-    <div className="bg-white rounded-xl p-5 shadow-sm border border-slate-200 hover:shadow-lg hover:scale-[1.01] transition-all duration-300">
+    <div className="bg-card rounded-xl p-5 shadow-sm border border-border hover:shadow-lg hover:scale-[1.01] transition-all duration-300">
       {isLoading ? (
         <>
-          <div className="animate-pulse h-8 w-20 bg-slate-200 rounded mb-1" />
-          <div className="animate-pulse h-4 w-28 bg-slate-100 rounded" />
+          <div className="animate-pulse h-8 w-20 bg-muted rounded mb-1" />
+          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
         </>
       ) : (
         <>
-          <div className="text-3xl font-bold text-slate-800 leading-none mb-1">
+          <div className="text-3xl font-bold text-foreground leading-none mb-1">
             {(value ?? 0).toLocaleString('es-CL')}
           </div>
-          <div className="text-sm text-slate-500">{label}</div>
-          {subtitle && <div className="text-xs text-slate-400 mt-1">{subtitle}</div>}
+          <div className="text-sm text-muted-foreground">{label}</div>
+          {subtitle && <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>}
         </>
       )}
     </div>

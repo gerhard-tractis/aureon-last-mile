@@ -195,7 +195,7 @@ export default function FileManagementPage() {
 
                     <div className="flex items-center justify-center w-full">
                         <label
-                            className={`w-full flex flex-col items-center px-4 py-6 bg-white rounded-lg shadow-lg tracking-wide border-2 cursor-pointer transition-colors ${
+                            className={`w-full flex flex-col items-center px-4 py-6 bg-card rounded-lg shadow-lg tracking-wide border-2 cursor-pointer transition-colors ${
                                 isDragging
                                     ? 'border-primary-500 border-dashed bg-primary-50'
                                     : 'border-primary-600 hover:bg-primary-50'
@@ -229,15 +229,15 @@ export default function FileManagementPage() {
                             </div>
                         )}
                         {files.length === 0 ? (
-                            <p className="text-center text-gray-500">No files uploaded yet</p>
+                            <p className="text-center text-muted-foreground">No files uploaded yet</p>
                         ) : (
                             files.map((file) => (
                                 <div
                                     key={file.name}
-                                    className="flex items-center justify-between p-4 bg-white rounded-lg border"
+                                    className="flex items-center justify-between p-4 bg-card rounded-lg border"
                                 >
                                     <div className="flex items-center space-x-3">
-                                        <FileIcon className="h-6 w-6 text-gray-400"/>
+                                        <FileIcon className="h-6 w-6 text-muted-foreground"/>
                                         <span className="font-medium">{file.name.split('/').pop()}</span>
                                     </div>
                                     <div className="flex items-center space-x-2">
@@ -288,7 +288,7 @@ export default function FileManagementPage() {
                                     type="text"
                                     value={shareUrl}
                                     readOnly
-                                    className="flex-1 p-2 border rounded bg-gray-50"
+                                    className="flex-1 p-2 border rounded bg-muted"
                                 />
                                 <button
                                     onClick={() => copyToClipboard(shareUrl)}
@@ -297,7 +297,7 @@ export default function FileManagementPage() {
                                     <Copy className="h-5 w-5"/>
                                     {showCopiedMessage && (
                                         <span
-                                            className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs px-2 py-1 rounded">
+                                            className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-popover text-popover-foreground text-xs px-2 py-1 rounded">
                                             Copied!
                                         </span>
                                     )}

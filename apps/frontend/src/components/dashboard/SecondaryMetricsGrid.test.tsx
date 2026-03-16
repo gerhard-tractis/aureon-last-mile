@@ -159,8 +159,8 @@ describe('SecondaryMetricsGrid', () => {
 });
 
 describe('getCapacityColor', () => {
-  it('returns slate for null', () => {
-    expect(getCapacityColor(null)).toBe('text-slate-400');
+  it('returns muted-foreground for null', () => {
+    expect(getCapacityColor(null)).toBe('text-muted-foreground');
   });
 
   it('returns red for >95% (over-utilized)', () => {
@@ -186,8 +186,8 @@ describe('getCapacityColor', () => {
 });
 
 describe('getOrdersPerHourColor', () => {
-  it('returns slate for null', () => {
-    expect(getOrdersPerHourColor(null)).toBe('text-slate-400');
+  it('returns muted-foreground for null', () => {
+    expect(getOrdersPerHourColor(null)).toBe('text-muted-foreground');
   });
 
   it('returns green for >=40', () => {

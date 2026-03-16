@@ -22,14 +22,14 @@ type SortDirection = 'asc' | 'desc';
 type DateRangeOption = '7' | '30' | '90' | 'custom';
 
 function getSlaColor(value: number | null): { bg: string; text: string } {
-  if (value === null) return { bg: 'bg-slate-50', text: 'text-slate-400' };
+  if (value === null) return { bg: 'bg-muted', text: 'text-muted-foreground' };
   if (value >= 95) return { bg: 'bg-[#10b981]/10', text: 'text-[#10b981]' };
   if (value >= 90) return { bg: 'bg-[#f59e0b]/10', text: 'text-[#f59e0b]' };
   return { bg: 'bg-[#ef4444]/10', text: 'text-[#ef4444]' };
 }
 
 function getFadrColor(value: number | null): { bg: string; text: string } {
-  if (value === null) return { bg: 'bg-slate-50', text: 'text-slate-400' };
+  if (value === null) return { bg: 'bg-muted', text: 'text-muted-foreground' };
   if (value >= 90) return { bg: 'bg-[#10b981]/10', text: 'text-[#10b981]' };
   if (value >= 80) return { bg: 'bg-[#f59e0b]/10', text: 'text-[#f59e0b]' };
   return { bg: 'bg-[#ef4444]/10', text: 'text-[#ef4444]' };
@@ -169,13 +169,13 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
   return (
     <>
-      <div className={`relative bg-white rounded-xl border border-slate-200 shadow-sm p-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
+      <div className={`relative bg-card rounded-xl border border-border shadow-sm p-6 transition-all duration-300${isPlaceholderData ? ' opacity-60' : ''}`}>
         {isPlaceholderData && (
-          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
         )}
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
             Desempeño por Cliente
           </h2>
           <button
@@ -191,7 +191,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
           {/* Search */}
           <div className="relative">
             <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -208,7 +208,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
               placeholder="Buscar cliente..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-56"
+              className="pl-9 pr-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-56"
             />
           </div>
 
@@ -216,7 +216,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
           <select
             value={dateRange}
             onChange={e => handleDateRangeChange(e.target.value as DateRangeOption)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {Object.entries(dateRangeLabels).map(([val, label]) => (
               <option key={val} value={val}>{label}</option>
@@ -229,14 +229,14 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                 type="date"
                 value={customStart}
                 onChange={e => { setCustomStart(e.target.value); setVisibleCount(10); }}
-                className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-slate-400">—</span>
+              <span className="text-muted-foreground">—</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={e => { setCustomEnd(e.target.value); setVisibleCount(10); }}
-                className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
           )}
@@ -247,7 +247,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
         {/* Table */}
         {processedData.length === 0 && !isLoading && !isError ? (
-          <p className="text-sm text-slate-500 text-center py-8">
+          <p className="text-sm text-muted-foreground text-center py-8">
             No hay datos de clientes para este periodo
           </p>
         ) : (
@@ -255,7 +255,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="bg-slate-50 border-b-2 border-slate-200">
+                  <tr className="bg-muted border-b-2 border-border">
                     {([
                       { key: 'retailer_name' as SortColumn, label: 'Cliente', width: '25%', align: 'left' },
                       { key: 'total_orders' as SortColumn, label: 'Pedidos', width: '15%', align: 'right' },
@@ -268,7 +268,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                         scope="col"
                         style={{ width: col.width }}
                         aria-sort={ariaSortValue(col.key)}
-                        className={`px-4 py-3 text-xs font-medium text-slate-700 uppercase tracking-wider cursor-pointer select-none hover:bg-slate-100 transition-colors ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+                        className={`px-4 py-3 text-xs font-medium text-foreground uppercase tracking-wider cursor-pointer select-none hover:bg-muted/80 transition-colors ${col.align === 'right' ? 'text-right' : 'text-left'}`}
                         onClick={() => handleSort(col.key)}
                         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort(col.key); } }}
                         tabIndex={0}
@@ -280,7 +280,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                         )}
                       </th>
                     ))}
-                    <th scope="col" style={{ width: '15%' }} className="px-4 py-3 text-xs font-medium text-slate-700 uppercase tracking-wider text-center">
+                    <th scope="col" style={{ width: '15%' }} className="px-4 py-3 text-xs font-medium text-foreground uppercase tracking-wider text-center">
                       Acciones
                     </th>
                   </tr>
@@ -294,16 +294,16 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                     return (
                       <tr
                         key={row.retailer_name}
-                        className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${idx % 2 === 1 ? 'bg-slate-50/50' : ''}`}
+                        className={`border-b border-border hover:bg-muted transition-colors ${idx % 2 === 1 ? 'bg-muted/50' : ''}`}
                         style={{ height: 56 }}
                       >
                         <td
-                          className="px-4 py-3 text-sm font-semibold text-slate-900 truncate max-w-0"
+                          className="px-4 py-3 text-sm font-semibold text-foreground truncate max-w-0"
                           title={row.retailer_name}
                         >
                           {row.retailer_name}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-700 text-right tabular-nums">
+                        <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">
                           {row.total_orders.toLocaleString('es-CL')}
                         </td>
                         <td className={`px-4 py-3 text-sm text-right tabular-nums ${slaColor.bg} ${slaColor.text} font-medium`}>
@@ -312,7 +312,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                         <td className={`px-4 py-3 text-sm text-right tabular-nums ${fadrColor.bg} ${fadrColor.text} font-medium`}>
                           {row.fadr_pct !== null ? `${row.fadr_pct.toFixed(1)}%` : '0'}
                         </td>
-                        <td className={`px-4 py-3 text-sm text-right tabular-nums ${failureWarning ? 'text-amber-600 font-medium' : 'text-slate-700'}`}>
+                        <td className={`px-4 py-3 text-sm text-right tabular-nums ${failureWarning ? 'text-amber-600 font-medium' : 'text-foreground'}`}>
                           {row.failed_deliveries.toLocaleString('es-CL')}
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -333,7 +333,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
 
             {/* Pagination */}
             <div className="flex items-center justify-between mt-4">
-              <span className="text-sm text-slate-500">
+              <span className="text-sm text-muted-foreground">
                 Mostrando {Math.min(visibleCount, totalCount)} de {totalCount} clientes
               </span>
               {visibleCount < totalCount && (
@@ -360,32 +360,32 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-slate-500 uppercase">Pedidos</p>
-                <p className="text-lg font-semibold text-slate-900">{selectedRetailer.total_orders.toLocaleString('es-CL')}</p>
+                <p className="text-xs text-muted-foreground uppercase">Pedidos</p>
+                <p className="text-lg font-semibold text-foreground">{selectedRetailer.total_orders.toLocaleString('es-CL')}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">Entregados</p>
-                <p className="text-lg font-semibold text-slate-900">{selectedRetailer.delivered_orders.toLocaleString('es-CL')}</p>
+                <p className="text-xs text-muted-foreground uppercase">Entregados</p>
+                <p className="text-lg font-semibold text-foreground">{selectedRetailer.delivered_orders.toLocaleString('es-CL')}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">SLA %</p>
+                <p className="text-xs text-muted-foreground uppercase">SLA %</p>
                 <p className={`text-lg font-semibold ${getSlaColor(selectedRetailer.sla_pct).text}`}>
                   {selectedRetailer.sla_pct !== null ? `${selectedRetailer.sla_pct.toFixed(1)}%` : 'N/A'}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">FADR %</p>
+                <p className="text-xs text-muted-foreground uppercase">FADR %</p>
                 <p className={`text-lg font-semibold ${getFadrColor(selectedRetailer.fadr_pct).text}`}>
                   {selectedRetailer.fadr_pct !== null ? `${selectedRetailer.fadr_pct.toFixed(1)}%` : 'N/A'}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">Fallos</p>
-                <p className="text-lg font-semibold text-slate-900">{selectedRetailer.failed_deliveries.toLocaleString('es-CL')}</p>
+                <p className="text-xs text-muted-foreground uppercase">Fallos</p>
+                <p className="text-lg font-semibold text-foreground">{selectedRetailer.failed_deliveries.toLocaleString('es-CL')}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 uppercase">Tasa de fallo</p>
-                <p className="text-lg font-semibold text-slate-900">
+                <p className="text-xs text-muted-foreground uppercase">Tasa de fallo</p>
+                <p className="text-lg font-semibold text-foreground">
                   {selectedRetailer.total_orders > 0
                     ? `${((selectedRetailer.failed_deliveries / selectedRetailer.total_orders) * 100).toFixed(1)}%`
                     : 'N/A'}

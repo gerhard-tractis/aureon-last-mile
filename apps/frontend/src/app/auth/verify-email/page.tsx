@@ -46,17 +46,17 @@ export default function VerifyEmailPage() {
                 </div>
             </div>
 
-            <h2 className="text-2xl font-semibold tracking-tight text-stone-900 mb-2">
+            <h2 className="text-2xl font-semibold tracking-tight text-foreground mb-2">
                 Revisa tu email
             </h2>
 
-            <p className="text-sm text-stone-400 mb-8 leading-relaxed">
+            <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
                 Te hemos enviado un enlace de verificación.
                 Revisa tu bandeja de entrada y haz clic en el enlace para verificar tu cuenta.
             </p>
 
             <div className="space-y-4">
-                <p className="text-xs text-stone-400">
+                <p className="text-xs text-muted-foreground">
                     ¿No recibiste el email? Revisa spam o ingresa tu email para reenviar:
                 </p>
 
@@ -77,11 +77,11 @@ export default function VerifyEmailPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="tu@empresa.cl"
-                    className="block w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-300 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
                 />
 
                 <button
-                    className="text-sm font-medium text-stone-700 hover:text-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-sm font-medium text-foreground hover:text-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={resendVerificationEmail}
                     disabled={loading}
                 >
@@ -89,10 +89,10 @@ export default function VerifyEmailPage() {
                 </button>
             </div>
 
-            <div className="mt-8 pt-6 border-t border-stone-200">
+            <div className="mt-8 pt-6 border-t border-border">
                 <Link
                     href="/auth/login"
-                    className="text-sm font-medium text-stone-700 hover:text-amber-600 transition-colors"
+                    className="text-sm font-medium text-foreground hover:text-amber-600 transition-colors"
                 >
                     Volver al inicio de sesión
                 </Link>

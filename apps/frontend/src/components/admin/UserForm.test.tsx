@@ -507,14 +507,14 @@ describe('UserForm', () => {
       render(<UserForm mode="create" />);
 
       const submitButton = screen.getByText('Create User');
-      expect(submitButton.className).toContain('bg-[#e6c15c]');
+      expect(submitButton.className).toContain('bg-gold');
     });
 
     it('should have focus ring on inputs', () => {
       render(<UserForm mode="create" />);
 
       const emailInput = screen.getByLabelText(/Email/);
-      expect(emailInput.className).toContain('focus:ring-[#e6c15c]');
+      expect(emailInput.className).toContain('focus:ring-gold');
     });
 
     it('should have modal overlay', () => {

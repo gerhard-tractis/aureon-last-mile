@@ -16,7 +16,7 @@ interface HeroSLAProps {
 }
 
 function getSlaColor(sla: number | null): string {
-  if (sla === null) return 'text-slate-400';
+  if (sla === null) return 'text-muted-foreground';
   if (sla >= 95) return 'text-[#10b981]';
   if (sla >= 90) return 'text-[#f59e0b]';
   return 'text-[#ef4444]';
@@ -78,13 +78,13 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
         aria-label="Ver analisis detallado de SLA"
         onClick={handleOpen}
         onKeyDown={handleKeyDown}
-        className={`relative bg-white rounded-xl p-6 md:p-12 shadow-sm w-full cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.01] text-center${isPlaceholderData ? ' opacity-60' : ''}`}
+        className={`relative bg-card rounded-xl p-6 md:p-12 shadow-sm w-full cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.01] text-center${isPlaceholderData ? ' opacity-60' : ''}`}
       >
         {isPlaceholderData && (
-          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-slate-400" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
         )}
 
-        <h2 className="text-xl font-semibold text-slate-700 uppercase tracking-wide mb-4">
+        <h2 className="text-xl font-semibold text-foreground uppercase tracking-wide mb-4">
           Cumplimiento SLA - Ultimos 7 Dias
         </h2>
 
@@ -101,7 +101,7 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
         )}
 
         {/* Context Line */}
-        <p className="text-2xl text-slate-600 mb-6">
+        <p className="text-2xl text-muted-foreground mb-6">
           {otif
             ? `${otif.delivered_orders} de ${otif.total_orders} entregas cumplidas`
             : 'Sin datos para este periodo'}
@@ -109,9 +109,9 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
 
         {/* Progress Bar */}
         {sla !== null && (
-          <div className="h-8 rounded-2xl max-w-[800px] mx-auto bg-slate-200 overflow-hidden mb-6">
+          <div className="h-8 rounded-2xl max-w-[800px] mx-auto bg-muted overflow-hidden mb-6">
             <div
-              className="h-full rounded-2xl bg-gradient-to-r from-gold to-gold-light flex items-center justify-center text-slate-800 font-semibold text-sm transition-all duration-500"
+              className="h-full rounded-2xl bg-gradient-to-r from-gold to-gold-light flex items-center justify-center text-foreground font-semibold text-sm transition-all duration-500"
               style={{ width: `${Math.min(sla, 100)}%` }}
             >
               {sla.toFixed(1)}%
@@ -120,7 +120,7 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
         )}
 
         {/* Inline Sub-Metrics */}
-        <div className="flex justify-center gap-12 text-lg text-slate-700">
+        <div className="flex justify-center gap-12 text-lg text-foreground">
           {fadr !== null && <span>Primera Entrega (FADR): {fadr.toFixed(1)}%</span>}
           {failurePercent !== null && otif && (
             <span>
