@@ -82,7 +82,7 @@ describe('MobileOCC', () => {
   it('defaults to ops tab when no search param is set', () => {
     render(<MobileOCC operatorId="op-123" />);
     const opsTab = screen.getByTestId('tab-ops');
-    expect(opsTab.getAttribute('aria-selected')).toBe('true');
+    expect(opsTab.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('renders MobileStatusCards on ops tab', () => {

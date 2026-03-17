@@ -32,20 +32,20 @@ describe('MobileTabBar', () => {
   });
 
   describe('Active tab styling', () => {
-    it('active tab has aria-selected=true', () => {
+    it('active tab has aria-pressed=true', () => {
       render(
         <MobileTabBar activeTab="dashboard" onTabChange={vi.fn()} urgentCount={0} />,
       );
       const dashboardTab = screen.getByTestId('tab-dashboard');
-      expect(dashboardTab.getAttribute('aria-selected')).toBe('true');
+      expect(dashboardTab.getAttribute('aria-pressed')).toBe('true');
     });
 
-    it('inactive tab has aria-selected=false', () => {
+    it('inactive tab has aria-pressed=false', () => {
       render(
         <MobileTabBar activeTab="dashboard" onTabChange={vi.fn()} urgentCount={0} />,
       );
       const opsTab = screen.getByTestId('tab-ops');
-      expect(opsTab.getAttribute('aria-selected')).toBe('false');
+      expect(opsTab.getAttribute('aria-pressed')).toBe('false');
     });
 
     it('active tab has data-active attribute', () => {
