@@ -33,7 +33,7 @@ export function MobileTabBar({ activeTab, onTabChange, urgentCount }: MobileTabB
             key={id}
             type="button"
             data-testid={`tab-${id}`}
-            aria-selected={isActive}
+            aria-pressed={isActive}
             data-active={isActive ? 'true' : 'false'}
             onClick={() => onTabChange(id)}
             className="flex-1 flex flex-col items-center justify-center h-full active:scale-95 transition-transform"

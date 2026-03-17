@@ -4,7 +4,6 @@ import { X } from 'lucide-react';
 import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
 import type { OpsControlFilterState } from '@/stores/useOpsControlFilterStore';
-import type { OrderStatus } from '@/lib/types/pipeline';
 
 export interface MobileFilterModalProps {
   open: boolean;
