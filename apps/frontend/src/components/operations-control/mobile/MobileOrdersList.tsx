@@ -9,18 +9,9 @@ import { MobileOrderCard } from './MobileOrderCard';
 import { MobileFilterModal } from './MobileFilterModal';
 import { MobilePullToRefresh } from './MobilePullToRefresh';
 import { OrderDetailModal } from '@/components/operations-control/OrderDetailModal';
+import { computePriority } from '@/lib/utils/priority';
 
-// ── Priority computation ───────────────────────────────────────────────────
-
-export function computePriority(order: OperationsOrder): OrderPriority {
-  if (!order.delivery_window_end) return 'ok';
-  const windowEnd = new Date(order.delivery_window_end);
-  if (windowEnd < new Date()) return 'late';
-  const minsUntil = (windowEnd.getTime() - Date.now()) / 60000;
-  if (minsUntil <= 45) return 'urgent';
-  if (minsUntil <= 120) return 'alert';
-  return 'ok';
-}
+export { computePriority };
 
 // ── Group config ──────────────────────────────────────────────────────────
 
@@ -81,20 +72,20 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
     return result;
   }, [filteredOrders]);
 
-  // ── Flat filtered list (respects statusFilter) ───────────────────────────
+  // ── Visible groups and flat filtered list (respects statusFilter) ────────
 
-  const flatFiltered = useMemo(() => {
-    const visibleGroups: OrderPriority[] =
+  const visibleGroups = useMemo<OrderPriority[]>(
+    () =>
       statusFilter === 'all'
         ? GROUP_ORDER.filter((g) => grouped[g].length > 0)
-        : GROUP_ORDER.filter((g) => g === statusFilter && grouped[g].length > 0);
-    return visibleGroups.flatMap((g) => grouped[g]);
-  }, [grouped, statusFilter]);
+        : GROUP_ORDER.filter((g) => g === statusFilter && grouped[g].length > 0),
+    [grouped, statusFilter],
+  );
 
-  const visibleGroups: OrderPriority[] =
-    statusFilter === 'all'
-      ? GROUP_ORDER.filter((g) => grouped[g].length > 0)
-      : GROUP_ORDER.filter((g) => g === statusFilter && grouped[g].length > 0);
+  const flatFiltered = useMemo(
+    () => visibleGroups.flatMap((g) => grouped[g]),
+    [visibleGroups, grouped],
+  );
 
   const paginatedOrders = flatFiltered.slice(0, visibleCount);
   const hasMore = flatFiltered.length > visibleCount;

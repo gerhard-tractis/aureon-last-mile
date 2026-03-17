@@ -5,12 +5,12 @@ import { useQueryClient } from '@tanstack/react-query';
 
 export interface MobilePullToRefreshProps {
   children: React.ReactNode;
+  onRefreshStart?: () => void; // optional test/debug hook
 }
 
 const PULL_THRESHOLD = 60; // px
-const IS_TEST = process.env.NODE_ENV === 'test';
 
-export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
+export function MobilePullToRefresh({ children, onRefreshStart }: MobilePullToRefreshProps) {
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -19,6 +19,7 @@ export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
   async function triggerRefresh() {
     if (isRefreshing) return;
     setIsRefreshing(true);
+    onRefreshStart?.();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['pipeline-counts'] }),
       queryClient.invalidateQueries({ queryKey: ['operations-orders'] }),
@@ -66,16 +67,6 @@ export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
         </div>
       )}
       {children}
-      {/* Test-only trigger — invisible in production */}
-      {IS_TEST && (
-        <button
-          type="button"
-          data-testid="test-trigger-refresh"
-          onClick={() => void triggerRefresh()}
-          style={{ display: 'none' }}
-          aria-hidden="true"
-        />
-      )}
     </div>
   );
 }

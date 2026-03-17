@@ -110,14 +110,14 @@ describe('MobileOrdersList', () => {
 
   describe('Loading state', () => {
     it('renders 3 skeleton cards when isLoading=true', () => {
-      render(<MobileOrdersList orders={[]} isLoading={true} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[]} isLoading={true} />);
       const skeletons = screen.getAllByTestId('order-skeleton');
       expect(skeletons).toHaveLength(3);
     });
 
     it('does not render order cards when isLoading=true', () => {
       const orders = [makeOrder()];
-      render(<MobileOrdersList orders={orders} isLoading={true} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={true} />);
       expect(screen.queryByTestId('order-card-ord-1')).toBeNull();
     });
   });
@@ -128,27 +128,27 @@ describe('MobileOrdersList', () => {
     it('renders group header for urgent orders', () => {
       const windowEnd = new Date(Date.now() + 30 * 60000).toISOString(); // 30 mins = urgent
       const order = makeOrder({ id: 'u1', delivery_window_end: windowEnd });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.getByTestId('group-header-urgent')).toBeTruthy();
     });
 
     it('renders group header for ok orders', () => {
       const order = makeOrder({ id: 'ok1', delivery_window_end: null });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.getByTestId('group-header-ok')).toBeTruthy();
     });
 
     it('renders group header for late orders', () => {
       const past = new Date(Date.now() - 60 * 60000).toISOString();
       const order = makeOrder({ id: 'l1', delivery_window_end: past });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.getByTestId('group-header-late')).toBeTruthy();
     });
 
     it('renders group header for alert orders', () => {
       const windowEnd = new Date(Date.now() + 100 * 60000).toISOString(); // 100 mins = alert
       const order = makeOrder({ id: 'a1', delivery_window_end: windowEnd });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.getByTestId('group-header-alert')).toBeTruthy();
     });
 
@@ -158,14 +158,14 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'u1', order_number: 'ORD-001', delivery_window_end: windowEnd }),
         makeOrder({ id: 'u2', order_number: 'ORD-002', delivery_window_end: windowEnd }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       const header = screen.getByTestId('group-header-urgent');
       expect(header.textContent).toContain('2');
     });
 
     it('does not render group header when no orders in that group', () => {
       const order = makeOrder({ id: 'ok1', delivery_window_end: null });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.queryByTestId('group-header-urgent')).toBeNull();
       expect(screen.queryByTestId('group-header-late')).toBeNull();
       expect(screen.queryByTestId('group-header-alert')).toBeNull();
@@ -173,7 +173,7 @@ describe('MobileOrdersList', () => {
 
     it('renders orders in pull-to-refresh wrapper', () => {
       const order = makeOrder();
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       expect(screen.getByTestId('pull-to-refresh-container')).toBeTruthy();
     });
   });
@@ -182,7 +182,7 @@ describe('MobileOrdersList', () => {
 
   describe('Search: filter by order_number', () => {
     it('expands search input when search toggle clicked', () => {
-      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       expect(screen.getByTestId('search-input')).toBeTruthy();
     });
@@ -192,7 +192,7 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'a', order_number: 'ORD-ABC' }),
         makeOrder({ id: 'b', order_number: 'ORD-XYZ' }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'abc' } });
       expect(screen.getByTestId('order-card-a')).toBeTruthy();
@@ -208,7 +208,7 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'a', retailer_name: 'Falabella' }),
         makeOrder({ id: 'b', retailer_name: 'Ripley' }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'ripley' } });
       expect(screen.getByTestId('order-card-b')).toBeTruthy();
@@ -225,7 +225,7 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'b', order_number: 'ORD-ABX', retailer_name: 'Ripley' }),
         makeOrder({ id: 'c', order_number: 'ORD-ZZZ', retailer_name: 'Ripley' }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'AB' } });
       expect(screen.getByTestId('search-results-label')).toBeTruthy();
@@ -234,7 +234,7 @@ describe('MobileOrdersList', () => {
     });
 
     it('does not show results label when search is empty', () => {
-      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       expect(screen.queryByTestId('search-results-label')).toBeNull();
     });
@@ -245,19 +245,19 @@ describe('MobileOrdersList', () => {
   describe('Load more', () => {
     it('shows load-more button when orders > 20', () => {
       const orders = makeOrders(25);
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       expect(screen.getByTestId('load-more-btn')).toBeTruthy();
     });
 
     it('does not show load-more button when orders <= 20', () => {
       const orders = makeOrders(20);
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       expect(screen.queryByTestId('load-more-btn')).toBeNull();
     });
 
     it('clicking load-more increases visible count', () => {
       const orders = makeOrders(25);
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       // 20 cards visible initially
       fireEvent.click(screen.getByTestId('load-more-btn'));
       // All 25 should now be visible (no more load-more button)
@@ -269,20 +269,20 @@ describe('MobileOrdersList', () => {
 
   describe('Empty state', () => {
     it('shows empty message when orders is empty and not loading', () => {
-      render(<MobileOrdersList orders={[]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[]} isLoading={false} />);
       expect(screen.getByTestId('empty-state')).toBeTruthy();
     });
 
     it('shows empty message when search yields no matches', () => {
       const orders = [makeOrder({ id: 'a', order_number: 'ORD-001' })];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       fireEvent.click(screen.getByTestId('search-toggle'));
       fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'ZZZZZZ' } });
       expect(screen.getByTestId('empty-state')).toBeTruthy();
     });
 
     it('does not show empty state when orders exist', () => {
-      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[makeOrder()]} isLoading={false} />);
       expect(screen.queryByTestId('empty-state')).toBeNull();
     });
   });
@@ -292,14 +292,14 @@ describe('MobileOrdersList', () => {
   describe('Order detail modal', () => {
     it('opens OrderDetailModal when order card is clicked', () => {
       const order = makeOrder({ id: 'ord-99' });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('order-card-ord-99'));
       expect(screen.getByTestId('order-detail-modal')).toBeTruthy();
     });
 
     it('closes OrderDetailModal when onClose is called', () => {
       const order = makeOrder({ id: 'ord-99' });
-      render(<MobileOrdersList orders={[order]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[order]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('order-card-ord-99'));
       expect(screen.getByTestId('order-detail-modal')).toBeTruthy();
       fireEvent.click(screen.getByText('Cerrar detalle'));
@@ -311,19 +311,19 @@ describe('MobileOrdersList', () => {
 
   describe('Filter button', () => {
     it('renders filter button', () => {
-      render(<MobileOrdersList orders={[]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[]} isLoading={false} />);
       expect(screen.getByTestId('filter-btn')).toBeTruthy();
     });
 
     it('opens MobileFilterModal when filter button clicked', () => {
-      render(<MobileOrdersList orders={[]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[]} isLoading={false} />);
       expect(screen.queryByTestId('mobile-filter-modal')).toBeNull();
       fireEvent.click(screen.getByTestId('filter-btn'));
       expect(screen.getByTestId('mobile-filter-modal')).toBeTruthy();
     });
 
     it('closes MobileFilterModal when modal onClose called', () => {
-      render(<MobileOrdersList orders={[]} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={[]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('filter-btn'));
       expect(screen.getByTestId('mobile-filter-modal')).toBeTruthy();
       fireEvent.click(screen.getByText('Cerrar modal'));
@@ -344,7 +344,7 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'u1', delivery_window_end: urgentEnd }),
         makeOrder({ id: 'ok1', delivery_window_end: null }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       expect(screen.getByTestId('order-card-u1')).toBeTruthy();
       expect(screen.queryByTestId('order-card-ok1')).toBeNull();
     });
@@ -355,7 +355,7 @@ describe('MobileOrdersList', () => {
         makeOrder({ id: 'u1', delivery_window_end: urgentEnd }),
         makeOrder({ id: 'ok1', delivery_window_end: null }),
       ];
-      render(<MobileOrdersList orders={orders} isLoading={false} operatorId="op-1" />);
+      render(<MobileOrdersList orders={orders} isLoading={false} />);
       expect(screen.getByTestId('order-card-u1')).toBeTruthy();
       expect(screen.getByTestId('order-card-ok1')).toBeTruthy();
     });

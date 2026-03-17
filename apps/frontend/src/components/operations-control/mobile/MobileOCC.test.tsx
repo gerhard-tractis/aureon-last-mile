@@ -106,4 +106,16 @@ describe('MobileOCC', () => {
     fireEvent.click(screen.getByTestId('tab-reports'));
     expect(pushMock).toHaveBeenCalledWith('?tab=reports', { scroll: false });
   });
+
+  it('navigates to /app/dashboard when dashboard tab is clicked', () => {
+    render(<MobileOCC operatorId="op-123" />);
+    fireEvent.click(screen.getByTestId('tab-dashboard'));
+    expect(pushMock).toHaveBeenCalledWith('/app/dashboard');
+  });
+
+  it('navigates to /app/orders when orders tab is clicked', () => {
+    render(<MobileOCC operatorId="op-123" />);
+    fireEvent.click(screen.getByTestId('tab-orders'));
+    expect(pushMock).toHaveBeenCalledWith('/app/orders');
+  });
 });

@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Menu, Bell } from 'lucide-react';
 import { MobileTabBar } from './MobileTabBar';
@@ -22,24 +21,6 @@ interface MobileOCCProps {
   operatorId: string;
 }
 
-// ── Sub-components for redirect tabs ─────────────────────────────────────────
-
-function DashboardTab() {
-  const router = useRouter();
-  useEffect(() => {
-    router.push('/app/dashboard');
-  }, [router]);
-  return null;
-}
-
-function OrdersTab() {
-  const router = useRouter();
-  useEffect(() => {
-    router.push('/app/orders');
-  }, [router]);
-  return null;
-}
-
 // ── MobileOCC ─────────────────────────────────────────────────────────────────
 
 export function MobileOCC({ operatorId }: MobileOCCProps) {
@@ -50,6 +31,14 @@ export function MobileOCC({ operatorId }: MobileOCCProps) {
   const activeTab: TabType = rawTab && VALID_TABS.includes(rawTab) ? rawTab : 'ops';
 
   const handleTabChange = (tab: TabType) => {
+    if (tab === 'dashboard') {
+      router.push('/app/dashboard');
+      return;
+    }
+    if (tab === 'orders') {
+      router.push('/app/orders');
+      return;
+    }
     router.push(`?tab=${tab}`, { scroll: false });
   };
 
@@ -103,9 +92,13 @@ export function MobileOCC({ operatorId }: MobileOCCProps) {
           </>
         )}
 
-        {activeTab === 'dashboard' && <DashboardTab />}
+        {activeTab === 'dashboard' && (
+          <div className="p-4 text-muted-foreground">Redirigiendo...</div>
+        )}
 
-        {activeTab === 'orders' && <OrdersTab />}
+        {activeTab === 'orders' && (
+          <div className="p-4 text-muted-foreground">Redirigiendo...</div>
+        )}
 
         {activeTab === 'reports' && (
           <p className="text-center text-muted-foreground py-8 px-4">Próximamente</p>

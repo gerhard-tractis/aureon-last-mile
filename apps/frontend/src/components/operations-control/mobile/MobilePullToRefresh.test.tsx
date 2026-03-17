@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { MobilePullToRefresh } from './MobilePullToRefresh';
 
 // Mock @tanstack/react-query
@@ -16,10 +16,14 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => mockUseQueryClient(),
 }));
 
-// Helper: build a minimal TouchEvent-like object that jsdom can handle
-// jsdom does not support the Touch constructor, so we simulate via fireEvent
-// with custom data. Instead, we directly test the component's triggerRefresh
-// method via the data-testid="trigger-refresh" button exposed in test mode.
+// Helper: simulate a pull-down gesture with sufficient deltaY to trigger refresh.
+// jsdom requires touches to be set via the `touches` property on the event init.
+async function simulatePullDown(container: HTMLElement, deltaY = 80) {
+  await act(async () => {
+    fireEvent.touchStart(container, { touches: [{ clientY: 0 }] });
+    fireEvent.touchEnd(container, { changedTouches: [{ clientY: deltaY }] });
+  });
+}
 
 describe('MobilePullToRefresh', () => {
   beforeEach(() => {
@@ -56,7 +60,7 @@ describe('MobilePullToRefresh', () => {
     });
   });
 
-  describe('Refresh behavior via test trigger', () => {
+  describe('Refresh behavior via touch gesture', () => {
     it('calls invalidateQueries for pipeline-counts on refresh', async () => {
       render(
         <MobilePullToRefresh>
@@ -64,11 +68,8 @@ describe('MobilePullToRefresh', () => {
         </MobilePullToRefresh>,
       );
 
-      // Use the hidden test-trigger button to invoke triggerRefresh
-      const triggerBtn = screen.getByTestId('test-trigger-refresh');
-      await act(async () => {
-        triggerBtn.click();
-      });
+      const container = screen.getByTestId('pull-to-refresh-container');
+      await simulatePullDown(container);
 
       expect(mockInvalidateQueries).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: ['pipeline-counts'] }),
@@ -82,10 +83,8 @@ describe('MobilePullToRefresh', () => {
         </MobilePullToRefresh>,
       );
 
-      const triggerBtn = screen.getByTestId('test-trigger-refresh');
-      await act(async () => {
-        triggerBtn.click();
-      });
+      const container = screen.getByTestId('pull-to-refresh-container');
+      await simulatePullDown(container);
 
       expect(mockInvalidateQueries).toHaveBeenCalledWith(
         expect.objectContaining({ queryKey: ['operations-orders'] }),
@@ -99,13 +98,24 @@ describe('MobilePullToRefresh', () => {
         </MobilePullToRefresh>,
       );
 
-      const triggerBtn = screen.getByTestId('test-trigger-refresh');
-      await act(async () => {
-        triggerBtn.click();
-      });
+      const container = screen.getByTestId('pull-to-refresh-container');
+      await simulatePullDown(container);
 
       // Spinner should be visible immediately after triggering refresh
       expect(screen.getByTestId('refresh-spinner')).toBeTruthy();
+    });
+
+    it('does not trigger refresh when pull delta is below threshold', async () => {
+      render(
+        <MobilePullToRefresh>
+          <div>content</div>
+        </MobilePullToRefresh>,
+      );
+
+      const container = screen.getByTestId('pull-to-refresh-container');
+      await simulatePullDown(container, 30); // below 60px threshold
+
+      expect(mockInvalidateQueries).not.toHaveBeenCalled();
     });
 
     it('does not trigger a second refresh while the first is in progress', async () => {
@@ -115,22 +125,32 @@ describe('MobilePullToRefresh', () => {
         </MobilePullToRefresh>,
       );
 
-      const triggerBtn = screen.getByTestId('test-trigger-refresh');
+      const container = screen.getByTestId('pull-to-refresh-container');
 
-      // First click — triggers refresh, sets isRefreshing=true
-      await act(async () => {
-        triggerBtn.click();
-      });
+      // First pull — triggers refresh, sets isRefreshing=true
+      await simulatePullDown(container);
       const firstCallCount = mockInvalidateQueries.mock.calls.length;
       expect(firstCallCount).toBe(2);
 
-      // Second click while still refreshing — should be a no-op
-      await act(async () => {
-        triggerBtn.click();
-      });
+      // Second pull while still refreshing — should be a no-op
+      await simulatePullDown(container);
 
       // Call count should not have increased
       expect(mockInvalidateQueries).toHaveBeenCalledTimes(2);
+    });
+
+    it('calls onRefreshStart callback when provided', async () => {
+      const onRefreshStart = vi.fn();
+      render(
+        <MobilePullToRefresh onRefreshStart={onRefreshStart}>
+          <div>content</div>
+        </MobilePullToRefresh>,
+      );
+
+      const container = screen.getByTestId('pull-to-refresh-container');
+      await simulatePullDown(container);
+
+      expect(onRefreshStart).toHaveBeenCalledTimes(1);
     });
   });
 });
