@@ -54,9 +54,9 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-y-auto">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-base font-semibold">Filtros</h2>
         <button
           type="button"
@@ -72,7 +72,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
       <div className="flex-1 px-4 py-4 space-y-6">
         {/* Estado */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Estado</h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Estado</h3>
           <div className="flex flex-wrap gap-2">
             {STATUS_OPTIONS.map(({ value, label }) => (
               <button
@@ -84,7 +84,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   statusFilter === value
                     ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
-                    : 'bg-white border-gray-200 text-gray-600'
+                    : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
                 {label}
@@ -95,7 +95,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
 
         {/* Fecha */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Fecha</h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Fecha</h3>
           <div className="flex flex-wrap gap-2">
             {DATE_OPTIONS.map(({ value, label }) => (
               <button
@@ -107,7 +107,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   datePreset === value
                     ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
-                    : 'bg-white border-gray-200 text-gray-600'
+                    : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
                 {label}
@@ -118,7 +118,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
 
         {/* Etapa */}
         <section>
-          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Etapa</h3>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Etapa</h3>
           <div className="flex flex-wrap gap-2">
             {PIPELINE_STAGES.map(({ status, label }) => (
               <button
@@ -130,7 +130,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   stageFilter === status
                     ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
-                    : 'bg-white border-gray-200 text-gray-600'
+                    : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
                 {label}
@@ -141,11 +141,11 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-gray-200 flex gap-3">
+      <div className="px-4 py-3 border-t border-border flex gap-3">
         <button
           type="button"
           onClick={handleLimpiar}
-          className="flex-1 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium"
+          className="flex-1 py-2 rounded-lg border border-border text-foreground text-sm font-medium"
         >
           Limpiar
         </button>

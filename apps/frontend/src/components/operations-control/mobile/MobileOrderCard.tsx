@@ -27,7 +27,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
   const countdownText = hasCountdown ? getCountdownText(order.delivery_window_end!) : null;
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-3 min-h-[60px]">
+    <div className="bg-background border border-border rounded-lg p-3 min-h-[60px]">
       {/* Row 1: priority dot + order number */}
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
@@ -39,14 +39,14 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
         </div>
         <span
           data-testid="status-badge"
-          className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full"
+          className="text-xs bg-muted text-foreground px-2 py-0.5 rounded-full"
         >
           {order.status}
         </span>
       </div>
 
       {/* Row 2: retailer · comuna */}
-      <p className="text-xs text-gray-500 mb-1">
+      <p className="text-xs text-muted-foreground mb-1">
         {order.retailer_name ?? ''} · {order.comuna}
       </p>
 
@@ -57,7 +57,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
           className={`text-xs font-medium ${
             countdownText === 'Pasado'
               ? 'text-red-500'
-              : 'text-gray-600'
+              : 'text-muted-foreground'
           } ${priority === 'urgent' ? 'animate-pulse' : ''}`}
         >
           {countdownText}
@@ -70,7 +70,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
           type="button"
           data-testid="btn-ver"
           onClick={onView}
-          className="min-h-[60px] text-xs bg-blue-50 text-blue-600 px-3 rounded-md font-medium"
+          className="min-h-[60px] text-xs bg-primary/10 text-primary px-3 rounded-md font-medium"
         >
           Ver
         </button>
@@ -79,7 +79,7 @@ export function MobileOrderCard({ order, priority, onView, onEscalar }: MobileOr
             type="button"
             data-testid="btn-escalar"
             onClick={onEscalar}
-            className="min-h-[60px] text-xs bg-red-50 text-red-600 px-3 rounded-md font-medium"
+            className="min-h-[60px] text-xs bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 px-3 rounded-md font-medium"
           >
             Escalar
           </button>

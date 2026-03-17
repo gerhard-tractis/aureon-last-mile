@@ -56,13 +56,13 @@ export function MobilePullToRefresh({ children }: MobilePullToRefreshProps) {
         <div className="flex justify-center py-2">
           <div
             data-testid="refresh-spinner"
-            className="w-6 h-6 rounded-full border-2 border-gray-200 border-t-blue-500 animate-spin"
+            className="w-6 h-6 rounded-full border-2 border-border border-t-primary animate-spin"
           />
         </div>
       )}
       {showToast && (
         <div className="flex justify-center py-1">
-          <span className="text-xs text-green-600 font-medium">Actualizado</span>
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Actualizado</span>
         </div>
       )}
       {children}
