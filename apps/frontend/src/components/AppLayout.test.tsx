@@ -10,12 +10,14 @@ vi.mock('next/navigation', () => ({
 
 let mockRole = 'admin';
 let mockPermissions: string[] = [];
+let mockOperatorId: string | null = 'op-test';
 
 vi.mock('@/lib/context/GlobalContext', () => ({
   useGlobal: () => ({
     user: { email: 'test@example.com' },
     role: mockRole,
-    permissions: mockPermissions
+    permissions: mockPermissions,
+    operatorId: mockOperatorId,
   }),
 }));
 
@@ -36,11 +38,21 @@ vi.mock('@/providers/BrandingProvider', () => ({
   useBranding: () => mockBranding,
 }));
 
+// Mock CapacityAlertBell to avoid hook dependencies in AppLayout tests
+vi.mock('@/components/capacity/CapacityAlertBell', () => ({
+  default: ({ operatorId }: { operatorId: string | null }) => (
+    <button aria-label="Alertas de capacidad" data-operator-id={operatorId}>
+      Bell
+    </button>
+  ),
+}));
+
 import AppLayout from './AppLayout';
 
 beforeEach(() => {
   mockRole = 'admin';
   mockPermissions = [];
+  mockOperatorId = 'op-test';
 });
 
 describe('AppLayout sidebar branding', () => {
@@ -125,5 +137,109 @@ describe('AppLayout - Ops Control nav item', () => {
     render(<AppLayout><div>content</div></AppLayout>);
 
     expect(screen.queryByText('Ops Control')).toBeNull();
+  });
+});
+
+describe('AppLayout nav items – Capacidad and Auditoría', () => {
+  it('shows Capacidad link for admin role', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
+  });
+
+  it('shows Capacidad link for operations_manager role', () => {
+    mockRole = 'operations_manager';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
+  });
+
+  it('hides Capacidad link for other roles', () => {
+    mockRole = 'driver';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByRole('link', { name: /capacidad/i })).toBeNull();
+  });
+
+  it('Capacidad link points to /app/capacity-planning', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    const link = screen.getByRole('link', { name: /capacidad/i }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/app/capacity-planning');
+  });
+
+  it('shows Auditoría link for admin role', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
+  });
+
+  it('shows Auditoría link for operations_manager role', () => {
+    mockRole = 'operations_manager';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
+  });
+
+  it('hides Auditoría link for other roles', () => {
+    mockRole = 'driver';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByRole('link', { name: /auditor[ií]a/i })).toBeNull();
+  });
+
+  it('Auditoría link points to /app/audit-logs', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    const link = screen.getByRole('link', { name: /auditor[ií]a/i }) as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/app/audit-logs');
+  });
+});
+
+describe('AppLayout CapacityAlertBell', () => {
+  it('renders the bell for admin role', () => {
+    mockRole = 'admin';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('button', { name: /alertas de capacidad/i })).toBeTruthy();
+  });
+
+  it('renders the bell for operations_manager role', () => {
+    mockRole = 'operations_manager';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.getByRole('button', { name: /alertas de capacidad/i })).toBeTruthy();
+  });
+
+  it('does not render the bell for other roles', () => {
+    mockRole = 'driver';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    expect(screen.queryByRole('button', { name: /alertas de capacidad/i })).toBeNull();
+  });
+
+  it('passes operatorId to CapacityAlertBell', () => {
+    mockRole = 'admin';
+    mockOperatorId = 'op-test';
+
+    render(<AppLayout><div>content</div></AppLayout>);
+
+    const bell = screen.getByRole('button', { name: /alertas de capacidad/i });
+    expect(bell.getAttribute('data-operator-id')).toBe('op-test');
   });
 });

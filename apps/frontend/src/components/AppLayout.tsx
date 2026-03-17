@@ -13,12 +13,15 @@ import {
     BarChart3,
     TrendingUp,
     ClipboardCheck,
+    Calendar,
+    ScrollText,
     Activity,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPASassClient } from "@/lib/supabase/client";
 import { useBranding } from "@/providers/BrandingProvider";
 import ThemeToggle from '@/components/ThemeToggle';
+import CapacityAlertBell from '@/components/capacity/CapacityAlertBell';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -26,7 +29,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const router = useRouter();
 
-    const { user, role: userRole, permissions: userPermissions } = useGlobal();
+    const { user, role: userRole, permissions: userPermissions, operatorId } = useGlobal();
     const { logoUrl, companyName } = useBranding();
     const [logoError, setLogoError] = useState(false);
 
@@ -180,6 +183,36 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             Pickup
                         </Link>
                     )}
+                    {(userRole === 'operations_manager' || userRole === 'admin') && (
+                        <Link
+                            href="/app/capacity-planning"
+                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                pathname.startsWith('/app/capacity-planning')
+                                    ? 'bg-primary-50 text-primary-600'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                        >
+                            <Calendar className={`mr-3 h-5 w-5 ${
+                                pathname.startsWith('/app/capacity-planning') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
+                            }`} />
+                            Capacidad
+                        </Link>
+                    )}
+                    {(userRole === 'operations_manager' || userRole === 'admin') && (
+                        <Link
+                            href="/app/audit-logs"
+                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                pathname === '/app/audit-logs'
+                                    ? 'bg-primary-50 text-primary-600'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                        >
+                            <ScrollText className={`mr-3 h-5 w-5 ${
+                                pathname === '/app/audit-logs' ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
+                            }`} />
+                            Auditoría
+                        </Link>
+                    )}
                     {standaloneNav.map((item) => {
                         const isActive = pathname === item.href;
                         return (
@@ -214,6 +247,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
                     <div className="flex items-center gap-2 ml-auto">
                         <ThemeToggle />
+                        {(userRole === 'operations_manager' || userRole === 'admin') && (
+                            <CapacityAlertBell operatorId={operatorId} />
+                        )}
                         <div className="relative">
                             <button
                                 onClick={() => setUserDropdownOpen(!isUserDropdownOpen)}
