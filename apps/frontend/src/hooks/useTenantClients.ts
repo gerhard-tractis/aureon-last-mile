@@ -18,7 +18,7 @@ export function useTenantClients(operatorId: string | null) {
       const { data, error } = await (createSPAClient() as any).from('tenant_clients')
         .select('id, name')
         .eq('operator_id', operatorId!)
-        .is('deleted_at', null)
+        .eq('is_active', true)
         .order('name');
       if (error) throw error;
       return (data as TenantClient[]) ?? [];
