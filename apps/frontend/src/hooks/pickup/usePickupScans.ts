@@ -84,6 +84,18 @@ export function useScanMutation() {
         if (insertError) throw insertError;
       }
 
+      // Advance verified packages to 'verificado'
+      if (result.scanResult === 'verified' && result.packageIds.length > 0) {
+        const { error: statusError } = await supabase
+          .from('packages')
+          .update({
+            status: 'verificado',
+            status_updated_at: new Date().toISOString(),
+          })
+          .in('id', result.packageIds);
+        if (statusError) throw statusError;
+      }
+
       // Play feedback
       playFeedback(result.scanResult);
 
