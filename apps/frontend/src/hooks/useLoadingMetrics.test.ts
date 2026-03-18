@@ -216,6 +216,23 @@ describe('useCommittedOrdersDaily', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
   });
+
+  // Guard: the RPC filters by created_at (load date) via p_start_date/p_end_date,
+  // then groups by delivery_date. If a future migration regresses the SQL to filter
+  // by delivery_date instead, this test documents the correct contract.
+  it('should pass date range as p_start_date/p_end_date for created_at filtering', async () => {
+    mockRpc.mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useCommittedOrdersDaily(OP, START, END), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockRpc).toHaveBeenCalledWith('get_committed_orders_daily', {
+      p_start_date: START,
+      p_end_date: END,
+    });
+  });
 });
 
 describe('useOrdersByComuna', () => {

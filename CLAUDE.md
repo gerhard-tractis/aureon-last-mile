@@ -34,7 +34,7 @@ Aureon Last Mile — last-mile logistics management platform.
 
 Read `docs/architecture.md` before any implementation task. Full stack and rules there.
 
-**Non-negotiable:** TDD always · `app→components→hooks→lib→Supabase` · `operator_id` on every query/table · soft deletes only. Keep files under 300 lines — exceed only if truly unavoidable.
+**Non-negotiable:** TDD always · `app→components→hooks→lib→Supabase` · `operator_id` on every query/table · soft deletes only. Keep files under 300 lines — exceed only if truly unavoidable. When rewriting a SQL function with `CREATE OR REPLACE`, always use the **latest** migration's definition as template — never the original.
 
 ## Feature Workflow
 
