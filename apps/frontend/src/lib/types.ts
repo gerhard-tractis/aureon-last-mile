@@ -61,6 +61,86 @@ export type Database = {
           },
         ]
       }
+      hub_receptions: {
+        Row: {
+          id: string
+          manifest_id: string
+          operator_id: string
+          received_by: string | null
+          delivered_by: string | null
+          status: string
+          started_at: string | null
+          completed_at: string | null
+          expected_count: number
+          received_count: number
+          discrepancy_notes: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          manifest_id: string
+          operator_id: string
+          received_by?: string | null
+          delivered_by?: string | null
+          status?: string
+          started_at?: string | null
+          completed_at?: string | null
+          expected_count?: number
+          received_count?: number
+          discrepancy_notes?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          manifest_id?: string
+          operator_id?: string
+          received_by?: string | null
+          delivered_by?: string | null
+          status?: string
+          started_at?: string | null
+          completed_at?: string | null
+          expected_count?: number
+          received_count?: number
+          discrepancy_notes?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hub_receptions_manifest_id_fkey"
+            columns: ["manifest_id"]
+            isOneToOne: false
+            referencedRelation: "manifests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hub_receptions_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hub_receptions_received_by_fkey"
+            columns: ["received_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hub_receptions_delivered_by_fkey"
+            columns: ["delivered_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_trigger_failures: {
         Row: {
           error_detail: string | null
@@ -223,6 +303,7 @@ export type Database = {
           signature_operator: string | null
           signature_operator_name: string | null
           started_at: string | null
+          reception_status: string | null
           status: string
           total_orders: number | null
           total_packages: number | null
@@ -237,6 +318,7 @@ export type Database = {
           id?: string
           operator_id: string
           pickup_location?: string | null
+          reception_status?: string | null
           retailer_name?: string | null
           signature_client?: string | null
           signature_client_name?: string | null
@@ -257,6 +339,7 @@ export type Database = {
           id?: string
           operator_id?: string
           pickup_location?: string | null
+          reception_status?: string | null
           retailer_name?: string | null
           signature_client?: string | null
           signature_client_name?: string | null
@@ -458,6 +541,77 @@ export type Database = {
             columns: ["package_id"]
             isOneToOne: false
             referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reception_scans: {
+        Row: {
+          id: string
+          reception_id: string
+          package_id: string | null
+          operator_id: string
+          scanned_by: string | null
+          barcode: string
+          scan_result: string
+          scanned_at: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          reception_id: string
+          package_id?: string | null
+          operator_id: string
+          scanned_by?: string | null
+          barcode: string
+          scan_result: string
+          scanned_at: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          reception_id?: string
+          package_id?: string | null
+          operator_id?: string
+          scanned_by?: string | null
+          barcode?: string
+          scan_result?: string
+          scanned_at?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reception_scans_reception_id_fkey"
+            columns: ["reception_id"]
+            isOneToOne: false
+            referencedRelation: "hub_receptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reception_scans_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reception_scans_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reception_scans_scanned_by_fkey"
+            columns: ["scanned_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -833,6 +987,31 @@ export type Database = {
         | "EMAIL"
         | "MANUAL"
         | "CSV"
+      hub_reception_status_enum:
+        | "pending"
+        | "in_progress"
+        | "completed"
+      package_status_enum:
+        | "ingresado"
+        | "verificado"
+        | "en_bodega"
+        | "asignado"
+        | "en_carga"
+        | "listo"
+        | "en_ruta"
+        | "entregado"
+        | "cancelado"
+        | "devuelto"
+        | "dañado"
+        | "extraviado"
+      reception_scan_result_enum:
+        | "received"
+        | "not_found"
+        | "duplicate"
+      reception_status_enum:
+        | "awaiting_reception"
+        | "reception_in_progress"
+        | "received"
       user_role:
         | "pickup_crew"
         | "warehouse_staff"
@@ -970,6 +1149,35 @@ export const Constants = {
         "success",
         "failed",
         "returned",
+      ],
+      hub_reception_status_enum: [
+        "pending",
+        "in_progress",
+        "completed",
+      ],
+      package_status_enum: [
+        "ingresado",
+        "verificado",
+        "en_bodega",
+        "asignado",
+        "en_carga",
+        "listo",
+        "en_ruta",
+        "entregado",
+        "cancelado",
+        "devuelto",
+        "dañado",
+        "extraviado",
+      ],
+      reception_scan_result_enum: [
+        "received",
+        "not_found",
+        "duplicate",
+      ],
+      reception_status_enum: [
+        "awaiting_reception",
+        "reception_in_progress",
+        "received",
       ],
       user_role: [
         "pickup_crew",
