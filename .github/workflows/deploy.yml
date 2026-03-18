@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 5
     defaults:
       run:
-        working-directory: apps/frontend
+        working-directory: packages/database
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 5
     defaults:
       run:
-        working-directory: apps/frontend
+        working-directory: packages/database
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -1,5 +1,5 @@
 {
-  "name": "supabase-expo-template",
+  "name": "@aureon/mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
@@ -8,9 +8,13 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "type-check": "echo 'type-check not configured'",
+    "test": "echo 'no tests configured'",
+    "test:run": "echo 'no tests configured'"
   },
   "dependencies": {
+    "@aureon/database": "*",
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
