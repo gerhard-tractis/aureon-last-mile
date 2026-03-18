@@ -1,0 +1,19 @@
+[Unit]
+Description=Aureon Agent Suite
+After=network.target redis-server.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/aureon-last-mile/apps/agents
+EnvironmentFile=/etc/aureon/agents.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aureon-agents
+
+[Install]
+WantedBy=multi-user.target
