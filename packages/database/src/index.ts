@@ -1,2 +1,2 @@
 export * from './enums';
-// database.types.ts will be added after generating types
+export type { Database, Json } from './database.types';
