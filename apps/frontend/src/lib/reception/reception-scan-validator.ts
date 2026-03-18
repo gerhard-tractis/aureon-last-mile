@@ -29,7 +29,7 @@ const PRE_VERIFICADO_STATUSES = ['ingresado'];
 export async function validateReceptionScan(
   input: ValidateReceptionScanInput
 ): Promise<ReceptionScanValidationResult> {
-  const { barcode, receptionId, manifestId, operatorId } = input;
+  const { barcode, receptionId, manifestId: _manifestId, operatorId } = input;
   const supabase = createSPAClient();
 
   // 1. Duplicate check — already scanned this barcode for this reception?

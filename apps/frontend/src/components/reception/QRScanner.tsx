@@ -19,7 +19,7 @@ interface LookupResult {
   detail?: string;
 }
 
-export function QRScanner({ onClose, operatorId }: QRScannerProps) {
+export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) {
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [manualInput, setManualInput] = useState('');
