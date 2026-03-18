@@ -54,7 +54,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "generators_authenticated_read" ON public.generators
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -76,7 +76,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "intake_submissions_authenticated_read" ON public.intake_submissions
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -98,7 +98,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "drivers_authenticated_read" ON public.drivers
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -120,7 +120,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "driver_availabilities_authenticated_read" ON public.driver_availabilities
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -142,7 +142,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "assignments_authenticated_read" ON public.assignments
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -164,7 +164,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "conversations_authenticated_read" ON public.conversations
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -186,7 +186,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "conversation_messages_authenticated_read" ON public.conversation_messages
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -209,7 +209,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "wismo_notifications_authenticated_read" ON public.wismo_notifications
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -231,7 +231,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "settlement_periods_authenticated_read" ON public.settlement_periods
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -253,7 +253,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "settlement_line_items_authenticated_read" ON public.settlement_line_items
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -275,7 +275,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "settlement_documents_authenticated_read" ON public.settlement_documents
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -297,7 +297,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "exceptions_authenticated_read" ON public.exceptions
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -319,7 +319,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "agent_events_authenticated_read" ON public.agent_events
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -342,7 +342,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "agent_tool_calls_authenticated_read" ON public.agent_tool_calls
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -365,7 +365,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "operator_config_authenticated_read" ON public.operator_config
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -387,7 +387,7 @@ END $$;
 DO $$ BEGIN
   CREATE POLICY "agent_commands_authenticated_read" ON public.agent_commands
     FOR SELECT TO authenticated
-    USING (operator_id = (SELECT operator_id FROM public.users WHERE auth_id = auth.uid()));
+    USING (operator_id = (SELECT operator_id FROM public.users WHERE id = auth.uid()));
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
