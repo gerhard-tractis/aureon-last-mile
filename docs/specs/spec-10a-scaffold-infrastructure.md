@@ -1,5 +1,7 @@
 # Spec-10a: Agent Suite — Scaffold + Infrastructure (Phase 0)
 
+**Status:** in progress
+
 > Part of the Agent Suite implementation plan: `docs/architecture/agents-implementation-plan.md`
 > Architecture: `docs/architecture/agents.md` §3
 
