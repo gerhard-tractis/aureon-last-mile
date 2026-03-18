@@ -1,0 +1,20 @@
+{
+  "name": "@aureon/root",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "test:run": "turbo run test:run",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "dev:frontend": "turbo run dev --filter=@aureon/frontend",
+    "dev:mobile": "turbo run dev --filter=@aureon/mobile"
+  },
+  "devDependencies": {
+    "turbo": "^2"
+  }
+}
