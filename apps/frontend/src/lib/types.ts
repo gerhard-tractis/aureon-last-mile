@@ -331,7 +331,10 @@ export type Database = {
           verified_dimensions: Json | null
           metadata: Json | null
           raw_data: Json
+          status: string
+          status_updated_at: string | null
           created_at: string
+          updated_at: string
           deleted_at: string | null
         }
         Insert: {
@@ -350,7 +353,10 @@ export type Database = {
           verified_dimensions?: Json | null
           metadata?: Json | null
           raw_data: Json
+          status?: string
+          status_updated_at?: string | null
           created_at?: string
+          updated_at?: string
           deleted_at?: string | null
         }
         Update: {
@@ -369,7 +375,10 @@ export type Database = {
           verified_dimensions?: Json | null
           metadata?: Json | null
           raw_data?: Json
+          status?: string
+          status_updated_at?: string | null
           created_at?: string
+          updated_at?: string
           deleted_at?: string | null
         }
         Relationships: [
