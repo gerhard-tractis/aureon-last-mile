@@ -11,7 +11,7 @@ const withSerwist = withSerwistInit({
 });
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  transpilePackages: ['@aureon/database'],
 };
 
 // Apply Serwist first, then Sentry
