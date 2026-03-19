@@ -1,0 +1,71 @@
+export interface DockZone {
+  id: string;
+  name: string;
+  code: string;
+  is_consolidation: boolean;
+  comunas: string[];
+  is_active: boolean;
+}
+
+export interface PackageOrder {
+  comuna: string;
+  delivery_date: string; // YYYY-MM-DD
+}
+
+export type ZoneMatchReason = 'matched' | 'future_date' | 'unmapped';
+
+export interface ZoneMatchResult {
+  zone_id: string;
+  zone_name: string;
+  zone_code: string;
+  is_consolidation: boolean;
+  reason: ZoneMatchReason;
+  flagged: boolean;
+}
+
+function normalize(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+function isDeliveryDateActive(deliveryDate: string, today: string): boolean {
+  const delivery = new Date(deliveryDate + 'T00:00:00');
+  const todayDate = new Date(today + 'T00:00:00');
+  const tomorrow = new Date(todayDate);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return delivery <= tomorrow;
+}
+
+export function determineDockZone(
+  pkg: PackageOrder,
+  zones: DockZone[],
+  today: string
+): ZoneMatchResult {
+  const consolidation = zones.find(z => z.is_consolidation);
+  if (!consolidation) {
+    throw new Error('No consolidation zone configured');
+  }
+
+  const makeResult = (zone: DockZone, reason: ZoneMatchReason, flagged = false): ZoneMatchResult => ({
+    zone_id: zone.id,
+    zone_name: zone.name,
+    zone_code: zone.code,
+    is_consolidation: zone.is_consolidation,
+    reason,
+    flagged,
+  });
+
+  if (!isDeliveryDateActive(pkg.delivery_date, today)) {
+    return makeResult(consolidation, 'future_date');
+  }
+
+  const normalizedComuna = normalize(pkg.comuna);
+  const matchingZone = zones.find(
+    z => !z.is_consolidation && z.is_active && z.comunas.some(c => normalize(c) === normalizedComuna)
+  );
+
+  if (matchingZone) {
+    return makeResult(matchingZone, 'matched');
+  }
+
+  return makeResult(consolidation, 'unmapped', true);
+}
