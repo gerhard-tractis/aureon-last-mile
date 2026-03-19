@@ -5,10 +5,15 @@
 
 import {
   isValidHexColor,
-  generateColorRamp,
+  generateColorRamp as _generateColorRamp,
 } from '@/utils/generateColorRamp';
 
-export { isValidHexColor, generateColorRamp };
+export { isValidHexColor };
+
+/** Generates a primary-50 → primary-950 color ramp from a single hex color. */
+export function generateColorRamp(hex: string): Record<string, string> {
+  return _generateColorRamp('primary', hex);
+}
 
 export interface BrandPalette {
   brand_primary: string;
@@ -39,12 +44,35 @@ export function getContrastForeground(bgHex: string): '#ffffff' | '#0f172a' {
   const luminance =
     0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
 
-  // Use white when contrast(white, bg) >= 2.5.
-  // This threshold favors white on mid-dark brand colors (e.g. gold accents)
-  // matching the design-system intent where white text is used on the gold accent.
+  // Pick whichever text color gives higher contrast (WCAG relative luminance).
+  // darkTextLuminance for #0f172a
+  const darkTextLuminance = 0.0090; // pre-computed for #0f172a
   const contrastWithWhite = (1.0 + 0.05) / (luminance + 0.05);
+  const contrastWithDark  = (luminance + 0.05) / (darkTextLuminance + 0.05);
 
-  return contrastWithWhite >= 2.5 ? '#ffffff' : '#0f172a';
+  return contrastWithWhite >= contrastWithDark ? '#ffffff' : '#0f172a';
+}
+
+/** Converts a hex color to [hue, saturation, lightness] tuple. */
+export function hexToHsl(hex: string): [number, number, number] {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!result) return [0, 0, 50];
+  const r = parseInt(result[1], 16) / 255;
+  const g = parseInt(result[2], 16) / 255;
+  const b = parseInt(result[3], 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  switch (max) {
+    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+    case g: h = ((b - r) / d + 2) / 6; break;
+    default: h = ((r - g) / d + 4) / 6;
+  }
+  return [h * 360, s * 100, l * 100];
 }
 
 /** Mixes two hex colors. ratio 0 = fully a, ratio 1 = fully b */
@@ -111,7 +139,7 @@ export function generateBrandTokens(palette: BrandPalette): CSSTokenMap {
   tokens['--color-text-muted'] = mixHex(brand_text, brand_background, 0.65);
 
   // Full primary-50 to primary-900 ramp (spec requirement)
-  const ramp = generateColorRamp('primary', brand_primary);
+  const ramp = generateColorRamp(brand_primary);
   Object.assign(tokens, ramp);
 
   return tokens;

@@ -2,13 +2,14 @@ import { describe, it, expect } from 'vitest';
 import {
   getContrastForeground,
   generateBrandTokens,
+  hexToHsl,
 } from './color-utils';
 
 describe('getContrastForeground', () => {
   it('returns white text on dark backgrounds', () => {
     expect(getContrastForeground('#c8102e')).toBe('#ffffff'); // Falabella red
     expect(getContrastForeground('#1a1a1a')).toBe('#ffffff'); // near-black
-    expect(getContrastForeground('#ca9a04')).toBe('#ffffff'); // dark gold
+    expect(getContrastForeground('#0f172a')).toBe('#ffffff'); // dark slate
   });
 
   it('returns dark text on light backgrounds', () => {
@@ -16,6 +17,19 @@ describe('getContrastForeground', () => {
     expect(getContrastForeground('#f8fafc')).toBe('#0f172a'); // slate-50
     expect(getContrastForeground('#fef9c3')).toBe('#0f172a'); // light yellow
     expect(getContrastForeground('#e6c15c')).toBe('#0f172a'); // light gold
+    expect(getContrastForeground('#ca9a04')).toBe('#0f172a'); // dark gold — dark text wins per WCAG
+  });
+});
+
+describe('hexToHsl', () => {
+  it('converts hex to HSL tuple', () => {
+    const [h, s, l] = hexToHsl('#ff0000');
+    expect(h).toBeCloseTo(0, 0); // red = hue 0
+    expect(s).toBeCloseTo(100, 0); // fully saturated
+    expect(l).toBeCloseTo(50, 0); // 50% lightness
+  });
+  it('returns [0, 0, 50] for invalid hex', () => {
+    expect(hexToHsl('bad')).toEqual([0, 0, 50]);
   });
 });
 
