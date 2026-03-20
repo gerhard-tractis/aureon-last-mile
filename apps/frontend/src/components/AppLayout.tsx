@@ -17,6 +17,7 @@ import {
     ScrollText,
     Activity,
     PackageCheck,
+    Layers,
 } from 'lucide-react';
 import { useGlobal } from "@/lib/context/GlobalContext";
 import { createSPASassClient } from "@/lib/supabase/client";
@@ -59,6 +60,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const opsControlAllowed = userRole === 'operations_manager' || userRole === 'admin';
     const pickupAllowed = userPermissions.includes('pickup');
     const receptionAllowed = userPermissions.includes('reception');
+    const distributionAllowed = userPermissions.includes('distribution');
     const isDashboardSection = pathname.startsWith('/app/dashboard');
     const operacionesHref = '/app/dashboard/operaciones';
     const analiticaHref = '/app/dashboard/analitica';
@@ -198,6 +200,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                                 pathname.startsWith('/app/reception') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
                             }`} />
                             Recepción
+                        </Link>
+                    )}
+                    {distributionAllowed && (
+                        <Link
+                            href="/app/distribution"
+                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                pathname.startsWith('/app/distribution')
+                                    ? 'bg-primary-50 text-primary-600'
+                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                            }`}
+                        >
+                            <Layers className={`mr-3 h-5 w-5 ${
+                                pathname.startsWith('/app/distribution') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
+                            }`} />
+                            Distribución
                         </Link>
                     )}
                     {(userRole === 'operations_manager' || userRole === 'admin') && (
