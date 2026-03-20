@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// Mock supabase client
+// Mock supabase client — controlled via mockSingle
 const mockSingle = vi.fn();
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -39,54 +39,31 @@ function createWrapper() {
 describe('BrandingProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset body inline styles
+    // Reset documentElement inline styles between tests
+    document.documentElement.removeAttribute('style');
     document.body.removeAttribute('style');
   });
 
-  it('provides default/fallback values when no branding config exists', async () => {
+  it('provides hasBranding: false and palette: null when no branding configured', async () => {
     mockSingle.mockResolvedValue({ data: { settings: {} }, error: null });
 
     const { result } = renderHook(() => useBranding(), { wrapper: createWrapper() });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    expect(result.current.hasBranding).toBe(false);
+    expect(result.current.palette).toBeNull();
     expect(result.current.logoUrl).toBeNull();
     expect(result.current.companyName).toBeNull();
-    expect(result.current.primaryColor).toBeNull();
-    expect(result.current.secondaryColor).toBeNull();
   });
 
-  it('provides branding values when config exists', async () => {
-    mockSingle.mockResolvedValue({
-      data: {
-        settings: {
-          branding: {
-            company_name: 'Test Corp',
-            logo_url: 'https://example.com/logo.png',
-            primary_color: '#1e40af',
-            secondary_color: '#475569',
-          },
-        },
-      },
-      error: null,
-    });
-
-    const { result } = renderHook(() => useBranding(), { wrapper: createWrapper() });
-
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    expect(result.current.companyName).toBe('Test Corp');
-    expect(result.current.logoUrl).toBe('https://example.com/logo.png');
-    expect(result.current.primaryColor).toBe('#1e40af');
-    expect(result.current.secondaryColor).toBe('#475569');
-  });
-
-  it('handles partial branding config (company_name only)', async () => {
+  it('provides hasBranding: false when palette fields are missing required colors', async () => {
     mockSingle.mockResolvedValue({
       data: {
         settings: {
           branding: {
             company_name: 'Partial Corp',
+            // Missing brand_primary, brand_background, brand_text
           },
         },
       },
@@ -97,16 +74,73 @@ describe('BrandingProvider', () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    expect(result.current.hasBranding).toBe(false);
+    expect(result.current.palette).toBeNull();
     expect(result.current.companyName).toBe('Partial Corp');
-    expect(result.current.primaryColor).toBeNull();
   });
 
-  it('applies CSS variables to document.body when custom colors are set', async () => {
+  it('provides hasBranding: true and non-null palette when all 3 required colors are valid', async () => {
     mockSingle.mockResolvedValue({
       data: {
         settings: {
           branding: {
-            primary_color: '#1e40af',
+            company_name: 'Brand Corp',
+            logo_url: 'https://example.com/logo.png',
+            brand_primary: '#c8102e',
+            brand_background: '#ffffff',
+            brand_text: '#1a1a1a',
+          },
+        },
+      },
+      error: null,
+    });
+
+    const { result } = renderHook(() => useBranding(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.hasBranding).toBe(true);
+    expect(result.current.palette).toEqual({
+      brand_primary: '#c8102e',
+      brand_background: '#ffffff',
+      brand_text: '#1a1a1a',
+      brand_secondary: undefined,
+    });
+    expect(result.current.companyName).toBe('Brand Corp');
+    expect(result.current.logoUrl).toBe('https://example.com/logo.png');
+  });
+
+  it('includes brand_secondary in palette when provided', async () => {
+    mockSingle.mockResolvedValue({
+      data: {
+        settings: {
+          branding: {
+            brand_primary: '#c8102e',
+            brand_background: '#ffffff',
+            brand_text: '#1a1a1a',
+            brand_secondary: '#0057b8',
+          },
+        },
+      },
+      error: null,
+    });
+
+    const { result } = renderHook(() => useBranding(), { wrapper: createWrapper() });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.hasBranding).toBe(true);
+    expect(result.current.palette?.brand_secondary).toBe('#0057b8');
+  });
+
+  it('injects CSS tokens to documentElement (not body) when palette is valid', async () => {
+    mockSingle.mockResolvedValue({
+      data: {
+        settings: {
+          branding: {
+            brand_primary: '#c8102e',
+            brand_background: '#ffffff',
+            brand_text: '#1a1a1a',
           },
         },
       },
@@ -116,7 +150,23 @@ describe('BrandingProvider', () => {
     renderHook(() => useBranding(), { wrapper: createWrapper() });
 
     await waitFor(() => {
-      expect(document.body.style.getPropertyValue('--color-primary-500')).not.toBe('');
+      expect(
+        document.documentElement.style.getPropertyValue('--color-accent')
+      ).not.toBe('');
+    });
+
+    // Must NOT be on body
+    expect(document.body.style.getPropertyValue('--color-accent')).toBe('');
+  });
+
+  it('does NOT inject tokens to documentElement when palette is null', async () => {
+    mockSingle.mockResolvedValue({ data: { settings: {} }, error: null });
+
+    renderHook(() => useBranding(), { wrapper: createWrapper() });
+
+    await waitFor(() => {
+      // Small wait to let the effect run
+      expect(document.documentElement.style.getPropertyValue('--color-accent')).toBe('');
     });
   });
 
@@ -147,13 +197,15 @@ describe('BrandingProvider', () => {
     });
   });
 
-  it('handles fetch error gracefully', async () => {
+  it('handles fetch error gracefully — returns null branding fields', async () => {
     mockSingle.mockResolvedValue({ data: null, error: { message: 'fail' } });
 
     const { result } = renderHook(() => useBranding(), { wrapper: createWrapper() });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
+    expect(result.current.hasBranding).toBe(false);
+    expect(result.current.palette).toBeNull();
     expect(result.current.companyName).toBeNull();
     expect(result.current.logoUrl).toBeNull();
   });
