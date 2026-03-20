@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { Analytics } from '@vercel/analytics/next';
 import CookieConsent from "@/components/Cookies";
 import { GoogleAnalytics } from '@next/third-parties/google';
@@ -25,23 +27,24 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  let theme = process.env.NEXT_PUBLIC_THEME
-  if(!theme) {
-    theme = "theme-sass3"
-  }
   const gaID = process.env.NEXT_PUBLIC_GOOGLE_TAG;
   return (
-    <html lang="en">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
     <head>
-      {/* Inline script runs before hydration to apply dark class immediately, preventing flash of light mode */}
+      {/* Inline script runs before hydration to apply theme class immediately, preventing flash */}
       <script
         dangerouslySetInnerHTML={{
-          __html: `(function(){try{var s=localStorage.getItem('aureon-theme');if(s==='dark'||(s===null&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();`,
+          __html: `(function(){try{
+  var s=localStorage.getItem('aureon-theme');
+  var mode=(['light','dark','custom'].indexOf(s)!==-1)?s:null;
+  if(!mode){mode=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+  document.documentElement.classList.add(mode);
+}catch(e){document.documentElement.classList.add('light');}})();`,
         }}
       />
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     </head>
-    <body className={theme}>
+    <body>
       <SentryUserProvider />
       <ServiceWorkerRegistration />
       <ConnectionStatusBanner />
