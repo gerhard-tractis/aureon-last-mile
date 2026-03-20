@@ -1,6 +1,8 @@
 'use client';
 import { useRef, useEffect, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { createSPAClient } from '@/lib/supabase/client';
 import {
   determineDockZone,
@@ -59,45 +61,54 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
 
   const handlePackageScan = async (barcode: string) => {
     setError(null);
-    const supabase = createSPAClient();
-    const { data } = await supabase
-      .from('packages')
-      .select('id, label, status, order_id, orders!inner(comuna, delivery_date)')
-      .eq('operator_id', operatorId)
-      .eq('label', barcode)
-      .is('deleted_at', null)
-      .limit(1);
+    try {
+      const supabase = createSPAClient();
+      const { data, error: dbError } = await supabase
+        .from('packages')
+        .select('id, label, status, order_id, orders!inner(comuna, delivery_date)')
+        .eq('operator_id', operatorId)
+        .eq('label', barcode)
+        .is('deleted_at', null)
+        .limit(1);
 
-    if (!data || data.length === 0) {
-      setError('Código no encontrado');
-      return;
+      if (dbError) {
+        setError('Error de red — intente de nuevo');
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setError('Código no encontrado');
+        return;
+      }
+
+      const pkg = data[0] as {
+        id: string;
+        label: string;
+        status: string;
+        order_id: string;
+        orders: { comuna: string; delivery_date: string };
+      };
+      const order = pkg.orders;
+
+      const matchResult = determineDockZone(
+        { comuna: order.comuna, delivery_date: order.delivery_date },
+        zones,
+        today
+      );
+
+      const batch = await createBatch.mutateAsync({
+        operator_id: operatorId,
+        dock_zone_id: matchResult.zone_id,
+        created_by: userId,
+      });
+
+      setCurrentBatchId(batch.id);
+      setCurrentPackage({ id: pkg.id, label: pkg.label });
+      setDestination(matchResult);
+      setState('show_destination');
+    } catch {
+      setError('Error al procesar — intente de nuevo');
     }
-
-    const pkg = data[0] as {
-      id: string;
-      label: string;
-      status: string;
-      order_id: string;
-      orders: { comuna: string; delivery_date: string };
-    };
-    const order = pkg.orders;
-
-    const matchResult = determineDockZone(
-      { comuna: order.comuna, delivery_date: order.delivery_date },
-      zones,
-      today
-    );
-
-    const batch = await createBatch.mutateAsync({
-      operator_id: operatorId,
-      dock_zone_id: matchResult.zone_id,
-      created_by: userId,
-    });
-
-    setCurrentBatchId(batch.id);
-    setCurrentPackage({ id: pkg.id, label: pkg.label });
-    setDestination(matchResult);
-    setState('show_destination');
   };
 
   const handleAndenScan = async (scannedCode: string) => {
@@ -130,6 +141,24 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
     setState('scan_package');
   };
 
+  const handlePkgKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && pkgValue.trim()) {
+      e.preventDefault();
+      const val = pkgValue.trim();
+      setPkgValue('');
+      await handlePackageScan(val);
+    }
+  };
+
+  const handleAndenKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && andenValue.trim()) {
+      e.preventDefault();
+      const val = andenValue.trim();
+      setAndenValue('');
+      await handleAndenScan(val);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="text-sm text-muted-foreground font-medium">
@@ -141,17 +170,11 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
           <p className="font-medium">Escanear paquete</p>
           <Input
             ref={pkgInputRef}
+            aria-label="Escanear paquete"
             value={pkgValue}
             placeholder="Escanear paquete..."
             onChange={e => setPkgValue(e.target.value)}
-            onKeyDown={async e => {
-              if (e.key === 'Enter' && pkgValue.trim()) {
-                e.preventDefault();
-                const val = pkgValue.trim();
-                setPkgValue('');
-                await handlePackageScan(val);
-              }
-            }}
+            onKeyDown={handlePkgKeyDown}
             onBlur={() => setTimeout(() => pkgInputRef.current?.focus(), 100)}
             autoComplete="off"
             className="text-lg font-mono"
@@ -171,12 +194,9 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
               </div>
             )}
           </div>
-          <button
-            onClick={() => setState('scan_anden')}
-            className="w-full rounded-md bg-primary px-4 py-2 text-primary-foreground font-medium hover:bg-primary/90"
-          >
+          <Button className="w-full" onClick={() => setState('scan_anden')}>
             Confirmar andén
-          </button>
+          </Button>
         </div>
       )}
 
@@ -190,17 +210,11 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
             <p className="font-medium text-center text-muted-foreground">Escanear andén para confirmar</p>
             <Input
               ref={andenInputRef}
+              aria-label="Escanear andén"
               value={andenValue}
               placeholder="Escanear andén..."
               onChange={e => setAndenValue(e.target.value)}
-              onKeyDown={async e => {
-                if (e.key === 'Enter' && andenValue.trim()) {
-                  e.preventDefault();
-                  const val = andenValue.trim();
-                  setAndenValue('');
-                  await handleAndenScan(val);
-                }
-              }}
+              onKeyDown={handleAndenKeyDown}
               onBlur={() => setTimeout(() => andenInputRef.current?.focus(), 100)}
               autoComplete="off"
               className="text-lg font-mono"
