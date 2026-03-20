@@ -62,7 +62,7 @@ export function useCloseDockBatch() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['distribution', 'batch', variables.id] });
-      queryClient.invalidateQueries({ queryKey: ['distribution', 'kpis'] });
+      queryClient.invalidateQueries({ queryKey: ['distribution', 'kpis', variables.operator_id] });
     },
   });
 }

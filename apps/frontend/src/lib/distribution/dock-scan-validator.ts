@@ -30,6 +30,7 @@ export async function validateDockScan(
   const { data: existing } = await supabase
     .from('dock_scans')
     .select('id')
+    .eq('operator_id', operatorId)
     .eq('batch_id', batchId)
     .eq('barcode', barcode)
     .eq('scan_result', 'accepted')
