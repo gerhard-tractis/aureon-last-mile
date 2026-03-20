@@ -52,7 +52,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
     if (state === 'scan_package') {
       setTimeout(() => pkgInputRef.current?.focus(), 50);
     }
-    if (state === 'show_destination' || state === 'scan_anden') {
+    if (state === 'scan_anden') {
       setTimeout(() => andenInputRef.current?.focus(), 50);
     }
   }, [state]);
@@ -160,7 +160,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
         </div>
       )}
 
-      {(state === 'show_destination' || state === 'scan_anden') && destination && (
+      {state === 'show_destination' && destination && (
         <div className="space-y-4">
           <div className="text-center space-y-2">
             <p className="text-4xl font-bold">{destination.zone_name}</p>
@@ -170,6 +170,21 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
                 Comuna sin andén asignado — redirigiendo a Consolidación
               </div>
             )}
+          </div>
+          <button
+            onClick={() => setState('scan_anden')}
+            className="w-full rounded-md bg-primary px-4 py-2 text-primary-foreground font-medium hover:bg-primary/90"
+          >
+            Confirmar andén
+          </button>
+        </div>
+      )}
+
+      {state === 'scan_anden' && destination && (
+        <div className="space-y-4">
+          <div className="text-center space-y-1">
+            <p className="text-4xl font-bold">{destination.zone_name}</p>
+            <p className="text-2xl font-mono text-muted-foreground">{destination.zone_code}</p>
           </div>
           <div className="space-y-2">
             <p className="font-medium text-center text-muted-foreground">Escanear andén para confirmar</p>

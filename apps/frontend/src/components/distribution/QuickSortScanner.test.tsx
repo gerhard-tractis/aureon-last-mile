@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QuickSortScanner } from './QuickSortScanner';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
 
@@ -78,21 +78,28 @@ describe('QuickSortScanner', () => {
     expect(screen.getByPlaceholderText(/escanear paquete/i)).toBeInTheDocument();
   });
 
-  it('shows andén scan input after destination is displayed', async () => {
+  it('transitions to scan_anden state after clicking Confirmar andén', async () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
     const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
+    // State B: show_destination — destination visible, no andén input yet
+    await screen.findByText('Andén 1');
+    await waitFor(() => expect(screen.queryByPlaceholderText(/escanear andén/i)).not.toBeInTheDocument());
+    // Click Confirmar andén → state C: scan_anden
+    fireEvent.click(screen.getByText(/confirmar andén/i));
     await screen.findByPlaceholderText(/escanear andén/i);
   });
 
   it('shows wrong andén error when wrong code scanned in state C', async () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
-    // Get to state B
+    // Get to state B (show_destination)
     const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
-    // Wait for state B — andén input appears
+    await screen.findByText('Andén 1');
+    // Transition to state C (scan_anden)
+    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     // Scan wrong code
     fireEvent.change(andenInput, { target: { value: 'WRONG-CODE' } });
@@ -102,11 +109,13 @@ describe('QuickSortScanner', () => {
 
   it('increments counter and resets to scan_package on correct andén scan', async () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
-    // Scan package
+    // Scan package → state B
     const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
-    // Wait for andén input
+    await screen.findByText('Andén 1');
+    // Confirm → state C
+    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     // Scan correct andén code
     fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
