@@ -221,3 +221,27 @@ describe('AppLayout Recepción nav permission gating', () => {
     expect(screen.getByText('Recepción')).toBeTruthy();
   });
 });
+
+describe('AppLayout Distribución nav permission gating', () => {
+  it('shows Distribución link for users with distribution permission', () => {
+    mockPermissions = ['distribution'];
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByText('Distribución')).toBeTruthy();
+    const link = screen.getByText('Distribución').closest('a');
+    expect(link).toBeTruthy();
+    expect(link?.getAttribute('href')).toBe('/app/distribution');
+  });
+
+  it('hides Distribución link for users without distribution permission', () => {
+    mockPermissions = ['pickup'];
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByText('Distribución')).toBeNull();
+  });
+
+  it('shows Distribución alongside Recepción when user has both permissions', () => {
+    mockPermissions = ['reception', 'distribution'];
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByText('Recepción')).toBeTruthy();
+    expect(screen.getByText('Distribución')).toBeTruthy();
+  });
+});

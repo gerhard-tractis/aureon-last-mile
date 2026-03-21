@@ -26,6 +26,9 @@ vi.mock('@/components/dashboard/LoadingTab', () => ({
 vi.mock('@/components/dashboard/DeliveryTab', () => ({
   default: () => <div data-testid="delivery-tab">DeliveryTab</div>,
 }));
+vi.mock('@/components/dashboard/DistributionTab', () => ({
+  DistributionTab: () => <div data-testid="distribution-tab">DistributionTab</div>,
+}));
 
 describe('OperacionesPage', () => {
   beforeEach(() => {
@@ -47,5 +50,16 @@ describe('OperacionesPage', () => {
   it('renders Carga tab button', () => {
     render(<OperacionesPage />);
     expect(screen.getByRole('tab', { name: /Carga/ })).toBeDefined();
+  });
+
+  it('shows distribution-tab when tab=distribution', () => {
+    searchParams = new URLSearchParams('tab=distribution');
+    render(<OperacionesPage />);
+    expect(screen.getByTestId('distribution-tab')).toBeDefined();
+  });
+
+  it('renders Distribución tab button', () => {
+    render(<OperacionesPage />);
+    expect(screen.getByRole('tab', { name: /Distribución/ })).toBeDefined();
   });
 });
