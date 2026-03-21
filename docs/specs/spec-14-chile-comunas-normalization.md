@@ -424,6 +424,9 @@ Order within the migration:
 | Create | `apps/frontend/src/components/distribution/UnmatchedComunasPanel.tsx` |
 | Create | `apps/frontend/src/components/distribution/UnmatchedComunasPanel.test.tsx` |
 | Modify | `apps/frontend/src/app/app/distribution/settings/page.tsx` |
+| Create | `apps/frontend/src/__tests__/comunas-normalization.test.ts` |
+| Modify | `apps/frontend/src/components/distribution/BatchScanner.tsx` |
+| Modify | `apps/frontend/src/components/distribution/QuickSortScanner.tsx` |
 
 ---
 
@@ -1192,18 +1195,42 @@ cd apps/frontend && npx vitest run --reporter=verbose src/hooks/distribution/use
 
 Expected: 2 tests PASS.
 
-- [ ] **Step 5: Update `useDockZones.ts` — new types and junction table fetch**
+- [ ] **Step 5: Write failing tests for `useDockZones`**
 
-Replace `useDockZones.ts` in full (see spec for two-step mutation pattern for create/update). Key changes:
-- `DockZoneRecord.comunas` changes from `string[]` to `{ id: string; nombre: string }[]`
-- `useDockZones` selects `dock_zone_comunas(chile_comunas(id, nombre))` and flattens
-- `useCreateDockZone` takes `comunaIds: string[]`, inserts `dock_zones` then `dock_zone_comunas`
-- `useUpdateDockZone` takes `comunaIds?: string[]`, updates `dock_zones`, deletes old `dock_zone_comunas`, inserts new
-- `useEnsureConsolidationZone` removes `comunas: []` from its INSERT
+Update `apps/frontend/src/hooks/distribution/useDockZones.test.ts` with the junction table data shape:
 
 ```typescript
-// Full replacement — see spec section "Frontend Changes" for the complete implementation.
-// Key interface change:
+// In the 'returns zones sorted' test, update mock data to junction table format:
+{
+  id: 'z1', name: 'Las Condes', code: 'LC',
+  is_consolidation: false, is_active: true, operator_id: 'op1',
+  dock_zone_comunas: [{ chile_comunas: { id: 'c1', nombre: 'Las Condes' } }],
+}
+// Assert flattened shape:
+expect(result.current.data![0].comunas).toEqual([{ id: 'c1', nombre: 'Las Condes' }]);
+
+// Add test: useEnsureConsolidationZone INSERT does NOT include comunas column
+it('useEnsureConsolidationZone inserts without comunas column', async () => {
+  const { result } = renderHook(() => useEnsureConsolidationZone('op1'), { wrapper });
+  await act(async () => { result.current.mutate(); });
+  const insertCall = mockInsertFn.mock.calls[0][0];
+  expect(insertCall).not.toHaveProperty('comunas');
+});
+```
+
+- [ ] **Step 5b: Run test to verify it fails**
+
+```bash
+cd apps/frontend && npx vitest run --reporter=verbose src/hooks/distribution/useDockZones.test.ts
+```
+
+Expected: FAIL — `comunas` is `string[]`, not `{ id, nombre }[]`; insert has `comunas: []`.
+
+- [ ] **Step 6: Implement `useDockZones.ts` — junction table fetch + two-step mutations**
+
+Replace `useDockZones.ts` with full implementation. Key changes:
+
+```typescript
 export interface DockZoneRecord {
   id: string;
   name: string;
@@ -1213,11 +1240,58 @@ export interface DockZoneRecord {
   is_active: boolean;
   operator_id: string;
 }
+
+// useDockZones: select with junction join, flatten to DockZoneRecord
+const { data, error } = await supabase
+  .from('dock_zones')
+  .select(`id, name, code, is_consolidation, is_active, operator_id,
+           dock_zone_comunas(chile_comunas(id, nombre))`)
+  .eq('operator_id', operatorId)
+  .is('deleted_at', null)
+  .order('name');
+return data!.map(z => ({
+  id: z.id, name: z.name, code: z.code,
+  is_consolidation: z.is_consolidation, is_active: z.is_active,
+  operator_id: z.operator_id,
+  comunas: (z.dock_zone_comunas ?? []).map((r: any) => r.chile_comunas),
+}));
+
+// useUpdateDockZone — two-step mutation: delete all then insert new set
+mutationFn: async ({ id, updates, comunaIds }: { id: string; updates: Partial<DockZoneRecord>; comunaIds?: string[] }) => {
+  const supabase = createSPAClient();
+  const { error } = await supabase
+    .from('dock_zones')
+    .update(updates)
+    .eq('id', id)
+    .eq('operator_id', operatorId!);
+  if (error) throw error;
+  if (comunaIds !== undefined) {
+    const { error: delError } = await supabase
+      .from('dock_zone_comunas')
+      .delete()
+      .eq('dock_zone_id', id);
+    if (delError) throw delError;
+    if (comunaIds.length > 0) {
+      const { error: insError } = await supabase
+        .from('dock_zone_comunas')
+        .insert(comunaIds.map(cid => ({ dock_zone_id: id, comuna_id: cid })));
+      if (insError) throw insError;
+    }
+  }
+},
+
+// useEnsureConsolidationZone — INSERT without comunas (column dropped):
+const { error } = await supabase
+  .from('dock_zones')
+  .insert({
+    operator_id: operatorId,
+    name: 'Consolidación',
+    code: 'CON',
+    is_consolidation: true,
+    is_active: true,
+    // No comunas: [] — column removed; communes via dock_zone_comunas junction table
+  });
 ```
-
-- [ ] **Step 6: Update `useDockZones.test.ts`**
-
-Update the `returns zones sorted` test mock data to return the junction table format (`dock_zone_comunas: [{ chile_comunas: { id, nombre } }]`) and verify the flattened `comunas` shape.
 
 - [ ] **Step 7: Run all hooks tests**
 
@@ -1230,10 +1304,7 @@ Expected: all PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add apps/frontend/src/hooks/distribution/useChileComunas.ts \
-        apps/frontend/src/hooks/distribution/useChileComunas.test.ts \
-        apps/frontend/src/hooks/distribution/useDockZones.ts \
-        apps/frontend/src/hooks/distribution/useDockZones.test.ts
+git add apps/frontend/src/hooks/distribution/useChileComunas.ts         apps/frontend/src/hooks/distribution/useChileComunas.test.ts         apps/frontend/src/hooks/distribution/useDockZones.ts         apps/frontend/src/hooks/distribution/useDockZones.test.ts
 git commit -m "feat(N.2): useChileComunas hook + useDockZones ID-based junction table"
 ```
 
@@ -1245,6 +1316,8 @@ git commit -m "feat(N.2): useChileComunas hook + useDockZones ID-based junction 
 - Modify: `apps/frontend/src/components/distribution/DockZoneForm.tsx`
 - Modify: `apps/frontend/src/components/distribution/DockZoneForm.test.tsx`
 - Modify: `apps/frontend/src/components/distribution/DockZoneList.tsx`
+- Modify: `apps/frontend/src/components/distribution/BatchScanner.tsx` (if `pkg.comuna` string reference found)
+- Modify: `apps/frontend/src/components/distribution/QuickSortScanner.tsx` (if `pkg.comuna` string reference found)
 
 - [ ] **Step 1: Write failing tests**
 
@@ -1310,7 +1383,9 @@ Expected: all PASS.
 ```bash
 git add apps/frontend/src/components/distribution/DockZoneForm.tsx \
         apps/frontend/src/components/distribution/DockZoneForm.test.tsx \
-        apps/frontend/src/components/distribution/DockZoneList.tsx
+        apps/frontend/src/components/distribution/DockZoneList.tsx \
+        apps/frontend/src/components/distribution/BatchScanner.tsx \
+        apps/frontend/src/components/distribution/QuickSortScanner.tsx
 git commit -m "feat(N.3): replace DockZoneForm textarea with Command combobox for ID-based commune selection"
 ```
 
