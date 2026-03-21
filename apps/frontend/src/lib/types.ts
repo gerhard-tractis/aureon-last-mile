@@ -397,6 +397,158 @@ export type Database = {
         }
         Relationships: []
       }
+      dock_zones: {
+        Row: {
+          id: string
+          operator_id: string
+          name: string
+          code: string
+          comunas: string[]
+          is_consolidation: boolean
+          is_active: boolean
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          name: string
+          code: string
+          comunas?: string[]
+          is_consolidation?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          name?: string
+          code?: string
+          comunas?: string[]
+          is_consolidation?: boolean
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dock_zones_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dock_batches: {
+        Row: {
+          id: string
+          operator_id: string
+          dock_zone_id: string
+          status: string
+          package_count: number
+          created_by: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          dock_zone_id: string
+          status?: string
+          package_count?: number
+          created_by: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          dock_zone_id?: string
+          status?: string
+          package_count?: number
+          created_by?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dock_batches_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dock_batches_dock_zone_id_fkey"
+            columns: ["dock_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dock_scans: {
+        Row: {
+          id: string
+          operator_id: string
+          batch_id: string
+          barcode: string
+          scan_result: string
+          package_id: string | null
+          scanned_by: string
+          scanned_at: string
+          created_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          batch_id: string
+          barcode: string
+          scan_result: string
+          package_id?: string | null
+          scanned_by: string
+          scanned_at?: string
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          batch_id?: string
+          barcode?: string
+          scan_result?: string
+          package_id?: string | null
+          scanned_by?: string
+          scanned_at?: string
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dock_scans_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dock_scans_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "dock_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       packages: {
         Row: {
           id: string
@@ -416,6 +568,7 @@ export type Database = {
           raw_data: Json
           status: string
           status_updated_at: string | null
+          dock_zone_id: string | null
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -438,6 +591,7 @@ export type Database = {
           raw_data: Json
           status?: string
           status_updated_at?: string | null
+          dock_zone_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -460,6 +614,7 @@ export type Database = {
           raw_data?: Json
           status?: string
           status_updated_at?: string | null
+          dock_zone_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -477,6 +632,13 @@ export type Database = {
             columns: ["order_id"]
             isOneToOne: false
             referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packages_dock_zone_id_fkey"
+            columns: ["dock_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
             referencedColumns: ["id"]
           },
         ]
@@ -978,6 +1140,12 @@ export type Database = {
       }
     }
     Enums: {
+      batch_status_enum:
+        | "open"
+        | "closed"
+      dock_scan_result_enum:
+        | "accepted"
+        | "rejected"
       delivery_attempt_status_enum:
         | "success"
         | "failed"
@@ -995,6 +1163,8 @@ export type Database = {
         | "ingresado"
         | "verificado"
         | "en_bodega"
+        | "sectorizado"
+        | "retenido"
         | "asignado"
         | "en_carga"
         | "listo"
