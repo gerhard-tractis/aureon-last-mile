@@ -4,14 +4,18 @@ import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useOperatorId } from '@/hooks/useDashboardMetrics';
-import { generateColorRamp, isValidHexColor } from '@/utils/generateColorRamp';
+import {
+  generateBrandTokens,
+  isValidHexColor,
+  type BrandPalette,
+} from '@/lib/design/color-utils';
 
 export interface BrandingConfig {
   logoUrl: string | null;
   faviconUrl: string | null;
   companyName: string | null;
-  primaryColor: string | null;
-  secondaryColor: string | null;
+  palette: BrandPalette | null;
+  hasBranding: boolean;
   isLoading: boolean;
 }
 
@@ -19,8 +23,8 @@ const DEFAULTS: BrandingConfig = {
   logoUrl: null,
   faviconUrl: null,
   companyName: null,
-  primaryColor: null,
-  secondaryColor: null,
+  palette: null,
+  hasBranding: false,
   isLoading: true,
 };
 
@@ -34,8 +38,28 @@ interface RawBranding {
   logo_url?: string | null;
   favicon_url?: string | null;
   company_name?: string | null;
-  primary_color?: string | null;
-  secondary_color?: string | null;
+  brand_primary?: string | null;
+  brand_background?: string | null;
+  brand_text?: string | null;
+  brand_secondary?: string | null;
+}
+
+function parsePalette(raw: RawBranding | null): BrandPalette | null {
+  if (!raw) return null;
+  const { brand_primary, brand_background, brand_text } = raw;
+  if (
+    !brand_primary || !isValidHexColor(brand_primary) ||
+    !brand_background || !isValidHexColor(brand_background) ||
+    !brand_text || !isValidHexColor(brand_text)
+  ) {
+    return null;
+  }
+  return {
+    brand_primary,
+    brand_background,
+    brand_text,
+    brand_secondary: raw.brand_secondary ?? undefined,
+  };
 }
 
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
@@ -58,50 +82,41 @@ export function BrandingProvider({ children }: { children: React.ReactNode }) {
     gcTime: 30 * 60 * 1000,
   });
 
+  const palette = useMemo(() => parsePalette(rawBranding ?? null), [rawBranding]);
+
   const branding = useMemo<BrandingConfig>(() => ({
     logoUrl: rawBranding?.logo_url ?? null,
     faviconUrl: rawBranding?.favicon_url ?? null,
     companyName: rawBranding?.company_name ?? null,
-    primaryColor: rawBranding?.primary_color ?? null,
-    secondaryColor: rawBranding?.secondary_color ?? null,
+    palette,
+    hasBranding: palette !== null,
     isLoading,
-  }), [rawBranding, isLoading]);
+  }), [rawBranding, palette, isLoading]);
 
-  // AC3: Apply dynamic CSS variable overrides
+  // Inject brand CSS tokens into <html> when a valid palette is active
   useEffect(() => {
-    const appliedVars: string[] = [];
+    if (!palette) return;
+    const tokens = generateBrandTokens(palette);
+    const root = document.documentElement;
+    const applied: string[] = [];
 
-    if (branding.primaryColor && isValidHexColor(branding.primaryColor)) {
-      const ramp = generateColorRamp('primary', branding.primaryColor);
-      for (const [prop, val] of Object.entries(ramp)) {
-        document.body.style.setProperty(prop, val);
-        appliedVars.push(prop);
-      }
+    for (const [prop, val] of Object.entries(tokens)) {
+      root.style.setProperty(prop, val);
+      applied.push(prop);
     }
 
-    if (branding.secondaryColor && isValidHexColor(branding.secondaryColor)) {
-      const ramp = generateColorRamp('secondary', branding.secondaryColor);
-      for (const [prop, val] of Object.entries(ramp)) {
-        document.body.style.setProperty(prop, val);
-        appliedVars.push(prop);
-      }
-    }
-
-    // Cleanup: remove all applied CSS variables
     return () => {
-      for (const prop of appliedVars) {
-        document.body.style.removeProperty(prop);
+      for (const prop of applied) {
+        root.style.removeProperty(prop);
       }
     };
-  }, [branding.primaryColor, branding.secondaryColor]);
+  }, [palette]);
 
-  // AC5: Update browser title
+  // Update browser title
   useEffect(() => {
-    if (branding.companyName) {
-      document.title = `${branding.companyName} — Aureon Last Mile`;
-    } else {
-      document.title = 'Aureon Last Mile';
-    }
+    document.title = branding.companyName
+      ? `${branding.companyName} — Aureon Last Mile`
+      : 'Aureon Last Mile';
   }, [branding.companyName]);
 
   // Dynamic favicon override

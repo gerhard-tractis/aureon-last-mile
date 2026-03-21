@@ -115,3 +115,5 @@ development_status:
   5-8-set-up-platform-health-monitoring-dashboard-aureon-devops: backlog
   5-9-configure-supabase-realtime-for-live-order-updates: backlog
   epic-5-retrospective: optional
+
+  spec-12-distribution-sectorization: in-progress  # D.0–D.6 implemented: DB migration, sectorization engine, andén UI, dashboard, batch scanning, quick-sort scanning, nav integration. 1489 tests passing.

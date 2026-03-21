@@ -20,14 +20,18 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/groq": "^1.2.9",
+    "@bull-board/api": "^6.20.6",
+    "@bull-board/express": "^6.20.6",
     "@sentry/node": "^9.20.0",
     "@supabase/supabase-js": "^2.47.10",
     "ai": "^4.3.16",
     "bullmq": "^5.51.0",
+    "express": "^5.2.1",
     "ioredis": "^5.6.1",
     "zod": "^3.25.36"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^20.11.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3",

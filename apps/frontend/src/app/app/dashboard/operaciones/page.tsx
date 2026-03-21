@@ -8,6 +8,7 @@ import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
 import OfflineBanner from '@/components/dashboard/OfflineBanner';
 import LoadingTab from '@/components/dashboard/LoadingTab';
 import DeliveryTab from '@/components/dashboard/DeliveryTab';
+import { DistributionTab } from '@/components/dashboard/DistributionTab';
 
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
@@ -15,7 +16,7 @@ const OPERACIONES_TABS: TabDefinition[] = [
   { id: 'loading', step: '①', label: 'Carga', enabled: true },
   { id: 'pickup', step: '②', label: 'Retiro', enabled: false },
   { id: 'reception', step: '③', label: 'Recepción', enabled: false },
-  { id: 'distribution', step: '④', label: 'Distribución', enabled: false },
+  { id: 'distribution', step: '④', label: 'Distribución', enabled: true },
   { id: 'routing', step: '⑤', label: 'Despacho', enabled: false },
   { id: 'lastmile', step: '⑥', label: 'Última Milla', enabled: true },
 ];
@@ -50,6 +51,7 @@ function OperacionesContent() {
       <OfflineBanner />
       <SubTabNav tabs={OPERACIONES_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
       {activeTab === 'loading' && <LoadingTab operatorId={operatorId} />}
+      {activeTab === 'distribution' && <DistributionTab operatorId={operatorId} />}
       {activeTab === 'lastmile' && <DeliveryTab operatorId={operatorId} />}
     </div>
   );
