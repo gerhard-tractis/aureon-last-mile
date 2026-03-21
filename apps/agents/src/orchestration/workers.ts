@@ -1,4 +1,5 @@
 // src/orchestration/workers.ts — BullMQ Worker registrations with stub handlers
+import type { Job } from 'bullmq';
 import { Worker } from 'bullmq';
 import { log } from '../lib/logger';
 
@@ -31,15 +32,20 @@ const WORKER_CONFIGS: Record<WorkerName, WorkerConfig> = {
 
 export type Workers = Record<WorkerName, Worker>;
 
-export function createWorkers(redisUrl: string): Workers {
+type QueueHandler = (job: Job) => Promise<void>;
+export type HandlerMap = Partial<Record<WorkerName, QueueHandler>>;
+
+export function createWorkers(redisUrl: string, handlers?: HandlerMap): Workers {
   const connection = { url: redisUrl };
   const entries = (Object.entries(WORKER_CONFIGS) as [WorkerName, WorkerConfig][]).map(
     ([name, cfg]) => {
+      const stubHandler: QueueHandler = async (job: Job) => {
+        log('info', 'job_received', { queue: name, jobId: job.id, jobName: job.name });
+      };
+      const handler = handlers?.[name] ?? stubHandler;
       const worker = new Worker(
         name,
-        async (job) => {
-          log('info', 'job_received', { queue: name, jobId: job.id, jobName: job.name });
-        },
+        handler,
         {
           connection,
           concurrency: cfg.concurrency,
