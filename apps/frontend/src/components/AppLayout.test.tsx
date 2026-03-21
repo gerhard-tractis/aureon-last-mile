@@ -245,3 +245,25 @@ describe('AppLayout Distribución nav permission gating', () => {
     expect(screen.getByText('Distribución')).toBeTruthy();
   });
 });
+
+describe('AppLayout sidebar rail', () => {
+  it('renders sidebar in icon-rail mode by default (unpinned)', () => {
+    localStorage.clear();
+    render(<AppLayout><div>content</div></AppLayout>);
+    const sidebar = document.querySelector('[data-sidebar]');
+    expect(sidebar).toBeTruthy();
+    expect(sidebar?.getAttribute('data-pinned')).toBe('false');
+    expect(sidebar?.className).toContain('w-14');
+  });
+
+  it('renders pin toggle button', () => {
+    localStorage.clear();
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(document.querySelector('[data-pin-toggle]')).toBeTruthy();
+  });
+
+  it('renders mobile hamburger button', () => {
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy();
+  });
+});
