@@ -1,7 +1,7 @@
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
 import { Tabs } from 'expo-router'
-import { FolderOpen, Home, ListTodo, Settings } from 'lucide-react-native'
+import { FolderOpen, Home, ListTodo, ScanLine, Settings } from 'lucide-react-native'
 import { useTranslation } from 'react-i18next'
 
 export default function AppLayout() {
@@ -37,6 +37,13 @@ export default function AppLayout() {
         options={{
           title: t('app.tasks'),
           tabBarIcon: ({ color, size }) => <ListTodo size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="intake"
+        options={{
+          title: 'Manifiestos',
+          tabBarIcon: ({ color, size }) => <ScanLine size={size} color={color} />,
         }}
       />
       <Tabs.Screen
