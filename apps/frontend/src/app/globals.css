@@ -171,6 +171,14 @@ html.custom {
   --color-status-info:           #3b82f6;
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
+
+  /* ---- SIDEBAR TOKENS — fixed dark, all modes --------------- */
+  --color-sidebar-bg:          #0f172a;
+  --color-sidebar-text:        #94a3b8;
+  --color-sidebar-text-active: #ca9a04;
+  --color-sidebar-hover:       rgba(255,255,255,0.05);
+  --color-sidebar-section:     #64748b;
+  --color-sidebar-border:      #1e293b;
 }
 
 /* Dark mode overrides for status backgrounds (semi-transparent) */
