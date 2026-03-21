@@ -356,12 +356,13 @@ Order within the migration:
 5. Seed known aliases
 6. Create `normalize_comuna_id()` function
 7. Create `map_comuna_alias()` RPC
-8. `ALTER TABLE orders ADD COLUMN comuna_id, ADD COLUMN comuna_raw`
-9. Create `orders_normalize_comuna` trigger function + trigger
-10. Create `dock_zone_comunas` table + RLS
-11. `ALTER TABLE dock_zones DROP COLUMN comunas`
-12. Run backfill UPDATE statements
-13. Grant permissions
+8. Create `get_unmatched_comunas(p_operator_id UUID)` RPC (returns unmatched raw commune counts)
+9. `ALTER TABLE orders ADD COLUMN comuna_id, ADD COLUMN comuna_raw`
+10. Create `orders_normalize_comuna` trigger function + trigger
+11. Create `dock_zone_comunas` table + RLS
+12. `ALTER TABLE dock_zones DROP COLUMN comunas`
+13. Run backfill UPDATE statements
+14. Grant permissions
 
 ---
 
