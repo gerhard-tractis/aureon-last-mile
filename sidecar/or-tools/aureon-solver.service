@@ -1,0 +1,19 @@
+[Unit]
+Description=Aureon OR-Tools Route Optimization Sidecar
+After=network.target
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/sidecar/or-tools
+ExecStart=/home/aureon/.venv/bin/uvicorn solver:app --host 127.0.0.1 --port 8090 --workers 2
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+# Basic hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
