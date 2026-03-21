@@ -121,3 +121,45 @@ jobs:
         run: |
           echo "::error::VPS worker deployment failed."
           echo "To debug: sudo journalctl -u aureon-worker -n 50"
+
+  # ─── 4. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
+  deploy-solver:
+    name: Deploy OR-Tools Solver to VPS
+    needs: [deploy-supabase, deploy-edge-functions]
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 10
+    steps:
+      - name: Pull latest code
+        run: |
+          cd ~/sidecar
+          git pull origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for solver changes
+        id: solver-changes
+        run: |
+          CHANGED=$(cd ~/sidecar && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- sidecar/or-tools/ | wc -l)
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies and restart
+        if: steps.solver-changes.outputs.changed != '0'
+        run: |
+          cd ~/sidecar/sidecar/or-tools
+          source ~/.venv/bin/activate
+          pip install --no-cache-dir -r requirements.txt
+          sudo cp aureon-solver.service /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl restart aureon-solver
+          sleep 2
+          curl -sf http://127.0.0.1:8090/api/v1/health
+
+      - name: No solver changes
+        if: steps.solver-changes.outputs.changed == '0'
+        run: echo "No sidecar/or-tools changes detected — skipping solver deploy"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::OR-Tools solver deployment failed."
+          echo "To debug: sudo journalctl -u aureon-solver -n 50"
