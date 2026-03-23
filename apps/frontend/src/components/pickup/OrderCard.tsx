@@ -21,9 +21,9 @@ function getBadgeColor(verified: number, total: number): string {
 }
 
 const BADGE_CLASSES: Record<string, string> = {
-  green: 'bg-green-100 text-green-800',
-  yellow: 'bg-yellow-100 text-yellow-800',
-  gray: 'bg-gray-100 text-gray-600',
+  green: 'bg-status-success-bg text-status-success',
+  yellow: 'bg-status-warning-bg text-status-warning',
+  gray: 'bg-surface-raised text-text-secondary',
 };
 
 export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
@@ -54,14 +54,14 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
         aria-expanded={expanded}
       >
         {expanded ? (
-          <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <ChevronDown className="h-4 w-4 text-text-muted flex-shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <ChevronRight className="h-4 w-4 text-text-muted flex-shrink-0" />
         )}
 
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm text-gray-900 truncate">{order.order_number}</p>
-          <p className="text-xs text-gray-500 truncate">
+          <p className="font-medium text-sm text-text truncate">{order.order_number}</p>
+          <p className="text-xs text-text-secondary truncate">
             {order.customer_name}, {order.comuna}
           </p>
         </div>
@@ -76,9 +76,9 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
 
       {expanded && (
         <CardContent className="pt-0 pb-3 px-3 space-y-1">
-          <p className="text-xs text-gray-400 mb-2 truncate">{order.delivery_address}</p>
+          <p className="text-xs text-text-muted mb-2 truncate">{order.delivery_address}</p>
           {order.packages.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-2">No packages</p>
+            <p className="text-sm text-text-muted text-center py-2">No packages</p>
           ) : (
             order.packages.map(pkg => (
               <PackageRow

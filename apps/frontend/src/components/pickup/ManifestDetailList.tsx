@@ -44,7 +44,7 @@ export function ManifestDetailList({
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm">Orders & Packages</CardTitle>
           {!isLoading && !isError && orders.length > 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-text-secondary">
               {verifiedCount}/{totalPackages} verified
             </span>
           )}
@@ -61,7 +61,7 @@ export function ManifestDetailList({
 
         {isError && (
           <div className="text-center py-4">
-            <p className="text-sm text-red-500 mb-2">Failed to load manifest details</p>
+            <p className="text-sm text-status-error mb-2">Failed to load manifest details</p>
             <Button size="sm" variant="outline" onClick={onRetry} aria-label="Retry">
               Retry
             </Button>
@@ -69,7 +69,7 @@ export function ManifestDetailList({
         )}
 
         {!isLoading && !isError && orders.length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-4">No orders found for this load</p>
+          <p className="text-sm text-text-muted text-center py-4">No orders found for this load</p>
         )}
 
         {!isLoading && !isError && orders.map(order => (

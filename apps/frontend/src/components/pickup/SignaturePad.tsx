@@ -86,7 +86,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
           <button
             type="button"
             onClick={clear}
-            className="text-xs text-red-500 hover:text-red-700"
+            className="text-xs text-status-error hover:opacity-80"
           >
             Clear
           </button>

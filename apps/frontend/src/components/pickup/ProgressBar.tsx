@@ -7,9 +7,9 @@ export function ProgressBar({ scanned, total }: ProgressBarProps) {
   const percentage = total > 0 ? Math.min((scanned / total) * 100, 100) : 0;
 
   const getColor = () => {
-    if (percentage >= 90) return 'bg-green-500';
-    if (percentage >= 50) return 'bg-yellow-500';
-    return 'bg-red-500';
+    if (percentage >= 90) return 'bg-status-success';
+    if (percentage >= 50) return 'bg-status-warning';
+    return 'bg-status-error';
   };
 
   return (
