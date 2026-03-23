@@ -16,11 +16,10 @@ export default function ReceptionPage() {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Recepción</h1>
+        <h1 className="text-xl font-bold text-text">Recepción</h1>
         <button
           onClick={() => setShowScanner(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white
-                     rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 min-h-[40px] bg-accent text-accent-foreground rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
         >
           <QrCode className="h-4 w-4" />
           Escanear QR

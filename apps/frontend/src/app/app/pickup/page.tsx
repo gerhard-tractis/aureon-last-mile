@@ -57,16 +57,16 @@ export default function PickupPage() {
 
   return (
     <div className="space-y-4 p-4">
-      <h1 className="text-2xl font-bold text-foreground">Pickup Verification</h1>
+      <h1 className="text-xl font-bold text-text">Pickup</h1>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
+      <div className="flex gap-2 border-b border-border">
         <button
           onClick={() => setActiveTab('active')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'active'
-              ? 'border-primary-600 text-primary-600'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-text-secondary hover:text-text'
           }`}
         >
           Active
@@ -75,8 +75,8 @@ export default function PickupPage() {
           onClick={() => setActiveTab('completed')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'completed'
-              ? 'border-primary-600 text-primary-600'
-              : 'border-transparent text-muted-foreground hover:text-foreground'
+              ? 'border-accent text-accent'
+              : 'border-transparent text-text-secondary hover:text-text'
           }`}
         >
           Completed
@@ -88,10 +88,10 @@ export default function PickupPage() {
         <div className="space-y-3">
           {pendingLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full rounded-lg" />
+              <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
             ))
           ) : pendingManifests?.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">No pending manifests</p>
+            <p className="text-text-secondary text-center py-8">No pending manifests</p>
           ) : (
             pendingManifests?.map((m) => (
               <ManifestCard
@@ -114,10 +114,10 @@ export default function PickupPage() {
         <div className="space-y-3">
           {completedLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full rounded-lg" />
+              <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
             ))
           ) : completedManifests?.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">No completed manifests</p>
+            <p className="text-text-secondary text-center py-8">No completed manifests</p>
           ) : (
             completedManifests?.map((m) => (
               <ManifestCard
