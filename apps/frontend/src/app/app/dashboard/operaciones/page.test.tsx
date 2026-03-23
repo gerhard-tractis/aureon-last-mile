@@ -10,6 +10,7 @@ let searchParams = new URLSearchParams();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
   useSearchParams: () => searchParams,
+  usePathname: () => '/app/dashboard/operaciones',
 }));
 
 vi.mock('@/hooks/useDashboardMetrics', () => ({

@@ -7,6 +7,7 @@ import { PageShell } from '@/components/PageShell';
 import SubTabNav, { type TabDefinition } from '@/components/dashboard/SubTabNav';
 import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
 import OfflineBanner from '@/components/dashboard/OfflineBanner';
+import { DashboardPageNav } from '@/components/dashboard/DashboardPageNav';
 import OtifTab from '@/components/analytics/OtifTab';
 import UnitEconomicsTab from '@/components/analytics/UnitEconomicsTab';
 import CxTab from '@/components/analytics/CxTab';
@@ -53,6 +54,7 @@ function AnaliticaContent() {
       ]}
     >
       <OfflineBanner />
+      <DashboardPageNav />
       <SubTabNav tabs={ANALITICA_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
       {activeTab === 'otif' && <OtifTab operatorId={operatorId} />}
       {activeTab === 'unit_economics' && <UnitEconomicsTab operatorId={operatorId} />}
