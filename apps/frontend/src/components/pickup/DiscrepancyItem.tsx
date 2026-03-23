@@ -31,18 +31,18 @@ export function DiscrepancyItem({
   };
 
   return (
-    <div className="border rounded-lg p-3 space-y-2">
+    <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <Package className="h-4 w-4 text-red-500" />
-        <span className="font-mono text-sm font-medium">{packageLabel}</span>
-        <span className="text-xs text-muted-foreground">Order: {orderNumber}</span>
+        <Package className="h-4 w-4 text-status-warning" />
+        <span className="font-mono text-sm font-medium text-text">{packageLabel}</span>
+        <span className="text-xs text-text-secondary">Order: {orderNumber}</span>
       </div>
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
         onBlur={handleBlur}
         placeholder="Reason for missing package (required)..."
-        className="w-full p-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="w-full p-2 text-sm bg-surface border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-accent/40 text-text"
         rows={2}
         aria-label={`Note for package ${packageLabel}`}
       />

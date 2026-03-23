@@ -13,7 +13,7 @@ export function ReceptionList({ manifests }: ReceptionListProps) {
 
   if (manifests.length === 0) {
     return (
-      <p className="text-gray-500 text-center py-8">
+      <p className="text-text-secondary text-center py-8">
         No hay cargas pendientes de recepción
       </p>
     );

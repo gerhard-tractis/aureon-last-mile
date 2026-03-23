@@ -94,7 +94,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="w-full h-32 border-2 border-dashed border-border rounded-lg cursor-crosshair touch-none bg-card"
+        className="w-full h-40 border-2 border-border rounded-lg cursor-crosshair touch-none bg-surface"
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={stopDrawing}

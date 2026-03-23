@@ -1,6 +1,5 @@
 'use client';
 
-import { Card, CardContent } from '@/components/ui/card';
 import { Package, Clock } from 'lucide-react';
 
 interface ReceptionCardProps {
@@ -25,8 +24,8 @@ export function ReceptionCard({
   const isInProgress = receptionStatus === 'reception_in_progress';
 
   return (
-    <Card
-      className="cursor-pointer hover:shadow-md transition-shadow"
+    <div
+      className="bg-surface border border-border rounded-lg p-4 cursor-pointer hover:border-accent/50 transition-colors min-h-[72px] flex flex-col justify-center"
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -34,60 +33,58 @@ export function ReceptionCard({
         if (e.key === 'Enter' || e.key === ' ') onClick();
       }}
     >
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">
-              {retailerName || 'Retailer desconocido'}
-            </h3>
-            {completedAt && (
-              <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                <Clock className="h-3 w-3" />
-                Retiro completado:{' '}
-                {new Date(completedAt).toLocaleString('es-CL', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Package className="h-4 w-4" />
-              <span>{packageCount}</span>
-            </div>
-            <span
-              className={`text-xs font-medium px-2 py-1 rounded-full ${
-                isInProgress
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-yellow-100 text-yellow-700'
-              }`}
-            >
-              {isInProgress ? 'En progreso' : 'Pendiente'}
-            </span>
-          </div>
-        </div>
-
-        {isInProgress &&
-          receivedCount !== undefined &&
-          expectedCount !== undefined && (
-            <div className="mt-2">
-              <p className="text-sm text-blue-600 font-medium">
-                En progreso: {receivedCount}/{expectedCount} recibidos
-              </p>
-              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
-                <div
-                  className="bg-blue-600 h-1.5 rounded-full transition-all"
-                  style={{
-                    width: `${expectedCount > 0 ? (receivedCount / expectedCount) * 100 : 0}%`,
-                  }}
-                />
-              </div>
-            </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-text truncate">
+            {retailerName || 'Retailer desconocido'}
+          </h3>
+          {completedAt && (
+            <p className="text-xs text-text-secondary flex items-center gap-1 mt-1">
+              <Clock className="h-3 w-3" />
+              Retiro completado:{' '}
+              {new Date(completedAt).toLocaleString('es-CL', {
+                day: '2-digit',
+                month: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+            </p>
           )}
-      </CardContent>
-    </Card>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1 text-sm text-text-secondary">
+            <Package className="h-4 w-4" />
+            <span className="font-mono">{packageCount}</span>
+          </div>
+          <span
+            className={`text-xs font-medium px-2 py-1 rounded-full ${
+              isInProgress
+                ? 'bg-status-info-bg text-status-info'
+                : 'bg-status-warning-bg text-status-warning'
+            }`}
+          >
+            {isInProgress ? 'En progreso' : 'Pendiente'}
+          </span>
+        </div>
+      </div>
+
+      {isInProgress &&
+        receivedCount !== undefined &&
+        expectedCount !== undefined && (
+          <div className="mt-2">
+            <p className="font-mono text-sm text-text-secondary">
+              {receivedCount} / {expectedCount} recibidos
+            </p>
+            <div className="w-full bg-border rounded-full h-1.5 mt-1">
+              <div
+                className="bg-accent h-1.5 rounded-full transition-all"
+                style={{
+                  width: `${expectedCount > 0 ? (receivedCount / expectedCount) * 100 : 0}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+    </div>
   );
 }
