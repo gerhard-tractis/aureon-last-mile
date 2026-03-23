@@ -6,11 +6,12 @@ import { useRealtimeOrders } from '@/hooks/useRealtimeOrders';
 import { useRealtimeStatus } from '@/hooks/useRealtimeStatus';
 import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { PageShell } from '@/components/PageShell';
+import { RealtimeStatusIndicator } from '@/components/operations-control/RealtimeStatusIndicator';
 import { PipelineOverview } from '@/components/operations-control/PipelineOverview';
 import { UrgentOrdersBanner } from '@/components/operations-control/UrgentOrdersBanner';
-import { OrdersFilterToolbar } from '@/components/operations-control/OrdersFilterToolbar';
 import { OrdersTable } from '@/components/operations-control/OrdersTable';
-import { OrderDetailModal } from '@/components/operations-control/OrderDetailModal';
+import { OrderDetailSheet } from '@/components/operations-control/OrderDetailSheet';
 import { MobileOCC } from '@/components/operations-control/mobile/MobileOCC';
 
 export default function OpsControlPage() {
@@ -24,46 +25,51 @@ export default function OpsControlPage() {
   useRealtimeOrders(operatorId ?? '');
 
   if (!operatorId) {
-    return <div className="p-4 text-muted-foreground">Cargando...</div>;
+    return <div className="p-4 text-text-muted">Cargando...</div>;
   }
 
-  return isMobile ? (
-    <MobileOCC operatorId={operatorId} />
-  ) : (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">Ops Control</h1>
-      </div>
+  if (isMobile) {
+    return <MobileOCC operatorId={operatorId} />;
+  }
 
-      {/* Pipeline Overview — TODO wire lastFetchedAt from usePipelineCounts data callback */}
-      <PipelineOverview
-        operatorId={operatorId}
-        realtimeStatus={realtimeStatus}
-        lastFetchedAt={null}
-      />
-
-      {/* Urgent Orders Banner — counts computed in future iteration */}
+  return (
+    <PageShell
+      title="Ops Control"
+      breadcrumbs={[
+        { label: 'Operaciones', href: '/app/dashboard' },
+        { label: 'Ops Control' },
+      ]}
+      actions={
+        <RealtimeStatusIndicator
+          status={realtimeStatus}
+        />
+      }
+    >
+      {/* Urgent Orders Banner — above pipeline */}
       <UrgentOrdersBanner
         urgentCount={0}
         lateCount={0}
         onViewUrgent={() => setStatusFilter('urgent')}
       />
 
-      {/* Filter Toolbar */}
-      <OrdersFilterToolbar />
+      {/* Pipeline Overview Strip */}
+      <div className="mt-3">
+        <PipelineOverview operatorId={operatorId} />
+      </div>
 
-      {/* Orders Table */}
-      <OrdersTable
-        operatorId={operatorId}
-        onOpenDetail={(orderId) => setSelectedOrderId(orderId)}
-      />
+      {/* Orders DataTable */}
+      <div className="mt-4">
+        <OrdersTable
+          operatorId={operatorId}
+          onOpenDetail={(orderId) => setSelectedOrderId(orderId)}
+        />
+      </div>
 
-      {/* Order Detail Modal */}
-      <OrderDetailModal
+      {/* Order Detail Sheet (slide-out from right) */}
+      <OrderDetailSheet
         orderId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
       />
-    </div>
+    </PageShell>
   );
 }

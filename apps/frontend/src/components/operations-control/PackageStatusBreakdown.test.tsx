@@ -2,10 +2,14 @@
  * Tests for PackageStatusBreakdown component
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PackageStatusBreakdown } from './PackageStatusBreakdown';
 import type { PackageDetail } from '@/hooks/useOrderDetail';
+
+vi.mock('@/components/StatusBadge', () => ({
+  StatusBadge: ({ status }: { status: string }) => <span data-testid="status-badge">{status}</span>,
+}));
 
 function makePackage(overrides: Partial<PackageDetail> = {}): PackageDetail {
   return {
@@ -37,9 +41,9 @@ describe('PackageStatusBreakdown', () => {
       expect(screen.getByText('P-001')).toBeTruthy();
     });
 
-    it('shows "—" when package_number is null', () => {
+    it('shows "\u2014" when package_number is null', () => {
       render(<PackageStatusBreakdown packages={[makePackage({ package_number: null })]} />);
-      const cells = screen.getAllByText('—');
+      const cells = screen.getAllByText('\u2014');
       expect(cells.length).toBeGreaterThan(0);
     });
   });
@@ -50,22 +54,22 @@ describe('PackageStatusBreakdown', () => {
       expect(screen.getByTestId('pkg-status-badge-pkg-1')).toHaveTextContent('en_ruta');
     });
 
-    it('shows "Sin estado" when status is null', () => {
+    it('shows "pending" when status is null (fallback via StatusBadge)', () => {
       render(<PackageStatusBreakdown packages={[makePackage({ status: null, id: 'pkg-null' })]} />);
-      expect(screen.getByTestId('pkg-status-badge-pkg-null')).toHaveTextContent('Sin estado');
+      expect(screen.getByTestId('pkg-status-badge-pkg-null')).toHaveTextContent('pending');
     });
 
-    it('applies color class for known status', () => {
+    it('passes correct status to StatusBadge for known status', () => {
       render(<PackageStatusBreakdown packages={[makePackage({ status: 'entregado' })]} />);
       const badge = screen.getByTestId('pkg-status-badge-pkg-1');
-      expect(badge.className).toContain('bg-green');
+      expect(badge).toHaveTextContent('entregado');
     });
   });
 
   describe('Updated column (time-ago)', () => {
-    it('shows "—" when status_updated_at is null', () => {
+    it('shows "\u2014" when status_updated_at is null', () => {
       render(<PackageStatusBreakdown packages={[makePackage({ status_updated_at: null })]} />);
-      const cells = screen.getAllByText('—');
+      const cells = screen.getAllByText('\u2014');
       expect(cells.length).toBeGreaterThan(0);
     });
 

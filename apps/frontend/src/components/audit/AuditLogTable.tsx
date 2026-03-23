@@ -42,10 +42,10 @@ function formatTimestamp(ts: string): string {
 }
 
 function actionBadgeClass(action: string): string {
-  if (action.startsWith('INSERT')) return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400';
-  if (action.startsWith('DELETE')) return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400';
-  if (action.startsWith('UPDATE')) return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400';
-  return 'bg-muted text-muted-foreground';
+  if (action.startsWith('INSERT')) return 'bg-[var(--color-status-success-bg)] text-[var(--color-status-success)] border border-[var(--color-status-success-border)]';
+  if (action.startsWith('DELETE')) return 'bg-[var(--color-status-error-bg)] text-[var(--color-status-error)] border border-[var(--color-status-error-border)]';
+  if (action.startsWith('UPDATE')) return 'bg-[var(--color-status-info-bg)] text-[var(--color-status-info)] border border-[var(--color-status-info-border)]';
+  return 'bg-surface-raised text-text-muted';
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ function SortableHeader({
 
   return (
     <th
-      className="text-left p-3 font-semibold text-foreground cursor-pointer select-none hover:bg-muted/50 transition-colors whitespace-nowrap"
+      className="text-left p-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted cursor-pointer select-none hover:bg-surface-raised transition-colors whitespace-nowrap h-8"
       onClick={() => onSort(column, nextDir)}
     >
       {label}
@@ -121,7 +121,7 @@ export default function AuditLogTable({
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="border-b bg-muted/50">
+            <tr className="border-b border-border bg-surface hover:bg-surface">
               <SortableHeader
                 label="Fecha/Hora"
                 column="timestamp"
@@ -150,10 +150,10 @@ export default function AuditLogTable({
                 currentDir={sortDirection}
                 onSort={onSortChange}
               />
-              <th className="text-left p-3 font-semibold text-foreground hidden md:table-cell">
+              <th className="text-left p-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted h-8 hidden md:table-cell">
                 IP
               </th>
-              <th className="p-3 font-semibold text-foreground text-center w-12">
+              <th className="p-3 text-[11px] font-semibold uppercase tracking-wide text-text-muted h-8 text-center w-12">
                 Detalle
               </th>
             </tr>
@@ -171,12 +171,12 @@ export default function AuditLogTable({
               logs.map((log) => (
                 <React.Fragment key={log.id}>
                   <tr
-                    className="border-b hover:bg-muted/30 transition-colors"
+                    className="h-8 border-b border-border-subtle hover:bg-surface-raised transition-colors"
                   >
-                    <td className="p-3 text-foreground whitespace-nowrap">
+                    <td className="p-3 text-text font-mono text-sm whitespace-nowrap">
                       {formatTimestamp(log.timestamp)}
                     </td>
-                    <td className="p-3 text-foreground">
+                    <td className="p-3 text-text text-sm">
                       {userMap[log.user_id] ?? log.user_id}
                     </td>
                     <td className="p-3">
@@ -186,15 +186,15 @@ export default function AuditLogTable({
                         {log.action}
                       </span>
                     </td>
-                    <td className="p-3 text-foreground">
+                    <td className="p-3 text-text text-sm">
                       <span className="font-medium">{log.resource_type ?? '—'}</span>
                       {log.resource_id && (
-                        <span className="text-muted-foreground text-xs ml-1">
+                        <span className="text-text-muted text-xs ml-1 font-mono">
                           {log.resource_id}
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-muted-foreground text-xs hidden md:table-cell">
+                    <td className="p-3 text-text-muted text-xs font-mono hidden md:table-cell">
                       {log.ip_address ?? '—'}
                     </td>
                     <td className="p-3 text-center">

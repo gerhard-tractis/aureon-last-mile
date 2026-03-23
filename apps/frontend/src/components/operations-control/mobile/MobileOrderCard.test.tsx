@@ -8,6 +8,12 @@ import { MobileOrderCard } from './MobileOrderCard';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
 import type { OrderPriority } from '@/lib/types/pipeline';
 
+vi.mock('@/components/StatusBadge', () => ({
+  StatusBadge: ({ status }: { status: string }) => (
+    <span data-testid="status-badge">{status}</span>
+  ),
+}));
+
 const makeOrder = (overrides: Partial<OperationsOrder> = {}): OperationsOrder => ({
   id: 'ord-1',
   order_number: 'ORD-12345',
@@ -215,10 +221,10 @@ describe('MobileOrderCard', () => {
 
   describe('Priority dot colors', () => {
     const priorities: Array<{ priority: OrderPriority; colorClass: string }> = [
-      { priority: 'urgent', colorClass: 'bg-red-500' },
-      { priority: 'alert', colorClass: 'bg-yellow-500' },
-      { priority: 'ok', colorClass: 'bg-green-500' },
-      { priority: 'late', colorClass: 'bg-gray-500' },
+      { priority: 'urgent', colorClass: 'bg-[var(--color-status-error)]' },
+      { priority: 'alert', colorClass: 'bg-[var(--color-status-warning)]' },
+      { priority: 'ok', colorClass: 'bg-[var(--color-status-success)]' },
+      { priority: 'late', colorClass: 'bg-border' },
     ];
 
     priorities.forEach(({ priority, colorClass }) => {

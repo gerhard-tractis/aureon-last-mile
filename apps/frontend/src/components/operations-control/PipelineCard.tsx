@@ -31,28 +31,44 @@ interface PipelineCardProps {
   onClick: () => void;
 }
 
-function getCardBorderClass(stage: PipelineStageCount): string {
-  if (stage.count === 0) return 'border-gray-300 dark:border-gray-600';
-  if (stage.urgent_count > 0 || stage.late_count > 0) return 'border-red-400';
-  if (stage.alert_count > 0) return 'border-yellow-400';
-  return 'border-green-400';
+type StatusVariant = 'urgent' | 'alert' | 'ok' | 'empty';
+
+function getStatusVariant(stage: PipelineStageCount): StatusVariant {
+  if (stage.count === 0) return 'empty';
+  if (stage.urgent_count > 0 || stage.late_count > 0) return 'urgent';
+  if (stage.alert_count > 0) return 'alert';
+  return 'ok';
 }
 
-function getFooterContent(stage: PipelineStageCount): {
-  text: string;
-  className: string;
-} {
-  if (stage.count === 0) {
-    return { text: '—', className: 'text-gray-400' };
+function getProgressBarClass(variant: StatusVariant): string {
+  switch (variant) {
+    case 'urgent':
+      return 'bg-[var(--color-status-error)]';
+    case 'alert':
+      return 'bg-[var(--color-status-warning)]';
+    case 'ok':
+      return 'bg-[var(--color-status-success)]';
+    case 'empty':
+      return 'bg-border';
   }
-  if (stage.urgent_count > 0 || stage.late_count > 0) {
-    const total = stage.urgent_count + stage.late_count;
-    return { text: `${total} urgentes`, className: 'text-red-500' };
+}
+
+function getFooterContent(
+  stage: PipelineStageCount,
+  variant: StatusVariant,
+): { text: string; className: string } {
+  switch (variant) {
+    case 'empty':
+      return { text: '—', className: 'text-text-muted' };
+    case 'urgent': {
+      const total = stage.urgent_count + stage.late_count;
+      return { text: `${total} urgentes`, className: 'text-status-error' };
+    }
+    case 'alert':
+      return { text: `${stage.alert_count} alertas`, className: 'text-status-warning' };
+    case 'ok':
+      return { text: 'OK', className: 'text-status-success' };
   }
-  if (stage.alert_count > 0) {
-    return { text: `${stage.alert_count} alertas`, className: 'text-yellow-500' };
-  }
-  return { text: 'OK', className: 'text-green-500' };
 }
 
 export function PipelineCard({ stage, isSelected, onClick }: PipelineCardProps) {
@@ -61,20 +77,19 @@ export function PipelineCard({ stage, isSelected, onClick }: PipelineCardProps) 
   const iconName = stageConfig?.icon ?? 'PackagePlus';
   const Icon = STAGE_ICONS[iconName] ?? PackagePlus;
 
-  const borderClass = getCardBorderClass(stage);
-  const footer = getFooterContent(stage);
+  const variant = getStatusVariant(stage);
+  const footer = getFooterContent(stage, variant);
   const isClickable = stage.count > 0;
 
-  const selectedClass = isSelected ? 'ring-2 ring-offset-1 ring-current' : '';
+  const selectedClass = isSelected ? 'border-accent bg-accent/5' : '';
   const cursorClass = isClickable ? 'cursor-pointer hover:shadow-md' : 'cursor-default';
 
   return (
     <button
       type="button"
       className={`
-        flex flex-col items-start p-3 rounded-lg border-2 bg-card text-card-foreground
+        flex flex-col items-start bg-surface border border-border rounded-md p-3
         transition-all w-full text-left
-        ${borderClass}
         ${selectedClass}
         ${cursorClass}
       `.trim()}
@@ -82,18 +97,27 @@ export function PipelineCard({ stage, isSelected, onClick }: PipelineCardProps) 
       disabled={!isClickable}
     >
       <div className="flex items-center justify-between w-full mb-1">
-        <span className="text-xs font-medium text-muted-foreground truncate">{label}</span>
-        <span data-testid="stage-icon" className="text-muted-foreground">
+        <span className="text-xs text-text-muted uppercase truncate">{label}</span>
+        <span data-testid="stage-icon" className="text-text-muted">
           <Icon className="w-4 h-4" />
         </span>
       </div>
 
       <span
         data-testid="stage-count"
-        className="text-3xl font-bold leading-none mb-2"
+        className="font-mono text-lg font-semibold leading-none mb-2"
       >
         {stage.count}
       </span>
+
+      {/* Mini progress bar */}
+      <div className="w-full mb-2">
+        <div
+          data-testid="stage-progress"
+          className={`h-1 rounded-full ${getProgressBarClass(variant)}`}
+          style={{ width: '100%' }}
+        />
+      </div>
 
       <span
         data-testid="stage-footer"

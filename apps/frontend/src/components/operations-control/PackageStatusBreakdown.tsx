@@ -6,22 +6,11 @@
  */
 
 import type { PackageDetail } from '@/hooks/useOrderDetail';
+import { StatusBadge } from '@/components/StatusBadge';
 
 interface PackageStatusBreakdownProps {
   packages: PackageDetail[];
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  ingresado: 'bg-gray-100 text-gray-700',
-  verificado: 'bg-blue-100 text-blue-700',
-  en_bodega: 'bg-purple-100 text-purple-700',
-  asignado: 'bg-indigo-100 text-indigo-700',
-  en_carga: 'bg-orange-100 text-orange-700',
-  listo: 'bg-cyan-100 text-cyan-700',
-  en_ruta: 'bg-yellow-100 text-yellow-700',
-  entregado: 'bg-green-100 text-green-700',
-  cancelado: 'bg-red-100 text-red-700',
-};
 
 function timeAgo(isoString: string | null): string {
   if (!isoString) return '—';
@@ -36,7 +25,7 @@ function timeAgo(isoString: string | null): string {
 export function PackageStatusBreakdown({ packages }: PackageStatusBreakdownProps) {
   if (packages.length === 0) {
     return (
-      <p className="text-sm text-gray-500 py-2">No hay paquetes registrados</p>
+      <p className="text-sm text-text-muted py-2">No hay paquetes registrados</p>
     );
   }
 
@@ -44,7 +33,7 @@ export function PackageStatusBreakdown({ packages }: PackageStatusBreakdownProps
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-200 text-left text-xs text-gray-500 uppercase">
+          <tr className="border-b border-border text-left text-xs text-text-muted uppercase">
             <th className="px-2 py-2 font-medium">Label</th>
             <th className="px-2 py-2 font-medium">Número</th>
             <th className="px-2 py-2 font-medium">Estado</th>
@@ -52,27 +41,21 @@ export function PackageStatusBreakdown({ packages }: PackageStatusBreakdownProps
           </tr>
         </thead>
         <tbody>
-          {packages.map((pkg) => {
-            const statusColor = pkg.status
-              ? (STATUS_COLORS[pkg.status] ?? 'bg-gray-100 text-gray-700')
-              : 'bg-gray-100 text-gray-500';
-
-            return (
-              <tr key={pkg.id} className="border-b border-gray-100">
+          {packages.map((pkg) => (
+              <tr key={pkg.id} className="border-b border-border-subtle">
                 <td className="px-2 py-2 font-mono text-xs">{pkg.label}</td>
                 <td className="px-2 py-2">{pkg.package_number ?? '—'}</td>
                 <td className="px-2 py-2">
-                  <span
-                    data-testid={`pkg-status-badge-${pkg.id}`}
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusColor}`}
-                  >
-                    {pkg.status ?? 'Sin estado'}
+                  <span data-testid={`pkg-status-badge-${pkg.id}`}>
+                    <StatusBadge
+                      status={pkg.status ?? 'pending'}
+                      size="sm"
+                    />
                   </span>
                 </td>
-                <td className="px-2 py-2 text-gray-500 text-xs">{timeAgo(pkg.status_updated_at)}</td>
+                <td className="px-2 py-2 text-text-muted text-xs">{timeAgo(pkg.status_updated_at)}</td>
               </tr>
-            );
-          })}
+            ))}
         </tbody>
       </table>
     </div>
