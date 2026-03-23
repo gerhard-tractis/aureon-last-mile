@@ -2,18 +2,18 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScannerInput } from '@/components/pickup/ScannerInput';
-import { ProgressBar } from '@/components/pickup/ProgressBar';
 import { ScanHistoryList } from '@/components/pickup/ScanHistoryList';
 import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
-import { CheckCircle, XCircle, Clock, ArrowLeft } from 'lucide-react';
+import { XCircle, Clock, ArrowLeft } from 'lucide-react';
 import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
 import { ManifestDetailList } from '@/components/pickup/ManifestDetailList';
+import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
+import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -119,57 +119,42 @@ export default function ScanningPage() {
         onDismiss={() => setShowNotFoundPopup(false)}
       />
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => router.push('/app/pickup')}
-            className="p-1 rounded-md hover:bg-muted transition-colors"
-            aria-label="Back to manifests"
-          >
-            <ArrowLeft className="h-5 w-5 text-muted-foreground" />
-          </button>
-          <h1 className="text-xl font-bold text-foreground">
-            Scanning: {loadId}
-          </h1>
-        </div>
-        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+      <PickupStepBreadcrumb current="scan" />
+      <PickupFlowHeader loadId={loadId} scanned={verifiedCount} total={totalPackages} />
+
+      {/* Back + timer row */}
+      <div className="flex items-center justify-between -mt-2">
+        <button
+          onClick={() => router.push('/app/pickup')}
+          className="p-1 rounded-md hover:bg-surface-raised transition-colors"
+          aria-label="Back to manifests"
+        >
+          <ArrowLeft className="h-5 w-5 text-text-secondary" />
+        </button>
+        <div className="flex items-center gap-1 text-sm text-text-secondary">
           <Clock className="h-4 w-4" />
           {elapsed}
         </div>
       </div>
 
-      <ProgressBar scanned={verifiedCount} total={totalPackages} />
       <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-500" />
-            <div>
-              <p className="text-2xl font-bold">{verifiedCount}</p>
-              <p className="text-xs text-muted-foreground">Verified</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <XCircle className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="text-2xl font-bold">{notFoundCount}</p>
-              <p className="text-xs text-muted-foreground">Not Found</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Not-found counter */}
+      {notFoundCount > 0 && (
+        <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-lg">
+          <XCircle className="h-4 w-4 text-status-error" />
+          <span className="text-sm text-text">{notFoundCount} not in manifest</span>
+        </div>
+      )}
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Recent Scans</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="bg-surface border border-border rounded-lg">
+        <div className="px-3 pt-3 pb-1">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Recent Scans</p>
+        </div>
+        <div className="p-3">
           <ScanHistoryList scans={scans} />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <ManifestDetailList
         orders={orders}
@@ -186,7 +171,7 @@ export default function ScanningPage() {
             `/app/pickup/review/${encodeURIComponent(loadId)}`
           )
         }
-        className="w-full bg-primary-600 hover:bg-primary-700 text-white"
+        className="w-full"
         size="lg"
       >
         Complete Pickup

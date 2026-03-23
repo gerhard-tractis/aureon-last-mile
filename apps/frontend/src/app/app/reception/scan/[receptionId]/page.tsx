@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { ProgressBar } from '@/components/pickup/ProgressBar';
 import { ReceptionScanner } from '@/components/reception/ReceptionScanner';
 import {
   ReceptionDetailList,
@@ -17,7 +15,8 @@ import {
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
-import { ArrowLeft, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { ArrowLeft, XCircle, Clock } from 'lucide-react';
+import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
 
 interface ReceptionMeta {
   manifestId: string;
@@ -203,29 +202,26 @@ export default function ReceptionScanPage() {
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center gap-3">
+      <PickupFlowHeader
+        loadId={meta?.externalLoadId ?? '...'}
+        scanned={receivedCount}
+        total={meta?.expectedCount ?? 0}
+      />
+
+      {/* Back + timer */}
+      <div className="flex items-center justify-between -mt-2">
         <button
           onClick={() => router.push('/app/reception')}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1 hover:bg-surface-raised rounded-md transition-colors"
           aria-label="Volver a recepción"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5 text-text-secondary" />
         </button>
-        <h1 className="text-xl font-bold text-gray-900 flex-1">
-          Recepción: {meta?.externalLoadId ?? '...'}
-        </h1>
-        <div className="flex items-center gap-1 text-sm text-gray-500">
+        <div className="flex items-center gap-1 text-sm text-text-secondary">
           <Clock className="h-4 w-4" />
           {elapsed}
         </div>
       </div>
-
-      {/* Progress */}
-      <ProgressBar
-        scanned={receivedCount}
-        total={meta?.expectedCount ?? 0}
-      />
 
       {/* Scanner */}
       <ReceptionScanner
@@ -234,42 +230,28 @@ export default function ReceptionScanPage() {
         lastScanResult={lastScanResult}
       />
 
-      {/* Counters */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-500" />
-            <div>
-              <p className="text-2xl font-bold">{receivedCount}</p>
-              <p className="text-xs text-gray-500">Recibidos</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <XCircle className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="text-2xl font-bold">{notFoundCount}</p>
-              <p className="text-xs text-gray-500">No encontrados</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Not-found counter */}
+      {notFoundCount > 0 && (
+        <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-lg">
+          <XCircle className="h-4 w-4 text-status-error" />
+          <span className="text-sm text-text">{notFoundCount} no encontrados</span>
+        </div>
+      )}
 
       {/* Package detail list */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Paquetes</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <div className="bg-surface border border-border rounded-lg">
+        <div className="px-3 pt-3 pb-1">
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Paquetes</p>
+        </div>
+        <div className="p-3">
           <ReceptionDetailList packages={packageItems} />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Manual complete button */}
       <Button
         onClick={() => router.push(`/app/reception/complete/${receptionId}`)}
-        className="w-full bg-primary-600 hover:bg-primary-700 text-white"
+        className="w-full"
         size="lg"
       >
         Finalizar Recepción
