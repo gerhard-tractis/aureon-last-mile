@@ -22,20 +22,20 @@ describe('ProgressBar', () => {
 
   it('shows red when under 50%', () => {
     render(<ProgressBar scanned={2} total={10} />);
-    expect(screen.getByRole('progressbar').className).toContain('bg-red-500');
+    expect(screen.getByRole('progressbar').className).toContain('bg-status-error');
   });
 
   it('shows yellow between 50-89%', () => {
     render(<ProgressBar scanned={7} total={10} />);
     expect(screen.getByRole('progressbar').className).toContain(
-      'bg-yellow-500'
+      'bg-status-warning'
     );
   });
 
   it('shows green at 90%+', () => {
     render(<ProgressBar scanned={9} total={10} />);
     expect(screen.getByRole('progressbar').className).toContain(
-      'bg-green-500'
+      'bg-status-success'
     );
   });
 
