@@ -40,6 +40,16 @@ vi.mock('@/components/audit/AuditLogExport', () => ({
   default: () => <div data-testid="audit-log-export">AuditLogExport</div>,
 }));
 
+vi.mock('@/components/PageShell', () => ({
+  PageShell: ({ children, title, actions }: { children: React.ReactNode; title: string; actions?: React.ReactNode }) => (
+    <div data-testid="page-shell">
+      <h1>{title}</h1>
+      {actions && <div data-testid="page-shell-actions">{actions}</div>}
+      {children}
+    </div>
+  ),
+}));
+
 describe('AuditLogsPage', () => {
   beforeEach(() => {
     pushMock.mockClear();
@@ -48,7 +58,7 @@ describe('AuditLogsPage', () => {
   it('renders page heading', async () => {
     render(<AuditLogsPage />);
     await waitFor(() => {
-      expect(screen.getByText(/registro de auditoría/i)).toBeDefined();
+      expect(screen.getByText('Auditoría')).toBeDefined();
     });
   });
 

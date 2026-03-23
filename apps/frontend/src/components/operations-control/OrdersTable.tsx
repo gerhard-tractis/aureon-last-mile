@@ -1,23 +1,23 @@
 'use client';
 
 /**
- * OrdersTable
- * Full orders table with pagination and client-side filtering.
+ * OrdersTable (spec-13c redesign)
+ * Uses DataTable compound component with filter chips from the ops control store.
  */
 
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { useOperationsOrders } from '@/hooks/useOperationsOrders';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
 import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { DataTable, type ColumnDef } from '@/components/data-table/DataTable';
+import type { FilterChip } from '@/components/data-table/DataTableToolbar';
+import { StatusBadge } from '@/components/StatusBadge';
 import type { OrderPriority } from '@/lib/types/pipeline';
-import { OrdersTableRow } from './OrdersTableRow';
 
 export interface OrdersTableProps {
   operatorId: string;
   onOpenDetail: (orderId: string) => void;
 }
-
-const PAGE_SIZE = 25;
 
 // --- Pure helper functions (exported for testing convenience) ---
 
@@ -52,123 +52,123 @@ export function applySearch(orders: OperationsOrder[], search: string): Operatio
   );
 }
 
-function sortByDeadline(orders: OperationsOrder[]): OperationsOrder[] {
-  return [...orders].sort((a, b) => {
-    const priorityA = computePriority(a);
-    const priorityB = computePriority(b);
-    // Late orders go to bottom
-    const isLateA = priorityA === 'late' ? 1 : 0;
-    const isLateB = priorityB === 'late' ? 1 : 0;
-    if (isLateA !== isLateB) return isLateA - isLateB;
-    // Sort by delivery_window_end ascending (soonest first), nulls last
-    if (!a.delivery_window_end && !b.delivery_window_end) return 0;
-    if (!a.delivery_window_end) return 1;
-    if (!b.delivery_window_end) return -1;
-    return new Date(a.delivery_window_end).getTime() - new Date(b.delivery_window_end).getTime();
-  });
+function formatTimeWindow(start: string | null, end: string | null): string {
+  if (!start || !end) return '—';
+  const now = Date.now();
+  const endMs = new Date(end).getTime();
+  const diffMs = endMs - now;
+  if (diffMs <= 0) {
+    const pastMin = Math.floor(-diffMs / 60000);
+    return `Pasado ${Math.floor(pastMin / 60)}h ${pastMin % 60}m`;
+  }
+  const min = Math.floor(diffMs / 60000);
+  return `En ${Math.floor(min / 60)}h ${min % 60}m`;
 }
+
+// --- Columns ---
+
+type OrderRow = OperationsOrder & Record<string, unknown>;
+
+const columns: ColumnDef<OrderRow>[] = [
+  {
+    accessorKey: 'order_number',
+    header: 'Orden',
+    className: 'font-mono',
+  },
+  {
+    accessorKey: 'customer_name',
+    header: 'Cliente',
+    cell: (row) => row.retailer_name ?? row.customer_name,
+  },
+  {
+    accessorKey: 'comuna',
+    header: 'Comuna',
+  },
+  {
+    accessorKey: 'status',
+    header: 'Estado',
+    cell: (row) => <StatusBadge status={row.status} size="sm" />,
+    sortable: false,
+  },
+  {
+    accessorKey: 'delivery_window_end',
+    header: 'Hora',
+    className: 'font-mono',
+    cell: (row) => formatTimeWindow(row.delivery_window_start as string | null, row.delivery_window_end as string | null),
+  },
+];
 
 // --- Component ---
 
 export function OrdersTable({ operatorId, onOpenDetail }: OrdersTableProps) {
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-
-  const { search, datePreset, statusFilter, stageFilter, clearAllFilters } = useOpsControlFilterStore();
+  const { statusFilter, datePreset, dateRange, stageFilter, setStatusFilter, clearAllFilters } =
+    useOpsControlFilterStore();
 
   const { data, isLoading, isError } = useOperationsOrders(operatorId, {
     datePreset,
-    dateRange: null,
+    dateRange,
     statusFilter,
     stageFilter,
   });
 
-  if (isLoading) {
-    return (
-      <div data-testid="orders-table-loading" className="p-4 space-y-2">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />
-        ))}
-      </div>
-    );
-  }
+  const filteredData = useMemo(() => {
+    const rawOrders = data ?? [];
+    return applyStatusFilter(rawOrders, statusFilter) as OrderRow[];
+  }, [data, statusFilter]);
+
+  const filterChips: FilterChip[] = useMemo(
+    () => [
+      {
+        key: 'urgent',
+        label: 'Urgentes',
+        active: statusFilter === 'urgent',
+        onToggle: () => setStatusFilter(statusFilter === 'urgent' ? 'all' : 'urgent'),
+      },
+      {
+        key: 'alert',
+        label: 'Alertas',
+        active: statusFilter === 'alert',
+        onToggle: () => setStatusFilter(statusFilter === 'alert' ? 'all' : 'alert'),
+      },
+      {
+        key: 'ok',
+        label: 'OK',
+        active: statusFilter === 'ok',
+        onToggle: () => setStatusFilter(statusFilter === 'ok' ? 'all' : 'ok'),
+      },
+      {
+        key: 'late',
+        label: 'Atrasados',
+        active: statusFilter === 'late',
+        onToggle: () => setStatusFilter(statusFilter === 'late' ? 'all' : 'late'),
+      },
+    ],
+    [statusFilter, setStatusFilter],
+  );
 
   if (isError) {
     return (
       <div
         data-testid="orders-table-error"
-        className="p-8 text-center text-red-600 font-medium"
+        className="p-8 text-center text-[var(--color-status-error)] font-medium"
       >
-        Error al cargar pedidos
-      </div>
-    );
-  }
-
-  const rawOrders = data ?? [];
-  const afterStatus = applyStatusFilter(rawOrders, statusFilter);
-  const afterSearch = applySearch(afterStatus, search);
-  const sorted = sortByDeadline(afterSearch);
-
-  if (sorted.length === 0) {
-    return (
-      <div
-        data-testid="orders-table-empty"
-        className="p-8 text-center text-gray-500"
-      >
-        No hay órdenes que coincidan.{' '}
-        <button
-          className="text-blue-600 hover:underline"
-          onClick={() => clearAllFilters()}
-        >
+        Error al cargar pedidos.{' '}
+        <button className="underline" onClick={() => clearAllFilters()}>
           Limpiar filtros
         </button>
       </div>
     );
   }
 
-  const visibleOrders = sorted.slice(0, visibleCount);
-  const hasMore = sorted.length > visibleCount;
-
   return (
-    <div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs text-gray-500 uppercase tracking-wide">
-              <th className="px-3 py-2 w-8" />
-              <th className="px-3 py-2">Pedido</th>
-              <th className="px-3 py-2">Cliente</th>
-              <th className="px-3 py-2">Destino</th>
-              <th className="px-3 py-2">Promesa</th>
-              <th className="px-3 py-2">Ventana</th>
-              <th className="px-3 py-2">Estado</th>
-              <th className="px-3 py-2 text-center">Parcial</th>
-              <th className="px-3 py-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleOrders.map((order) => (
-              <OrdersTableRow
-                key={order.id}
-                order={order}
-                priority={computePriority(order)}
-                onOpenDetail={onOpenDetail}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {hasMore && (
-        <div className="flex justify-center py-4">
-          <button
-            data-testid="load-more-btn"
-            onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-            className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-          >
-            Cargar más ({sorted.length - visibleCount} restantes)
-          </button>
-        </div>
-      )}
-    </div>
+    <DataTable<OrderRow>
+      columns={columns}
+      data={filteredData}
+      isLoading={isLoading}
+      filterChips={filterChips}
+      searchPlaceholder="Buscar orden, cliente, comuna..."
+      onRowClick={(row) => onOpenDetail(row.id)}
+      emptyMessage="No hay órdenes que coincidan"
+    />
   );
 }

@@ -40,14 +40,14 @@ export function MobileTabBar({ activeTab, onTabChange, urgentCount }: MobileTabB
           >
             <div
               className={`relative flex items-center justify-center rounded-lg p-1 ${
-                isActive ? 'bg-[#e6c15c]' : ''
+                isActive ? 'bg-accent' : ''
               }`}
             >
               <Icon className="w-5 h-5" />
               {id === 'ops' && showBadge && (
                 <span
                   data-testid="ops-badge"
-                  className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5"
+                  className="absolute -top-1 -right-1 bg-[var(--color-status-error)] text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5"
                 >
                   {badgeText}
                 </span>

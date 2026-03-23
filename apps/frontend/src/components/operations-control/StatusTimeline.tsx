@@ -24,7 +24,7 @@ function formatTimestamp(isoString: string | null): string {
 export function StatusTimeline({ auditLogs }: StatusTimelineProps) {
   if (auditLogs.length === 0) {
     return (
-      <p className="text-sm text-gray-500 py-2">Sin historial de cambios</p>
+      <p className="text-sm text-text-muted py-2">Sin historial de cambios</p>
     );
   }
 
@@ -35,17 +35,17 @@ export function StatusTimeline({ auditLogs }: StatusTimelineProps) {
   });
 
   return (
-    <ol className="relative border-l border-gray-200">
+    <ol className="relative border-l-2 border-[var(--color-accent)]">
       {sorted.map((entry) => (
         <li key={entry.id} className="mb-4 ml-4">
-          <div className="absolute w-3 h-3 bg-blue-500 rounded-full -left-1.5 border border-white mt-1" />
+          <div className="absolute w-3 h-3 bg-[var(--color-accent)] rounded-full -left-[7px] border-2 border-surface mt-1" />
           <time
             data-testid={`timeline-time-${entry.id}`}
-            className="text-xs text-gray-400"
+            className="text-xs text-text-muted"
           >
             {formatTimestamp(entry.timestamp)}
           </time>
-          <p className="text-sm text-gray-700 mt-0.5">{entry.action}</p>
+          <p className="text-sm text-text-secondary mt-0.5">{entry.action}</p>
         </li>
       ))}
     </ol>

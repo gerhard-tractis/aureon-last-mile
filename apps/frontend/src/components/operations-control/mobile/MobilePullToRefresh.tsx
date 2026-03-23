@@ -63,7 +63,7 @@ export function MobilePullToRefresh({ children, onRefreshStart }: MobilePullToRe
       )}
       {showToast && (
         <div className="flex justify-center py-1">
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Actualizado</span>
+          <span className="text-xs text-[var(--color-status-success)] font-medium">Actualizado</span>
         </div>
       )}
       {children}

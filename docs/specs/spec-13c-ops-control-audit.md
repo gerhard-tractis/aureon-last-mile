@@ -1,6 +1,6 @@
 # Spec-13c: Operations Control & Audit Logs Redesign
 
-> **Status:** brainstorming
+> **Status:** in progress
 > **Parent:** spec-13 (design language)
 > **Depends on:** spec-13a (foundation components)
 > **Phase:** 3 of 5

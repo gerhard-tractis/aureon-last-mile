@@ -1,9 +1,7 @@
 'use client';
 
 /**
- * Audit Logs page — ops-manager view
- * Epic 5 / Spec-06: Capacity Calendar, Alerts & Audit Log Viewer
- *
+ * Audit Logs page — ops-manager view (spec-13c redesign)
  * Route: /app/audit-logs
  * Allowed roles: operations_manager, admin
  */
@@ -14,18 +12,15 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { useAuditLogsOps } from '@/hooks/useAuditLogsOps';
 import { useAuditLogUsers } from '@/hooks/useAuditLogUsers';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageShell } from '@/components/PageShell';
 import AuditLogTable from '@/components/audit/AuditLogTable';
 import AuditLogFilters from '@/components/audit/AuditLogFilters';
 import AuditLogExport from '@/components/audit/AuditLogExport';
 import type { AuditFilters } from '@/components/audit/AuditLogFilters';
 import type { SortColumn, SortDirection } from '@/components/audit/AuditLogTable';
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
 const ALLOWED_ROLES = ['operations_manager', 'admin'];
 const PAGE_SIZE = 50;
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getDateRange(preset: AuditFilters['datePreset'], dateFrom?: string, dateTo?: string) {
   const today = new Date();
@@ -49,8 +44,6 @@ function getDateRange(preset: AuditFilters['datePreset'], dateFrom?: string, dat
     }
   }
 }
-
-// ── Inner Content ─────────────────────────────────────────────────────────────
 
 function AuditLogsContent() {
   const router = useRouter();
@@ -100,7 +93,6 @@ function AuditLogsContent() {
   />;
 }
 
-// Split inner to keep hooks after the early returns above in a separate component
 function AuditLogsInner({
   operatorId,
   filters,
@@ -139,7 +131,6 @@ function AuditLogsInner({
 
   const { data: users, isLoading: usersLoading } = useAuditLogUsers(operatorId);
 
-  // Build user display map: id → full_name
   const userMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     for (const u of users) {
@@ -150,7 +141,7 @@ function AuditLogsInner({
 
   function handleFiltersChange(newFilters: AuditFilters) {
     setFilters(newFilters);
-    setPage(1); // reset to page 1 on filter change
+    setPage(1);
   }
 
   function handleSortChange(column: SortColumn, direction: SortDirection) {
@@ -160,14 +151,15 @@ function AuditLogsInner({
   }
 
   return (
-    <div className="space-y-4 p-4">
+    <PageShell
+      title="Auditoría"
+      breadcrumbs={[
+        { label: 'Operaciones', href: '/app/dashboard' },
+        { label: 'Auditoría' },
+      ]}
+      actions={<AuditLogExport logs={logs} userMap={userMap} />}
+    >
       <title>Registro de Auditoría | Aureon Last Mile</title>
-
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-foreground">Registro de Auditoría</h1>
-        <AuditLogExport logs={logs} userMap={userMap} />
-      </div>
 
       {/* Filters */}
       <AuditLogFilters
@@ -178,23 +170,23 @@ function AuditLogsInner({
       />
 
       {/* Table */}
-      <AuditLogTable
-        logs={logs}
-        count={count}
-        page={page}
-        pageSize={PAGE_SIZE}
-        onPageChange={setPage}
-        onSortChange={handleSortChange}
-        sortColumn={sortColumn}
-        sortDirection={sortDirection}
-        userMap={userMap}
-        isLoading={isLoading}
-      />
-    </div>
+      <div className="mt-4">
+        <AuditLogTable
+          logs={logs}
+          count={count}
+          page={page}
+          pageSize={PAGE_SIZE}
+          onPageChange={setPage}
+          onSortChange={handleSortChange}
+          sortColumn={sortColumn}
+          sortDirection={sortDirection}
+          userMap={userMap}
+          isLoading={isLoading}
+        />
+      </div>
+    </PageShell>
   );
 }
-
-// ── Page Export ───────────────────────────────────────────────────────────────
 
 export default function AuditLogsPage() {
   return (

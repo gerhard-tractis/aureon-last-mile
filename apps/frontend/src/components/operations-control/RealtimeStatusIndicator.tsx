@@ -2,19 +2,47 @@
 
 import { useState, useEffect } from 'react';
 
+const STALE_THRESHOLD_MS = 30_000;
+
+type VisualState = 'live' | 'stale' | 'offline';
+
 interface RealtimeStatusIndicatorProps {
   status: 'connected' | 'disconnected';
   lastFetchedAt?: Date | null;
 }
 
-function getTimeAgoText(fetchedAt: Date): string {
-  const diffSeconds = Math.floor((Date.now() - fetchedAt.getTime()) / 1000);
-  if (diffSeconds < 60) {
-    return `Actualizado hace ${diffSeconds}s`;
+function deriveVisualState(
+  status: 'connected' | 'disconnected',
+  lastFetchedAt?: Date | null,
+): VisualState {
+  if (status === 'disconnected') return 'offline';
+  if (
+    lastFetchedAt &&
+    Date.now() - lastFetchedAt.getTime() > STALE_THRESHOLD_MS
+  ) {
+    return 'stale';
   }
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  return `Actualizado hace ${diffMinutes}m`;
+  return 'live';
 }
+
+const STATE_CONFIG: Record<
+  VisualState,
+  { dotClass: string; label: string }
+> = {
+  live: {
+    dotClass:
+      'w-2 h-2 rounded-full bg-[var(--color-status-success)] animate-pulse',
+    label: 'En vivo',
+  },
+  stale: {
+    dotClass: 'w-2 h-2 rounded-full bg-[var(--color-status-warning)]',
+    label: 'Actualizando...',
+  },
+  offline: {
+    dotClass: 'w-2 h-2 rounded-full bg-[var(--color-status-error)]',
+    label: 'Sin conexión',
+  },
+};
 
 export function RealtimeStatusIndicator({
   status,
@@ -30,28 +58,16 @@ export function RealtimeStatusIndicator({
     return () => clearInterval(interval);
   }, [lastFetchedAt]);
 
-  const isConnected = status === 'connected';
+  const visualState = deriveVisualState(status, lastFetchedAt);
+  const { dotClass, label } = STATE_CONFIG[visualState];
 
   return (
     <div
       data-testid="realtime-status-indicator"
-      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      className="flex items-center gap-1.5 text-xs text-text-muted"
     >
-      <span
-        data-testid="status-dot"
-        className={
-          isConnected
-            ? 'w-2 h-2 rounded-full bg-green-500 animate-pulse'
-            : 'w-2 h-2 rounded-full bg-red-500'
-        }
-      />
-      <span>{isConnected ? 'En vivo' : 'Offline'}</span>
-      {lastFetchedAt && (
-        <>
-          <span className="text-muted-foreground/60">·</span>
-          <span>{getTimeAgoText(lastFetchedAt)}</span>
-        </>
-      )}
+      <span data-testid="status-dot" className={dotClass} />
+      <span>{label}</span>
     </div>
   );
 }

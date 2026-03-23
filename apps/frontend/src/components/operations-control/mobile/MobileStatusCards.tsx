@@ -24,26 +24,26 @@ const CARDS: CardConfig[] = [
   {
     key: 'urgent',
     label: 'Urgentes',
-    borderClass: 'border-red-500',
-    activeBgClass: 'bg-red-50 dark:bg-red-950',
+    borderClass: 'border-[var(--color-status-error)]',
+    activeBgClass: 'bg-[var(--color-status-error-bg)]',
   },
   {
     key: 'alert',
     label: 'Alertas',
-    borderClass: 'border-yellow-500',
-    activeBgClass: 'bg-yellow-50 dark:bg-yellow-950',
+    borderClass: 'border-[var(--color-status-warning)]',
+    activeBgClass: 'bg-[var(--color-status-warning-bg)]',
   },
   {
     key: 'ok',
     label: 'OK',
-    borderClass: 'border-green-500',
-    activeBgClass: 'bg-green-50 dark:bg-green-950',
+    borderClass: 'border-[var(--color-status-success)]',
+    activeBgClass: 'bg-[var(--color-status-success-bg)]',
   },
   {
     key: 'late',
     label: 'Atrasados',
-    borderClass: 'border-gray-500',
-    activeBgClass: 'bg-gray-100 dark:bg-gray-800',
+    borderClass: 'border-border',
+    activeBgClass: 'bg-surface-raised',
   },
 ];
 
@@ -56,7 +56,7 @@ export function MobileStatusCards({ counts, isLoading }: MobileStatusCardsProps)
         {[0, 1, 2, 3].map((i) => (
           <div
             key={i}
-            className="animate-pulse bg-gray-200 dark:bg-gray-700 h-[72px] w-full rounded"
+            className="animate-pulse bg-surface-raised h-[72px] w-full rounded"
           />
         ))}
       </div>
@@ -83,7 +83,7 @@ export function MobileStatusCards({ counts, isLoading }: MobileStatusCardsProps)
             className={[
               'flex items-center justify-between min-h-[72px] w-full',
               'border-l-4 rounded px-4 cursor-pointer',
-              'bg-card dark:bg-card',
+              'bg-surface',
               'transition-colors',
               borderClass,
               isActive ? activeBgClass : '',
@@ -92,10 +92,10 @@ export function MobileStatusCards({ counts, isLoading }: MobileStatusCardsProps)
               .join(' ')}
           >
             <div className="flex flex-col">
-              <span className="text-2xl font-bold text-foreground">
+              <span className="text-2xl font-bold font-mono text-text">
                 {counts[key]}
               </span>
-              <span className="text-sm text-muted-foreground">{label}</span>
+              <span className="text-sm text-text-muted">{label}</span>
             </div>
             <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
           </div>

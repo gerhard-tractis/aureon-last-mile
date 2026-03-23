@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { RealtimeStatusIndicator } from './RealtimeStatusIndicator';
 
 describe('RealtimeStatusIndicator', () => {
@@ -24,7 +24,7 @@ describe('RealtimeStatusIndicator', () => {
     it('shows green dot when connected', () => {
       render(<RealtimeStatusIndicator status="connected" />);
       const dot = screen.getByTestId('status-dot');
-      expect(dot.className).toContain('bg-green-500');
+      expect(dot.className).toContain('bg-[var(--color-status-success)]');
     });
 
     it('green dot has animate-pulse class', () => {
@@ -35,15 +35,15 @@ describe('RealtimeStatusIndicator', () => {
   });
 
   describe('Disconnected state', () => {
-    it('shows "Offline" when disconnected', () => {
+    it('shows "Sin conexión" when disconnected', () => {
       render(<RealtimeStatusIndicator status="disconnected" />);
-      expect(screen.getByText('Offline')).toBeTruthy();
+      expect(screen.getByText('Sin conexión')).toBeTruthy();
     });
 
     it('shows red dot when disconnected', () => {
       render(<RealtimeStatusIndicator status="disconnected" />);
       const dot = screen.getByTestId('status-dot');
-      expect(dot.className).toContain('bg-red-500');
+      expect(dot.className).toContain('bg-[var(--color-status-error)]');
     });
 
     it('red dot does not have animate-pulse', () => {
@@ -53,44 +53,23 @@ describe('RealtimeStatusIndicator', () => {
     });
   });
 
-  describe('lastFetchedAt display', () => {
-    it('does not show time text when lastFetchedAt is not provided', () => {
-      render(<RealtimeStatusIndicator status="connected" />);
-      expect(screen.queryByText(/Actualizado/)).toBeNull();
-    });
-
-    it('does not show time text when lastFetchedAt is null', () => {
-      render(<RealtimeStatusIndicator status="connected" lastFetchedAt={null} />);
-      expect(screen.queryByText(/Actualizado/)).toBeNull();
-    });
-
-    it('shows seconds ago when less than 60 seconds', () => {
-      const now = new Date();
-      const fetchedAt = new Date(now.getTime() - 30_000); // 30 seconds ago
-      render(<RealtimeStatusIndicator status="connected" lastFetchedAt={fetchedAt} />);
-      expect(screen.getByText(/Actualizado hace 30s/)).toBeTruthy();
-    });
-
-    it('shows minutes ago when 60 seconds or more', () => {
-      const now = new Date();
-      const fetchedAt = new Date(now.getTime() - 120_000); // 2 minutes ago
-      render(<RealtimeStatusIndicator status="connected" lastFetchedAt={fetchedAt} />);
-      expect(screen.getByText(/Actualizado hace 2m/)).toBeTruthy();
-    });
-
-    it('updates display every 10 seconds', () => {
+  describe('Stale and live states', () => {
+    it('shows live state when lastFetchedAt is recent', () => {
       const now = new Date();
       const fetchedAt = new Date(now.getTime() - 5_000); // 5 seconds ago
       render(<RealtimeStatusIndicator status="connected" lastFetchedAt={fetchedAt} />);
+      expect(screen.getByText('En vivo')).toBeTruthy();
+      const dot = screen.getByTestId('status-dot');
+      expect(dot.className).toContain('bg-[var(--color-status-success)]');
+    });
 
-      expect(screen.getByText(/Actualizado hace 5s/)).toBeTruthy();
-
-      // Advance 10 seconds
-      act(() => {
-        vi.advanceTimersByTime(10_000);
-      });
-
-      expect(screen.getByText(/Actualizado hace 15s/)).toBeTruthy();
+    it('shows stale state when lastFetchedAt is older than 30s', () => {
+      const now = new Date();
+      const fetchedAt = new Date(now.getTime() - 45_000); // 45 seconds ago
+      render(<RealtimeStatusIndicator status="connected" lastFetchedAt={fetchedAt} />);
+      expect(screen.getByText('Actualizando...')).toBeTruthy();
+      const dot = screen.getByTestId('status-dot');
+      expect(dot.className).toContain('bg-[var(--color-status-warning)]');
     });
   });
 

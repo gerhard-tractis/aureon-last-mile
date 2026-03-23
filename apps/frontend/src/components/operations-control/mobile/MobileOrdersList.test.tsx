@@ -23,8 +23,8 @@ vi.mock('@/components/operations-control/mobile/MobileFilterModal', () => ({
     open ? <div data-testid="mobile-filter-modal"><button onClick={onClose}>Cerrar modal</button></div> : null,
 }));
 
-vi.mock('@/components/operations-control/OrderDetailModal', () => ({
-  OrderDetailModal: ({ orderId, onClose }: { orderId: string | null; onClose: () => void }) =>
+vi.mock('@/components/operations-control/OrderDetailSheet', () => ({
+  OrderDetailSheet: ({ orderId, onClose }: { orderId: string | null; onClose: () => void }) =>
     orderId ? <div data-testid="order-detail-modal"><button onClick={onClose}>Cerrar detalle</button></div> : null,
 }));
 
@@ -287,17 +287,17 @@ describe('MobileOrdersList', () => {
     });
   });
 
-  // ── 8. Order detail modal ────────────────────────────────────────────────
+  // ── 8. Order detail sheet ────────────────────────────────────────────────
 
-  describe('Order detail modal', () => {
-    it('opens OrderDetailModal when order card is clicked', () => {
+  describe('Order detail sheet', () => {
+    it('opens OrderDetailSheet when order card is clicked', () => {
       const order = makeOrder({ id: 'ord-99' });
       render(<MobileOrdersList orders={[order]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('order-card-ord-99'));
       expect(screen.getByTestId('order-detail-modal')).toBeTruthy();
     });
 
-    it('closes OrderDetailModal when onClose is called', () => {
+    it('closes OrderDetailSheet when onClose is called', () => {
       const order = makeOrder({ id: 'ord-99' });
       render(<MobileOrdersList orders={[order]} isLoading={false} />);
       fireEvent.click(screen.getByTestId('order-card-ord-99'));

@@ -8,7 +8,7 @@ import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
 import { MobileOrderCard } from './MobileOrderCard';
 import { MobileFilterModal } from './MobileFilterModal';
 import { MobilePullToRefresh } from './MobilePullToRefresh';
-import { OrderDetailModal } from '@/components/operations-control/OrderDetailModal';
+import { OrderDetailSheet } from '@/components/operations-control/OrderDetailSheet';
 import { computePriority } from '@/lib/utils/priority';
 
 export { computePriority };
@@ -221,7 +221,7 @@ export function MobileOrdersList({ orders, isLoading }: MobileOrdersListProps) {
         onClose={() => setFilterModalOpen(false)}
       />
 
-      <OrderDetailModal
+      <OrderDetailSheet
         orderId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
       />
