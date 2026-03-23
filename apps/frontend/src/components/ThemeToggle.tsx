@@ -4,7 +4,11 @@ import { Moon, Sun, Palette } from 'lucide-react';
 import { useTheme, type ThemeMode } from '@/hooks/useTheme';
 import { useBranding } from '@/providers/BrandingProvider';
 
-export default function ThemeToggle() {
+interface ThemeToggleProps {
+  compact?: boolean;
+}
+
+export default function ThemeToggle({ compact = false }: ThemeToggleProps) {
   const { hasBranding, palette } = useBranding();
   const { mode, setMode } = useTheme({ hasCustomBranding: hasBranding });
 
@@ -17,7 +21,7 @@ export default function ThemeToggle() {
           label: 'Brand mode',
           icon: palette?.brand_primary ? (
             <span
-              className="h-4 w-4 rounded-sm inline-block border border-border"
+              className="h-4 w-4 rounded-sm inline-block border border-sidebar-border"
               style={{ background: palette.brand_primary }}
             />
           ) : (
@@ -27,18 +31,36 @@ export default function ThemeToggle() {
       : []),
   ];
 
+  // Compact mode: single button that cycles through modes
+  if (compact) {
+    const currentIdx = options.findIndex((o) => o.value === mode);
+    const current = options[currentIdx] ?? options[0];
+    const nextMode = options[(currentIdx + 1) % options.length].value;
+
+    return (
+      <button
+        onClick={() => setMode(nextMode)}
+        aria-label={`Theme: ${current.label}. Click to switch.`}
+        className="p-2 rounded-md text-sidebar-text hover:bg-sidebar-hover transition-colors"
+      >
+        {current.icon}
+      </button>
+    );
+  }
+
+  // Full mode: inline button group
   return (
-    <div className="flex items-center gap-1" role="group" aria-label="Theme mode">
+    <div className="flex items-center gap-0.5" role="group" aria-label="Theme mode">
       {options.map((opt) => (
         <button
           key={opt.value}
           onClick={() => setMode(opt.value)}
           aria-label={opt.label}
           aria-pressed={mode === opt.value}
-          className={`p-2 rounded-md transition-colors ${
+          className={`p-1.5 rounded-md transition-colors ${
             mode === opt.value
-              ? 'bg-accent text-accent-foreground'
-              : 'text-text-secondary hover:text-text hover:bg-surface-raised'
+              ? 'bg-sidebar-hover text-sidebar-active'
+              : 'text-sidebar-text hover:text-sidebar-active hover:bg-sidebar-hover'
           }`}
         >
           {opt.icon}

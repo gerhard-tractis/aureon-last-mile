@@ -91,16 +91,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="px-2 py-2 border-t border-sidebar-border space-y-1">
           <SidebarUserMenu pinned={ep} />
-          {!mobilePinned && (
-            <button
-              data-pin-toggle
-              onClick={togglePin}
-              className="flex items-center justify-center w-full p-2 rounded-md text-sidebar-text hover:bg-sidebar-hover transition-colors"
-              aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar'}
-            >
-              {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-            </button>
-          )}
+          <div className={`flex items-center ${ep ? 'justify-between' : 'justify-center'} px-1`}>
+            <ThemeToggle compact={!ep} />
+            {!mobilePinned && (
+              <button
+                data-pin-toggle
+                onClick={togglePin}
+                className="p-2 rounded-md text-sidebar-text hover:bg-sidebar-hover transition-colors"
+                aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar'}
+              >
+                {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -134,12 +137,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Sheet>
           </div>
 
-          {/* Alert bell + theme toggle + main */}
+          {/* Main content */}
           <div className="relative">
-            <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
-              <ThemeToggle />
-              {isAdminOrManager && <CapacityAlertBell operatorId={operatorId} />}
-            </div>
+            {isAdminOrManager && (
+              <div className="absolute top-3 right-4 z-10">
+                <CapacityAlertBell operatorId={operatorId} />
+              </div>
+            )}
             <main>{children}</main>
           </div>
         </div>

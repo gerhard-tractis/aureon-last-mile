@@ -172,13 +172,23 @@ html.custom {
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
 
-  /* ---- SIDEBAR TOKENS — fixed dark, all modes --------------- */
-  --color-sidebar-bg:          #0f172a;
-  --color-sidebar-text:        #94a3b8;
+  /* ---- SIDEBAR TOKENS — warm charcoal, all modes ------------ */
+  --color-sidebar-bg:          #1c1917;
+  --color-sidebar-text:        #a8a29e;
   --color-sidebar-text-active: #ca9a04;
-  --color-sidebar-hover:       rgba(255,255,255,0.05);
-  --color-sidebar-section:     #64748b;
-  --color-sidebar-border:      #1e293b;
+  --color-sidebar-hover:       rgba(255,255,255,0.06);
+  --color-sidebar-section:     #78716c;
+  --color-sidebar-border:      #292524;
+}
+
+/* Dark mode sidebar — deeper warm black to sit below content */
+html.dark {
+  --color-sidebar-bg:          #0c0a08;
+  --color-sidebar-text:        #a8a29e;
+  --color-sidebar-text-active: #e6c15c;
+  --color-sidebar-hover:       rgba(255,255,255,0.06);
+  --color-sidebar-section:     #78716c;
+  --color-sidebar-border:      #1c1917;
 }
 
 /* Dark mode overrides for status backgrounds (semi-transparent) */
