@@ -75,56 +75,49 @@ describe('HeroSLA', () => {
     mockFadrQuery.isPlaceholderData = false;
   });
 
-  it('renders SLA percentage with green color for >= 95%', () => {
+  it('renders SLA percentage as white monospace on gold background', () => {
     mockOtifQuery.data = makeOtif(965, 1000); // 96.5%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    const elements = screen.getAllByText('96.5%');
-    const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
-    expect(heroDisplay).toHaveClass('text-[#10b981]');
+    expect(screen.getByText('96.5%')).toBeInTheDocument();
+    // Card uses bg-accent (gold) and all text is white
+    const card = screen.getByRole('button', { name: /Ver analisis detallado de SLA/ });
+    expect(card.className).toContain('bg-accent');
+    expect(card.className).toContain('text-white');
   });
 
-  it('renders SLA percentage with yellow color for 90-94.9%', () => {
-    mockOtifQuery.data = makeOtif(923, 1000); // 92.3%
+  it('renders SLA value with font-mono styling', () => {
+    mockOtifQuery.data = makeOtif(942, 1000); // 94.2%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    const elements = screen.getAllByText('92.3%');
-    const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
-    expect(heroDisplay).toHaveClass('text-[#f59e0b]');
-  });
-
-  it('renders SLA percentage with red color for < 90%', () => {
-    mockOtifQuery.data = makeOtif(85, 100); // 85.0%
-    renderWithProvider(<HeroSLA operatorId="op-123" />);
-    const elements = screen.getAllByText('85.0%');
-    const heroDisplay = elements.find((el) => el.className.includes('text-[4rem]'));
-    expect(heroDisplay).toHaveClass('text-[#ef4444]');
+    const value = screen.getByText('94.2%');
+    expect(value.className).toContain('font-mono');
+    expect(value.className).toContain('text-[28px]');
   });
 
   it('renders "N/A" when data is null', () => {
     mockOtifQuery.data = null;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
     expect(screen.getByText('N/A')).toBeInTheDocument();
-    expect(screen.getByText('Sin datos para este periodo')).toBeInTheDocument();
   });
 
   it('shows trend arrow up with correct delta', () => {
     mockOtifQuery.data = makeOtif(95, 100);      // 95.0%
     mockPrevOtifQuery.data = makeOtif(927, 1000); // 92.7%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    expect(screen.getByText(/\+2\.3% vs semana anterior/)).toBeInTheDocument();
+    expect(screen.getByText(/\+2\.3% vs anterior/)).toBeInTheDocument();
   });
 
   it('shows trend arrow down with negative delta', () => {
     mockOtifQuery.data = makeOtif(90, 100);      // 90.0%
     mockPrevOtifQuery.data = makeOtif(930, 1000); // 93.0%
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    expect(screen.getByText(/-3\.0% vs semana anterior/)).toBeInTheDocument();
+    expect(screen.getByText(/-3\.0% vs anterior/)).toBeInTheDocument();
   });
 
   it('hides trend when previous period is null', () => {
     mockOtifQuery.data = makeOtif(95, 100); // 95.0%
     mockPrevOtifQuery.data = null;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-    expect(screen.queryByText(/vs semana anterior/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/vs anterior/)).not.toBeInTheDocument();
   });
 
   it('shows skeleton when loading', () => {
@@ -168,21 +161,14 @@ describe('HeroSLA', () => {
   it('uses provided startDate/endDate props instead of hardcoded dates', () => {
     mockOtifQuery.data = makeOtif(95, 100);
     renderWithProvider(<HeroSLA operatorId="op-123" startDate="2026-01-01" endDate="2026-01-07" />);
-    expect(screen.getAllByText('95.0%')[0]).toBeInTheDocument();
+    expect(screen.getByText('95.0%')).toBeInTheDocument();
   });
 
-  it('renders context line with delivery counts when data is available', () => {
+  it('shows target and FADR in subtitle', () => {
     mockOtifQuery.data = makeOtif(190, 200);
-    renderWithProvider(<HeroSLA operatorId="op-123" />);
-    expect(screen.getByText('190 de 200 entregas cumplidas')).toBeInTheDocument();
-  });
-
-  it('renders FADR and failure count in inline metrics', () => {
-    mockOtifQuery.data = makeOtif(190, 200, 10);
     mockFadrQuery.data = 88.5;
     renderWithProvider(<HeroSLA operatorId="op-123" />);
-
-    expect(screen.getByText(/Primera Entrega \(FADR\): 88\.5%/)).toBeInTheDocument();
-    expect(screen.getByText(/Fallos: 10 \(5\.0%\)/)).toBeInTheDocument();
+    expect(screen.getByText('Meta: 95%')).toBeInTheDocument();
+    expect(screen.getByText('FADR: 88.5%')).toBeInTheDocument();
   });
 });

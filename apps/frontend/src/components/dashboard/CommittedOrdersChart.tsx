@@ -30,24 +30,24 @@ export default function CommittedOrdersChart({ operatorId, startDate, endDate }:
   }, [data]);
 
   return (
-    <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
-      <h3 className="text-lg font-semibold text-foreground mb-4">Órdenes Comprometidas por Día</h3>
+    <div className="bg-surface border border-border rounded-md p-3">
+      <h3 className="text-xs font-semibold text-text-muted uppercase mb-3">Órdenes Comprometidas por Día</h3>
 
       {isLoading ? (
         <div className="h-64 animate-pulse bg-muted rounded-lg" />
       ) : (
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={240}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#64748b' }} />
-            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
-            <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--color-text-muted)' }} />
+            <YAxis tick={{ fontSize: 12, fill: 'var(--color-text-muted)' }} />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid var(--color-border)' }} />
             <Line
               type="monotone"
               dataKey="count"
-              stroke="#e6c15c"
+              stroke="var(--color-accent)"
               strokeWidth={2}
-              dot={{ fill: '#e6c15c', r: 3 }}
+              dot={{ fill: 'var(--color-accent)', r: 3 }}
               name="Órdenes"
             />
           </LineChart>

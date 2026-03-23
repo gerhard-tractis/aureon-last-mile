@@ -9,6 +9,8 @@ interface DateFilterBarProps {
   onPresetChange: (preset: DatePreset) => void;
   onCustomStartChange: (date: string) => void;
   onCustomEndChange: (date: string) => void;
+  /** When true, renders inline (no sticky positioning) for use in PageShell actions slot */
+  inline?: boolean;
 }
 
 const PRESETS: { id: DatePreset; label: string }[] = [
@@ -28,9 +30,10 @@ export default function DateFilterBar({
   onPresetChange,
   onCustomStartChange,
   onCustomEndChange,
+  inline,
 }: DateFilterBarProps) {
   return (
-    <div className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm border-b border-border -mx-4 px-4 py-3 sm:-mx-6 sm:px-6">
+    <div className={inline ? '' : 'sticky top-0 z-10 bg-surface/95 backdrop-blur-sm border-b border-border -mx-4 px-4 py-3 sm:-mx-6 sm:px-6'}>
       <div className="flex flex-wrap gap-2">
         {PRESETS.map(({ id, label }) => (
           <button
@@ -38,8 +41,8 @@ export default function DateFilterBar({
             onClick={() => onPresetChange(id)}
             className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 rounded-full ${
               preset === id
-                ? 'bg-gold text-foreground shadow-sm'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                ? 'bg-accent text-accent-foreground'
+                : 'bg-[var(--color-surface-raised)] text-[var(--color-text-secondary)] border border-border hover:opacity-80'
             }`}
           >
             {label}
@@ -54,7 +57,7 @@ export default function DateFilterBar({
               aria-label="Desde"
               value={customStart}
               onChange={(e) => onCustomStartChange(e.target.value)}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-gold"
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-accent"
             />
             <label className="sr-only" htmlFor="date-filter-end">Hasta</label>
             <input
@@ -63,7 +66,7 @@ export default function DateFilterBar({
               aria-label="Hasta"
               value={customEnd}
               onChange={(e) => onCustomEndChange(e.target.value)}
-              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-gold"
+              className="text-sm border border-border rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-accent"
             />
           </>
         )}

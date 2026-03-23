@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import SubTabNav from './SubTabNav';
 
 const TABS = [
@@ -11,7 +12,6 @@ const TABS = [
 describe('SubTabNav', () => {
   it('renders all tab labels', () => {
     render(<SubTabNav tabs={TABS} activeTab="tab_a" onTabChange={() => {}} />);
-    // Each label appears in both mobile option and desktop button
     expect(screen.getAllByText('Tab A').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Tab B').length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Tab C/).length).toBeGreaterThan(0);
@@ -20,21 +20,21 @@ describe('SubTabNav', () => {
   it('highlights the active tab', () => {
     render(<SubTabNav tabs={TABS} activeTab="tab_a" onTabChange={() => {}} />);
     const activeBtn = screen.getByRole('tab', { name: 'Tab A' });
-    expect(activeBtn.getAttribute('aria-selected')).toBe('true');
+    expect(activeBtn.getAttribute('data-state')).toBe('active');
   });
 
-  it('calls onTabChange when clicking an enabled tab', () => {
+  it('calls onTabChange when clicking an enabled tab', async () => {
     const onChange = vi.fn();
     render(<SubTabNav tabs={TABS} activeTab="tab_a" onTabChange={onChange} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Tab B' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Tab B' }));
     expect(onChange).toHaveBeenCalledWith('tab_b');
   });
 
-  it('does not call onTabChange when clicking a disabled tab', () => {
+  it('does not call onTabChange when clicking a disabled tab', async () => {
     const onChange = vi.fn();
     render(<SubTabNav tabs={TABS} activeTab="tab_a" onTabChange={onChange} />);
     const disabledBtn = screen.getByRole('tab', { name: /Tab C/ });
-    fireEvent.click(disabledBtn);
+    await userEvent.click(disabledBtn);
     expect(onChange).not.toHaveBeenCalled();
   });
 
