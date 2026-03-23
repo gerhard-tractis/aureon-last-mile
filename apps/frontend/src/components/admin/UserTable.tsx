@@ -78,7 +78,7 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
   const getRoleBadgeColor = (role: string) => {
     const color = getRoleColor(role);
     if (color === 'gold') return 'bg-gold text-foreground';
-    if (color === 'blue') return 'bg-blue-100 text-blue-800';
+    if (color === 'blue') return 'bg-status-info-bg text-status-info';
     return 'bg-muted text-foreground';
   };
 
@@ -149,14 +149,14 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => setEditFormOpen(true, user.id)}
-                    className="text-blue-600 hover:text-blue-800"
+                    className="text-accent hover:opacity-80"
                     style={{ minHeight: '36px', minWidth: '60px' }} // Touch target minimum
                   >
                     Edit
                   </button>
                   <button
                     onClick={() => setDeleteConfirmOpen(true, user.id)}
-                    className="text-red-600 hover:text-red-800"
+                    className="text-status-error hover:opacity-80"
                     style={{ minHeight: '36px', minWidth: '60px' }} // Touch target minimum
                   >
                     Delete

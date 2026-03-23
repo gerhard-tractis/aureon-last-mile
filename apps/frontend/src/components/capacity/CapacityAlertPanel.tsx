@@ -10,10 +10,10 @@ interface Props {
 }
 
 function getSeverityClass(thresholdPct: number | null): string {
-  if (thresholdPct === null) return 'bg-yellow-400';
-  if (thresholdPct >= 120) return 'bg-red-500';
-  if (thresholdPct >= 100) return 'bg-orange-500';
-  return 'bg-yellow-400';
+  if (thresholdPct === null) return 'bg-status-warning';
+  if (thresholdPct >= 120) return 'bg-status-error';
+  if (thresholdPct >= 100) return 'bg-status-warning';
+  return 'bg-status-warning';
 }
 
 function getSeverityLabel(thresholdPct: number | null): string {

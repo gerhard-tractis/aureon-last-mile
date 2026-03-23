@@ -32,14 +32,14 @@ export function OrdersFilterToolbar() {
     : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 p-3 bg-white border-b border-gray-200">
+    <div className="flex flex-wrap items-center gap-2 p-3 bg-white border-b border-border">
       {/* Search input */}
       <input
         type="text"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Buscar orden, cliente..."
-        className="flex-1 min-w-[200px] px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="flex-1 min-w-[200px] px-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent"
       />
 
       {/* Date filter */}
@@ -51,7 +51,7 @@ export function OrdersFilterToolbar() {
             e.target.value as 'today' | 'tomorrow' | 'next7' | 'custom',
           )
         }
-        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        className="px-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent bg-white"
       >
         <option value="today">Hoy</option>
         <option value="tomorrow">Mañana</option>
@@ -68,7 +68,7 @@ export function OrdersFilterToolbar() {
             e.target.value as 'all' | 'urgent' | 'alert' | 'ok' | 'late',
           )
         }
-        className="px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+        className="px-3 py-1.5 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent bg-white"
       >
         <option value="all">Todos</option>
         <option value="urgent">Urgentes</option>
@@ -81,13 +81,13 @@ export function OrdersFilterToolbar() {
       {stageFilter !== null && stageLabel !== null && (
         <span
           data-testid="stage-filter-badge"
-          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full"
+          className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium bg-status-info-bg text-status-info rounded-full"
         >
           Etapa: {stageLabel}
           <button
             data-testid="stage-filter-clear"
             onClick={() => setStageFilter(null)}
-            className="ml-1 text-blue-600 hover:text-blue-900 font-bold leading-none"
+            className="ml-1 text-accent hover:text-accent/80 font-bold leading-none"
             aria-label="Limpiar filtro de etapa"
           >
             ×
@@ -99,7 +99,7 @@ export function OrdersFilterToolbar() {
       {hasActiveFilters && (
         <button
           onClick={clearAllFilters}
-          className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50"
+          className="px-3 py-1.5 text-sm text-text-secondary hover:text-text border border-border rounded-md hover:bg-surface-raised"
         >
           Limpiar filtros
         </button>

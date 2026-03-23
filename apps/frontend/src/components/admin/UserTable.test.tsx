@@ -128,7 +128,7 @@ describe('UserTable', () => {
 
       // Operations manager badge should have blue background
       const managerBadge = screen.getByText('Operations Manager').closest('span');
-      expect(managerBadge?.className).toContain('bg-blue-100');
+      expect(managerBadge?.className).toContain('bg-status-info-bg');
 
       // Pickup crew badge should have gray background
       const crewBadge = screen.getByText('Pickup Crew').closest('span');

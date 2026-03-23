@@ -291,7 +291,7 @@ export default function TaskManagementPage() {
                                                     onClick={() => handleMarkAsDone(task.id)}
                                                     variant="ghost"
                                                     size="icon"
-                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                    className="text-status-success hover:opacity-80 hover:bg-status-success-bg"
                                                 >
                                                     <CheckCircle className="h-5 w-5" />
                                                 </Button>

@@ -38,11 +38,11 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
     <Dialog open={!!orderId} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="order-detail-modal">
         {isLoading && (
-          <p className="text-sm text-gray-500 py-4">Cargando detalles...</p>
+          <p className="text-sm text-text-muted py-4">Cargando detalles...</p>
         )}
 
         {isError && !isLoading && (
-          <p className="text-sm text-red-600 py-4">Error al cargar detalles del pedido</p>
+          <p className="text-sm text-status-error py-4">Error al cargar detalles del pedido</p>
         )}
 
         {!isLoading && !isError && data && (
@@ -54,13 +54,13 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                   <DialogTitle className="text-lg font-semibold">
                     Orden #{data.order_number}
                   </DialogTitle>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-text-secondary mt-1">
                     {data.retailer_name ? `${data.retailer_name} — ` : ''}{data.customer_name}
                   </p>
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-text-muted">
                     {data.delivery_address}, {data.comuna}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-text-muted mt-1">
                     Promesa: {data.delivery_date}
                     {' | '}
                     Ventana: {formatDeliveryWindow(data.delivery_window_start, data.delivery_window_end)}
@@ -69,7 +69,7 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
                 <button
                   data-testid="modal-close-btn"
                   onClick={onClose}
-                  className="ml-4 text-gray-400 hover:text-gray-600 text-lg leading-none"
+                  className="ml-4 text-text-muted hover:text-text-secondary text-lg leading-none"
                   aria-label="Cerrar"
                 >
                   ×
@@ -79,22 +79,22 @@ export function OrderDetailModal({ orderId, onClose }: OrderDetailModalProps) {
 
             {/* Packages section */}
             <section className="mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Paquetes</h3>
+              <h3 className="text-sm font-semibold text-text-secondary mb-2">Paquetes</h3>
               <PackageStatusBreakdown packages={data.packages} />
             </section>
 
             {/* History section */}
             <section className="mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Historial</h3>
+              <h3 className="text-sm font-semibold text-text-secondary mb-2">Historial</h3>
               <StatusTimeline auditLogs={data.auditLogs} />
             </section>
 
             {/* Placeholder action */}
-            <section className="mt-4 pt-4 border-t border-gray-100">
+            <section className="mt-4 pt-4 border-t border-border">
               <button
                 onClick={() => {}}
                 aria-label="Reasignar zona"
-                className="px-4 py-2 text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded hover:bg-indigo-100"
+                className="px-4 py-2 text-sm text-accent bg-accent-muted border border-border rounded hover:bg-accent-muted/80"
               >
                 Reasignar zona
               </button>

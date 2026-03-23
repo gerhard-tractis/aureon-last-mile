@@ -41,7 +41,7 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
         </div>
       )}
       {zones.map((zone) => (
-        <Card key={zone.id} className={zone.is_consolidation ? 'border-blue-200 bg-blue-50/30' : ''}>
+        <Card key={zone.id} className={zone.is_consolidation ? 'border-status-info-border bg-status-info-bg' : ''}>
           <CardContent className="p-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
@@ -49,10 +49,10 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
                   <span className="font-semibold text-sm">{zone.name}</span>
                   <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{zone.code}</code>
                   {zone.is_consolidation && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Hub</span>
+                    <span className="text-xs bg-status-info-bg text-status-info px-1.5 py-0.5 rounded">Hub</span>
                   )}
                   {!zone.is_active && (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Inactivo</span>
+                    <span className="text-xs bg-surface-raised text-text-muted px-1.5 py-0.5 rounded">Inactivo</span>
                   )}
                 </div>
                 {zone.comunas.length > 0 && (

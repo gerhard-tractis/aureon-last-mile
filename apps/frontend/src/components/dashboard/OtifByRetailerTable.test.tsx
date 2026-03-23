@@ -39,7 +39,7 @@ describe('OtifByRetailerTable', () => {
 
     // Ripley has 100% OTIF
     const ripleyRow = screen.getByText('100.0').closest('td');
-    expect(ripleyRow?.className).toContain('text-emerald');
+    expect(ripleyRow?.className).toContain('text-status-success');
   });
 
   it('applies red color to OTIF < 85%', () => {
@@ -48,7 +48,7 @@ describe('OtifByRetailerTable', () => {
 
     // Paris has 55.6% OTIF
     const parisRow = screen.getByText('55.6').closest('td');
-    expect(parisRow?.className).toContain('text-red');
+    expect(parisRow?.className).toContain('text-status-error');
   });
 
   it('shows loading skeleton', () => {

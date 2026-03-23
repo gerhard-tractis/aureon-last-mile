@@ -15,22 +15,22 @@ export interface OrdersTableRowProps {
 }
 
 const PRIORITY_DOTS: Record<OrderPriority, string> = {
-  urgent: 'bg-red-500',
-  alert: 'bg-yellow-500',
-  ok: 'bg-green-500',
-  late: 'bg-gray-500',
+  urgent: 'bg-status-error',
+  alert: 'bg-status-warning',
+  ok: 'bg-status-success',
+  late: 'bg-text-muted',
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  ingresado: 'bg-gray-100 text-gray-700',
-  verificado: 'bg-blue-100 text-blue-700',
-  en_bodega: 'bg-purple-100 text-purple-700',
-  asignado: 'bg-indigo-100 text-indigo-700',
-  en_carga: 'bg-orange-100 text-orange-700',
-  listo: 'bg-cyan-100 text-cyan-700',
-  en_ruta: 'bg-yellow-100 text-yellow-700',
-  entregado: 'bg-green-100 text-green-700',
-  cancelado: 'bg-red-100 text-red-700',
+  ingresado: 'bg-surface-raised text-text-secondary',
+  verificado: 'bg-status-info-bg text-status-info',
+  en_bodega: 'bg-accent-muted text-accent',
+  asignado: 'bg-accent-muted text-accent',
+  en_carga: 'bg-status-warning-bg text-status-warning',
+  listo: 'bg-status-info-bg text-status-info',
+  en_ruta: 'bg-status-warning-bg text-status-warning',
+  entregado: 'bg-status-success-bg text-status-success',
+  cancelado: 'bg-status-error-bg text-status-error',
 };
 
 function formatDeliveryDate(dateStr: string): string {
@@ -57,11 +57,11 @@ function formatTimeWindow(start: string | null, end: string | null): string {
 
 export function OrdersTableRow({ order, priority, onOpenDetail }: OrdersTableRowProps) {
   const clienteDisplay = order.retailer_name ?? order.customer_name;
-  const statusColor = STATUS_COLORS[order.status] ?? 'bg-gray-100 text-gray-700';
+  const statusColor = STATUS_COLORS[order.status] ?? 'bg-surface-raised text-text-secondary';
   const isParcial = order.status !== order.leading_status;
 
   return (
-    <tr className="border-b border-gray-100 hover:bg-gray-50 text-sm">
+    <tr className="border-b border-border hover:bg-surface-raised text-sm">
       {/* Status / Priority dot */}
       <td className="px-3 py-2 w-8">
         <span
@@ -74,7 +74,7 @@ export function OrdersTableRow({ order, priority, onOpenDetail }: OrdersTableRow
       <td className="px-3 py-2 font-mono">
         <button
           onClick={() => onOpenDetail(order.id)}
-          className="text-blue-600 hover:text-blue-800 hover:underline"
+          className="text-accent hover:text-accent/80 hover:underline"
         >
           {order.order_number}
         </button>
@@ -120,17 +120,17 @@ export function OrdersTableRow({ order, priority, onOpenDetail }: OrdersTableRow
         <div className="flex items-center gap-1">
           <button
             onClick={() => onOpenDetail(order.id)}
-            className="px-2 py-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+            className="px-2 py-1 text-xs text-status-info bg-status-info-bg border border-status-info-border rounded hover:bg-status-info-bg/80"
           >
             Ver
           </button>
           {(priority === 'alert' || priority === 'urgent') && (
-            <button className="px-2 py-1 text-xs text-orange-700 bg-orange-50 border border-orange-200 rounded hover:bg-orange-100">
+            <button className="px-2 py-1 text-xs text-status-warning bg-status-warning-bg border border-status-warning-border rounded hover:bg-status-warning-bg/80">
               Reasignar
             </button>
           )}
           {priority === 'late' && (
-            <button className="px-2 py-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded hover:bg-red-100">
+            <button className="px-2 py-1 text-xs text-status-error bg-status-error-bg border border-status-error-border rounded hover:bg-status-error-bg/80">
               Escalar
             </button>
           )}

@@ -39,8 +39,8 @@ export const DeleteConfirmationModal = () => {
           Are you sure you want to delete this user?
         </p>
 
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-4 mb-6">
-          <p className="text-sm text-amber-800">
+        <div className="bg-status-warning-bg border border-status-warning-border rounded-md p-4 mb-6">
+          <p className="text-sm text-status-warning">
             <strong>Warning:</strong> User will be soft-deleted (sets deleted_at timestamp).
             They can no longer log in. This action can be reversed by setting deleted_at = NULL
             in the database.

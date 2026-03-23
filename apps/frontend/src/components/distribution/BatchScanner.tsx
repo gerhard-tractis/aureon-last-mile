@@ -57,9 +57,9 @@ export function BatchScanner({ onScan, lastResult, disabled }: BatchScannerProps
 function ScanFeedbackBanner({ result }: { result: DockScanValidationResult }) {
   if (result.scanResult === 'accepted') {
     return (
-      <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
-        <CheckCircle className="h-5 w-5 text-green-500 shrink-0" />
-        <span className="text-sm font-medium text-green-800">
+      <div className="flex items-center gap-2 p-2 bg-status-success-bg border border-status-success-border rounded-md">
+        <CheckCircle className="h-5 w-5 text-status-success shrink-0" />
+        <span className="text-sm font-medium text-status-success">
           Aceptado
           {result.packageLabel ? (
             <> — <span>{result.packageLabel}</span></>
@@ -70,9 +70,9 @@ function ScanFeedbackBanner({ result }: { result: DockScanValidationResult }) {
   }
 
   return (
-    <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-md">
-      <XCircle className="h-5 w-5 text-red-500 shrink-0" />
-      <span className="text-sm font-medium text-red-800">
+    <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-md">
+      <XCircle className="h-5 w-5 text-status-error shrink-0" />
+      <span className="text-sm font-medium text-status-error">
         {result.message ?? 'Paquete no encontrado'}
       </span>
     </div>

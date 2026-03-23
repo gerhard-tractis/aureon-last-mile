@@ -15,10 +15,10 @@ function formatTime(iso: string | null): string {
 
 function StatusBadge({ status }: { status: ActiveRoute['status'] }) {
   const map: Record<ActiveRoute['status'], { label: string; className: string }> = {
-    in_progress: { label: 'En Ruta', className: 'bg-blue-100 text-blue-700' },
-    completed: { label: 'Completado', className: 'bg-emerald-100 text-emerald-700' },
+    in_progress: { label: 'En Ruta', className: 'bg-status-info-bg text-status-info' },
+    completed: { label: 'Completado', className: 'bg-status-success-bg text-status-success' },
     planned: { label: 'Planificado', className: 'bg-muted text-muted-foreground' },
-    cancelled: { label: 'Cancelado', className: 'bg-red-100 text-red-700' },
+    cancelled: { label: 'Cancelado', className: 'bg-status-error-bg text-status-error' },
   };
   const { label, className } = map[status] ?? map.planned;
   return (
@@ -30,9 +30,9 @@ function StatusBadge({ status }: { status: ActiveRoute['status'] }) {
 
 function DispatchStatusDot({ status }: { status: ActiveDispatch['status'] }) {
   const colors: Record<ActiveDispatch['status'], string> = {
-    delivered: 'bg-emerald-500',
-    failed: 'bg-red-500',
-    partial: 'bg-amber-500',
+    delivered: 'bg-status-success',
+    failed: 'bg-status-error',
+    partial: 'bg-status-warning',
     pending: 'bg-muted-foreground/50',
   };
   return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]}`} />;
@@ -54,7 +54,7 @@ function StopList({ dispatches }: { dispatches: ActiveDispatch[] }) {
             <span className="text-muted-foreground shrink-0">ETA {formatTime(d.estimated_at)}</span>
           )}
           {d.arrived_at && (
-            <span className="text-emerald-600 shrink-0">✓ {formatTime(d.arrived_at)}</span>
+            <span className="text-status-success shrink-0">✓ {formatTime(d.arrived_at)}</span>
           )}
         </div>
       ))}
@@ -101,7 +101,7 @@ export default function RouteProgressCard({ route }: RouteProgressCardProps) {
         </div>
         <div className="h-2 rounded-full bg-muted overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-500"
+            className="h-full rounded-full bg-accent transition-all duration-500"
             style={{ width: `${progress}%` }}
             data-testid="progress-bar"
           />
@@ -118,7 +118,7 @@ export default function RouteProgressCard({ route }: RouteProgressCardProps) {
       {/* Expand/collapse */}
       <button
         onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+        className="flex items-center gap-1 text-xs text-accent hover:opacity-80 transition-colors"
         aria-expanded={expanded}
       >
         {expanded ? (

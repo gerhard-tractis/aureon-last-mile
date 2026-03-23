@@ -38,7 +38,7 @@ export default function GlobalError({
           </p>
           <button
             onClick={reset}
-            className="py-3 px-6 bg-primary-600 text-white border-none rounded-lg cursor-pointer text-base"
+            className="py-3 px-6 bg-accent text-accent-foreground border-none rounded-lg cursor-pointer text-base"
           >
             Reintentar
           </button>

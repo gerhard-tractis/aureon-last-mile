@@ -20,12 +20,12 @@ export function DistributionKPIs({ pending, consolidation, dueSoon }: Distributi
       </Card>
 
       <Card
-        className={dueSoon > 0 ? 'p-4 border-orange-300 bg-orange-50/40' : 'p-4'}
+        className={dueSoon > 0 ? 'p-4 border-status-warning-border bg-status-warning-bg' : 'p-4'}
         data-urgent={dueSoon > 0 ? 'true' : undefined}
       >
         <div className="text-sm text-muted-foreground">Próximos a despachar</div>
         <div
-          className={dueSoon > 0 ? 'text-2xl font-bold mt-1 text-orange-600' : 'text-2xl font-bold mt-1'}
+          className={dueSoon > 0 ? 'text-2xl font-bold mt-1 text-status-warning' : 'text-2xl font-bold mt-1'}
         >
           {dueSoon}
         </div>
