@@ -47,20 +47,20 @@ export default function DailyOrdersChart({ operatorId, startDate, endDate }: Dai
   const clients = Array.from(clientSet);
 
   return (
-    <div className="bg-card rounded-xl p-6 shadow-sm border border-border">
-      <h3 className="text-lg font-semibold text-foreground mb-4">
+    <div className="bg-surface border border-border rounded-md p-3">
+      <h3 className="text-xs font-semibold text-text-muted uppercase mb-3">
         Evolución Diaria de Órdenes Cargadas
       </h3>
 
       {isLoading ? (
         <div className="h-64 animate-pulse bg-muted rounded-lg" />
       ) : (
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={240}>
           <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#64748b' }} />
-            <YAxis tick={{ fontSize: 12, fill: '#64748b' }} />
-            <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e2e8f0' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
+            <XAxis dataKey="day" tick={{ fontSize: 12, fill: 'var(--color-text-muted)' }} />
+            <YAxis tick={{ fontSize: 12, fill: 'var(--color-text-muted)' }} />
+            <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid var(--color-border)' }} />
             <Legend />
             {clients.map((client, i) => (
               <Bar

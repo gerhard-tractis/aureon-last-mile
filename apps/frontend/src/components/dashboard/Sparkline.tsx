@@ -9,10 +9,10 @@ export type SparklinePoint = {
 
 interface SparklineProps {
   data: SparklinePoint[];
-  color: string;
+  color?: string;
 }
 
-export default function Sparkline({ data, color }: SparklineProps) {
+export default function Sparkline({ data, color = 'var(--color-accent)' }: SparklineProps) {
   if (!data || data.length === 0) return null;
 
   return (

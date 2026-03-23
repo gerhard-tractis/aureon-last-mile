@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useDashboardMetrics';
+import { PageShell } from '@/components/PageShell';
 import SubTabNav, { type TabDefinition } from '@/components/dashboard/SubTabNav';
 import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
 import OfflineBanner from '@/components/dashboard/OfflineBanner';
@@ -44,13 +45,19 @@ function AnaliticaContent() {
   if (!operatorId) return <HeroSLASkeleton />;
 
   return (
-    <div className="space-y-6">
+    <PageShell
+      title="Analítica"
+      breadcrumbs={[
+        { label: 'Dashboard', href: '/app/dashboard' },
+        { label: 'Analítica' },
+      ]}
+    >
       <OfflineBanner />
       <SubTabNav tabs={ANALITICA_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
       {activeTab === 'otif' && <OtifTab operatorId={operatorId} />}
       {activeTab === 'unit_economics' && <UnitEconomicsTab operatorId={operatorId} />}
       {activeTab === 'cx' && <CxTab operatorId={operatorId} />}
-    </div>
+    </PageShell>
   );
 }
 

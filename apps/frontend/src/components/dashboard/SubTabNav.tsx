@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface TabDefinition {
   id: string;
@@ -20,7 +21,7 @@ export default function SubTabNav({ tabs, activeTab, onTabChange }: SubTabNavPro
     <div>
       {/* Mobile dropdown */}
       <select
-        className="md:hidden w-full text-sm font-medium border border-border rounded-lg px-4 py-3 bg-card focus:ring-2 focus:ring-gold"
+        className="md:hidden w-full text-sm font-medium border border-border rounded-lg px-4 py-3 bg-card focus:ring-2 focus:ring-accent"
         value={activeTab}
         onChange={(e) => onTabChange(e.target.value)}
         role="combobox"
@@ -34,30 +35,22 @@ export default function SubTabNav({ tabs, activeTab, onTabChange }: SubTabNavPro
       </select>
 
       {/* Desktop tab bar */}
-      <div className="hidden md:block border-b border-border">
-        <div className="flex items-center" role="tablist">
-          {tabs.map((tab, i) => (
-            <React.Fragment key={tab.id}>
-              {i > 0 && <div className="w-3 h-px bg-border" />}
-              <button
-                role="tab"
-                aria-selected={activeTab === tab.id}
+      <div className="hidden md:block">
+        <Tabs value={activeTab} onValueChange={onTabChange}>
+          <TabsList className="bg-transparent border-b border-border rounded-none h-auto p-0 w-full justify-start">
+            {tabs.map((tab) => (
+              <TabsTrigger
+                key={tab.id}
+                value={tab.id}
                 disabled={!tab.enabled}
                 title={!tab.enabled ? 'Próximamente' : undefined}
-                onClick={() => onTabChange(tab.id)}
-                className={`whitespace-nowrap px-4 py-2 text-sm border-b-2 -mb-px ${
-                  activeTab === tab.id
-                    ? 'border-gold text-foreground font-semibold'
-                    : tab.enabled
-                      ? 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
-                      : 'border-transparent text-muted-foreground/50 cursor-not-allowed'
-                }`}
+                className={`rounded-none border-b-2 border-transparent data-[state=active]:border-accent data-[state=active]:text-accent data-[state=active]:shadow-none text-[var(--color-text-secondary)] px-4 py-2 text-sm${!tab.enabled ? ' opacity-50 cursor-not-allowed' : ''}`}
               >
                 {tab.step ? `${tab.step} ` : ''}{tab.label}
-              </button>
-            </React.Fragment>
-          ))}
-        </div>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
     </div>
   );

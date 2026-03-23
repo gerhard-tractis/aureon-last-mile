@@ -24,9 +24,9 @@ describe('DateFilterBar', () => {
     expect(screen.getByRole('button', { name: 'Personalizado' })).toBeInTheDocument();
   });
 
-  it('active preset has gold bg class', () => {
+  it('active preset has accent bg class', () => {
     render(<DateFilterBar {...defaultProps} preset="this_week" />);
-    expect(screen.getByRole('button', { name: 'Esta Semana' }).className).toContain('bg-gold');
+    expect(screen.getByRole('button', { name: 'Esta Semana' }).className).toContain('bg-accent');
   });
 
   it('clicking a preset calls onPresetChange with correct id', async () => {
