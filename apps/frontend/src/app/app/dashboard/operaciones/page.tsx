@@ -13,6 +13,7 @@ import CommittedOrdersChart from '@/components/dashboard/CommittedOrdersChart';
 import SubTabNav, { type TabDefinition } from '@/components/dashboard/SubTabNav';
 import HeroSLASkeleton from '@/components/dashboard/HeroSLASkeleton';
 import OfflineBanner from '@/components/dashboard/OfflineBanner';
+import { DashboardPageNav } from '@/components/dashboard/DashboardPageNav';
 import CustomerPerformanceTable from '@/components/dashboard/CustomerPerformanceTable';
 import LoadingTab from '@/components/dashboard/LoadingTab';
 import DeliveryTab from '@/components/dashboard/DeliveryTab';
@@ -80,6 +81,7 @@ function OperacionesContent() {
       }
     >
       <OfflineBanner />
+      <DashboardPageNav />
 
       {/* Command center: HeroSLA + KPIs */}
       <div className="space-y-3 mb-4">
