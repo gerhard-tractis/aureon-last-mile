@@ -67,17 +67,17 @@ describe('OrderCard', () => {
       { id: 's2', barcode_scanned: 'CTN002', scan_result: 'verified', scanned_at: '2026-03-15T10:01:00Z', package_id: 'pkg-2' },
     ];
     render(<OrderCard {...defaultProps} scans={allScans} />);
-    expect(screen.getByTestId('badge').className).toContain('green');
+    expect(screen.getByTestId('badge').className).toContain('bg-status-success-bg');
   });
 
   it('shows yellow badge when partially verified', () => {
     render(<OrderCard {...defaultProps} />);
-    expect(screen.getByTestId('badge').className).toContain('yellow');
+    expect(screen.getByTestId('badge').className).toContain('bg-status-warning-bg');
   });
 
   it('shows gray badge when none verified', () => {
     render(<OrderCard {...defaultProps} scans={[]} />);
-    expect(screen.getByTestId('badge').className).toContain('gray');
+    expect(screen.getByTestId('badge').className).toContain('bg-surface-raised');
   });
 
   it('shows empty state for order with 0 packages', () => {

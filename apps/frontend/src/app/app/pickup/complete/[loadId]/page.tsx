@@ -123,7 +123,7 @@ export default function CompletionPage() {
       <PickupStepBreadcrumb current="complete" />
 
       {/* Gold header */}
-      <div className="bg-accent text-accent-foreground p-4 -mx-4 rounded-none">
+      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
         <p className="text-xs opacity-80">{loadId}</p>
         <p className="font-semibold text-base mt-0.5">Complete Pickup</p>
       </div>

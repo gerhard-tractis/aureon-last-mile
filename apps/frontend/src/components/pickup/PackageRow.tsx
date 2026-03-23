@@ -12,24 +12,24 @@ export function PackageRow({ pkg, isVerified, onManualVerify }: PackageRowProps)
   const skuCount = pkg.sku_items.length;
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-md text-sm">
+    <div className="flex items-center gap-3 px-3 py-2 bg-surface-raised rounded-md text-sm">
       <span className="font-mono font-medium flex-shrink-0">{pkg.label}</span>
 
       {pkg.package_number && (
-        <span className="text-gray-500 flex-shrink-0">{pkg.package_number}</span>
+        <span className="text-text-secondary flex-shrink-0">{pkg.package_number}</span>
       )}
 
-      <span className="text-gray-500">
+      <span className="text-text-secondary">
         {skuCount} {skuCount === 1 ? 'SKU' : 'SKUs'}
       </span>
 
       {pkg.declared_weight_kg != null && (
-        <span className="text-gray-500">{pkg.declared_weight_kg} kg</span>
+        <span className="text-text-secondary">{pkg.declared_weight_kg} kg</span>
       )}
 
       <div className="ml-auto flex-shrink-0">
         {isVerified ? (
-          <CheckCircle className="h-5 w-5 text-green-500" data-testid="verified-icon" />
+          <CheckCircle className="h-5 w-5 text-status-success" data-testid="verified-icon" />
         ) : (
           <Button
             size="sm"

@@ -7,9 +7,9 @@ interface ScanHistoryListProps {
 }
 
 const ICONS = {
-  verified: <CheckCircle className="h-5 w-5 text-green-500" />,
-  not_found: <XCircle className="h-5 w-5 text-red-500" />,
-  duplicate: <Copy className="h-5 w-5 text-yellow-500" />,
+  verified: <CheckCircle className="h-5 w-5 text-status-success" />,
+  not_found: <XCircle className="h-5 w-5 text-status-error" />,
+  duplicate: <Copy className="h-5 w-5 text-status-warning" />,
 } as const;
 
 export function ScanHistoryList({ scans, maxItems = 5 }: ScanHistoryListProps) {

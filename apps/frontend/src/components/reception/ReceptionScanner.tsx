@@ -71,9 +71,9 @@ function ScanFeedbackBanner({ result }: { result: ScanFeedback }) {
 
   if (scanResult === 'received') {
     return (
-      <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded-md">
-        <CheckCircle className="h-5 w-5 text-green-500" />
-        <span className="text-sm font-medium text-green-800">
+      <div className="flex items-center gap-2 p-2 bg-status-success-bg border border-status-success-border rounded-md">
+        <CheckCircle className="h-5 w-5 text-status-success" />
+        <span className="text-sm font-medium text-status-success">
           Paquete recibido
         </span>
       </div>
@@ -82,9 +82,9 @@ function ScanFeedbackBanner({ result }: { result: ScanFeedback }) {
 
   if (scanResult === 'duplicate') {
     return (
-      <div className="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-        <Copy className="h-5 w-5 text-yellow-500" />
-        <span className="text-sm font-medium text-yellow-800">
+      <div className="flex items-center gap-2 p-2 bg-status-warning-bg border border-status-warning-border rounded-md">
+        <Copy className="h-5 w-5 text-status-warning" />
+        <span className="text-sm font-medium text-status-warning">
           Paquete ya escaneado
         </span>
       </div>
@@ -93,9 +93,9 @@ function ScanFeedbackBanner({ result }: { result: ScanFeedback }) {
 
   // not_found
   return (
-    <div className="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded-md">
-      <XCircle className="h-5 w-5 text-red-500" />
-      <span className="text-sm font-medium text-red-800">
+    <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-md">
+      <XCircle className="h-5 w-5 text-status-error" />
+      <span className="text-sm font-medium text-status-error">
         {message ?? 'Paquete no encontrado'}
       </span>
     </div>

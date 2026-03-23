@@ -59,7 +59,7 @@ export default function HandoffPage() {
   if (isLoading || !manifest) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
       </div>
     );
   }
@@ -69,7 +69,7 @@ export default function HandoffPage() {
       <PickupStepBreadcrumb current="handoff" />
 
       {/* Gold header */}
-      <div className="bg-accent text-accent-foreground p-4 -mx-4 rounded-none">
+      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
         <p className="text-xs opacity-80">{loadId}</p>
         <p className="font-semibold text-base mt-0.5">Handoff</p>
       </div>

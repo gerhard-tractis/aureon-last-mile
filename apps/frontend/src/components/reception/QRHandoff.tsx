@@ -23,20 +23,20 @@ export function QRHandoff({
   onDismiss,
 }: QRHandoffProps) {
   return (
-    <div className="min-h-screen bg-white flex flex-col items-center justify-between p-6">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-between p-6">
       {/* Header */}
       <div className="w-full text-center space-y-2">
-        <h1 className="text-xl font-bold text-gray-900">
+        <h1 className="text-xl font-bold text-text">
           Entrega en Bodega
         </h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-text-secondary">
           {retailerName ?? 'Carga'} — {loadLabel(retailerName)}
         </p>
       </div>
 
       {/* QR Code Section */}
       <div className="flex flex-col items-center space-y-6 flex-1 justify-center">
-        <div className="bg-white p-4 rounded-2xl shadow-lg border border-gray-100">
+        <div className="bg-surface p-4 rounded-2xl shadow-lg border border-border">
           <QRCodeSVG
             value={qrPayload}
             size={256}
@@ -46,7 +46,7 @@ export function QRHandoff({
         </div>
 
         {/* Package count */}
-        <div className="flex items-center gap-2 text-gray-700">
+        <div className="flex items-center gap-2 text-text">
           <Package className="h-5 w-5" />
           <span className="text-lg font-semibold">
             {packageCount} paquetes
@@ -54,7 +54,7 @@ export function QRHandoff({
         </div>
 
         {/* Instructions */}
-        <p className="text-sm text-gray-500 text-center max-w-xs">
+        <p className="text-sm text-text-secondary text-center max-w-xs">
           Muestre este código al encargado de bodega para registrar la entrega
         </p>
       </div>
@@ -63,7 +63,7 @@ export function QRHandoff({
       <div className="w-full pt-4">
         <button
           onClick={onDismiss}
-          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-colors"
+          className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg bg-surface-raised hover:opacity-80 text-text font-medium transition-colors"
           aria-label="Volver"
         >
           <ArrowLeft className="h-4 w-4" />

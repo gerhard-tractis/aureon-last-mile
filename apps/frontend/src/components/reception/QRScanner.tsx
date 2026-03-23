@@ -200,8 +200,8 @@ export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) 
         <div
           className={`mx-4 mb-2 p-3 rounded-lg text-sm ${
             lookupResult.type === 'already_received'
-              ? 'bg-yellow-100 text-yellow-800'
-              : 'bg-red-100 text-red-800'
+              ? 'bg-status-warning-bg text-status-warning'
+              : 'bg-status-error-bg text-status-error'
           }`}
         >
           <p className="font-medium">{lookupResult.message}</p>
@@ -212,8 +212,8 @@ export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) 
       )}
 
       {/* Manual input fallback */}
-      <div className="p-4 bg-gray-900">
-        <p className="text-xs text-gray-400 mb-2">
+      <div className="p-4 bg-surface">
+        <p className="text-xs text-text-muted mb-2">
           O ingresa el ID manualmente:
         </p>
         <div className="flex gap-2">
@@ -222,8 +222,8 @@ export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) 
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
             placeholder="ID del manifiesto (UUID)"
-            className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white text-sm
-                       border border-gray-700 focus:border-blue-500 focus:outline-none"
+            className="flex-1 px-3 py-2 rounded-lg bg-surface-raised text-text text-sm
+                       border border-border focus:border-accent focus:outline-none"
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleManualSubmit();
             }}
@@ -232,8 +232,8 @@ export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) 
             onClick={handleManualSubmit}
             disabled={isLooking}
             aria-label="Buscar"
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm
-                       hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+            className="px-4 py-2 bg-accent text-accent-foreground rounded-lg text-sm
+                       hover:opacity-90 disabled:opacity-50 flex items-center gap-1"
           >
             <Search className="h-4 w-4" />
           </button>

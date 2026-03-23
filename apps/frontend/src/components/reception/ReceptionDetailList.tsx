@@ -26,7 +26,7 @@ export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
 
   if (sorted.length === 0) {
     return (
-      <p className="text-sm text-gray-400 text-center py-4">
+      <p className="text-sm text-text-muted text-center py-4">
         No hay paquetes en esta carga
       </p>
     );
@@ -38,13 +38,13 @@ export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
         <div
           key={pkg.id}
           className={`flex items-center gap-3 p-2 rounded-md ${
-            pkg.received ? 'bg-green-50' : 'bg-gray-50'
+            pkg.received ? 'bg-status-success-bg' : 'bg-surface-raised'
           }`}
         >
           {pkg.received ? (
-            <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />
+            <CheckCircle className="h-5 w-5 text-status-success flex-shrink-0" />
           ) : (
-            <Circle className="h-5 w-5 text-gray-300 flex-shrink-0" />
+            <Circle className="h-5 w-5 text-text-muted flex-shrink-0" />
           )}
           <div className="flex-1 min-w-0">
             <span
@@ -53,11 +53,11 @@ export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
             >
               {pkg.label}
             </span>
-            <span className="text-xs text-gray-500">{pkg.orderNumber}</span>
+            <span className="text-xs text-text-secondary">{pkg.orderNumber}</span>
           </div>
           <span
             className={`text-xs font-medium ${
-              pkg.received ? 'text-green-600' : 'text-gray-400'
+              pkg.received ? 'text-status-success' : 'text-text-muted'
             }`}
           >
             {pkg.received ? 'Recibido' : 'Pendiente'}
