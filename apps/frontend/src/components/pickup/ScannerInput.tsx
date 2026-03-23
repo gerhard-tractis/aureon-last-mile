@@ -31,6 +31,10 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
 
   return (
     <div className="relative">
+      {/*
+        Single input — styled as a large tap-target on mobile (min-h-12, accent bg),
+        standard text field on desktop (sm:).
+      */}
       <Input
         ref={inputRef}
         type="text"
@@ -45,7 +49,7 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
         }}
         placeholder="Scan barcode..."
         disabled={disabled}
-        className="text-lg font-mono"
+        className="min-h-[48px] text-base font-medium text-center bg-accent text-accent-foreground placeholder:text-accent-foreground/70 sm:min-h-0 sm:text-lg sm:font-mono sm:text-left sm:bg-input sm:text-foreground sm:placeholder:text-muted-foreground"
         autoComplete="off"
         aria-label="Barcode scanner input"
       />

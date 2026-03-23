@@ -166,7 +166,7 @@ export default function ExportDashboardModal({
                     value={fmt}
                     checked={exportFormat === fmt}
                     onChange={() => setExportFormat(fmt)}
-                    className="w-4 h-4 text-blue-600"
+                    className="w-4 h-4 text-accent"
                   />
                   <span className="text-sm text-foreground uppercase">{fmt}</span>
                 </label>
@@ -186,7 +186,7 @@ export default function ExportDashboardModal({
               id="export-date-range"
               value={dateRange}
               onChange={e => setDateRange(e.target.value as DateRangeOption)}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent"
             >
               {(Object.entries(DATE_RANGE_LABELS) as [DateRangeOption, string][]).map(
                 ([val, label]) => (
@@ -211,7 +211,7 @@ export default function ExportDashboardModal({
                       type="checkbox"
                       checked={sections[key]}
                       onChange={() => toggleSection(key)}
-                      className="w-4 h-4 rounded border-border text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-border text-accent focus:ring-accent"
                     />
                     <span className="text-sm text-foreground">{label}</span>
                   </label>
@@ -233,7 +233,7 @@ export default function ExportDashboardModal({
               type="text"
               value={filename}
               onChange={e => setFilename(e.target.value)}
-              className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent"
             />
           </div>
         </div>
@@ -242,7 +242,7 @@ export default function ExportDashboardModal({
           <button
             type="button"
             onClick={handleCancel}
-            className="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted"
+            className="px-4 py-2 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-[var(--color-surface-raised)]"
           >
             Cancelar
           </button>
@@ -250,7 +250,7 @@ export default function ExportDashboardModal({
             type="button"
             onClick={handleExport}
             disabled={isExporting || dataLoading}
-            className="px-6 py-2 text-sm font-medium text-white bg-foreground hover:bg-foreground/90 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2 text-sm font-medium bg-accent text-accent-foreground hover:opacity-90 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isExporting ? (
               <span className="flex items-center gap-2">

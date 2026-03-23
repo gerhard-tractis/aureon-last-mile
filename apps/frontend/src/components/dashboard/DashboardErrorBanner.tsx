@@ -23,12 +23,12 @@ export default function DashboardErrorBanner({
   };
 
   return (
-    <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-4">
-      <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-      <span className="text-sm text-red-700">{message}</span>
+    <div className="flex items-center gap-3 bg-[var(--color-status-error-bg)] border border-[var(--color-status-error-border)] rounded-lg px-4 py-3 mb-4">
+      <AlertTriangle className="h-4 w-4 text-status-error shrink-0" />
+      <span className="text-sm text-status-error">{message}</span>
       <button
         onClick={handleRetry}
-        className="ml-auto text-sm font-medium text-red-700 underline hover:text-red-900"
+        className="ml-auto text-sm font-medium text-status-error underline hover:opacity-80"
       >
         Reintentar
       </button>

@@ -1,6 +1,6 @@
 # Spec-13b: Dashboard Redesign
 
-> **Status:** brainstorming
+> **Status:** done
 > **Parent:** spec-13 (design language)
 > **Depends on:** spec-13a (foundation components)
 > **Phase:** 2 of 5

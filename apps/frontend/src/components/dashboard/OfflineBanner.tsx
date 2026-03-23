@@ -26,9 +26,9 @@ export default function OfflineBanner() {
   if (isOnline) return null;
 
   return (
-    <div className="flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 mb-4">
-      <WifiOff className="h-4 w-4 text-amber-600 shrink-0" />
-      <span className="text-sm font-medium text-amber-800">
+    <div className="flex items-center gap-3 bg-[var(--color-status-warning-bg)] border border-[var(--color-status-warning-border)] rounded-lg px-4 py-3 mb-4">
+      <WifiOff className="h-4 w-4 text-status-warning shrink-0" />
+      <span className="text-sm font-medium text-status-warning">
         Sin conexión — mostrando datos en caché
       </span>
     </div>

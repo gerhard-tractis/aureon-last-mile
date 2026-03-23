@@ -15,16 +15,28 @@ interface HeroSLAProps {
   endDate?: string;
 }
 
-function getSlaColor(sla: number | null): string {
-  if (sla === null) return 'text-muted-foreground';
-  if (sla >= 95) return 'text-[#10b981]';
-  if (sla >= 90) return 'text-[#f59e0b]';
-  return 'text-[#ef4444]';
-}
-
 function computeSla(delivered: number, total: number): number | null {
   if (total === 0) return null;
   return Math.round((delivered / total) * 10000) / 100;
+}
+
+function HeroSparkline({ data }: { data?: number[] }) {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+  const h = 24;
+  const w = 60;
+  const step = w / (data.length - 1);
+  const points = data
+    .map((v, i) => `${i * step},${h - ((v - min) / range) * h}`)
+    .join(' ');
+
+  return (
+    <svg className="sparkline" viewBox={`0 0 ${w} ${h}`} width={w} height={h} fill="none">
+      <polyline points={points} stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 export default function HeroSLA({ operatorId, startDate: startDateProp, endDate: endDateProp }: HeroSLAProps) {
@@ -56,11 +68,6 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
   const trendDelta = hasTrend ? sla - prevSla : 0;
   const trendUp = trendDelta >= 0;
 
-  const failurePercent =
-    otif && otif.total_orders > 0
-      ? (otif.failed_orders / otif.total_orders) * 100
-      : null;
-
   const handleOpen = () => setDialogOpen(true);
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -78,55 +85,37 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
         aria-label="Ver analisis detallado de SLA"
         onClick={handleOpen}
         onKeyDown={handleKeyDown}
-        className={`relative bg-card rounded-xl p-6 md:p-12 shadow-sm w-full cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.01] text-center${isPlaceholderData ? ' opacity-60' : ''}`}
+        className={`relative bg-accent text-white rounded-md p-4 w-full cursor-pointer transition-opacity hover:opacity-90${isPlaceholderData ? ' opacity-60' : ''}`}
       >
         {isPlaceholderData && (
-          <Loader2 className="absolute top-4 right-4 h-4 w-4 animate-spin text-muted-foreground" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-3 right-3 h-4 w-4 animate-spin text-white/60" aria-label="Actualizando..." />
         )}
 
-        <h2 className="text-xl font-semibold text-foreground uppercase tracking-wide mb-4">
-          Cumplimiento SLA - Ultimos 7 Dias
-        </h2>
-
-        {/* SLA Percentage */}
-        <div className={`text-[4rem] md:text-[3rem] font-bold leading-none mb-2 ${getSlaColor(sla)}`}>
-          {sla !== null ? `${sla.toFixed(1)}%` : 'N/A'}
-        </div>
-
-        {/* Trend */}
-        {hasTrend && (
-          <div className={`text-xl font-medium mb-4 ${trendUp ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
-            {trendUp ? '↑' : '↓'} {trendUp ? '+' : ''}{trendDelta.toFixed(1)}% vs semana anterior
-          </div>
-        )}
-
-        {/* Context Line */}
-        <p className="text-2xl text-muted-foreground mb-6">
-          {otif
-            ? `${otif.delivered_orders} de ${otif.total_orders} entregas cumplidas`
-            : 'Sin datos para este periodo'}
-        </p>
-
-        {/* Progress Bar */}
-        {sla !== null && (
-          <div className="h-8 rounded-2xl max-w-[800px] mx-auto bg-muted overflow-hidden mb-6">
-            <div
-              className="h-full rounded-2xl bg-gradient-to-r from-gold to-gold-light flex items-center justify-center text-foreground font-semibold text-sm transition-all duration-500"
-              style={{ width: `${Math.min(sla, 100)}%` }}
-            >
-              {sla.toFixed(1)}%
+        <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-white/80 mb-1">
+              Cumplimiento SLA
+            </h2>
+            <div className="font-mono text-[28px] font-bold leading-none text-white">
+              {sla !== null ? `${sla.toFixed(1)}%` : 'N/A'}
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-sm text-white/80">
+              {otif && (
+                <span>Meta: 95%</span>
+              )}
+              {hasTrend && (
+                <span>
+                  {trendUp ? '▲' : '▼'} {trendUp ? '+' : ''}{trendDelta.toFixed(1)}% vs anterior
+                </span>
+              )}
+              {fadr !== null && (
+                <span>FADR: {fadr.toFixed(1)}%</span>
+              )}
             </div>
           </div>
-        )}
-
-        {/* Inline Sub-Metrics */}
-        <div className="flex justify-center gap-12 text-lg text-foreground">
-          {fadr !== null && <span>Primera Entrega (FADR): {fadr.toFixed(1)}%</span>}
-          {failurePercent !== null && otif && (
-            <span>
-              Fallos: {otif.failed_orders} ({failurePercent.toFixed(1)}%)
-            </span>
-          )}
+          <div className="ml-3">
+            <HeroSparkline />
+          </div>
         </div>
       </div>
 

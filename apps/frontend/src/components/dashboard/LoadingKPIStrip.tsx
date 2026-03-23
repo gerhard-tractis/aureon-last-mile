@@ -26,7 +26,7 @@ function KPICard({
   isLoading: boolean;
 }) {
   return (
-    <div className="bg-card rounded-xl p-5 shadow-sm border border-border hover:shadow-lg hover:scale-[1.01] transition-all duration-300">
+    <div className="bg-surface border border-border rounded-md p-3">
       {isLoading ? (
         <>
           <div className="animate-pulse h-8 w-20 bg-muted rounded mb-1" />
@@ -34,11 +34,11 @@ function KPICard({
         </>
       ) : (
         <>
-          <div className="text-3xl font-bold text-foreground leading-none mb-1">
+          <div className="font-mono text-xl font-semibold text-text leading-none mb-1">
             {(value ?? 0).toLocaleString('es-CL')}
           </div>
-          <div className="text-sm text-muted-foreground">{label}</div>
-          {subtitle && <div className="text-xs text-muted-foreground mt-1">{subtitle}</div>}
+          <div className="text-xs text-text-muted uppercase tracking-wide">{label}</div>
+          {subtitle && <div className="text-xs text-text-muted mt-1">{subtitle}</div>}
         </>
       )}
     </div>
