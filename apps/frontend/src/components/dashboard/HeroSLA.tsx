@@ -34,7 +34,13 @@ function HeroSparkline({ data }: { data?: number[] }) {
 
   return (
     <svg className="sparkline" viewBox={`0 0 ${w} ${h}`} width={w} height={h} fill="none">
-      <polyline points={points} stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline
+        points={points}
+        className="stroke-white dark:stroke-accent"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -85,21 +91,28 @@ export default function HeroSLA({ operatorId, startDate: startDateProp, endDate:
         aria-label="Ver analisis detallado de SLA"
         onClick={handleOpen}
         onKeyDown={handleKeyDown}
-        className={`relative bg-accent text-white rounded-md p-4 w-full cursor-pointer transition-opacity hover:opacity-90${isPlaceholderData ? ' opacity-60' : ''}`}
+        className={[
+          'relative rounded-md p-4 w-full cursor-pointer transition-opacity hover:opacity-90',
+          /* Light: solid gold bg with white text */
+          'bg-accent text-white',
+          /* Dark: subtle gold-tinted surface with gold text */
+          'dark:bg-accent-muted dark:border dark:border-accent/25 dark:text-accent',
+          isPlaceholderData ? 'opacity-60' : '',
+        ].join(' ')}
       >
         {isPlaceholderData && (
-          <Loader2 className="absolute top-3 right-3 h-4 w-4 animate-spin text-white/60" aria-label="Actualizando..." />
+          <Loader2 className="absolute top-3 right-3 h-4 w-4 animate-spin text-white/60 dark:text-accent/40" aria-label="Actualizando..." />
         )}
 
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-white/80 mb-1">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-white/80 dark:text-text-secondary mb-1">
               Cumplimiento SLA
             </h2>
-            <div className="font-mono text-[28px] font-bold leading-none text-white">
+            <div className="font-mono text-[28px] font-bold leading-none text-white dark:text-accent">
               {sla !== null ? `${sla.toFixed(1)}%` : 'N/A'}
             </div>
-            <div className="flex items-center gap-3 mt-1 text-sm text-white/80">
+            <div className="flex items-center gap-3 mt-1 text-sm text-white/80 dark:text-text-muted">
               {otif && (
                 <span>Meta: 95%</span>
               )}
