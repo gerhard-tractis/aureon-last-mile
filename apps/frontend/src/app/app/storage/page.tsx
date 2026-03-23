@@ -243,14 +243,14 @@ export default function FileManagementPage() {
                                     <div className="flex items-center space-x-2">
                                         <button
                                             onClick={() => handleDownload(file.name)}
-                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                                            className="p-2 text-accent hover:bg-surface-raised rounded-full transition-colors"
                                             title="Download"
                                         >
                                             <Download className="h-5 w-5"/>
                                         </button>
                                         <button
                                             onClick={() => handleShare(file.name)}
-                                            className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-colors"
+                                            className="p-2 text-status-success hover:bg-status-success-bg rounded-full transition-colors"
                                             title="Share"
                                         >
                                             <Share2 className="h-5 w-5"/>

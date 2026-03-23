@@ -25,7 +25,7 @@ export function DockZoneGrid({ zones }: DockZoneGridProps) {
               {zone.comunas.length} {zone.comunas.length === 1 ? 'comuna' : 'comunas'}
             </div>
             {!zone.is_active && (
-              <div className="text-xs text-gray-400">Inactivo</div>
+              <div className="text-xs text-text-muted">Inactivo</div>
             )}
           </CardContent>
         </Card>

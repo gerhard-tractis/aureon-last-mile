@@ -59,7 +59,7 @@ export default function RegisterPage() {
             </p>
 
             {error && (
-                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-status-error bg-status-error-bg border border-status-error-border rounded-lg">
                     {error}
                 </div>
             )}

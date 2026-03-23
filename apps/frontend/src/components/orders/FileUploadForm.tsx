@@ -104,10 +104,10 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
       <label
         className={`w-full flex flex-col items-center px-4 py-8 bg-card rounded-lg shadow-sm tracking-wide border-2 cursor-pointer transition-colors ${
           isDragging
-            ? 'border-blue-500 border-dashed bg-blue-50'
+            ? 'border-accent border-dashed bg-accent-muted'
             : displayError
               ? 'border-red-300 hover:border-red-400'
-              : 'border-border hover:border-blue-400'
+              : 'border-border hover:border-accent'
         }`}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -116,7 +116,7 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
       >
         {isLoading ? (
           <>
-            <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+            <Loader2 className="w-8 h-8 animate-spin text-accent" />
             <span className="mt-2 text-sm text-muted-foreground">Parsing file...</span>
           </>
         ) : selectedFile ? (

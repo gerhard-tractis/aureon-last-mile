@@ -42,7 +42,7 @@ export default function CapacityAlertBell({ operatorId }: Props) {
         {count > 0 && (
           <span
             data-testid="alert-badge"
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-0.5 text-[10px] font-bold text-white leading-none"
+            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-status-error px-0.5 text-[10px] font-bold text-white leading-none"
           >
             {badgeLabel}
           </span>

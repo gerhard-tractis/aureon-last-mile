@@ -141,9 +141,9 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      log.action.startsWith('INSERT') ? 'bg-green-100 text-green-800' :
-                      log.action.startsWith('UPDATE') ? 'bg-blue-100 text-blue-800' :
-                      log.action.startsWith('DELETE') ? 'bg-red-100 text-red-800' :
+                      log.action.startsWith('INSERT') ? 'bg-status-success-bg text-status-success' :
+                      log.action.startsWith('UPDATE') ? 'bg-status-info-bg text-status-info' :
+                      log.action.startsWith('DELETE') ? 'bg-status-error-bg text-status-error' :
                       'bg-muted text-foreground'
                     }`}>
                       {log.action}

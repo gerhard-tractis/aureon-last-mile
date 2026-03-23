@@ -193,7 +193,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
           </h2>
           <button
             onClick={handleExport}
-            className="text-sm font-medium text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-md hover:bg-blue-50 transition-colors"
+            className="text-sm font-medium text-accent hover:opacity-80 px-3 py-1.5 rounded-md hover:bg-surface-raised transition-colors"
           >
             Exportar CSV ↓
           </button>
@@ -204,7 +204,7 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
           <select
             value={dateRange}
             onChange={e => setDateRange(e.target.value as DateRangeOption)}
-            className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent"
           >
             {Object.entries(dateRangeLabels).map(([val, label]) => (
               <option key={val} value={val}>
@@ -219,14 +219,14 @@ export default function CustomerPerformanceTable({ operatorId }: CustomerPerform
                 type="date"
                 value={customStart}
                 onChange={e => setCustomStart(e.target.value)}
-                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent"
               />
               <span className="text-muted-foreground">—</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={e => setCustomEnd(e.target.value)}
-                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="text-sm border border-border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-accent"
               />
             </div>
           )}

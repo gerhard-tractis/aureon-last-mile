@@ -186,10 +186,10 @@ describe('DeleteConfirmationModal', () => {
       expect(deleteButton.className).toContain('bg-red-600');
     });
 
-    it('should have amber warning box', () => {
+    it('should have warning box', () => {
       const { container } = render(<DeleteConfirmationModal />);
 
-      const warningBox = container.querySelector('.bg-amber-50');
+      const warningBox = container.querySelector('.bg-status-warning-bg');
       expect(warningBox).toBeTruthy();
     });
 

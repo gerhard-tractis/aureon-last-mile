@@ -98,7 +98,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           label="Entregados"
           count={otifData?.delivered_orders ?? 0}
           total={otifData?.total_orders ?? 0}
-          accent="text-emerald-600"
+          accent="text-status-success"
           isLoading={otif.isLoading}
           testId="outcome-delivered"
           onClick={() => scrollToOrders('entregado')}
@@ -107,7 +107,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           label="Fallidos"
           count={otifData?.failed_orders ?? 0}
           total={otifData?.total_orders ?? 0}
-          accent="text-red-600"
+          accent="text-status-error"
           isLoading={otif.isLoading}
           testId="outcome-failed"
           onClick={() => scrollToOrders('cancelado')}
@@ -116,7 +116,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           label="En Ruta"
           count={otifData?.in_route_orders ?? 0}
           total={otifData?.total_orders ?? 0}
-          accent="text-blue-600"
+          accent="text-status-info"
           isLoading={otif.isLoading}
           testId="outcome-in-route"
           onClick={() => scrollToOrders('ingresado')}
@@ -125,7 +125,7 @@ export default function DeliveryTab({ operatorId }: DeliveryTabProps) {
           label="Pendientes"
           count={otifData?.pending_orders ?? 0}
           total={otifData?.total_orders ?? 0}
-          accent="text-amber-600"
+          accent="text-status-warning"
           isLoading={otif.isLoading}
           testId="outcome-pending"
           onClick={() => scrollToOrders('ingresado')}

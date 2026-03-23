@@ -73,8 +73,8 @@ export default function ResetPasswordPage() {
         return (
             <div className="text-center py-4">
                 <div className="flex justify-center mb-5">
-                    <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
-                        <CheckCircle className="h-7 w-7 text-emerald-500" />
+                    <div className="w-14 h-14 rounded-full bg-status-success-bg flex items-center justify-center">
+                        <CheckCircle className="h-7 w-7 text-status-success" />
                     </div>
                 </div>
 
@@ -106,7 +106,7 @@ export default function ResetPasswordPage() {
             </p>
 
             {error && (
-                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-status-error bg-status-error-bg border border-status-error-border rounded-lg">
                     {error}
                 </div>
             )}

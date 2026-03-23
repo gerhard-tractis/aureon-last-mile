@@ -29,9 +29,9 @@ export function BatchDetailList({ scans, totalExpected }: BatchDetailListProps) 
           {scans.map((scan) => (
             <li key={scan.id} className="flex items-center gap-3 px-3 py-2">
               {scan.scan_result === 'accepted' ? (
-                <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                <CheckCircle className="h-4 w-4 text-status-success shrink-0" />
               ) : (
-                <XCircle className="h-4 w-4 text-red-500 shrink-0" />
+                <XCircle className="h-4 w-4 text-status-error shrink-0" />
               )}
               <span className="font-mono text-sm flex-1">{scan.barcode}</span>
               <span className="text-xs text-muted-foreground">

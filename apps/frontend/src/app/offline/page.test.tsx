@@ -77,7 +77,7 @@ describe('OfflinePage', () => {
       render(<OfflinePage />);
 
       const retryButton = screen.getByRole('button', { name: /reintentar conexión/i });
-      expect(retryButton).toHaveClass('bg-blue-600', 'text-white');
+      expect(retryButton).toHaveClass('bg-accent', 'text-accent-foreground');
     });
 
     it('back button has correct secondary styling', () => {

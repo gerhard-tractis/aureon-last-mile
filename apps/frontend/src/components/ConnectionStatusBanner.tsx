@@ -84,10 +84,10 @@ export default function ConnectionStatusBanner() {
         px-4 py-2 text-center text-sm font-medium
         ${
           status === 'online'
-            ? 'bg-green-500 text-white'
+            ? 'bg-status-success text-white'
             : status === 'offline'
-              ? 'bg-yellow-500 text-black'
-              : 'bg-gray-400 text-white'
+              ? 'bg-status-warning text-black'
+              : 'bg-text-muted text-white'
         }
       `}
     >

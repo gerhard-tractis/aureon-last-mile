@@ -31,8 +31,8 @@ export default function OfflinePage() {
           No se pudo conectar al servidor. Verifica tu conexión a internet.
         </p>
 
-        <div className="mb-6 rounded-md bg-blue-50 p-4">
-          <p className="text-sm text-blue-800">
+        <div className="mb-6 rounded-md bg-status-info-bg p-4">
+          <p className="text-sm text-status-info">
             <strong>Modo Offline:</strong> Puedes seguir escaneando códigos de barras.
             Los escaneos se sincronizarán automáticamente cuando se restablezca la conexión.
           </p>
@@ -40,14 +40,14 @@ export default function OfflinePage() {
 
         <button
           onClick={() => window.location.reload()}
-          className="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="w-full rounded-md bg-accent px-4 py-2 text-accent-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
         >
           Reintentar Conexión
         </button>
 
         <button
           onClick={() => window.history.back()}
-          className="mt-3 w-full rounded-md border border-border bg-card px-4 py-2 text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="mt-3 w-full rounded-md border border-border bg-card px-4 py-2 text-foreground hover:bg-muted focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
         >
           Volver
         </button>

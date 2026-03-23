@@ -102,10 +102,10 @@ export default function CapacityUtilizationSummary({
                 <span
                   className={
                     s.avgUtilization > 100
-                      ? 'text-red-600 font-semibold'
+                      ? 'text-status-error font-semibold'
                       : s.avgUtilization >= 80
-                        ? 'text-yellow-600 font-semibold'
-                        : 'text-green-600'
+                        ? 'text-status-warning font-semibold'
+                        : 'text-status-success'
                   }
                 >
                   {s.avgUtilization}%

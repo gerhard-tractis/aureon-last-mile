@@ -41,8 +41,8 @@ export default function VerifyEmailPage() {
     return (
         <div className="text-center py-4">
             <div className="flex justify-center mb-5">
-                <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
-                    <CheckCircle className="h-7 w-7 text-emerald-500" />
+                <div className="w-14 h-14 rounded-full bg-status-success-bg flex items-center justify-center">
+                    <CheckCircle className="h-7 w-7 text-status-success" />
                 </div>
             </div>
 
@@ -61,13 +61,13 @@ export default function VerifyEmailPage() {
                 </p>
 
                 {error && (
-                    <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                    <div className="text-sm text-status-error bg-status-error-bg border border-status-error-border rounded-lg px-4 py-3">
                         {error}
                     </div>
                 )}
 
                 {success && (
-                    <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+                    <div className="text-sm text-status-success bg-status-success-bg border border-status-success-border rounded-lg px-4 py-3">
                         Email de verificación reenviado exitosamente.
                     </div>
                 )}

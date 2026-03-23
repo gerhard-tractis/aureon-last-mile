@@ -42,7 +42,7 @@ export default function GlobalError({
           )}
           <button
             onClick={reset}
-            className="px-6 py-3 bg-primary-600 text-white border-none rounded-md text-base cursor-pointer"
+            className="px-6 py-3 bg-accent text-accent-foreground border-none rounded-md text-base cursor-pointer"
           >
             Try again
           </button>
