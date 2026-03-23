@@ -39,7 +39,7 @@ function SidebarBrand({
       <img
         src={logoUrl}
         alt={companyName || 'Logo'}
-        className="max-h-10 max-w-[140px] object-contain"
+        className={`max-h-10 object-contain transition-all ${pinned ? 'max-w-[140px]' : 'max-w-8'}`}
         onError={onLogoError}
       />
     );
@@ -76,7 +76,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const ep = mobilePinned || pinned;
     return (
       <div className="flex flex-col h-full bg-sidebar">
-        <div className="h-14 flex items-center px-3 border-b border-sidebar-border">
+        <div className="h-14 flex items-center px-3 border-b border-sidebar-border overflow-hidden">
           <SidebarBrand
             logoUrl={logoError ? null : logoUrl}
             companyName={companyName}
