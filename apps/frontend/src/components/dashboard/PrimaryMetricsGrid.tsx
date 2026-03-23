@@ -172,7 +172,7 @@ export default function PrimaryMetricsGrid({ operatorId }: PrimaryMetricsGridPro
           title="Reclamos"
           icon="💰"
           value={claims ? clpFormatter.format(claimsAmount) : '0 CLP'}
-          color={claims ? claimsColor : 'text-[#10b981]'}
+          color={claims ? claimsColor : 'text-[var(--color-status-success)]'}
           trend={claimsTrend?.text}
           trendUp={claimsTrend?.up}
           context={claimsContext}

@@ -164,24 +164,24 @@ describe('getCapacityColor', () => {
   });
 
   it('returns red for >95% (over-utilized)', () => {
-    expect(getCapacityColor(96)).toBe('text-[#ef4444]');
-    expect(getCapacityColor(100)).toBe('text-[#ef4444]');
+    expect(getCapacityColor(96)).toBe('text-[var(--color-status-error)]');
+    expect(getCapacityColor(100)).toBe('text-[var(--color-status-error)]');
   });
 
   it('returns red for <60% (under-utilized)', () => {
-    expect(getCapacityColor(59)).toBe('text-[#ef4444]');
-    expect(getCapacityColor(30)).toBe('text-[#ef4444]');
+    expect(getCapacityColor(59)).toBe('text-[var(--color-status-error)]');
+    expect(getCapacityColor(30)).toBe('text-[var(--color-status-error)]');
   });
 
   it('returns yellow for >85% to 95%', () => {
-    expect(getCapacityColor(86)).toBe('text-[#f59e0b]');
-    expect(getCapacityColor(95)).toBe('text-[#f59e0b]');
+    expect(getCapacityColor(86)).toBe('text-[var(--color-status-warning)]');
+    expect(getCapacityColor(95)).toBe('text-[var(--color-status-warning)]');
   });
 
   it('returns green for 60-85% (healthy)', () => {
-    expect(getCapacityColor(60)).toBe('text-[#10b981]');
-    expect(getCapacityColor(75)).toBe('text-[#10b981]');
-    expect(getCapacityColor(85)).toBe('text-[#10b981]');
+    expect(getCapacityColor(60)).toBe('text-[var(--color-status-success)]');
+    expect(getCapacityColor(75)).toBe('text-[var(--color-status-success)]');
+    expect(getCapacityColor(85)).toBe('text-[var(--color-status-success)]');
   });
 });
 
@@ -191,18 +191,18 @@ describe('getOrdersPerHourColor', () => {
   });
 
   it('returns green for >=40', () => {
-    expect(getOrdersPerHourColor(40)).toBe('text-[#10b981]');
-    expect(getOrdersPerHourColor(50)).toBe('text-[#10b981]');
+    expect(getOrdersPerHourColor(40)).toBe('text-[var(--color-status-success)]');
+    expect(getOrdersPerHourColor(50)).toBe('text-[var(--color-status-success)]');
   });
 
   it('returns yellow for 30-39.9', () => {
-    expect(getOrdersPerHourColor(30)).toBe('text-[#f59e0b]');
-    expect(getOrdersPerHourColor(39.9)).toBe('text-[#f59e0b]');
+    expect(getOrdersPerHourColor(30)).toBe('text-[var(--color-status-warning)]');
+    expect(getOrdersPerHourColor(39.9)).toBe('text-[var(--color-status-warning)]');
   });
 
   it('returns red for <30', () => {
-    expect(getOrdersPerHourColor(29.9)).toBe('text-[#ef4444]');
-    expect(getOrdersPerHourColor(0)).toBe('text-[#ef4444]');
+    expect(getOrdersPerHourColor(29.9)).toBe('text-[var(--color-status-error)]');
+    expect(getOrdersPerHourColor(0)).toBe('text-[var(--color-status-error)]');
   });
 });
 

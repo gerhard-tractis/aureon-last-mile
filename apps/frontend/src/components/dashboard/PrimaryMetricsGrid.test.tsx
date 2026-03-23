@@ -102,7 +102,7 @@ describe('PrimaryMetricsGrid', () => {
     renderWithProvider(<PrimaryMetricsGrid operatorId="op-123" />);
 
     const fadrValue = screen.getByText('92.1%');
-    expect(fadrValue).toHaveClass('text-[#f59e0b]');
+    expect(fadrValue).toHaveClass('text-[var(--color-status-warning)]');
   });
 
   it('renders FADR benchmark badge', () => {
@@ -141,7 +141,7 @@ describe('PrimaryMetricsGrid', () => {
     renderWithProvider(<PrimaryMetricsGrid operatorId="op-123" />);
 
     const value = screen.getByText('35 min');
-    expect(value).toHaveClass('text-[#10b981]');
+    expect(value).toHaveClass('text-[var(--color-status-success)]');
   });
 
   it('renders efficiency red for > 60min', () => {
@@ -149,7 +149,7 @@ describe('PrimaryMetricsGrid', () => {
     renderWithProvider(<PrimaryMetricsGrid operatorId="op-123" />);
 
     const value = screen.getByText('75 min');
-    expect(value).toHaveClass('text-[#ef4444]');
+    expect(value).toHaveClass('text-[var(--color-status-error)]');
   });
 
   it('opens FADR drill-down dialog on click', async () => {

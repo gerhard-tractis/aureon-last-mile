@@ -4,6 +4,7 @@
  * User Form Component
  * Handles both creating new users and editing existing users
  * Uses React Hook Form + Zod for validation
+ * Rendered inside a shadcn Sheet (slide-out from right)
  */
 
 import { useEffect, useState } from 'react';
@@ -12,6 +13,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useAdminStore } from '@/stores/adminStore';
 import { useCreateUser, useUpdateUser, useUsers } from '@/hooks/useUsers';
 import { createUserSchema, updateUserSchema, roleOptions, type CreateUserFormData, type UpdateUserFormData } from '@/lib/validation/userSchema';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface UserFormProps {
   mode: 'create' | 'edit';
@@ -81,11 +83,13 @@ const CreateUserFormInternal = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-semibold text-foreground mb-4">Create New User</h2>
+    <Sheet open={true} onOpenChange={(open) => { if (!open) setCreateFormOpen(false); }}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>Create New User</SheetTitle>
+        </SheetHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
           {/* Email field */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
@@ -96,17 +100,17 @@ const CreateUserFormInternal = () => {
               type="email"
               {...register('email')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.email || emailCheckError ? 'email-error' : undefined}
               aria-invalid={!!(errors.email || emailCheckError)}
             />
             {errors.email && (
-              <p id="email-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="email-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.email.message}
               </p>
             )}
             {emailCheckError && (
-              <p id="email-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="email-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {emailCheckError}
               </p>
             )}
@@ -125,12 +129,12 @@ const CreateUserFormInternal = () => {
               type="text"
               {...register('full_name')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.full_name ? 'full_name-error' : undefined}
               aria-invalid={!!errors.full_name}
             />
             {errors.full_name && (
-              <p id="full_name-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="full_name-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.full_name.message}
               </p>
             )}
@@ -145,7 +149,7 @@ const CreateUserFormInternal = () => {
               id="role"
               {...register('role')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
@@ -157,7 +161,7 @@ const CreateUserFormInternal = () => {
               ))}
             </select>
             {errors.role && (
-              <p id="role-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="role-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.role.message}
               </p>
             )}
@@ -174,12 +178,12 @@ const CreateUserFormInternal = () => {
               {...register('operator_id')}
               disabled={isPending}
               placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000"
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.operator_id ? 'operator_id-error' : undefined}
               aria-invalid={!!errors.operator_id}
             />
             {errors.operator_id && (
-              <p id="operator_id-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="operator_id-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.operator_id.message}
               </p>
             )}
@@ -201,7 +205,7 @@ const CreateUserFormInternal = () => {
             <button
               type="submit"
               disabled={isPending || !!emailCheckError}
-              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isPending && (
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -213,8 +217,8 @@ const CreateUserFormInternal = () => {
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 };
 
@@ -268,11 +272,13 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-semibold text-foreground mb-4">Edit User</h2>
+    <Sheet open={true} onOpenChange={(open) => { if (!open) setEditFormOpen(false); }}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>Edit User</SheetTitle>
+        </SheetHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
           {/* Show email as read-only */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
@@ -296,12 +302,12 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               type="text"
               {...register('full_name')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.full_name ? 'full_name-error' : undefined}
               aria-invalid={!!errors.full_name}
             />
             {errors.full_name && (
-              <p id="full_name-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="full_name-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.full_name.message}
               </p>
             )}
@@ -316,7 +322,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               id="role"
               {...register('role')}
               disabled={isPending}
-              className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
@@ -328,7 +334,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               ))}
             </select>
             {errors.role && (
-              <p id="role-error" className="mt-1 text-sm text-red-600" role="alert">
+              <p id="role-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
                 {errors.role.message}
               </p>
             )}
@@ -360,7 +366,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
             <button
               type="submit"
               disabled={isPending}
-              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
               {isPending && (
                 <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -372,7 +378,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
             </button>
           </div>
         </form>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   );
 };

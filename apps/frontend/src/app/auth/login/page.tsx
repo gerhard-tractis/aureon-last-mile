@@ -76,7 +76,7 @@ export default function LoginPage() {
             </p>
 
             {error && (
-                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-[var(--color-status-error)] bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
@@ -95,7 +95,7 @@ export default function LoginPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="tu@empresa.cl"
-                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                     />
                 </div>
 
@@ -104,7 +104,7 @@ export default function LoginPage() {
                         <label htmlFor="password" className="block text-xs font-medium text-muted-foreground">
                             Contraseña
                         </label>
-                        <Link href="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-amber-600 transition-colors">
+                        <Link href="/auth/forgot-password" className="text-xs text-muted-foreground hover:text-accent transition-colors">
                             ¿Olvidaste tu contraseña?
                         </Link>
                     </div>
@@ -116,7 +116,7 @@ export default function LoginPage() {
                         required
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                     />
                     <div className="flex items-center justify-between mt-3">
                         <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -124,7 +124,7 @@ export default function LoginPage() {
                                 type="checkbox"
                                 checked={rememberMe}
                                 onChange={(e) => setRememberMe(e.target.checked)}
-                                className="h-4 w-4 rounded border-border text-foreground focus:ring-amber-500"
+                                className="h-4 w-4 rounded border-border text-foreground focus:ring-accent"
                             />
                             <span className="text-xs text-muted-foreground">Recordarme</span>
                         </label>
@@ -134,7 +134,7 @@ export default function LoginPage() {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-lg bg-foreground py-2.5 px-4 text-sm font-medium text-background hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                    className="w-full rounded-lg bg-accent py-2.5 px-4 text-sm font-medium text-accent-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 transition-opacity"
                 >
                     {loading ? 'Ingresando...' : 'Ingresar'}
                 </button>
@@ -144,7 +144,7 @@ export default function LoginPage() {
 
             <p className="mt-8 text-center text-sm text-muted-foreground">
                 ¿No tienes cuenta?{' '}
-                <Link href="/auth/register" className="font-medium text-foreground hover:text-amber-600 transition-colors">
+                <Link href="/auth/register" className="font-medium text-accent hover:underline">
                     Crear cuenta
                 </Link>
             </p>

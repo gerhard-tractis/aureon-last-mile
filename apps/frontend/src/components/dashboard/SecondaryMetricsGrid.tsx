@@ -16,16 +16,16 @@ interface SecondaryMetricsGridProps {
 
 function getCapacityColor(value: number | null): string {
   if (value === null) return 'text-muted-foreground';
-  if (value > 95 || value < 60) return 'text-[#ef4444]';
-  if (value > 85) return 'text-[#f59e0b]';
-  return 'text-[#10b981]';
+  if (value > 95 || value < 60) return 'text-[var(--color-status-error)]';
+  if (value > 85) return 'text-[var(--color-status-warning)]';
+  return 'text-[var(--color-status-success)]';
 }
 
 function getOrdersPerHourColor(value: number | null): string {
   if (value === null) return 'text-muted-foreground';
-  if (value >= 40) return 'text-[#10b981]';
-  if (value >= 30) return 'text-[#f59e0b]';
-  return 'text-[#ef4444]';
+  if (value >= 40) return 'text-[var(--color-status-success)]';
+  if (value >= 30) return 'text-[var(--color-status-warning)]';
+  return 'text-[var(--color-status-error)]';
 }
 
 function formatTrend(current: number | null, previous: number | null): { text: string; up: boolean } | null {

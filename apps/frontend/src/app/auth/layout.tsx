@@ -73,20 +73,20 @@ export default function AuthLayout({
                 />
 
                 {/* Gold accent line */}
-                <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-amber-500/40 to-transparent" />
+                <div className="absolute left-0 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-accent/40 to-transparent" />
 
                 <div className="relative w-full flex flex-col justify-center px-16 xl:px-24">
                     <div className="max-w-md">
                         {/* Tagline */}
                         <div className="mb-12">
-                            <div className="inline-block px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/5 mb-6">
-                                <span className="text-[11px] font-medium tracking-widest uppercase text-amber-400">
+                            <div className="inline-block px-3 py-1 rounded-full border border-accent/20 bg-accent/5 mb-6">
+                                <span className="text-[11px] font-medium tracking-widest uppercase text-accent">
                                     Plataforma logística
                                 </span>
                             </div>
                             <h2 className="text-3xl xl:text-4xl font-bold text-white leading-tight tracking-tight">
                                 Gestión de última milla{' '}
-                                <span className="text-amber-400">inteligente</span>
+                                <span className="text-accent">inteligente</span>
                             </h2>
                             <p className="mt-4 text-stone-400 text-sm leading-relaxed">
                                 Visibilidad completa de tu operación logística.
@@ -101,8 +101,8 @@ export default function AuthLayout({
                                     key={index}
                                     className="group flex items-start gap-4"
                                 >
-                                    <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-stone-800 border border-stone-700/50 flex items-center justify-center group-hover:border-amber-500/30 transition-colors">
-                                        <feature.Icon className="w-4 h-4 text-amber-400" />
+                                    <div className="flex-shrink-0 w-9 h-9 rounded-lg bg-stone-800 border border-stone-700/50 flex items-center justify-center group-hover:border-accent/30 transition-colors">
+                                        <feature.Icon className="w-4 h-4 text-accent" />
                                     </div>
                                     <div className="pt-0.5">
                                         <p className="text-sm font-medium text-stone-200">

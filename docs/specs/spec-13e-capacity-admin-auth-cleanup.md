@@ -1,6 +1,6 @@
 # Spec-13e: Capacity, Admin, Auth & Cleanup
 
-> **Status:** brainstorming
+> **Status:** in progress
 > **Parent:** spec-13 (design language)
 > **Depends on:** spec-13a (foundation components)
 > **Phase:** 5 of 5

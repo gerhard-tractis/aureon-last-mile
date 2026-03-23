@@ -62,7 +62,7 @@ export default function DistributionPage() {
       {activeZones.length === 0 && (
         <div className="text-center py-8 text-muted-foreground">
           No hay andenes configurados.{' '}
-          <Link href="/app/distribution/settings" className="text-primary-600 hover:underline">
+          <Link href="/app/distribution/settings" className="text-accent hover:underline">
             Configurar andenes →
           </Link>
         </div>

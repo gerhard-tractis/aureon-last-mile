@@ -15,27 +15,27 @@ vi.mock('recharts', () => ({
 
 describe('getMetricColor', () => {
   it('returns green for higher-better above green threshold', () => {
-    expect(getMetricColor(96, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[#10b981]');
+    expect(getMetricColor(96, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[var(--color-status-success)]');
   });
 
   it('returns yellow for higher-better between thresholds', () => {
-    expect(getMetricColor(92, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[#f59e0b]');
+    expect(getMetricColor(92, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[var(--color-status-warning)]');
   });
 
   it('returns red for higher-better below yellow', () => {
-    expect(getMetricColor(85, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[#ef4444]');
+    expect(getMetricColor(85, { green: 95, yellow: 90, direction: 'higher-better' })).toBe('text-[var(--color-status-error)]');
   });
 
   it('returns green for lower-better below green threshold', () => {
-    expect(getMetricColor(35, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[#10b981]');
+    expect(getMetricColor(35, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[var(--color-status-success)]');
   });
 
   it('returns yellow for lower-better between thresholds', () => {
-    expect(getMetricColor(50, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[#f59e0b]');
+    expect(getMetricColor(50, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[var(--color-status-warning)]');
   });
 
   it('returns red for lower-better above yellow', () => {
-    expect(getMetricColor(70, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[#ef4444]');
+    expect(getMetricColor(70, { green: 40, yellow: 60, direction: 'lower-better' })).toBe('text-[var(--color-status-error)]');
   });
 
   it('returns muted-foreground for null', () => {
@@ -62,7 +62,7 @@ describe('MetricsCard', () => {
     title: 'FADR',
     icon: '🎯',
     value: '92.1%',
-    color: 'text-[#f59e0b]',
+    color: 'text-[var(--color-status-warning)]',
     context: '281/305 primera entrega exitosa',
     ariaLabel: 'FADR: 92.1%',
   };

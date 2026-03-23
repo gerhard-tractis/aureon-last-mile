@@ -10,10 +10,10 @@ interface Props {
 }
 
 function getSeverityClass(thresholdPct: number | null): string {
-  if (thresholdPct === null) return 'bg-status-warning';
-  if (thresholdPct >= 120) return 'bg-status-error';
-  if (thresholdPct >= 100) return 'bg-status-warning';
-  return 'bg-status-warning';
+  if (thresholdPct === null) return 'bg-[var(--color-status-warning)]';
+  if (thresholdPct >= 120) return 'bg-[var(--color-status-error)]';
+  if (thresholdPct >= 100) return 'bg-[var(--color-status-warning)]';
+  return 'bg-[var(--color-status-warning)]';
 }
 
 function getSeverityLabel(thresholdPct: number | null): string {
@@ -38,7 +38,6 @@ export default function CapacityAlertPanel({ alerts, onClose }: Props) {
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-96 bg-card border border-border rounded-lg shadow-lg z-50"
       data-testid="capacity-alert-panel"
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -85,7 +84,7 @@ export default function CapacityAlertPanel({ alerts, onClose }: Props) {
                         router.push('/app/capacity-planning');
                         onClose();
                       }}
-                      className="text-xs text-primary-600 hover:underline"
+                      className="text-xs text-accent hover:underline"
                       aria-label="Ver"
                     >
                       Ver

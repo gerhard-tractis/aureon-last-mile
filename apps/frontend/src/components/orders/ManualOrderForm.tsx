@@ -161,12 +161,12 @@ export default function ManualOrderForm() {
           aria-invalid={!!(errors.order_number || orderNumberError)}
         />
         {errors.order_number && (
-          <p id="order_number-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="order_number-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.order_number.message}
           </p>
         )}
         {orderNumberError && (
-          <p id="order_number-dup-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="order_number-dup-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {orderNumberError}
           </p>
         )}
@@ -187,7 +187,7 @@ export default function ManualOrderForm() {
           aria-invalid={!!errors.customer_name}
         />
         {errors.customer_name && (
-          <p id="customer_name-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="customer_name-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.customer_name.message}
           </p>
         )}
@@ -209,7 +209,7 @@ export default function ManualOrderForm() {
           aria-invalid={!!errors.customer_phone}
         />
         {errors.customer_phone && (
-          <p id="customer_phone-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="customer_phone-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.customer_phone.message}
           </p>
         )}
@@ -230,7 +230,7 @@ export default function ManualOrderForm() {
           aria-invalid={!!errors.delivery_address}
         />
         {errors.delivery_address && (
-          <p id="delivery_address-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="delivery_address-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.delivery_address.message}
           </p>
         )}
@@ -257,7 +257,7 @@ export default function ManualOrderForm() {
           ))}
         </datalist>
         {errors.comuna && (
-          <p id="comuna-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="comuna-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.comuna.message}
           </p>
         )}
@@ -279,12 +279,12 @@ export default function ManualOrderForm() {
           aria-invalid={!!errors.delivery_date}
         />
         {errors.delivery_date && (
-          <p id="delivery_date-error" className="mt-1 text-sm text-red-600" role="alert">
+          <p id="delivery_date-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
             {errors.delivery_date.message}
           </p>
         )}
         {dateWarning && (
-          <p className="mt-1 text-sm text-yellow-600" role="status">
+          <p className="mt-1 text-sm text-[var(--color-status-warning)]" role="status">
             {dateWarning}
           </p>
         )}
@@ -318,7 +318,7 @@ export default function ManualOrderForm() {
             aria-invalid={!!errors.delivery_window_end}
           />
           {errors.delivery_window_end && (
-            <p id="delivery_window_end-error" className="mt-1 text-sm text-red-600" role="alert">
+            <p id="delivery_window_end-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
               {errors.delivery_window_end.message}
             </p>
           )}
@@ -364,7 +364,7 @@ export default function ManualOrderForm() {
         <button
           type="submit"
           disabled={!isValid || isPending || !!orderNumberError}
-          className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
         >
           {isPending && (
             <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

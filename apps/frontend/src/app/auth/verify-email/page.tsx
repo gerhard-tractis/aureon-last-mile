@@ -61,7 +61,7 @@ export default function VerifyEmailPage() {
                 </p>
 
                 {error && (
-                    <div className="text-sm text-status-error bg-status-error-bg border border-status-error-border rounded-lg px-4 py-3">
+                    <div className="text-sm text-[var(--color-status-error)] bg-red-50 border border-red-200 rounded-lg px-4 py-3">
                         {error}
                     </div>
                 )}
@@ -77,11 +77,11 @@ export default function VerifyEmailPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="tu@empresa.cl"
-                    className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                    className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                 />
 
                 <button
-                    className="text-sm font-medium text-foreground hover:text-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="text-sm font-medium text-accent hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={resendVerificationEmail}
                     disabled={loading}
                 >
@@ -92,7 +92,7 @@ export default function VerifyEmailPage() {
             <div className="mt-8 pt-6 border-t border-border">
                 <Link
                     href="/auth/login"
-                    className="text-sm font-medium text-foreground hover:text-amber-600 transition-colors"
+                    className="text-sm font-medium text-accent hover:underline"
                 >
                     Volver al inicio de sesión
                 </Link>

@@ -30,7 +30,7 @@ export function DistributionTab({ operatorId }: DistributionTabProps) {
         </Card>
       </div>
       <div className="text-right">
-        <Link href="/app/distribution" className="text-sm text-primary-600 hover:underline">
+        <Link href="/app/distribution" className="text-sm text-accent hover:underline">
           Ver distribución completa →
         </Link>
       </div>
