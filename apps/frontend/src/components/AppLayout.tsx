@@ -12,6 +12,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Layers,
+  Truck,
 } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
@@ -68,6 +69,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/app/pickup',             label: 'Pickup',       icon: CheckSquare,     show: permissions.includes('pickup') },
     { href: '/app/reception',          label: 'Recepción',    icon: ArrowUpDown,     show: permissions.includes('reception') },
     { href: '/app/distribution',       label: 'Distribución', icon: Layers,          show: permissions.includes('distribution') },
+    { href: '/app/dispatch',           label: 'Despacho',     icon: Truck,           show: permissions.includes('dispatch') || permissions.includes('admin') },
     { href: '/app/capacity-planning',  label: 'Capacidad',    icon: Calendar,        show: isAdminOrManager },
     { href: '/app/audit-logs',         label: 'Auditoría',    icon: FileText,        show: isAdminOrManager },
   ].filter((item) => item.show);
