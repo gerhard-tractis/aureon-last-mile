@@ -58,7 +58,7 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
                 {zone.comunas.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
                     {zone.comunas.map((c) => (
-                      <span key={c} className="text-xs bg-muted px-2 py-0.5 rounded-full">{c}</span>
+                      <span key={c.id} className="text-xs bg-muted px-2 py-0.5 rounded-full">{c.nombre}</span>
                     ))}
                   </div>
                 )}
