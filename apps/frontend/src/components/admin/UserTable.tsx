@@ -72,8 +72,8 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
 
   return (
     <DataTable
-      columns={columns}
-      data={users ?? []}
+      columns={columns as unknown as ColumnDef<Record<string, unknown>>[]}
+      data={(users ?? []) as unknown as Record<string, unknown>[]}
       isLoading={isLoading}
       searchPlaceholder="Buscar por nombre o email..."
       emptyMessage="No hay usuarios"
