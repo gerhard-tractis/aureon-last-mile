@@ -8,6 +8,7 @@ vi.mock('../scroll-reveal', () => ({
 
 import { ValueProps } from '../value-props';
 import { MetricsShowcase } from '../metrics-showcase';
+import { Features } from '../features';
 
 describe('ValueProps', () => {
   it('renders section heading', () => {
@@ -41,5 +42,24 @@ describe('MetricsShowcase', () => {
     expect(screen.getByText('Costo por Envío')).toBeInTheDocument();
     expect(screen.getByText('On Time In Full')).toBeInTheDocument();
     expect(screen.getByText('Net Promoter Score')).toBeInTheDocument();
+  });
+});
+
+describe('Features', () => {
+  it('renders section heading', () => {
+    render(<Features />);
+    expect(screen.getByText('Todo lo que necesitas para tu operación')).toBeInTheDocument();
+  });
+
+  it('renders all 8 features', () => {
+    render(<Features />);
+    expect(screen.getByText('Despacho inteligente')).toBeInTheDocument();
+    expect(screen.getByText('Escaneo y verificación')).toBeInTheDocument();
+    expect(screen.getByText('Control de operaciones')).toBeInTheDocument();
+    expect(screen.getByText('Ingesta con IA')).toBeInTheDocument();
+    expect(screen.getByText('KPIs estratégicos')).toBeInTheDocument();
+    expect(screen.getByText('Agentes de monitoreo')).toBeInTheDocument();
+    expect(screen.getByText('Inteligencia operacional')).toBeInTheDocument();
+    expect(screen.getByText('Reportes y auditoría')).toBeInTheDocument();
   });
 });
