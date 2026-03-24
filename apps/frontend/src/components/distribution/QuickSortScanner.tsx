@@ -65,7 +65,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
       const supabase = createSPAClient();
       const { data, error: dbError } = await supabase
         .from('packages')
-        .select('id, label, status, order_id, orders!inner(comuna, delivery_date)')
+        .select('id, label, status, order_id, orders!inner(comuna_id, delivery_date)')
         .eq('operator_id', operatorId)
         .eq('label', barcode)
         .is('deleted_at', null)
@@ -86,12 +86,12 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
         label: string;
         status: string;
         order_id: string;
-        orders: { comuna: string; delivery_date: string };
+        orders: { comuna_id: string | null; delivery_date: string };
       };
       const order = pkg.orders;
 
       const matchResult = determineDockZone(
-        { comuna: order.comuna, delivery_date: order.delivery_date },
+        { comunaId: order.comuna_id, delivery_date: order.delivery_date },
         zones,
         today
       );

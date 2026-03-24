@@ -5,6 +5,7 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { useDockZones, useEnsureConsolidationZone } from '@/hooks/distribution/useDockZones';
 import { DockZoneList } from '@/components/distribution/DockZoneList';
 import { DockZoneForm } from '@/components/distribution/DockZoneForm';
+import { UnmatchedComunasPanel } from '@/components/distribution/UnmatchedComunasPanel';
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,8 @@ export default function DistributionSettingsPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {operatorId && <UnmatchedComunasPanel operatorId={operatorId} />}
     </div>
   );
 }

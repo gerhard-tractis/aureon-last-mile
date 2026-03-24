@@ -397,13 +397,95 @@ export type Database = {
         }
         Relationships: []
       }
+      chile_comunas: {
+        Row: {
+          id: string
+          codigo_cut: string
+          nombre: string
+          provincia: string
+          region: string
+          region_num: number
+          geometry: string | null
+        }
+        Insert: {
+          id?: string
+          codigo_cut: string
+          nombre: string
+          provincia: string
+          region: string
+          region_num: number
+          geometry?: string | null
+        }
+        Update: {
+          id?: string
+          codigo_cut?: string
+          nombre?: string
+          provincia?: string
+          region?: string
+          region_num?: number
+          geometry?: string | null
+        }
+        Relationships: []
+      }
+      chile_comuna_aliases: {
+        Row: {
+          id: string
+          alias: string
+          comuna_id: string
+          source: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          alias: string
+          comuna_id: string
+          source?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          alias?: string
+          comuna_id?: string
+          source?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chile_comuna_aliases_comuna_id_fkey"
+            columns: ["comuna_id"]
+            isOneToOne: false
+            referencedRelation: "chile_comunas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dock_zone_comunas: {
+        Row: { dock_zone_id: string; comuna_id: string }
+        Insert: { dock_zone_id: string; comuna_id: string }
+        Update: { dock_zone_id?: string; comuna_id?: string }
+        Relationships: [
+          {
+            foreignKeyName: "dock_zone_comunas_dock_zone_id_fkey"
+            columns: ["dock_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dock_zone_comunas_comuna_id_fkey"
+            columns: ["comuna_id"]
+            isOneToOne: false
+            referencedRelation: "chile_comunas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dock_zones: {
         Row: {
           id: string
           operator_id: string
           name: string
           code: string
-          comunas: string[]
           is_consolidation: boolean
           is_active: boolean
           created_at: string
@@ -415,7 +497,6 @@ export type Database = {
           operator_id: string
           name: string
           code: string
-          comunas?: string[]
           is_consolidation?: boolean
           is_active?: boolean
           created_at?: string
@@ -427,7 +508,6 @@ export type Database = {
           operator_id?: string
           name?: string
           code?: string
-          comunas?: string[]
           is_consolidation?: boolean
           is_active?: boolean
           created_at?: string
@@ -787,6 +867,8 @@ export type Database = {
           customer_phone: string
           delivery_address: string
           comuna: string
+          comuna_id: string | null
+          comuna_raw: string | null
           delivery_date: string
           delivery_window_start: string | null
           delivery_window_end: string | null
@@ -808,6 +890,8 @@ export type Database = {
           customer_phone: string
           delivery_address: string
           comuna: string
+          comuna_id?: string | null
+          comuna_raw?: string | null
           delivery_date: string
           delivery_window_start?: string | null
           delivery_window_end?: string | null
@@ -829,6 +913,8 @@ export type Database = {
           customer_phone?: string
           delivery_address?: string
           comuna?: string
+          comuna_id?: string | null
+          comuna_raw?: string | null
           delivery_date?: string
           delivery_window_start?: string | null
           delivery_window_end?: string | null
@@ -1137,6 +1223,18 @@ export type Database = {
           p_date: string
         }
         Returns: undefined
+      }
+      normalize_comuna_id: {
+        Args: { raw_name: string }
+        Returns: string | null
+      }
+      map_comuna_alias: {
+        Args: { p_alias: string; p_comuna_id: string; p_source?: string }
+        Returns: undefined
+      }
+      get_unmatched_comunas: {
+        Args: { p_operator_id: string }
+        Returns: { comuna_raw: string; order_count: number }[]
       }
     }
     Enums: {

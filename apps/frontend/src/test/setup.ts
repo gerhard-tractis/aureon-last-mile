@@ -67,3 +67,15 @@ window.location = {
 
 // Mock window.history
 window.history.back = vi.fn();
+
+// Polyfill ResizeObserver (used by cmdk / shadcn Command component)
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+// Polyfill scrollIntoView (used by cmdk for keyboard navigation)
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = vi.fn();
+}

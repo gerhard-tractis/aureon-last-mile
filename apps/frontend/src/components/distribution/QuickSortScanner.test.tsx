@@ -3,9 +3,19 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QuickSortScanner } from './QuickSortScanner';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
 
+const LC_ID = 'comuna-las-condes';
+
 const zones: DockZone[] = [
-  { id: 'zone-1', name: 'Andén 1', code: 'DOCK-001', is_consolidation: false, comunas: ['las condes'], is_active: true },
-  { id: 'consol', name: 'Consolidación', code: 'CONSOL', is_consolidation: true, comunas: [], is_active: true },
+  {
+    id: 'zone-1', name: 'Andén 1', code: 'DOCK-001',
+    is_consolidation: false, is_active: true,
+    comunas: [{ id: LC_ID, nombre: 'Las Condes' }],
+  },
+  {
+    id: 'consol', name: 'Consolidación', code: 'CONSOL',
+    is_consolidation: true, is_active: true,
+    comunas: [],
+  },
 ];
 
 const mockLimit = vi.fn();
@@ -44,7 +54,7 @@ beforeEach(() => {
       label: 'PKG-001',
       status: 'en_bodega',
       order_id: 'ord-1',
-      orders: { comuna: 'Las Condes', delivery_date: '2026-03-18' },
+      orders: { comuna_id: LC_ID, delivery_date: '2026-03-18' },
     }],
     error: null,
   });
@@ -132,7 +142,7 @@ describe('QuickSortScanner', () => {
         label: 'PKG-002',
         status: 'en_bodega',
         order_id: 'ord-2',
-        orders: { comuna: 'Antartica', delivery_date: '2026-03-18' },
+        orders: { comuna_id: 'unknown-id', delivery_date: '2026-03-18' },
       }],
       error: null,
     });

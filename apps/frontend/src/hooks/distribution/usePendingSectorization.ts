@@ -8,7 +8,7 @@ export interface PendingPackage {
   id: string;
   label: string;
   order_id: string;
-  comuna: string;
+  comunaId: string | null;
   delivery_date: string;
 }
 
@@ -29,7 +29,7 @@ export function usePendingSectorization(operatorId: string | null) {
 
       const { data, error } = await supabase
         .from('packages')
-        .select('id, label, order_id, orders!inner(comuna, delivery_date)')
+        .select('id, label, order_id, orders!inner(comuna_id, delivery_date)')
         .eq('operator_id', operatorId!)
         .eq('status', 'en_bodega')
         .is('deleted_at', null)
@@ -41,9 +41,9 @@ export function usePendingSectorization(operatorId: string | null) {
       const groupMap = new Map<string, ZoneGroup>();
 
       for (const pkg of data) {
-        const order = pkg.orders as { comuna: string; delivery_date: string };
+        const order = pkg.orders as { comuna_id: string | null; delivery_date: string };
         const matchResult = determineDockZone(
-          { comuna: order.comuna, delivery_date: order.delivery_date },
+          { comunaId: order.comuna_id, delivery_date: order.delivery_date },
           zones,
           today
         );
@@ -52,7 +52,7 @@ export function usePendingSectorization(operatorId: string | null) {
           id: pkg.id,
           label: pkg.label,
           order_id: pkg.order_id,
-          comuna: order.comuna,
+          comunaId: order.comuna_id,
           delivery_date: order.delivery_date,
         };
         if (existing) {
