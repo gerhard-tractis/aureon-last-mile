@@ -57,7 +57,9 @@ describe('useIsMobile', () => {
   });
 
   it('updates state when viewport changes', () => {
-    let capturedHandler: ((e: MediaQueryListEvent) => void) | null = null;
+    // useIsMobile delegates to useViewport which registers 3 listeners
+    // (mobile/tablet/desktop). Capture by query to fire the right one.
+    const handlers: Map<string, (e: MediaQueryListEvent) => void> = new Map();
 
     Object.defineProperty(window, 'matchMedia', {
       writable: true,
@@ -67,7 +69,7 @@ describe('useIsMobile', () => {
         media: query,
         onchange: null,
         addEventListener: vi.fn((_, handler) => {
-          capturedHandler = handler;
+          handlers.set(query, handler);
         }),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
@@ -77,8 +79,9 @@ describe('useIsMobile', () => {
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(false);
 
+    const mobileHandler = handlers.get('(max-width: 768px)');
     act(() => {
-      capturedHandler!({ matches: true } as MediaQueryListEvent);
+      mobileHandler!({ matches: true } as MediaQueryListEvent);
     });
 
     expect(result.current).toBe(true);
