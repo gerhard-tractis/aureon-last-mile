@@ -3,12 +3,12 @@ export interface DockZone {
   name: string;
   code: string;
   is_consolidation: boolean;
-  comunas: string[];
+  comunas: { id: string; nombre: string }[];
   is_active: boolean;
 }
 
 export interface PackageOrder {
-  comuna: string;
+  comunaId: string | null;
   delivery_date: string; // YYYY-MM-DD
 }
 
@@ -21,10 +21,6 @@ export interface ZoneMatchResult {
   is_consolidation: boolean;
   reason: ZoneMatchReason;
   flagged: boolean;
-}
-
-function normalize(s: string): string {
-  return s.trim().toLowerCase();
 }
 
 function isDeliveryDateActive(deliveryDate: string, today: string): boolean {
@@ -58,14 +54,16 @@ export function determineDockZone(
     return makeResult(consolidation, 'future_date');
   }
 
-  const normalizedComuna = normalize(pkg.comuna);
-  const matchingZone = zones.find(
-    z => !z.is_consolidation && z.is_active && z.comunas.some(c => normalize(c) === normalizedComuna)
-  );
-
-  if (matchingZone) {
-    return makeResult(matchingZone, 'matched');
+  if (pkg.comunaId) {
+    const matchingZone = zones.find(
+      z => !z.is_consolidation && z.is_active && z.comunas.some(c => c.id === pkg.comunaId)
+    );
+    if (matchingZone) {
+      return makeResult(matchingZone, 'matched');
+    }
   }
 
-  return makeResult(consolidation, 'unmapped', true);
+  // flagged=true when comunaId provided but no zone matched (known commune, unassigned andén)
+  // flagged=false when comunaId is null (commune unmatched by DB trigger)
+  return makeResult(consolidation, 'unmapped', pkg.comunaId !== null);
 }
