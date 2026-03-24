@@ -450,7 +450,12 @@ BEGIN
 END;
 $$;
 
--- 7. map_comuna_alias RPC
+-- 7. orders: add new columns (must precede LANGUAGE sql RPCs that reference them)
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS comuna_id  UUID REFERENCES public.chile_comunas(id),
+  ADD COLUMN IF NOT EXISTS comuna_raw TEXT;
+
+-- 8. map_comuna_alias RPC
 CREATE OR REPLACE FUNCTION public.map_comuna_alias(
   p_alias     TEXT,
   p_comuna_id UUID,
@@ -478,7 +483,7 @@ BEGIN
 END;
 $$;
 
--- 8. get_unmatched_comunas RPC
+-- 9. get_unmatched_comunas RPC
 CREATE OR REPLACE FUNCTION public.get_unmatched_comunas(p_operator_id UUID)
 RETURNS TABLE (comuna_raw TEXT, order_count BIGINT)
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -492,11 +497,6 @@ AS $$
    GROUP BY o.comuna_raw
    ORDER BY order_count DESC;
 $$;
-
--- 9. orders: add new columns
-ALTER TABLE public.orders
-  ADD COLUMN IF NOT EXISTS comuna_id  UUID REFERENCES public.chile_comunas(id),
-  ADD COLUMN IF NOT EXISTS comuna_raw TEXT;
 
 -- 10. Normalization trigger
 CREATE OR REPLACE FUNCTION public.orders_normalize_comuna()
