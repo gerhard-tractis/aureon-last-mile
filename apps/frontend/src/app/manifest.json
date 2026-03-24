@@ -1,12 +1,12 @@
 {
   "name": "Aureon Last Mile",
   "short_name": "Aureon",
-  "description": "Last-mile logistics management platform for Chilean operators",
+  "description": "Plataforma de gestión de última milla para operadores logísticos chilenos",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#1e2a3a",
   "theme_color": "#e6c15c",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -22,31 +22,30 @@
     }
   ],
   "categories": ["business", "productivity", "utilities"],
-  "screenshots": [],
   "shortcuts": [
     {
-      "name": "Scan Pickup",
-      "short_name": "Scan",
-      "description": "Start barcode scanning",
-      "url": "/app/scan",
-      "icons": [
-        {
-          "src": "/icon-scan.png",
-          "sizes": "96x96"
-        }
-      ]
+      "name": "Pickup",
+      "short_name": "Pickup",
+      "description": "Verificación de pickup",
+      "url": "/app/pickup"
     },
     {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "View performance metrics",
-      "url": "/app/dashboard",
-      "icons": [
-        {
-          "src": "/icon-dashboard.png",
-          "sizes": "96x96"
-        }
-      ]
+      "name": "Recepción",
+      "short_name": "Recepción",
+      "description": "Recepción en hub",
+      "url": "/app/reception"
+    },
+    {
+      "name": "Distribución",
+      "short_name": "Distribución",
+      "description": "Distribución de paquetes",
+      "url": "/app/distribution"
+    },
+    {
+      "name": "Despacho",
+      "short_name": "Despacho",
+      "description": "Despacho de paquetes",
+      "url": "/app/dispatch"
     }
   ],
   "prefer_related_applications": false

@@ -13,7 +13,6 @@ import SentryUserProvider from "@/components/SentryUserProvider";
 export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_PRODUCTNAME,
   description: "Plataforma de gestión de última milla para operadores logísticos chilenos",
-  manifest: "/manifest.json",
   themeColor: "#e6c15c",
   appleWebApp: {
     capable: true,
@@ -29,7 +28,7 @@ export default function RootLayout({
 }>) {
   const gaID = process.env.NEXT_PUBLIC_GOOGLE_TAG;
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="es" className={`${GeistSans.variable} ${GeistMono.variable}`}>
     <head>
       {/* Inline script runs before hydration to apply theme class immediately, preventing flash */}
       <script
