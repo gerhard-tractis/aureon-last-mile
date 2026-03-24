@@ -1,8 +1,11 @@
 "use client";
 import React from 'react';
+import dynamic from 'next/dynamic';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { CalendarDays, Settings, ExternalLink } from 'lucide-react';
+
+const TabletRedirect = dynamic(() => import('./TabletRedirect'), { ssr: false });
 import Link from 'next/link';
 
 export default function DashboardContent() {
@@ -26,6 +29,8 @@ export default function DashboardContent() {
     const daysSinceRegistration = getDaysSinceRegistration();
 
     return (
+        <>
+        <TabletRedirect />
         <div className="space-y-6 p-6">
             <Card>
                 <CardHeader>
@@ -74,5 +79,6 @@ export default function DashboardContent() {
                 </CardContent>
             </Card>
         </div>
+        </>
     );
 }
