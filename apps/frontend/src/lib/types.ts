@@ -1157,6 +1157,234 @@ export type Database = {
           },
         ]
       }
+      fleet_vehicles: {
+        Row: {
+          id: string
+          operator_id: string
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_vehicle_id: string | null
+          plate_number: string | null
+          vehicle_type: string | null
+          driver_name: string | null
+          raw_data: Json
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_vehicle_id?: string | null
+          plate_number?: string | null
+          vehicle_type?: string | null
+          driver_name?: string | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          provider?: Database["public"]["Enums"]["routing_provider_enum"]
+          external_vehicle_id?: string | null
+          plate_number?: string | null
+          vehicle_type?: string | null
+          driver_name?: string | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fleet_vehicles_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      routes: {
+        Row: {
+          id: string
+          operator_id: string
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_route_id: string
+          route_date: string
+          driver_name: string | null
+          vehicle_id: string | null
+          status: Database["public"]["Enums"]["route_status_enum"]
+          planned_stops: number | null
+          completed_stops: number
+          start_time: string | null
+          end_time: string | null
+          total_km: number | null
+          idle_time_minutes: number | null
+          raw_data: Json
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_route_id: string
+          route_date: string
+          driver_name?: string | null
+          vehicle_id?: string | null
+          status?: Database["public"]["Enums"]["route_status_enum"]
+          planned_stops?: number | null
+          completed_stops?: number
+          start_time?: string | null
+          end_time?: string | null
+          total_km?: number | null
+          idle_time_minutes?: number | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          provider?: Database["public"]["Enums"]["routing_provider_enum"]
+          external_route_id?: string
+          route_date?: string
+          driver_name?: string | null
+          vehicle_id?: string | null
+          status?: Database["public"]["Enums"]["route_status_enum"]
+          planned_stops?: number | null
+          completed_stops?: number
+          start_time?: string | null
+          end_time?: string | null
+          total_km?: number | null
+          idle_time_minutes?: number | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routes_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "fleet_vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dispatches: {
+        Row: {
+          id: string
+          operator_id: string
+          route_id: string | null
+          order_id: string | null
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_dispatch_id: string | null
+          external_route_id: string | null
+          status: Database["public"]["Enums"]["dispatch_status_enum"]
+          substatus: string | null
+          substatus_code: string | null
+          planned_sequence: number | null
+          estimated_at: string | null
+          arrived_at: string | null
+          completed_at: string | null
+          failure_reason: string | null
+          driver_notes: string | null
+          is_pickup: boolean
+          latitude: number | null
+          longitude: number | null
+          raw_data: Json
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          route_id?: string | null
+          order_id?: string | null
+          provider: Database["public"]["Enums"]["routing_provider_enum"]
+          external_dispatch_id?: string | null
+          external_route_id?: string | null
+          status?: Database["public"]["Enums"]["dispatch_status_enum"]
+          substatus?: string | null
+          substatus_code?: string | null
+          planned_sequence?: number | null
+          estimated_at?: string | null
+          arrived_at?: string | null
+          completed_at?: string | null
+          failure_reason?: string | null
+          driver_notes?: string | null
+          is_pickup?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          route_id?: string | null
+          order_id?: string | null
+          provider?: Database["public"]["Enums"]["routing_provider_enum"]
+          external_dispatch_id?: string | null
+          external_route_id?: string | null
+          status?: Database["public"]["Enums"]["dispatch_status_enum"]
+          substatus?: string | null
+          substatus_code?: string | null
+          planned_sequence?: number | null
+          estimated_at?: string | null
+          arrived_at?: string | null
+          completed_at?: string | null
+          failure_reason?: string | null
+          driver_notes?: string | null
+          is_pickup?: boolean
+          latitude?: number | null
+          longitude?: number | null
+          raw_data?: Json
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dispatches_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dispatches_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1238,6 +1466,21 @@ export type Database = {
       }
     }
     Enums: {
+      routing_provider_enum:
+        | "dispatchtrack"
+        | "simpliroute"
+        | "drivin"
+      route_status_enum:
+        | "draft"
+        | "planned"
+        | "in_progress"
+        | "completed"
+        | "cancelled"
+      dispatch_status_enum:
+        | "pending"
+        | "delivered"
+        | "failed"
+        | "partial"
       batch_status_enum:
         | "open"
         | "closed"
@@ -1265,7 +1508,7 @@ export type Database = {
         | "retenido"
         | "asignado"
         | "en_carga"
-        | "listo"
+        | "listo_para_despacho"
         | "en_ruta"
         | "entregado"
         | "cancelado"
@@ -1429,7 +1672,7 @@ export const Constants = {
         "en_bodega",
         "asignado",
         "en_carga",
-        "listo",
+        "listo_para_despacho",
         "en_ruta",
         "entregado",
         "cancelado",
