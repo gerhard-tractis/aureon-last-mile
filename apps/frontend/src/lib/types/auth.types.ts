@@ -185,7 +185,7 @@ export const RolePermissions = {
   },
 } as const;
 
-export type Permission = 'pickup' | 'warehouse' | 'loading' | 'operations' | 'admin' | 'reception' | 'distribution';
+export type Permission = 'pickup' | 'warehouse' | 'loading' | 'operations' | 'admin' | 'reception' | 'distribution' | 'dispatch';
 
 export function hasPermission(permissions: string[] | undefined, permission: Permission): boolean {
   if (!permissions) return false;
