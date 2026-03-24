@@ -9,6 +9,7 @@ vi.mock('../scroll-reveal', () => ({
 import { ValueProps } from '../value-props';
 import { MetricsShowcase } from '../metrics-showcase';
 import { Features } from '../features';
+import { Integrations } from '../integrations';
 
 describe('ValueProps', () => {
   it('renders section heading', () => {
@@ -61,5 +62,20 @@ describe('Features', () => {
     expect(screen.getByText('Agentes de monitoreo')).toBeInTheDocument();
     expect(screen.getByText('Inteligencia operacional')).toBeInTheDocument();
     expect(screen.getByText('Reportes y auditoría')).toBeInTheDocument();
+  });
+});
+
+describe('Integrations', () => {
+  it('renders section heading', () => {
+    render(<Integrations />);
+    expect(screen.getByText(/Tu centro de comando/)).toBeInTheDocument();
+  });
+
+  it('renders integration partner names', () => {
+    render(<Integrations />);
+    expect(screen.getByText('DispatchTrack')).toBeInTheDocument();
+    expect(screen.getByText('SimpliRoute')).toBeInTheDocument();
+    expect(screen.getByText('Driv.in')).toBeInTheDocument();
+    expect(screen.getByText('Y más...')).toBeInTheDocument();
   });
 });
