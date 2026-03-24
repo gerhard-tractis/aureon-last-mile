@@ -25,21 +25,19 @@ export default function CapacityAlertBell({ operatorId }: Props) {
 
   return (
     <>
-      <div className="fixed top-4 right-4 z-10">
-        <button
-          onClick={() => setIsOpen(true)}
-          aria-label="Alertas de capacidad"
-          className="relative p-2 rounded-md text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors"
+      <button
+        onClick={() => setIsOpen(true)}
+        aria-label="Alertas de capacidad"
+        className="relative p-2 rounded-md text-[var(--color-text-secondary)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-raised)] transition-colors"
+      >
+        <Bell className="h-5 w-5" />
+        <span
+          data-testid="alert-badge"
+          className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-status-error)] px-0.5 text-[10px] font-bold text-white leading-none"
         >
-          <Bell className="h-5 w-5" />
-          <span
-            data-testid="alert-badge"
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--color-status-error)] px-0.5 text-[10px] font-bold text-white leading-none"
-          >
-            {badgeLabel}
-          </span>
-        </button>
-      </div>
+          {badgeLabel}
+        </span>
+      </button>
 
       <Sheet open={isOpen} onOpenChange={setIsOpen}>
         <SheetContent side="right" className="w-96 p-0">
