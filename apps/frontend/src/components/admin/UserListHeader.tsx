@@ -21,7 +21,7 @@ export const UserListHeader = () => {
 
       <button
         onClick={() => setCreateFormOpen(true)}
-        className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium transition-colors"
+        className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:opacity-90 font-medium transition-colors"
         style={{ minHeight: '44px' }} // Touch target minimum
       >
         Create User

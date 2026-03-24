@@ -40,8 +40,8 @@ export default function ForgotPasswordPage() {
         return (
             <div className="text-center py-4">
                 <div className="flex justify-center mb-5">
-                    <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
-                        <CheckCircle className="h-7 w-7 text-emerald-500" />
+                    <div className="w-14 h-14 rounded-full bg-status-success-bg flex items-center justify-center">
+                        <CheckCircle className="h-7 w-7 text-status-success" />
                     </div>
                 </div>
 
@@ -56,7 +56,7 @@ export default function ForgotPasswordPage() {
 
                 <Link
                     href="/auth/login"
-                    className="text-sm font-medium text-foreground hover:text-amber-600 transition-colors"
+                    className="text-sm font-medium text-accent hover:underline"
                 >
                     Volver al inicio de sesión
                 </Link>
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
             </p>
 
             {error && (
-                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-[var(--color-status-error)] bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
@@ -93,14 +93,14 @@ export default function ForgotPasswordPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="tu@empresa.cl"
-                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                     />
                 </div>
 
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-lg bg-foreground py-2.5 px-4 text-sm font-medium text-background hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                    className="w-full rounded-lg bg-accent py-2.5 px-4 text-sm font-medium text-accent-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 transition-opacity"
                 >
                     {loading ? 'Enviando...' : 'Enviar enlace de recuperación'}
                 </button>
@@ -108,7 +108,7 @@ export default function ForgotPasswordPage() {
 
             <p className="mt-8 text-center text-sm text-muted-foreground">
                 ¿Recordaste tu contraseña?{' '}
-                <Link href="/auth/login" className="font-medium text-foreground hover:text-amber-600 transition-colors">
+                <Link href="/auth/login" className="font-medium text-foreground hover:text-accent transition-colors">
                     Iniciar sesión
                 </Link>
             </p>

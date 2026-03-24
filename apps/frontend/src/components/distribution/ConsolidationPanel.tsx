@@ -34,7 +34,7 @@ export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelPr
     <div className="space-y-4">
       {urgent.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-orange-700">Urgentes (despacho hoy/mañana)</h3>
+          <h3 className="text-sm font-semibold text-status-warning">Urgentes (despacho hoy/mañana)</h3>
           {urgent.map((pkg) => (
             <PackageRow key={pkg.id} pkg={pkg} urgent onRelease={onRelease} />
           ))}
@@ -60,7 +60,7 @@ interface PackageRowProps {
 
 function PackageRow({ pkg, urgent, onRelease }: PackageRowProps) {
   return (
-    <Card className={urgent ? 'border-orange-200 bg-orange-50/30' : ''}>
+    <Card className={urgent ? 'border-status-warning-border bg-status-warning-bg' : ''}>
       <CardContent className="p-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className="font-mono text-sm font-medium">{pkg.label}</span>

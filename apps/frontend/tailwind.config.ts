@@ -56,6 +56,16 @@ const config: Config = {
           "info-border":    "var(--color-status-info-border)",
         },
 
+        /* ---- Sidebar — always dark ---- */
+        sidebar: {
+          DEFAULT:    "var(--color-sidebar-bg)",
+          text:       "var(--color-sidebar-text)",
+          active:     "var(--color-sidebar-text-active)",
+          hover:      "var(--color-sidebar-hover)",
+          section:    "var(--color-sidebar-section)",
+          border:     "var(--color-sidebar-border)",
+        },
+
         /* ---- shadcn/ui compatibility — do not remove ---- */
         foreground:  "hsl(var(--foreground))",
         card: {

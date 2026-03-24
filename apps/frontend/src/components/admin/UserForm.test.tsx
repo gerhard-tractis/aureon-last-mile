@@ -477,9 +477,10 @@ describe('UserForm', () => {
     it('should show spinner when isPending is true', () => {
       mockCreateUserReturn.isPending = true;
 
-      const { container } = render(<UserForm mode="create" />);
+      render(<UserForm mode="create" />);
 
-      const spinner = container.querySelector('.animate-spin');
+      // Sheet renders via portal; query from document
+      const spinner = document.querySelector('.animate-spin');
       expect(spinner).toBeTruthy();
     });
   });
@@ -503,25 +504,26 @@ describe('UserForm', () => {
   });
 
   describe('Styling', () => {
-    it('should have Tractis gold submit button', () => {
+    it('should have accent submit button', () => {
       render(<UserForm mode="create" />);
 
       const submitButton = screen.getByText('Create User');
-      expect(submitButton.className).toContain('bg-gold');
+      expect(submitButton.className).toContain('bg-accent');
     });
 
     it('should have focus ring on inputs', () => {
       render(<UserForm mode="create" />);
 
       const emailInput = screen.getByLabelText(/Email/);
-      expect(emailInput.className).toContain('focus:ring-gold');
+      expect(emailInput.className).toContain('focus:ring-accent');
     });
 
-    it('should have modal overlay', () => {
-      const { container } = render(<UserForm mode="create" />);
+    it('should render inside a Sheet (dialog role)', () => {
+      render(<UserForm mode="create" />);
 
-      const overlay = container.querySelector('.bg-black.bg-opacity-50');
-      expect(overlay).toBeTruthy();
+      // Sheet/Dialog renders a role="dialog" element
+      const dialog = document.querySelector('[role="dialog"]');
+      expect(dialog).toBeTruthy();
     });
   });
 });

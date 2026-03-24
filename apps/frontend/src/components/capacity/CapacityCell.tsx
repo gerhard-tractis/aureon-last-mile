@@ -13,10 +13,9 @@ interface CapacityCellProps {
 
 function getUtilizationClass(pct: number | null): string {
   if (pct === null) return '';
-  if (pct > 120) return 'bg-red-100 border-red-300 dark:bg-red-950 dark:border-red-700';
-  if (pct > 100) return 'bg-orange-100 border-orange-300 dark:bg-orange-950 dark:border-orange-700';
-  if (pct >= 80) return 'bg-yellow-100 border-yellow-300 dark:bg-yellow-950 dark:border-yellow-700';
-  return 'bg-green-100 border-green-300 dark:bg-green-950 dark:border-green-700';
+  if (pct > 95) return 'bg-[var(--color-status-error-bg)] border-[var(--color-status-error-border)]';
+  if (pct >= 80) return 'bg-[var(--color-status-warning-bg)] border-[var(--color-status-warning-border)]';
+  return 'bg-[var(--color-status-success-bg)] border-[var(--color-status-success-border)]';
 }
 
 function isFutureDate(date: string): boolean {
@@ -103,7 +102,7 @@ export default function CapacityCell({
         />
       ) : (
         <span
-          className="text-sm font-semibold text-foreground cursor-pointer hover:underline"
+          className="font-mono text-sm font-semibold text-foreground cursor-pointer hover:underline"
           onClick={handleStartEdit}
           title="Clic para editar"
         >
@@ -112,7 +111,7 @@ export default function CapacityCell({
       )}
 
       {/* Actual orders */}
-      <span className="text-xs text-muted-foreground">
+      <span className="font-mono text-sm text-muted-foreground">
         {actualOrders !== null ? actualOrders : '—'}
       </span>
 

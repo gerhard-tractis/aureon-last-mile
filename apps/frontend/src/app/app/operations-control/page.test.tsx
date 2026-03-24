@@ -26,16 +26,26 @@ vi.mock('@/stores/useOpsControlFilterStore', () => ({
   })),
 }));
 
+vi.mock('@/components/PageShell', () => ({
+  PageShell: ({ children, title, actions }: { children: React.ReactNode; title: string; actions?: React.ReactNode }) => (
+    <div data-testid="page-shell">
+      <h1>{title}</h1>
+      {actions && <div data-testid="page-shell-actions">{actions}</div>}
+      {children}
+    </div>
+  ),
+}));
+
+vi.mock('@/components/operations-control/RealtimeStatusIndicator', () => ({
+  RealtimeStatusIndicator: () => <div data-testid="realtime-status-indicator">En vivo</div>,
+}));
+
 vi.mock('@/components/operations-control/PipelineOverview', () => ({
   PipelineOverview: () => <div data-testid="pipeline-overview">Pipeline</div>,
 }));
 
 vi.mock('@/components/operations-control/UrgentOrdersBanner', () => ({
   UrgentOrdersBanner: () => <div data-testid="urgent-orders-banner" />,
-}));
-
-vi.mock('@/components/operations-control/OrdersFilterToolbar', () => ({
-  OrdersFilterToolbar: () => <div data-testid="orders-filter-toolbar">Toolbar</div>,
 }));
 
 vi.mock('@/components/operations-control/OrdersTable', () => ({
@@ -46,8 +56,8 @@ vi.mock('@/components/operations-control/OrdersTable', () => ({
   ),
 }));
 
-vi.mock('@/components/operations-control/OrderDetailModal', () => ({
-  OrderDetailModal: ({
+vi.mock('@/components/operations-control/OrderDetailSheet', () => ({
+  OrderDetailSheet: ({
     orderId,
     onClose,
   }: {
@@ -55,7 +65,7 @@ vi.mock('@/components/operations-control/OrderDetailModal', () => ({
     onClose: () => void;
   }) =>
     orderId ? (
-      <div data-testid="order-detail-modal">
+      <div data-testid="order-detail-sheet">
         <button onClick={onClose}>Close</button>
       </div>
     ) : null,
@@ -108,10 +118,10 @@ describe('OpsControlPage', () => {
     expect(screen.getByTestId('urgent-orders-banner')).toBeDefined();
   });
 
-  it('renders OrdersFilterToolbar', () => {
+  it('renders RealtimeStatusIndicator in PageShell actions', () => {
     vi.mocked(useIsMobile).mockReturnValue(false);
     render(<OpsControlPage />);
-    expect(screen.getByTestId('orders-filter-toolbar')).toBeDefined();
+    expect(screen.getByTestId('realtime-status-indicator')).toBeDefined();
   });
 
   it('renders OrdersTable', () => {
@@ -120,23 +130,23 @@ describe('OpsControlPage', () => {
     expect(screen.getByTestId('orders-table')).toBeDefined();
   });
 
-  it('opens OrderDetailModal when order is selected', () => {
+  it('opens OrderDetailSheet when order is selected', () => {
     vi.mocked(useIsMobile).mockReturnValue(false);
     render(<OpsControlPage />);
-    expect(screen.queryByTestId('order-detail-modal')).toBeNull();
+    expect(screen.queryByTestId('order-detail-sheet')).toBeNull();
 
     fireEvent.click(screen.getByText('Open Order'));
-    expect(screen.getByTestId('order-detail-modal')).toBeDefined();
+    expect(screen.getByTestId('order-detail-sheet')).toBeDefined();
   });
 
-  it('closes modal when onClose is called', () => {
+  it('closes sheet when onClose is called', () => {
     vi.mocked(useIsMobile).mockReturnValue(false);
     render(<OpsControlPage />);
 
     fireEvent.click(screen.getByText('Open Order'));
-    expect(screen.getByTestId('order-detail-modal')).toBeDefined();
+    expect(screen.getByTestId('order-detail-sheet')).toBeDefined();
 
     fireEvent.click(screen.getByText('Close'));
-    expect(screen.queryByTestId('order-detail-modal')).toBeNull();
+    expect(screen.queryByTestId('order-detail-sheet')).toBeNull();
   });
 });

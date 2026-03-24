@@ -23,8 +23,8 @@ export function ReceptionSummary({
           data-testid="summary-status"
           className={`flex items-center gap-2 p-3 rounded-lg ${
             allReceived
-              ? 'bg-green-50 text-green-700 border border-green-200'
-              : 'bg-amber-50 text-amber-700 border border-amber-200'
+              ? 'bg-status-success-bg text-status-success border border-status-success-border'
+              : 'bg-status-warning-bg text-status-warning border border-status-warning-border'
           }`}
         >
           {allReceived ? (
@@ -45,37 +45,37 @@ export function ReceptionSummary({
         {/* Count cards */}
         <div className="grid grid-cols-3 gap-3">
           {/* Expected */}
-          <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <Package className="h-5 w-5 mx-auto text-gray-500 mb-1" />
-            <p className="text-2xl font-bold text-gray-900" data-testid="expected-count">
+          <div className="text-center p-3 bg-surface-raised rounded-lg">
+            <Package className="h-5 w-5 mx-auto text-text-secondary mb-1" />
+            <p className="text-2xl font-bold text-text" data-testid="expected-count">
               {expectedCount}
             </p>
-            <p className="text-xs text-gray-500">Esperados</p>
+            <p className="text-xs text-text-secondary">Esperados</p>
           </div>
 
           {/* Received */}
-          <div className="text-center p-3 bg-green-50 rounded-lg">
-            <CheckCircle className="h-5 w-5 mx-auto text-green-500 mb-1" />
-            <p className="text-2xl font-bold text-green-700" data-testid="received-count">
+          <div className="text-center p-3 bg-status-success-bg rounded-lg">
+            <CheckCircle className="h-5 w-5 mx-auto text-status-success mb-1" />
+            <p className="text-2xl font-bold text-status-success" data-testid="received-count">
               {receivedCount}
             </p>
-            <p className="text-xs text-green-600">Recibidos</p>
+            <p className="text-xs text-status-success">Recibidos</p>
           </div>
 
           {/* Missing */}
           <div
             className={`text-center p-3 rounded-lg ${
-              missingCount > 0 ? 'bg-red-50' : 'bg-gray-50'
+              missingCount > 0 ? 'bg-status-error-bg' : 'bg-surface-raised'
             }`}
           >
             <AlertTriangle
               className={`h-5 w-5 mx-auto mb-1 ${
-                missingCount > 0 ? 'text-red-500' : 'text-gray-400'
+                missingCount > 0 ? 'text-status-error' : 'text-text-muted'
               }`}
             />
             <p
               className={`text-2xl font-bold ${
-                missingCount > 0 ? 'text-red-700' : 'text-gray-500'
+                missingCount > 0 ? 'text-status-error' : 'text-text-secondary'
               }`}
               data-testid="missing-count"
             >
@@ -83,7 +83,7 @@ export function ReceptionSummary({
             </p>
             <p
               className={`text-xs ${
-                missingCount > 0 ? 'text-red-600' : 'text-gray-500'
+                missingCount > 0 ? 'text-status-error' : 'text-text-secondary'
               }`}
             >
               Faltantes

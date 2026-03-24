@@ -26,14 +26,14 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_COLORS: Record<string, string> = {
   ingresado: 'bg-muted text-foreground',
-  verificado: 'bg-blue-100 text-blue-700',
-  en_bodega: 'bg-cyan-100 text-cyan-700',
-  asignado: 'bg-indigo-100 text-indigo-700',
-  en_carga: 'bg-purple-100 text-purple-700',
-  listo: 'bg-teal-100 text-teal-700',
-  en_ruta: 'bg-amber-100 text-amber-700',
-  entregado: 'bg-emerald-100 text-emerald-700',
-  cancelado: 'bg-red-100 text-red-700',
+  verificado: 'bg-status-info-bg text-status-info',
+  en_bodega: 'bg-accent-muted text-accent',
+  asignado: 'bg-accent-muted text-accent',
+  en_carga: 'bg-accent-muted text-accent',
+  listo: 'bg-status-info-bg text-status-info',
+  en_ruta: 'bg-status-warning-bg text-status-warning',
+  entregado: 'bg-status-success-bg text-status-success',
+  cancelado: 'bg-status-error-bg text-status-error',
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -65,7 +65,7 @@ function ExpandedRow({ row }: { row: OrderDetailRow }) {
             <span className="text-muted-foreground text-xs block">Delta</span>
             <span className={`font-semibold ${
               row.days_delta === null ? 'text-muted-foreground' :
-              row.days_delta <= 0 ? 'text-emerald-600' : 'text-red-600'
+              row.days_delta <= 0 ? 'text-status-success' : 'text-status-error'
             }`}>
               {row.days_delta === null ? '—' :
                row.days_delta === 0 ? 'A tiempo' :

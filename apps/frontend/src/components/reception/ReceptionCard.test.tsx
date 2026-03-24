@@ -49,7 +49,7 @@ describe('ReceptionCard', () => {
         expectedCount={25}
       />
     );
-    expect(screen.getByText('En progreso: 15/25 recibidos')).toBeInTheDocument();
+    expect(screen.getByText('15 / 25 recibidos')).toBeInTheDocument();
   });
 
   it('shows "Pendiente" badge for awaiting reception', () => {

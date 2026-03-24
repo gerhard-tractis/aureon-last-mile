@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { createSPAClient } from '@/lib/supabase/client';
 import ManualOrderForm from '@/components/orders/ManualOrderForm';
+import { PageShell } from '@/components/PageShell';
 
 const ALLOWED_ROLES = ['admin', 'operations_manager'];
 
@@ -42,7 +43,13 @@ export default function NewOrderPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <PageShell
+      title="Nuevo Pedido"
+      breadcrumbs={[
+        { label: 'Dashboard', href: '/app/dashboard' },
+        { label: 'Nuevo Pedido' },
+      ]}
+    >
       <Card>
         <CardHeader>
           <CardTitle>New Order</CardTitle>
@@ -54,6 +61,6 @@ export default function NewOrderPage() {
           <ManualOrderForm />
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

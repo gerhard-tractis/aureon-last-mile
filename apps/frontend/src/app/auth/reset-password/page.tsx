@@ -73,8 +73,8 @@ export default function ResetPasswordPage() {
         return (
             <div className="text-center py-4">
                 <div className="flex justify-center mb-5">
-                    <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center">
-                        <CheckCircle className="h-7 w-7 text-emerald-500" />
+                    <div className="w-14 h-14 rounded-full bg-status-success-bg flex items-center justify-center">
+                        <CheckCircle className="h-7 w-7 text-status-success" />
                     </div>
                 </div>
 
@@ -106,7 +106,7 @@ export default function ResetPasswordPage() {
             </p>
 
             {error && (
-                <div className="mb-6 px-4 py-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                <div className="mb-6 px-4 py-3 text-sm text-[var(--color-status-error)] bg-red-50 border border-red-200 rounded-lg">
                     {error}
                 </div>
             )}
@@ -124,7 +124,7 @@ export default function ResetPasswordPage() {
                         required
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                     />
                 </div>
 
@@ -140,7 +140,7 @@ export default function ResetPasswordPage() {
                         required
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
-                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500/30 transition-colors"
+                        className="block w-full rounded-lg border border-border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30 transition-colors"
                     />
                     <p className="mt-1.5 text-xs text-muted-foreground">
                         Mínimo 6 caracteres
@@ -150,7 +150,7 @@ export default function ResetPasswordPage() {
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full rounded-lg bg-foreground py-2.5 px-4 text-sm font-medium text-background hover:bg-foreground/90 focus:outline-none focus:ring-2 focus:ring-foreground focus:ring-offset-2 disabled:opacity-50 transition-colors"
+                    className="w-full rounded-lg bg-accent py-2.5 px-4 text-sm font-medium text-accent-foreground hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 disabled:opacity-50 transition-opacity"
                 >
                     {loading ? 'Actualizando...' : 'Actualizar contraseña'}
                 </button>

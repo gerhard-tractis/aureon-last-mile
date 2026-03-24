@@ -72,7 +72,7 @@ html.dark {
 
   --color-text:            #f5ecd7;
   --color-text-secondary:  #c8b99a;
-  --color-text-muted:      #5c5040;
+  --color-text-muted:      #9a8e7d;
 
   /* shadcn compatibility */
   --background:            30 24% 7%;    /* #13110d */
@@ -86,7 +86,7 @@ html.dark {
   --secondary:             30 16% 14%;   /* #2a2218 */
   --secondary-foreground:  36 40% 69%;   /* #c8b99a */
   --muted:                 30 16% 14%;
-  --muted-foreground:      30 12% 37%;   /* #5c5040 */
+  --muted-foreground:      30 10% 55%;   /* #9a8e7d */
   --accent:                43 76% 63%;
   --accent-foreground:     30 36% 6%;
   --destructive:           0 63% 55%;
@@ -171,6 +171,24 @@ html.custom {
   --color-status-info:           #3b82f6;
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
+
+  /* ---- SIDEBAR TOKENS — warm charcoal, all modes ------------ */
+  --color-sidebar-bg:          #1c1917;
+  --color-sidebar-text:        #a8a29e;
+  --color-sidebar-text-active: #ca9a04;
+  --color-sidebar-hover:       rgba(255,255,255,0.06);
+  --color-sidebar-section:     #78716c;
+  --color-sidebar-border:      #292524;
+}
+
+/* Dark mode sidebar — deeper warm black to sit below content */
+html.dark {
+  --color-sidebar-bg:          #0c0a08;
+  --color-sidebar-text:        #a8a29e;
+  --color-sidebar-text-active: #e6c15c;
+  --color-sidebar-hover:       rgba(255,255,255,0.06);
+  --color-sidebar-section:     #78716c;
+  --color-sidebar-border:      #1c1917;
 }
 
 /* Dark mode overrides for status backgrounds (semi-transparent) */

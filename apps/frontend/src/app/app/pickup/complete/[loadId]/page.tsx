@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
@@ -11,6 +10,7 @@ import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
+import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 
 export default function CompletionPage() {
   const params = useParams();
@@ -120,56 +120,52 @@ export default function CompletionPage() {
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold text-foreground">
-        Complete Pickup: {loadId}
-      </h1>
+      <PickupStepBreadcrumb current="complete" />
+
+      {/* Gold header */}
+      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
+        <p className="text-xs opacity-80">{loadId}</p>
+        <p className="font-semibold text-base mt-0.5">Complete Pickup</p>
+      </div>
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-500" />
-            <div>
-              <p className="text-xl font-bold">{verifiedCount}</p>
-              <p className="text-xs text-muted-foreground">Verified</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <XCircle className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="text-xl font-bold">{missingPackages.length}</p>
-              <p className="text-xs text-muted-foreground">Missing (noted)</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <Target className="h-5 w-5 text-blue-500" />
-            <div>
-              <p className="text-xl font-bold">{precision}%</p>
-              <p className="text-xs text-muted-foreground">Precision</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 flex items-center gap-2">
-            <Shield className="h-5 w-5 text-purple-500" />
-            <div>
-              <p className="text-xl font-bold">{elapsed}</p>
-              <p className="text-xs text-muted-foreground">Time Elapsed</p>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
+          <CheckCircle className="h-5 w-5 text-status-success shrink-0" />
+          <div>
+            <p className="text-xl font-bold font-mono text-text">{verifiedCount}</p>
+            <p className="text-xs text-text-secondary">Verified</p>
+          </div>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
+          <XCircle className="h-5 w-5 text-status-error shrink-0" />
+          <div>
+            <p className="text-xl font-bold font-mono text-text">{missingPackages.length}</p>
+            <p className="text-xs text-text-secondary">Missing (noted)</p>
+          </div>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
+          <Target className="h-5 w-5 text-status-info shrink-0" />
+          <div>
+            <p className="text-xl font-bold font-mono text-text">{precision}%</p>
+            <p className="text-xs text-text-secondary">Precision</p>
+          </div>
+        </div>
+        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
+          <Shield className="h-5 w-5 text-text-secondary shrink-0" />
+          <div>
+            <p className="text-xl font-bold font-mono text-text">{elapsed}</p>
+            <p className="text-xs text-text-secondary">Elapsed</p>
+          </div>
+        </div>
       </div>
 
       {/* Legal Notice */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-        <p className="text-sm text-amber-800 font-medium">
+      <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3">
+        <p className="text-sm text-text font-medium">
           Custody Transfer Notice
         </p>
-        <p className="text-xs text-amber-700 mt-1">
+        <p className="text-xs text-text-secondary mt-1">
           By signing below, the operator confirms receipt of the verified
           packages. From this moment, the operator assumes legal responsibility
           for the goods.
@@ -178,8 +174,8 @@ export default function CompletionPage() {
 
       {/* Operator Signature (required) */}
       <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">
-          Operator: <strong>{operatorName}</strong>
+        <p className="text-sm text-text-secondary">
+          Operator: <strong className="text-text">{operatorName}</strong>
         </p>
         <SignaturePad
           label="Operator Signature (required)"
@@ -196,7 +192,7 @@ export default function CompletionPage() {
             onChange={(e) => setShowClientSig(e.target.checked)}
             className="rounded"
           />
-          <span className="text-sm text-foreground">Add client signature</span>
+          <span className="text-sm text-text">Add client signature</span>
         </label>
         {showClientSig && (
           <div className="space-y-2 ml-6">
@@ -219,7 +215,7 @@ export default function CompletionPage() {
       <Button
         onClick={handleComplete}
         disabled={!canComplete || isSubmitting}
-        className="w-full bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-50"
+        className="w-full disabled:opacity-50"
         size="lg"
       >
         {isSubmitting ? 'Completing...' : 'Complete & Generate Receipt'}

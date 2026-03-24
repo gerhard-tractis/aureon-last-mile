@@ -15,6 +15,7 @@ import {
   findDuplicates,
   ValidationError,
 } from '@/lib/validation/orderImportValidation';
+import { PageShell } from '@/components/PageShell';
 
 interface ImportState {
   originalFile: File | null;
@@ -164,72 +165,80 @@ export default function ImportOrdersPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Import Orders</CardTitle>
-          <CardDescription>
-            Upload a CSV or Excel file to bulk import orders. The file will be validated before import.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* File Upload */}
-          <FileUploadForm
-            onFileSelected={handleFileSelected}
-            isLoading={isParsing}
-            error={parseError}
-          />
+    <PageShell
+      title="Importar Pedidos"
+      breadcrumbs={[
+        { label: 'Dashboard', href: '/app/dashboard' },
+        { label: 'Importar Pedidos' },
+      ]}
+    >
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Import Orders</CardTitle>
+            <CardDescription>
+              Upload a CSV or Excel file to bulk import orders. The file will be validated before import.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* File Upload */}
+            <FileUploadForm
+              onFileSelected={handleFileSelected}
+              isLoading={isParsing}
+              error={parseError}
+            />
 
-          {/* Validation Results */}
-          {state.parseResult && (
-            <>
-              <ValidationErrorDisplay
-                data={state.parseResult.data}
-                errors={state.errors}
-              />
+            {/* Validation Results */}
+            {state.parseResult && (
+              <>
+                <ValidationErrorDisplay
+                  data={state.parseResult.data}
+                  errors={state.errors}
+                />
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleImport}
-                  disabled={state.validCount === 0 || state.isImporting || state.importComplete}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {state.isImporting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Importing...
-                    </>
-                  ) : (
-                    `Import ${state.validCount} Valid Orders`
-                  )}
-                </button>
-
-                {state.errors.length > 0 && (
+                {/* Action Buttons */}
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={handleExportErrors}
-                    className="inline-flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-muted transition-colors"
+                    onClick={handleImport}
+                    disabled={state.validCount === 0 || state.isImporting || state.importComplete}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-accent text-accent-foreground rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    <Download className="w-4 h-4" />
-                    Export Failed Rows
+                    {state.isImporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      `Import ${state.validCount} Valid Orders`
+                    )}
                   </button>
-                )}
-              </div>
-            </>
-          )}
 
-          {/* Import Complete */}
-          {state.importComplete && (
-            <Alert>
-              <CheckCircle className="h-4 w-4 text-green-500" />
-              <AlertDescription>
-                Imported {state.importedCount} orders successfully.{' '}
-                {state.skippedCount > 0 && `${state.skippedCount} errors skipped.`}
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+                  {state.errors.length > 0 && (
+                    <button
+                      onClick={handleExportErrors}
+                      className="inline-flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg hover:bg-muted transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Export Failed Rows
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* Import Complete */}
+            {state.importComplete && (
+              <Alert>
+                <CheckCircle className="h-4 w-4 text-green-500" />
+                <AlertDescription>
+                  Imported {state.importedCount} orders successfully.{' '}
+                  {state.skippedCount > 0 && `${state.skippedCount} errors skipped.`}
+                </AlertDescription>
+              </Alert>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </PageShell>
   );
 }

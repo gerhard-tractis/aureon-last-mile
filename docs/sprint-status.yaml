@@ -117,3 +117,6 @@ development_status:
   epic-5-retrospective: optional
 
   spec-12-distribution-sectorization: in-progress  # D.0–D.6 implemented: DB migration, sectorization engine, andén UI, dashboard, batch scanning, quick-sort scanning, nav integration. 1489 tests passing.
+  spec-13a-design-foundation: done  # PR #146 merged 2026-03-21. 14 shadcn primitives, sidebar tokens, StatusBadge, EmptyState, PageShell, MetricCard, DataTable, useSidebarPin, SidebarNavItem/UserMenu, AppLayout icon-rail sidebar. 1576 tests passing.
+  spec-13b-dashboard-redesign: done  # Dense command center: HeroSLA gold card, 4 KPI MetricCards, charts with token colors, shadcn Tabs, DataTable for client performance, PageShell layout, semantic tokens throughout. 1542 tests passing.
+  spec-13c-ops-control-audit: done  # PR #149 merged 2026-03-23. Ops Control + Audit Logs redesign with design tokens, DataTable, Sheet, PageShell. 300 tests passing.

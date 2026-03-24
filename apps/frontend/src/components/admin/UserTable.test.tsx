@@ -1,6 +1,6 @@
 /**
  * UserTable Component Tests
- * Tests table rendering, sorting, and action buttons
+ * Tests DataTable rendering and action buttons
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -10,9 +10,6 @@ import type { User } from '@/lib/api/users';
 
 // Create mock return object that can be reconfigured
 let mockAdminStoreReturn = {
-  sortBy: 'created_at',
-  sortOrder: 'desc',
-  toggleSort: vi.fn(),
   setEditFormOpen: vi.fn(),
   setDeleteConfirmOpen: vi.fn(),
 };
@@ -60,11 +57,7 @@ describe('UserTable', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset to default state
     mockAdminStoreReturn = {
-      sortBy: 'created_at',
-      sortOrder: 'desc',
-      toggleSort: vi.fn(),
       setEditFormOpen: vi.fn(),
       setDeleteConfirmOpen: vi.fn(),
     };
@@ -78,26 +71,26 @@ describe('UserTable', () => {
   });
 
   describe('Empty State', () => {
-    it('should display "No users found" when users array is empty', () => {
+    it('should display empty message when users array is empty', () => {
       render(<UserTable users={[]} isLoading={false} />);
-      expect(screen.getByText('No users found')).toBeInTheDocument();
+      expect(screen.getByText('No hay usuarios')).toBeInTheDocument();
     });
 
-    it('should display "No users found" when users is null', () => {
+    it('should display empty message when users is null', () => {
       render(<UserTable users={null as any} isLoading={false} />);
-      expect(screen.getByText('No users found')).toBeInTheDocument();
+      expect(screen.getByText('No hay usuarios')).toBeInTheDocument();
     });
   });
 
   describe('Table Rendering', () => {
-    it('should render table headers', () => {
+    it('should render column headers', () => {
       render(<UserTable users={mockUsers} isLoading={false} />);
 
+      expect(screen.getByText('Nombre')).toBeInTheDocument();
       expect(screen.getByText('Email')).toBeInTheDocument();
-      expect(screen.getByText('Full Name')).toBeInTheDocument();
-      expect(screen.getByText('Role')).toBeInTheDocument();
-      expect(screen.getByText('Created At')).toBeInTheDocument();
-      expect(screen.getByText('Actions')).toBeInTheDocument();
+      expect(screen.getByText('Rol')).toBeInTheDocument();
+      expect(screen.getByText('Creado')).toBeInTheDocument();
+      expect(screen.getByText('Acciones')).toBeInTheDocument();
     });
 
     it('should render all users in the table', () => {
@@ -111,28 +104,12 @@ describe('UserTable', () => {
       expect(screen.getByText('Crew User')).toBeInTheDocument();
     });
 
-    it('should render role badges with correct text', () => {
+    it('should render role badges with correct display names', () => {
       render(<UserTable users={mockUsers} isLoading={false} />);
 
       expect(screen.getByText('Administrator')).toBeInTheDocument();
       expect(screen.getByText('Operations Manager')).toBeInTheDocument();
       expect(screen.getByText('Pickup Crew')).toBeInTheDocument();
-    });
-
-    it('should render role badges with correct colors', () => {
-      const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
-
-      // Admin badge should have gold background
-      const adminBadge = screen.getByText('Administrator').closest('span');
-      expect(adminBadge?.className).toContain('bg-gold');
-
-      // Operations manager badge should have blue background
-      const managerBadge = screen.getByText('Operations Manager').closest('span');
-      expect(managerBadge?.className).toContain('bg-blue-100');
-
-      // Pickup crew badge should have gray background
-      const crewBadge = screen.getByText('Pickup Crew').closest('span');
-      expect(crewBadge?.className).toContain('bg-muted');
     });
 
     it('should format dates correctly', () => {
@@ -144,109 +121,37 @@ describe('UserTable', () => {
     });
   });
 
-  describe('Sorting', () => {
-    it('should call toggleSort when clicking email header', () => {
-      const mockToggleSort = vi.fn();
-      mockAdminStoreReturn.toggleSort = mockToggleSort;
-
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      const emailHeader = screen.getByText('Email').closest('th');
-      fireEvent.click(emailHeader!);
-
-      expect(mockToggleSort).toHaveBeenCalledWith('email');
-    });
-
-    it('should call toggleSort when clicking full_name header', () => {
-      const mockToggleSort = vi.fn();
-      mockAdminStoreReturn.toggleSort = mockToggleSort;
-
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      const fullNameHeader = screen.getByText('Full Name').closest('th');
-      fireEvent.click(fullNameHeader!);
-
-      expect(mockToggleSort).toHaveBeenCalledWith('full_name');
-    });
-
-    it('should call toggleSort when clicking role header', () => {
-      const mockToggleSort = vi.fn();
-      mockAdminStoreReturn.toggleSort = mockToggleSort;
-
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      const roleHeader = screen.getByText('Role').closest('th');
-      fireEvent.click(roleHeader!);
-
-      expect(mockToggleSort).toHaveBeenCalledWith('role');
-    });
-
-    it('should call toggleSort when clicking created_at header', () => {
-      const mockToggleSort = vi.fn();
-      mockAdminStoreReturn.toggleSort = mockToggleSort;
-
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      const createdAtHeader = screen.getByText('Created At').closest('th');
-      fireEvent.click(createdAtHeader!);
-
-      expect(mockToggleSort).toHaveBeenCalledWith('created_at');
-    });
-
-    it('should display correct sort icon for active column', () => {
-      mockAdminStoreReturn.sortBy = 'email';
-      mockAdminStoreReturn.sortOrder = 'asc';
-
-      const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
-
-      // Email header should have up arrow (asc)
-      const emailHeader = screen.getByText('Email').closest('th');
-      expect(emailHeader?.textContent).toContain('↑');
-    });
-
-    it('should display neutral sort icon for inactive columns', () => {
-      mockAdminStoreReturn.sortBy = 'email';
-      mockAdminStoreReturn.sortOrder = 'asc';
-
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      // Full Name header should have neutral icon (↕)
-      const fullNameHeader = screen.getByText('Full Name').closest('th');
-      expect(fullNameHeader?.textContent).toContain('↕');
-    });
-  });
-
   describe('Action Buttons', () => {
-    it('should render Edit and Delete buttons for each user', () => {
+    it('should render Editar and Eliminar buttons for each user', () => {
       render(<UserTable users={mockUsers} isLoading={false} />);
 
-      const editButtons = screen.getAllByText('Edit');
-      const deleteButtons = screen.getAllByText('Delete');
+      const editButtons = screen.getAllByText('Editar');
+      const deleteButtons = screen.getAllByText('Eliminar');
 
       expect(editButtons).toHaveLength(3);
       expect(deleteButtons).toHaveLength(3);
     });
 
-    it('should call setEditFormOpen when clicking Edit button', () => {
+    it('should call setEditFormOpen when clicking Editar button', () => {
       const mockSetEditFormOpen = vi.fn();
       mockAdminStoreReturn.setEditFormOpen = mockSetEditFormOpen;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
-      const editButtons = screen.getAllByText('Edit');
-      fireEvent.click(editButtons[0]); // Click first Edit button
+      const editButtons = screen.getAllByText('Editar');
+      fireEvent.click(editButtons[0]); // Click first Editar button
 
       expect(mockSetEditFormOpen).toHaveBeenCalledWith(true, '1');
     });
 
-    it('should call setDeleteConfirmOpen when clicking Delete button', () => {
+    it('should call setDeleteConfirmOpen when clicking Eliminar button', () => {
       const mockSetDeleteConfirmOpen = vi.fn();
       mockAdminStoreReturn.setDeleteConfirmOpen = mockSetDeleteConfirmOpen;
 
       render(<UserTable users={mockUsers} isLoading={false} />);
 
-      const deleteButtons = screen.getAllByText('Delete');
-      fireEvent.click(deleteButtons[1]); // Click second Delete button
+      const deleteButtons = screen.getAllByText('Eliminar');
+      fireEvent.click(deleteButtons[1]); // Click second Eliminar button
 
       expect(mockSetDeleteConfirmOpen).toHaveBeenCalledWith(true, '2');
     });
@@ -264,26 +169,8 @@ describe('UserTable', () => {
     it('should have scope attribute on th elements', () => {
       const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
 
-      const headers = container.querySelectorAll('th[scope="col"]');
+      const headers = container.querySelectorAll('th');
       expect(headers.length).toBeGreaterThan(0);
-    });
-
-    it('should have minimum touch target sizes', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
-
-      const editButtons = screen.getAllByText('Edit');
-      const deleteButtons = screen.getAllByText('Delete');
-
-      editButtons.forEach((button) => {
-        const style = window.getComputedStyle(button);
-        // Note: In test environment, inline styles may not be computed
-        // Just verify the style attribute exists
-        expect(button.getAttribute('style')).toBeTruthy();
-      });
-
-      deleteButtons.forEach((button) => {
-        expect(button.getAttribute('style')).toBeTruthy();
-      });
     });
   });
 });

@@ -13,13 +13,13 @@ export function getMetricColor(value: number | null, thresholds: ColorThresholds
   if (value === null || isNaN(value)) return 'text-muted-foreground';
   const { green, yellow, direction } = thresholds;
   if (direction === 'higher-better') {
-    if (value >= green) return 'text-[#10b981]';
-    if (value >= yellow) return 'text-[#f59e0b]';
-    return 'text-[#ef4444]';
+    if (value >= green) return 'text-[var(--color-status-success)]';
+    if (value >= yellow) return 'text-[var(--color-status-warning)]';
+    return 'text-[var(--color-status-error)]';
   }
-  if (value <= green) return 'text-[#10b981]';
-  if (value <= yellow) return 'text-[#f59e0b]';
-  return 'text-[#ef4444]';
+  if (value <= green) return 'text-[var(--color-status-success)]';
+  if (value <= yellow) return 'text-[var(--color-status-warning)]';
+  return 'text-[var(--color-status-error)]';
 }
 
 export function getMetricHexColor(value: number | null, thresholds: ColorThresholds): string {
@@ -118,7 +118,7 @@ export default function MetricsCard({
 
       {/* Trend */}
       {trend && (
-        <div className={`text-sm font-medium mb-1 ${trendUp ? 'text-[#10b981]' : 'text-[#ef4444]'}`}>
+        <div className={`text-sm font-medium mb-1 ${trendUp ? 'text-[var(--color-status-success)]' : 'text-[var(--color-status-error)]'}`}>
           {trend}
         </div>
       )}

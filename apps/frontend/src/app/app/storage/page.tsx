@@ -197,8 +197,8 @@ export default function FileManagementPage() {
                         <label
                             className={`w-full flex flex-col items-center px-4 py-6 bg-card rounded-lg shadow-lg tracking-wide border-2 cursor-pointer transition-colors ${
                                 isDragging
-                                    ? 'border-primary-500 border-dashed bg-primary-50'
-                                    : 'border-primary-600 hover:bg-primary-50'
+                                    ? 'border-accent border-dashed bg-accent/5'
+                                    : 'border-accent hover:bg-accent/5'
                             }`}
                             onDragEnter={handleDragEnter}
                             onDragOver={handleDragOver}
@@ -243,14 +243,14 @@ export default function FileManagementPage() {
                                     <div className="flex items-center space-x-2">
                                         <button
                                             onClick={() => handleDownload(file.name)}
-                                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                                            className="p-2 text-accent hover:bg-accent/10 rounded-full transition-colors"
                                             title="Download"
                                         >
                                             <Download className="h-5 w-5"/>
                                         </button>
                                         <button
                                             onClick={() => handleShare(file.name)}
-                                            className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-colors"
+                                            className="p-2 text-[var(--color-status-success)] hover:bg-[var(--color-status-success)]/10 rounded-full transition-colors"
                                             title="Share"
                                         >
                                             <Share2 className="h-5 w-5"/>
@@ -260,7 +260,7 @@ export default function FileManagementPage() {
                                                 setFileToDelete(file.name);
                                                 setShowDeleteDialog(true);
                                             }}
-                                            className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                                            className="p-2 text-[var(--color-status-error)] hover:bg-[var(--color-status-error)]/10 rounded-full transition-colors"
                                             title="Delete"
                                         >
                                             <Trash2 className="h-5 w-5"/>
@@ -292,7 +292,7 @@ export default function FileManagementPage() {
                                 />
                                 <button
                                     onClick={() => copyToClipboard(shareUrl)}
-                                    className="p-2 text-primary-600 hover:bg-primary-50 rounded-full transition-colors relative"
+                                    className="p-2 text-accent hover:bg-accent/10 rounded-full transition-colors relative"
                                 >
                                     <Copy className="h-5 w-5"/>
                                     {showCopiedMessage && (
@@ -317,7 +317,7 @@ export default function FileManagementPage() {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+                                <AlertDialogAction onClick={handleDelete} className="bg-[var(--color-status-error)] hover:opacity-90">
                                     Delete
                                 </AlertDialogAction>
                             </AlertDialogFooter>

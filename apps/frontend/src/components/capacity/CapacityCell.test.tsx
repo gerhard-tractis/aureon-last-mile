@@ -35,7 +35,7 @@ describe('CapacityCell', () => {
     expect(screen.getByText(/93%/)).toBeDefined();
   });
 
-  it('shows green color class for utilization < 80%', () => {
+  it('shows success token class for utilization < 80%', () => {
     const { container } = render(
       <CapacityCell
         date={pastDate}
@@ -46,10 +46,10 @@ describe('CapacityCell', () => {
       />
     );
     const cell = container.firstChild as HTMLElement;
-    expect(cell.className).toMatch(/green/);
+    expect(cell.className).toContain('color-status-success');
   });
 
-  it('shows yellow color class for utilization 80–100%', () => {
+  it('shows warning token class for utilization 80–95%', () => {
     const { container } = render(
       <CapacityCell
         date={pastDate}
@@ -60,10 +60,10 @@ describe('CapacityCell', () => {
       />
     );
     const cell = container.firstChild as HTMLElement;
-    expect(cell.className).toMatch(/yellow/);
+    expect(cell.className).toContain('color-status-warning');
   });
 
-  it('shows orange color class for utilization 100–120%', () => {
+  it('shows error token class for utilization 95–120%', () => {
     const { container } = render(
       <CapacityCell
         date={pastDate}
@@ -74,10 +74,10 @@ describe('CapacityCell', () => {
       />
     );
     const cell = container.firstChild as HTMLElement;
-    expect(cell.className).toMatch(/orange/);
+    expect(cell.className).toContain('color-status-error');
   });
 
-  it('shows red color class for utilization > 120%', () => {
+  it('shows error token class for utilization > 120%', () => {
     const { container } = render(
       <CapacityCell
         date={pastDate}
@@ -88,7 +88,7 @@ describe('CapacityCell', () => {
       />
     );
     const cell = container.firstChild as HTMLElement;
-    expect(cell.className).toMatch(/red/);
+    expect(cell.className).toContain('color-status-error');
   });
 
   it('shows N/A for past date with no capacity', () => {

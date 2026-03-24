@@ -179,7 +179,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
             autoComplete="off"
             className="text-lg font-mono"
           />
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && <p className="text-status-error text-sm">{error}</p>}
         </div>
       )}
 
@@ -189,7 +189,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
             <p className="text-4xl font-bold">{destination.zone_name}</p>
             <p className="text-2xl font-mono text-muted-foreground">{destination.zone_code}</p>
             {destination.flagged && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 text-sm text-yellow-800">
+              <div className="bg-status-warning-bg border border-status-warning-border rounded p-3 text-sm text-status-warning">
                 Comuna sin andén asignado — redirigiendo a Consolidación
               </div>
             )}
@@ -219,7 +219,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
               autoComplete="off"
               className="text-lg font-mono"
             />
-            {error && <p className="text-red-600 text-sm">{error}</p>}
+            {error && <p className="text-status-error text-sm">{error}</p>}
           </div>
         </div>
       )}

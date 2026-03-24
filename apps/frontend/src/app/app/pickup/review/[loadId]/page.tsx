@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DiscrepancyItem } from '@/components/pickup/DiscrepancyItem';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
@@ -14,6 +13,7 @@ import {
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 
 export default function DiscrepancyReviewPage() {
   const params = useParams();
@@ -88,40 +88,38 @@ export default function DiscrepancyReviewPage() {
 
   return (
     <div className="space-y-4 p-4 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold text-foreground">
-        Discrepancy Review: {loadId}
-      </h1>
+      <PickupStepBreadcrumb current="review" />
 
-      {/* Summary Cards */}
+      {/* Gold header */}
+      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
+        <p className="text-xs opacity-80">{loadId}</p>
+        <p className="font-semibold text-base mt-0.5">Review</p>
+      </div>
+
+      {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <Card>
-          <CardContent className="p-3 text-center">
-            <CheckCircle className="h-5 w-5 text-green-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold">{verifiedCount}</p>
-            <p className="text-xs text-muted-foreground">Verified</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <XCircle className="h-5 w-5 text-red-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold">{missingPackages.length}</p>
-            <p className="text-xs text-muted-foreground">Missing</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3 text-center">
-            <AlertTriangle className="h-5 w-5 text-yellow-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold">{notFoundScans.length}</p>
-            <p className="text-xs text-muted-foreground">Not in Manifest</p>
-          </CardContent>
-        </Card>
+        <div className="bg-surface border border-border rounded-lg p-3 text-center">
+          <CheckCircle className="h-5 w-5 text-status-success mx-auto mb-1" />
+          <p className="text-2xl font-bold font-mono text-text">{verifiedCount}</p>
+          <p className="text-xs text-text-secondary">Verified</p>
+        </div>
+        <div className="bg-surface border border-status-error-border rounded-lg p-3 text-center">
+          <XCircle className="h-5 w-5 text-status-error mx-auto mb-1" />
+          <p className="text-2xl font-bold font-mono text-text">{missingPackages.length}</p>
+          <p className="text-xs text-text-secondary">Missing</p>
+        </div>
+        <div className="bg-surface border border-status-warning-border rounded-lg p-3 text-center">
+          <AlertTriangle className="h-5 w-5 text-status-warning mx-auto mb-1" />
+          <p className="text-2xl font-bold font-mono text-text">{notFoundScans.length}</p>
+          <p className="text-xs text-text-secondary">Not in Manifest</p>
+        </div>
       </div>
 
       {/* Missing Packages — notes required */}
       {missingPackages.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-foreground">
-            Missing Packages — notes required ({missingPackages.length})
+          <h2 className="text-sm font-semibold text-text">
+            Missing — notes required ({missingPackages.length})
           </h2>
           {missingPackages.map((pkg) => (
             <DiscrepancyItem
@@ -139,43 +137,39 @@ export default function DiscrepancyReviewPage() {
       {/* Not in Manifest scans — informational */}
       {notFoundScans.length > 0 && (
         <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-sm font-semibold text-text">
             Not in Manifest ({notFoundScans.length})
           </h2>
           {notFoundScans.map((scan) => (
             <div
               key={scan.id}
-              className="flex items-center gap-2 p-2 bg-yellow-50 rounded-md"
+              className="flex items-center gap-2 p-2 bg-status-warning-bg border border-status-warning-border rounded-lg"
             >
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              <span className="font-mono text-sm">{scan.barcode_scanned}</span>
+              <AlertTriangle className="h-4 w-4 text-status-warning" />
+              <span className="font-mono text-sm text-text">{scan.barcode_scanned}</span>
             </div>
           ))}
         </div>
       )}
 
       {/* Actions */}
-      <div className="flex gap-3 pt-4">
+      <div className="flex gap-3 pt-2">
         <Button
           variant="outline"
           onClick={() =>
-            router.push(
-              `/app/pickup/scan/${encodeURIComponent(loadId)}`
-            )
+            router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`)
           }
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Scanning
+          Back
         </Button>
         <Button
           onClick={() =>
-            router.push(
-              `/app/pickup/complete/${encodeURIComponent(loadId)}`
-            )
+            router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`)
           }
           disabled={!allNotesComplete}
-          className="flex-1 bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-50"
+          className="flex-1 disabled:opacity-50"
         >
           Proceed to Sign
         </Button>

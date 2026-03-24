@@ -4,14 +4,11 @@ import { usePipelineCounts } from '@/hooks/usePipelineCounts';
 import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
 import type { PipelineStageCount } from '@/hooks/usePipelineCounts';
-import { RealtimeStatusIndicator } from './RealtimeStatusIndicator';
 import { PipelineCard } from './PipelineCard';
 
 interface PipelineOverviewProps {
   operatorId: string;
   date?: string;
-  lastFetchedAt?: Date | null;
-  realtimeStatus: 'connected' | 'disconnected';
 }
 
 const EMPTY_STAGE_COUNTS: Omit<PipelineStageCount, 'status'> = {
@@ -24,13 +21,11 @@ const EMPTY_STAGE_COUNTS: Omit<PipelineStageCount, 'status'> = {
 export function PipelineOverview({
   operatorId,
   date,
-  lastFetchedAt,
-  realtimeStatus,
 }: PipelineOverviewProps) {
   const { data, isLoading, isError } = usePipelineCounts(operatorId, date);
   const { stageFilter, setStageFilter } = useOpsControlFilterStore();
 
-  // Build full 8-stage list, filling missing stages with zeros
+  // Build full stage list, filling missing stages with zeros
   const stages: PipelineStageCount[] = PIPELINE_STAGES.map((stageConfig) => {
     const found = data?.find((d) => d.status === stageConfig.status);
     return found ?? { status: stageConfig.status, ...EMPTY_STAGE_COUNTS };
@@ -45,35 +40,28 @@ export function PipelineOverview({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-end">
-        <RealtimeStatusIndicator
-          status={realtimeStatus}
-          lastFetchedAt={lastFetchedAt}
-        />
-      </div>
-
+    <div>
       {isError && (
-        <div className="text-sm text-red-500 py-2">Error al cargar etapas</div>
+        <div className="text-sm text-[var(--color-status-error)] py-2">Error al cargar etapas</div>
       )}
 
       {isLoading ? (
         <div
           data-testid="pipeline-grid"
-          className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-4"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2"
         >
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
               data-testid="pipeline-skeleton"
-              className="h-24 rounded-lg border-2 border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800 animate-pulse"
+              className="h-24 rounded-md border border-border bg-surface animate-pulse"
             />
           ))}
         </div>
       ) : (
         <div
           data-testid="pipeline-grid"
-          className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-4"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2"
         >
           {stages.map((stage) => (
             <PipelineCard

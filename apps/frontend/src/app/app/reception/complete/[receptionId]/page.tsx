@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ReceptionSummary } from '@/components/reception/ReceptionSummary';
@@ -65,7 +64,7 @@ export default function ReceptionCompletePage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
       </div>
     );
   }
@@ -73,14 +72,14 @@ export default function ReceptionCompletePage() {
   if (isCompleted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] p-4 space-y-4">
-        <CheckCircle className="h-16 w-16 text-green-500" />
-        <h2 className="text-xl font-bold text-gray-900">
+        <CheckCircle className="h-16 w-16 text-status-success" />
+        <h2 className="text-xl font-bold text-text">
           Recepcion completada
         </h2>
-        <p className="text-gray-500 text-center">
+        <p className="text-text-secondary text-center">
           {retailerName} — {externalLoadId}
         </p>
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-text-muted">
           Redirigiendo...
         </p>
       </div>
@@ -93,16 +92,16 @@ export default function ReceptionCompletePage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => router.back()}
-          className="p-1 hover:bg-gray-100 rounded"
+          className="p-1 hover:bg-surface-raised rounded-md transition-colors"
           aria-label="Volver"
         >
-          <ArrowLeft className="h-5 w-5" />
+          <ArrowLeft className="h-5 w-5 text-text-secondary" />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-gray-900">
+          <h1 className="text-xl font-bold text-text">
             Confirmar Recepcion
           </h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-text-secondary">
             {retailerName} — {externalLoadId}
           </p>
         </div>
@@ -116,33 +115,29 @@ export default function ReceptionCompletePage() {
 
       {/* Discrepancy notes (only when missing packages) */}
       {hasMissing && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-red-700">
-              Reporte de discrepancia
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-gray-600 mb-2">
-              Se detectaron {missingCount} paquetes faltantes. Registre las
-              observaciones sobre la perdida en transito.
-            </p>
-            <Textarea
-              placeholder="Describa los paquetes faltantes y posibles causas..."
-              value={discrepancyNotes}
-              onChange={(e) => setDiscrepancyNotes(e.target.value)}
-              rows={3}
-              data-testid="discrepancy-notes"
-            />
-          </CardContent>
-        </Card>
+        <div className="bg-status-error-bg border border-status-error-border rounded-lg p-4 space-y-2">
+          <p className="text-sm font-semibold text-text">
+            Reporte de discrepancia
+          </p>
+          <p className="text-sm text-text-secondary">
+            Se detectaron {missingCount} paquetes faltantes. Registre las
+            observaciones sobre la perdida en transito.
+          </p>
+          <Textarea
+            placeholder="Describa los paquetes faltantes y posibles causas..."
+            value={discrepancyNotes}
+            onChange={(e) => setDiscrepancyNotes(e.target.value)}
+            rows={3}
+            data-testid="discrepancy-notes"
+          />
+        </div>
       )}
 
       {/* Confirm button */}
       <Button
         onClick={handleConfirm}
         disabled={completeMutation.isPending}
-        className="w-full bg-primary-600 hover:bg-primary-700 text-white"
+        className="w-full"
         size="lg"
       >
         {completeMutation.isPending ? (

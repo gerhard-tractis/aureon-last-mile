@@ -58,7 +58,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
@@ -78,7 +77,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
@@ -99,7 +97,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
@@ -111,44 +108,12 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
       // Only 3 stages were returned; the other 5 should have count 0
       const counts = screen.getAllByTestId('stage-count');
       expect(counts).toHaveLength(8);
-    });
-
-    it('renders RealtimeStatusIndicator', () => {
-      render(
-        <PipelineOverview
-          operatorId="op-1"
-          realtimeStatus="connected"
-        />,
-      );
-
-      expect(screen.getByTestId('realtime-status-indicator')).toBeTruthy();
-    });
-
-    it('shows En vivo for connected status', () => {
-      render(
-        <PipelineOverview
-          operatorId="op-1"
-          realtimeStatus="connected"
-        />,
-      );
-      expect(screen.getByText('En vivo')).toBeTruthy();
-    });
-
-    it('shows Offline for disconnected status', () => {
-      render(
-        <PipelineOverview
-          operatorId="op-1"
-          realtimeStatus="disconnected"
-        />,
-      );
-      expect(screen.getByText('Offline')).toBeTruthy();
     });
   });
 
@@ -172,7 +137,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
@@ -193,7 +157,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 
@@ -215,7 +178,6 @@ describe('PipelineOverview', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
-          realtimeStatus="connected"
         />,
       );
 

@@ -14,9 +14,9 @@ type SortDir = 'asc' | 'desc';
 
 function getOtifCellColor(pct: number | null): string {
   if (pct === null) return 'text-muted-foreground';
-  if (pct >= 95) return 'text-emerald-600 font-semibold';
-  if (pct >= 85) return 'text-amber-600 font-semibold';
-  return 'text-red-600 font-semibold';
+  if (pct >= 95) return 'text-status-success font-semibold';
+  if (pct >= 85) return 'text-status-warning font-semibold';
+  return 'text-status-error font-semibold';
 }
 
 export default function OtifByRetailerTable({ operatorId, startDate, endDate }: OtifByRetailerTableProps) {

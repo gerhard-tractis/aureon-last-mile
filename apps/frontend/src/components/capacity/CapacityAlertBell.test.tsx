@@ -24,7 +24,16 @@ describe('CapacityAlertBell', () => {
     mockAlerts.mockReturnValue({ data: [], isLoading: false });
   });
 
-  it('renders a bell button', () => {
+  it('renders nothing when there are no alerts', () => {
+    const { container } = render(<CapacityAlertBell operatorId="op-1" />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders a bell button when alerts exist', () => {
+    mockAlerts.mockReturnValue({
+      data: [{ id: '1', utilization_pct: 85, alert_date: '2026-03-01', client_id: 'c1', dismissed_at: null }],
+      isLoading: false,
+    });
     render(<CapacityAlertBell operatorId="op-1" />);
     expect(screen.getByRole('button', { name: /alertas de capacidad/i })).toBeDefined();
   });
@@ -75,18 +84,10 @@ describe('CapacityAlertBell', () => {
     mockAlerts.mockReturnValue({ data: [{ id: '1' }], isLoading: false });
     render(<CapacityAlertBell operatorId="op-1" />);
     fireEvent.click(screen.getByRole('button', { name: /alertas de capacidad/i }));
-    expect(screen.getByTestId('alert-panel')).toBeDefined();
-    fireEvent.click(screen.getByRole('button', { name: /close/i }));
-    expect(screen.queryByTestId('alert-panel')).toBeNull();
-  });
-
-  it('toggles panel closed when bell clicked again', () => {
-    mockAlerts.mockReturnValue({ data: [{ id: '1' }], isLoading: false });
-    render(<CapacityAlertBell operatorId="op-1" />);
-    const btn = screen.getByRole('button', { name: /alertas de capacidad/i });
-    fireEvent.click(btn);
-    expect(screen.getByTestId('alert-panel')).toBeDefined();
-    fireEvent.click(btn);
+    const panel = screen.getByTestId('alert-panel');
+    expect(panel).toBeDefined();
+    // Click the mocked panel's close button (not the Sheet's built-in close button)
+    fireEvent.click(panel.querySelector('button')!);
     expect(screen.queryByTestId('alert-panel')).toBeNull();
   });
 

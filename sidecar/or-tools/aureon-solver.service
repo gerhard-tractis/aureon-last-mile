@@ -5,8 +5,8 @@ After=network.target
 [Service]
 Type=simple
 User=aureon
-WorkingDirectory=/home/aureon/sidecar/or-tools
-ExecStart=/home/aureon/.venv/bin/uvicorn solver:app --host 127.0.0.1 --port 8090 --workers 2
+WorkingDirectory=/home/aureon/sidecar/sidecar/or-tools
+ExecStart=/home/aureon/.venv/bin/python -m uvicorn solver:app --host 127.0.0.1 --port 8090 --workers 2
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

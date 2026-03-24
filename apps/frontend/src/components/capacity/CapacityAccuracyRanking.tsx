@@ -87,10 +87,10 @@ export default function CapacityAccuracyRanking({
                 <span
                   className={
                     r.accuracyPct >= 90
-                      ? 'text-green-600 font-semibold'
+                      ? 'text-[var(--color-status-success)] font-semibold'
                       : r.accuracyPct >= 70
-                        ? 'text-yellow-600 font-semibold'
-                        : 'text-red-600 font-semibold'
+                        ? 'text-[var(--color-status-warning)] font-semibold'
+                        : 'text-[var(--color-status-error)] font-semibold'
                   }
                 >
                   {r.accuracyPct}%

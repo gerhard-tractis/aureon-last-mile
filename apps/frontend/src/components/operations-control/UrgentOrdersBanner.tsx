@@ -50,7 +50,7 @@ export function UrgentOrdersBanner({
   return (
     <div
       data-testid="urgent-banner"
-      className="flex items-center justify-between gap-3 px-4 py-3 bg-red-600 text-white text-sm"
+      className="flex items-center justify-between gap-3 px-4 py-3 bg-[var(--color-status-error-bg)] border border-[var(--color-status-error-border)] text-[var(--color-status-error)] rounded-md text-sm"
       role="alert"
     >
       <span className="font-medium">
@@ -60,7 +60,7 @@ export function UrgentOrdersBanner({
       <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={onViewUrgent}
-          className="px-3 py-1 text-xs font-semibold bg-white text-red-700 rounded hover:bg-red-50"
+          className="px-3 py-1 text-xs font-semibold bg-[var(--color-status-error)] text-white rounded hover:opacity-90"
         >
           Ver urgentes
         </button>
@@ -68,7 +68,7 @@ export function UrgentOrdersBanner({
         <button
           data-testid="urgent-banner-dismiss"
           onClick={() => setDismissedTotal(totalCount)}
-          className="text-white hover:text-red-100 font-bold text-lg leading-none"
+          className="text-[var(--color-status-error)] hover:opacity-70 font-bold text-lg leading-none"
           aria-label="Cerrar alerta"
         >
           ×

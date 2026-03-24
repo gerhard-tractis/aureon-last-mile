@@ -82,7 +82,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 onClick={() => setStatusFilter(value)}
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   statusFilter === value
-                    ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
+                    ? 'bg-accent border-accent font-medium'
                     : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
@@ -105,7 +105,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 onClick={() => setDatePreset(value)}
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   datePreset === value
-                    ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
+                    ? 'bg-accent border-accent font-medium'
                     : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
@@ -128,7 +128,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
                 onClick={() => setStageFilter(status)}
                 className={`px-3 py-1 rounded-full text-sm border transition-colors ${
                   stageFilter === status
-                    ? 'bg-[#e6c15c] border-[#e6c15c] font-medium'
+                    ? 'bg-accent border-accent font-medium'
                     : 'bg-muted border-border text-muted-foreground'
                 }`}
               >
@@ -151,7 +151,7 @@ export function MobileFilterModal({ open, onClose }: MobileFilterModalProps) {
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 py-2 rounded-lg bg-[#e6c15c] text-white text-sm font-medium"
+          className="flex-1 py-2 rounded-lg bg-accent text-accent-foreground text-sm font-medium"
         >
           Aplicar
         </button>

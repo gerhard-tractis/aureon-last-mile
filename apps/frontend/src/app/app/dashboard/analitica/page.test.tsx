@@ -8,6 +8,7 @@ let searchParams = new URLSearchParams();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
   useSearchParams: () => searchParams,
+  usePathname: () => '/app/dashboard/analitica',
 }));
 
 vi.mock('@/hooks/useDashboardMetrics', () => ({

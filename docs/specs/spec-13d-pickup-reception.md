@@ -1,6 +1,6 @@
 # Spec-13d: Pickup & Reception Redesign (Mobile-First)
 
-> **Status:** brainstorming
+> **Status:** in progress
 > **Parent:** spec-13 (design language)
 > **Depends on:** spec-13a (foundation components)
 > **Phase:** 4 of 5

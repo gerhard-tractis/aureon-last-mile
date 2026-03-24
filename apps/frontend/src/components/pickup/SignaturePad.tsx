@@ -86,7 +86,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
           <button
             type="button"
             onClick={clear}
-            className="text-xs text-red-500 hover:text-red-700"
+            className="text-xs text-status-error hover:opacity-80"
           >
             Clear
           </button>
@@ -94,7 +94,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
       </div>
       <canvas
         ref={canvasRef}
-        className="w-full h-32 border-2 border-dashed border-border rounded-lg cursor-crosshair touch-none bg-card"
+        className="w-full h-40 border-2 border-border rounded-lg cursor-crosshair touch-none bg-surface"
         onMouseDown={startDrawing}
         onMouseMove={draw}
         onMouseUp={stopDrawing}

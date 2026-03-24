@@ -73,7 +73,7 @@ function CreateTaskDialog({ onTaskCreated }: CreateTaskDialogProps) {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button className="bg-primary-600 text-white hover:bg-primary-700">
+                <Button className="bg-accent text-accent-foreground hover:opacity-90">
                     <Plus className="h-4 w-4 mr-2" />
                     Add Task
                 </Button>
@@ -112,14 +112,14 @@ function CreateTaskDialog({ onTaskCreated }: CreateTaskDialogProps) {
                                 type="checkbox"
                                 checked={isUrgent}
                                 onChange={(e) => setIsUrgent(e.target.checked)}
-                                className="rounded border-border focus:ring-primary-500"
+                                className="rounded border-border focus:ring-accent"
                             />
                             <span className="text-sm">Mark as urgent</span>
                         </label>
                         <Button
                             type="submit"
                             disabled={loading}
-                            className="bg-primary-600 text-white hover:bg-primary-700"
+                            className="bg-accent text-accent-foreground hover:opacity-90"
                         >
                             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Create Task
@@ -195,7 +195,7 @@ export default function TaskManagementPage() {
     if (initialLoading) {
         return (
             <div className="flex justify-center items-center min-h-[200px]">
-                <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                <Loader2 className="h-8 w-8 animate-spin text-accent" />
             </div>
         );
     }
@@ -223,7 +223,7 @@ export default function TaskManagementPage() {
                             variant={filter === null ? "default" : "secondary"}
                             onClick={() => setFilter(null)}
                             size="sm"
-                            className={filter === null ? "bg-primary-600 text-white hover:bg-primary-700" : ""}
+                            className={filter === null ? "bg-accent text-accent-foreground hover:opacity-90" : ""}
                         >
                             All Tasks
                         </Button>
@@ -231,7 +231,7 @@ export default function TaskManagementPage() {
                             variant={filter === false ? "default" : "secondary"}
                             onClick={() => setFilter(false)}
                             size="sm"
-                            className={filter === false ? "bg-primary-600 text-white hover:bg-primary-700" : ""}
+                            className={filter === false ? "bg-accent text-accent-foreground hover:opacity-90" : ""}
                         >
                             Active
                         </Button>
@@ -239,7 +239,7 @@ export default function TaskManagementPage() {
                             variant={filter === true ? "default" : "secondary"}
                             onClick={() => setFilter(true)}
                             size="sm"
-                            className={filter === true ? "bg-primary-600 text-white hover:bg-primary-700" : ""}
+                            className={filter === true ? "bg-accent text-accent-foreground hover:opacity-90" : ""}
                         >
                             Completed
                         </Button>
@@ -248,7 +248,7 @@ export default function TaskManagementPage() {
                     <div className="space-y-3 relative">
                         {loading && (
                             <div className="absolute inset-0 bg-background/50 flex items-center justify-center backdrop-blur-sm">
-                                <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+                                <Loader2 className="h-8 w-8 animate-spin text-accent" />
                             </div>
                         )}
 
@@ -263,7 +263,7 @@ export default function TaskManagementPage() {
                                     className={`p-4 border rounded-lg transition-colors ${
                                         task.done ? 'bg-muted' : 'bg-card'
                                     } ${
-                                        task.urgent && !task.done ? 'border-red-200' : 'border-border'
+                                        task.urgent && !task.done ? 'border-[var(--color-status-error)]/30' : 'border-border'
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-4">
@@ -279,7 +279,7 @@ export default function TaskManagementPage() {
                                                     Created: {formatDate(task.created_at)}
                                                 </span>
                                                 {task.urgent && !task.done && (
-                                                    <span className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded-full">
+                                                    <span className="px-2 py-0.5 text-xs bg-[var(--color-status-error)]/10 text-[var(--color-status-error)] rounded-full">
                                                         Urgent
                                                     </span>
                                                 )}
@@ -291,7 +291,7 @@ export default function TaskManagementPage() {
                                                     onClick={() => handleMarkAsDone(task.id)}
                                                     variant="ghost"
                                                     size="icon"
-                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                    className="text-[var(--color-status-success)] hover:text-[var(--color-status-success)] hover:bg-[var(--color-status-success)]/10"
                                                 >
                                                     <CheckCircle className="h-5 w-5" />
                                                 </Button>

@@ -4,8 +4,34 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { OrdersTable } from './OrdersTable';
+import { OrdersTable, computePriority, applyStatusFilter, applySearch } from './OrdersTable';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
+
+// --- Mock DataTable (renders a simple table from columns/data) ---
+vi.mock('@/components/data-table/DataTable', () => ({
+  DataTable: vi.fn(({ columns, data, isLoading, onRowClick, emptyMessage }: any) => {
+    if (isLoading) return <div data-testid="orders-table-loading">Loading...</div>;
+    if (data.length === 0) return <div data-testid="orders-table-empty">{emptyMessage}</div>;
+    return (
+      <table data-testid="orders-data-table">
+        <tbody>
+          {data.map((row: any) => (
+            <tr key={row.id} onClick={() => onRowClick?.(row)} data-testid={`row-${row.id}`}>
+              <td>{row.order_number}</td>
+              <td>{row.customer_name}</td>
+              <td>{row.comuna}</td>
+              <td>{row.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }),
+}));
+
+vi.mock('@/components/StatusBadge', () => ({
+  StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
+}));
 
 // --- Mock hooks ---
 vi.mock('@/hooks/useOperationsOrders', () => ({
@@ -16,6 +42,7 @@ vi.mock('@/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(() => ({
     search: '',
     datePreset: 'today',
+    dateRange: null,
     statusFilter: 'all',
     stageFilter: null,
     setSearch: vi.fn(),
@@ -65,6 +92,7 @@ function makeOrders(count: number): OperationsOrder[] {
 const defaultStoreState = {
   search: '',
   datePreset: 'today' as const,
+  dateRange: null,
   statusFilter: 'all' as const,
   stageFilter: null,
   setSearch: vi.fn(),
@@ -147,135 +175,10 @@ describe('OrdersTable', () => {
     });
   });
 
-  describe('"Cargar más" button', () => {
-    it('shows "Cargar más" when more than 25 orders are present', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: makeOrders(30),
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.getByTestId('load-more-btn')).toBeTruthy();
-    });
-
-    it('does not show "Cargar más" when 25 or fewer orders', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: makeOrders(25),
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.queryByTestId('load-more-btn')).toBeNull();
-    });
-
-    it('shows more rows after clicking "Cargar más"', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: makeOrders(30),
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      // Initially only 25 rows shown (ORD-026 not visible)
-      expect(screen.queryByText('ORD-026')).toBeNull();
-      fireEvent.click(screen.getByTestId('load-more-btn'));
-      // After load more, ORD-026 should be visible
-      expect(screen.getByText('ORD-026')).toBeTruthy();
-    });
-  });
-
-  describe('Client-side search filter', () => {
-    it('filters orders by order_number', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: [
-          makeOrder({ id: '1', order_number: 'ORD-001', customer_name: 'Alpha' }),
-          makeOrder({ id: '2', order_number: 'ORD-002', customer_name: 'Beta' }),
-        ],
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      vi.mocked(useOpsControlFilterStore).mockReturnValue({
-        ...defaultStoreState,
-        search: 'ORD-001',
-      });
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.getByText('ORD-001')).toBeTruthy();
-      expect(screen.queryByText('ORD-002')).toBeNull();
-    });
-
-    it('filters orders by customer_name', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: [
-          makeOrder({ id: '1', order_number: 'ORD-001', customer_name: 'Alpha', retailer_name: null }),
-          makeOrder({ id: '2', order_number: 'ORD-002', customer_name: 'Beta', retailer_name: null }),
-        ],
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      vi.mocked(useOpsControlFilterStore).mockReturnValue({
-        ...defaultStoreState,
-        search: 'beta',
-      });
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.queryByText('ORD-001')).toBeNull();
-      expect(screen.getByText('ORD-002')).toBeTruthy();
-    });
-
-    it('filters orders by retailer_name', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: [
-          makeOrder({ id: '1', order_number: 'ORD-001', retailer_name: 'RetailerX', customer_name: 'Alpha' }),
-          makeOrder({ id: '2', order_number: 'ORD-002', retailer_name: 'RetailerY', customer_name: 'Beta' }),
-        ],
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      vi.mocked(useOpsControlFilterStore).mockReturnValue({
-        ...defaultStoreState,
-        search: 'retailerx',
-      });
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.getByText('ORD-001')).toBeTruthy();
-      expect(screen.queryByText('ORD-002')).toBeNull();
-    });
-
-    it('filters orders by comuna', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: [
-          makeOrder({ id: '1', order_number: 'ORD-001', customer_name: 'Alpha', comuna: 'Providencia' }),
-          makeOrder({ id: '2', order_number: 'ORD-002', customer_name: 'Beta', comuna: 'Las Condes' }),
-        ],
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      vi.mocked(useOpsControlFilterStore).mockReturnValue({
-        ...defaultStoreState,
-        search: 'las condes',
-      });
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.queryByText('ORD-001')).toBeNull();
-      expect(screen.getByText('ORD-002')).toBeTruthy();
-    });
-
-    it('shows empty state when search matches nothing', () => {
-      vi.mocked(useOperationsOrders).mockReturnValue({
-        data: [makeOrder({ order_number: 'ORD-001', customer_name: 'Alpha' })],
-        isLoading: false,
-        isError: false,
-      } as unknown as ReturnType<typeof useOperationsOrders>);
-      vi.mocked(useOpsControlFilterStore).mockReturnValue({
-        ...defaultStoreState,
-        search: 'xyz-no-match',
-      });
-      render(<OrdersTable operatorId="op-1" onOpenDetail={vi.fn()} />);
-      expect(screen.getByTestId('orders-table-empty')).toBeTruthy();
-    });
-  });
-
   describe('Client-side status filter', () => {
     it('shows all orders when statusFilter is "all"', () => {
       vi.mocked(useOperationsOrders).mockReturnValue({
         data: [
-          // no window_end → priority ok
           makeOrder({ id: '1', order_number: 'ORD-001', delivery_window_end: null }),
         ],
         isLoading: false,
@@ -290,7 +193,7 @@ describe('OrdersTable', () => {
     });
 
     it('filters by priority "ok" — shows orders with no window_end (ok) and hides late', () => {
-      const pastEnd = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago → late
+      const pastEnd = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago -> late
       vi.mocked(useOperationsOrders).mockReturnValue({
         data: [
           makeOrder({ id: '1', order_number: 'ORD-OK', delivery_window_end: null }),
@@ -309,7 +212,7 @@ describe('OrdersTable', () => {
     });
 
     it('filters by priority "late" — shows only late orders', () => {
-      const pastEnd = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago → late
+      const pastEnd = new Date(Date.now() - 3600000).toISOString(); // 1 hour ago -> late
       vi.mocked(useOperationsOrders).mockReturnValue({
         data: [
           makeOrder({ id: '1', order_number: 'ORD-OK', delivery_window_end: null }),
@@ -329,7 +232,7 @@ describe('OrdersTable', () => {
   });
 
   describe('onOpenDetail integration', () => {
-    it('calls onOpenDetail with the correct order id when "Ver" is clicked', () => {
+    it('calls onOpenDetail with the correct order id when row is clicked', () => {
       const onOpenDetail = vi.fn();
       vi.mocked(useOperationsOrders).mockReturnValue({
         data: [makeOrder({ id: 'order-abc', order_number: 'ORD-ABC' })],
@@ -337,8 +240,93 @@ describe('OrdersTable', () => {
         isError: false,
       } as unknown as ReturnType<typeof useOperationsOrders>);
       render(<OrdersTable operatorId="op-1" onOpenDetail={onOpenDetail} />);
-      fireEvent.click(screen.getByText('Ver'));
+      fireEvent.click(screen.getByTestId('row-order-abc'));
       expect(onOpenDetail).toHaveBeenCalledWith('order-abc');
+    });
+  });
+
+  describe('Pure helper functions', () => {
+    describe('computePriority', () => {
+      it('returns "ok" when delivery_window_end is null', () => {
+        expect(computePriority(makeOrder({ delivery_window_end: null }))).toBe('ok');
+      });
+
+      it('returns "late" when delivery_window_end is in the past', () => {
+        const pastEnd = new Date(Date.now() - 3600000).toISOString();
+        expect(computePriority(makeOrder({ delivery_window_end: pastEnd }))).toBe('late');
+      });
+
+      it('returns "urgent" when less than 30 min remain', () => {
+        const soonEnd = new Date(Date.now() + 15 * 60000).toISOString();
+        expect(computePriority(makeOrder({ delivery_window_end: soonEnd }))).toBe('urgent');
+      });
+
+      it('returns "alert" when between 30 and 90 min remain', () => {
+        const medEnd = new Date(Date.now() + 60 * 60000).toISOString();
+        expect(computePriority(makeOrder({ delivery_window_end: medEnd }))).toBe('alert');
+      });
+
+      it('returns "ok" when more than 90 min remain', () => {
+        const farEnd = new Date(Date.now() + 120 * 60000).toISOString();
+        expect(computePriority(makeOrder({ delivery_window_end: farEnd }))).toBe('ok');
+      });
+    });
+
+    describe('applyStatusFilter', () => {
+      it('returns all orders when filter is "all"', () => {
+        const orders = [makeOrder({ id: '1' }), makeOrder({ id: '2' })];
+        expect(applyStatusFilter(orders, 'all')).toHaveLength(2);
+      });
+
+      it('filters by computed priority', () => {
+        const pastEnd = new Date(Date.now() - 3600000).toISOString();
+        const orders = [
+          makeOrder({ id: '1', delivery_window_end: null }),
+          makeOrder({ id: '2', delivery_window_end: pastEnd }),
+        ];
+        const result = applyStatusFilter(orders, 'late');
+        expect(result).toHaveLength(1);
+        expect(result[0].id).toBe('2');
+      });
+    });
+
+    describe('applySearch', () => {
+      it('returns all orders when search is empty', () => {
+        const orders = [makeOrder({ id: '1' }), makeOrder({ id: '2' })];
+        expect(applySearch(orders, '')).toHaveLength(2);
+      });
+
+      it('filters by order_number', () => {
+        const orders = [
+          makeOrder({ id: '1', order_number: 'ORD-001' }),
+          makeOrder({ id: '2', order_number: 'ORD-002' }),
+        ];
+        expect(applySearch(orders, 'ORD-001')).toHaveLength(1);
+      });
+
+      it('filters by customer_name (case-insensitive)', () => {
+        const orders = [
+          makeOrder({ id: '1', customer_name: 'Alpha' }),
+          makeOrder({ id: '2', customer_name: 'Beta' }),
+        ];
+        expect(applySearch(orders, 'beta')).toHaveLength(1);
+      });
+
+      it('filters by retailer_name', () => {
+        const orders = [
+          makeOrder({ id: '1', retailer_name: 'RetailerX' }),
+          makeOrder({ id: '2', retailer_name: 'RetailerY' }),
+        ];
+        expect(applySearch(orders, 'retailerx')).toHaveLength(1);
+      });
+
+      it('filters by comuna', () => {
+        const orders = [
+          makeOrder({ id: '1', comuna: 'Providencia' }),
+          makeOrder({ id: '2', comuna: 'Las Condes' }),
+        ];
+        expect(applySearch(orders, 'las condes')).toHaveLength(1);
+      });
     });
   });
 });

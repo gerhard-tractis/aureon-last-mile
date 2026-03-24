@@ -88,7 +88,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
         return (
             <Card className="w-full">
                 <CardContent className="flex justify-center items-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
                 </CardContent>
             </Card>
         );
@@ -136,8 +136,8 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                                         onClick={() => setSelectedFactorId(factor.id)}
                                         className={`flex items-center space-x-3 p-3 border rounded-lg transition-colors ${
                                             selectedFactorId === factor.id
-                                                ? 'border-primary-500 bg-primary-50 text-primary-700'
-                                                : 'border-border hover:border-primary-200 hover:bg-muted'
+                                                ? 'border-accent bg-accent/10 text-accent'
+                                                : 'border-border hover:border-accent/30 hover:bg-muted'
                                         }`}
                                     >
                                         <Smartphone className="h-5 w-5" />
@@ -150,7 +150,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                                             </p>
                                         </div>
                                         {selectedFactorId === factor.id && (
-                                            <CheckCircle className="h-5 w-5 text-primary-500" />
+                                            <CheckCircle className="h-5 w-5 text-accent" />
                                         )}
                                     </button>
                                 ))}
@@ -166,7 +166,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                             type="text"
                             value={verifyCode}
                             onChange={(e) => setVerifyCode(e.target.value.trim())}
-                            className="block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-primary-500 sm:text-sm"
+                            className="block w-full rounded-md border border-border px-3 py-2 shadow-sm focus:border-accent focus:outline-none focus:ring-accent sm:text-sm"
                             placeholder="Enter 6-digit code"
                             maxLength={6}
                         />
@@ -178,7 +178,7 @@ export function MFAVerification({ onVerified }: MFAVerificationProps) {
                     <button
                         onClick={handleVerification}
                         disabled={loading || verifyCode.length !== 6 || !selectedFactorId}
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-accent-foreground bg-accent hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent disabled:opacity-50"
                     >
                         {loading ? 'Verifying...' : 'Verify'}
                     </button>

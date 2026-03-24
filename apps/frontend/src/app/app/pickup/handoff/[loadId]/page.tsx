@@ -7,6 +7,7 @@ import { useQRHandoff } from '@/hooks/reception/useQRHandoff';
 import { QRHandoff } from '@/components/reception/QRHandoff';
 import { createSPAClient } from '@/lib/supabase/client';
 import { Loader2, Truck, AlertCircle } from 'lucide-react';
+import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 
 export default function HandoffPage() {
   const params = useParams();
@@ -58,42 +59,40 @@ export default function HandoffPage() {
   if (isLoading || !manifest) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+        <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 max-w-lg mx-auto space-y-6">
-      {/* Header */}
-      <div className="space-y-1">
-        <h1 className="text-xl font-bold text-gray-900">
-          Entrega en Bodega
-        </h1>
-        <p className="text-sm text-gray-500">
-          Carga: {loadId}
-        </p>
+    <div className="p-4 max-w-lg mx-auto space-y-4">
+      <PickupStepBreadcrumb current="handoff" />
+
+      {/* Gold header */}
+      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
+        <p className="text-xs opacity-80">{loadId}</p>
+        <p className="font-semibold text-base mt-0.5">Handoff</p>
       </div>
 
       {/* Manifest Summary Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-4">
+      <div className="bg-surface border border-border rounded-lg p-4 space-y-3">
         <div className="flex items-center gap-3">
-          <div className="bg-blue-50 rounded-full p-2">
-            <Truck className="h-5 w-5 text-blue-600" />
+          <div className="bg-accent-muted rounded-full p-2">
+            <Truck className="h-5 w-5 text-accent" />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">
+            <p className="font-semibold text-text">
               {manifest.retailer_name ?? 'Sin retailer'}
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="font-mono text-sm text-text-secondary">
               {packageCount} paquetes verificados
             </p>
           </div>
         </div>
 
         {manifest.reception_status && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-sm text-amber-800">
+          <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3">
+            <p className="text-sm text-text">
               Esta carga ya tiene estado de recepción: {manifest.reception_status}
             </p>
           </div>
@@ -102,9 +101,9 @@ export default function HandoffPage() {
 
       {/* Error */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="bg-status-error-bg border border-status-error-border rounded-lg p-3 flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-status-error mt-0.5 shrink-0" />
+          <p className="text-sm text-text">{error}</p>
         </div>
       )}
 
@@ -112,7 +111,7 @@ export default function HandoffPage() {
       <button
         onClick={initiateHandoff}
         disabled={isSubmitting}
-        className="w-full py-4 px-6 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+        className="w-full py-4 px-6 bg-accent hover:opacity-90 disabled:opacity-50 text-accent-foreground font-semibold rounded-lg transition-opacity flex items-center justify-center gap-2 min-h-[48px]"
       >
         {isSubmitting ? (
           <>
@@ -127,7 +126,7 @@ export default function HandoffPage() {
       {/* Back */}
       <button
         onClick={() => router.back()}
-        className="w-full py-3 text-gray-500 text-sm hover:text-gray-700 transition-colors"
+        className="w-full py-3 text-text-secondary text-sm hover:text-text transition-colors"
       >
         Volver
       </button>

@@ -179,17 +179,18 @@ describe('DeleteConfirmationModal', () => {
   });
 
   describe('Styling', () => {
-    it('should have red background on Delete button', () => {
+    it('should have destructive background on Delete button', () => {
       render(<DeleteConfirmationModal />);
 
       const deleteButton = screen.getByText('Delete');
-      expect(deleteButton.className).toContain('bg-red-600');
+      expect(deleteButton.className).toContain('bg-destructive');
     });
 
-    it('should have amber warning box', () => {
+    it('should have warning token box', () => {
       const { container } = render(<DeleteConfirmationModal />);
 
-      const warningBox = container.querySelector('.bg-amber-50');
+      // Warning box uses CSS custom property tokens
+      const warningBox = container.querySelector('[class*="status-warning-bg"]');
       expect(warningBox).toBeTruthy();
     });
 

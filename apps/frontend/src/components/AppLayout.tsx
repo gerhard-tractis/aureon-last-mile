@@ -1,343 +1,153 @@
 "use client";
+
 import React, { useState } from 'react';
-import Link from 'next/link';
-import {usePathname, useRouter} from 'next/navigation';
 import {
-    User,
-    Menu,
-    X,
-    ChevronDown,
-    ChevronRight,
-    LogOut,
-    Key,
-    BarChart3,
-    TrendingUp,
-    ClipboardCheck,
-    Calendar,
-    ScrollText,
-    Activity,
-    PackageCheck,
-    Layers,
+  LayoutDashboard,
+  Radio,
+  CheckSquare,
+  ArrowUpDown,
+  Calendar,
+  FileText,
+  Menu,
+  PanelLeftClose,
+  PanelLeft,
+  Layers,
 } from 'lucide-react';
-import { useGlobal } from "@/lib/context/GlobalContext";
-import { createSPASassClient } from "@/lib/supabase/client";
-import { useBranding } from "@/providers/BrandingProvider";
-import ThemeToggle from '@/components/ThemeToggle';
-import CapacityAlertBell from '@/components/capacity/CapacityAlertBell';
+import { useGlobal } from '@/lib/context/GlobalContext';
+import { useBranding } from '@/providers/BrandingProvider';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { useSidebarPin } from './sidebar/useSidebarPin';
+import { SidebarNavItem } from './sidebar/SidebarNavItem';
+import { SidebarUserMenu } from './sidebar/SidebarUserMenu';
+import ThemeToggle from './ThemeToggle';
+import CapacityAlertBell from './capacity/CapacityAlertBell';
+
+function SidebarBrand({
+  logoUrl,
+  companyName,
+  pinned,
+  onLogoError,
+}: {
+  logoUrl: string | null;
+  companyName: string | null;
+  pinned: boolean;
+  onLogoError: () => void;
+}) {
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={companyName || 'Logo'}
+        className={`max-h-10 object-contain transition-all ${pinned ? 'max-w-[140px]' : 'max-w-8'}`}
+        onError={onLogoError}
+      />
+    );
+  }
+  return (
+    <>
+      <div className={pinned ? 'hidden' : 'h-5 w-5 rounded bg-sidebar-active'} />
+      <span className={pinned ? 'text-sm font-semibold text-sidebar-active' : 'sr-only'}>
+        {companyName || 'Aureon'}
+      </span>
+    </>
+  );
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-    const [isSidebarOpen, setSidebarOpen] = useState(false);
-    const [isUserDropdownOpen, setUserDropdownOpen] = useState(false);
-    const pathname = usePathname();
-    const router = useRouter();
+  const { role, permissions, operatorId } = useGlobal();
+  const { logoUrl, companyName } = useBranding();
+  const { pinned, togglePin } = useSidebarPin();
+  const [logoError, setLogoError] = useState(false);
 
-    const { user, role: userRole, permissions: userPermissions, operatorId } = useGlobal();
-    const { logoUrl, companyName } = useBranding();
-    const [logoError, setLogoError] = useState(false);
+  const isAdminOrManager = role === 'admin' || role === 'operations_manager';
 
-    const handleLogout = async () => {
-        try {
-            const client = await createSPASassClient();
-            await client.logout();
-        } catch (error) {
-            console.error('Error logging out:', error);
-        }
-    };
-    const handleChangePassword = async () => {
-        router.push('/app/user-settings')
-    };
+  const navItems = [
+    { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
+    { href: '/app/operations-control', label: 'Ops Control',  icon: Radio,           show: isAdminOrManager },
+    { href: '/app/pickup',             label: 'Pickup',       icon: CheckSquare,     show: permissions.includes('pickup') },
+    { href: '/app/reception',          label: 'Recepción',    icon: ArrowUpDown,     show: permissions.includes('reception') },
+    { href: '/app/distribution',       label: 'Distribución', icon: Layers,          show: permissions.includes('distribution') },
+    { href: '/app/capacity-planning',  label: 'Capacidad',    icon: Calendar,        show: isAdminOrManager },
+    { href: '/app/audit-logs',         label: 'Auditoría',    icon: FileText,        show: isAdminOrManager },
+  ].filter((item) => item.show);
 
-    const getInitials = (email: string) => {
-        const parts = email.split('@')[0].split(/[._-]/);
-        return parts.length > 1
-            ? (parts[0][0] + parts[1][0]).toUpperCase()
-            : parts[0].slice(0, 2).toUpperCase();
-    };
-
-    const productName = process.env.NEXT_PUBLIC_PRODUCTNAME;
-
-    const dashboardAllowed = userRole === 'operations_manager' || userRole === 'admin';
-    const opsControlAllowed = userRole === 'operations_manager' || userRole === 'admin';
-    const pickupAllowed = userPermissions.includes('pickup');
-    const receptionAllowed = userPermissions.includes('reception');
-    const distributionAllowed = userPermissions.includes('distribution');
-    const isDashboardSection = pathname.startsWith('/app/dashboard');
-    const operacionesHref = '/app/dashboard/operaciones';
-    const analiticaHref = '/app/dashboard/analitica';
-
-    const standaloneNav = [
-        { name: 'User Settings', href: '/app/user-settings', icon: User },
-    ];
-
-    const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
-
+  function SidebarInner({ mobilePinned = false }: { mobilePinned?: boolean }) {
+    const ep = mobilePinned || pinned;
     return (
-        <div className="min-h-screen bg-muted">
-            {isSidebarOpen && (
-                <div
-                    className="fixed inset-0 bg-gray-600 bg-opacity-75 z-20 lg:hidden"
-                    onClick={toggleSidebar}
-                />
-            )}
-
-            {/* Sidebar */}
-            <div className={`fixed inset-y-0 left-0 w-64 bg-card shadow-lg transform transition-transform duration-200 ease-in-out z-30
-                ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-
-                <div className="h-16 flex items-center justify-between px-4 border-b">
-                    {logoUrl && !logoError ? (
-                        <img
-                            src={logoUrl}
-                            alt={companyName || productName || 'Logo'}
-                            className="max-h-10 max-w-40 object-contain"
-                            onError={() => setLogoError(true)}
-                        />
-                    ) : (
-                        <span className="text-xl font-semibold text-primary-600">
-                            {companyName || productName}
-                        </span>
-                    )}
-                    <button
-                        onClick={toggleSidebar}
-                        className="lg:hidden text-muted-foreground hover:text-foreground"
-                    >
-                        <X className="h-6 w-6" />
-                    </button>
-                </div>
-
-                {/* Navigation */}
-                <nav className="mt-4 px-2 space-y-1">
-                    {dashboardAllowed && (
-                        <div>
-                            <button
-                                onClick={() => {
-                                    if (!isDashboardSection) router.push(operacionesHref);
-                                }}
-                                className={`w-full group flex items-center justify-between px-2 py-2 text-sm font-medium rounded-md ${
-                                    isDashboardSection
-                                        ? 'bg-primary-50 text-primary-600'
-                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                }`}
-                            >
-                                <div className="flex items-center">
-                                    <BarChart3 className={`mr-3 h-5 w-5 ${
-                                        isDashboardSection ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                                    }`} />
-                                    Dashboard
-                                </div>
-                                <ChevronRight className={`h-4 w-4 transition-transform duration-200 ${
-                                    isDashboardSection ? 'rotate-90' : ''
-                                }`} />
-                            </button>
-                            {isDashboardSection && (
-                                <div className="ml-6 mt-1 space-y-1">
-                                    <Link
-                                        href={operacionesHref}
-                                        className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
-                                            pathname.startsWith(operacionesHref)
-                                                ? 'text-primary-600 font-medium'
-                                                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                                        }`}
-                                    >
-                                        <BarChart3 className="mr-2 h-4 w-4" />
-                                        Operaciones
-                                    </Link>
-                                    <Link
-                                        href={analiticaHref}
-                                        className={`flex items-center px-2 py-1.5 text-sm rounded-md ${
-                                            pathname.startsWith(analiticaHref)
-                                                ? 'text-primary-600 font-medium'
-                                                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                                        }`}
-                                    >
-                                        <TrendingUp className="mr-2 h-4 w-4" />
-                                        Analítica
-                                    </Link>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    {opsControlAllowed && (
-                        <Link
-                            href="/app/operations-control"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith('/app/operations-control')
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                            }`}
-                        >
-                            <Activity className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/operations-control') ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                            }`} />
-                            Ops Control
-                        </Link>
-                    )}
-                    {pickupAllowed && (
-                        <Link
-                            href="/app/pickup"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith('/app/pickup')
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                            }`}
-                        >
-                            <ClipboardCheck className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/pickup') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                            }`} />
-                            Pickup
-                        </Link>
-                    )}
-                    {receptionAllowed && (
-                        <Link
-                            href="/app/reception"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith('/app/reception')
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                            }`}
-                        >
-                            <PackageCheck className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/reception') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                            }`} />
-                            Recepción
-                        </Link>
-                    )}
-                    {distributionAllowed && (
-                        <Link
-                            href="/app/distribution"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith('/app/distribution')
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                            }`}
-                        >
-                            <Layers className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/distribution') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                            }`} />
-                            Distribución
-                        </Link>
-                    )}
-                    {(userRole === 'operations_manager' || userRole === 'admin') && (
-                        <Link
-                            href="/app/capacity-planning"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith('/app/capacity-planning')
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                            }`}
-                        >
-                            <Calendar className={`mr-3 h-5 w-5 ${
-                                pathname.startsWith('/app/capacity-planning') ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                            }`} />
-                            Capacidad
-                        </Link>
-                    )}
-                    {(userRole === 'operations_manager' || userRole === 'admin') && (
-                        <Link
-                            href="/app/audit-logs"
-                            className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname === '/app/audit-logs'
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                            }`}
-                        >
-                            <ScrollText className={`mr-3 h-5 w-5 ${
-                                pathname === '/app/audit-logs' ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                            }`} />
-                            Auditoría
-                        </Link>
-                    )}
-                    {standaloneNav.map((item) => {
-                        const isActive = pathname === item.href;
-                        return (
-                            <Link
-                                key={item.name}
-                                href={item.href}
-                                className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                    isActive
-                                        ? 'bg-primary-50 text-primary-600'
-                                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                                }`}
-                            >
-                                <item.icon className={`mr-3 h-5 w-5 ${
-                                    isActive ? 'text-primary-500' : 'text-muted-foreground group-hover:text-muted-foreground'
-                                }`} />
-                                {item.name}
-                            </Link>
-                        );
-                    })}
-                </nav>
-
-            </div>
-
-            <div className="lg:pl-64">
-                <div className="sticky top-0 z-10 flex items-center justify-between h-16 bg-card shadow-sm px-4">
-                    <button
-                        onClick={toggleSidebar}
-                        className="lg:hidden text-muted-foreground hover:text-foreground"
-                    >
-                        <Menu className="h-6 w-6"/>
-                    </button>
-
-                    <div className="flex items-center gap-2 ml-auto">
-                        <ThemeToggle />
-                        {(userRole === 'operations_manager' || userRole === 'admin') && (
-                            <CapacityAlertBell operatorId={operatorId} />
-                        )}
-                        <div className="relative">
-                            <button
-                                onClick={() => setUserDropdownOpen(!isUserDropdownOpen)}
-                                className="flex items-center space-x-2 text-sm text-foreground hover:text-foreground"
-                            >
-                                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-                                    <span className="text-primary-700 font-medium">
-                                        {user ? getInitials(user.email) : '??'}
-                                    </span>
-                                </div>
-                                <span>{user?.email || 'Loading...'}</span>
-                                <ChevronDown className="h-4 w-4"/>
-                            </button>
-
-                            {isUserDropdownOpen && (
-                                <div className="absolute right-0 mt-2 w-64 bg-card rounded-md shadow-lg border border-border">
-                                    <div className="p-2 border-b border-border">
-                                        <p className="text-xs text-muted-foreground">Signed in as</p>
-                                        <p className="text-sm font-medium text-foreground truncate">
-                                            {user?.email}
-                                        </p>
-                                    </div>
-                                    <div className="py-1">
-                                        <button
-                                            onClick={() => {
-                                                setUserDropdownOpen(false);
-                                                handleChangePassword()
-                                            }}
-                                            className="w-full flex items-center px-4 py-2 text-sm text-foreground hover:bg-muted"
-                                        >
-                                            <Key className="mr-3 h-4 w-4 text-muted-foreground"/>
-                                            Change Password
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                handleLogout();
-                                                setUserDropdownOpen(false);
-                                            }}
-                                            className="w-full flex items-center px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                                        >
-                                            <LogOut className="mr-3 h-4 w-4 text-red-400"/>
-                                            Sign Out
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <main className="p-4">
-                    {children}
-                </main>
-            </div>
+      <div className="flex flex-col h-full bg-sidebar">
+        <div className="h-14 flex items-center px-3 border-b border-sidebar-border overflow-hidden">
+          <SidebarBrand
+            logoUrl={logoError ? null : logoUrl}
+            companyName={companyName}
+            pinned={ep}
+            onLogoError={() => setLogoError(true)}
+          />
         </div>
+        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+          {navItems.map((item) => (
+            <SidebarNavItem key={item.href} href={item.href} label={item.label} icon={item.icon} pinned={ep} />
+          ))}
+        </nav>
+        <div className="px-2 py-2 border-t border-sidebar-border space-y-1">
+          <SidebarUserMenu pinned={ep} />
+          <div className={`flex items-center ${ep ? 'justify-between' : 'justify-center'} px-1`}>
+            <ThemeToggle compact={!ep} />
+            {!mobilePinned && (
+              <button
+                data-pin-toggle
+                onClick={togglePin}
+                className="p-2 rounded-md text-sidebar-text hover:bg-sidebar-hover transition-colors"
+                aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar'}
+              >
+                {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     );
+  }
+
+  return (
+    <TooltipProvider>
+      <div className="min-h-screen flex bg-surface">
+        {/* Desktop sidebar */}
+        <aside
+          data-sidebar
+          data-pinned={pinned}
+          className={`hidden lg:flex flex-col fixed inset-y-0 left-0 transition-all duration-200 z-30 border-r border-sidebar-border ${pinned ? 'w-[200px]' : 'w-14'}`}
+        >
+          <SidebarInner />
+        </aside>
+
+        {/* Main */}
+        <div className={`flex-1 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
+          {/* Mobile bar */}
+          <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">
+            <Sheet>
+              <SheetTrigger asChild>
+                <button className="text-sidebar-text" aria-label="Open sidebar">
+                  <Menu className="h-5 w-5" />
+                </button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[200px] p-0 bg-sidebar border-sidebar-border">
+                <SidebarInner mobilePinned />
+              </SheetContent>
+            </Sheet>
+          </div>
+
+          {/* Main content */}
+          <div className="relative">
+            {isAdminOrManager && (
+              <div className="absolute top-3 right-4 z-10">
+                <CapacityAlertBell operatorId={operatorId} />
+              </div>
+            )}
+            <main>{children}</main>
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
 }

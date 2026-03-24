@@ -48,9 +48,9 @@ describe('OrdersDetailTable', () => {
     render(<OrdersDetailTable operatorId="op-1" startDate="2026-03-01" endDate="2026-03-09" />, { wrapper });
 
     const deliveredBadge = screen.getAllByText('Entregado').find(el => el.tagName === 'SPAN')!;
-    expect(deliveredBadge.className).toContain('emerald');
+    expect(deliveredBadge.className).toContain('text-status-success');
     const canceladoBadge = screen.getAllByText('Cancelado').find(el => el.tagName === 'SPAN')!;
-    expect(canceladoBadge.className).toContain('red');
+    expect(canceladoBadge.className).toContain('text-status-error');
   });
 
   it('expands row on click to show details', async () => {

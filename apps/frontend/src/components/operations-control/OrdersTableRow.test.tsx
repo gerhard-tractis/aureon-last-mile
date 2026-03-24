@@ -55,25 +55,25 @@ describe('OrdersTableRow', () => {
     it('renders red dot for urgent priority', () => {
       renderRow(makeOrder(), 'urgent');
       const dot = screen.getByTestId('priority-dot');
-      expect(dot.className).toContain('bg-red-500');
+      expect(dot.className).toContain('bg-status-error');
     });
 
     it('renders yellow dot for alert priority', () => {
       renderRow(makeOrder(), 'alert');
       const dot = screen.getByTestId('priority-dot');
-      expect(dot.className).toContain('bg-yellow-500');
+      expect(dot.className).toContain('bg-status-warning');
     });
 
     it('renders green dot for ok priority', () => {
       renderRow(makeOrder(), 'ok');
       const dot = screen.getByTestId('priority-dot');
-      expect(dot.className).toContain('bg-green-500');
+      expect(dot.className).toContain('bg-status-success');
     });
 
     it('renders gray dot for late priority', () => {
       renderRow(makeOrder(), 'late');
       const dot = screen.getByTestId('priority-dot');
-      expect(dot.className).toContain('bg-gray-500');
+      expect(dot.className).toContain('bg-text-muted');
     });
   });
 

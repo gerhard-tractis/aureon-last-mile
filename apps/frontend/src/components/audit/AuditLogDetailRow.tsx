@@ -26,7 +26,7 @@ function highlightJson(obj: unknown): React.ReactNode {
     const highlighted = line
       .replace(
         /("[\w\s]+")\s*:/g,
-        '<span class="text-blue-600 dark:text-blue-400">$1</span>:',
+        '<span class="text-status-info">$1</span>:',
       )
       .replace(
         /:\s*("(?:[^"\\]|\\.)*")/g,
@@ -34,11 +34,11 @@ function highlightJson(obj: unknown): React.ReactNode {
       )
       .replace(
         /:\s*(\d+\.?\d*)/g,
-        ': <span class="text-orange-600 dark:text-orange-400">$1</span>',
+        ': <span class="text-status-warning">$1</span>',
       )
       .replace(
         /:\s*(true|false|null)/g,
-        ': <span class="text-purple-600 dark:text-purple-400">$1</span>',
+        ': <span class="text-accent">$1</span>',
       );
 
     return (
