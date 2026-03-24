@@ -171,6 +171,17 @@ export const RolePermissions = {
   },
 
   /**
+   * Check if role can perform dispatch operations
+   */
+  canPerformDispatch(role: UserRole): boolean {
+    return (
+      role === UserRole.LOADING_CREW ||
+      role === UserRole.OPERATIONS_MANAGER ||
+      role === UserRole.ADMIN
+    );
+  },
+
+  /**
    * Get human-readable role name
    */
   getRoleDisplayName(role: UserRole): string {

@@ -2,12 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
-// Mock dependencies
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/app',
-  useRouter: () => ({ push: vi.fn() }),
-}));
-
 let mockRole = 'admin';
 let mockPermissions: string[] = [];
 let mockOperatorId: string | null = 'op-test';
@@ -38,13 +32,27 @@ vi.mock('@/providers/BrandingProvider', () => ({
   useBranding: () => mockBranding,
 }));
 
-// Mock CapacityAlertBell to avoid hook dependencies in AppLayout tests
 vi.mock('@/components/capacity/CapacityAlertBell', () => ({
   default: ({ operatorId }: { operatorId: string | null }) => (
     <button aria-label="Alertas de capacidad" data-operator-id={operatorId}>
       Bell
     </button>
   ),
+}));
+
+vi.mock('@/components/tablet/TabletTopBar', () => ({
+  default: () => <nav data-testid="tablet-top-bar">TabletTopBar</nav>,
+}));
+
+let mockIsTablet = false;
+vi.mock('@/hooks/useViewport', () => ({
+  useViewport: () => ({ isMobile: false, isTablet: mockIsTablet, isDesktop: !mockIsTablet }),
+}));
+
+let mockPathname = '/app';
+vi.mock('next/navigation', () => ({
+  usePathname: () => mockPathname,
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 import AppLayout from './AppLayout';
@@ -55,6 +63,8 @@ beforeEach(() => {
   mockOperatorId = 'op-test';
   mockBranding.logoUrl = null;
   mockBranding.companyName = null;
+  mockIsTablet = false;
+  mockPathname = '/app';
 });
 
 describe('AppLayout sidebar branding', () => {
@@ -262,8 +272,45 @@ describe('AppLayout sidebar rail', () => {
     expect(document.querySelector('[data-pin-toggle]')).toBeTruthy();
   });
 
-  it('renders mobile hamburger button', () => {
+  it('renders mobile hamburger button on desktop', () => {
+    mockIsTablet = false;
     render(<AppLayout><div>content</div></AppLayout>);
     expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy();
+  });
+});
+
+describe('AppLayout tablet mode', () => {
+  it('shows TabletTopBar on tablet viewport on a workflow page', () => {
+    mockIsTablet = true;
+    mockPathname = '/app/pickup';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByTestId('tablet-top-bar')).toBeTruthy();
+  });
+
+  it('hides TabletTopBar on /app/tablet-home', () => {
+    mockIsTablet = true;
+    mockPathname = '/app/tablet-home';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('tablet-top-bar')).toBeNull();
+  });
+
+  it('hides TabletTopBar on desktop viewport', () => {
+    mockIsTablet = false;
+    mockPathname = '/app/pickup';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('tablet-top-bar')).toBeNull();
+  });
+
+  it('hides hamburger menu on tablet viewport', () => {
+    mockIsTablet = true;
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull();
+  });
+
+  it('hides CapacityAlertBell on tablet viewport', () => {
+    mockIsTablet = true;
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('button', { name: /alertas de capacidad/i })).toBeNull();
   });
 });

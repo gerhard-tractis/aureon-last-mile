@@ -1,5 +1,6 @@
 # Spec-16a: Android Tablet PWA — Tablet Shell
 
+**Status:** in progress
 **Status:** backlog
 
 _Date: 2026-03-24_
