@@ -9,8 +9,10 @@ vi.stubGlobal('fetch', mockFetch);
 
 function wrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: React.ReactNode }) =>
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: qc }, children);
+  Wrapper.displayName = 'TestWrapper';
+  return Wrapper;
 }
 
 describe('useScanPackage', () => {
