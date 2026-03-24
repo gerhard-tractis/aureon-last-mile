@@ -457,7 +457,9 @@ CREATE OR REPLACE FUNCTION public.map_comuna_alias(
   p_source    TEXT DEFAULT 'manual'
 )
 RETURNS VOID
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   v_canonical TEXT;
 BEGIN
@@ -471,7 +473,8 @@ BEGIN
      SET comuna_id = p_comuna_id,
          comuna    = v_canonical
    WHERE lower(trim(comuna_raw)) = lower(trim(p_alias))
-     AND comuna_id IS NULL;
+     AND comuna_id IS NULL
+     AND operator_id = public.get_operator_id();
 END;
 $$;
 
@@ -479,6 +482,7 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_unmatched_comunas(p_operator_id UUID)
 RETURNS TABLE (comuna_raw TEXT, order_count BIGINT)
 LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   SELECT o.comuna_raw, COUNT(*)::BIGINT AS order_count
     FROM public.orders o
