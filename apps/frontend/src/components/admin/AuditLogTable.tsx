@@ -141,9 +141,9 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      log.action.startsWith('INSERT') ? 'bg-status-success-bg text-status-success' :
-                      log.action.startsWith('UPDATE') ? 'bg-status-info-bg text-status-info' :
-                      log.action.startsWith('DELETE') ? 'bg-status-error-bg text-status-error' :
+                      log.action.startsWith('INSERT') ? 'bg-[var(--color-status-success-bg)] text-[var(--color-status-success)]' :
+                      log.action.startsWith('UPDATE') ? 'bg-[var(--color-status-info-bg)] text-[var(--color-status-info)]' :
+                      log.action.startsWith('DELETE') ? 'bg-[var(--color-status-error-bg)] text-[var(--color-status-error)]' :
                       'bg-muted text-foreground'
                     }`}>
                       {log.action}
@@ -164,7 +164,7 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                         e.stopPropagation();
                         toggleRow(log.id);
                       }}
-                      className="text-gold hover:text-primary-600 font-medium"
+                      className="text-accent hover:opacity-80 font-medium"
                       aria-label={expandedRows.has(log.id) ? 'Hide details' : 'Show details'}
                       aria-expanded={expandedRows.has(log.id)}
                     >
@@ -219,7 +219,7 @@ export const AuditLogTable = ({ logs, total, page, limit, onPageChange }: AuditL
                   onClick={() => onPageChange(pageNum as number)}
                   className={`px-3 py-1 border rounded-md text-sm font-medium ${
                     page === pageNum
-                      ? 'bg-gold text-foreground border-gold'
+                      ? 'bg-accent text-accent-foreground border-accent'
                       : 'border-border text-foreground hover:bg-muted'
                   }`}
                   aria-label={`Go to page ${pageNum}`}

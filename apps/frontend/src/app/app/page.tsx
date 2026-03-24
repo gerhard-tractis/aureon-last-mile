@@ -18,7 +18,7 @@ export default function DashboardContent() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
             </div>
         );
     }
@@ -49,8 +49,8 @@ export default function DashboardContent() {
                             href="/app/user-settings"
                             className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted transition-colors"
                         >
-                            <div className="p-2 bg-primary-50 rounded-full">
-                                <Settings className="h-4 w-4 text-primary-600" />
+                            <div className="p-2 bg-[var(--color-surface-raised)] rounded-full">
+                                <Settings className="h-4 w-4 text-accent" />
                             </div>
                             <div>
                                 <h3 className="font-medium">User Settings</h3>
@@ -62,8 +62,8 @@ export default function DashboardContent() {
                             href="/app/table"
                             className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted transition-colors"
                         >
-                            <div className="p-2 bg-primary-50 rounded-full">
-                                <ExternalLink className="h-4 w-4 text-primary-600" />
+                            <div className="p-2 bg-[var(--color-surface-raised)] rounded-full">
+                                <ExternalLink className="h-4 w-4 text-accent" />
                             </div>
                             <div>
                                 <h3 className="font-medium">Example Page</h3>

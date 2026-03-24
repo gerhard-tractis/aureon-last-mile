@@ -56,7 +56,7 @@ export default function TwoFactorAuthPage() {
     if (loading) {
         return (
             <div className="flex justify-center items-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
             </div>
         );
     }
@@ -64,7 +64,7 @@ export default function TwoFactorAuthPage() {
     if (error) {
         return (
             <div className="flex justify-center items-center">
-                <div className="text-red-600">{error}</div>
+                <div className="text-sm text-[var(--color-status-error)]">{error}</div>
             </div>
         );
     }

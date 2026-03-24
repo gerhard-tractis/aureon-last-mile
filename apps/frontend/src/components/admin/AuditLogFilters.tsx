@@ -85,7 +85,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
           <select
             value={datePreset}
             onChange={(e) => applyDatePreset(e.target.value)}
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
           >
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
@@ -106,7 +106,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
                 type="datetime-local"
                 value={filters.date_from ? new Date(filters.date_from).toISOString().slice(0, 16) : ''}
                 onChange={(e) => onFiltersChange({ ...filters, date_from: new Date(e.target.value).toISOString() })}
-                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
               />
             </div>
             <div>
@@ -117,7 +117,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
                 type="datetime-local"
                 value={filters.date_to ? new Date(filters.date_to).toISOString().slice(0, 16) : ''}
                 onChange={(e) => onFiltersChange({ ...filters, date_to: new Date(e.target.value).toISOString() })}
-                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+                className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
               />
             </div>
           </>
@@ -131,7 +131,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
           <select
             value={filters.user_id || ''}
             onChange={(e) => onFiltersChange({ ...filters, user_id: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
           >
             <option value="">All Users</option>
             {users?.map(user => (
@@ -150,7 +150,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
           <select
             value={filters.action || ''}
             onChange={(e) => onFiltersChange({ ...filters, action: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
           >
             <option value="">All Actions</option>
             <option value="INSERT_users">INSERT users</option>
@@ -173,7 +173,7 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
           <select
             value={filters.resource_type || ''}
             onChange={(e) => onFiltersChange({ ...filters, resource_type: e.target.value || undefined, page: 1 })}
-            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+            className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
           >
             <option value="">All Resources</option>
             <option value="users">Users</option>
@@ -193,12 +193,12 @@ export const AuditLogFilters = ({ filters, onFiltersChange }: AuditLogFiltersPro
               placeholder="Search resource ID, action, or changes..."
               value={filters.search || ''}
               onChange={(e) => onFiltersChange({ ...filters, search: e.target.value || undefined, page: 1 })}
-              className="flex-1 px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+              className="flex-1 px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
             />
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="px-4 py-2 bg-gold text-foreground rounded-md hover:bg-primary-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:opacity-90 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 whitespace-nowrap"
             >
               {isExporting ? (
                 <>

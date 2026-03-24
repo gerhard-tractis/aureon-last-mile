@@ -50,18 +50,18 @@ describe('UserListHeader', () => {
       expect(mockSetCreateFormOpen).toHaveBeenCalledWith(true);
     });
 
-    it('should have Tractis gold background color', () => {
+    it('should have accent background color', () => {
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
-      expect(createButton.className).toContain('bg-gold');
+      expect(createButton.className).toContain('bg-accent');
     });
 
     it('should have hover state', () => {
       render(<UserListHeader />);
 
       const createButton = screen.getByText('Create User');
-      expect(createButton.className).toContain('hover:bg-primary-600');
+      expect(createButton.className).toContain('hover:opacity-90');
     });
 
     it('should have minimum touch target size', () => {

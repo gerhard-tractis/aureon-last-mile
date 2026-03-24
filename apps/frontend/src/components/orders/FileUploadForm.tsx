@@ -102,11 +102,11 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
   return (
     <div className="space-y-4">
       <label
-        className={`w-full flex flex-col items-center px-4 py-8 bg-card rounded-lg shadow-sm tracking-wide border-2 cursor-pointer transition-colors ${
+        className={`w-full flex flex-col items-center px-4 py-8 bg-[var(--color-surface)] rounded-lg shadow-sm tracking-wide border-2 border-dashed cursor-pointer transition-colors ${
           isDragging
-            ? 'border-accent border-dashed bg-accent-muted'
+            ? 'border-accent bg-accent/5'
             : displayError
-              ? 'border-red-300 hover:border-red-400'
+              ? 'border-[var(--color-status-error)] hover:border-[var(--color-status-error)]'
               : 'border-border hover:border-accent'
         }`}
         onDragEnter={handleDragEnter}
@@ -163,7 +163,7 @@ export default function FileUploadForm({ onFileSelected, isLoading, error }: Fil
       </label>
 
       {displayError && (
-        <p className="text-sm text-red-600">{displayError}</p>
+        <p className="text-sm text-[var(--color-status-error)]">{displayError}</p>
       )}
     </div>
   );

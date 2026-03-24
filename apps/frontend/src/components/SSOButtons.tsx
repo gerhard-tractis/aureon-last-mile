@@ -31,7 +31,7 @@ const PROVIDER_CONFIGS = {
                 <path d="M10 3.98c1.48 0 2.79.51 3.83 1.5l2.78-2.78C14.93 1.03 12.7 0 10 0 6.09 0 2.72 2.25 1.07 5.54l3.3 2.51C5.17 5.68 7.39 3.98 10 3.98z" fill="#EA4335"/>
             </svg>
         ),
-        bgColor: 'bg-card hover:bg-muted',
+        bgColor: 'bg-surface hover:bg-muted',
         textColor: 'text-foreground',
         borderColor: 'border-border'
     },
@@ -127,11 +127,11 @@ export default function SSOButtons({ onError }: SSOButtonsProps) {
             </div>
             <div className="mt-4 text-center text-xs text-muted-foreground">
                 By creating an account via selected provider, you agree to our{' '}
-                <Link href="/legal/terms" className="text-primary-600 hover:text-primary-800 underline">
+                <Link href="/legal/terms" className="text-accent hover:underline underline">
                     Terms and Conditions
                 </Link>
                 {' '}and{' '}
-                <Link href="/legal/privacy" className="text-primary-600 hover:text-primary-800 underline">
+                <Link href="/legal/privacy" className="text-accent hover:underline underline">
                     Privacy Policy
                 </Link>
             </div>
