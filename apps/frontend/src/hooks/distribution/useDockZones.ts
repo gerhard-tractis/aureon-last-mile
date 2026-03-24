@@ -16,6 +16,16 @@ const DOCK_ZONES_QUERY_OPTIONS = {
   staleTime: 30_000,
 } as const;
 
+interface DockZoneJoinRow {
+  id: string;
+  name: string;
+  code: string;
+  is_consolidation: boolean;
+  is_active: boolean;
+  operator_id: string;
+  dock_zone_comunas: { chile_comunas: { id: string; nombre: string } | null }[];
+}
+
 export function useDockZones(operatorId: string | null) {
   return useQuery({
     queryKey: ['distribution', 'dock-zones', operatorId],
@@ -30,14 +40,16 @@ export function useDockZones(operatorId: string | null) {
         .order('is_consolidation', { ascending: false })
         .order('name');
       if (error) throw error;
-      return data!.map(z => ({
+      return (data as unknown as DockZoneJoinRow[]).map(z => ({
         id: z.id,
         name: z.name,
         code: z.code,
         is_consolidation: z.is_consolidation,
         is_active: z.is_active,
         operator_id: z.operator_id,
-        comunas: ((z as any).dock_zone_comunas ?? []).map((r: any) => r.chile_comunas),
+        comunas: z.dock_zone_comunas
+          .map(r => r.chile_comunas)
+          .filter((c): c is { id: string; nombre: string } => c !== null),
       })) as DockZoneRecord[];
     },
     enabled: !!operatorId,
