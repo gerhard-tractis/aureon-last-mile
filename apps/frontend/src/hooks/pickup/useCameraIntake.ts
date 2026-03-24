@@ -52,7 +52,7 @@ export function useCameraIntake(): UseCameraIntakeReturn {
       }
 
       // 2. Insert intake_submissions row
-      const { error: insertError } = await supabase.from('intake_submissions').insert({
+      const { error: insertError } = await (supabase.from as CallableFunction)('intake_submissions').insert({
         operator_id: operatorId,
         generator_id: generatorId,
         channel: 'mobile_camera',

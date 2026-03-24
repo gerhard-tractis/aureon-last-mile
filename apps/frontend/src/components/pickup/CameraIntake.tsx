@@ -27,14 +27,13 @@ export function CameraIntake({ onClose }: CameraIntakeProps) {
   useEffect(() => {
     if (!operatorId) return;
     const supabase = createSPAClient();
-    supabase
-      .from('generators')
+    ;(supabase.from as CallableFunction)('generators')
       .select('id, name')
       .eq('operator_id', operatorId)
       .eq('is_active', true)
       .is('deleted_at', null)
-      .then(({ data }) => {
-        const gens = (data ?? []) as Generator[];
+      .then(({ data }: { data: Generator[] | null }) => {
+        const gens = data ?? [];
         setGenerators(gens);
         if (gens.length > 0) setSelectedGeneratorId(gens[0].id);
       });
