@@ -12,6 +12,14 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@aureon/database'],
+  async rewrites() {
+    return [
+      {
+        source: '/manifest.json',
+        destination: '/manifest.webmanifest',
+      },
+    ];
+  },
 };
 
 // Apply Serwist first, then Sentry

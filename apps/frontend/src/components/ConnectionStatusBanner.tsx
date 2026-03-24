@@ -11,10 +11,12 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/lib/db';
 import { syncManager } from '@/lib/sync-manager';
+import { useTranslation } from '@/lib/i18n/useTranslation';
 
 type ConnectionStatus = 'online' | 'offline' | 'syncing';
 
 export default function ConnectionStatusBanner() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ConnectionStatus>('online');
   const [queueCount, setQueueCount] = useState(0);
 
@@ -92,12 +94,12 @@ export default function ConnectionStatusBanner() {
       `}
     >
       {status === 'online' && queueCount > 0 && (
-        <span>Online - {queueCount} scans queued for sync</span>
+        <span>{t('connection.queued', { n: queueCount })}</span>
       )}
       {status === 'offline' && (
-        <span>Offline - {queueCount} scans queued</span>
+        <span>{t('connection.offline')} — {t('connection.queued', { n: queueCount })}</span>
       )}
-      {status === 'syncing' && <span>Syncing...</span>}
+      {status === 'syncing' && <span>{t('connection.syncing')}</span>}
     </div>
   );
 }
