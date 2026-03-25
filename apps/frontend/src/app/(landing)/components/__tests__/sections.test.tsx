@@ -10,6 +10,7 @@ import { ValueProps } from '../value-props';
 import { MetricsShowcase } from '../metrics-showcase';
 import { Features } from '../features';
 import { Integrations } from '../integrations';
+import { HowItWorks } from '../how-it-works';
 
 describe('ValueProps', () => {
   it('renders section heading', () => {
@@ -77,5 +78,24 @@ describe('Integrations', () => {
     expect(screen.getByText('SimpliRoute')).toBeInTheDocument();
     expect(screen.getByText('Driv.in')).toBeInTheDocument();
     expect(screen.getByText('Y más...')).toBeInTheDocument();
+  });
+});
+
+describe('HowItWorks', () => {
+  it('renders all 4 steps', () => {
+    render(<HowItWorks />);
+    // Each step title appears twice (desktop + mobile layout)
+    expect(screen.getAllByText('Carga manifiestos').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Recibe y despacha en tu hub').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Monitorea la última milla').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Mejora cada detalle').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders step numbers', () => {
+    render(<HowItWorks />);
+    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('3').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
   });
 });
