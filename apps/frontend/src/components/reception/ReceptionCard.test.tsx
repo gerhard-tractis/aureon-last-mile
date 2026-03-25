@@ -57,7 +57,7 @@ describe('ReceptionCard', () => {
     expect(screen.getByText('Pendiente')).toBeInTheDocument();
   });
 
-  it('shows "En progreso" badge for in-progress reception', () => {
+  it('shows "En curso" badge for in-progress reception', () => {
     render(
       <ReceptionCard
         {...defaultProps}
@@ -66,7 +66,7 @@ describe('ReceptionCard', () => {
         expectedCount={25}
       />
     );
-    expect(screen.getByText('En progreso')).toBeInTheDocument();
+    expect(screen.getByText('En curso')).toBeInTheDocument();
   });
 
   it('renders pickup completion time', () => {

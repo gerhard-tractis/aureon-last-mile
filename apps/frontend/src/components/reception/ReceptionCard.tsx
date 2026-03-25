@@ -77,7 +77,7 @@ export function ReceptionCard({
                 : 'bg-status-warning-bg text-status-warning'
             }`}
           >
-            {isInProgress ? 'En progreso' : 'Pendiente'}
+            {isInProgress ? 'En curso' : 'Pendiente'}
           </span>
         </div>
       </div>
