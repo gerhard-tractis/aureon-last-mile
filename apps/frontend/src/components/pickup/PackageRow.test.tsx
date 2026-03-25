@@ -67,4 +67,47 @@ describe('PackageRow', () => {
     render(<PackageRow {...defaultProps} pkg={{ ...defaultProps.pkg, sku_items: [] }} />);
     expect(screen.getByText(/0 SKUs/)).toBeInTheDocument();
   });
+
+  it('shows expand chevron when SKU items exist', () => {
+    render(<PackageRow {...defaultProps} />);
+    expect(screen.getByLabelText('Ver SKUs')).toBeInTheDocument();
+  });
+
+  it('does not show expand chevron when no SKU items', () => {
+    render(<PackageRow {...defaultProps} pkg={{ ...defaultProps.pkg, sku_items: [] }} />);
+    expect(screen.queryByLabelText('Ver SKUs')).not.toBeInTheDocument();
+  });
+
+  it('expands to show SKU detail table on click', () => {
+    const multiSkuPkg = {
+      ...defaultProps.pkg,
+      sku_items: [
+        { sku: 'SKU1', description: 'Widget', quantity: 2 },
+        { sku: 'SKU2', description: 'Gadget', quantity: 5 },
+      ],
+    };
+    render(<PackageRow {...defaultProps} pkg={multiSkuPkg} />);
+
+    expect(screen.queryByTestId('sku-table')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Ver SKUs'));
+
+    expect(screen.getByTestId('sku-table')).toBeInTheDocument();
+    expect(screen.getByText('SKU1')).toBeInTheDocument();
+    expect(screen.getByText('Widget')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('SKU2')).toBeInTheDocument();
+    expect(screen.getByText('Gadget')).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+  });
+
+  it('collapses SKU table on second click', () => {
+    render(<PackageRow {...defaultProps} />);
+
+    fireEvent.click(screen.getByLabelText('Ver SKUs'));
+    expect(screen.getByTestId('sku-table')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Ocultar SKUs'));
+    expect(screen.queryByTestId('sku-table')).not.toBeInTheDocument();
+  });
 });
