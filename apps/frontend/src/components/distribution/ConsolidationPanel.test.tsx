@@ -24,7 +24,8 @@ describe('ConsolidationPanel', () => {
 
   it('shows empty state when no packages in consolidation', () => {
     render(<ConsolidationPanel packages={[]} onRelease={vi.fn()} />);
-    expect(screen.getByText(/no hay paquetes/i)).toBeInTheDocument();
+    expect(screen.getByText('Sin paquetes en consolidación')).toBeInTheDocument();
+    expect(screen.getByText(/necesiten consolidarse/i)).toBeInTheDocument();
   });
 
   it('renders a Liberar button per package', () => {
