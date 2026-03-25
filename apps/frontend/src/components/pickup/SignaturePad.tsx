@@ -21,7 +21,8 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width;
     canvas.height = rect.height;
-    ctx.strokeStyle = '#000';
+    const textColor = getComputedStyle(canvas).getPropertyValue('--color-text').trim();
+    ctx.strokeStyle = textColor || '#0f172a';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -88,7 +89,7 @@ export function SignaturePad({ label, onChange }: SignaturePadProps) {
             onClick={clear}
             className="text-xs text-status-error hover:opacity-80"
           >
-            Clear
+            Borrar
           </button>
         )}
       </div>

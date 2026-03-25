@@ -23,9 +23,9 @@ describe('ManifestCard', () => {
     expect(screen.getByText('25')).toBeInTheDocument();
   });
 
-  it('shows "Unknown Retailer" when retailerName is null', () => {
+  it('shows "Retailer desconocido" when retailerName is null', () => {
     render(<ManifestCard {...defaultProps} retailerName={null} />);
-    expect(screen.getByText('Unknown Retailer')).toBeInTheDocument();
+    expect(screen.getByText('Retailer desconocido')).toBeInTheDocument();
   });
 
   it('calls onClick when clicked', () => {
@@ -42,13 +42,23 @@ describe('ManifestCard', () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('shows completed date when provided', () => {
+  it('shows completed date in Spanish when provided', () => {
     render(<ManifestCard {...defaultProps} completedAt="2026-03-10T12:00:00Z" />);
-    expect(screen.getByText(/Completed/)).toBeInTheDocument();
+    expect(screen.getByText(/Completado el/)).toBeInTheDocument();
   });
 
   it('does not show completed date when not provided', () => {
     render(<ManifestCard {...defaultProps} />);
-    expect(screen.queryByText(/Completed/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Completado el/)).not.toBeInTheDocument();
+  });
+
+  it('removes interactive affordances when interactive=false', () => {
+    render(<ManifestCard {...defaultProps} interactive={false} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('is interactive by default', () => {
+    render(<ManifestCard {...defaultProps} />);
+    expect(screen.getByRole('button')).toBeInTheDocument();
   });
 });
