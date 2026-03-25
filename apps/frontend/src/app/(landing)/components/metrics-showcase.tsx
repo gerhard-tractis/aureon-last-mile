@@ -37,7 +37,7 @@ export function MetricsShowcase() {
         <div className="grid md:grid-cols-3 gap-8 mt-12">
           {kpis.map((kpi, i) => (
             <ScrollReveal key={kpi.abbr} delay={i * 100}>
-              <div className="bg-stone-900 border border-stone-800 rounded-xl p-8 hover:border-amber-500/30 hover:-translate-y-0.5 transition-all duration-200 shadow-[inset_0_1px_0_rgba(230,193,92,0.1)]">
+              <div className="h-full bg-stone-900 border border-stone-800 rounded-xl p-8 hover:border-amber-500/30 hover:-translate-y-0.5 transition-all duration-200 shadow-[inset_0_1px_0_rgba(230,193,92,0.1)]">
                 <span className="font-mono text-3xl font-bold text-amber-400">{kpi.abbr}</span>
                 <h3 className="mt-2 text-lg font-semibold text-stone-200">{kpi.name}</h3>
                 <p className="mt-3 text-sm text-stone-400 leading-relaxed">{kpi.description}</p>
