@@ -4,6 +4,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Skeleton } from '@/components/ui/skeleton';
+import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
@@ -11,6 +14,18 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
+import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function CompletionPage() {
   const params = useParams();
@@ -111,6 +126,7 @@ export default function CompletionPage() {
         .eq('id', manifestId);
 
       if (error) throw error;
+      toast.success('Manifiesto completado exitosamente');
       router.push('/app/pickup');
     } catch (err) {
       console.error('Failed to complete manifest:', err);
@@ -118,108 +134,120 @@ export default function CompletionPage() {
     }
   };
 
+  if (!manifestId) {
+    return (
+      <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4 p-4 max-w-2xl mx-auto">
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <PickupStepBreadcrumb current="complete" />
 
       {/* Gold header */}
       <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
         <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Complete Pickup</p>
+        <p className="font-semibold text-base mt-0.5">Firma y finalización</p>
       </div>
 
       {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
-          <CheckCircle className="h-5 w-5 text-status-success shrink-0" />
-          <div>
-            <p className="text-xl font-bold font-mono text-text">{verifiedCount}</p>
-            <p className="text-xs text-text-secondary">Verified</p>
-          </div>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
-          <XCircle className="h-5 w-5 text-status-error shrink-0" />
-          <div>
-            <p className="text-xl font-bold font-mono text-text">{missingPackages.length}</p>
-            <p className="text-xs text-text-secondary">Missing (noted)</p>
-          </div>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
-          <Target className="h-5 w-5 text-status-info shrink-0" />
-          <div>
-            <p className="text-xl font-bold font-mono text-text">{precision}%</p>
-            <p className="text-xs text-text-secondary">Precision</p>
-          </div>
-        </div>
-        <div className="bg-surface border border-border rounded-lg p-3 flex items-center gap-2">
-          <Shield className="h-5 w-5 text-text-secondary shrink-0" />
-          <div>
-            <p className="text-xl font-bold font-mono text-text">{elapsed}</p>
-            <p className="text-xs text-text-secondary">Elapsed</p>
-          </div>
-        </div>
+        <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
+        <MetricCard icon={XCircle} label="Faltantes (con nota)" value={missingPackages.length} />
+        <MetricCard icon={Target} label="Precisión" value={`${precision}%`} />
+        <MetricCard icon={Shield} label="Duración" value={elapsed} />
       </div>
 
       {/* Legal Notice */}
       <div className="bg-status-warning-bg border border-status-warning-border rounded-lg p-3">
         <p className="text-sm text-text font-medium">
-          Custody Transfer Notice
+          Aviso de transferencia de custodia
         </p>
         <p className="text-xs text-text-secondary mt-1">
-          By signing below, the operator confirms receipt of the verified
-          packages. From this moment, the operator assumes legal responsibility
-          for the goods.
+          Al firmar, el operador confirma la recepción de los paquetes verificados.
+          A partir de este momento, el operador asume la responsabilidad legal
+          sobre la mercancía.
         </p>
       </div>
 
       {/* Operator Signature (required) */}
       <div className="space-y-2">
         <p className="text-sm text-text-secondary">
-          Operator: <strong className="text-text">{operatorName}</strong>
+          Operador: <strong className="text-text">{operatorName}</strong>
         </p>
         <SignaturePad
-          label="Operator Signature (required)"
+          label="Firma del operador (obligatoria)"
           onChange={setOperatorSignature}
         />
       </div>
 
       {/* Client Signature (optional) */}
       <div className="space-y-2">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
+        <label htmlFor="client-sig" className="flex items-center gap-2">
+          <Checkbox
+            id="client-sig"
             checked={showClientSig}
-            onChange={(e) => setShowClientSig(e.target.checked)}
-            className="rounded"
+            onCheckedChange={(checked) => setShowClientSig(checked === true)}
           />
-          <span className="text-sm text-text">Add client signature</span>
+          <span className="text-sm text-text">Agregar firma del cliente</span>
         </label>
         {showClientSig && (
           <div className="space-y-2 ml-6">
             <Input
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
-              placeholder="Client name"
+              placeholder="Nombre del cliente"
               className="text-sm"
-              aria-label="Client name"
+              aria-label="Nombre del cliente"
             />
             <SignaturePad
-              label="Client Signature (optional)"
+              label="Firma del cliente (opcional)"
               onChange={setClientSignature}
             />
           </div>
         )}
       </div>
 
-      {/* Complete Button */}
-      <Button
-        onClick={handleComplete}
-        disabled={!canComplete || isSubmitting}
-        className="w-full disabled:opacity-50"
-        size="lg"
-      >
-        {isSubmitting ? 'Completing...' : 'Complete & Generate Receipt'}
-      </Button>
+      {/* Complete Button with Confirmation Dialog */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            disabled={!canComplete || isSubmitting}
+            className="w-full disabled:opacity-50"
+            size="lg"
+          >
+            {isSubmitting ? 'Completando...' : 'Completar y generar recibo'}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Confirmar transferencia de custodia?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción es irreversible. Al confirmar, se registrará la
+              transferencia legal de los paquetes al operador.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleComplete}>
+              Confirmar y completar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

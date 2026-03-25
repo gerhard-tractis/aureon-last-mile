@@ -1,11 +1,11 @@
 export type PickupStep = 'pickup' | 'scan' | 'review' | 'handoff' | 'complete';
 
 const STEPS: { key: PickupStep; label: string }[] = [
-  { key: 'pickup', label: 'Pickup' },
-  { key: 'scan', label: 'Scan' },
-  { key: 'review', label: 'Review' },
-  { key: 'handoff', label: 'Handoff' },
-  { key: 'complete', label: 'Complete' },
+  { key: 'pickup', label: 'Recogida' },
+  { key: 'scan', label: 'Escaneo' },
+  { key: 'review', label: 'Revisión' },
+  { key: 'handoff', label: 'Entrega' },
+  { key: 'complete', label: 'Firma' },
 ];
 
 interface PickupStepBreadcrumbProps {

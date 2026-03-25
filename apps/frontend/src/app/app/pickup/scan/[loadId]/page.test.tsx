@@ -1,15 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import ScanningPage from './page';
 
-// Mock next/navigation
-const mockPush = vi.fn();
-const mockParams = { loadId: 'CARGA-001' };
-vi.mock('next/navigation', () => ({
-  useParams: () => mockParams,
-  useRouter: () => ({ push: mockPush }),
+// Mock all dependencies
+const mockUsePickupScans = vi.fn();
+const mockUseScanMutation = vi.fn();
+vi.mock('@/hooks/pickup/usePickupScans', () => ({
+  usePickupScans: (...args: unknown[]) => mockUsePickupScans(...args),
+  useScanMutation: (...args: unknown[]) => mockUseScanMutation(...args),
 }));
 
-// Mock hooks
+const mockUseManifestOrders = vi.fn();
+vi.mock('@/hooks/pickup/useManifestOrders', () => ({
+  useManifestOrders: (...args: unknown[]) => mockUseManifestOrders(...args),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
@@ -17,61 +22,85 @@ vi.mock('@/hooks/useOperatorId', () => ({
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
     from: () => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      is: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { id: 'manifest-1', total_packages: 10 } }),
-      order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      select: () => ({
+        eq: () => ({
+          eq: () => ({
+            is: () => ({
+              single: () => Promise.resolve({ data: { id: 'm1', total_packages: 10 } }),
+            }),
+          }),
+        }),
+      }),
     }),
-    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } } }) },
+    auth: {
+      getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }),
+    },
   }),
-}));
-
-vi.mock('@/hooks/pickup/usePickupScans', () => ({
-  usePickupScans: () => ({ data: [] }),
-  useScanMutation: () => ({ mutate: vi.fn(), isPending: false }),
-}));
-
-vi.mock('@/hooks/pickup/useManifestOrders', () => ({
-  useManifestOrders: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
-}));
-
-vi.mock('@/components/pickup/ManifestDetailList', () => ({
-  ManifestDetailList: () => <div data-testid="manifest-detail-list" />,
 }));
 
 vi.mock('@/components/pickup/ScannerInput', () => ({
   ScannerInput: () => <div data-testid="scanner-input" />,
 }));
 
-vi.mock('@/components/pickup/ProgressBar', () => ({
-  ProgressBar: () => <div data-testid="progress-bar" />,
-}));
-
 vi.mock('@/components/pickup/ScanHistoryList', () => ({
-  ScanHistoryList: () => <div data-testid="scan-history-list" />,
+  ScanHistoryList: () => <div data-testid="scan-history" />,
 }));
 
 vi.mock('@/components/pickup/ScanResultPopup', () => ({
   ScanResultPopup: () => null,
 }));
 
-vi.mock('@/lib/pickup/audio', () => ({
-  playFeedback: vi.fn(),
+vi.mock('@/components/pickup/ManifestDetailList', () => ({
+  ManifestDetailList: () => <div data-testid="manifest-detail" />,
 }));
 
-import ScanningPage from './page';
+vi.mock('@/components/pickup/PickupFlowHeader', () => ({
+  PickupFlowHeader: () => <div data-testid="flow-header" />,
+}));
+
+vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
+  PickupStepBreadcrumb: () => <div data-testid="breadcrumb" />,
+}));
+
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useParams: () => ({ loadId: 'CARGA-001' }),
+  useRouter: () => ({ push: mockPush }),
+}));
 
 describe('ScanningPage', () => {
-  it('renders back arrow that navigates to /app/pickup', () => {
-    render(<ScanningPage />);
-    const backButton = screen.getByLabelText('Back to manifests');
-    fireEvent.click(backButton);
-    expect(mockPush).toHaveBeenCalledWith('/app/pickup');
+  beforeEach(() => {
+    mockUsePickupScans.mockReturnValue({ data: [
+      { id: 's1', scan_result: 'verified', package_id: 'p1', barcode_scanned: 'BC001' },
+      { id: 's2', scan_result: 'not_found', package_id: null, barcode_scanned: 'BC999' },
+    ] });
+    mockUseScanMutation.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    mockUseManifestOrders.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
   });
 
-  it('renders ManifestDetailList', () => {
+  it('renders Spanish text for "not in manifest" counter', () => {
     render(<ScanningPage />);
-    expect(screen.getByTestId('manifest-detail-list')).toBeInTheDocument();
+    expect(screen.getByText(/no encontrados? en manifiesto/i)).toBeInTheDocument();
+  });
+
+  it('renders "Escaneos recientes" section header', () => {
+    render(<ScanningPage />);
+    expect(screen.getByText('Escaneos recientes')).toBeInTheDocument();
+  });
+
+  it('renders "Continuar a revisión" button', () => {
+    render(<ScanningPage />);
+    expect(screen.getByRole('button', { name: /continuar a revisión/i })).toBeInTheDocument();
+  });
+
+  it('renders back button with Spanish aria-label', () => {
+    render(<ScanningPage />);
+    expect(screen.getByRole('button', { name: /volver a manifiestos/i })).toBeInTheDocument();
+  });
+
+  it('has responsive padding', () => {
+    const { container } = render(<ScanningPage />);
+    const wrapper = container.firstElementChild;
+    expect(wrapper?.className).toContain('sm:p-6');
   });
 });

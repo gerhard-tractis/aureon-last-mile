@@ -113,7 +113,7 @@ export default function ScanningPage() {
   );
 
   return (
-    <div className="space-y-4 p-4 max-w-2xl mx-auto">
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <ScanResultPopup
         visible={showNotFoundPopup}
         onDismiss={() => setShowNotFoundPopup(false)}
@@ -124,13 +124,14 @@ export default function ScanningPage() {
 
       {/* Back + timer row */}
       <div className="flex items-center justify-between -mt-2">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => router.push('/app/pickup')}
-          className="p-1 rounded-md hover:bg-surface-raised transition-colors"
-          aria-label="Back to manifests"
+          aria-label="Volver a manifiestos"
         >
           <ArrowLeft className="h-5 w-5 text-text-secondary" />
-        </button>
+        </Button>
         <div className="flex items-center gap-1 text-sm text-text-secondary">
           <Clock className="h-4 w-4" />
           {elapsed}
@@ -143,13 +144,13 @@ export default function ScanningPage() {
       {notFoundCount > 0 && (
         <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-lg">
           <XCircle className="h-4 w-4 text-status-error" />
-          <span className="text-sm text-text">{notFoundCount} not in manifest</span>
+          <span className="text-sm text-text">{notFoundCount} no encontrados en manifiesto</span>
         </div>
       )}
 
       <div className="bg-surface border border-border rounded-lg">
         <div className="px-3 pt-3 pb-1">
-          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Recent Scans</p>
+          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
         </div>
         <div className="p-3">
           <ScanHistoryList scans={scans} />
@@ -174,7 +175,7 @@ export default function ScanningPage() {
         className="w-full"
         size="lg"
       >
-        Complete Pickup
+        Continuar a revisión
       </Button>
     </div>
   );

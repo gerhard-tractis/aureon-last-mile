@@ -8,6 +8,7 @@ interface ManifestCardProps {
   orderCount: number;
   packageCount: number;
   completedAt?: string;
+  interactive?: boolean;
   onClick: () => void;
 }
 
@@ -17,20 +18,33 @@ export function ManifestCard({
   orderCount,
   packageCount,
   completedAt,
+  interactive = true,
   onClick,
 }: ManifestCardProps) {
+  const interactiveProps = interactive
+    ? {
+        onClick,
+        role: 'button' as const,
+        tabIndex: 0,
+        onKeyDown: (e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' || e.key === ' ') onClick();
+        },
+      }
+    : {};
+
+  const interactiveClasses = interactive
+    ? 'cursor-pointer hover:border-accent/50'
+    : '';
+
   return (
     <div
-      className="bg-surface border border-border rounded-lg p-4 cursor-pointer hover:border-accent/50 transition-colors min-h-[72px] flex flex-col justify-center"
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
+      className={`bg-surface border border-border rounded-lg p-4 transition-colors min-h-[72px] flex flex-col justify-center ${interactiveClasses}`}
+      {...interactiveProps}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-semibold text-text truncate">
-            {retailerName || 'Unknown Retailer'}
+            {retailerName || 'Retailer desconocido'}
           </h3>
           <p className="font-mono text-xs text-text-secondary mt-0.5">{externalLoadId}</p>
         </div>
@@ -47,7 +61,7 @@ export function ManifestCard({
       </div>
       {completedAt && (
         <p className="text-xs text-text-muted mt-2">
-          Completed {new Date(completedAt).toLocaleDateString()}
+          Completado el {new Date(completedAt).toLocaleDateString()}
         </p>
       )}
     </div>

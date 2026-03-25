@@ -12,16 +12,16 @@ describe('DiscrepancyItem', () => {
     onSaveNote: vi.fn(),
   };
 
-  it('renders package label and order number', () => {
+  it('renders package label and order number in Spanish', () => {
     render(<DiscrepancyItem {...defaultProps} />);
     expect(screen.getByText('CTN001')).toBeInTheDocument();
-    expect(screen.getByText('Order: ORD-100')).toBeInTheDocument();
+    expect(screen.getByText('Pedido: ORD-100')).toBeInTheDocument();
   });
 
   it('renders textarea with aria-label', () => {
     render(<DiscrepancyItem {...defaultProps} />);
     expect(
-      screen.getByLabelText('Note for package CTN001')
+      screen.getByLabelText('Nota para paquete CTN001')
     ).toBeInTheDocument();
   });
 
@@ -30,7 +30,7 @@ describe('DiscrepancyItem', () => {
       <DiscrepancyItem {...defaultProps} existingNote="Damaged box" />
     );
     const textarea = screen.getByLabelText(
-      'Note for package CTN001'
+      'Nota para paquete CTN001'
     ) as HTMLTextAreaElement;
     expect(textarea.value).toBe('Damaged box');
   });
@@ -40,7 +40,7 @@ describe('DiscrepancyItem', () => {
     render(
       <DiscrepancyItem {...defaultProps} onSaveNote={onSaveNote} />
     );
-    const textarea = screen.getByLabelText('Note for package CTN001');
+    const textarea = screen.getByLabelText('Nota para paquete CTN001');
     await userEvent.type(textarea, 'Missing from pallet');
     fireEvent.blur(textarea);
     expect(onSaveNote).toHaveBeenCalledWith('pkg-1', 'Missing from pallet');
@@ -51,7 +51,7 @@ describe('DiscrepancyItem', () => {
     render(
       <DiscrepancyItem {...defaultProps} onSaveNote={onSaveNote} />
     );
-    const textarea = screen.getByLabelText('Note for package CTN001');
+    const textarea = screen.getByLabelText('Nota para paquete CTN001');
     fireEvent.blur(textarea);
     expect(onSaveNote).not.toHaveBeenCalled();
   });

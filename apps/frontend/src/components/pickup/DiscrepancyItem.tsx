@@ -35,16 +35,16 @@ export function DiscrepancyItem({
       <div className="flex items-center gap-2">
         <Package className="h-4 w-4 text-status-warning" />
         <span className="font-mono text-sm font-medium text-text">{packageLabel}</span>
-        <span className="text-xs text-text-secondary">Order: {orderNumber}</span>
+        <span className="text-xs text-text-secondary">Pedido: {orderNumber}</span>
       </div>
       <textarea
         value={note}
         onChange={(e) => setNote(e.target.value)}
         onBlur={handleBlur}
-        placeholder="Reason for missing package (required)..."
+        placeholder="Motivo del faltante (obligatorio)..."
         className="w-full p-2 text-sm bg-surface border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-accent/40 text-text"
         rows={2}
-        aria-label={`Note for package ${packageLabel}`}
+        aria-label={`Nota para paquete ${packageLabel}`}
       />
     </div>
   );
