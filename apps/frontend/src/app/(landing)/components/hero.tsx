@@ -52,10 +52,10 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
           style={{ transitionDelay: '0ms' }}
         >
           <span className="text-4xl md:text-5xl font-bold tracking-tight text-amber-400">Aureon</span>
-          <span className="flex items-center gap-1.5 self-end mb-1">
-            <span className="text-xs text-stone-500">by</span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-xs text-stone-500 translate-y-[-2px]">by</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-4 opacity-50" />
+            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-4 opacity-50 translate-y-[-2px]" />
           </span>
         </div>
         <h1

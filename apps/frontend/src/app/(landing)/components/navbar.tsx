@@ -34,12 +34,12 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-6">
         {/* Brand */}
-        <Link href="/" className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-baseline gap-2">
           <span className="text-xl font-bold tracking-tight text-stone-100">Aureon</span>
-          <span className="flex items-center gap-1 self-end mb-0.5">
-            <span className="text-[10px] text-stone-500 leading-none">by</span>
+          <span className="flex items-baseline gap-1">
+            <span className="text-[10px] text-stone-500">by</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40" />
+            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40 translate-y-[-1px]" />
           </span>
         </Link>
 
