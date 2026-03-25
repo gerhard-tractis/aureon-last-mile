@@ -215,9 +215,13 @@ html.dark {
   * {
     @apply border-border;
   }
+  html {
+    background-color: var(--color-background);
+  }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-sans, system-ui, sans-serif);
+    min-height: 100dvh;
   }
   code, kbd, pre, .font-mono {
     font-family: var(--font-mono, ui-monospace, monospace);

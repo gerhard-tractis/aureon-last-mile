@@ -32,10 +32,10 @@ export default function DistributionPage() {
   void mappedComunas;
 
   return (
-    <div className="p-6 space-y-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 max-w-6xl mx-auto">
+      <div className="space-y-3 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
         <h1 className="text-2xl font-semibold">Distribución</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             href="/app/distribution/batch"
             className="inline-flex items-center px-3 py-1.5 text-sm border rounded-md hover:bg-muted"
