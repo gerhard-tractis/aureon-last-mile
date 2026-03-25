@@ -14,6 +14,8 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
+import { MetricCard } from '@/components/metrics/MetricCard';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DiscrepancyReviewPage() {
   const params = useParams();
@@ -86,40 +88,43 @@ export default function DiscrepancyReviewPage() {
     });
   };
 
+  if (!manifestId) {
+    return (
+      <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-20 w-full" />
+        <div className="grid grid-cols-3 gap-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+        <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4 p-4 max-w-2xl mx-auto">
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <PickupStepBreadcrumb current="review" />
 
       {/* Gold header */}
       <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
         <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Review</p>
+        <p className="font-semibold text-base mt-0.5">Revisión</p>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-surface border border-border rounded-lg p-3 text-center">
-          <CheckCircle className="h-5 w-5 text-status-success mx-auto mb-1" />
-          <p className="text-2xl font-bold font-mono text-text">{verifiedCount}</p>
-          <p className="text-xs text-text-secondary">Verified</p>
-        </div>
-        <div className="bg-surface border border-status-error-border rounded-lg p-3 text-center">
-          <XCircle className="h-5 w-5 text-status-error mx-auto mb-1" />
-          <p className="text-2xl font-bold font-mono text-text">{missingPackages.length}</p>
-          <p className="text-xs text-text-secondary">Missing</p>
-        </div>
-        <div className="bg-surface border border-status-warning-border rounded-lg p-3 text-center">
-          <AlertTriangle className="h-5 w-5 text-status-warning mx-auto mb-1" />
-          <p className="text-2xl font-bold font-mono text-text">{notFoundScans.length}</p>
-          <p className="text-xs text-text-secondary">Not in Manifest</p>
-        </div>
+        <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
+        <MetricCard icon={XCircle} label="Faltantes" value={missingPackages.length} />
+        <MetricCard icon={AlertTriangle} label="No en manifiesto" value={notFoundScans.length} />
       </div>
 
       {/* Missing Packages — notes required */}
       {missingPackages.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-text">
-            Missing — notes required ({missingPackages.length})
+            Faltantes — notas obligatorias ({missingPackages.length})
           </h2>
           {missingPackages.map((pkg) => (
             <DiscrepancyItem
@@ -138,7 +143,7 @@ export default function DiscrepancyReviewPage() {
       {notFoundScans.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-sm font-semibold text-text">
-            Not in Manifest ({notFoundScans.length})
+            No en manifiesto ({notFoundScans.length})
           </h2>
           {notFoundScans.map((scan) => (
             <div
@@ -162,16 +167,16 @@ export default function DiscrepancyReviewPage() {
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          Volver
         </Button>
         <Button
           onClick={() =>
-            router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`)
+            router.push(`/app/pickup/handoff/${encodeURIComponent(loadId)}`)
           }
           disabled={!allNotesComplete}
           className="flex-1 disabled:opacity-50"
         >
-          Proceed to Sign
+          Continuar a entrega
         </Button>
       </div>
     </div>
