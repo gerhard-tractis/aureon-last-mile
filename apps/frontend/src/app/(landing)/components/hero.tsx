@@ -47,16 +47,27 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
 
       {/* Content */}
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
+        <div
+          className={`flex items-center justify-center gap-3 mb-8 ${show}`}
+          style={{ transitionDelay: '0ms' }}
+        >
+          <span className="text-4xl md:text-5xl font-bold tracking-tight text-amber-400">Aureon</span>
+          <span className="flex items-center gap-1.5 self-end mb-1">
+            <span className="text-xs text-stone-500">by</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-4 opacity-50" />
+          </span>
+        </div>
         <h1
           className={`text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight bg-gradient-to-r from-white via-stone-200 to-stone-400 bg-clip-text text-transparent ${show}`}
-          style={{ transitionDelay: '0ms' }}
+          style={{ transitionDelay: '150ms' }}
         >
           Tu última milla, bajo control
         </h1>
 
         <p
           className={`mt-6 text-lg md:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed ${show}`}
-          style={{ transitionDelay: '150ms' }}
+          style={{ transitionDelay: '300ms' }}
         >
           Plataforma inteligente para operaciones logísticas de última milla. Menos entregas fallidas,
           rutas más eficientes, datos en tiempo real.
@@ -64,7 +75,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
 
         <div
           className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${show}`}
-          style={{ transitionDelay: '300ms' }}
+          style={{ transitionDelay: '450ms' }}
         >
           <a
             href={DEMO_URL}
