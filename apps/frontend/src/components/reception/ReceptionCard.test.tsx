@@ -57,7 +57,7 @@ describe('ReceptionCard', () => {
     expect(screen.getByText('Pendiente')).toBeInTheDocument();
   });
 
-  it('shows "En progreso" badge for in-progress reception', () => {
+  it('shows "En curso" badge for in-progress reception', () => {
     render(
       <ReceptionCard
         {...defaultProps}
@@ -66,12 +66,32 @@ describe('ReceptionCard', () => {
         expectedCount={25}
       />
     );
-    expect(screen.getByText('En progreso')).toBeInTheDocument();
+    expect(screen.getByText('En curso')).toBeInTheDocument();
   });
 
   it('renders pickup completion time', () => {
     render(<ReceptionCard {...defaultProps} />);
     // completedAt is rendered as a localized date/time
     expect(screen.getByText(/Retiro completado/)).toBeInTheDocument();
+  });
+
+  it('shows driver name when provided', () => {
+    render(<ReceptionCard {...defaultProps} driverName="Carlos López" />);
+    expect(screen.getByText(/Carlos López/)).toBeInTheDocument();
+  });
+
+  it('shows departure time when provided', () => {
+    render(<ReceptionCard {...defaultProps} departedAt="2026-03-25T14:30:00Z" />);
+    expect(screen.getByText(/Salió a las/)).toBeInTheDocument();
+  });
+
+  it('renders non-interactive when interactive is false', () => {
+    render(<ReceptionCard {...defaultProps} interactive={false} />);
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('shows hint text when interactive is false', () => {
+    render(<ReceptionCard {...defaultProps} interactive={false} />);
+    expect(screen.getByText(/Escanee QR para iniciar/)).toBeInTheDocument();
   });
 });

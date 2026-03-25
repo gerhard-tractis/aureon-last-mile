@@ -1,7 +1,8 @@
 'use client';
 
 import { Card, CardContent } from '@/components/ui/card';
-import { Package, CheckCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle, AlertTriangle, Package } from 'lucide-react';
+import { MetricCard } from '@/components/metrics/MetricCard';
 
 interface ReceptionSummaryProps {
   expectedCount: number;
@@ -42,53 +43,20 @@ export function ReceptionSummary({
           )}
         </div>
 
-        {/* Count cards */}
+        {/* MetricCards */}
         <div className="grid grid-cols-3 gap-3">
-          {/* Expected */}
-          <div className="text-center p-3 bg-surface-raised rounded-lg">
-            <Package className="h-5 w-5 mx-auto text-text-secondary mb-1" />
-            <p className="text-2xl font-bold text-text" data-testid="expected-count">
-              {expectedCount}
-            </p>
-            <p className="text-xs text-text-secondary">Esperados</p>
-          </div>
-
-          {/* Received */}
-          <div className="text-center p-3 bg-status-success-bg rounded-lg">
-            <CheckCircle className="h-5 w-5 mx-auto text-status-success mb-1" />
-            <p className="text-2xl font-bold text-status-success" data-testid="received-count">
-              {receivedCount}
-            </p>
-            <p className="text-xs text-status-success">Recibidos</p>
-          </div>
-
-          {/* Missing */}
-          <div
-            className={`text-center p-3 rounded-lg ${
-              missingCount > 0 ? 'bg-status-error-bg' : 'bg-surface-raised'
-            }`}
-          >
-            <AlertTriangle
-              className={`h-5 w-5 mx-auto mb-1 ${
-                missingCount > 0 ? 'text-status-error' : 'text-text-muted'
-              }`}
-            />
-            <p
-              className={`text-2xl font-bold ${
-                missingCount > 0 ? 'text-status-error' : 'text-text-secondary'
-              }`}
-              data-testid="missing-count"
-            >
-              {missingCount}
-            </p>
-            <p
-              className={`text-xs ${
-                missingCount > 0 ? 'text-status-error' : 'text-text-secondary'
-              }`}
-            >
-              Faltantes
-            </p>
-          </div>
+          <MetricCard label="Esperados" value={expectedCount} icon={Package} />
+          <MetricCard label="Recibidos" value={receivedCount} icon={CheckCircle} />
+          <MetricCard
+            label="Faltantes"
+            value={missingCount}
+            icon={AlertTriangle}
+            className={
+              missingCount > 0
+                ? 'border-status-error-border bg-status-error-bg'
+                : undefined
+            }
+          />
         </div>
       </CardContent>
     </Card>
