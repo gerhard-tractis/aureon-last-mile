@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, Clock } from 'lucide-react';
+import { Package, Clock, Truck } from 'lucide-react';
 
 interface ReceptionCardProps {
   retailerName: string | null;
@@ -9,6 +9,9 @@ interface ReceptionCardProps {
   receptionStatus: 'awaiting_reception' | 'reception_in_progress';
   receivedCount?: number;
   expectedCount?: number;
+  driverName?: string | null;
+  departedAt?: string | null;
+  interactive?: boolean;
   onClick: () => void;
 }
 
@@ -19,35 +22,46 @@ export function ReceptionCard({
   receptionStatus,
   receivedCount,
   expectedCount,
+  driverName,
+  departedAt,
+  interactive = true,
   onClick,
 }: ReceptionCardProps) {
   const isInProgress = receptionStatus === 'reception_in_progress';
 
-  return (
-    <div
-      className="bg-surface border border-border rounded-lg p-4 cursor-pointer hover:border-accent/50 transition-colors min-h-[72px] flex flex-col justify-center"
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') onClick();
-      }}
-    >
+  const timeDisplay = departedAt
+    ? `Salió a las ${new Date(departedAt).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}`
+    : completedAt
+      ? `Retiro completado: ${new Date(completedAt).toLocaleString('es-CL', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`
+      : null;
+
+  const content = (
+    <>
       <div className="flex items-center justify-between gap-3">
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-text truncate">
             {retailerName || 'Retailer desconocido'}
           </h3>
-          {completedAt && (
+          {driverName && (
+            <p className="text-xs text-text-secondary flex items-center gap-1 mt-1">
+              <Truck className="h-3 w-3" />
+              {driverName}
+            </p>
+          )}
+          {timeDisplay && (
             <p className="text-xs text-text-secondary flex items-center gap-1 mt-1">
               <Clock className="h-3 w-3" />
-              Retiro completado:{' '}
-              {new Date(completedAt).toLocaleString('es-CL', {
-                day: '2-digit',
-                month: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+              {timeDisplay}
+            </p>
+          )}
+          {!interactive && !isInProgress && (
+            <p className="text-xs text-text-muted mt-1">
+              Escanee QR para iniciar recepción
             </p>
           )}
         </div>
@@ -85,6 +99,28 @@ export function ReceptionCard({
             </div>
           </div>
         )}
+    </>
+  );
+
+  if (!interactive) {
+    return (
+      <div className="bg-surface border border-border rounded-lg p-4 min-h-[72px] flex flex-col justify-center">
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="bg-surface border border-border rounded-lg p-4 cursor-pointer hover:border-accent/50 transition-colors min-h-[72px] flex flex-col justify-center"
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onClick();
+      }}
+    >
+      {content}
     </div>
   );
 }
