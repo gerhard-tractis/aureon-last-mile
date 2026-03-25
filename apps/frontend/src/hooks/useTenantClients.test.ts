@@ -5,8 +5,8 @@ import React from 'react';
 import { useTenantClients } from './useTenantClients';
 
 const mockOrder = vi.fn();
-const mockIs = vi.fn().mockReturnValue({ order: mockOrder });
-const mockEq = vi.fn().mockReturnValue({ is: mockIs });
+const mockEq2 = vi.fn().mockReturnValue({ order: mockOrder });
+const mockEq = vi.fn().mockReturnValue({ eq: mockEq2 });
 const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
 const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
 
@@ -27,8 +27,8 @@ describe('useTenantClients', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockOrder.mockReset();
-    mockIs.mockReturnValue({ order: mockOrder });
-    mockEq.mockReturnValue({ is: mockIs });
+    mockEq2.mockReturnValue({ order: mockOrder });
+    mockEq.mockReturnValue({ eq: mockEq2 });
     mockSelect.mockReturnValue({ eq: mockEq });
     mockFrom.mockReturnValue({ select: mockSelect });
   });
@@ -58,7 +58,7 @@ describe('useTenantClients', () => {
     expect(mockFrom).toHaveBeenCalledWith('tenant_clients');
     expect(mockSelect).toHaveBeenCalledWith('id, name');
     expect(mockEq).toHaveBeenCalledWith('operator_id', 'op-1');
-    expect(mockIs).toHaveBeenCalledWith('deleted_at', null);
+    expect(mockEq2).toHaveBeenCalledWith('is_active', true);
     expect(mockOrder).toHaveBeenCalledWith('name');
   });
 
