@@ -8,7 +8,7 @@ interface DistributionKPIsProps {
 
 export function DistributionKPIs({ pending, consolidation, dueSoon }: DistributionKPIsProps) {
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
       <Card className="p-4">
         <div className="text-sm text-muted-foreground">Pendientes de sectorizar</div>
         <div className="text-2xl font-bold mt-1">{pending}</div>

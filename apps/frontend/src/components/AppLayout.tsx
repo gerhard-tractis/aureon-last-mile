@@ -119,7 +119,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider>
-      <div className="min-h-screen flex bg-surface">
+      <div className="min-h-dvh flex bg-surface">
         {/* Desktop sidebar */}
         <aside
           data-sidebar
