@@ -1,6 +1,8 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
+import { Package } from 'lucide-react';
+import { EmptyState } from '@/components/EmptyState';
 
 interface ConsolidationPanelProps {
   packages: ConsolidationPackage[];
@@ -19,11 +21,11 @@ function isUrgent(deliveryDate: string): boolean {
 export function ConsolidationPanel({ packages, onRelease }: ConsolidationPanelProps) {
   if (packages.length === 0) {
     return (
-      <Card>
-        <CardContent className="p-6 text-center text-muted-foreground">
-          No hay paquetes en consolidación.
-        </CardContent>
-      </Card>
+      <EmptyState
+        icon={Package}
+        title="Sin paquetes en consolidación"
+        description="Los paquetes que necesiten consolidarse antes de despacho aparecerán aquí."
+      />
     );
   }
 
