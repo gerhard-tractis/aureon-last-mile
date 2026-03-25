@@ -121,3 +121,5 @@ development_status:
   spec-13b-dashboard-redesign: done  # Dense command center: HeroSLA gold card, 4 KPI MetricCards, charts with token colors, shadcn Tabs, DataTable for client performance, PageShell layout, semantic tokens throughout. 1542 tests passing.
   spec-13c-ops-control-audit: done  # PR #149 merged 2026-03-23. Ops Control + Audit Logs redesign with design tokens, DataTable, Sheet, PageShell. 300 tests passing.
   spec-14-chile-comunas-normalization: done  # PR #158 merged 2026-03-24. chile_comunas (347 communes), aliases, normalization trigger on orders, dock_zone_comunas junction table, ID-based sectorization, DockZoneForm combobox, UnmatchedComunasPanel. 1527 tests passing.
+  spec-20-camera-intake-cascading-dropdowns: done  # PR #175 merged 2026-03-25. Cascading client→pickup-point dropdowns in CameraIntake, useTenantClients + usePickupPointsByClient hooks, fixes deleted_at column error.
+  spec-21-reception-visual-polish: done  # PR #178 merged 2026-03-25. Reception list KPIs+tabs, QR scanner (html5-qrcode), ReceptionStepBreadcrumb, MetricCard in summary, AlertDialog confirm, Spanish accent fixes. 97 tests passing.
