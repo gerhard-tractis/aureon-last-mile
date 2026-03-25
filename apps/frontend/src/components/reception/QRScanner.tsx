@@ -114,7 +114,8 @@ export function QRScanner({ onClose, operatorId: _operatorId }: QRScannerProps) 
           { fps: 10, qrbox: 250 },
           (decodedText: string) => {
             lookupManifest(decodedText);
-          }
+          },
+          () => { /* ignore per-frame decode errors */ }
         );
       } catch {
         setCameraError(true);
