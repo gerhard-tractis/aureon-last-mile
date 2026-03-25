@@ -10,12 +10,12 @@ export function Footer() {
         <div className="grid sm:grid-cols-3 gap-12">
           {/* Brand */}
           <div>
-            <div className="flex items-center gap-2.5 mb-3">
+            <div className="flex items-baseline gap-2 mb-3">
               <span className="text-lg font-bold text-stone-200">Aureon</span>
-              <span className="flex items-center gap-1 self-end mb-0.5">
-                <span className="text-[10px] text-stone-500 leading-none">by</span>
+              <span className="flex items-baseline gap-1">
+                <span className="text-[10px] text-stone-500">by</span>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40" />
+                <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40 translate-y-[-1px]" />
               </span>
             </div>
             <p className="text-sm text-stone-500">Plataforma inteligente de última milla</p>
