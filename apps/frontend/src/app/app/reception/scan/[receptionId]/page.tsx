@@ -17,6 +17,7 @@ import { createSPAClient } from '@/lib/supabase/client';
 import { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
 import { ArrowLeft, XCircle, Clock } from 'lucide-react';
 import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
+import { ReceptionStepBreadcrumb } from '@/components/reception/ReceptionStepBreadcrumb';
 
 interface ReceptionMeta {
   manifestId: string;
@@ -201,7 +202,8 @@ export default function ReceptionScanPage() {
   );
 
   return (
-    <div className="space-y-4 p-4 max-w-2xl mx-auto">
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+      <ReceptionStepBreadcrumb current="scan" />
       <PickupFlowHeader
         loadId={meta?.externalLoadId ?? '...'}
         scanned={receivedCount}
@@ -210,13 +212,14 @@ export default function ReceptionScanPage() {
 
       {/* Back + timer */}
       <div className="flex items-center justify-between -mt-2">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => router.push('/app/reception')}
-          className="p-1 hover:bg-surface-raised rounded-md transition-colors"
           aria-label="Volver a recepción"
         >
           <ArrowLeft className="h-5 w-5 text-text-secondary" />
-        </button>
+        </Button>
         <div className="flex items-center gap-1 text-sm text-text-secondary">
           <Clock className="h-4 w-4" />
           {elapsed}
