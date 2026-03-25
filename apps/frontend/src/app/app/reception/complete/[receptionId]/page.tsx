@@ -4,7 +4,19 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { ReceptionSummary } from '@/components/reception/ReceptionSummary';
+import { ReceptionStepBreadcrumb } from '@/components/reception/ReceptionStepBreadcrumb';
 import {
   useHubReception,
   useCompleteReception,
@@ -48,14 +60,13 @@ export default function ReceptionCompletePage() {
       {
         onSuccess: () => {
           setIsCompleted(true);
-          toast.success('Recepcion completada exitosamente');
-          // Navigate back after brief delay so user sees success state
+          toast.success('Recepción completada exitosamente');
           setTimeout(() => {
             router.push('/app/reception');
           }, 2000);
         },
         onError: () => {
-          toast.error('Error al completar la recepcion');
+          toast.error('Error al completar la recepción');
         },
       }
     );
@@ -74,7 +85,7 @@ export default function ReceptionCompletePage() {
       <div className="flex flex-col items-center justify-center min-h-[50vh] p-4 space-y-4">
         <CheckCircle className="h-16 w-16 text-status-success" />
         <h2 className="text-xl font-bold text-text">
-          Recepcion completada
+          Recepción completada
         </h2>
         <p className="text-text-secondary text-center">
           {retailerName} — {externalLoadId}
@@ -87,19 +98,22 @@ export default function ReceptionCompletePage() {
   }
 
   return (
-    <div className="space-y-4 p-4 max-w-2xl mx-auto">
+    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+      <ReceptionStepBreadcrumb current="confirm" />
+
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => router.back()}
-          className="p-1 hover:bg-surface-raised rounded-md transition-colors"
           aria-label="Volver"
         >
           <ArrowLeft className="h-5 w-5 text-text-secondary" />
-        </button>
+        </Button>
         <div className="flex-1">
           <h1 className="text-xl font-bold text-text">
-            Confirmar Recepcion
+            Confirmar Recepción
           </h1>
           <p className="text-sm text-text-secondary">
             {retailerName} — {externalLoadId}
@@ -121,7 +135,7 @@ export default function ReceptionCompletePage() {
           </p>
           <p className="text-sm text-text-secondary">
             Se detectaron {missingCount} paquetes faltantes. Registre las
-            observaciones sobre la perdida en transito.
+            observaciones sobre la pérdida en tránsito.
           </p>
           <Textarea
             placeholder="Describa los paquetes faltantes y posibles causas..."
@@ -133,22 +147,39 @@ export default function ReceptionCompletePage() {
         </div>
       )}
 
-      {/* Confirm button */}
-      <Button
-        onClick={handleConfirm}
-        disabled={completeMutation.isPending}
-        className="w-full"
-        size="lg"
-      >
-        {completeMutation.isPending ? (
-          <>
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            Procesando...
-          </>
-        ) : (
-          'Confirmar recepcion'
-        )}
-      </Button>
+      {/* Confirm button with AlertDialog */}
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            disabled={completeMutation.isPending}
+            className="w-full"
+            size="lg"
+          >
+            {completeMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Procesando...
+              </>
+            ) : (
+              'Confirmar recepción'
+            )}
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Confirmar recepción de carga?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción registrará la transferencia de custodia y no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirm}>
+              Confirmar recepción
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
