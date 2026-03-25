@@ -12,10 +12,9 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const show = (delay: number) =>
-    mounted
-      ? `opacity-100 translate-y-0 transition-all duration-700 ease-out`
-      : 'opacity-0 translate-y-5';
+  const show = mounted
+    ? 'opacity-100 translate-y-0 transition-all duration-700 ease-out'
+    : 'opacity-0 translate-y-5';
 
   return (
     <section className="relative min-h-screen flex items-center justify-center bg-stone-950 overflow-hidden">
@@ -49,14 +48,14 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
       {/* Content */}
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
         <h1
-          className={`text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight bg-gradient-to-r from-white via-stone-200 to-stone-400 bg-clip-text text-transparent ${show(0)}`}
+          className={`text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight bg-gradient-to-r from-white via-stone-200 to-stone-400 bg-clip-text text-transparent ${show}`}
           style={{ transitionDelay: '0ms' }}
         >
           Tu última milla, bajo control
         </h1>
 
         <p
-          className={`mt-6 text-lg md:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed ${show(150)}`}
+          className={`mt-6 text-lg md:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed ${show}`}
           style={{ transitionDelay: '150ms' }}
         >
           Plataforma inteligente para operaciones logísticas de última milla. Menos entregas fallidas,
@@ -64,7 +63,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
         </p>
 
         <div
-          className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${show(300)}`}
+          className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${show}`}
           style={{ transitionDelay: '300ms' }}
         >
           <a
