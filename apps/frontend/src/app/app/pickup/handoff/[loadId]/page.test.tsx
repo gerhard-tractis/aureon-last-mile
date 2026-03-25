@@ -18,7 +18,7 @@ vi.mock('@/lib/supabase/client', () => ({
         eq: () => ({
           eq: () => ({
             is: () => ({
-              then: (cb: Function) => cb({ data: [{ id: 'p1' }, { id: 'p2' }] }),
+              then: (cb: (r: { data: { id: string }[] }) => void) => cb({ data: [{ id: 'p1' }, { id: 'p2' }] }),
             }),
           }),
         }),
