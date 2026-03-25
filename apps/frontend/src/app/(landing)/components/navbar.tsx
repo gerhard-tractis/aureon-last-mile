@@ -35,12 +35,15 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
       <div className="max-w-7xl mx-auto flex items-center justify-between h-16 px-6">
         {/* Brand */}
         <Link href="/" className="flex items-center gap-3">
-          <svg width="24" height="22" viewBox="0 0 110 104" fill="#e6c15c" className="flex-shrink-0">
+          <svg width="28" height="26" viewBox="0 0 110 104" fill="#e6c15c" className="flex-shrink-0">
             <polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19" />
             <polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19" />
             <polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38" />
           </svg>
-          <span className="text-sm font-semibold tracking-tight text-stone-100">Aureon</span>
+          <div className="flex flex-col">
+            <span className="text-lg font-bold tracking-tight text-stone-100 leading-none">Aureon</span>
+            <span className="text-[10px] text-stone-500 tracking-wide leading-none mt-0.5">by Tractis</span>
+          </div>
         </Link>
 
         {/* Desktop nav links */}
