@@ -6,6 +6,7 @@ export interface ReceptionHubInfo {
   expected_count: number;
   received_count: number;
   status: string;
+  delivered_by_user?: { full_name: string } | null;
 }
 
 export interface ReceptionManifest {
@@ -34,7 +35,9 @@ export function useReceptionManifests(operatorId: string | null) {
         .select(
           `id, external_load_id, retailer_name, total_packages, completed_at,
            reception_status, assigned_to_user_id,
-           hub_receptions(id, expected_count, received_count, status)`
+           hub_receptions(id, expected_count, received_count, status,
+             delivered_by_user:users!hub_receptions_delivered_by_fkey(full_name)
+           )`
         )
         .in('reception_status', ['awaiting_reception', 'reception_in_progress'])
         .is('deleted_at', null)
