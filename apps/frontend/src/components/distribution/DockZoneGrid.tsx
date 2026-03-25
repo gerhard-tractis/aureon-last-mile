@@ -1,5 +1,7 @@
 import { Card, CardContent } from '@/components/ui/card';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
+import { Layers } from 'lucide-react';
+import { EmptyState } from '@/components/EmptyState';
 
 interface DockZoneGridProps {
   zones: DockZoneRecord[];
@@ -8,9 +10,12 @@ interface DockZoneGridProps {
 export function DockZoneGrid({ zones }: DockZoneGridProps) {
   if (zones.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        No hay andenes configurados para mostrar.
-      </div>
+      <EmptyState
+        icon={Layers}
+        title="Sin andenes activos"
+        description="Todos los andenes están inactivos. Activa al menos uno para ver la grilla de distribución."
+        action={{ label: 'Configurar andenes', href: '/app/distribution/settings' }}
+      />
     );
   }
 

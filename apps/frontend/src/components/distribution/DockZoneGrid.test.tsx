@@ -44,6 +44,8 @@ describe('DockZoneGrid', () => {
 
   it('shows empty state when no zones', () => {
     render(<DockZoneGrid zones={[]} />);
-    expect(screen.getByText(/no hay andenes/i)).toBeInTheDocument();
+    expect(screen.getByText('Sin andenes activos')).toBeInTheDocument();
+    expect(screen.getByText(/activa al menos uno/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /configurar andenes/i })).toHaveAttribute('href', '/app/distribution/settings');
   });
 });
