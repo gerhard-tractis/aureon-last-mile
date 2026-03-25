@@ -6,11 +6,19 @@ vi.mock('../scroll-reveal', () => ({
   ScrollReveal: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+vi.mock('next/link', () => ({
+  default: ({ children, href, ...props }: { children: React.ReactNode; href: string; [key: string]: unknown }) => (
+    <a href={href} {...props}>{children}</a>
+  ),
+}));
+
 import { ValueProps } from '../value-props';
 import { MetricsShowcase } from '../metrics-showcase';
 import { Features } from '../features';
 import { Integrations } from '../integrations';
 import { HowItWorks } from '../how-it-works';
+import { CtaSection } from '../cta-section';
+import { Footer } from '../footer';
 
 describe('ValueProps', () => {
   it('renders section heading', () => {
@@ -97,5 +105,44 @@ describe('HowItWorks', () => {
     expect(screen.getAllByText('2').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('3').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('CtaSection', () => {
+  it('renders headline', () => {
+    render(<CtaSection />);
+    expect(screen.getByText('Lleva tu operación al siguiente nivel')).toBeInTheDocument();
+  });
+
+  it('renders demo CTA', () => {
+    render(<CtaSection />);
+    const link = screen.getByRole('link', { name: /solicita una demo/i });
+    expect(link).toHaveAttribute('href', 'https://calendar.app.google/k9siT3q8FuxjGf9v5');
+  });
+});
+
+describe('Footer', () => {
+  it('renders brand', () => {
+    render(<Footer />);
+    expect(screen.getByText(/Plataforma de última milla por Tractis/)).toBeInTheDocument();
+  });
+
+  it('renders contact email', () => {
+    render(<Footer />);
+    expect(screen.getByText('gerhard@tractis.ai')).toBeInTheDocument();
+  });
+
+  it('renders copyright', () => {
+    render(<Footer />);
+    expect(screen.getByText(/© 2026 Tractis/)).toBeInTheDocument();
+  });
+
+  it('renders LinkedIn links', () => {
+    render(<Footer />);
+    const links = screen.getAllByRole('link');
+    const linkedInLinks = links.filter(
+      (l) => l.getAttribute('href')?.includes('linkedin.com')
+    );
+    expect(linkedInLinks).toHaveLength(2);
   });
 });
