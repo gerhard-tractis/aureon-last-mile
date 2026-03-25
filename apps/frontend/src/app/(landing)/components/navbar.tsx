@@ -42,7 +42,11 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
           </svg>
           <div className="flex flex-col">
             <span className="text-lg font-bold tracking-tight text-stone-100 leading-none">Aureon</span>
-            <span className="text-[10px] text-stone-500 tracking-wide leading-none mt-0.5">by Tractis</span>
+            <span className="flex items-center gap-1 mt-0.5">
+              <span className="text-[10px] text-stone-500 leading-none">by</span>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logos/tractis-color.svg" alt="Tractis" className="h-2.5 opacity-50" />
+            </span>
           </div>
         </Link>
 

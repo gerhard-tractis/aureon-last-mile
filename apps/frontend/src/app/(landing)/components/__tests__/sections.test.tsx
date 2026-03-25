@@ -125,7 +125,7 @@ describe('Footer', () => {
   it('renders brand', () => {
     render(<Footer />);
     expect(screen.getByText(/Plataforma inteligente de última milla/)).toBeInTheDocument();
-    expect(screen.getByText('by Tractis')).toBeInTheDocument();
+    expect(screen.getByAltText('Tractis')).toBeInTheDocument();
   });
 
   it('renders contact email', () => {
