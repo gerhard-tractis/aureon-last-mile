@@ -18,7 +18,11 @@ export function Footer() {
               </svg>
               <div className="flex flex-col">
                 <span className="text-base font-bold text-stone-200 leading-none">Aureon</span>
-                <span className="text-[10px] text-stone-500 tracking-wide leading-none mt-0.5">by Tractis</span>
+                <span className="flex items-center gap-1 mt-0.5">
+                  <span className="text-[10px] text-stone-500 leading-none">by</span>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/logos/tractis-color.svg" alt="Tractis" className="h-2.5 opacity-50" />
+                </span>
               </div>
             </div>
             <p className="text-sm text-stone-500">Plataforma inteligente de última milla</p>
