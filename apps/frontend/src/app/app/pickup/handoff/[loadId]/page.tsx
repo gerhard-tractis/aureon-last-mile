@@ -7,6 +7,7 @@ import { useQRHandoff } from '@/hooks/reception/useQRHandoff';
 import { QRHandoff } from '@/components/reception/QRHandoff';
 import { createSPAClient } from '@/lib/supabase/client';
 import { Loader2, Truck, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 
 export default function HandoffPage() {
@@ -65,13 +66,13 @@ export default function HandoffPage() {
   }
 
   return (
-    <div className="p-4 max-w-lg mx-auto space-y-4">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4">
       <PickupStepBreadcrumb current="handoff" />
 
       {/* Gold header */}
       <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
         <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Handoff</p>
+        <p className="font-semibold text-base mt-0.5">Entrega en bodega</p>
       </div>
 
       {/* Manifest Summary Card */}
@@ -108,10 +109,11 @@ export default function HandoffPage() {
       )}
 
       {/* Handoff Button */}
-      <button
+      <Button
         onClick={initiateHandoff}
         disabled={isSubmitting}
-        className="w-full py-4 px-6 bg-accent hover:opacity-90 disabled:opacity-50 text-accent-foreground font-semibold rounded-lg transition-opacity flex items-center justify-center gap-2 min-h-[48px]"
+        className="w-full"
+        size="lg"
       >
         {isSubmitting ? (
           <>
@@ -121,15 +123,16 @@ export default function HandoffPage() {
         ) : (
           'Entregar en bodega'
         )}
-      </button>
+      </Button>
 
       {/* Back */}
-      <button
+      <Button
+        variant="ghost"
         onClick={() => router.back()}
-        className="w-full py-3 text-text-secondary text-sm hover:text-text transition-colors"
+        className="w-full"
       >
         Volver
-      </button>
+      </Button>
     </div>
   );
 }
