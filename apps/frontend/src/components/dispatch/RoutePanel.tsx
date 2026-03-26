@@ -1,4 +1,18 @@
 'use client';
+
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
 interface Props {
@@ -17,76 +31,143 @@ interface Props {
 }
 
 export function RoutePanel({
-  packageCount, vehicles, selectedVehicle, driverName, routeClosed,
-  dispatching, dispatchError, onVehicleChange, onDriverChange, onClose, onDispatch, onRetry,
+  packageCount,
+  vehicles,
+  selectedVehicle,
+  driverName,
+  routeClosed,
+  dispatching,
+  dispatchError,
+  onVehicleChange,
+  onDriverChange,
+  onClose,
+  onDispatch,
+  onRetry,
 }: Props) {
   return (
-    <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', background: 'var(--color-surface)', borderLeft: '1.5px solid var(--color-border)' }}>
-      <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--color-border)' }}>
-        <h3 style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 14 }}>
+    <div className="w-full md:w-[340px] shrink-0 flex flex-col bg-surface border-l-[1.5px] border-border">
+      {/* Vehicle section */}
+      <div className="px-5 py-[18px] border-b border-border">
+        <h3 className="text-[10px] font-bold tracking-widest uppercase text-text-muted mb-3.5">
           Vehículo
         </h3>
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 6 }}>Camión</div>
+        <div className="mb-3.5">
+          <div className="text-[11px] text-text-muted mb-1.5">Camión</div>
           <select
             value={selectedVehicle}
             onChange={(e) => onVehicleChange(e.target.value)}
             disabled={routeClosed}
-            style={{ width: '100%', minHeight: 52, background: 'var(--color-background)', border: '1.5px solid var(--color-border)', borderRadius: 10, color: 'var(--color-text)', fontSize: 15, padding: '0 14px', cursor: 'pointer', outline: 'none' }}
+            className="w-full min-h-[52px] bg-background border-[1.5px] border-border rounded-[10px] text-text text-[15px] px-3.5 cursor-pointer outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Seleccionar camión…</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.external_vehicle_id}>
-                {v.external_vehicle_id}{v.plate_number ? ` · ${v.plate_number}` : ''}
+                {v.external_vehicle_id}
+                {v.plate_number ? ` · ${v.plate_number}` : ''}
               </option>
             ))}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 6 }}>Conductor (opcional)</div>
-          <input
+          <div className="text-[11px] text-text-muted mb-1.5">
+            Conductor (opcional)
+          </div>
+          <Input
             value={driverName}
             onChange={(e) => onDriverChange(e.target.value)}
             disabled={routeClosed}
             placeholder="Nombre o RUT…"
-            style={{ width: '100%', minHeight: 52, background: 'var(--color-background)', border: '1.5px solid var(--color-border)', borderRadius: 10, color: 'var(--color-text)', fontSize: 15, padding: '0 14px', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+            className="min-h-[52px] rounded-[10px] border-[1.5px] text-[15px] px-3.5"
           />
         </div>
       </div>
-      <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--color-border)' }}>
-        <h3 style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 14 }}>
+
+      {/* Summary section */}
+      <div className="px-5 py-[18px] border-b border-border">
+        <h3 className="text-[10px] font-bold tracking-widest uppercase text-text-muted mb-3.5">
           Resumen
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div className="grid grid-cols-2 gap-2.5">
           {(['Paquetes', 'Órdenes'] as const).map((label) => (
-            <div key={label} style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 22, fontWeight: 700, color: 'var(--color-text)' }}>{packageCount}</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 1 }}>{label}</div>
+            <div
+              key={label}
+              className="bg-surface-raised border border-border rounded-lg px-3 py-2.5 text-center"
+            >
+              <div className="font-mono text-[22px] font-bold text-text">
+                {packageCount}
+              </div>
+              <div className="text-[11px] text-text-muted mt-px">{label}</div>
             </div>
           ))}
         </div>
       </div>
-      <div style={{ marginTop: 'auto', padding: '16px 20px', borderTop: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* Actions section */}
+      <div className="mt-auto px-5 py-4 border-t border-border flex flex-col gap-2.5">
         {dispatchError && (
-          <div style={{ background: 'color-mix(in srgb, #e53e3e 10%, transparent)', border: '1px solid color-mix(in srgb, #e53e3e 30%, transparent)', color: '#e53e3e', padding: '10px 14px', borderRadius: 8, fontSize: 12 }}>
+          <div className="bg-status-error-bg border border-status-error-border text-status-error px-3.5 py-2.5 rounded-lg text-xs">
             ⚠ {dispatchError}{' '}
-            <button onClick={onRetry} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', textDecoration: 'underline', fontSize: 12 }}>Reintentar</button>
+            <button
+              onClick={onRetry}
+              className="bg-transparent border-none cursor-pointer text-status-error underline text-xs"
+            >
+              Reintentar
+            </button>
           </div>
         )}
-        <button
-          onClick={onClose}
-          disabled={routeClosed || packageCount === 0}
-          style={{ width: '100%', minHeight: 52, borderRadius: 10, background: 'var(--color-surface-raised)', border: '1.5px solid var(--color-border)', color: 'var(--color-text-secondary, var(--color-text))', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}
-        >
-          Cerrar Ruta
-        </button>
-        <button
-          onClick={onDispatch}
-          disabled={!routeClosed || !selectedVehicle || dispatching}
-          style={{ width: '100%', minHeight: 56, borderRadius: 10, border: 'none', background: 'var(--color-accent)', color: 'var(--color-accent-foreground, #fff)', fontSize: 16, fontWeight: 800, cursor: 'pointer', opacity: (!routeClosed || !selectedVehicle || dispatching) ? 0.4 : 1 }}
-        >
-          {dispatching ? 'Despachando…' : 'Despachar a DispatchTrack →'}
-        </button>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full h-13 rounded-[10px] text-[15px] font-semibold"
+              disabled={routeClosed || packageCount === 0}
+            >
+              Cerrar Ruta
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar cierre de ruta</AlertDialogTitle>
+              <AlertDialogDescription>
+                No se podrán agregar más paquetes a esta ruta después de
+                cerrarla.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onClose}>
+                Cerrar ruta
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              className="w-full h-14 rounded-[10px] text-base font-extrabold"
+              disabled={!routeClosed || !selectedVehicle || dispatching}
+            >
+              {dispatching ? 'Despachando…' : 'Despachar a DispatchTrack →'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar despacho</AlertDialogTitle>
+              <AlertDialogDescription>
+                Se enviará la ruta con {packageCount} paquetes a DispatchTrack.
+                Esta acción no se puede deshacer.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onDispatch}>
+                Despachar
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

@@ -24,26 +24,9 @@ export function ScanZone({ onScan, disabled, lastError }: Props) {
   };
 
   return (
-    <div
-      style={{
-        padding: '14px 20px 12px',
-        background: 'var(--color-accent-muted)',
-        borderBottom: '1.5px solid color-mix(in srgb, var(--color-accent) 25%, transparent)',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '10px', fontWeight: 700, letterSpacing: '0.14em',
-          textTransform: 'uppercase', color: 'var(--color-accent)',
-          marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px',
-        }}
-      >
-        <span
-          style={{
-            width: 7, height: 7, borderRadius: '50%', background: 'var(--color-accent)',
-            display: 'inline-block',
-          }}
-        />
+    <div className="px-5 pt-3.5 pb-3 bg-accent-muted border-b border-accent/25">
+      <div className="text-[10px] font-bold tracking-[0.14em] uppercase text-accent mb-2 flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-accent inline-block" />
         Escáner activo
       </div>
       <input
@@ -55,22 +38,12 @@ export function ScanZone({ onScan, disabled, lastError }: Props) {
         disabled={disabled}
         placeholder="Escanea barcode, QR o número de orden…"
         autoComplete="off"
-        style={{
-          width: '100%', minHeight: 52,
-          background: 'var(--color-background)',
-          border: '1.5px solid var(--color-accent)',
-          borderRadius: 10, color: 'var(--color-text)',
-          fontFamily: 'var(--font-mono)', fontSize: 16,
-          padding: '0 16px', outline: 'none',
-          boxSizing: 'border-box',
-        }}
+        className="w-full h-13 bg-background border-[1.5px] border-accent rounded-[10px] text-text font-mono text-base px-4 outline-none"
       />
       {lastError && (
-        <p style={{ fontSize: 12, color: 'var(--color-status-error, #e53e3e)', marginTop: 6 }}>
-          {lastError}
-        </p>
+        <p className="text-xs text-status-error mt-1.5">{lastError}</p>
       )}
-      <p style={{ fontSize: 11, color: 'var(--color-accent)', opacity: 0.7, marginTop: 6 }}>
+      <p className="text-[11px] text-accent/70 mt-1.5">
         Acepta código de paquete · número de orden · QR code
       </p>
     </div>
