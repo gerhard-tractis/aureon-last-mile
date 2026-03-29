@@ -14,8 +14,6 @@ import { registerSchedulers } from './orchestration/schedulers';
 import { createFlowProducer, closeFlowProducer } from './orchestration/flow-producer';
 import { startCommandListener } from './orchestration/command-listener';
 import { startBullBoard } from './orchestration/bull-board';
-import { GroqProvider } from './providers/groq';
-import { IntakeAgent } from './agents/intake/intake-agent';
 import { createIntakeHandler } from './agents/intake/intake-worker';
 
 Sentry.init({
@@ -57,13 +55,9 @@ async function main(): Promise<void> {
   await initRedis(cfg.REDIS_URL);
   initSupabase(cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Instantiate INTAKE agent
-  const groq = new GroqProvider(cfg.GROQ_API_KEY);
-  const intakeAgent = new IntakeAgent(groq, supabase, null as never);
-
   const queues = createQueues(cfg.REDIS_URL) as unknown as Record<string, Queue>;
   workers = createWorkers(cfg.REDIS_URL, {
-    'intake.ingest': createIntakeHandler(intakeAgent),
+    'intake.ingest': createIntakeHandler(supabase, cfg.OPENROUTER_API_KEY),
   });
   createFlowProducer(cfg.REDIS_URL);
 
