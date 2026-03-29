@@ -12,7 +12,8 @@ interface UseCameraIntakeReturn {
   status: IntakeStatus;
   result: IntakeResult | null;
   error: string | null;
-  submit: (file: File, generatorId: string) => Promise<void>;
+  uploadProgress: { current: number; total: number } | null;
+  submit: (files: File[], pickupPointId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -21,6 +22,7 @@ export function useCameraIntake(): UseCameraIntakeReturn {
   const [status, setStatus] = useState<IntakeStatus>('idle');
   const [result, setResult] = useState<IntakeResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const channelRef = useRef<ReturnType<ReturnType<typeof createSPAClient>['channel']> | null>(null);
 
   const reset = useCallback(() => {
@@ -31,52 +33,66 @@ export function useCameraIntake(): UseCameraIntakeReturn {
     setStatus('idle');
     setResult(null);
     setError(null);
+    setUploadProgress(null);
   }, []);
 
   const submit = useCallback(
-    async (file: File, generatorId: string) => {
-      if (!operatorId) return;
+    async (files: File[], pickupPointId: string) => {
+      if (!operatorId || files.length === 0) return;
 
       setStatus('uploading');
       setError(null);
 
       const supabase = createSPAClient();
-      const path = `${operatorId}/${generatorId}/${Date.now()}-${file.name}`;
+      const timestamp = Date.now();
+      const storagePaths: string[] = [];
 
-      // 1. Upload image to Storage
-      const { error: uploadError } = await supabase.storage.from('manifests').upload(path, file);
-      if (uploadError) {
-        setStatus('error');
-        setError(uploadError.message);
-        return;
+      // Upload files sequentially (mobile connections may be slow)
+      for (let i = 0; i < files.length; i++) {
+        setUploadProgress({ current: i + 1, total: files.length });
+        const path = `${operatorId}/${pickupPointId}/${timestamp}/page-${i + 1}.jpg`;
+        const { error: uploadError } = await supabase.storage.from('manifests').upload(path, files[i]);
+        if (uploadError) {
+          setStatus('error');
+          setError(uploadError.message);
+          return;
+        }
+        storagePaths.push(path);
       }
 
-      // 2. Insert intake_submissions row
-      const { error: insertError } = await (supabase.from as CallableFunction)('intake_submissions').insert({
-        operator_id: operatorId,
-        generator_id: generatorId,
-        channel: 'mobile_camera',
-        status: 'received',
-        raw_payload: { storage_path: path, file_name: file.name },
-      });
-      if (insertError) {
+      // Insert intake_submissions row and capture the ID
+      const { data: submission, error: insertError } = await (supabase.from as CallableFunction)(
+        'intake_submissions',
+      )
+        .insert({
+          operator_id: operatorId,
+          pickup_point_id: pickupPointId,
+          channel: 'mobile_camera',
+          status: 'received',
+          raw_payload: { storage_paths: storagePaths, file_count: files.length },
+        })
+        .select('id')
+        .single();
+
+      if (insertError || !submission) {
         setStatus('error');
-        setError(insertError.message);
+        setError(insertError?.message ?? 'Failed to create submission');
         return;
       }
 
       setStatus('processing');
+      setUploadProgress(null);
 
-      // 3. Subscribe to Realtime for status updates on this submission
+      // Subscribe to Realtime filtered by submission ID
       const channel = supabase
-        .channel(`intake:${operatorId}:${generatorId}:${Date.now()}`)
+        .channel(`intake:${submission.id}`)
         .on(
           'postgres_changes',
           {
             event: 'UPDATE',
             schema: 'public',
             table: 'intake_submissions',
-            filter: `operator_id=eq.${operatorId}`,
+            filter: `id=eq.${submission.id}`,
           },
           (payload: { new: { status: string; orders_created: number } }) => {
             const { status: newStatus, orders_created } = payload.new;
@@ -87,14 +103,14 @@ export function useCameraIntake(): UseCameraIntakeReturn {
               setStatus('error');
               setError('El manifiesto no pudo ser procesado');
             }
-          }
+          },
         )
         .subscribe();
 
       channelRef.current = channel;
     },
-    [operatorId]
+    [operatorId],
   );
 
-  return { status, result, error, submit, reset };
+  return { status, result, error, uploadProgress, submit, reset };
 }
