@@ -20,6 +20,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/groq": "^1.2.9",
+    "@ai-sdk/openai": "^3.0.48",
     "@bull-board/api": "^6.20.6",
     "@bull-board/express": "^6.20.6",
     "@sentry/node": "^9.20.0",

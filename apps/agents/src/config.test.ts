@@ -7,8 +7,7 @@ const REQUIRED_VARS = [
   'REDIS_URL',
   'ANTHROPIC_API_KEY',
   'GROQ_API_KEY',
-  'GLM_OCR_API_KEY',
-  'GLM_OCR_ENDPOINT',
+  'OPENROUTER_API_KEY',
   'ENCRYPTION_KEY',
   'SENTRY_DSN',
 ];
@@ -27,8 +26,7 @@ const FULL_ENV: Record<string, string> = {
   REDIS_URL: 'redis://localhost:6379',
   ANTHROPIC_API_KEY: 'sk-ant-test',
   GROQ_API_KEY: 'gsk-test',
-  GLM_OCR_API_KEY: 'glm-key',
-  GLM_OCR_ENDPOINT: 'https://glm.example.com',
+  OPENROUTER_API_KEY: 'test-openrouter-key',
   ENCRYPTION_KEY: 'a'.repeat(64),
   SENTRY_DSN: 'https://sentry.io/test',
 };
