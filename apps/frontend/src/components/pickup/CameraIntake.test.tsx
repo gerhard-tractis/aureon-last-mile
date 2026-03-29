@@ -10,6 +10,7 @@ const mockReset = vi.fn();
 let mockStatus = 'idle';
 let mockResult: { ordersCreated: number } | null = null;
 let mockError: string | null = null;
+let mockUploadProgress: { current: number; total: number } | null = null;
 
 vi.mock('@/hooks/pickup/useCameraIntake', () => ({
   useCameraIntake: () => ({
@@ -18,6 +19,7 @@ vi.mock('@/hooks/pickup/useCameraIntake', () => ({
     status: mockStatus,
     result: mockResult,
     error: mockError,
+    uploadProgress: mockUploadProgress,
   }),
 }));
 
@@ -35,14 +37,14 @@ vi.mock('@/hooks/useTenantClients', () => ({
   }),
 }));
 
-// ── useGeneratorsByClient mock ───────────────────────────────────────────────
-let mockGenerators: { id: string; name: string }[] = [];
-let mockGeneratorsLoading = false;
+// ── usePickupPointsByClient mock ─────────────────────────────────────────────
+let mockPickupPoints: { id: string; name: string }[] = [];
+let mockPickupPointsLoading = false;
 
-vi.mock('@/hooks/pickup/useGeneratorsByClient', () => ({
-  useGeneratorsByClient: (_opId: string | null, clientId: string | null) => ({
-    data: clientId ? mockGenerators : undefined,
-    isLoading: clientId ? mockGeneratorsLoading : false,
+vi.mock('@/hooks/pickup/usePickupPointsByClient', () => ({
+  usePickupPointsByClient: (_opId: string | null, clientId: string | null) => ({
+    data: clientId ? mockPickupPoints : undefined,
+    isLoading: clientId ? mockPickupPointsLoading : false,
   }),
 }));
 
@@ -51,6 +53,10 @@ vi.mock('@/hooks/useOperatorId', () => ({
 }));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+function setFiles(input: HTMLInputElement, files: File[]) {
+  Object.defineProperty(input, 'files', { value: files, configurable: true });
+}
+
 function renderIntake(onClose = vi.fn()) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -70,16 +76,17 @@ describe('CameraIntake', () => {
     mockStatus = 'idle';
     mockResult = null;
     mockError = null;
+    mockUploadProgress = null;
     mockClients = [
       { id: 'client-1', name: 'Easy' },
       { id: 'client-2', name: 'Paris' },
     ];
     mockClientsLoading = false;
-    mockGenerators = [
-      { id: 'gen-1', name: 'Easy Maipú' },
-      { id: 'gen-2', name: 'Easy Puente Alto' },
+    mockPickupPoints = [
+      { id: 'pp-1', name: 'Easy Maipú' },
+      { id: 'pp-2', name: 'Easy Puente Alto' },
     ];
-    mockGeneratorsLoading = false;
+    mockPickupPointsLoading = false;
   });
 
   // ── Client dropdown ───────────────────────────────────────────────────────
@@ -106,44 +113,42 @@ describe('CameraIntake', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  // ── Generator dropdown ────────────────────────────────────────────────────
-  it('disables generator dropdown until client is selected', () => {
+  // ── Pickup point dropdown ─────────────────────────────────────────────────
+  it('disables pickup-point dropdown until client is selected', () => {
     renderIntake();
-    const genSelect = screen.getByTestId('generator-select');
-    expect(genSelect).toBeDisabled();
+    const ppSelect = screen.getByTestId('pickup-point-select');
+    expect(ppSelect).toBeDisabled();
   });
 
-  it('shows generators after selecting client', () => {
+  it('shows pickup points after selecting client', () => {
     renderIntake();
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
-    const genSelect = screen.getByTestId('generator-select');
-    expect(genSelect).not.toBeDisabled();
+    const ppSelect = screen.getByTestId('pickup-point-select');
+    expect(ppSelect).not.toBeDisabled();
     expect(screen.getByText('Easy Maipú')).toBeInTheDocument();
     expect(screen.getByText('Easy Puente Alto')).toBeInTheDocument();
   });
 
-  it('resets generator when client changes', () => {
+  it('resets pickup point when client changes', () => {
     renderIntake();
-    // Select client and generator
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
-    fireEvent.change(screen.getByTestId('generator-select'), { target: { value: 'gen-1' } });
-    expect(screen.getByTestId('generator-select')).toHaveValue('gen-1');
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
+    expect(screen.getByTestId('pickup-point-select')).toHaveValue('pp-1');
 
-    // Change client → generator resets
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-2' } });
-    expect(screen.getByTestId('generator-select')).toHaveValue('');
+    expect(screen.getByTestId('pickup-point-select')).toHaveValue('');
   });
 
-  it('shows message when client has zero generators', () => {
-    mockGenerators = [];
+  it('shows message when client has zero pickup points', () => {
+    mockPickupPoints = [];
     renderIntake();
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
     expect(screen.getByTestId('no-pickup-points')).toBeInTheDocument();
     expect(screen.getByText('No hay puntos de retiro configurados para este cliente')).toBeInTheDocument();
   });
 
-  // ── Camera button ─────────────────────────────────────────────────────────
-  it('disables camera button until generator is selected', () => {
+  // ── Camera button (no photos yet) ─────────────────────────────────────────
+  it('disables camera button until pickup point is selected', () => {
     renderIntake();
     const cameraBtn = screen.getByText('Tomar foto');
     expect(cameraBtn).toBeDisabled();
@@ -151,7 +156,7 @@ describe('CameraIntake', () => {
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
     expect(cameraBtn).toBeDisabled();
 
-    fireEvent.change(screen.getByTestId('generator-select'), { target: { value: 'gen-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
     expect(cameraBtn).not.toBeDisabled();
   });
 
@@ -163,17 +168,113 @@ describe('CameraIntake', () => {
     expect(fileInput.getAttribute('accept')).toContain('image/*');
   });
 
-  it('calls submit with file and selected generator', () => {
+  // ── Multi-photo flow ──────────────────────────────────────────────────────
+  it('shows thumbnail strip after first photo is taken', () => {
     renderIntake();
     fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
-    fireEvent.change(screen.getByTestId('generator-select'), { target: { value: 'gen-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
 
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(['img'], 'photo.jpg', { type: 'image/jpeg' });
-    Object.defineProperty(fileInput, 'files', { value: [file] });
+    setFiles(fileInput, [file]);
     fireEvent.change(fileInput);
 
-    expect(mockSubmit).toHaveBeenCalledWith(file, 'gen-1');
+    expect(screen.getByTestId('photo-thumb-0')).toBeInTheDocument();
+    expect(screen.getByText('Tomar otra pagina')).toBeInTheDocument();
+    expect(screen.getByText('Enviar (1)')).toBeInTheDocument();
+  });
+
+  it('can add multiple photos and shows correct count', () => {
+    renderIntake();
+    fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    const file1 = new File(['img1'], 'photo1.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file1]);
+    fireEvent.change(fileInput);
+
+    const file2 = new File(['img2'], 'photo2.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file2]);
+    fireEvent.change(fileInput);
+
+    expect(screen.getByTestId('photo-thumb-0')).toBeInTheDocument();
+    expect(screen.getByTestId('photo-thumb-1')).toBeInTheDocument();
+    expect(screen.getByText('Enviar (2)')).toBeInTheDocument();
+  });
+
+  it('can remove a photo from the strip', () => {
+    renderIntake();
+    fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file1 = new File(['img1'], 'photo1.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file1]);
+    fireEvent.change(fileInput);
+
+    const file2 = new File(['img2'], 'photo2.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file2]);
+    fireEvent.change(fileInput);
+
+    expect(screen.getByText('Enviar (2)')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('remove-photo-0'));
+
+    expect(screen.queryByTestId('photo-thumb-1')).not.toBeInTheDocument();
+    expect(screen.getByText('Enviar (1)')).toBeInTheDocument();
+  });
+
+  it('disables "Tomar otra pagina" at 10 photos', () => {
+    renderIntake();
+    fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    for (let i = 0; i < 10; i++) {
+      const file = new File([`img${i}`], `photo${i}.jpg`, { type: 'image/jpeg' });
+      setFiles(fileInput, [file]);
+      fireEvent.change(fileInput);
+    }
+
+    expect(screen.getByText('Tomar otra pagina')).toBeDisabled();
+    expect(screen.getByText('Enviar (10)')).toBeInTheDocument();
+  });
+
+  it('calls submit with all photos and selectedPickupPointId', () => {
+    renderIntake();
+    fireEvent.change(screen.getByTestId('client-select'), { target: { value: 'client-1' } });
+    fireEvent.change(screen.getByTestId('pickup-point-select'), { target: { value: 'pp-1' } });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file1 = new File(['img1'], 'photo1.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file1]);
+    fireEvent.change(fileInput);
+
+    const file2 = new File(['img2'], 'photo2.jpg', { type: 'image/jpeg' });
+    setFiles(fileInput, [file2]);
+    fireEvent.change(fileInput);
+
+    fireEvent.click(screen.getByTestId('submit-btn'));
+
+    expect(mockSubmit).toHaveBeenCalledWith([file1, file2], 'pp-1');
+  });
+
+  // ── Upload progress ───────────────────────────────────────────────────────
+  it('shows upload progress during uploading state', () => {
+    mockStatus = 'uploading';
+    mockUploadProgress = { current: 2, total: 5 };
+    renderIntake();
+    expect(screen.getByText('Subiendo foto 2 de 5...')).toBeInTheDocument();
+  });
+
+  it('shows generic processing text when uploading with no progress yet', () => {
+    mockStatus = 'uploading';
+    mockUploadProgress = null;
+    renderIntake();
+    expect(screen.getByText('Procesando manifiesto...')).toBeInTheDocument();
   });
 
   // ── Status states ─────────────────────────────────────────────────────────
