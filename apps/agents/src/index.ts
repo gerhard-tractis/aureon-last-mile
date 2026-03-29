@@ -15,7 +15,6 @@ import { createFlowProducer, closeFlowProducer } from './orchestration/flow-prod
 import { startCommandListener } from './orchestration/command-listener';
 import { startBullBoard } from './orchestration/bull-board';
 import { GroqProvider } from './providers/groq';
-import { GlmOcrProvider } from './providers/glm-ocr';
 import { IntakeAgent } from './agents/intake/intake-agent';
 import { createIntakeHandler } from './agents/intake/intake-worker';
 
@@ -60,8 +59,7 @@ async function main(): Promise<void> {
 
   // Instantiate INTAKE agent
   const groq = new GroqProvider(cfg.GROQ_API_KEY);
-  const glmOcr = new GlmOcrProvider(cfg.GLM_OCR_API_KEY, cfg.GLM_OCR_ENDPOINT);
-  const intakeAgent = new IntakeAgent(groq, supabase, glmOcr);
+  const intakeAgent = new IntakeAgent(groq, supabase, null as never);
 
   const queues = createQueues(cfg.REDIS_URL) as unknown as Record<string, Queue>;
   workers = createWorkers(cfg.REDIS_URL, {
