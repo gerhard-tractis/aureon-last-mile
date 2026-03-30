@@ -217,6 +217,7 @@ html.dark {
   }
   html {
     background-color: var(--color-background);
+    scroll-behavior: smooth;
   }
   body {
     @apply bg-background text-foreground;

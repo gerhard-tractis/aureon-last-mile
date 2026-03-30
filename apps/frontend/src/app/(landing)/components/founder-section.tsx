@@ -8,13 +8,13 @@ const creds = [
 
 export function FounderSection() {
   return (
-    <section className="bg-stone-950 py-24 border-t border-stone-900">
+    <section aria-label="Quien esta detras" className="bg-stone-950 py-24 border-t border-stone-900">
       <div className="max-w-3xl mx-auto px-6 text-center">
         <ScrollReveal>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-6">
             Quién está detrás
           </p>
-          <h2 className="text-3xl md:text-4xl font-bold text-stone-100 mb-8 leading-tight">
+          <h2 className="text-3xl md:text-4xl font-display text-stone-100 mb-8 leading-tight">
             Construido por alguien que vivió tus mismos desafíos
           </h2>
           <blockquote className="text-lg text-stone-400 leading-relaxed italic mb-8 max-w-2xl mx-auto">

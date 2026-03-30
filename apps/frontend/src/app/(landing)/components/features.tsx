@@ -31,10 +31,10 @@ const agents = [
 
 export function Features() {
   return (
-    <section id="agentes" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="agentes" aria-label="Agentes autonomos" className="bg-stone-900 py-24 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
         <ScrollReveal>
-          <h2 className="text-3xl md:text-4xl font-bold text-stone-100">
+          <h2 className="text-3xl md:text-4xl font-display text-stone-100">
             No es solo un dashboard.
             <br className="hidden md:block" /> Aureon actúa por ti.
           </h2>

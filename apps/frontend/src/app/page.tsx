@@ -7,6 +7,7 @@ import { ValueProps } from './(landing)/components/value-props';
 import { MetricsShowcase } from './(landing)/components/metrics-showcase';
 import { Features } from './(landing)/components/features';
 import { HowItWorks } from './(landing)/components/how-it-works';
+import { Integrations } from './(landing)/components/integrations';
 import { FounderSection } from './(landing)/components/founder-section';
 import { CtaSection } from './(landing)/components/cta-section';
 import { Footer } from './(landing)/components/footer';
@@ -31,13 +32,14 @@ export default async function LandingPage() {
   const isAuthenticated = !!user;
 
   return (
-    <main className="bg-stone-950 text-stone-100 overflow-x-hidden" style={{ scrollBehavior: 'smooth' }}>
+    <main className="bg-stone-950 text-stone-100 overflow-x-hidden">
       <Navbar isAuthenticated={isAuthenticated} />
       <Hero isAuthenticated={isAuthenticated} />
       <ValueProps />
       <MetricsShowcase />
       <Features />
       <HowItWorks />
+      <Integrations />
       <FounderSection />
       <CtaSection />
       <Footer />

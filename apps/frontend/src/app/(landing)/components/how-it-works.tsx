@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react';
+import { FileText, Smartphone, Link2, BarChart3 } from 'lucide-react';
 import { ScrollReveal } from './scroll-reveal';
 
 const steps = [
@@ -19,27 +21,27 @@ const steps = [
   },
 ];
 
-const feats = [
+const feats: { icon: LucideIcon; title: string; description: string }[] = [
   {
-    icon: '📄',
+    icon: FileText,
     title: 'Ingesta inteligente',
     description:
       'API, CSV, PDF o incluso una foto del manifiesto. El agente OCR extrae la data y la carga en Aureon.',
   },
   {
-    icon: '📱',
+    icon: Smartphone,
     title: 'PWA para operadores',
     description:
       'Tus operadores ejecutan desde su tablet. Escaneo de etiquetas, verificación y cuadratura en cada punto.',
   },
   {
-    icon: '🔗',
+    icon: Link2,
     title: 'Se integra, no reemplaza',
     description:
       'Compatible con DispatchTrack, SimpliRoute, Driv.in. Las novedades de ruta alimentan Aureon vía API.',
   },
   {
-    icon: '📊',
+    icon: BarChart3,
     title: 'KPIs operativos',
     description:
       'Nada duerme en bodega. Sabes exactamente qué está pendiente, qué salió a ruta y qué se entregó.',
@@ -50,13 +52,13 @@ const integrations = ['DispatchTrack', 'SimpliRoute', 'Driv.in'];
 
 export function HowItWorks() {
   return (
-    <section id="operacion" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="operacion" aria-label="Operacion completa" className="bg-stone-900 py-24 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
         <ScrollReveal>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">
             Operación completa
           </p>
-          <h2 className="text-3xl md:text-4xl font-bold text-stone-100">
+          <h2 className="text-3xl md:text-4xl font-display text-stone-100">
             Gestiona toda tu cadena desde un solo sistema
           </h2>
           <p className="mt-4 text-lg text-stone-400 max-w-2xl leading-relaxed">
@@ -107,7 +109,7 @@ export function HowItWorks() {
             <ScrollReveal key={feat.title} delay={i * 75}>
               <div className="flex gap-3 items-start">
                 <div className="w-8 h-8 min-w-[32px] rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-sm flex-shrink-0">
-                  {feat.icon}
+                  <feat.icon className="w-4 h-4" />
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-stone-200 mb-1">{feat.title}</h4>

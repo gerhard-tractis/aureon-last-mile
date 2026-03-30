@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-const DEMO_URL = 'https://calendar.app.google/k9siT3q8FuxjGf9v5';
+import { DEMO_URL } from '../constants';
 
 const TOPO_PATTERN = `url("data:image/svg+xml,%3Csvg width='600' height='600' viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1'%3E%3Cellipse cx='300' cy='300' rx='280' ry='180'/%3E%3Cellipse cx='300' cy='300' rx='220' ry='140'/%3E%3Cellipse cx='300' cy='300' rx='160' ry='100'/%3E%3Cellipse cx='300' cy='300' rx='100' ry='60'/%3E%3Cellipse cx='300' cy='300' rx='50' ry='30'/%3E%3Cellipse cx='150' cy='150' rx='120' ry='80'/%3E%3Cellipse cx='150' cy='150' rx='70' ry='45'/%3E%3Cellipse cx='450' cy='450' rx='130' ry='85'/%3E%3Cellipse cx='450' cy='450' rx='75' ry='50'/%3E%3C/g%3E%3C/svg%3E")`;
 
@@ -23,7 +23,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
     : 'opacity-0 translate-y-5';
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center bg-stone-950 overflow-hidden">
+    <section aria-label="Inicio" className="relative min-h-screen flex items-center justify-center bg-stone-950 overflow-hidden">
       {/* Topographic pattern */}
       <div
         className="absolute inset-0 opacity-[0.03]"
@@ -61,8 +61,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
           <span className="text-4xl md:text-5xl font-bold tracking-tight text-amber-400">Aureon</span>
           <div className="flex items-center gap-1 mt-1">
             <span className="text-xs text-stone-500">by</span>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3.5 opacity-40" />
+            <svg viewBox="0 0 110 104" fill="currentColor" className="h-3.5 opacity-40 text-stone-100"><polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19" /><polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19" /><polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38" /></svg>
           </div>
         </div>
 
@@ -76,7 +75,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
 
         {/* Headline */}
         <h1
-          className={`text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-stone-100 leading-tight ${show}`}
+          className={`text-5xl md:text-6xl lg:text-7xl font-display tracking-tight text-stone-100 leading-tight ${show}`}
           style={{ transitionDelay: '150ms' }}
         >
           Ejecutas miles de entregas al mes.
@@ -104,13 +103,13 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
             href={DEMO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-8 py-3 bg-amber-500 text-stone-950 font-semibold rounded-md hover:bg-amber-400 hover:shadow-[0_0_20px_rgba(230,193,92,0.3)] transition-all text-sm"
+            className="px-10 py-4 bg-amber-500 text-stone-950 font-semibold rounded-md hover:bg-amber-400 hover:shadow-[0_0_20px_rgba(230,193,92,0.3)] transition-all text-sm active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-950 outline-none"
           >
             Agenda una llamada de 15 min →
           </a>
           <Link
             href={isAuthenticated ? '/app' : '/auth/login'}
-            className="px-8 py-3 border border-stone-700 text-stone-300 rounded-md hover:border-stone-500 hover:text-stone-100 transition-all text-sm"
+            className="px-8 py-3 border border-stone-700 text-stone-300 rounded-md hover:border-stone-500 hover:text-stone-100 transition-all text-sm active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2 focus-visible:ring-offset-stone-950 outline-none"
           >
             {isAuthenticated ? 'Ir al Panel' : 'Ver el panel'}
           </Link>
