@@ -25,18 +25,60 @@ describe('useDispatchRoutes', () => {
     expect(result.current.fetchStatus).toBe('idle');
   });
 
-  it('returns routes on success', async () => {
+  it('returns routes on success with ordering', async () => {
+    const result = { data: [{ id: 'r1', status: 'draft', planned_stops: 5 }], error: null };
+    const orderFinal = vi.fn().mockResolvedValue(result);
+    const orderFirst = vi.fn().mockReturnValue({ order: orderFinal });
     const chain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       in: vi.fn().mockReturnThis(),
-      is: vi.fn().mockResolvedValue({ data: [{ id: 'r1', status: 'draft', planned_stops: 5 }], error: null }),
+      is: vi.fn().mockReturnValue({ order: orderFirst }),
     };
     mockFrom.mockReturnValue(chain);
 
-    const { result } = renderHook(() => useDispatchRoutes('op-1'), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toHaveLength(1);
-    expect(result.current.data?.[0].status).toBe('draft');
+    const { result: hookResult } = renderHook(() => useDispatchRoutes('op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(hookResult.current.isSuccess).toBe(true));
+    expect(hookResult.current.data).toHaveLength(1);
+    expect(hookResult.current.data?.[0].status).toBe('draft');
+  });
+
+  it('does not filter by route_date', async () => {
+    const result = { data: [], error: null };
+    const orderFinal = vi.fn().mockResolvedValue(result);
+    const orderFirst = vi.fn().mockReturnValue({ order: orderFinal });
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnValue({ order: orderFirst }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    const { result: hookResult } = renderHook(() => useDispatchRoutes('op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(hookResult.current.isSuccess).toBe(true));
+
+    // eq should only be called once (for operator_id), not twice (no route_date)
+    expect(chain.eq).toHaveBeenCalledTimes(1);
+    expect(chain.eq).toHaveBeenCalledWith('operator_id', 'op-1');
+  });
+
+  it('applies order by route_date and created_at', async () => {
+    const result = { data: [], error: null };
+    const orderFinal = vi.fn().mockResolvedValue(result);
+    const orderFirst = vi.fn().mockReturnValue({ order: orderFinal });
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnValue({ order: orderFirst }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    const { result: hookResult } = renderHook(() => useDispatchRoutes('op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(hookResult.current.isSuccess).toBe(true));
+
+    expect(orderFirst).toHaveBeenCalledWith('route_date', { ascending: false });
+    expect(orderFinal).toHaveBeenCalledWith('created_at', { ascending: false });
   });
 });

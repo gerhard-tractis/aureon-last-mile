@@ -6,10 +6,9 @@ const configSchema = z.object({
   SUPABASE_URL: z.string().min(1),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   REDIS_URL: z.string().min(1),
-  ANTHROPIC_API_KEY: z.string().min(1),
-  GROQ_API_KEY: z.string().min(1),
-  GLM_OCR_API_KEY: z.string().min(1),
-  GLM_OCR_ENDPOINT: z.string().min(1),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  GROQ_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEY: z.string().min(1),
   ENCRYPTION_KEY: z.string().min(1),
   SENTRY_DSN: z.string().min(1),
 

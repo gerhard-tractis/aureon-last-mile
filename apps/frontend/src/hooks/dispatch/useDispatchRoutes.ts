@@ -7,14 +7,14 @@ export function useDispatchRoutes(operatorId: string | null) {
     queryKey: ['dispatch', 'routes', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const today = new Date().toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('routes')
         .select('id, status, route_date, driver_name, vehicle_id, planned_stops, completed_stops, created_at, external_route_id')
         .eq('operator_id', operatorId!)
         .in('status', ['draft', 'planned'])
-        .eq('route_date', today)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .order('route_date', { ascending: false })
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data as DispatchRoute[];
     },

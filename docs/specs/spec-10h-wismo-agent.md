@@ -1,8 +1,12 @@
 # Spec-10h: WISMO Agent (Phase 7)
 
+> **⚠️ SUPERSEDED by [spec-24-customer-communication-agent.md](spec-24-customer-communication-agent.md).** Do not implement this spec. Spec-24 expands the WISMO scope with customer sessions, reschedule tracking, early arrival flow, and ETA notifications. All functionality described here is covered there.
+
 > Part of the Agent Suite implementation plan: `docs/architecture/agents-implementation-plan.md`
 > Architecture: `docs/architecture/agents.md` §3 (wismo)
 > API design: `docs/architecture/agents-api-design.md` §2
+
+**Status:** superseded
 
 _Date: 2026-03-18_
 

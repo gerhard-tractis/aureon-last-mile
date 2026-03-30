@@ -122,7 +122,42 @@ jobs:
           echo "::error::VPS worker deployment failed."
           echo "To debug: sudo journalctl -u aureon-worker -n 50"
 
-  # ─── 4. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
+  # ─── 4. Agents Suite (VPS) ───────────────────────────────────────────────────
+  deploy-agents:
+    name: Deploy Agents to VPS
+    needs: [deploy-supabase, deploy-edge-functions]
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 10
+    steps:
+      - name: Pull latest code
+        run: |
+          cd ~/aureon-last-mile
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git pull origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for agents changes
+        id: agents-changes
+        run: |
+          CHANGED=$(cd ~/aureon-last-mile && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- apps/agents/ | wc -l)
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Deploy agents
+        if: steps.agents-changes.outputs.changed != '0'
+        run: bash ~/aureon-last-mile/apps/agents/scripts/deploy.sh
+
+      - name: No agents changes
+        if: steps.agents-changes.outputs.changed == '0'
+        run: echo "No apps/agents changes detected — skipping agents deploy"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::VPS agents deployment failed."
+          echo "To debug: sudo journalctl -u aureon-agents -n 50"
+
+  # ─── 5. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
   deploy-solver:
     name: Deploy OR-Tools Solver to VPS
     needs: [deploy-supabase, deploy-edge-functions]

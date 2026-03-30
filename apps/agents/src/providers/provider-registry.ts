@@ -1,21 +1,19 @@
 // src/providers/provider-registry.ts — Model name → provider resolution
 
 import { ClaudeProvider } from './claude';
-import { GlmOcrProvider } from './glm-ocr';
 import { GroqProvider } from './groq';
+import { OpenRouterProvider } from './openrouter';
 import type { LLMProvider } from './types';
 
 export interface ProviderRegistryConfig {
   anthropicApiKey: string;
   groqApiKey: string;
-  glmOcrApiKey: string;
-  glmOcrEndpoint: string;
+  openrouterApiKey: string;
 }
 
 export class ProviderRegistry {
   private readonly config: ProviderRegistryConfig;
   private readonly cache = new Map<string, LLMProvider>();
-  private glmOcrInstance: GlmOcrProvider | null = null;
 
   constructor(config: ProviderRegistryConfig) {
     this.config = config;
@@ -46,25 +44,15 @@ export class ProviderRegistry {
       case 'claude':
         provider = new ClaudeProvider(this.config.anthropicApiKey, model);
         break;
+      case 'openrouter':
+        provider = new OpenRouterProvider(this.config.openrouterApiKey, model);
+        break;
       default:
         throw new Error(`Unknown provider prefix in model name: "${modelName}"`);
     }
 
     this.cache.set(modelName, provider);
     return provider;
-  }
-
-  /**
-   * Returns the GlmOcrProvider instance (singleton per registry).
-   */
-  getGlmOcr(): GlmOcrProvider {
-    if (!this.glmOcrInstance) {
-      this.glmOcrInstance = new GlmOcrProvider(
-        this.config.glmOcrApiKey,
-        this.config.glmOcrEndpoint,
-      );
-    }
-    return this.glmOcrInstance;
   }
 }
 

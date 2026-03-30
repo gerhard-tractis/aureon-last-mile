@@ -1,5 +1,5 @@
 // app/(app)/intake.tsx — Pickup manifest camera intake
-// Picker selects generator → captures photo → uploads → realtime status tracking
+// Picker selects pickup point → captures photo → uploads → realtime status tracking
 import { Button } from '@/components/ui/button'
 import { Colors } from '@/constants/theme'
 import { useColorScheme } from '@/hooks/use-color-scheme'
@@ -23,9 +23,9 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type Step = 'select_generator' | 'camera' | 'preview' | 'processing' | 'success' | 'error'
+type Step = 'select_pickup_point' | 'camera' | 'preview' | 'processing' | 'success' | 'error'
 
-interface Generator {
+interface PickupPoint {
   id: string
   name: string
   code: string
@@ -43,37 +43,37 @@ export default function IntakeScreen() {
   const colorScheme = useColorScheme()
   const colors = Colors[colorScheme ?? 'light']
 
-  const [step, setStep] = useState<Step>('select_generator')
-  const [generators, setGenerators] = useState<Generator[]>([])
-  const [selectedGenerator, setSelectedGenerator] = useState<Generator | null>(null)
+  const [step, setStep] = useState<Step>('select_pickup_point')
+  const [pickupPoints, setPickupPoints] = useState<PickupPoint[]>([])
+  const [selectedPickupPoint, setSelectedPickupPoint] = useState<PickupPoint | null>(null)
   const [photoUri, setPhotoUri] = useState<string | null>(null)
   const [submissionId, setSubmissionId] = useState<string | null>(null)
   const [result, setResult] = useState<SubmissionResult | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
-  const [loadingGenerators, setLoadingGenerators] = useState(false)
+  const [loadingPickupPoints, setLoadingPickupPoints] = useState(false)
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
 
-  // ── Fetch generators ───────────────────────────────────────────────────────
+  // ── Fetch pickup points ────────────────────────────────────────────────────
 
-  const loadGenerators = useCallback(async () => {
-    setLoadingGenerators(true)
+  const loadPickupPoints = useCallback(async () => {
+    setLoadingPickupPoints(true)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
 
     const { data, error } = await supabase
-      .from('generators')
+      .from('pickup_points')
       .select('id, name, code')
       .eq('is_active', true)
       .is('deleted_at', null)
       .order('name')
 
-    if (!error) setGenerators((data ?? []) as Generator[])
-    setLoadingGenerators(false)
+    if (!error) setPickupPoints((data ?? []) as PickupPoint[])
+    setLoadingPickupPoints(false)
   }, [])
 
   useEffect(() => {
-    void loadGenerators()
-  }, [loadGenerators])
+    void loadPickupPoints()
+  }, [loadPickupPoints])
 
   // ── Camera ────────────────────────────────────────────────────────────────
 
@@ -97,7 +97,7 @@ export default function IntakeScreen() {
   // ── Upload & Submit ───────────────────────────────────────────────────────
 
   const submitManifest = useCallback(async () => {
-    if (!photoUri || !selectedGenerator) return
+    if (!photoUri || !selectedPickupPoint) return
     setStep('processing')
 
     try {
@@ -117,8 +117,8 @@ export default function IntakeScreen() {
       const { data: sub, error: subError } = await supabase
         .from('intake_submissions')
         .insert({
-          generator_id: selectedGenerator.id,
-          channel: 'manual',
+          pickup_point_id: selectedPickupPoint.id,
+          channel: 'mobile_camera',
           status: 'received',
           raw_file_url: filename,
           raw_payload: { source: 'mobile_camera', user_id: user.id },
@@ -137,7 +137,7 @@ export default function IntakeScreen() {
       setErrorMsg(err instanceof Error ? err.message : 'Error desconocido')
       setStep('error')
     }
-  }, [photoUri, selectedGenerator])
+  }, [photoUri, selectedPickupPoint])
 
   const subscribeToSubmission = useCallback((sid: string) => {
     const channel = supabase
@@ -177,33 +177,33 @@ export default function IntakeScreen() {
 
   const reset = useCallback(() => {
     realtimeRef.current?.unsubscribe()
-    setStep('select_generator')
+    setStep('select_pickup_point')
     setPhotoUri(null)
     setSubmissionId(null)
     setResult(null)
     setErrorMsg('')
-    setSelectedGenerator(null)
+    setSelectedPickupPoint(null)
   }, [])
 
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: colors.background }]}>
-      {step === 'select_generator' && (
+      {step === 'select_pickup_point' && (
         <ScrollView contentContainerStyle={s.pad}>
-          <Text style={[s.title, { color: colors.text }]}>Seleccionar Generador</Text>
+          <Text style={[s.title, { color: colors.text }]}>Seleccionar Punto de Recogida</Text>
           <Text style={[s.sub, { color: colors.icon }]}>¿En qué cliente estás recolectando?</Text>
-          {loadingGenerators ? (
+          {loadingPickupPoints ? (
             <ActivityIndicator color={colors.tint} style={{ marginTop: 32 }} />
           ) : (
             <FlatList
-              data={generators}
+              data={pickupPoints}
               keyExtractor={(g) => g.id}
               scrollEnabled={false}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[s.genItem, { borderColor: colors.icon }]}
-                  onPress={() => { setSelectedGenerator(item); openCamera() }}
+                  onPress={() => { setSelectedPickupPoint(item); openCamera() }}
                 >
                   <Text style={[s.genName, { color: colors.text }]}>{item.name}</Text>
                   <Text style={[s.genCode, { color: colors.icon }]}>{item.code}</Text>

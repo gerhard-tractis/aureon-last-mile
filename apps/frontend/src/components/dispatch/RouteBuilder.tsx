@@ -1,6 +1,9 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/StatusBadge';
 import { ScanZone } from './ScanZone';
 import { PackageRow } from './PackageRow';
 import { RoutePanel } from './RoutePanel';
@@ -69,27 +72,52 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   };
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 53px)', overflow: 'hidden' }}>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRight: '1.5px solid var(--color-border)' }}>
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 20px', height: 56, background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
-          <button onClick={() => router.push('/app/dispatch')} style={{ width: 40, height: 40, borderRadius: 8, border: 'none', background: 'var(--color-surface-raised)', cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 18 }}>←</button>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, fontWeight: 700, color: 'var(--color-accent)' }}>{routeId.slice(0, 8).toUpperCase()}</span>
-          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: routeClosed ? 'color-mix(in srgb, var(--color-accent) 15%, transparent)' : 'var(--color-surface-raised)', color: routeClosed ? 'var(--color-accent)' : 'var(--color-text-muted)' }}>
-            {routeClosed ? 'Listo' : 'Draft'}
+    <div className="flex flex-col md:flex-row h-[calc(100vh-53px)] overflow-hidden">
+      {/* Left panel */}
+      <div className="flex-1 flex flex-col overflow-hidden md:border-r border-border">
+        {/* Header */}
+        <div className="shrink-0 flex items-center gap-3 px-5 h-14 bg-surface border-b border-border">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push('/app/dispatch')}
+            className="text-text-muted"
+          >
+            <ArrowLeft />
+          </Button>
+          <span className="font-mono text-[15px] font-bold text-accent">
+            {routeId.slice(0, 8).toUpperCase()}
           </span>
+          <span className="text-xs text-text-muted">
+            {new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </span>
+          <StatusBadge
+            status={routeClosed ? 'Listo' : 'Borrador'}
+            variant={routeClosed ? 'success' : 'neutral'}
+            size="sm"
+          />
         </div>
+
         <ScanZone onScan={handleScan} disabled={routeClosed} lastError={scanError} />
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', height: 36, background: 'var(--color-background)', borderBottom: '1px solid var(--color-border)' }}>
-          <span style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Paquetes escaneados</span>
-          <strong style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--color-accent)' }}>{packages.length}</strong>
+
+        {/* Package count bar */}
+        <div className="shrink-0 flex items-center justify-between px-5 h-9 bg-background border-b border-border">
+          <span className="text-[11px] text-text-muted uppercase tracking-[0.06em]">
+            Paquetes escaneados
+          </span>
+          <strong className="font-mono text-[13px] text-accent">
+            {packages.length}
+          </strong>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px' }}>
+
+        {/* Package list */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {packages.map((pkg, i) => (
             <PackageRow key={pkg.dispatch_id} index={i + 1} pkg={pkg} onRemove={handleRemove} />
           ))}
         </div>
       </div>
+
       <RoutePanel
         packageCount={packages.length}
         vehicles={vehicles}

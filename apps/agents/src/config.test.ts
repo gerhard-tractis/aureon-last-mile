@@ -5,15 +5,14 @@ const REQUIRED_VARS = [
   'SUPABASE_URL',
   'SUPABASE_SERVICE_ROLE_KEY',
   'REDIS_URL',
-  'ANTHROPIC_API_KEY',
-  'GROQ_API_KEY',
-  'GLM_OCR_API_KEY',
-  'GLM_OCR_ENDPOINT',
+  'OPENROUTER_API_KEY',
   'ENCRYPTION_KEY',
   'SENTRY_DSN',
 ];
 
 const OPTIONAL_VARS = [
+  'ANTHROPIC_API_KEY',
+  'GROQ_API_KEY',
   'BETTERSTACK_HEARTBEAT_URL',
   'WA_PHONE_NUMBER_ID',
   'WA_ACCESS_TOKEN',
@@ -25,10 +24,7 @@ const FULL_ENV: Record<string, string> = {
   SUPABASE_URL: 'https://test.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
   REDIS_URL: 'redis://localhost:6379',
-  ANTHROPIC_API_KEY: 'sk-ant-test',
-  GROQ_API_KEY: 'gsk-test',
-  GLM_OCR_API_KEY: 'glm-key',
-  GLM_OCR_ENDPOINT: 'https://glm.example.com',
+  OPENROUTER_API_KEY: 'test-openrouter-key',
   ENCRYPTION_KEY: 'a'.repeat(64),
   SENTRY_DSN: 'https://sentry.io/test',
 };
@@ -60,7 +56,7 @@ describe('loadConfig', () => {
     const config = loadConfig();
     expect(config.SUPABASE_URL).toBe(FULL_ENV.SUPABASE_URL);
     expect(config.REDIS_URL).toBe(FULL_ENV.REDIS_URL);
-    expect(config.ANTHROPIC_API_KEY).toBe(FULL_ENV.ANTHROPIC_API_KEY);
+    expect(config.OPENROUTER_API_KEY).toBe(FULL_ENV.OPENROUTER_API_KEY);
     expect(config.ENCRYPTION_KEY).toBe(FULL_ENV.ENCRYPTION_KEY);
   });
 
@@ -101,9 +97,9 @@ describe('loadConfig', () => {
   });
 
   it('error message is descriptive (includes "missing" or "required" context)', async () => {
-    // Only set some vars, omit ANTHROPIC_API_KEY
+    // Only set some vars, omit OPENROUTER_API_KEY
     const partial = { ...FULL_ENV };
-    delete (partial as Record<string, string>).ANTHROPIC_API_KEY;
+    delete (partial as Record<string, string>).OPENROUTER_API_KEY;
     Object.assign(process.env, partial);
 
     const { loadConfig } = await import('./config');
@@ -114,6 +110,6 @@ describe('loadConfig', () => {
       err = e as Error;
     }
     expect(err).not.toBeNull();
-    expect(err!.message).toContain('ANTHROPIC_API_KEY');
+    expect(err!.message).toContain('OPENROUTER_API_KEY');
   });
 });
