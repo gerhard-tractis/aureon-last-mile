@@ -5,7 +5,7 @@
 > Data model: `docs/architecture/agents-data-model.sql`
 > ETA source: `packages/database/supabase/functions/beetrack-webhook/`
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-03-30_
 

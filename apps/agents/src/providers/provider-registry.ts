@@ -2,11 +2,13 @@
 
 import { ClaudeProvider } from './claude';
 import { GroqProvider } from './groq';
+import { OpenRouterProvider } from './openrouter';
 import type { LLMProvider } from './types';
 
 export interface ProviderRegistryConfig {
   anthropicApiKey: string;
   groqApiKey: string;
+  openrouterApiKey: string;
 }
 
 export class ProviderRegistry {
@@ -41,6 +43,9 @@ export class ProviderRegistry {
         break;
       case 'claude':
         provider = new ClaudeProvider(this.config.anthropicApiKey, model);
+        break;
+      case 'openrouter':
+        provider = new OpenRouterProvider(this.config.openrouterApiKey, model);
         break;
       default:
         throw new Error(`Unknown provider prefix in model name: "${modelName}"`);
