@@ -9,10 +9,10 @@ const partners = [
 
 export function Integrations() {
   return (
-    <section className="bg-stone-950 py-24">
+    <section aria-label="Integraciones" className="bg-stone-950 py-24">
       <div className="max-w-7xl mx-auto px-6 text-center">
         <ScrollReveal>
-          <h2 className="text-3xl md:text-4xl font-bold text-stone-100">
+          <h2 className="text-3xl md:text-4xl font-display text-stone-100">
             Tu centro de comando — compatible con tus herramientas
           </h2>
           <p className="mt-4 text-lg text-stone-400 max-w-2xl mx-auto">

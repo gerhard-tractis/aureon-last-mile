@@ -119,7 +119,7 @@ describe('CtaSection', () => {
 describe('Footer', () => {
   it('renders brand', () => {
     render(<Footer />);
-    expect(screen.getByText('Intelligence Applied. Results Delivered.')).toBeInTheDocument();
+    expect(screen.getByText('Inteligencia aplicada. Resultados medibles.')).toBeInTheDocument();
     expect(screen.getByText('Aureon')).toBeInTheDocument();
   });
 
