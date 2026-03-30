@@ -23,21 +23,21 @@ import { Footer } from '../footer';
 describe('ValueProps', () => {
   it('renders section heading', () => {
     render(<ValueProps />);
-    expect(screen.getByText('Beneficios')).toBeInTheDocument();
+    expect(screen.getByText('El problema')).toBeInTheDocument();
   });
 
-  it('renders 3 value proposition cards', () => {
+  it('renders 3 pain point cards', () => {
     render(<ValueProps />);
-    expect(screen.getByText('Operaciones más rápidas')).toBeInTheDocument();
-    expect(screen.getByText('Menos entregas fallidas')).toBeInTheDocument();
-    expect(screen.getByText('Decisiones con datos')).toBeInTheDocument();
+    expect(screen.getByText('No conoces tu costo real por envío')).toBeInTheDocument();
+    expect(screen.getByText('Entregas que fallan sin explicación')).toBeInTheDocument();
+    expect(screen.getByText('Tu cliente espera todo el día sin saber nada')).toBeInTheDocument();
   });
 });
 
 describe('MetricsShowcase', () => {
   it('renders section heading', () => {
     render(<MetricsShowcase />);
-    expect(screen.getByText('Los KPIs que transforman tu operación')).toBeInTheDocument();
+    expect(screen.getByText('Los 3 indicadores que definen si tu última milla es rentable')).toBeInTheDocument();
   });
 
   it('renders 3 KPI cards with abbreviations', () => {
@@ -49,8 +49,8 @@ describe('MetricsShowcase', () => {
 
   it('renders KPI full names', () => {
     render(<MetricsShowcase />);
-    expect(screen.getByText('Costo por Envío')).toBeInTheDocument();
-    expect(screen.getByText('On Time In Full')).toBeInTheDocument();
+    expect(screen.getByText('Costo por envío')).toBeInTheDocument();
+    expect(screen.getByText('On time, in full')).toBeInTheDocument();
     expect(screen.getByText('Net Promoter Score')).toBeInTheDocument();
   });
 });
@@ -58,19 +58,15 @@ describe('MetricsShowcase', () => {
 describe('Features', () => {
   it('renders section heading', () => {
     render(<Features />);
-    expect(screen.getByText('Todo lo que necesitas para tu operación')).toBeInTheDocument();
+    expect(screen.getByText(/No es solo un dashboard/)).toBeInTheDocument();
   });
 
-  it('renders all 8 features', () => {
+  it('renders all 4 agent features', () => {
     render(<Features />);
-    expect(screen.getByText('Despacho inteligente')).toBeInTheDocument();
-    expect(screen.getByText('Escaneo y verificación')).toBeInTheDocument();
-    expect(screen.getByText('Control de operaciones')).toBeInTheDocument();
-    expect(screen.getByText('Ingesta con IA')).toBeInTheDocument();
-    expect(screen.getByText('KPIs estratégicos')).toBeInTheDocument();
-    expect(screen.getByText('Agentes de monitoreo')).toBeInTheDocument();
-    expect(screen.getByText('Inteligencia operacional')).toBeInTheDocument();
-    expect(screen.getByText('Reportes y auditoría')).toBeInTheDocument();
+    expect(screen.getByText('Coordinación proactiva con cliente')).toBeInTheDocument();
+    expect(screen.getByText('Actualización en ruta')).toBeInTheDocument();
+    expect(screen.getByText('Post-entrega y reclamos')).toBeInTheDocument();
+    expect(screen.getByText('Reagendamiento y cancelaciones')).toBeInTheDocument();
   });
 });
 
@@ -92,11 +88,10 @@ describe('Integrations', () => {
 describe('HowItWorks', () => {
   it('renders all 4 steps', () => {
     render(<HowItWorks />);
-    // Each step title appears twice (desktop + mobile layout)
-    expect(screen.getAllByText('Carga manifiestos').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Recibe y despacha en tu hub').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Monitorea la última milla').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('Mejora cada detalle').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Pickup').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Recepción').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Distribución').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Despacho').length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders step numbers', () => {
@@ -111,12 +106,12 @@ describe('HowItWorks', () => {
 describe('CtaSection', () => {
   it('renders headline', () => {
     render(<CtaSection />);
-    expect(screen.getByText('Lleva tu operación al siguiente nivel')).toBeInTheDocument();
+    expect(screen.getByText('Lleva tu última milla al siguiente nivel')).toBeInTheDocument();
   });
 
   it('renders demo CTA', () => {
     render(<CtaSection />);
-    const link = screen.getByRole('link', { name: /solicita una demo/i });
+    const link = screen.getByRole('link', { name: /agenda una llamada/i });
     expect(link).toHaveAttribute('href', 'https://calendar.app.google/k9siT3q8FuxjGf9v5');
   });
 });
@@ -124,13 +119,13 @@ describe('CtaSection', () => {
 describe('Footer', () => {
   it('renders brand', () => {
     render(<Footer />);
-    expect(screen.getByText(/Plataforma inteligente de última milla/)).toBeInTheDocument();
-    expect(screen.getByAltText('Tractis')).toBeInTheDocument();
+    expect(screen.getByText('Intelligence Applied. Results Delivered.')).toBeInTheDocument();
+    expect(screen.getByText('Aureon')).toBeInTheDocument();
   });
 
   it('renders contact email', () => {
     render(<Footer />);
-    expect(screen.getByText('gerhard@tractis.ai')).toBeInTheDocument();
+    expect(screen.getAllByText('gerhard@tractis.ai').length).toBeGreaterThan(0);
   });
 
   it('renders copyright', () => {

@@ -10,15 +10,12 @@ export function Footer() {
         <div className="grid sm:grid-cols-3 gap-12">
           {/* Brand */}
           <div>
-            <div className="flex items-baseline gap-2 mb-3">
+            <div className="mb-3">
               <span className="text-lg font-bold text-stone-200">Aureon</span>
-              <span className="flex items-baseline gap-1">
-                <span className="text-[10px] text-stone-500">by</span>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40 translate-y-[-1px]" />
-              </span>
             </div>
-            <p className="text-sm text-stone-500">Plataforma inteligente de última milla</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-stone-600 mt-1">
+              Intelligence Applied. Results Delivered.
+            </p>
           </div>
 
           {/* Links */}
@@ -32,7 +29,7 @@ export function Footer() {
               </li>
               <li>
                 <a href={DEMO_URL} target="_blank" rel="noopener noreferrer" className="text-stone-500 hover:text-stone-300 transition-colors">
-                  Solicita una Demo
+                  Agenda una llamada
                 </a>
               </li>
               <li>
@@ -70,7 +67,12 @@ export function Footer() {
         </div>
 
         <div className="mt-12 pt-6 border-t border-stone-800/50 text-center">
-          <p className="text-xs text-stone-600">© 2026 Tractis. Todos los derechos reservados.</p>
+          <p className="text-xs text-stone-600">
+            © 2026 Tractis SpA. Todos los derechos reservados. ·{' '}
+            <a href="mailto:gerhard@tractis.ai" className="hover:text-stone-400 transition-colors">
+              gerhard@tractis.ai
+            </a>
+          </p>
         </div>
       </div>
     </footer>
