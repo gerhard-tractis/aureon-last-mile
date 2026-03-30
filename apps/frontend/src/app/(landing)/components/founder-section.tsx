@@ -18,11 +18,11 @@ export function FounderSection() {
             Construido por alguien que vivió tus mismos desafíos
           </h2>
           <blockquote className="text-lg text-stone-400 leading-relaxed italic mb-8 max-w-2xl mx-auto">
-            "Sé lo que se siente gestionar una operación de última milla bajo presión: la carga que
+            &ldquo;Sé lo que se siente gestionar una operación de última milla bajo presión: la carga que
             se acumula, las entregas que fallan, los KPIs que no cuadran. Viví esos problemas
             durante más de 5 años liderando operaciones logísticas de alto volumen en retail. Aureon
             nace de esa experiencia — está pensado para que tu equipo deje de apagar incendios y
-            pueda enfocarse en hacer crecer el negocio."
+            pueda enfocarse en hacer crecer el negocio.&rdquo;
           </blockquote>
           <p className="text-stone-100 font-semibold">Gerhard Neumann</p>
           <p className="text-stone-500 text-sm mt-1 mb-10">Founder & CEO — Tractis</p>
