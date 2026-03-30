@@ -5,7 +5,6 @@
 # story_location: docs/stories
 
 # STATUS DEFINITIONS:
-# ==================
 # Epic Status:
 #   - backlog: Epic not yet started
 #   - in-progress: Epic actively being worked on
@@ -27,7 +26,6 @@
 #   - done: Retrospective has been completed
 #
 # WORKFLOW NOTES:
-# ===============
 # - Epic transitions to 'in-progress' automatically when first story is created
 # - Stories can be worked in parallel if team capacity allows
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
