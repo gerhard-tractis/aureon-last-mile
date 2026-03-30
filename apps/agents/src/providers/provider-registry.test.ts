@@ -2,7 +2,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { ProviderRegistry, createProviderRegistry } from './provider-registry';
 import { ClaudeProvider } from './claude';
 import { GroqProvider } from './groq';
-import { GlmOcrProvider } from './glm-ocr';
 
 vi.mock('./claude', () => {
   const ClaudeProvider = vi.fn(function (this: Record<string, unknown>, apiKey: string, model?: string) {
@@ -20,18 +19,9 @@ vi.mock('./groq', () => {
   return { GroqProvider };
 });
 
-vi.mock('./glm-ocr', () => {
-  const GlmOcrProvider = vi.fn(function (this: Record<string, unknown>, apiKey: string, endpoint: string) {
-    this.extractDocument = vi.fn();
-  });
-  return { GlmOcrProvider };
-});
-
 const config = {
   anthropicApiKey: 'anthropic-key',
   groqApiKey: 'groq-key',
-  glmOcrApiKey: 'glm-key',
-  glmOcrEndpoint: 'https://glm-ocr.example.com/extract',
 };
 
 describe('ProviderRegistry', () => {
@@ -83,23 +73,6 @@ describe('ProviderRegistry', () => {
     expect(() => registry.getProvider('llama-3.3-70b-versatile')).toThrow(
       /unknown provider/i,
     );
-  });
-
-  it('getGlmOcr() returns a GlmOcrProvider', () => {
-    const registry = new ProviderRegistry(config);
-    const glmOcr = registry.getGlmOcr();
-    expect(glmOcr).toBeDefined();
-    expect(GlmOcrProvider).toHaveBeenCalledWith(
-      config.glmOcrApiKey,
-      config.glmOcrEndpoint,
-    );
-  });
-
-  it('getGlmOcr() returns the same instance on repeated calls', () => {
-    const registry = new ProviderRegistry(config);
-    const first = registry.getGlmOcr();
-    const second = registry.getGlmOcr();
-    expect(first).toBe(second);
   });
 
   it('getProvider() returns the same instance for same model on repeated calls', () => {

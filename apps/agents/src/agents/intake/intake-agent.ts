@@ -1,112 +1,181 @@
-// src/agents/intake/intake-agent.ts — INTAKE agent: camera photo → OCR → orders
+// src/agents/intake/intake-agent.ts — INTAKE agent: multi-photo manifest → OCR → orders
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { GlmOcrProvider } from '../../providers/glm-ocr';
-import type { LLMProvider } from '../../providers/types';
-import type { AgentContext, ExecuteResult } from '../base-agent';
-import { BaseAgent } from '../base-agent';
-import { buildIntakeTools } from './intake-tools';
-import { intakeFallback } from './intake-fallback';
+import { extractManifest, type ExtractionResult } from '../../tools/ocr/extract-manifest';
 import { log } from '../../lib/logger';
-
-const SYSTEM_PROMPT = `Eres el agente de INTAKE de Aureon, un sistema logístico chileno.
-Tu tarea es procesar manifiestos de entrega fotografiados por los recolectores.
-
-Flujo obligatorio:
-1. Llama a parse_with_vision con el image_url recibido para extraer texto e información.
-2. Llama a match_customer con el texto extraído para obtener la lista de clientes del tenant.
-3. Para cada destinatario identificado en el manifiesto:
-   - Si el cliente coincide claramente (RUT exacto o nombre muy similar): llama create_order con customer_id.
-   - Si es ambiguo o no hay coincidencia: llama create_order sin customer_id (lo revisará un operador).
-4. Si el manifiesto es ilegible o no puedes extraer información útil: llama flag_parsing_error.
-
-Reglas:
-- Siempre usa el operator_id del contexto en cada operación.
-- Prefiere coincidencia por RUT (formato XX.XXX.XXX-X o XXXXXXXX-X).
-- Responde en español.
-- No inventes información que no esté en el manifiesto.`;
 
 export interface IntakeJobData {
   submission_id: string;
-  image_url: string;
+  operator_id: string;
 }
 
-const MAX_STEPS = 10;
+const REQUIRED_ORDER_FIELDS = ['customer_name', 'customer_phone', 'delivery_address', 'comuna'] as const;
 
-export class IntakeAgent extends BaseAgent {
-  private readonly db: SupabaseClient;
+export async function processIntakeSubmission(
+  db: SupabaseClient,
+  openrouterApiKey: string,
+  job: IntakeJobData,
+): Promise<{ ordersCreated: number; status: 'parsed' | 'needs_review' }> {
+  const { submission_id, operator_id } = job;
 
-  constructor(provider: LLMProvider, db: SupabaseClient, ocr: GlmOcrProvider) {
-    super('INTAKE', provider);
-    this.db = db;
-    const tools = buildIntakeTools(db, ocr);
-    for (const tool of tools) {
-      this.registerTool(tool);
+  // 1. Mark as parsing
+  await db
+    .from('intake_submissions')
+    .update({ status: 'parsing', processing_started_at: new Date().toISOString() })
+    .eq('id', submission_id)
+    .eq('operator_id', operator_id);
+
+  // 2. Read submission to get storage paths
+  const { data: submission, error: fetchErr } = await db
+    .from('intake_submissions')
+    .select('raw_payload, pickup_point_id')
+    .eq('id', submission_id)
+    .eq('operator_id', operator_id)
+    .single();
+
+  if (fetchErr || !submission) {
+    throw new Error(`Submission ${submission_id} not found: ${fetchErr?.message}`);
+  }
+
+  const storagePaths: string[] = submission.raw_payload?.storage_paths ?? [];
+  const pickupPointId: string | null = submission.pickup_point_id;
+
+  if (storagePaths.length === 0) {
+    await markNeedsReview(db, submission_id, operator_id, 'No storage paths in submission');
+    return { ordersCreated: 0, status: 'needs_review' };
+  }
+
+  // 3. Download all images
+  const imageBuffers: Buffer[] = [];
+  for (const path of storagePaths) {
+    const { data, error } = await db.storage.from('manifests').download(path);
+    if (error) {
+      log('warn', 'image_download_failed', { submission_id, path, error: error.message });
+      continue;
     }
+    const arrayBuf = await data.arrayBuffer();
+    imageBuffers.push(Buffer.from(arrayBuf));
   }
 
-  /** Exposed for tests */
-  get toolCount(): number {
-    // Access the private tools map via the registered tool array
-    return (this as unknown as { tools: Map<string, unknown> }).tools?.size ?? 4;
+  if (imageBuffers.length === 0) {
+    await markNeedsReview(db, submission_id, operator_id, 'All image downloads failed');
+    return { ordersCreated: 0, status: 'needs_review' };
   }
 
-  async run(jobData: IntakeJobData, context: AgentContext): Promise<ExecuteResult> {
-    log('info', 'intake_run_start', {
-      operator_id: context.operator_id,
-      submission_id: jobData.submission_id,
-      job_id: context.job_id,
-    });
+  // 4. Call OpenRouter vision OCR
+  let extraction: ExtractionResult;
+  try {
+    extraction = await extractManifest(openrouterApiKey, imageBuffers);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log('error', 'ocr_extraction_failed', { submission_id, error: msg });
+    await markNeedsReview(db, submission_id, operator_id, `OCR failed: ${msg}`);
+    return { ordersCreated: 0, status: 'needs_review' };
+  }
 
-    // Mark submission as parsing
-    await this.db
-      .from('intake_submissions')
-      .update({ status: 'parsing', processing_started_at: new Date().toISOString() })
-      .eq('id', jobData.submission_id)
-      .eq('operator_id', context.operator_id);
+  // 5. Handle illegible manifest
+  if (extraction.error) {
+    await markNeedsReview(db, submission_id, operator_id, extraction.error);
+    return { ordersCreated: 0, status: 'needs_review' };
+  }
 
-    const userMessage = `Procesa el manifiesto fotografiado.
-submission_id: ${jobData.submission_id}
-image_url: ${jobData.image_url}`;
+  // 6. Insert orders + packages
+  const deliveryDate = extraction.delivery_date ?? new Date().toISOString().slice(0, 10);
+  let ordersCreated = 0;
+  let hasIncompleteOrders = false;
 
-    const result = await this.execute(
-      [{ role: 'user', content: userMessage }],
-      context,
-      { maxSteps: MAX_STEPS, systemPrompt: SYSTEM_PROMPT },
-    );
+  for (const order of extraction.orders) {
+    const missingFields = REQUIRED_ORDER_FIELDS.filter((f) => !order[f]);
+    if (missingFields.length > 0) hasIncompleteOrders = true;
 
-    // Mark submission as parsed on success
-    if (!result.content.includes('error') && !result.content.includes('flag')) {
-      await this.db
-        .from('intake_submissions')
-        .update({
-          status: 'parsed',
-          processed_by_agent: 'INTAKE',
-          processing_completed_at: new Date().toISOString(),
-        })
-        .eq('id', jobData.submission_id)
-        .eq('operator_id', context.operator_id);
+    // Dedup check
+    const { data: existing } = await db
+      .from('orders')
+      .select('id')
+      .eq('operator_id', operator_id)
+      .eq('order_number', order.order_number)
+      .maybeSingle();
+
+    if (existing) {
+      log('info', 'order_duplicate_skipped', { submission_id, order_number: order.order_number });
+      continue;
     }
 
-    log('info', 'intake_run_complete', {
-      operator_id: context.operator_id,
-      submission_id: jobData.submission_id,
-      steps: result.steps,
-      tools: result.toolCallsMade,
-    });
+    // Insert order
+    const { data: newOrder, error: orderErr } = await db
+      .from('orders')
+      .insert({
+        operator_id,
+        order_number: order.order_number,
+        customer_name: order.customer_name ?? '',
+        customer_phone: order.customer_phone ?? '',
+        delivery_address: order.delivery_address ?? '',
+        comuna: order.comuna ?? '',
+        delivery_date: deliveryDate,
+        pickup_point_id: pickupPointId,
+        imported_via: 'OCR',
+        imported_at: new Date().toISOString(),
+        raw_data: order,
+        metadata: missingFields.length > 0 ? { needs_review: true, missing_fields: missingFields } : {},
+      })
+      .select('id')
+      .single();
 
-    return result;
+    if (orderErr) {
+      log('warn', 'order_insert_failed', {
+        submission_id, order_number: order.order_number, error: orderErr.message,
+      });
+      continue;
+    }
+
+    // Insert packages
+    for (const pkg of order.packages) {
+      await db.from('packages').insert({
+        operator_id,
+        order_id: newOrder.id,
+        label: pkg.label,
+        package_number: pkg.package_number,
+        declared_box_count: pkg.declared_box_count,
+        sku_items: pkg.sku_items,
+        declared_weight_kg: pkg.declared_weight_kg,
+        raw_data: pkg,
+      });
+    }
+
+    ordersCreated++;
   }
 
-  protected async handleFallback(
-    _messages: unknown[],
-    context: AgentContext,
-    error: unknown,
-  ): Promise<{ content: string }> {
-    // Extract submission_id from context or job data (stored in job_id field)
-    const submissionId = context.request_id ?? context.job_id ?? 'unknown';
-    await intakeFallback(this.db, submissionId, context.operator_id, error);
-    return {
-      content: `Fallback activado: LLM no disponible. Submission ${submissionId} marcada para revisión manual.`,
-    };
-  }
+  // 7. Update submission
+  const finalStatus = hasIncompleteOrders || ordersCreated === 0 ? 'needs_review' : 'parsed';
+  await db
+    .from('intake_submissions')
+    .update({
+      status: finalStatus,
+      orders_created: ordersCreated,
+      parsed_data: extraction,
+      processed_by_agent: 'INTAKE',
+      processing_completed_at: new Date().toISOString(),
+    })
+    .eq('id', submission_id)
+    .eq('operator_id', operator_id);
+
+  log('info', 'intake_complete', { submission_id, ordersCreated, status: finalStatus });
+  return { ordersCreated, status: finalStatus };
+}
+
+async function markNeedsReview(
+  db: SupabaseClient,
+  submissionId: string,
+  operatorId: string,
+  reason: string,
+): Promise<void> {
+  await db
+    .from('intake_submissions')
+    .update({
+      status: 'needs_review',
+      validation_errors: [{ message: reason }],
+      processed_by_agent: 'INTAKE',
+      processing_completed_at: new Date().toISOString(),
+    })
+    .eq('id', submissionId)
+    .eq('operator_id', operatorId);
 }

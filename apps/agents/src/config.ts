@@ -8,8 +8,7 @@ const configSchema = z.object({
   REDIS_URL: z.string().min(1),
   ANTHROPIC_API_KEY: z.string().min(1),
   GROQ_API_KEY: z.string().min(1),
-  GLM_OCR_API_KEY: z.string().min(1),
-  GLM_OCR_ENDPOINT: z.string().min(1),
+  OPENROUTER_API_KEY: z.string().min(1),
   ENCRYPTION_KEY: z.string().min(1),
   SENTRY_DSN: z.string().min(1),
 

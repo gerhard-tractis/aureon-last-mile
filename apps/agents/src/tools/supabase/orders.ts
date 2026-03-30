@@ -7,7 +7,7 @@ export interface OrderInsert {
   customer_name: string;
   delivery_address: string;
   customer_id?: string;
-  generator_id?: string;
+  pickup_point_id?: string;
   phone?: string | null;
   notes?: string | null;
   priority?: number;

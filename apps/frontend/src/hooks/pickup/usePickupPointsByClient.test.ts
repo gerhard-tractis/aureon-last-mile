@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { useGeneratorsByClient } from './useGeneratorsByClient';
+import { usePickupPointsByClient } from './usePickupPointsByClient';
 
 const mockFrom = vi.fn();
 
@@ -30,40 +30,40 @@ function mockChain(data: unknown[], error: unknown = null) {
   return chain;
 }
 
-describe('useGeneratorsByClient', () => {
+describe('usePickupPointsByClient', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('fetches generators for a given operator and client', async () => {
-    const generators = [
-      { id: 'gen-1', name: 'Easy Maipú' },
-      { id: 'gen-2', name: 'Easy Puente Alto' },
+  it('fetches pickup points for a given operator and client', async () => {
+    const pickupPoints = [
+      { id: 'pp-1', name: 'Easy Maipú' },
+      { id: 'pp-2', name: 'Easy Puente Alto' },
     ];
-    const chain = mockChain(generators);
+    const chain = mockChain(pickupPoints);
     mockFrom.mockReturnValue(chain);
 
     const { result } = renderHook(
-      () => useGeneratorsByClient('op-1', 'client-1'),
+      () => usePickupPointsByClient('op-1', 'client-1'),
       { wrapper: createWrapper() }
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(result.current.data).toEqual(generators);
-    expect(mockFrom).toHaveBeenCalledWith('generators');
+    expect(result.current.data).toEqual(pickupPoints);
+    expect(mockFrom).toHaveBeenCalledWith('pickup_points');
     expect(chain.eq).toHaveBeenCalledWith('operator_id', 'op-1');
     expect(chain.eq).toHaveBeenCalledWith('tenant_client_id', 'client-1');
     expect(chain.eq).toHaveBeenCalledWith('is_active', true);
     expect(chain.is).toHaveBeenCalledWith('deleted_at', null);
   });
 
-  it('returns empty array when no generators exist', async () => {
+  it('returns empty array when no pickup points exist', async () => {
     const chain = mockChain([]);
     mockFrom.mockReturnValue(chain);
 
     const { result } = renderHook(
-      () => useGeneratorsByClient('op-1', 'client-1'),
+      () => usePickupPointsByClient('op-1', 'client-1'),
       { wrapper: createWrapper() }
     );
 
@@ -73,7 +73,7 @@ describe('useGeneratorsByClient', () => {
 
   it('does not fetch when clientId is null', () => {
     const { result } = renderHook(
-      () => useGeneratorsByClient('op-1', null),
+      () => usePickupPointsByClient('op-1', null),
       { wrapper: createWrapper() }
     );
 
@@ -83,7 +83,7 @@ describe('useGeneratorsByClient', () => {
 
   it('does not fetch when operatorId is null', () => {
     const { result } = renderHook(
-      () => useGeneratorsByClient(null, 'client-1'),
+      () => usePickupPointsByClient(null, 'client-1'),
       { wrapper: createWrapper() }
     );
 
