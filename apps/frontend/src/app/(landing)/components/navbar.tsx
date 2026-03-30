@@ -8,10 +8,10 @@ import { Sheet, SheetTrigger, SheetContent } from '@/components/ui/sheet';
 const DEMO_URL = 'https://calendar.app.google/k9siT3q8FuxjGf9v5';
 
 const navLinks = [
-  { label: 'Beneficios', href: '#beneficios' },
-  { label: 'Métricas', href: '#metricas' },
-  { label: 'Funcionalidades', href: '#funcionalidades' },
-  { label: 'Cómo Funciona', href: '#como-funciona' },
+  { label: 'El problema', href: '#problema' },
+  { label: 'Inteligencia', href: '#inteligencia' },
+  { label: 'Agentes', href: '#agentes' },
+  { label: 'Operación', href: '#operacion' },
 ];
 
 export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
@@ -36,11 +36,6 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
         {/* Brand */}
         <Link href="/" className="flex items-baseline gap-2">
           <span className="text-xl font-bold tracking-tight text-stone-100">Aureon</span>
-          <span className="flex items-baseline gap-1">
-            <span className="text-[10px] text-stone-500">by</span>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logos/tractis-white.svg" alt="Tractis" className="h-3 opacity-40 translate-y-[-1px]" />
-          </span>
         </Link>
 
         {/* Desktop nav links */}
@@ -70,7 +65,7 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
             rel="noopener noreferrer"
             className="text-sm font-medium bg-amber-500 text-stone-950 px-4 py-2 rounded-md hover:bg-amber-400 hover:shadow-[0_0_20px_rgba(230,193,92,0.3)] transition-all"
           >
-            Solicita una Demo
+            Agenda una llamada
           </a>
         </div>
 
@@ -108,7 +103,7 @@ export function Navbar({ isAuthenticated }: { isAuthenticated: boolean }) {
                   rel="noopener noreferrer"
                   className="text-center font-medium bg-amber-500 text-stone-950 px-4 py-2.5 rounded-md"
                 >
-                  Solicita una Demo
+                  Agenda una llamada
                 </a>
               </div>
             </SheetContent>
