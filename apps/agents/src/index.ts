@@ -15,6 +15,8 @@ import { createFlowProducer, closeFlowProducer } from './orchestration/flow-prod
 import { startCommandListener } from './orchestration/command-listener';
 import { startBullBoard } from './orchestration/bull-board';
 import { createIntakeHandler } from './agents/intake/intake-worker';
+import { createWismoHandler } from './agents/wismo/wismo-worker';
+import { OpenRouterProvider } from './providers/openrouter';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -56,8 +58,15 @@ async function main(): Promise<void> {
   initSupabase(cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY);
 
   const queues = createQueues(cfg.REDIS_URL) as unknown as Record<string, Queue>;
+  const wismoProvider = new OpenRouterProvider(cfg.OPENROUTER_API_KEY, 'meta-llama/llama-3.3-70b-instruct');
   workers = createWorkers(cfg.REDIS_URL, {
     'intake.ingest': createIntakeHandler(supabase, cfg.OPENROUTER_API_KEY),
+    'wismo.client': createWismoHandler(
+      supabase,
+      wismoProvider,
+      cfg.WA_PHONE_NUMBER_ID ?? '',
+      cfg.WA_ACCESS_TOKEN ?? '',
+    ),
   });
   createFlowProducer(cfg.REDIS_URL);
 
@@ -72,7 +81,7 @@ async function main(): Promise<void> {
 
   healthServer = startHealthServer();
 
-  log('info', 'agents_ready', { version: '0.3.0' });
+  log('info', 'agents_ready', { version: '0.4.0' });
 }
 
 main().catch((err) => {
