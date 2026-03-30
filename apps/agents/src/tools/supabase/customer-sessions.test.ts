@@ -59,11 +59,6 @@ function makeDb(options: {
   chain.update = vi.fn().mockReturnValue(chain);
   chain.maybeSingle = vi.fn().mockResolvedValue({ data: maybeSingleResult, error: maybeSingleError });
   chain.single = vi.fn().mockResolvedValue({ data: insertResult, error: insertError });
-  // For order() + no terminator — used in getSessionHistory
-  chain.order.mockImplementation(() => ({
-    ...chain,
-    then: undefined, // ensure it's treated as a chainable not a promise
-  }));
   // selectListResult resolves when eq chain ends with no .single()/.maybeSingle()
   // For the list query, replace the eq chain final with a direct mock:
   const listChain: Record<string, unknown> = {};
