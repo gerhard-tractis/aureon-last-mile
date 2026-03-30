@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ProviderRegistry, createProviderRegistry } from './provider-registry';
 import { ClaudeProvider } from './claude';
 import { GroqProvider } from './groq';
+import { OpenRouterProvider } from './openrouter';
 
 vi.mock('./claude', () => {
   const ClaudeProvider = vi.fn(function (this: Record<string, unknown>, apiKey: string, model?: string) {
@@ -19,9 +20,18 @@ vi.mock('./groq', () => {
   return { GroqProvider };
 });
 
+vi.mock('./openrouter', () => {
+  const OpenRouterProvider = vi.fn(function (this: Record<string, unknown>, apiKey: string, model?: string) {
+    this.model = model ?? 'meta-llama/llama-3.3-70b-instruct';
+    this.generate = vi.fn();
+  });
+  return { OpenRouterProvider };
+});
+
 const config = {
   anthropicApiKey: 'anthropic-key',
   groqApiKey: 'groq-key',
+  openrouterApiKey: 'openrouter-key',
 };
 
 describe('ProviderRegistry', () => {
@@ -39,19 +49,23 @@ describe('ProviderRegistry', () => {
     const registry = new ProviderRegistry(config);
     const provider = registry.getProvider('groq:llama-3.3-70b-versatile');
     expect(provider).toBeDefined();
-    expect(GroqProvider).toHaveBeenCalledWith(
-      config.groqApiKey,
-      'llama-3.3-70b-versatile',
-    );
+    expect(GroqProvider).toHaveBeenCalledWith(config.groqApiKey, 'llama-3.3-70b-versatile');
   });
 
   it('resolves claude:* to a ClaudeProvider', () => {
     const registry = new ProviderRegistry(config);
     const provider = registry.getProvider('claude:claude-4-sonnet-20250514');
     expect(provider).toBeDefined();
-    expect(ClaudeProvider).toHaveBeenCalledWith(
-      config.anthropicApiKey,
-      'claude-4-sonnet-20250514',
+    expect(ClaudeProvider).toHaveBeenCalledWith(config.anthropicApiKey, 'claude-4-sonnet-20250514');
+  });
+
+  it('resolves openrouter:* to an OpenRouterProvider', () => {
+    const registry = new ProviderRegistry(config);
+    const provider = registry.getProvider('openrouter:meta-llama/llama-3.3-70b-instruct');
+    expect(provider).toBeDefined();
+    expect(OpenRouterProvider).toHaveBeenCalledWith(
+      config.openrouterApiKey,
+      'meta-llama/llama-3.3-70b-instruct',
     );
   });
 
@@ -63,19 +77,15 @@ describe('ProviderRegistry', () => {
 
   it('throws for unknown provider prefix', () => {
     const registry = new ProviderRegistry(config);
-    expect(() => registry.getProvider('openai:gpt-4')).toThrow(
-      /unknown provider/i,
-    );
+    expect(() => registry.getProvider('openai:gpt-4')).toThrow(/unknown provider/i);
   });
 
   it('throws for model name without colon separator', () => {
     const registry = new ProviderRegistry(config);
-    expect(() => registry.getProvider('llama-3.3-70b-versatile')).toThrow(
-      /unknown provider/i,
-    );
+    expect(() => registry.getProvider('llama-3.3-70b-versatile')).toThrow(/unknown provider/i);
   });
 
-  it('getProvider() returns the same instance for same model on repeated calls', () => {
+  it('returns same instance for same model on repeated calls', () => {
     const registry = new ProviderRegistry(config);
     const first = registry.getProvider('groq:llama-3.3-70b-versatile');
     const second = registry.getProvider('groq:llama-3.3-70b-versatile');
