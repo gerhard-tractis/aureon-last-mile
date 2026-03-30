@@ -1,43 +1,53 @@
-import { Zap, ShieldCheck, BarChart3, type LucideIcon } from 'lucide-react';
 import { ScrollReveal } from './scroll-reveal';
 
-const props: { title: string; description: string; Icon: LucideIcon }[] = [
+const pains = [
   {
-    title: 'Operaciones más rápidas',
+    icon: '$',
+    title: 'No conoces tu costo real por envío',
     description:
-      'Digitaliza tu flujo completo — desde la recepción hasta la entrega — y elimina los cuellos de botella manuales.',
-    Icon: Zap,
+      'Sabes cuánto gastas en total, pero no cuánto te cuesta cada entrega incluyendo reintentos, combustible, tiempos muertos y kilómetros vacíos.',
   },
   {
-    title: 'Menos entregas fallidas',
+    icon: '✗',
+    title: 'Entregas que fallan sin explicación',
     description:
-      'Verificación en cada punto de contacto. Escaneo, firma, foto — trazabilidad completa que reduce errores.',
-    Icon: ShieldCheck,
+      'El cliente no estaba, la dirección era incorrecta, llegaron fuera de horario. Pero nadie analiza por qué ni actúa antes de que ocurra.',
   },
   {
-    title: 'Decisiones con datos',
+    icon: '★',
+    title: 'Tu cliente espera todo el día sin saber nada',
     description:
-      'Métricas en tiempo real sobre tu operación. Sabe exactamente dónde optimizar y cuánto estás ahorrando.',
-    Icon: BarChart3,
+      'No tiene visibilidad de su pedido, no recibe avisos si hay atrasos, y si la entrega no llega, nadie le avisa. Eso destruye tu NPS y te cuesta contratos.',
   },
 ];
 
 export function ValueProps() {
   return (
-    <section id="beneficios" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="problema" className="bg-stone-900 py-24 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
         <ScrollReveal>
-          <p className="text-sm font-medium tracking-widest uppercase text-amber-400 mb-4">Beneficios</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">
+            El problema
+          </p>
+          <h2 className="text-3xl md:text-4xl font-bold text-stone-100 max-w-2xl leading-tight">
+            Tu app de despacho te dice dónde va el camión.
+            <br className="hidden md:block" /> Pero nadie te dice si tu negocio funciona.
+          </h2>
+          <p className="mt-4 text-lg text-stone-400 max-w-2xl leading-relaxed">
+            Las herramientas de última milla están hechas para ejecutar entregas, no para gestionar
+            un negocio. Eso te deja con problemas que ningún software operativo resuelve.
+          </p>
         </ScrollReveal>
-        <div className="grid md:grid-cols-3 gap-8 mt-8">
-          {props.map((p, i) => (
-            <ScrollReveal key={p.title} delay={i * 100}>
-              <div className="border-l-2 border-amber-500/40 hover:border-amber-500/60 bg-stone-800/50 rounded-r-lg p-6 hover:-translate-y-0.5 transition-all duration-200">
-                <div className="w-10 h-10 rounded-lg bg-stone-800 border border-stone-700/50 flex items-center justify-center mb-4">
-                  <p.Icon className="w-5 h-5 text-amber-400" />
+
+        <div className="grid md:grid-cols-3 gap-6 mt-12">
+          {pains.map((pain, i) => (
+            <ScrollReveal key={pain.title} delay={i * 100}>
+              <div className="border border-stone-800 hover:border-red-500/25 bg-stone-950/50 rounded-xl p-7 transition-all duration-200 h-full">
+                <div className="w-10 h-10 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 text-base font-bold mb-5">
+                  {pain.icon}
                 </div>
-                <h3 className="text-lg font-semibold text-stone-200">{p.title}</h3>
-                <p className="mt-2 text-sm text-stone-400 leading-relaxed">{p.description}</p>
+                <h3 className="text-base font-semibold text-stone-100 mb-3">{pain.title}</h3>
+                <p className="text-sm text-stone-400 leading-relaxed">{pain.description}</p>
               </div>
             </ScrollReveal>
           ))}

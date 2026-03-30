@@ -37,7 +37,7 @@ describe('Navbar', () => {
 
   it('renders demo CTA linking to Google Calendar', () => {
     render(<Navbar isAuthenticated={false} />);
-    const demoLinks = screen.getAllByRole('link', { name: /solicita una demo/i });
+    const demoLinks = screen.getAllByRole('link', { name: /agenda una llamada/i });
     expect(demoLinks.length).toBeGreaterThan(0);
     expect(demoLinks[0]).toHaveAttribute('href', 'https://calendar.app.google/k9siT3q8FuxjGf9v5');
     expect(demoLinks[0]).toHaveAttribute('target', '_blank');
@@ -45,9 +45,9 @@ describe('Navbar', () => {
 
   it('renders anchor navigation links', () => {
     render(<Navbar isAuthenticated={false} />);
-    expect(screen.getAllByText('Beneficios').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Métricas').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Funcionalidades').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Cómo Funciona').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('El problema').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Inteligencia').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Agentes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Operación').length).toBeGreaterThan(0);
   });
 });

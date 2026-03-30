@@ -14,7 +14,10 @@ import { registerSchedulers } from './orchestration/schedulers';
 import { createFlowProducer, closeFlowProducer } from './orchestration/flow-producer';
 import { startCommandListener } from './orchestration/command-listener';
 import { startBullBoard } from './orchestration/bull-board';
+import { startIntakeListener } from './orchestration/intake-listener';
 import { createIntakeHandler } from './agents/intake/intake-worker';
+import { createWismoHandler } from './agents/wismo/wismo-worker';
+import { OpenRouterProvider } from './providers/openrouter';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -26,12 +29,14 @@ let healthServer: Server | null = null;
 let bullBoardServer: Server | null = null;
 let workers: Workers | null = null;
 let stopCommandListener: (() => void) | null = null;
+let stopIntakeListener: (() => void) | null = null;
 
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   log('info', 'agents_stop', { signal });
 
+  stopIntakeListener?.();
   stopCommandListener?.();
   bullBoardServer?.close();
   healthServer?.close();
@@ -56,14 +61,22 @@ async function main(): Promise<void> {
   initSupabase(cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY);
 
   const queues = createQueues(cfg.REDIS_URL) as unknown as Record<string, Queue>;
+  const wismoProvider = new OpenRouterProvider(cfg.OPENROUTER_API_KEY, 'meta-llama/llama-3.3-70b-instruct');
   workers = createWorkers(cfg.REDIS_URL, {
     'intake.ingest': createIntakeHandler(supabase, cfg.OPENROUTER_API_KEY),
+    'wismo.client': createWismoHandler(
+      supabase,
+      wismoProvider,
+      cfg.WA_PHONE_NUMBER_ID ?? '',
+      cfg.WA_ACCESS_TOKEN ?? '',
+    ),
   });
   createFlowProducer(cfg.REDIS_URL);
 
   await registerSchedulers(queues);
 
   stopCommandListener = startCommandListener(supabase, queues);
+  stopIntakeListener = startIntakeListener(supabase, queues['intake.ingest']);
 
   bullBoardServer = startBullBoard(queues, {
     user: process.env.BULL_BOARD_USER ?? 'admin',
@@ -72,7 +85,7 @@ async function main(): Promise<void> {
 
   healthServer = startHealthServer();
 
-  log('info', 'agents_ready', { version: '0.3.0' });
+  log('info', 'agents_ready', { version: '0.4.0' });
 }
 
 main().catch((err) => {

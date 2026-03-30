@@ -6,19 +6,19 @@ import { Hero } from './(landing)/components/hero';
 import { ValueProps } from './(landing)/components/value-props';
 import { MetricsShowcase } from './(landing)/components/metrics-showcase';
 import { Features } from './(landing)/components/features';
-import { Integrations } from './(landing)/components/integrations';
 import { HowItWorks } from './(landing)/components/how-it-works';
+import { FounderSection } from './(landing)/components/founder-section';
 import { CtaSection } from './(landing)/components/cta-section';
 import { Footer } from './(landing)/components/footer';
 
 export const metadata: Metadata = {
-  title: 'Aureon — Tu última milla, bajo control',
+  title: 'Aureon OS — El sistema de gestión para última milla',
   description:
-    'Plataforma inteligente para operaciones logísticas de última milla. Menos entregas fallidas, rutas más eficientes, datos en tiempo real.',
+    'Aureon OS te muestra dónde pierdes plata, coordina con tu cliente de forma autónoma, y conecta toda tu operación en un solo lugar.',
   openGraph: {
-    title: 'Aureon — Tu última milla, bajo control',
+    title: 'Aureon OS — El sistema de gestión para última milla',
     description:
-      'Plataforma inteligente para operaciones logísticas de última milla. Menos entregas fallidas, rutas más eficientes, datos en tiempo real.',
+      'Aureon OS te muestra dónde pierdes plata, coordina con tu cliente de forma autónoma, y conecta toda tu operación en un solo lugar.',
     siteName: 'Aureon',
   },
 };
@@ -37,8 +37,8 @@ export default async function LandingPage() {
       <ValueProps />
       <MetricsShowcase />
       <Features />
-      <Integrations />
       <HowItWorks />
+      <FounderSection />
       <CtaSection />
       <Footer />
     </main>
