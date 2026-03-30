@@ -1,7 +1,7 @@
 // src/lib/health.ts — HTTP health endpoint
 import http from 'http';
 
-const DEFAULT_PORT = 3100;
+const DEFAULT_PORT = 3110;
 
 export function startHealthServer(port: number = DEFAULT_PORT): http.Server {
   const server = http.createServer((req, res) => {
