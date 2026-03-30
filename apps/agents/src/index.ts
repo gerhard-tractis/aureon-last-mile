@@ -14,6 +14,7 @@ import { registerSchedulers } from './orchestration/schedulers';
 import { createFlowProducer, closeFlowProducer } from './orchestration/flow-producer';
 import { startCommandListener } from './orchestration/command-listener';
 import { startBullBoard } from './orchestration/bull-board';
+import { startIntakeListener } from './orchestration/intake-listener';
 import { createIntakeHandler } from './agents/intake/intake-worker';
 
 Sentry.init({
@@ -26,12 +27,14 @@ let healthServer: Server | null = null;
 let bullBoardServer: Server | null = null;
 let workers: Workers | null = null;
 let stopCommandListener: (() => void) | null = null;
+let stopIntakeListener: (() => void) | null = null;
 
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   log('info', 'agents_stop', { signal });
 
+  stopIntakeListener?.();
   stopCommandListener?.();
   bullBoardServer?.close();
   healthServer?.close();
@@ -64,6 +67,7 @@ async function main(): Promise<void> {
   await registerSchedulers(queues);
 
   stopCommandListener = startCommandListener(supabase, queues);
+  stopIntakeListener = startIntakeListener(supabase, queues['intake.ingest']);
 
   bullBoardServer = startBullBoard(queues, {
     user: process.env.BULL_BOARD_USER ?? 'admin',
