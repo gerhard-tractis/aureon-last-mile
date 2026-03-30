@@ -52,7 +52,7 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
       </svg>
 
       {/* Content */}
-      <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-16">
+      <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-16 pb-20">
         {/* Brand */}
         <div
           className={`flex flex-col items-center mb-8 ${show}`}
