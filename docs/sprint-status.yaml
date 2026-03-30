@@ -5,7 +5,6 @@
 # story_location: docs/stories
 
 # STATUS DEFINITIONS:
-# ==================
 # Epic Status:
 #   - backlog: Epic not yet started
 #   - in-progress: Epic actively being worked on
@@ -27,7 +26,6 @@
 #   - done: Retrospective has been completed
 #
 # WORKFLOW NOTES:
-# ===============
 # - Epic transitions to 'in-progress' automatically when first story is created
 # - Stories can be worked in parallel if team capacity allows
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
@@ -124,3 +122,5 @@ development_status:
   spec-20-camera-intake-cascading-dropdowns: done  # PR #175 merged 2026-03-25. Cascading client→pickup-point dropdowns in CameraIntake, useTenantClients + usePickupPointsByClient hooks, fixes deleted_at column error.
   spec-21-reception-visual-polish: done  # PR #178 merged 2026-03-25. Reception list KPIs+tabs, QR scanner (html5-qrcode), ReceptionStepBreadcrumb, MetricCard in summary, AlertDialog confirm, Spanish accent fixes. 97 tests passing.
   spec-23-ocr-agent-camera-intake: done  # PR #182 merged 2026-03-30. OpenRouter Gemini 2.5 Flash vision OCR; generators→pickup_points rename (DB+agents+frontend+mobile); multi-photo CameraIntake (max 10, thumbnail strip, sequential upload); processIntakeSubmission replaces class-based IntakeAgent; 178 agent tests + 1822 frontend tests passing.
+  spec-24-customer-communication-agent: in-progress  # DB migration (customer_sessions, customer_session_messages, order_reschedules, wismo_type_enum extension); OpenRouter provider; WA send-message tool; WISMO agent (proactive/reactive); wismo-worker wired into BullMQ wismo.client queue.
+  spec-25-agents-deploy-intake-trigger: in-progress  # Agents deploy pipeline, intake-listener Supabase Realtime trigger, Redis install on VPS, systemd service fix, health port 3110.
