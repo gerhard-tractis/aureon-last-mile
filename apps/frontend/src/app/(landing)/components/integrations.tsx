@@ -9,7 +9,9 @@ const partners = [
 
 export function Integrations() {
   return (
-    <section aria-label="Integraciones" className="bg-stone-950 py-24">
+    <section aria-label="Integraciones" className="relative bg-stone-950 py-24">
+      {/* Section gradient */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-stone-900 to-transparent pointer-events-none" />
       <div className="max-w-7xl mx-auto px-6 text-center">
         <ScrollReveal>
           <h2 className="text-3xl md:text-4xl font-display text-stone-100">
