@@ -45,9 +45,6 @@ CREATE TABLE IF NOT EXISTS public.customer_sessions (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at        TIMESTAMPTZ,
 
-  CONSTRAINT uq_active_session_per_order
-    UNIQUE (operator_id, order_id)
-    WHERE deleted_at IS NULL,
   CONSTRAINT chk_session_status
     CHECK (status IN ('active', 'closed', 'escalated')),
   CONSTRAINT chk_session_escalated_at
@@ -55,6 +52,10 @@ CREATE TABLE IF NOT EXISTS public.customer_sessions (
   CONSTRAINT chk_session_closed_at
     CHECK (status != 'closed' OR closed_at IS NOT NULL)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_active_session_per_order
+  ON public.customer_sessions(operator_id, order_id)
+  WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_operator ON public.customer_sessions(operator_id);
 CREATE INDEX IF NOT EXISTS idx_customer_sessions_order    ON public.customer_sessions(order_id);
