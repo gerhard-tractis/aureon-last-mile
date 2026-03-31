@@ -25,7 +25,7 @@ const pains: { icon: LucideIcon; title: string; description: string }[] = [
 
 export function ValueProps() {
   return (
-    <section id="problema" aria-label="El problema" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="problema" aria-label="El problema" className="bg-stone-900 pt-20 pb-24 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
         <ScrollReveal>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">

@@ -67,22 +67,27 @@ export function HowItWorks() {
           </p>
         </ScrollReveal>
 
-        {/* Desktop: horizontal flow */}
-        <div className="hidden md:flex items-center justify-center mt-14">
-          {steps.map((step, i) => (
-            <div key={step.title} className="flex items-center">
-              <div className="bg-stone-950/60 border border-stone-800 hover:border-amber-500/30 rounded-xl p-6 text-center w-44 transition-all duration-200 flex-shrink-0">
-                <div className="w-7 h-7 rounded-full bg-amber-500 flex items-center justify-center mx-auto mb-3 text-stone-950 text-xs font-bold flex-shrink-0">
-                  {i + 1}
+        {/* Desktop: connected timeline */}
+        <div className="hidden md:block mt-14">
+          <div className="relative">
+            {/* Connecting line */}
+            <div className="absolute top-5 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500/60 via-amber-500/30 to-amber-500/60" />
+            <div className="grid grid-cols-4 gap-6">
+              {steps.map((step, i) => (
+                <div key={step.title} className="relative flex flex-col items-center text-center">
+                  {/* Numbered circle */}
+                  <div className="relative z-10 w-10 h-10 rounded-full border-2 border-amber-500/50 bg-stone-900 flex items-center justify-center mb-4">
+                    <span className="font-mono text-sm font-bold text-amber-400">{i + 1}</span>
+                  </div>
+                  {/* Card */}
+                  <div className={`bg-stone-950/60 border border-stone-800 hover:border-amber-500/30 rounded-xl p-6 transition-all duration-200 w-full ${i % 2 === 0 ? 'mt-4' : 'mt-8'}`}>
+                    <h4 className="text-sm font-semibold text-stone-100 mb-1">{step.title}</h4>
+                    <p className="text-xs text-stone-400 leading-snug">{step.description}</p>
+                  </div>
                 </div>
-                <h4 className="text-sm font-semibold text-stone-100 mb-1">{step.title}</h4>
-                <p className="text-xs text-stone-400 leading-snug">{step.description}</p>
-              </div>
-              {i < steps.length - 1 && (
-                <div className="text-stone-700 text-xl mx-3 flex-shrink-0">→</div>
-              )}
+              ))}
             </div>
-          ))}
+          </div>
         </div>
 
         {/* Mobile: vertical stepper */}

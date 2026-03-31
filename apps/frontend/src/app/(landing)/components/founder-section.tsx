@@ -17,13 +17,16 @@ export function FounderSection() {
           <h2 className="text-3xl md:text-4xl font-display text-stone-100 mb-8 leading-tight">
             Construido por alguien que vivió tus mismos desafíos
           </h2>
-          <blockquote className="text-lg text-stone-400 leading-relaxed italic mb-8 max-w-2xl mx-auto">
-            &ldquo;Sé lo que se siente gestionar una operación de última milla bajo presión: la carga que
-            se acumula, las entregas que fallan, los KPIs que no cuadran. Viví esos problemas
-            durante más de 5 años liderando operaciones logísticas de alto volumen en retail. Aureon
-            nace de esa experiencia — está pensado para que tu equipo deje de apagar incendios y
-            pueda enfocarse en hacer crecer el negocio.&rdquo;
-          </blockquote>
+          <div className="relative">
+            <span aria-hidden="true" className="absolute -top-8 left-1/2 -translate-x-1/2 font-display text-[120px] md:text-[180px] text-amber-500/10 leading-none select-none pointer-events-none">&ldquo;</span>
+            <blockquote className="relative text-lg text-stone-400 leading-relaxed italic mb-8 max-w-2xl mx-auto">
+              &ldquo;Sé lo que se siente gestionar una operación de última milla bajo presión: la carga que
+              se acumula, las entregas que fallan, los KPIs que no cuadran. Viví esos problemas
+              durante más de 5 años liderando operaciones logísticas de alto volumen en retail. Aureon
+              nace de esa experiencia — está pensado para que tu equipo deje de apagar incendios y
+              pueda enfocarse en hacer crecer el negocio.&rdquo;
+            </blockquote>
+          </div>
           <p className="text-stone-100 font-semibold">Gerhard Neumann</p>
           <p className="text-stone-500 text-sm mt-1 mb-10">Founder & CEO — Tractis</p>
         </ScrollReveal>
