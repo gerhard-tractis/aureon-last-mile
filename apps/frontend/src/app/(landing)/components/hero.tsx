@@ -42,8 +42,11 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, [reducedMotion]);
 
-  const motionProps = (config: ReturnType<typeof fadeUp>) =>
-    reducedMotion ? {} : config;
+  const motionProps = (config: {
+    initial: Record<string, unknown>;
+    animate: Record<string, unknown>;
+    transition: Record<string, unknown>;
+  }) => (reducedMotion ? {} : config);
 
   return (
     <section aria-label="Inicio" className="relative min-h-screen flex items-center justify-center bg-stone-950 overflow-hidden">
