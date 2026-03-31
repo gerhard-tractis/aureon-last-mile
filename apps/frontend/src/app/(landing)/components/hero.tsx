@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { motion, useReducedMotion } from 'motion/react';
 
-import { DEMO_URL } from '../constants';
-
-const TOPO_PATTERN = `url("data:image/svg+xml,%3Csvg width='600' height='600' viewBox='0 0 600 600' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1'%3E%3Cellipse cx='300' cy='300' rx='280' ry='180'/%3E%3Cellipse cx='300' cy='300' rx='220' ry='140'/%3E%3Cellipse cx='300' cy='300' rx='160' ry='100'/%3E%3Cellipse cx='300' cy='300' rx='100' ry='60'/%3E%3Cellipse cx='300' cy='300' rx='50' ry='30'/%3E%3Cellipse cx='150' cy='150' rx='120' ry='80'/%3E%3Cellipse cx='150' cy='150' rx='70' ry='45'/%3E%3Cellipse cx='450' cy='450' rx='130' ry='85'/%3E%3Cellipse cx='450' cy='450' rx='75' ry='50'/%3E%3C/g%3E%3C/svg%3E")`;
+import { DEMO_URL, TOPO_PATTERN } from '../constants';
+import { DashboardPlaceholder } from './dashboard-placeholder';
 
 const proofStats = [
   { number: '3', label: 'KPIs que definen tu éxito' },
@@ -14,20 +14,51 @@ const proofStats = [
   { number: '8–10 sem', label: 'Implementación' },
 ];
 
-export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+const fadeUp = (delay: number) => ({
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.7, ease: 'easeOut', delay: delay / 1000 },
+});
 
-  const show = mounted
-    ? 'opacity-100 translate-y-0 transition-all duration-700 ease-out'
-    : 'opacity-0 translate-y-5';
+export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
+  const reducedMotion = useReducedMotion();
+  const topoRef = useRef<HTMLDivElement>(null);
+  const [scrollY, setScrollY] = useState(0);
+
+  // Topo parallax
+  useEffect(() => {
+    if (reducedMotion) return;
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          setScrollY(window.scrollY);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [reducedMotion]);
+
+  const motionProps = (config: {
+    initial: Record<string, unknown>;
+    animate: Record<string, unknown>;
+    transition: Record<string, unknown>;
+  }) => (reducedMotion ? {} : config);
 
   return (
     <section aria-label="Inicio" className="relative min-h-screen flex items-center justify-center bg-stone-950 overflow-hidden">
-      {/* Topographic pattern */}
+      {/* Topographic pattern with parallax */}
       <div
-        className="absolute inset-0 opacity-[0.03]"
-        style={{ backgroundImage: TOPO_PATTERN, backgroundSize: '600px 600px' }}
+        ref={topoRef}
+        className="absolute inset-0 opacity-[0.03] will-change-transform"
+        style={{
+          backgroundImage: TOPO_PATTERN,
+          backgroundSize: '600px 600px',
+          transform: `translateY(${scrollY * 0.1}px)`,
+        }}
       />
 
       {/* Radial gold gradient */}
@@ -54,50 +85,66 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
       {/* Content */}
       <div className="relative z-10 text-center px-6 max-w-4xl mx-auto pt-16 pb-20">
         {/* Brand */}
-        <div
-          className={`flex flex-col items-center mb-8 ${show}`}
-          style={{ transitionDelay: '0ms' }}
+        <motion.div
+          className="flex flex-col items-center mb-8"
+          {...motionProps({
+            initial: { opacity: 0, scale: 1.05 },
+            animate: { opacity: 1, scale: 1.0 },
+            transition: { duration: 0.7, ease: 'easeOut', delay: 0 },
+          })}
         >
           <span className="text-4xl md:text-5xl font-bold tracking-tight text-amber-400">Aureon</span>
-          <div className="flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-1.5 mt-1">
             <span className="text-xs text-stone-500">by</span>
             <svg viewBox="0 0 110 104" fill="currentColor" className="h-3.5 opacity-40 text-stone-100"><polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19" /><polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19" /><polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38" /></svg>
+            <span className="text-xs font-medium text-stone-500">Tractis</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Eyebrow */}
-        <p
-          className={`text-xs font-semibold uppercase tracking-[0.15em] text-amber-500/80 mb-5 ${show}`}
-          style={{ transitionDelay: '75ms' }}
+        <motion.p
+          className="text-xs font-semibold uppercase tracking-[0.15em] text-amber-500/80 mb-5"
+          {...motionProps({
+            initial: { opacity: 0, x: -20 },
+            animate: { opacity: 1, x: 0 },
+            transition: { duration: 0.7, ease: 'easeOut', delay: 0.1 },
+          })}
         >
           El sistema operativo para última milla
-        </p>
+        </motion.p>
 
         {/* Headline */}
-        <h1
-          className={`text-5xl md:text-6xl lg:text-7xl font-display tracking-tight text-stone-100 leading-tight ${show}`}
-          style={{ transitionDelay: '150ms' }}
+        <motion.h1
+          className="text-5xl md:text-6xl lg:text-7xl font-display tracking-tight text-stone-100 leading-tight"
+          {...motionProps(fadeUp(200))}
         >
           Ejecutas miles de entregas al mes.
           <br />
-          <span className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent">
+          <motion.span
+            className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent inline-block"
+            {...motionProps(fadeUp(350))}
+          >
             ¿Pero sabes si tu negocio es rentable?
-          </span>
-        </h1>
+          </motion.span>
+        </motion.h1>
 
         {/* Subtext */}
-        <p
-          className={`mt-6 text-lg md:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed ${show}`}
-          style={{ transitionDelay: '300ms' }}
+        <motion.p
+          className="mt-6 text-lg md:text-xl text-stone-400 max-w-2xl mx-auto leading-relaxed"
+          {...motionProps({
+            initial: { opacity: 0 },
+            animate: { opacity: 1 },
+            transition: { duration: 0.7, ease: 'easeOut', delay: 0.5 },
+          })}
         >
           Aureon OS es el sistema de gestión que te muestra dónde pierdes plata, coordina con tu
           cliente de forma autónoma, y conecta toda tu operación en un solo lugar.
-        </p>
+        </motion.p>
 
         {/* CTAs */}
-        <div
-          className={`mt-10 flex flex-col sm:flex-row items-center justify-center gap-4 ${show}`}
-          style={{ transitionDelay: '450ms' }}
+        <motion.div
+          className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4"
+          {...motionProps(fadeUp(650))}
         >
           <a
             href={DEMO_URL}
@@ -113,20 +160,33 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
           >
             {isAuthenticated ? 'Ir al Panel' : 'Ver el panel'}
           </Link>
-        </div>
+        </motion.div>
 
-        {/* Proof stats */}
-        <div
-          className={`mt-16 pt-8 border-t border-stone-800 grid grid-cols-2 md:grid-cols-4 gap-8 ${show}`}
-          style={{ transitionDelay: '600ms' }}
+        {/* Proof stats — floating bar */}
+        <motion.div
+          className="mt-14 bg-stone-900/50 backdrop-blur-sm rounded-2xl px-8 py-6 grid grid-cols-2 md:grid-cols-4 gap-8"
+          {...motionProps(fadeUp(800))}
         >
-          {proofStats.map((stat) => (
-            <div key={stat.label} className="text-center">
+          {proofStats.map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              className="text-center"
+              {...motionProps({
+                initial: { opacity: 0, y: 10 },
+                animate: { opacity: 1, y: 0 },
+                transition: { duration: 0.5, ease: 'easeOut', delay: 0.8 + i * 0.1 },
+              })}
+            >
               <div className="text-2xl md:text-3xl font-bold text-stone-100">{stat.number}</div>
               <div className="mt-1 text-xs text-stone-500">{stat.label}</div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
+
+        {/* Dashboard placeholder */}
+        <motion.div {...motionProps(fadeUp(1000))}>
+          <DashboardPlaceholder />
+        </motion.div>
       </div>
     </section>
   );
