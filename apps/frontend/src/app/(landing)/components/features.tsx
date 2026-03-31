@@ -32,12 +32,14 @@ const agents = [
 
 export function Features() {
   return (
-    <section id="agentes" aria-label="Agentes autonomos" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="agentes" aria-label="Agentes autonomos" className="relative bg-stone-900 py-24 scroll-mt-16">
+      {/* Section gradient */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-stone-950 to-transparent pointer-events-none" />
       <div className="max-w-7xl mx-auto px-6">
         <div className="md:flex md:gap-12 mt-12">
           {/* Left column — sticky heading */}
           <div className="md:w-2/5 md:sticky md:top-24 md:self-start">
-            <ScrollReveal>
+            <ScrollReveal direction="left">
               <h2 className="text-3xl md:text-4xl font-display text-stone-100">
                 No es solo un dashboard.
                 <br className="hidden md:block" /> Aureon actúa por ti.
@@ -53,10 +55,10 @@ export function Features() {
           <div className="md:w-3/5 space-y-6 mt-8 md:mt-0">
             {agents.map((agent, i) => (
               <ScrollReveal key={agent.title} delay={i * 100}>
-                <div className="border border-stone-800 hover:border-amber-500/30 bg-stone-950/40 rounded-xl p-7 transition-all duration-200 h-full flex flex-col">
+                <div className="group border border-stone-800 hover:border-amber-500/30 hover:-translate-y-0.5 bg-stone-950/40 rounded-xl p-7 transition-all duration-200 h-full flex flex-col">
                   {/* Agent badge */}
                   <div className="inline-flex items-center gap-2 self-start bg-stone-950 border border-stone-800 text-amber-400 text-xs font-semibold uppercase tracking-[0.08em] px-3 py-1.5 rounded-md mb-5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse group-hover:animate-[pulse_0.8s_ease-in-out_infinite]" />
                     Agente activo
                   </div>
                   <h3 className="text-base font-semibold text-stone-100 mb-3">{agent.title}</h3>

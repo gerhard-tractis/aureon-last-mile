@@ -32,7 +32,7 @@ export default async function LandingPage() {
   const isAuthenticated = !!user;
 
   return (
-    <main className="bg-stone-950 text-stone-100 overflow-x-hidden">
+    <main className="bg-stone-950 text-stone-100 overflow-x-hidden landing-noise">
       <Navbar isAuthenticated={isAuthenticated} />
       <Hero isAuthenticated={isAuthenticated} />
       <ValueProps />
