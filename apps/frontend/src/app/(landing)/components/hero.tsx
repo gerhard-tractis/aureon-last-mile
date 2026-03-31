@@ -94,9 +94,10 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
           })}
         >
           <span className="text-4xl md:text-5xl font-bold tracking-tight text-amber-400">Aureon</span>
-          <div className="flex items-center gap-1 mt-1">
+          <div className="flex items-center gap-1.5 mt-1">
             <span className="text-xs text-stone-500">by</span>
             <svg viewBox="0 0 110 104" fill="currentColor" className="h-3.5 opacity-40 text-stone-100"><polygon points="0 41.766 30.817 57.54 30.817 93.694 51 104 51 67.846 51 45.08 0 19" /><polygon points="59 45.08 59 67.846 59 104 79.183 93.694 79.183 57.54 110 41.766 110 19" /><polygon points="105 11.955 85.674 0 54.017 14.451 22.326 0 3 11.955 54.017 38" /></svg>
+            <span className="text-xs font-medium text-stone-500">Tractis</span>
           </div>
         </motion.div>
 
