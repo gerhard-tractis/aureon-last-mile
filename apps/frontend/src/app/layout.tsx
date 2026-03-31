@@ -21,6 +21,14 @@ export const metadata: Metadata = {
   title: process.env.NEXT_PUBLIC_PRODUCTNAME,
   description: "Plataforma de gestión de última milla para operadores logísticos chilenos",
   themeColor: "#e6c15c",
+  icons: {
+    icon: [
+      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
