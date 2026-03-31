@@ -115,13 +115,13 @@ export function Hero({ isAuthenticated }: { isAuthenticated: boolean }) {
 
         {/* Headline */}
         <motion.h1
-          className="text-5xl md:text-6xl lg:text-7xl font-display tracking-tight text-stone-100 leading-tight"
+          className="text-5xl md:text-6xl lg:text-7xl font-display tracking-tight text-stone-100 leading-snug"
           {...motionProps(fadeUp(200))}
         >
           Ejecutas miles de entregas al mes.
           <br />
           <motion.span
-            className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent inline-block"
+            className="bg-gradient-to-r from-amber-400 to-amber-600 bg-clip-text text-transparent inline-block pb-1"
             {...motionProps(fadeUp(350))}
           >
             ¿Pero sabes si tu negocio es rentable?
