@@ -1,3 +1,4 @@
+import { Lightbulb } from 'lucide-react';
 import { ScrollReveal } from './scroll-reveal';
 
 const kpis = [
@@ -26,13 +27,13 @@ const kpis = [
 
 export function MetricsShowcase() {
   return (
-    <section id="inteligencia" className="bg-stone-950 py-24 scroll-mt-16">
+    <section id="inteligencia" aria-label="Inteligencia estrategica" className="bg-stone-950 py-24 scroll-mt-16">
       <div className="max-w-7xl mx-auto px-6">
         <ScrollReveal>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">
             Inteligencia estratégica
           </p>
-          <h2 className="text-3xl md:text-4xl font-bold text-stone-100">
+          <h2 className="text-3xl md:text-4xl font-display text-stone-100">
             Los 3 indicadores que definen si tu última milla es rentable
           </h2>
           <p className="mt-4 text-lg text-stone-400 max-w-2xl leading-relaxed">
@@ -80,7 +81,7 @@ export function MetricsShowcase() {
         <ScrollReveal delay={300}>
           <div className="mt-6 bg-stone-900 border border-stone-800 border-l-2 border-l-amber-500 rounded-r-xl p-6 flex gap-4 items-start">
             <div className="w-9 h-9 min-w-[36px] rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-base flex-shrink-0">
-              💡
+              <Lightbulb className="w-5 h-5 text-amber-400" />
             </div>
             <p className="text-sm text-stone-400 leading-relaxed">
               <strong className="text-stone-200">Caso real:</strong>{' '}
