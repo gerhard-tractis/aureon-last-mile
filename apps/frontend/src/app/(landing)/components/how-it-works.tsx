@@ -52,9 +52,11 @@ const integrations = ['DispatchTrack', 'SimpliRoute', 'Driv.in'];
 
 export function HowItWorks() {
   return (
-    <section id="operacion" aria-label="Operacion completa" className="bg-stone-900 py-24 scroll-mt-16">
+    <section id="operacion" aria-label="Operacion completa" className="relative bg-stone-900 py-24 scroll-mt-16">
+      {/* Section gradient */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-stone-950 to-transparent pointer-events-none" />
       <div className="max-w-7xl mx-auto px-6">
-        <ScrollReveal>
+        <ScrollReveal direction="left">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">
             Operación completa
           </p>

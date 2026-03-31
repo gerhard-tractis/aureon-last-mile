@@ -8,7 +8,9 @@ const creds = [
 
 export function FounderSection() {
   return (
-    <section aria-label="Quien esta detras" className="bg-stone-950 py-24 border-t border-stone-900">
+    <section aria-label="Quien esta detras" className="relative bg-stone-950 py-24 border-t border-stone-900">
+      {/* Section gradient */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-stone-900 to-transparent pointer-events-none" />
       <div className="max-w-3xl mx-auto px-6 text-center">
         <ScrollReveal>
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-6">

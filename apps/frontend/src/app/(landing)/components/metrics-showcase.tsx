@@ -1,5 +1,6 @@
 import { Lightbulb } from 'lucide-react';
 import { ScrollReveal } from './scroll-reveal';
+import { TOPO_PATTERN } from '../constants';
 
 const kpis = [
   {
@@ -27,9 +28,16 @@ const kpis = [
 
 export function MetricsShowcase() {
   return (
-    <section id="inteligencia" aria-label="Inteligencia estrategica" className="bg-stone-950 py-24 scroll-mt-16">
+    <section id="inteligencia" aria-label="Inteligencia estrategica" className="relative bg-stone-950 py-24 scroll-mt-16">
+      {/* Topo pattern */}
+      <div
+        className="absolute inset-0 opacity-[0.015] pointer-events-none"
+        style={{ backgroundImage: TOPO_PATTERN, backgroundSize: '600px 600px' }}
+      />
+      {/* Section gradient */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-stone-900 to-transparent pointer-events-none" />
       <div className="max-w-7xl mx-auto px-6">
-        <ScrollReveal>
+        <ScrollReveal direction="right">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-400 mb-4">
             Inteligencia estratégica
           </p>
@@ -45,9 +53,9 @@ export function MetricsShowcase() {
         <div className="grid md:grid-cols-3 gap-6 mt-12">
           {kpis.map((kpi, i) => (
             <ScrollReveal key={kpi.abbr} delay={i * 100} className={i === 0 ? 'md:col-span-2' : ''}>
-              <div className="h-full bg-stone-900 border border-stone-800 rounded-xl overflow-hidden hover:border-amber-500/30 transition-all duration-200 flex flex-col">
+              <div className="group h-full bg-stone-900 border border-stone-800 rounded-xl overflow-hidden hover:border-amber-500/30 hover:-translate-y-0.5 transition-all duration-200 flex flex-col">
                 {/* Gold top accent bar */}
-                <div className="h-0.5 w-full bg-amber-500" />
+                <div className="h-0.5 group-hover:h-1 transition-all duration-200 w-full bg-amber-500" />
                 <div className={`p-8 flex flex-col flex-1 ${i === 0 ? 'md:flex-row md:gap-8' : ''}`}>
                   <div className={i === 0 ? 'md:flex-1' : ''}>
                     <span className="font-mono text-3xl font-bold text-amber-400">{kpi.abbr}</span>
