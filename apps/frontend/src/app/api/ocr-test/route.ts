@@ -1,19 +1,23 @@
 // Keep extraction prompt in sync with apps/agents/src/tools/ocr/extract-manifest.ts
 import { NextRequest, NextResponse } from 'next/server';
 
+export const maxDuration = 60; // Gemini can be slow on multi-page manifests
+
 const EXTRACTION_PROMPT = `Eres un sistema de extraccion de datos logisticos chilenos.
 
 Analiza todas las paginas de este manifiesto de entrega y extrae cada orden con sus bultos.
 
 Responde UNICAMENTE con JSON valido en este formato exacto:
 {
-  "delivery_date": "YYYY-MM-DD o null",
+  "pickup_point_code": "string o null",
+  "pickup_point_name": "string o null",
   "orders": [{
     "order_number": "string",
     "customer_name": "string o null",
     "customer_phone": "string o null",
     "delivery_address": "string o null",
     "comuna": "string o null",
+    "delivery_date": "YYYY-MM-DD o null",
     "packages": [{
       "label": "string",
       "package_number": "string o null",
@@ -25,6 +29,8 @@ Responde UNICAMENTE con JSON valido en este formato exacto:
 }
 
 Reglas:
+- pickup_point_code: el identificador numerico o alfanumerico del punto de retiro visible en el encabezado del manifiesto
+- pickup_point_name: el nombre del punto de retiro o sucursal visible en el manifiesto
 - Extrae TODAS las ordenes visibles en todas las paginas
 - Si un campo no es visible o legible, usa null
 - Los numeros de telefono chilenos: +56 9 XXXX XXXX

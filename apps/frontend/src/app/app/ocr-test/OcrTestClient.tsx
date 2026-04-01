@@ -20,13 +20,50 @@ interface ExtractedOrder {
   customer_phone: string | null;
   delivery_address: string | null;
   comuna: string | null;
+  delivery_date: string | null;
   packages: ExtractedPackage[];
 }
 
 interface ExtractionResult {
-  delivery_date: string | null;
+  pickup_point_code: string | null;
+  pickup_point_name: string | null;
   orders: ExtractedOrder[];
   error?: string;
+}
+
+// ── Image compression ─────────────────────────────────────────────────────────
+const MAX_DIMENSION = 1600; // px — enough for OCR, keeps files ~200-400 KB
+const JPEG_QUALITY = 0.82;
+
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const scale = MAX_DIMENSION / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error('Canvas compression failed'));
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        JPEG_QUALITY,
+      );
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(file);
+  });
 }
 
 // ── OrderCard ──────────────────────────────────────────────────────────────────
@@ -81,6 +118,12 @@ export function OrderCard({ order, index }: { order: ExtractedOrder; index: numb
                 <span className="text-text font-mono">{order.customer_phone}</span>
               </>
             )}
+            {order.delivery_date && (
+              <>
+                <span className="text-text-secondary">Fecha entrega</span>
+                <span className="text-text font-mono">{order.delivery_date}</span>
+              </>
+            )}
           </div>
           {order.packages.length > 0 && (
             <div className="mt-2 rounded-md bg-surface-raised p-2 space-y-1">
@@ -112,9 +155,10 @@ export default function OcrTestClient() {
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const addPhoto = useCallback((file: File) => {
-    setPhotos((prev) => [...prev, file]);
-    setPreviews((prev) => [...prev, URL.createObjectURL(file)]);
+  const addPhoto = useCallback(async (file: File) => {
+    const compressed = await compressImage(file);
+    setPhotos((prev) => [...prev, compressed]);
+    setPreviews((prev) => [...prev, URL.createObjectURL(compressed)]);
   }, []);
 
   const removePhoto = useCallback((idx: number) => {
@@ -135,9 +179,9 @@ export default function OcrTestClient() {
     setErrorMsg('');
   }, [previews]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) addPhoto(file);
+    if (file) await addPhoto(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -152,7 +196,15 @@ export default function OcrTestClient() {
 
     try {
       const res = await fetch('/api/ocr-test', { method: 'POST', body: formData });
-      const json = (await res.json()) as ExtractionResult & { error?: string };
+
+      let json: ExtractionResult & { error?: string };
+      try {
+        json = (await res.json()) as ExtractionResult & { error?: string };
+      } catch {
+        setErrorMsg(`HTTP ${res.status}: respuesta no válida del servidor (¿imagen demasiado grande?)`);
+        setStatus('error');
+        return;
+      }
       setRawJson(JSON.stringify(json, null, 2));
 
       if (!res.ok) {
@@ -269,9 +321,9 @@ export default function OcrTestClient() {
                 {result.orders.length} orden{result.orders.length !== 1 ? 'es' : ''} encontrada
                 {result.orders.length !== 1 ? 's' : ''}
               </span>
-              {result.delivery_date && (
+              {(result.pickup_point_code || result.pickup_point_name) && (
                 <Badge variant="secondary" className="text-xs font-mono">
-                  {result.delivery_date}
+                  {[result.pickup_point_code, result.pickup_point_name].filter(Boolean).join(' · ')}
                 </Badge>
               )}
               {result.error && (

@@ -23,7 +23,8 @@ function makeSubmission(storagePaths: string[] = ['manifests/page1.jpg']) {
 
 function makeExtractionResult(overrides = {}) {
   return {
-    delivery_date: '2026-03-29',
+    pickup_point_code: '400',
+    pickup_point_name: 'Paris Maipú',
     orders: [
       {
         order_number: 'ORD-001',
@@ -31,6 +32,7 @@ function makeExtractionResult(overrides = {}) {
         customer_phone: '+56912345678',
         delivery_address: 'Av. Las Condes 123',
         comuna: 'Las Condes',
+        delivery_date: '2026-03-29',
         packages: [
           {
             label: 'PKG-001',
@@ -173,6 +175,7 @@ describe('processIntakeSubmission', () => {
             customer_phone: null,
             delivery_address: null,
             comuna: null,
+            delivery_date: null,
             packages: [],
           },
         ],
@@ -214,7 +217,8 @@ describe('processIntakeSubmission', () => {
   it('marks submission needs_review on illegible manifest', async () => {
     const db = makeDb();
     mockExtractManifest.mockResolvedValueOnce({
-      delivery_date: null,
+      pickup_point_code: null,
+      pickup_point_name: null,
       orders: [],
       error: 'ilegible',
     });
