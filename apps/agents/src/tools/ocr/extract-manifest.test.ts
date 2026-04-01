@@ -22,7 +22,8 @@ describe('extractManifest', () => {
 
   it('extracts orders from valid JSON response', async () => {
     const mockResponse = {
-      delivery_date: '2026-03-29',
+      pickup_point_code: '400',
+      pickup_point_name: 'Paris Maipú',
       orders: [
         {
           order_number: 'GU-001',
@@ -30,6 +31,7 @@ describe('extractManifest', () => {
           customer_phone: '+56 9 1234 5678',
           delivery_address: 'Av. Providencia 1234',
           comuna: 'Providencia',
+          delivery_date: '2026-03-29',
           packages: [
             {
               label: 'PKG-001',
@@ -49,7 +51,9 @@ describe('extractManifest', () => {
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0].order_number).toBe('GU-001');
     expect(result.orders[0].packages).toHaveLength(1);
-    expect(result.delivery_date).toBe('2026-03-29');
+    expect(result.orders[0].delivery_date).toBe('2026-03-29');
+    expect(result.pickup_point_code).toBe('400');
+    expect(result.pickup_point_name).toBe('Paris Maipú');
   });
 
   it('returns error for illegible manifest', async () => {
@@ -65,13 +69,15 @@ describe('extractManifest', () => {
   it('handles nullable fields in extraction', async () => {
     mockGenerateText.mockResolvedValue({
       text: JSON.stringify({
-        delivery_date: null,
+        pickup_point_code: null,
+        pickup_point_name: null,
         orders: [{
           order_number: 'GU-002',
           customer_name: null,
           customer_phone: null,
           delivery_address: null,
           comuna: null,
+          delivery_date: null,
           packages: [],
         }],
       }),
@@ -79,7 +85,8 @@ describe('extractManifest', () => {
 
     const result = await extractManifest(apiKey, [Buffer.from('partial')]);
     expect(result.orders[0].customer_name).toBeNull();
-    expect(result.delivery_date).toBeNull();
+    expect(result.orders[0].delivery_date).toBeNull();
+    expect(result.pickup_point_code).toBeNull();
   });
 
   it('throws on invalid JSON response', async () => {
@@ -89,7 +96,7 @@ describe('extractManifest', () => {
 
   it('sends all images in one API call', async () => {
     mockGenerateText.mockResolvedValue({
-      text: JSON.stringify({ delivery_date: null, orders: [] }),
+      text: JSON.stringify({ pickup_point_code: null, pickup_point_name: null, orders: [] }),
     } as never);
 
     const images = [Buffer.from('page1'), Buffer.from('page2'), Buffer.from('page3')];
@@ -101,7 +108,7 @@ describe('extractManifest', () => {
   });
 
   it('strips markdown code fences from response', async () => {
-    const json = JSON.stringify({ delivery_date: null, orders: [] });
+    const json = JSON.stringify({ pickup_point_code: null, pickup_point_name: null, orders: [] });
     mockGenerateText.mockResolvedValue({ text: '```json\n' + json + '\n```' } as never);
 
     const result = await extractManifest(apiKey, [Buffer.from('fenced')]);

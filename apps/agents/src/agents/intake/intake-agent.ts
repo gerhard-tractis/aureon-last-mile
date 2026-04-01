@@ -79,7 +79,7 @@ export async function processIntakeSubmission(
   }
 
   // 6. Insert orders + packages
-  const deliveryDate = extraction.delivery_date ?? new Date().toISOString().slice(0, 10);
+  const fallbackDate = new Date().toISOString().slice(0, 10);
   let ordersCreated = 0;
   let hasIncompleteOrders = false;
 
@@ -110,7 +110,7 @@ export async function processIntakeSubmission(
         customer_phone: order.customer_phone ?? '',
         delivery_address: order.delivery_address ?? '',
         comuna: order.comuna ?? '',
-        delivery_date: deliveryDate,
+        delivery_date: order.delivery_date ?? fallbackDate,
         pickup_point_id: pickupPointId,
         imported_via: 'OCR',
         imported_at: new Date().toISOString(),
