@@ -9,13 +9,13 @@ Analiza todas las paginas de este manifiesto de entrega y extrae cada orden con 
 
 Responde UNICAMENTE con JSON valido en este formato exacto:
 {
-  "delivery_date": "YYYY-MM-DD o null",
   "orders": [{
     "order_number": "string",
     "customer_name": "string o null",
     "customer_phone": "string o null",
     "delivery_address": "string o null",
     "comuna": "string o null",
+    "delivery_date": "YYYY-MM-DD o null",
     "packages": [{
       "label": "string",
       "package_number": "string o null",
@@ -49,11 +49,11 @@ const ExtractedOrderSchema = z.object({
   customer_phone: z.string().nullable().default(null),
   delivery_address: z.string().nullable().default(null),
   comuna: z.string().nullable().default(null),
+  delivery_date: z.string().nullable().default(null),
   packages: z.array(PackageSchema).default([]),
 });
 
 const ExtractionResultSchema = z.object({
-  delivery_date: z.string().nullable().default(null),
   orders: z.array(ExtractedOrderSchema),
   error: z.string().optional(),
 });

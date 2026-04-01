@@ -20,11 +20,11 @@ interface ExtractedOrder {
   customer_phone: string | null;
   delivery_address: string | null;
   comuna: string | null;
+  delivery_date: string | null;
   packages: ExtractedPackage[];
 }
 
 interface ExtractionResult {
-  delivery_date: string | null;
   orders: ExtractedOrder[];
   error?: string;
 }
@@ -79,6 +79,12 @@ export function OrderCard({ order, index }: { order: ExtractedOrder; index: numb
               <>
                 <span className="text-text-secondary">Teléfono</span>
                 <span className="text-text font-mono">{order.customer_phone}</span>
+              </>
+            )}
+            {order.delivery_date && (
+              <>
+                <span className="text-text-secondary">Fecha entrega</span>
+                <span className="text-text font-mono">{order.delivery_date}</span>
               </>
             )}
           </div>
@@ -269,11 +275,6 @@ export default function OcrTestClient() {
                 {result.orders.length} orden{result.orders.length !== 1 ? 'es' : ''} encontrada
                 {result.orders.length !== 1 ? 's' : ''}
               </span>
-              {result.delivery_date && (
-                <Badge variant="secondary" className="text-xs font-mono">
-                  {result.delivery_date}
-                </Badge>
-              )}
               {result.error && (
                 <Badge variant="destructive" className="text-xs">{result.error}</Badge>
               )}
