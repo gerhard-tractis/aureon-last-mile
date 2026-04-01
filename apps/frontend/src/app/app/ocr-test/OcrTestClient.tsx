@@ -25,6 +25,8 @@ interface ExtractedOrder {
 }
 
 interface ExtractionResult {
+  pickup_point_code: string | null;
+  pickup_point_name: string | null;
   orders: ExtractedOrder[];
   error?: string;
 }
@@ -275,6 +277,11 @@ export default function OcrTestClient() {
                 {result.orders.length} orden{result.orders.length !== 1 ? 'es' : ''} encontrada
                 {result.orders.length !== 1 ? 's' : ''}
               </span>
+              {(result.pickup_point_code || result.pickup_point_name) && (
+                <Badge variant="secondary" className="text-xs font-mono">
+                  {[result.pickup_point_code, result.pickup_point_name].filter(Boolean).join(' · ')}
+                </Badge>
+              )}
               {result.error && (
                 <Badge variant="destructive" className="text-xs">{result.error}</Badge>
               )}
