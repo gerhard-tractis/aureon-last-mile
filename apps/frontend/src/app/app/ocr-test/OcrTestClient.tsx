@@ -160,7 +160,15 @@ export default function OcrTestClient() {
 
     try {
       const res = await fetch('/api/ocr-test', { method: 'POST', body: formData });
-      const json = (await res.json()) as ExtractionResult & { error?: string };
+
+      let json: ExtractionResult & { error?: string };
+      try {
+        json = (await res.json()) as ExtractionResult & { error?: string };
+      } catch {
+        setErrorMsg(`HTTP ${res.status}: respuesta no válida del servidor (¿imagen demasiado grande?)`);
+        setStatus('error');
+        return;
+      }
       setRawJson(JSON.stringify(json, null, 2));
 
       if (!res.ok) {
