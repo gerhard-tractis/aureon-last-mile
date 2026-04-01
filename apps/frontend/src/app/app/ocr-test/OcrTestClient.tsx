@@ -31,6 +31,41 @@ interface ExtractionResult {
   error?: string;
 }
 
+// ── Image compression ─────────────────────────────────────────────────────────
+const MAX_DIMENSION = 1600; // px — enough for OCR, keeps files ~200-400 KB
+const JPEG_QUALITY = 0.82;
+
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const scale = MAX_DIMENSION / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error('Canvas compression failed'));
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        JPEG_QUALITY,
+      );
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 // ── OrderCard ──────────────────────────────────────────────────────────────────
 export function OrderCard({ order, index }: { order: ExtractedOrder; index: number }) {
   const [open, setOpen] = useState(index === 0);
@@ -120,9 +155,10 @@ export default function OcrTestClient() {
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const addPhoto = useCallback((file: File) => {
-    setPhotos((prev) => [...prev, file]);
-    setPreviews((prev) => [...prev, URL.createObjectURL(file)]);
+  const addPhoto = useCallback(async (file: File) => {
+    const compressed = await compressImage(file);
+    setPhotos((prev) => [...prev, compressed]);
+    setPreviews((prev) => [...prev, URL.createObjectURL(compressed)]);
   }, []);
 
   const removePhoto = useCallback((idx: number) => {
@@ -143,9 +179,9 @@ export default function OcrTestClient() {
     setErrorMsg('');
   }, [previews]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) addPhoto(file);
+    if (file) await addPhoto(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
