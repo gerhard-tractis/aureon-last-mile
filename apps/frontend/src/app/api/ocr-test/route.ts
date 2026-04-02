@@ -75,6 +75,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     },
     body: JSON.stringify({
       model: MODEL,
+      max_tokens: 65536,
       messages: [
         {
           role: 'user',
