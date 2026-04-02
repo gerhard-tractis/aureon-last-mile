@@ -35,6 +35,7 @@ Reglas:
 - Si un campo no es visible o legible, usa null
 - Los numeros de telefono chilenos: +56 9 XXXX XXXX
 - No inventes datos que no esten en el manifiesto
+- Cuidado con digitos similares: 0 vs 8, 0 vs 6, 1 vs 7. Verifica cada numero de orden comparando con el contexto visual
 - Si el manifiesto es ilegible, responde: {"orders": [], "error": "ilegible"}`;
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
