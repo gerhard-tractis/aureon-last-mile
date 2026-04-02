@@ -33,7 +33,7 @@ describe('GET /health', () => {
   it('returns 200 ok', async () => {
     const res = await fetch(url('/health'));
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { status: string };
     expect(body.status).toBe('ok');
   });
 });
@@ -80,7 +80,7 @@ describe('POST /api/ocr-extract', () => {
     });
 
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as { orders: unknown[]; pickup_point_code: string };
     expect(body.orders).toHaveLength(1);
     expect(body.pickup_point_code).toBe('400');
     expect(mockExtract).toHaveBeenCalledWith(API_KEY, [expect.any(Buffer)]);
@@ -99,7 +99,7 @@ describe('POST /api/ocr-extract', () => {
     });
 
     expect(res.status).toBe(502);
-    const body = await res.json();
+    const body = (await res.json()) as { error: string };
     expect(body.error).toContain('OpenRouter down');
   });
 });

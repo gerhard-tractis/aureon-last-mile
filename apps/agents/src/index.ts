@@ -83,7 +83,10 @@ async function main(): Promise<void> {
     password: process.env.BULL_BOARD_PASSWORD ?? 'changeme',
   });
 
-  healthServer = startHealthServer();
+  healthServer = startHealthServer(3110, {
+    openrouterApiKey: cfg.OPENROUTER_API_KEY,
+    ocrApiSecret: cfg.OCR_API_SECRET,
+  });
 
   log('info', 'agents_ready', { version: '0.4.0' });
 }
