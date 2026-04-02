@@ -13,6 +13,7 @@ const configSchema = z.object({
   SENTRY_DSN: z.string().min(1),
 
   // Optional vars
+  OCR_API_SECRET: z.string().min(1).optional(),
   BETTERSTACK_HEARTBEAT_URL: z.string().optional(),
   WA_PHONE_NUMBER_ID: z.string().optional(),
   WA_ACCESS_TOKEN: z.string().optional(),
