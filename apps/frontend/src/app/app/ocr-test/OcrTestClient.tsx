@@ -195,7 +195,10 @@ export default function OcrTestClient() {
     photos.forEach((f) => formData.append('images', f));
 
     try {
-      const res = await fetch('/api/ocr-test', { method: 'POST', body: formData });
+      const ocrUrl = process.env.NEXT_PUBLIC_OCR_API_URL ?? '/api/ocr-test';
+      const ocrSecret = process.env.NEXT_PUBLIC_OCR_API_SECRET;
+      const headers: HeadersInit = ocrSecret ? { Authorization: `Bearer ${ocrSecret}` } : {};
+      const res = await fetch(ocrUrl, { method: 'POST', headers, body: formData });
 
       let json: ExtractionResult & { error?: string };
       try {
