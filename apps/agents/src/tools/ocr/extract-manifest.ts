@@ -79,6 +79,7 @@ export async function extractManifest(
 
   const result = await generateText({
     model: openrouter(MODEL),
+    maxTokens: 65536,
     messages: [
       {
         role: 'user',
