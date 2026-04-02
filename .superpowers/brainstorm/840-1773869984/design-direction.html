@@ -1,0 +1,144 @@
+<h2>What should Aureon's standard design feel like?</h2>
+<p class="subtitle">Three distinct directions — same app, different soul. All three support light/dark/custom modes.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="precision" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fafafa;padding:16px;border-bottom:1px solid #e5e5e5;font-family:'DM Mono',monospace">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:22px;height:22px;background:#18181b;border-radius:4px"></div>
+        <span style="font-size:12px;font-weight:600;letter-spacing:0.08em;color:#18181b;text-transform:uppercase">Aureon</span>
+        <span style="margin-left:auto;font-size:11px;color:#a1a1aa;letter-spacing:0.05em">OPERACIONES</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="flex:1;background:white;border:1px solid #e4e4e7;border-radius:6px;padding:10px">
+          <div style="font-size:10px;color:#71717a;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px">Entregas hoy</div>
+          <div style="font-size:22px;font-weight:700;color:#18181b;font-family:monospace">142</div>
+          <div style="font-size:10px;color:#22c55e;margin-top:2px">↑ 12% vs ayer</div>
+        </div>
+        <div style="flex:1;background:white;border:1px solid #e4e4e7;border-radius:6px;padding:10px">
+          <div style="font-size:10px;color:#71717a;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:4px">En ruta</div>
+          <div style="font-size:22px;font-weight:700;color:#18181b;font-family:monospace">38</div>
+          <div style="font-size:10px;color:#f59e0b;margin-top:2px">● 3 alertas</div>
+        </div>
+      </div>
+      <div style="background:white;border:1px solid #e4e4e7;border-radius:6px;padding:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:#71717a">Conductores</span>
+          <span style="font-size:10px;color:#71717a">Hoy, 14:22</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:6px;height:6px;border-radius:50%;background:#22c55e"></div>
+            <span style="font-size:11px;color:#18181b;flex:1">Carlos Muñoz</span>
+            <span style="font-size:10px;color:#71717a;font-family:monospace">18/22</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:6px;height:6px;border-radius:50%;background:#f59e0b"></div>
+            <span style="font-size:11px;color:#18181b;flex:1">Ana Rojas</span>
+            <span style="font-size:10px;color:#71717a;font-family:monospace">11/15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Precision</h3>
+      <p>Surgical minimalism. Monospaced data, tight grid, near-zero decoration. Every element earns its space. Think Linear, Stripe Dashboard, Vercel.</p>
+      <p style="margin-top:6px;font-size:12px;color:#71717a"><strong>Tone:</strong> Calm authority. "This tool doesn't need to impress you."</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="command" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f1117;padding:16px;border-bottom:1px solid #1e2130;font-family:system-ui">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:22px;height:22px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);border-radius:4px"></div>
+        <span style="font-size:12px;font-weight:700;color:#f1f5f9;letter-spacing:0.04em">AUREON</span>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <div style="width:8px;height:8px;border-radius:50%;background:#22c55e"></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:#f59e0b"></div>
+          <div style="width:8px;height:8px;border-radius:50%;background:#ef4444"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="flex:1;background:#1a1f2e;border:1px solid #2d3748;border-radius:6px;padding:10px">
+          <div style="font-size:10px;color:#64748b;margin-bottom:4px">ENTREGAS</div>
+          <div style="font-size:24px;font-weight:800;color:#3b82f6;font-variant-numeric:tabular-nums">142</div>
+          <div style="width:100%;height:3px;background:#1e2130;border-radius:2px;margin-top:6px">
+            <div style="width:72%;height:3px;background:#3b82f6;border-radius:2px"></div>
+          </div>
+        </div>
+        <div style="flex:1;background:#1a1f2e;border:1px solid #2d3748;border-radius:6px;padding:10px">
+          <div style="font-size:10px;color:#64748b;margin-bottom:4px">ALERTAS</div>
+          <div style="font-size:24px;font-weight:800;color:#f59e0b;font-variant-numeric:tabular-nums">3</div>
+          <div style="width:100%;height:3px;background:#1e2130;border-radius:2px;margin-top:6px">
+            <div style="width:20%;height:3px;background:#f59e0b;border-radius:2px"></div>
+          </div>
+        </div>
+      </div>
+      <div style="background:#1a1f2e;border:1px solid #2d3748;border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:9px;background:#22c55e22;color:#22c55e;padding:2px 6px;border-radius:3px;font-weight:600">ACTIVO</span>
+          <span style="font-size:11px;color:#cbd5e1">Carlos Muñoz — Zona Sur</span>
+          <span style="font-size:10px;color:#475569;margin-left:auto">18/22</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:9px;background:#f59e0b22;color:#f59e0b;padding:2px 6px;border-radius:3px;font-weight:600">ALERTA</span>
+          <span style="font-size:11px;color:#cbd5e1">Ana Rojas — Zona Centro</span>
+          <span style="font-size:10px;color:#475569;margin-left:auto">11/15</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Command Center</h3>
+      <p>Dark-first, status-saturated, high contrast. Built for operators who live in this screen. Think Datadog, PagerDuty, dispatch consoles.</p>
+      <p style="margin-top:6px;font-size:12px;color:#71717a"><strong>Tone:</strong> Tactical urgency. "Something always needs attention."</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="elevated" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8f7f4;padding:16px;border-bottom:1px solid #ece9e2;font-family:Georgia,serif">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="width:22px;height:22px;background:#2d2926;border-radius:4px;display:flex;align-items:center;justify-content:center">
+          <div style="width:10px;height:10px;background:#c9a227;border-radius:2px"></div>
+        </div>
+        <span style="font-size:13px;font-weight:600;color:#2d2926;letter-spacing:-0.01em">Aureon</span>
+        <span style="margin-left:auto;font-size:11px;color:#9c8f7e;font-style:italic">Operaciones</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <div style="flex:1;background:white;border:1px solid #ece9e2;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+          <div style="font-size:10px;color:#9c8f7e;margin-bottom:6px">Entregas hoy</div>
+          <div style="font-size:26px;font-weight:700;color:#2d2926;letter-spacing:-0.02em">142</div>
+          <div style="height:2px;background:#f0ece4;border-radius:1px;margin-top:6px">
+            <div style="width:72%;height:2px;background:#c9a227;border-radius:1px"></div>
+          </div>
+        </div>
+        <div style="flex:1;background:white;border:1px solid #ece9e2;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+          <div style="font-size:10px;color:#9c8f7e;margin-bottom:6px">Completadas</div>
+          <div style="font-size:26px;font-weight:700;color:#2d2926;letter-spacing:-0.02em">104</div>
+          <div style="height:2px;background:#f0ece4;border-radius:1px;margin-top:6px">
+            <div style="width:53%;height:2px;background:#22c55e;border-radius:1px"></div>
+          </div>
+        </div>
+      </div>
+      <div style="background:white;border:1px solid #ece9e2;border-radius:8px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:10px;color:#9c8f7e;margin-bottom:8px">Conductores en ruta</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:28px;height:28px;background:#e8e3d8;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#2d2926">CM</div>
+            <div style="flex:1">
+              <div style="font-size:11px;font-weight:600;color:#2d2926">Carlos Muñoz</div>
+              <div style="font-size:10px;color:#9c8f7e">Zona Sur · 18 de 22</div>
+            </div>
+            <div style="width:6px;height:6px;border-radius:50%;background:#22c55e"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Elevated Ops</h3>
+      <p>Warm neutrals, serif accents, editorial breathing room. Professional without being cold. Think Notion, Loom, Craft — but for logistics.</p>
+      <p style="margin-top:6px;font-size:12px;color:#71717a"><strong>Tone:</strong> Confident warmth. "Built for people who care about their work."</p>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distribution Page — Before vs After</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #13110d;
+    --surface: #1e1a14;
+    --surface-raised: #2a2218;
+    --border: #2a2218;
+    --accent: #e6c15c;
+    --accent-fg: #0d0b09;
+    --text: #f5ecd7;
+    --text-secondary: #c8b99a;
+    --text-muted: #9a8e7d;
+    --warning: #fbbf24;
+    --warning-bg: rgba(120, 53, 15, 0.27);
+    --warning-border: #78350f;
+    --success: #4ade80;
+    --info: #60a5fa;
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --font-mono: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+
+  h1.page-title {
+    font-size: 28px; font-weight: 700; color: var(--accent);
+    margin-bottom: 8px; letter-spacing: -0.5px;
+  }
+  .subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 40px; }
+
+  .comparison { display: flex; gap: 32px; margin-bottom: 48px; }
+  .panel { flex: 1; min-width: 0; }
+  .panel-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px;
+    margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  .panel-label.before { color: #f87171; }
+  .panel-label.after { color: var(--success); }
+
+  /* === BEFORE styles === */
+  .before-phone {
+    background: var(--surface);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 16px;
+    font-size: 13px;
+  }
+  .before-phone .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .before-phone .header h2 { font-size: 18px; font-weight: 600; }
+  .before-phone .btn-group { display: flex; gap: 4px; }
+  .before-phone .btn-plain {
+    font-size: 11px; padding: 4px 8px; border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text-secondary); background: transparent;
+    white-space: nowrap;
+  }
+  .before-phone .kpi-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+    margin-top: 16px;
+  }
+  .before-phone .kpi-card {
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+  }
+  .before-phone .kpi-label { font-size: 11px; color: var(--text-muted); }
+  .before-phone .kpi-value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+  .before-phone .empty-text {
+    text-align: center; padding: 24px 0; color: var(--text-muted); font-size: 12px;
+  }
+
+  /* === AFTER styles === */
+  .after-phone {
+    background: var(--surface);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 16px;
+    font-size: 13px;
+  }
+  .after-phone .header {
+    margin-bottom: 12px;
+  }
+  .after-phone .header h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .after-phone .btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .after-phone .btn-icon {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 500; padding: 6px 12px;
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); background: var(--surface-raised);
+    transition: all 0.15s;
+  }
+  .after-phone .btn-icon svg { width: 14px; height: 14px; color: var(--text-muted); }
+
+  .after-phone .kpi-grid {
+    display: grid; grid-template-columns: 1fr; gap: 8px;
+    margin-top: 12px;
+  }
+  .after-phone .kpi-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .after-phone .kpi-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .after-phone .kpi-icon.pending { background: rgba(96, 165, 250, 0.15); color: var(--info); }
+  .after-phone .kpi-icon.consolidation { background: rgba(230, 193, 92, 0.15); color: var(--accent); }
+  .after-phone .kpi-icon.urgent { background: var(--warning-bg); color: var(--warning); }
+  .after-phone .kpi-icon svg { width: 18px; height: 18px; }
+  .after-phone .kpi-content { flex: 1; min-width: 0; }
+  .after-phone .kpi-label {
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 500;
+  }
+  .after-phone .kpi-value {
+    font-family: var(--font-mono); font-size: 20px; font-weight: 600;
+    margin-top: 2px;
+  }
+  .after-phone .kpi-card.urgent-border {
+    border-color: var(--warning-border);
+  }
+
+  .after-phone .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 32px 16px; text-align: center;
+  }
+  .after-phone .empty-icon {
+    width: 48px; height: 48px; color: var(--text-muted); opacity: 0.5;
+    margin-bottom: 12px;
+  }
+  .after-phone .empty-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .after-phone .empty-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; }
+  .after-phone .empty-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; background: var(--accent); color: var(--accent-fg);
+    border-radius: 6px; font-size: 12px; font-weight: 600;
+    text-decoration: none; border: none; cursor: pointer;
+  }
+  .after-phone .empty-btn svg { width: 14px; height: 14px; }
+
+  /* Annotations */
+  .annotation {
+    font-size: 11px; color: var(--accent); font-style: italic;
+    margin-top: 8px; padding-left: 8px; border-left: 2px solid var(--accent);
+  }
+
+  .section-divider {
+    border: none; border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* Desktop comparison */
+  .desktop-mockup {
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 24px;
+  }
+  .desktop-mockup .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .desktop-mockup .header h2 { font-size: 20px; font-weight: 700; }
+  .desktop-mockup .btn-group { display: flex; gap: 8px; }
+  .desktop-mockup .btn-icon {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; padding: 7px 14px;
+    border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); background: var(--surface-raised);
+  }
+  .desktop-mockup .btn-icon svg { width: 14px; height: 14px; color: var(--text-muted); }
+  .desktop-mockup .kpi-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;
+    margin-bottom: 24px;
+  }
+  .desktop-mockup .kpi-card {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px;
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .desktop-mockup .kpi-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .desktop-mockup .kpi-icon.pending { background: rgba(96, 165, 250, 0.15); color: var(--info); }
+  .desktop-mockup .kpi-icon.consolidation { background: rgba(230, 193, 92, 0.15); color: var(--accent); }
+  .desktop-mockup .kpi-icon.urgent { background: var(--warning-bg); color: var(--warning); }
+  .desktop-mockup .kpi-icon svg { width: 18px; height: 18px; }
+  .desktop-mockup .kpi-content { flex: 1; }
+  .desktop-mockup .kpi-label {
+    font-size: 11px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 500;
+  }
+  .desktop-mockup .kpi-value {
+    font-family: var(--font-mono); font-size: 22px; font-weight: 600;
+    margin-top: 2px;
+  }
+  .desktop-mockup .kpi-card.urgent-border { border-color: var(--warning-border); }
+
+  .desktop-mockup .empty-state {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 40px 16px; text-align: center;
+    border: 1px dashed var(--border); border-radius: 8px;
+  }
+  .desktop-mockup .empty-icon { width: 48px; height: 48px; color: var(--text-muted); opacity: 0.4; margin-bottom: 12px; }
+  .desktop-mockup .empty-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .desktop-mockup .empty-desc { font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; max-width: 320px; }
+  .desktop-mockup .empty-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 18px; background: var(--accent); color: var(--accent-fg);
+    border-radius: 6px; font-size: 13px; font-weight: 600;
+    text-decoration: none; border: none;
+  }
+  .desktop-mockup .empty-btn svg { width: 14px; height: 14px; }
+
+  @media (max-width: 700px) {
+    .comparison { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1 class="page-title">Distribution Page Polish</h1>
+  <p class="subtitle">Side-by-side comparison — current vs proposed design (mobile view)</p>
+
+  <div class="comparison">
+    <!-- BEFORE -->
+    <div class="panel">
+      <div class="panel-label before">CURRENT</div>
+      <div class="before-phone">
+        <div class="header">
+          <h2>Distribución</h2>
+          <div class="btn-group">
+            <span class="btn-plain">Modo lote</span>
+            <span class="btn-plain">Modo rápido</span>
+            <span class="btn-plain">Configurar andenes</span>
+          </div>
+        </div>
+
+        <div style="text-align:center;padding:12px 0;color:var(--text-muted);font-size:12px;">
+          No hay andenes configurados. <span style="color:var(--accent)">Configurar andenes →</span>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Pendientes de sectorizar</div>
+            <div class="kpi-value">0</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">En consolidación</div>
+            <div class="kpi-value">0</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Próximos a despachar</div>
+            <div class="kpi-value">0</div>
+          </div>
+        </div>
+
+        <div class="empty-text">No hay andenes configurados para mostrar.</div>
+        <div class="empty-text" style="border-top:1px solid var(--border);margin-top:8px;padding-top:16px;">
+          No hay paquetes en consolidación.
+        </div>
+      </div>
+      <div class="annotation">No icons, no visual hierarchy, cramped cards, plain empty states</div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="panel">
+      <div class="panel-label after">PROPOSED</div>
+      <div class="after-phone">
+        <div class="header">
+          <h2>Distribución</h2>
+          <div class="btn-group">
+            <span class="btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              Modo lote
+            </span>
+            <span class="btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              Modo rápido
+            </span>
+            <span class="btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+              Andenes
+            </span>
+          </div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon pending">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg>
+            </div>
+            <div class="kpi-content">
+              <div class="kpi-label">Pendientes</div>
+              <div class="kpi-value">0</div>
+            </div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon consolidation">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/><path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/></svg>
+            </div>
+            <div class="kpi-content">
+              <div class="kpi-label">Consolidación</div>
+              <div class="kpi-value">0</div>
+            </div>
+          </div>
+          <div class="kpi-card urgent-border">
+            <div class="kpi-icon urgent">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+            <div class="kpi-content">
+              <div class="kpi-label">Próximos a despachar</div>
+              <div class="kpi-value">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="empty-state">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/><path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/></svg>
+          <div class="empty-title">Sin andenes configurados</div>
+          <div class="empty-desc">Configura tus andenes para comenzar a sectorizar paquetes por zona de entrega.</div>
+          <button class="empty-btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Configurar andenes
+          </button>
+        </div>
+      </div>
+      <div class="annotation">Icons for scanability, monospace values, color-coded KPIs, proper empty state with CTA</div>
+    </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <h1 class="page-title" style="font-size:22px;">Desktop View — Proposed</h1>
+  <p class="subtitle">Same design at wider viewport — 3-column KPIs, title + buttons inline</p>
+
+  <div class="desktop-mockup">
+    <div class="header">
+      <h2>Distribución</h2>
+      <div class="btn-group">
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Modo lote
+        </span>
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Modo rápido
+        </span>
+        <span class="btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          Configurar andenes
+        </span>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-icon pending">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="M3.3 7 12 12l8.7-5M12 22V12"/></svg>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Pendientes de sectorizar</div>
+          <div class="kpi-value">0</div>
+        </div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-icon consolidation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/><path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/></svg>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">En consolidación</div>
+          <div class="kpi-value">0</div>
+        </div>
+      </div>
+      <div class="kpi-card urgent-border">
+        <div class="kpi-icon urgent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        </div>
+        <div class="kpi-content">
+          <div class="kpi-label">Próximos a despachar</div>
+          <div class="kpi-value">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="empty-state">
+      <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m6.08 9.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/><path d="m6.08 14.5-3.5 1.6a1 1 0 0 0 0 1.81l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.59"/></svg>
+      <div class="empty-title">Sin andenes configurados</div>
+      <div class="empty-desc">Configura tus andenes para comenzar a sectorizar paquetes por zona de entrega.</div>
+      <button class="empty-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Configurar andenes
+      </button>
+    </div>
+  </div>
+
+  <hr class="section-divider">
+
+  <h1 class="page-title" style="font-size:18px;">Key Changes</h1>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">KPI Cards</div>
+      <ul style="font-size:12px;color:var(--text-secondary);list-style:none;line-height:1.8;">
+        <li>+ Lucide icons with color-coded backgrounds</li>
+        <li>+ Monospace values (font-mono)</li>
+        <li>+ Uppercase labels with tracking</li>
+        <li>+ Reuse existing MetricCard component</li>
+        <li>+ Warm amber always on "despachar" card</li>
+      </ul>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">Action Buttons</div>
+      <ul style="font-size:12px;color:var(--text-secondary);list-style:none;line-height:1.8;">
+        <li>+ Icons for instant recognition</li>
+        <li>+ Surface-raised background instead of bare outline</li>
+        <li>+ "Configurar andenes" → "Andenes" on mobile</li>
+      </ul>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">Empty States</div>
+      <ul style="font-size:12px;color:var(--text-secondary);list-style:none;line-height:1.8;">
+        <li>+ Use existing EmptyState component</li>
+        <li>+ Prominent icon + title + description</li>
+        <li>+ Gold CTA button instead of inline link</li>
+        <li>+ Actionable copy in Spanish</li>
+      </ul>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
+      <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px;">Consistency</div>
+      <ul style="font-size:12px;color:var(--text-secondary);list-style:none;line-height:1.8;">
+        <li>+ Aligns with spec-13 design language</li>
+        <li>+ Reuses MetricCard + EmptyState</li>
+        <li>+ Follows dashboard KPI patterns</li>
+        <li>+ Uses semantic design tokens throughout</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</body>
+</html>

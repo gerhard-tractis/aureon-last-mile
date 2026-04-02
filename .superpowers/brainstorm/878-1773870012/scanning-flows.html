@@ -1,0 +1,127 @@
+<h2>Distribution Scanning Flows</h2>
+<p class="subtitle">Two modes for different operational scenarios</p>
+
+<div class="section">
+  <h3>Batch Mode (Primary — Efficient)</h3>
+  <div class="mockup">
+    <div class="mockup-header">Batch Mode Flow</div>
+    <div class="mockup-body" style="padding: 24px; font-family: system-ui;">
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <div style="background: #2563eb; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 140px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 1</div>
+          <div style="font-weight: 600;">View Pending</div>
+          <div style="font-size: 12px; margin-top: 4px;">System groups packages<br>by andén using rules</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #2563eb; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 140px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 2</div>
+          <div style="font-weight: 600;">Select Andén</div>
+          <div style="font-size: 12px; margin-top: 4px;">Pick target andén<br>to start a batch</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #2563eb; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 140px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 3</div>
+          <div style="font-weight: 600;">Scan Packages</div>
+          <div style="font-size: 12px; margin-top: 4px;">Scan into batch<br>(validates belonging)</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #f59e0b; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 140px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 4</div>
+          <div style="font-weight: 600;">Close Batch</div>
+          <div style="font-size: 12px; margin-top: 4px;">Operator decides<br>when batch is ready</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #16a34a; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 140px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 5</div>
+          <div style="font-weight: 600;">Scan Andén PK</div>
+          <div style="font-size: 12px; margin-top: 4px;">Confirm placement<br>→ status updated</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px; padding: 12px; background: #1e293b; border-radius: 8px; border-left: 3px solid #f59e0b;">
+        <div style="font-weight: 600; color: #f59e0b; font-size: 13px;">EDGE CASES</div>
+        <ul style="margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: #94a3b8;">
+          <li><strong>Wrong zone package:</strong> Rejected — "Does not belong to this batch"</li>
+          <li><strong>Unmapped comuna:</strong> Auto-routes to consolidation + flags for attention</li>
+          <li><strong>Multiple batches:</strong> Operator creates several small batches per andén</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Quick-Sort Mode (Fallback — Crowded Floor)</h3>
+  <div class="mockup">
+    <div class="mockup-header">Quick-Sort Flow</div>
+    <div class="mockup-body" style="padding: 24px; font-family: system-ui;">
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <div style="background: #7c3aed; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 160px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 1</div>
+          <div style="font-weight: 600;">Scan Package</div>
+          <div style="font-size: 12px; margin-top: 4px;">Scan any barcode</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #7c3aed; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 160px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 2</div>
+          <div style="font-weight: 600;">See Destination</div>
+          <div style="font-size: 12px; margin-top: 4px;">Big display:<br>"→ Andén 3" or "→ Consolidación"</div>
+        </div>
+        <div style="color: #666; font-size: 20px;">→</div>
+        <div style="background: #7c3aed; color: white; padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 160px;">
+          <div style="font-size: 13px; opacity: 0.8;">Step 3</div>
+          <div style="font-weight: 600;">Scan Andén PK</div>
+          <div style="font-size: 12px; margin-top: 4px;">Confirm placement<br>→ status updated</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px; padding: 12px; background: #1e293b; border-radius: 8px; border-left: 3px solid #7c3aed;">
+        <div style="font-weight: 600; color: #a78bfa; font-size: 13px;">KEY DIFFERENCE</div>
+        <ul style="margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: #94a3b8;">
+          <li>No pre-grouping — scan one package at a time</li>
+          <li>System creates a single-item batch automatically</li>
+          <li>Still requires andén PK scan for traceability</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Status Transitions</h3>
+  <div class="mockup">
+    <div class="mockup-header">Package Status After Sectorization</div>
+    <div class="mockup-body" style="padding: 24px; font-family: system-ui;">
+      <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center;">
+        <div style="background: #334155; padding: 10px 14px; border-radius: 6px; text-align: center;">
+          <div style="font-size: 11px; color: #94a3b8;">③</div>
+          <div style="font-weight: 600; color: #e2e8f0;">en_bodega</div>
+          <div style="font-size: 11px; color: #64748b;">unsorted</div>
+        </div>
+        <div style="color: #666;">→</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="background: #1e3a5f; border: 1px solid #2563eb; padding: 10px 14px; border-radius: 6px; text-align: center;">
+              <div style="font-weight: 600; color: #60a5fa;">sectorizado</div>
+              <div style="font-size: 11px; color: #64748b;">active andén<br>today/tomorrow</div>
+            </div>
+            <div style="color: #666;">→</div>
+            <div style="background: #334155; padding: 10px 14px; border-radius: 6px; text-align: center;">
+              <div style="font-size: 11px; color: #94a3b8;">④</div>
+              <div style="font-weight: 600; color: #e2e8f0;">asignado</div>
+              <div style="font-size: 11px; color: #64748b;">driver assigned</div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div style="background: #3b1f1f; border: 1px solid #f59e0b; padding: 10px 14px; border-radius: 6px; text-align: center;">
+              <div style="font-weight: 600; color: #fbbf24;">retenido</div>
+              <div style="font-size: 11px; color: #64748b;">consolidation<br>future date</div>
+            </div>
+            <div style="color: #666;">→</div>
+            <div style="font-size: 12px; color: #94a3b8; font-style: italic;">when date arrives →<br>re-sectorize → sectorizado</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

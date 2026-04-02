@@ -1,0 +1,174 @@
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Playfair+Display:wght@400;700&family=Syne:wght@400;700;800&family=DM+Serif+Display&family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  body { background: #13110d; color: #f5ecd7; font-family: system-ui, sans-serif; }
+  .comparison { max-width: 900px; margin: 0 auto; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.12em; color: #e6c15c; margin-bottom: 32px; }
+  .option {
+    border: 1px solid #2a2218;
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .option:hover { border-color: rgba(230,193,92,0.3); box-shadow: 0 0 20px rgba(230,193,92,0.08); }
+  .option[data-selected="true"] { border-color: #e6c15c; box-shadow: 0 0 24px rgba(230,193,92,0.15); }
+  .option-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #9a8e7d;
+    margin-bottom: 4px;
+  }
+  .font-name {
+    font-size: 13px;
+    color: #e6c15c;
+    margin-bottom: 16px;
+    font-family: ui-monospace, monospace;
+  }
+  .hero-headline {
+    font-size: 48px;
+    line-height: 1.1;
+    color: #f5ecd7;
+    margin-bottom: 12px;
+  }
+  .hero-gradient {
+    background: linear-gradient(to right, #fbbf24, #d97706);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .section-headline {
+    font-size: 32px;
+    line-height: 1.2;
+    color: #f5ecd7;
+    margin-top: 16px;
+  }
+  .body-sample {
+    font-family: system-ui, sans-serif;
+    font-size: 16px;
+    color: #9a8e7d;
+    margin-top: 12px;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+  .rec-badge {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(230,193,92,0.15);
+    border: 1px solid rgba(230,193,92,0.3);
+    color: #e6c15c;
+    padding: 3px 10px;
+    border-radius: 4px;
+    margin-left: 12px;
+    vertical-align: middle;
+  }
+  .note {
+    font-size: 12px;
+    color: #78716c;
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .divider { border: none; border-top: 1px solid #2a2218; margin: 12px 0; }
+</style>
+
+<div class="comparison">
+  <h2>Display Font for Headlines</h2>
+  <p style="font-size: 14px; color: #9a8e7d; margin-bottom: 32px;">
+    Click the option you prefer. Each is shown with the hero headline and a section headline.
+    Body text stays as Geist Sans in all options.
+  </p>
+
+  <!-- Option A: Instrument Serif -->
+  <div class="option" data-value="instrument-serif">
+    <div class="option-label">Option A <span class="rec-badge">Recommended</span></div>
+    <div class="font-name">Instrument Serif (Regular only — no bold weight)</div>
+    <div class="hero-headline" style="font-family: 'Instrument Serif', serif; font-weight: 400;">
+      Ejecutas miles de entregas al mes.<br>
+      <span class="hero-gradient" style="font-family: 'Instrument Serif', serif;">¿Pero sabes si tu negocio es rentable?</span>
+    </div>
+    <hr class="divider">
+    <div class="section-headline" style="font-family: 'Instrument Serif', serif; font-weight: 400;">
+      Los 3 indicadores que definen si tu última milla es rentable
+    </div>
+    <div class="body-sample">
+      Cada KPI tiene aperturas tácticas para que sepas exactamente dónde actuar. No es un dashboard bonito — es la herramienta que necesitas para tomar decisiones.
+    </div>
+    <div class="note">Elegant, editorial. High contrast with Geist Sans body. Only regular weight — relies on size for hierarchy.</div>
+  </div>
+
+  <!-- Option B: Playfair Display -->
+  <div class="option" data-value="playfair-display">
+    <div class="option-label">Option B</div>
+    <div class="font-name">Playfair Display (Regular + Bold available)</div>
+    <div class="hero-headline" style="font-family: 'Playfair Display', serif; font-weight: 700;">
+      Ejecutas miles de entregas al mes.<br>
+      <span class="hero-gradient" style="font-family: 'Playfair Display', serif; font-weight: 700;">¿Pero sabes si tu negocio es rentable?</span>
+    </div>
+    <hr class="divider">
+    <div class="section-headline" style="font-family: 'Playfair Display', serif; font-weight: 700;">
+      Los 3 indicadores que definen si tu última milla es rentable
+    </div>
+    <div class="body-sample">
+      Cada KPI tiene aperturas tácticas para que sepas exactamente dónde actuar. No es un dashboard bonito — es la herramienta que necesitas para tomar decisiones.
+    </div>
+    <div class="note">Classic luxury feel. Bold weight available for strong hierarchy. More traditional/serious tone.</div>
+  </div>
+
+  <!-- Option C: Syne -->
+  <div class="option" data-value="syne">
+    <div class="option-label">Option C</div>
+    <div class="font-name">Syne (Regular + Bold + ExtraBold available)</div>
+    <div class="hero-headline" style="font-family: 'Syne', sans-serif; font-weight: 800;">
+      Ejecutas miles de entregas al mes.<br>
+      <span class="hero-gradient" style="font-family: 'Syne', sans-serif; font-weight: 800;">¿Pero sabes si tu negocio es rentable?</span>
+    </div>
+    <hr class="divider">
+    <div class="section-headline" style="font-family: 'Syne', sans-serif; font-weight: 700;">
+      Los 3 indicadores que definen si tu última milla es rentable
+    </div>
+    <div class="body-sample">
+      Cada KPI tiene aperturas tácticas para que sepas exactamente dónde actuar. No es un dashboard bonito — es la herramienta que necesitas para tomar decisiones.
+    </div>
+    <div class="note">Geometric, futuristic sans-serif. Bold presence. Tech-forward tone — less "editorial", more "command center".</div>
+  </div>
+
+  <!-- Option D: DM Serif Display -->
+  <div class="option" data-value="dm-serif-display">
+    <div class="option-label">Option D</div>
+    <div class="font-name">DM Serif Display (Regular only — no bold weight)</div>
+    <div class="hero-headline" style="font-family: 'DM Serif Display', serif; font-weight: 400;">
+      Ejecutas miles de entregas al mes.<br>
+      <span class="hero-gradient" style="font-family: 'DM Serif Display', serif;">¿Pero sabes si tu negocio es rentable?</span>
+    </div>
+    <hr class="divider">
+    <div class="section-headline" style="font-family: 'DM Serif Display', serif; font-weight: 400;">
+      Los 3 indicadores que definen si tu última milla es rentable
+    </div>
+    <div class="body-sample">
+      Cada KPI tiene aperturas tácticas para que sepas exactamente dónde actuar. No es un dashboard bonito — es la herramienta que necesitas para tomar decisiones.
+    </div>
+    <div class="note">Warm, approachable serif. Slightly rounder than Instrument Serif. Good match for the warm stone palette.</div>
+  </div>
+
+  <!-- Option E: Libre Baskerville -->
+  <div class="option" data-value="libre-baskerville">
+    <div class="option-label">Option E</div>
+    <div class="font-name">Libre Baskerville (Regular + Bold available)</div>
+    <div class="hero-headline" style="font-family: 'Libre Baskerville', serif; font-weight: 700;">
+      Ejecutas miles de entregas al mes.<br>
+      <span class="hero-gradient" style="font-family: 'Libre Baskerville', serif; font-weight: 700;">¿Pero sabes si tu negocio es rentable?</span>
+    </div>
+    <hr class="divider">
+    <div class="section-headline" style="font-family: 'Libre Baskerville', serif; font-weight: 700;">
+      Los 3 indicadores que definen si tu última milla es rentable
+    </div>
+    <div class="body-sample">
+      Cada KPI tiene aperturas tácticas para que sepas exactamente dónde actuar. No es un dashboard bonito — es la herramienta que necesitas para tomar decisiones.
+    </div>
+    <div class="note">Authoritative, newspaper-editorial feel. Bold weight available. High readability at all sizes. More conservative.</div>
+  </div>
+</div>

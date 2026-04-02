@@ -1,0 +1,150 @@
+<h2>Screen 2: Scanning — Wireframe</h2>
+<p class="subtitle">Primary working screen for pickup crew. Hardware scanner sends keystrokes to focused input.</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Scanning Screen — Normal State</div>
+    <div class="mockup-body" style="background: #f8fafc; padding: 0;">
+      <!-- Header bar -->
+      <div style="background: white; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.2rem; cursor: pointer;">←</span>
+        <div style="flex: 1; text-align: center;">
+          <div style="font-weight: 700; font-size: 0.9rem;">Falabella — CARGA-00547</div>
+          <div style="font-size: 0.75rem; color: #64748b;">347 orders · 412 packages</div>
+        </div>
+        <span style="font-size: 1rem;">⚙️</span>
+      </div>
+
+      <!-- Progress section -->
+      <div style="background: white; padding: 16px; border-bottom: 1px solid #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+          <span style="font-size: 2rem; font-weight: 800; color: #0f172a;">287 <span style="font-size: 1rem; color: #64748b; font-weight: 400;">/ 412</span></span>
+          <span style="font-size: 0.85rem; font-weight: 600; color: #16a34a;">69.7%</span>
+        </div>
+        <div style="background: #e2e8f0; height: 12px; border-radius: 6px; overflow: hidden;">
+          <div style="background: linear-gradient(90deg, #e6c15c, #fbbf24); height: 100%; width: 69.7%; border-radius: 6px;"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.75rem; color: #64748b;">
+          <span>✓ 285 verified</span>
+          <span>✗ 2 not found</span>
+          <span>⏱ 18:42</span>
+        </div>
+      </div>
+
+      <!-- Scanner input (always focused) -->
+      <div style="padding: 12px 16px; background: #fffbeb; border-bottom: 1px solid #fde68a;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.2rem;">📡</span>
+          <div style="flex: 1; background: white; border: 2px solid #e6c15c; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; color: #94a3b8;">
+            Waiting for scanner...
+          </div>
+        </div>
+        <div style="font-size: 0.7rem; color: #92400e; margin-top: 4px; text-align: center;">Scanner input auto-focused · Press Enter after scan</div>
+      </div>
+
+      <!-- Scan history (last scans) -->
+      <div style="padding: 12px 16px;">
+        <div style="font-size: 0.8rem; font-weight: 600; color: #64748b; margin-bottom: 8px;">RECENT SCANS</div>
+
+        <div style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #16a34a; font-size: 1.1rem;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.85rem;">CTN-98234</div>
+            <div style="font-size: 0.7rem; color: #64748b;">Order #FA-2026-18923</div>
+          </div>
+          <span style="font-size: 0.7rem; color: #64748b;">3s ago</span>
+        </div>
+
+        <div style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #16a34a; font-size: 1.1rem;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.85rem;">CTN-98233</div>
+            <div style="font-size: 0.7rem; color: #64748b;">Order #FA-2026-18922</div>
+          </div>
+          <span style="font-size: 0.7rem; color: #64748b;">5s ago</span>
+        </div>
+
+        <div style="background: #fef2f2; border-radius: 8px; border: 1px solid #fecaca; margin-bottom: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #dc2626; font-size: 1.1rem;">✗</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.85rem; color: #dc2626;">CTN-99001</div>
+            <div style="font-size: 0.7rem; color: #b91c1c;">Package not included</div>
+          </div>
+          <span style="font-size: 0.7rem; color: #64748b;">12s ago</span>
+        </div>
+
+        <div style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #16a34a; font-size: 1.1rem;">✓</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.85rem;">CTN-98231</div>
+            <div style="font-size: 0.7rem; color: #64748b;">Order #FA-2026-18920</div>
+          </div>
+          <span style="font-size: 0.7rem; color: #64748b;">14s ago</span>
+        </div>
+
+        <div style="background: #fefce8; border-radius: 8px; border: 1px solid #fde68a; margin-bottom: 6px; padding: 10px 12px; display: flex; align-items: center; gap: 8px;">
+          <span style="color: #ca8a04; font-size: 1.1rem;">⚠</span>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.85rem; color: #a16207;">CTN-98230</div>
+            <div style="font-size: 0.7rem; color: #a16207;">Already scanned at 10:23</div>
+          </div>
+          <span style="font-size: 0.7rem; color: #64748b;">18s ago</span>
+        </div>
+      </div>
+
+      <!-- Bottom action -->
+      <div style="padding: 12px 16px; position: sticky; bottom: 0; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+        <button style="width: 100%; padding: 14px; background: #e6c15c; color: #0f172a; border: none; border-radius: 10px; font-weight: 700; font-size: 0.95rem;">
+          Complete Pickup →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Error Popup — "Not Found"</div>
+    <div class="mockup-body" style="background: #f8fafc; padding: 0; position: relative;">
+      <!-- Same header dimmed -->
+      <div style="opacity: 0.3;">
+        <div style="background: white; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; text-align: center;">
+          <div style="font-weight: 700; font-size: 0.9rem;">Falabella — CARGA-00547</div>
+        </div>
+        <div style="background: white; padding: 16px; border-bottom: 1px solid #e2e8f0;">
+          <div style="font-size: 2rem; font-weight: 800;">287 <span style="font-size: 1rem; color: #64748b;">/ 412</span></div>
+        </div>
+      </div>
+
+      <!-- Error popup overlay -->
+      <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; padding: 24px;">
+        <div style="background: white; border-radius: 16px; padding: 32px 24px; text-align: center; width: 100%; max-width: 320px; border: 3px solid #dc2626;">
+          <div style="font-size: 4rem; margin-bottom: 12px;">❌</div>
+          <div style="font-size: 1.3rem; font-weight: 800; color: #dc2626; margin-bottom: 8px;">Package Not Included</div>
+          <div style="font-size: 1.1rem; font-weight: 600; color: #0f172a; margin-bottom: 4px; font-family: monospace; background: #f1f5f9; padding: 8px; border-radius: 6px;">CTN-99001</div>
+          <div style="font-size: 0.85rem; color: #64748b; margin-bottom: 20px;">This barcode is not in the manifest.<br>It has been logged for review.</div>
+          <button style="padding: 12px 32px; background: #dc2626; color: white; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">
+            Dismiss
+          </button>
+          <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 8px;">Auto-dismisses in 5 seconds</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>Audio Feedback Specification</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px;">
+    <div style="background: #0a2e1a; padding: 16px; border-radius: 8px; border-left: 4px solid #16a34a;">
+      <strong style="color: #4ade80;">✓ Verified</strong>
+      <p style="margin-top: 6px; font-size: 0.8em;">Single beep · 800Hz · 150ms<br>Haptic: 1 short pulse</p>
+    </div>
+    <div style="background: #2e0a0a; padding: 16px; border-radius: 8px; border-left: 4px solid #dc2626;">
+      <strong style="color: #f87171;">✗ Not Found</strong>
+      <p style="margin-top: 6px; font-size: 0.8em;">Triple beep · 400Hz · 200ms each<br>Haptic: 3 pulses + popup</p>
+    </div>
+    <div style="background: #2e2a0a; padding: 16px; border-radius: 8px; border-left: 4px solid #ca8a04;">
+      <strong style="color: #fbbf24;">⚠ Duplicate</strong>
+      <p style="margin-top: 6px; font-size: 0.8em;">Double beep · 600Hz · 200ms each<br>Haptic: 2 pulses</p>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,1614 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dispatch Module — 4 Approaches</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ─── Design Tokens ─────────────────────────────────────────────────────── */
+:root {
+  --bg:          #13110d;
+  --surface:     #1e1a14;
+  --surface-2:   #2a2218;
+  --border:      #2a2218;
+  --border-sub:  #1f1a13;
+  --accent:      #e6c15c;
+  --accent-dim:  #2d2106;
+  --accent-fg:   #0d0b09;
+  --text:        #f5ecd7;
+  --text-sec:    #c8b99a;
+  --text-muted:  #9a8e7d;
+  --sidebar-bg:  #0c0a08;
+  --success:     #22c55e;
+  --warning:     #f59e0b;
+  --error:       #ef4444;
+  --info:        #3b82f6;
+  --font-sans: 'Geist', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, monospace;
+  --radius: 6px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
+input, select, button { font-family: inherit; }
+
+/* ─── Tab Switcher ──────────────────────────────────────────────────────── */
+.tab-bar {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 0;
+  padding: 0 24px;
+}
+.tab-bar h1 {
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 16px 20px 16px 0;
+  border-right: 1px solid var(--border);
+  margin-right: 16px;
+  white-space: nowrap;
+}
+.tab-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 13px; font-weight: 500;
+  padding: 16px 16px; border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text-sec); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.approach { display: none; }
+.approach.active { display: block; }
+
+/* ─── Shared Utilities ──────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
+}
+.badge-draft   { background: var(--surface-2); color: var(--text-muted); }
+.badge-planned { background: color-mix(in srgb, var(--info) 15%, transparent); color: var(--info); }
+.badge-carga   { background: color-mix(in srgb, var(--warning) 15%, transparent); color: var(--warning); }
+.badge-listo   { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.badge-ruta    { background: color-mix(in srgb, var(--success) 15%, transparent); color: var(--success); }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APPROACH 1: SPLIT PANEL — Scanner-First / Industrial Dense
+   ══════════════════════════════════════════════════════════════════════════ */
+.a1 { display: flex; height: calc(100vh - 53px); overflow: hidden; }
+
+/* Left: Main working area */
+.a1-main {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+
+.a1-toolbar {
+  flex-shrink: 0; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+}
+.a1-toolbar .route-id {
+  font-family: var(--font-mono); font-size: 16px; font-weight: 600;
+  color: var(--accent);
+}
+.a1-toolbar .sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.a1-toolbar .date { font-size: 12px; color: var(--text-muted); }
+
+.a1-scan-bar {
+  flex-shrink: 0; padding: 12px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.a1-scan-wrap {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1.5px solid var(--accent);
+  border-radius: var(--radius); padding: 0 12px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.a1-scan-wrap .scan-icon { color: var(--accent); font-size: 16px; flex-shrink: 0; }
+.a1-scan-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: var(--font-mono); font-size: 14px;
+  padding: 10px 0;
+  caret-color: var(--accent);
+}
+.a1-scan-input::placeholder { color: var(--text-muted); font-size: 13px; }
+.a1-scan-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+.a1-count-bar {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px; background: var(--bg);
+  border-bottom: 1px solid var(--border-sub);
+}
+.a1-count-bar span { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.a1-count-bar strong { font-family: var(--font-mono); font-size: 13px; color: var(--text); }
+
+/* Package table */
+.a1-table-wrap { flex: 1; overflow-y: auto; }
+.a1-table { width: 100%; border-collapse: collapse; }
+.a1-table thead tr { background: var(--surface); position: sticky; top: 0; z-index: 1; }
+.a1-table th {
+  text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+}
+.a1-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border-sub);
+  font-size: 13px; vertical-align: middle;
+}
+.a1-table tr:hover td { background: var(--surface); }
+.a1-table .order-id { font-family: var(--font-mono); color: var(--accent); font-size: 12px; }
+.a1-table .client { color: var(--text); font-weight: 500; }
+.a1-table .address { color: var(--text-muted); font-size: 12px; }
+.a1-table .remove-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-muted);
+  padding: 4px 6px; border-radius: 4px; transition: color 0.15s, background 0.15s;
+  font-size: 16px; line-height: 1;
+}
+.a1-table .remove-btn:hover { color: var(--error); background: color-mix(in srgb, var(--error) 10%, transparent); }
+
+.a1-table .new-row td { animation: slideIn 0.2s ease; }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Right: Route panel */
+.a1-side {
+  width: 280px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--surface); overflow-y: auto;
+}
+.a1-side-section { padding: 16px; border-bottom: 1px solid var(--border); }
+.a1-side-section h3 {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 12px;
+}
+.field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.field-value { font-size: 13px; color: var(--text); font-weight: 500; }
+.a1-select {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius); padding: 8px 10px;
+  font-size: 13px; cursor: pointer; outline: none;
+  transition: border-color 0.15s;
+}
+.a1-select:focus { border-color: var(--accent); }
+.a1-select option { background: var(--surface); }
+
+.a1-stat {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0;
+}
+.a1-stat + .a1-stat { border-top: 1px solid var(--border-sub); }
+.a1-stat span { font-size: 12px; color: var(--text-sec); }
+.a1-stat strong { font-family: var(--font-mono); font-size: 14px; color: var(--text); }
+
+.a1-actions { padding: 16px; margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.btn-primary {
+  width: 100%; padding: 10px; border-radius: var(--radius); border: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: opacity 0.15s;
+  background: var(--accent); color: var(--accent-fg);
+}
+.btn-primary:hover { opacity: 0.88; }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-outline {
+  width: 100%; padding: 10px; border-radius: var(--radius); cursor: pointer;
+  font-size: 13px; font-weight: 500; transition: background 0.15s;
+  background: transparent; color: var(--text-sec);
+  border: 1px solid var(--border);
+}
+.btn-outline:hover { background: var(--surface-2); }
+
+/* Route list for A1 */
+.a1-list-page { padding: 24px; max-width: 900px; }
+.a1-page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.a1-page-header h2 { font-size: 18px; font-weight: 600; }
+.btn-new {
+  display: flex; align-items: center; gap-6px; gap: 6px;
+  background: var(--accent); color: var(--accent-fg);
+  border: none; border-radius: var(--radius); padding: 8px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+}
+.btn-new:hover { opacity: 0.88; }
+
+.route-table { width: 100%; border-collapse: collapse; }
+.route-table th {
+  text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.route-table td {
+  padding: 12px; border-bottom: 1px solid var(--border-sub);
+  font-size: 13px; vertical-align: middle;
+}
+.route-table tr:hover td { background: var(--surface); cursor: pointer; }
+.route-id-cell { font-family: var(--font-mono); color: var(--accent); font-weight: 600; }
+.open-btn {
+  font-size: 12px; color: var(--text-muted); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 4px 10px; cursor: pointer; transition: color 0.15s;
+}
+.open-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APPROACH 2: CARD DECK — Warm Spatial / Steps
+   ══════════════════════════════════════════════════════════════════════════ */
+.a2 { padding: 28px; min-height: calc(100vh - 53px); }
+.a2-inner { max-width: 780px; margin: 0 auto; }
+
+.a2-page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.a2-page-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.a2-page-header p { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+/* Step indicator */
+.steps { display: flex; align-items: center; gap: 0; margin-bottom: 28px; }
+.step {
+  display: flex; align-items: center; gap: 8px; flex: 1;
+  padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-right: none;
+  transition: background 0.2s;
+}
+.step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.step:last-child { border-right: 1px solid var(--border); border-radius: 0 var(--radius) var(--radius) 0; }
+.step.active { background: var(--accent-dim); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.step.done { background: color-mix(in srgb, var(--success) 8%, transparent); border-color: color-mix(in srgb, var(--success) 25%, transparent); }
+.step-num {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+}
+.step.active .step-num { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.step.done .step-num { background: var(--success); color: #fff; border-color: var(--success); }
+.step-label { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+.step.active .step-label { color: var(--accent); }
+.step.done .step-label { color: var(--success); }
+
+/* Cards */
+.a2-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 2); padding: 20px; margin-bottom: 16px;
+}
+.a2-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+.a2-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.a2-card-sub { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+.a2-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.a2-meta-item {}
+.a2-meta-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.a2-meta-value { font-size: 13px; font-weight: 500; }
+.a2-meta-value.mono { font-family: var(--font-mono); color: var(--accent); font-size: 15px; }
+
+.a2-select {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--text); border-radius: var(--radius); padding: 9px 12px;
+  font-size: 13px; cursor: pointer; outline: none; transition: border-color 0.15s;
+  appearance: none;
+}
+.a2-select:focus { border-color: var(--accent); }
+.a2-select option { background: var(--surface); }
+
+/* Big scan zone */
+.a2-scan-zone {
+  background: var(--surface); border: 1.5px solid var(--accent);
+  border-radius: calc(var(--radius) * 2); padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.a2-scan-zone-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.a2-scan-zone-label .pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.a2-scan-input {
+  width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text);
+  font-family: var(--font-mono); font-size: 15px;
+  padding: 12px 14px; outline: none; transition: border-color 0.15s;
+}
+.a2-scan-input:focus { border-color: var(--accent); }
+.a2-scan-input::placeholder { color: var(--text-muted); font-size: 13px; }
+.a2-scan-hint { font-size: 11px; color: var(--text-muted); margin-top: 8px; text-align: center; }
+
+/* Package cards */
+.a2-pkg-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+}
+.a2-pkg-count {
+  font-size: 12px; color: var(--text-muted);
+}
+.a2-pkg-count strong { font-family: var(--font-mono); color: var(--text); }
+
+.a2-pkg-list { display: flex; flex-direction: column; gap: 8px; }
+.a2-pkg-card {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+  animation: fadeUp 0.2s ease;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.a2-pkg-icon {
+  width: 36px; height: 36px; flex-shrink: 0; border-radius: 8px;
+  background: var(--accent-dim); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.a2-pkg-info { flex: 1; min-width: 0; }
+.a2-pkg-order { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.a2-pkg-name { font-size: 13px; font-weight: 500; color: var(--text); }
+.a2-pkg-addr { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a2-pkg-remove {
+  background: none; border: none; cursor: pointer; padding: 6px;
+  border-radius: 4px; color: var(--text-muted); transition: color 0.15s, background 0.15s;
+  font-size: 14px;
+}
+.a2-pkg-remove:hover { color: var(--error); background: color-mix(in srgb, var(--error) 10%, transparent); }
+
+/* A2 Action bar */
+.a2-actions {
+  display: flex; gap: 10px; margin-top: 20px; position: sticky; bottom: 0;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+  padding: 16px 0;
+}
+.a2-btn-close {
+  flex: 1; padding: 12px; border-radius: var(--radius); cursor: pointer;
+  font-size: 13px; font-weight: 600; transition: background 0.15s;
+  background: transparent; color: var(--text-sec); border: 1.5px solid var(--border);
+}
+.a2-btn-close:hover { background: var(--surface-2); border-color: var(--text-muted); }
+.a2-btn-dispatch {
+  flex: 2; padding: 12px; border-radius: var(--radius); cursor: pointer; border: none;
+  font-size: 14px; font-weight: 700; transition: opacity 0.15s;
+  background: var(--accent); color: var(--accent-fg);
+}
+.a2-btn-dispatch:hover { opacity: 0.88; }
+.a2-btn-dispatch:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* A2 Route list */
+.a2-routes-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.a2-route-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: calc(var(--radius)*2);
+  padding: 18px; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.a2-route-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent); }
+.a2-route-card .rid { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.a2-route-card .rmeta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.a2-route-card .rprog { margin-top: 12px; }
+.a2-route-card .rprog-bar { height: 4px; background: var(--surface-2); border-radius: 99px; margin-top: 4px; }
+.a2-route-card .rprog-fill { height: 100%; background: var(--accent); border-radius: 99px; }
+.a2-route-card .rfoot { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APPROACH 3: TERMINAL — Monospace Command-Line
+   ══════════════════════════════════════════════════════════════════════════ */
+.a3 {
+  background: #0d0c09; min-height: calc(100vh - 53px);
+  font-family: var(--font-mono);
+}
+.a3-layout { display: flex; height: calc(100vh - 53px); }
+
+/* Terminal sidebar */
+.a3-left {
+  width: 320px; flex-shrink: 0; border-right: 1px solid #1e1b14;
+  background: #080705; display: flex; flex-direction: column; overflow: hidden;
+}
+.a3-sys-header {
+  padding: 14px 16px; border-bottom: 1px solid #1e1b14;
+}
+.a3-sys-header .sys-label {
+  font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: #4a4540;
+  margin-bottom: 2px;
+}
+.a3-sys-header .sys-title {
+  font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em;
+}
+
+.a3-route-list { flex: 1; overflow-y: auto; padding: 8px; }
+.a3-route-item {
+  padding: 10px 10px; border-radius: 4px; cursor: pointer; margin-bottom: 2px;
+  border: 1px solid transparent; transition: all 0.1s;
+}
+.a3-route-item:hover { background: #141109; border-color: #2a2218; }
+.a3-route-item.active { background: #1a1407; border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+.a3-route-item .ri-id { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em; }
+.a3-route-item .ri-meta { font-size: 10px; color: #5a5248; margin-top: 2px; }
+.a3-route-item .ri-count { font-size: 10px; color: #6b6558; margin-top: 1px; }
+
+.a3-new-route-btn {
+  margin: 8px; padding: 9px; border: 1px dashed #2a2218; border-radius: 4px;
+  background: none; cursor: pointer; color: #5a5248; font-family: var(--font-mono);
+  font-size: 11px; letter-spacing: 0.05em; transition: all 0.15s;
+}
+.a3-new-route-btn:hover { border-color: var(--accent); color: var(--accent); background: #1a1407; }
+
+/* Terminal main */
+.a3-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.a3-header {
+  padding: 12px 20px; background: #0d0c09; border-bottom: 1px solid #1e1b14;
+  display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+}
+.a3-header .a3-route-id { font-size: 14px; font-weight: 600; color: var(--accent); letter-spacing: 0.05em; }
+.a3-header .a3-sep { color: #2a2218; }
+.a3-header .a3-date { font-size: 11px; color: #5a5248; }
+.a3-header .a3-status { margin-left: auto; }
+
+.a3-controls {
+  display: flex; gap: 0; border-bottom: 1px solid #1e1b14; flex-shrink: 0;
+}
+.a3-control-field {
+  flex: 1; padding: 10px 16px; border-right: 1px solid #1e1b14;
+}
+.a3-control-label { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #4a4540; margin-bottom: 4px; }
+.a3-control-input {
+  background: none; border: none; outline: none; color: var(--text-sec);
+  font-family: var(--font-mono); font-size: 12px; width: 100%;
+}
+.a3-control-select {
+  background: none; border: none; outline: none; color: var(--text-sec);
+  font-family: var(--font-mono); font-size: 12px; cursor: pointer; width: 100%;
+  -webkit-appearance: none;
+}
+.a3-control-select option { background: #0d0c09; color: var(--text); }
+
+/* Scan prompt */
+.a3-prompt-area {
+  padding: 12px 20px; background: #0d0c09; border-bottom: 1px solid #1e1b14; flex-shrink: 0;
+}
+.a3-prompt-line {
+  display: flex; align-items: center; gap: 8px;
+}
+.a3-prompt-sign { color: var(--accent); font-size: 13px; user-select: none; }
+.a3-prompt-input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: var(--font-mono); font-size: 13px;
+  caret-color: var(--accent);
+}
+.a3-prompt-input::placeholder { color: #3a3630; }
+
+.a3-prompt-hint { font-size: 10px; color: #4a4540; margin-top: 4px; letter-spacing: 0.05em; }
+
+/* Log output */
+.a3-log { flex: 1; overflow-y: auto; padding: 8px 20px; font-size: 12px; }
+.a3-log-entry {
+  display: flex; gap: 10px; padding: 5px 0;
+  border-bottom: 1px solid #100f0c;
+  animation: logIn 0.15s ease;
+}
+@keyframes logIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.a3-log-ts { color: #3a3630; flex-shrink: 0; width: 58px; }
+.a3-log-code { color: var(--accent); flex-shrink: 0; width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.a3-log-name { color: var(--text-sec); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a3-log-addr { color: #5a5248; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a3-log-status { flex-shrink: 0; }
+
+/* A3 action bar */
+.a3-action-bar {
+  flex-shrink: 0; padding: 10px 20px; background: #080705; border-top: 1px solid #1e1b14;
+  display: flex; align-items: center; gap: 10px;
+}
+.a3-count { font-size: 11px; color: #5a5248; flex: 1; }
+.a3-count strong { color: var(--accent); }
+.a3-btn {
+  padding: 8px 16px; border-radius: 3px; cursor: pointer;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  border: 1px solid; transition: all 0.15s; text-transform: uppercase;
+}
+.a3-btn-close {
+  color: #8a7e6e; border-color: #2a2218; background: none;
+}
+.a3-btn-close:hover { color: var(--text-sec); border-color: #4a4540; }
+.a3-btn-dispatch {
+  color: var(--accent-fg); background: var(--accent); border-color: var(--accent);
+}
+.a3-btn-dispatch:hover { opacity: 0.85; }
+.a3-btn-dispatch:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APPROACH 4: TABLET HYBRID — Split Panel skeleton, Card Deck soul
+   Optimized for landscape tablet, 56px touch targets throughout
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Route List (tablet) ─────────────────────────────────────────────── */
+.a4-list { padding: 24px 28px; min-height: calc(100vh - 53px); }
+.a4-list-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px;
+}
+.a4-list-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+.a4-list-header p  { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.a4-new-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--accent); color: var(--accent-fg);
+  border: none; border-radius: 10px; padding: 14px 22px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s; min-height: 52px;
+}
+.a4-new-btn:active { opacity: 0.8; }
+
+.a4-routes-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+}
+.a4-route-tile {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 14px; padding: 18px 20px;
+  cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s, transform 0.1s;
+  min-height: 130px; display: flex; flex-direction: column; justify-content: space-between;
+}
+.a4-route-tile:active { transform: scale(0.98); border-color: var(--accent); }
+.a4-route-tile.a4-ready { border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 4%, var(--surface)); }
+.a4-tile-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.a4-tile-id  { font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--accent); }
+.a4-tile-meta { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.a4-tile-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+.a4-tile-count { font-size: 22px; font-weight: 700; font-family: var(--font-mono); color: var(--text); }
+.a4-tile-count span { font-size: 12px; color: var(--text-muted); font-weight: 400; font-family: var(--font-sans); }
+
+/* ── Builder (tablet landscape) ──────────────────────────────────────── */
+.a4-builder {
+  display: flex; height: calc(100vh - 53px); overflow: hidden;
+}
+
+/* LEFT — 62% working area */
+.a4-left {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  border-right: 1.5px solid var(--border);
+}
+
+/* Top bar: back + route ID + status */
+.a4-topbar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; height: 56px; /* touch row */
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.a4-back-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 8px; border: none;
+  background: var(--surface-2); cursor: pointer; color: var(--text-sec);
+  font-size: 18px; touch-action: manipulation; flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent; transition: background 0.15s;
+}
+.a4-back-btn:active { background: var(--border); }
+.a4-topbar-id { font-family: var(--font-mono); font-size: 15px; font-weight: 700; color: var(--accent); }
+.a4-topbar-date { font-size: 12px; color: var(--text-muted); }
+.a4-topbar-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+
+/* Scan zone — prominent, always at top */
+.a4-scan-zone {
+  flex-shrink: 0; padding: 14px 20px 12px;
+  background: var(--accent-dim);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.a4-scan-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.a4-pulse {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  animation: pulse 1.4s infinite;
+}
+.a4-scan-row { display: flex; align-items: center; gap: 10px; }
+.a4-scan-input {
+  flex: 1; min-height: 52px; /* big touch target */
+  background: var(--bg); border: 1.5px solid var(--accent);
+  border-radius: 10px; color: var(--text); outline: none;
+  font-family: var(--font-mono); font-size: 16px; padding: 0 16px;
+  caret-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  transition: box-shadow 0.15s;
+}
+.a4-scan-input::placeholder { color: var(--text-muted); font-size: 14px; }
+.a4-scan-input:focus { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent); }
+.a4-scan-hint { font-size: 11px; color: color-mix(in srgb, var(--accent) 60%, var(--text-muted)); margin-top: 6px; }
+
+/* Count strip */
+.a4-count-strip {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px; height: 36px;
+  background: var(--bg); border-bottom: 1px solid var(--border-sub);
+}
+.a4-count-strip span { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.a4-count-strip strong { font-family: var(--font-mono); font-size: 13px; color: var(--accent); }
+
+/* Package card-list */
+.a4-pkg-list { flex: 1; overflow-y: auto; padding: 10px 16px; }
+.a4-pkg-row {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 0 14px; min-height: 60px; /* 60px touch target */
+  margin-bottom: 8px;
+  animation: rowIn 0.18s ease;
+  position: relative; overflow: hidden;
+}
+@keyframes rowIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.a4-pkg-row:active { background: var(--surface-2); }
+
+.a4-pkg-num {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);
+  width: 22px; flex-shrink: 0; text-align: right;
+}
+.a4-pkg-icon {
+  width: 38px; height: 38px; border-radius: 8px; flex-shrink: 0;
+  background: var(--accent-dim); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  display: flex; align-items: center; justify-content: center; font-size: 17px;
+}
+.a4-pkg-body { flex: 1; min-width: 0; }
+.a4-pkg-id { font-family: var(--font-mono); font-size: 11px; color: var(--accent); }
+.a4-pkg-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.a4-pkg-addr { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a4-pkg-remove {
+  width: 44px; height: 44px; border-radius: 8px; border: none; cursor: pointer;
+  background: transparent; color: var(--text-muted); font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  touch-action: manipulation; transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.a4-pkg-remove:active { background: color-mix(in srgb, var(--error) 15%, transparent); color: var(--error); }
+
+/* RIGHT — 38% route panel */
+.a4-right {
+  width: 340px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--surface); overflow-y: auto;
+}
+
+.a4-panel-section { padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.a4-panel-section h3 {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 14px;
+}
+.a4-field { margin-bottom: 14px; }
+.a4-field:last-child { margin-bottom: 0; }
+.a4-field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+.a4-select {
+  width: 100%; min-height: 52px; background: var(--bg);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  color: var(--text); font-size: 15px; padding: 0 14px;
+  cursor: pointer; outline: none; transition: border-color 0.15s;
+  touch-action: manipulation; appearance: none;
+}
+.a4-select:focus { border-color: var(--accent); }
+.a4-select option { background: var(--surface); }
+.a4-text-input {
+  width: 100%; min-height: 52px; background: var(--bg);
+  border: 1.5px solid var(--border); border-radius: 10px;
+  color: var(--text); font-size: 15px; padding: 0 14px;
+  outline: none; font-family: inherit; transition: border-color 0.15s;
+}
+.a4-text-input:focus { border-color: var(--accent); }
+.a4-text-input::placeholder { color: var(--text-muted); }
+
+/* Stats */
+.a4-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.a4-stat-box {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; text-align: center;
+}
+.a4-stat-box .sv { font-family: var(--font-mono); font-size: 22px; font-weight: 700; color: var(--text); }
+.a4-stat-box .sl { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+/* Actions — sticky bottom, huge buttons */
+.a4-actions {
+  margin-top: auto; padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.a4-btn-close {
+  width: 100%; min-height: 52px; border-radius: 10px;
+  background: var(--surface-2); border: 1.5px solid var(--border);
+  color: var(--text-sec); font-size: 15px; font-weight: 600; cursor: pointer;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.a4-btn-close:active { background: var(--border); }
+.a4-btn-dispatch {
+  width: 100%; min-height: 56px; border-radius: 10px; border: none;
+  background: var(--accent); color: var(--accent-fg);
+  font-size: 16px; font-weight: 800; cursor: pointer; letter-spacing: 0.01em;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s; box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.a4-btn-dispatch:active { opacity: 0.82; }
+.a4-btn-dispatch:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--surface-2); }
+</style>
+</head>
+<body>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <h1>Aureon — Dispatch</h1>
+  <button class="tab-btn active" onclick="switchTab(1)">① Split Panel</button>
+  <button class="tab-btn" onclick="switchTab(2)">② Card Deck</button>
+  <button class="tab-btn" onclick="switchTab(3)">③ Terminal</button>
+  <button class="tab-btn" onclick="switchTab(4)">④ Tablet Hybrid ✦</button>
+  <button class="tab-btn" onclick="switchView('list')">— Route List</button>
+  <button class="tab-btn" onclick="switchView('builder')">— Route Builder</button>
+</div>
+
+<!-- ══════════ APPROACH 1 ══════════ -->
+<div id="a1" class="approach active">
+
+  <!-- List View -->
+  <div id="a1-list" class="a1-list-page">
+    <div class="a1-page-header">
+      <div>
+        <h2>Despacho</h2>
+        <p style="font-size:13px;color:var(--text-muted);margin-top:2px;">Rutas activas · 24 Mar 2026</p>
+      </div>
+      <button class="btn-new" onclick="a1ShowBuilder()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva Ruta
+      </button>
+    </div>
+    <table class="route-table">
+      <thead>
+        <tr>
+          <th>Ruta</th><th>Camión</th><th>Conductor</th><th>Paquetes</th><th>Estado</th><th>Creada</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr onclick="a1ShowBuilder()">
+          <td class="route-id-cell">RUT-001</td>
+          <td>ZALDUENDO</td>
+          <td>Carlos M.</td>
+          <td><strong>14</strong></td>
+          <td><span class="badge badge-draft">Draft</span></td>
+          <td style="color:var(--text-muted)">08:42</td>
+          <td><button class="open-btn">Abrir →</button></td>
+        </tr>
+        <tr>
+          <td class="route-id-cell">RUT-002</td>
+          <td>FURGÓN-04</td>
+          <td>Ana R.</td>
+          <td><strong>22</strong></td>
+          <td><span class="badge badge-draft">Draft</span></td>
+          <td style="color:var(--text-muted)">09:15</td>
+          <td><button class="open-btn">Abrir →</button></td>
+        </tr>
+        <tr>
+          <td class="route-id-cell">RUT-003</td>
+          <td>CAM-08</td>
+          <td>—</td>
+          <td><strong>8</strong></td>
+          <td><span class="badge badge-listo">Listo</span></td>
+          <td style="color:var(--text-muted)">09:50</td>
+          <td><button class="open-btn">Abrir →</button></td>
+        </tr>
+        <tr>
+          <td class="route-id-cell">RUT-004</td>
+          <td>PICK-02</td>
+          <td>Luis F.</td>
+          <td><strong>31</strong></td>
+          <td><span class="badge badge-planned">Planned</span></td>
+          <td style="color:var(--text-muted)">07:30</td>
+          <td><button class="open-btn" style="opacity:0.5;cursor:default">Cerrada</button></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Builder View -->
+  <div id="a1-builder" class="a1" style="display:none;">
+    <!-- Main scan area -->
+    <div class="a1-main">
+      <div class="a1-toolbar">
+        <span class="route-id">RUT-001</span>
+        <div class="sep"></div>
+        <span class="date">Lunes 24 Mar 2026</span>
+        <div class="sep"></div>
+        <span class="badge badge-draft">Draft</span>
+        <button onclick="a1ShowList()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:13px;">← Volver</button>
+      </div>
+
+      <div class="a1-scan-bar">
+        <div class="a1-scan-wrap">
+          <span class="scan-icon">⌫</span>
+          <input class="a1-scan-input" placeholder="Escanea código de paquete u orden…" autofocus id="a1ScanInput">
+          <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">ENTER</span>
+        </div>
+        <div class="a1-scan-hint">Acepta código de paquete, número de orden o QR</div>
+      </div>
+
+      <div class="a1-count-bar">
+        <span>Paquetes escaneados</span>
+        <strong id="a1Count">3</strong>
+      </div>
+
+      <div class="a1-table-wrap">
+        <table class="a1-table">
+          <thead>
+            <tr>
+              <th>#</th><th>Orden</th><th>Cliente</th><th>Dirección</th><th>Estado</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="a1PkgList">
+            <tr>
+              <td style="color:var(--text-muted);width:32px">1</td>
+              <td class="order-id">ORD-4821</td>
+              <td class="client">Mario González</td>
+              <td class="address">Av. Providencia 1234, Providencia</td>
+              <td><span class="badge badge-carga">En carga</span></td>
+              <td><button class="remove-btn">✕</button></td>
+            </tr>
+            <tr>
+              <td style="color:var(--text-muted)">2</td>
+              <td class="order-id">ORD-4822</td>
+              <td class="client">Ana Pérez</td>
+              <td class="address">Las Condes 890, Las Condes</td>
+              <td><span class="badge badge-carga">En carga</span></td>
+              <td><button class="remove-btn">✕</button></td>
+            </tr>
+            <tr>
+              <td style="color:var(--text-muted)">3</td>
+              <td class="order-id">ORD-4830</td>
+              <td class="client">Roberto Silva</td>
+              <td class="address">Vitacura 5555, Vitacura</td>
+              <td><span class="badge badge-carga">En carga</span></td>
+              <td><button class="remove-btn">✕</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Side panel -->
+    <div class="a1-side">
+      <div class="a1-side-section">
+        <h3>Ruta</h3>
+        <div style="margin-bottom:12px">
+          <div class="field-label">ID de Ruta</div>
+          <div class="field-value" style="font-family:var(--font-mono);color:var(--accent);font-size:16px">RUT-001</div>
+        </div>
+        <div>
+          <div class="field-label">Fecha</div>
+          <div class="field-value">24 Mar 2026</div>
+        </div>
+      </div>
+
+      <div class="a1-side-section">
+        <h3>Vehículo</h3>
+        <div style="margin-bottom:12px">
+          <div class="field-label" style="margin-bottom:6px">Camión</div>
+          <select class="a1-select">
+            <option>ZALDUENDO</option>
+            <option>FURGÓN-04</option>
+            <option>CAM-08</option>
+            <option>PICK-02</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:6px">Conductor (opcional)</div>
+          <input class="a1-select" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:8px 10px;font-size:13px;outline:none;width:100%" placeholder="Nombre o RUT...">
+        </div>
+      </div>
+
+      <div class="a1-side-section">
+        <h3>Resumen</h3>
+        <div class="a1-stat"><span>Paquetes</span><strong>3</strong></div>
+        <div class="a1-stat"><span>Órdenes</span><strong>3</strong></div>
+        <div class="a1-stat"><span>Estado Ruta</span><span class="badge badge-draft">Draft</span></div>
+      </div>
+
+      <div class="a1-actions">
+        <button class="btn-primary" onclick="a1CloseRoute()">Cerrar Ruta</button>
+        <button class="btn-outline" disabled id="a1DispatchBtn">Despachar a DispatchTrack →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ APPROACH 2 ══════════ -->
+<div id="a2" class="approach">
+
+  <!-- List View -->
+  <div id="a2-list" class="a2">
+    <div class="a2-inner">
+      <div class="a2-page-header">
+        <div>
+          <h2>Despacho</h2>
+          <p>Rutas activas · Lunes 24 Mar 2026</p>
+        </div>
+        <button class="btn-new" onclick="a2ShowBuilder()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nueva Ruta
+        </button>
+      </div>
+
+      <div class="a2-routes-grid">
+        <div class="a2-route-card" onclick="a2ShowBuilder()">
+          <div class="rid">RUT-001</div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="badge badge-draft">Draft</span>
+            <span style="font-size:11px;color:var(--text-muted)">08:42</span>
+          </div>
+          <div class="rmeta">🚚 ZALDUENDO · Carlos M.</div>
+          <div class="rprog">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)"><span>14 paquetes</span><span>building</span></div>
+            <div class="rprog-bar"><div class="rprog-fill" style="width:60%"></div></div>
+          </div>
+          <div class="rfoot">
+            <span style="font-size:12px;color:var(--text-muted)">Andén A-3</span>
+            <button class="open-btn">Continuar →</button>
+          </div>
+        </div>
+
+        <div class="a2-route-card">
+          <div class="rid">RUT-002</div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="badge badge-draft">Draft</span>
+            <span style="font-size:11px;color:var(--text-muted)">09:15</span>
+          </div>
+          <div class="rmeta">🚚 FURGÓN-04 · Ana R.</div>
+          <div class="rprog">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)"><span>22 paquetes</span><span>building</span></div>
+            <div class="rprog-bar"><div class="rprog-fill" style="width:88%"></div></div>
+          </div>
+          <div class="rfoot">
+            <span style="font-size:12px;color:var(--text-muted)">Andén B-1</span>
+            <button class="open-btn">Continuar →</button>
+          </div>
+        </div>
+
+        <div class="a2-route-card" style="border-color:color-mix(in srgb, var(--accent) 25%, transparent)">
+          <div class="rid">RUT-003</div>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <span class="badge badge-listo">Listo</span>
+            <span style="font-size:11px;color:var(--text-muted)">09:50</span>
+          </div>
+          <div class="rmeta">🚚 CAM-08</div>
+          <div class="rprog">
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted)"><span>8 paquetes</span><span>listo para despachar</span></div>
+            <div class="rprog-bar"><div class="rprog-fill" style="width:100%;background:var(--accent)"></div></div>
+          </div>
+          <div class="rfoot">
+            <span style="font-size:12px;color:var(--text-muted)">Andén C-2</span>
+            <button class="btn-new" style="font-size:11px;padding:5px 10px">Despachar →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Builder View -->
+  <div id="a2-builder" class="a2" style="display:none;">
+    <div class="a2-inner">
+      <!-- Back -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
+        <button onclick="a2ShowList()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:13px;padding:0">← Rutas</button>
+        <span style="color:var(--border)">/</span>
+        <span style="font-size:13px;color:var(--text);font-family:var(--font-mono)">RUT-001</span>
+      </div>
+
+      <!-- Steps -->
+      <div class="steps">
+        <div class="step done">
+          <div class="step-num">✓</div>
+          <span class="step-label">Crear Ruta</span>
+        </div>
+        <div class="step active">
+          <div class="step-num">2</div>
+          <span class="step-label">Escanear</span>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <span class="step-label">Cerrar</span>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <span class="step-label">Despachar</span>
+        </div>
+      </div>
+
+      <!-- Route metadata card -->
+      <div class="a2-card">
+        <div class="a2-card-header">
+          <div>
+            <div class="a2-card-title">Información de Ruta</div>
+            <div class="a2-card-sub">RUT-001 · 24 Mar 2026 · <span class="badge badge-draft">Draft</span></div>
+          </div>
+        </div>
+        <div class="a2-meta-grid">
+          <div class="a2-meta-item">
+            <div class="a2-meta-label">Camión</div>
+            <select class="a2-select">
+              <option>ZALDUENDO</option>
+              <option>FURGÓN-04</option>
+              <option>CAM-08</option>
+            </select>
+          </div>
+          <div class="a2-meta-item">
+            <div class="a2-meta-label">Conductor (opcional)</div>
+            <input class="a2-select" placeholder="Nombre o RUT...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Scan zone -->
+      <div class="a2-scan-zone">
+        <div class="a2-scan-zone-label">
+          <div class="pulse"></div>
+          Escáner activo
+        </div>
+        <input class="a2-scan-input" placeholder="Escanea barcode, QR o ingresa código..." autofocus id="a2ScanInput">
+        <div class="a2-scan-hint">Código de paquete · Número de orden · QR code</div>
+      </div>
+
+      <!-- Package list -->
+      <div class="a2-card">
+        <div class="a2-pkg-header">
+          <div class="a2-card-title">Paquetes en ruta</div>
+          <div class="a2-pkg-count"><strong id="a2Count">3</strong> paquetes</div>
+        </div>
+        <div class="a2-pkg-list" id="a2PkgList">
+          <div class="a2-pkg-card">
+            <div class="a2-pkg-icon">📦</div>
+            <div class="a2-pkg-info">
+              <div class="a2-pkg-order">ORD-4821</div>
+              <div class="a2-pkg-name">Mario González</div>
+              <div class="a2-pkg-addr">Av. Providencia 1234, Providencia</div>
+            </div>
+            <span class="badge badge-carga">En carga</span>
+            <button class="a2-pkg-remove">✕</button>
+          </div>
+          <div class="a2-pkg-card">
+            <div class="a2-pkg-icon">📦</div>
+            <div class="a2-pkg-info">
+              <div class="a2-pkg-order">ORD-4822</div>
+              <div class="a2-pkg-name">Ana Pérez</div>
+              <div class="a2-pkg-addr">Las Condes 890, Las Condes</div>
+            </div>
+            <span class="badge badge-carga">En carga</span>
+            <button class="a2-pkg-remove">✕</button>
+          </div>
+          <div class="a2-pkg-card">
+            <div class="a2-pkg-icon">📦</div>
+            <div class="a2-pkg-info">
+              <div class="a2-pkg-order">ORD-4830</div>
+              <div class="a2-pkg-name">Roberto Silva</div>
+              <div class="a2-pkg-addr">Vitacura 5555, Vitacura</div>
+            </div>
+            <span class="badge badge-carga">En carga</span>
+            <button class="a2-pkg-remove">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="a2-actions">
+        <button class="a2-btn-close" onclick="a2CloseRoute()">Cerrar Ruta</button>
+        <button class="a2-btn-dispatch" disabled id="a2DispatchBtn">Despachar a DispatchTrack →</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════ APPROACH 3 ══════════ -->
+<div id="a3" class="approach">
+  <div class="a3-layout">
+
+    <!-- Left sidebar: route list -->
+    <div class="a3-left">
+      <div class="a3-sys-header">
+        <div class="sys-label">Aureon / Despacho</div>
+        <div class="sys-title">ROUTE MANAGER v1.0</div>
+      </div>
+      <div class="a3-route-list">
+        <div class="a3-route-item active" onclick="a3SelectRoute(this,'RUT-001')">
+          <div class="ri-id">RUT-001</div>
+          <div class="ri-meta">ZALDUENDO · 24-03-2026</div>
+          <div class="ri-count">3 pkgs · DRAFT</div>
+        </div>
+        <div class="a3-route-item" onclick="a3SelectRoute(this,'RUT-002')">
+          <div class="ri-id">RUT-002</div>
+          <div class="ri-meta">FURGÓN-04 · 24-03-2026</div>
+          <div class="ri-count">22 pkgs · DRAFT</div>
+        </div>
+        <div class="a3-route-item" onclick="a3SelectRoute(this,'RUT-003')">
+          <div class="ri-id">RUT-003</div>
+          <div class="ri-meta">CAM-08 · 24-03-2026</div>
+          <div class="ri-count">8 pkgs · LISTO</div>
+        </div>
+      </div>
+      <button class="a3-new-route-btn">+ NEW ROUTE</button>
+    </div>
+
+    <!-- Main terminal -->
+    <div class="a3-main">
+      <div class="a3-header">
+        <span class="a3-route-id" id="a3RouteId">RUT-001</span>
+        <span class="a3-sep">|</span>
+        <span class="a3-date">MON 2026-03-24</span>
+        <span class="a3-sep">|</span>
+        <span class="a3-date">3 PACKAGES</span>
+        <div class="a3-status"><span class="badge badge-draft">DRAFT</span></div>
+      </div>
+
+      <div class="a3-controls">
+        <div class="a3-control-field">
+          <div class="a3-control-label">TRUCK_ID</div>
+          <select class="a3-control-select">
+            <option>ZALDUENDO</option><option>FURGÓN-04</option><option>CAM-08</option>
+          </select>
+        </div>
+        <div class="a3-control-field">
+          <div class="a3-control-label">DRIVER (OPTIONAL)</div>
+          <input class="a3-control-input" placeholder="—">
+        </div>
+        <div class="a3-control-field" style="border-right:none;flex:0.5">
+          <div class="a3-control-label">STATUS</div>
+          <span style="font-size:12px;color:var(--text-muted)">DRAFT</span>
+        </div>
+      </div>
+
+      <div class="a3-prompt-area">
+        <div class="a3-prompt-line">
+          <span class="a3-prompt-sign">aureon:dispatch $</span>
+          <input class="a3-prompt-input" placeholder="scan [barcode|qr|order_id]" id="a3ScanInput" autofocus>
+        </div>
+        <div class="a3-prompt-hint">CTRL+D → cerrar ruta &nbsp;·&nbsp; CTRL+ENTER → despachar &nbsp;·&nbsp; ESC → limpiar</div>
+      </div>
+
+      <div class="a3-log" id="a3Log">
+        <!-- Log header -->
+        <div class="a3-log-entry" style="border-bottom:1px solid #1a1815;padding-bottom:6px;margin-bottom:2px">
+          <span class="a3-log-ts" style="color:#3a3630">TIME</span>
+          <span class="a3-log-code" style="color:#3a3630">CODE</span>
+          <span class="a3-log-name" style="color:#3a3630">CLIENT</span>
+          <span class="a3-log-addr" style="color:#3a3630">ADDRESS</span>
+          <span class="a3-log-status" style="color:#3a3630;width:70px;text-align:right">STATUS</span>
+        </div>
+        <div class="a3-log-entry">
+          <span class="a3-log-ts">08:42:11</span>
+          <span class="a3-log-code">ORD-4821</span>
+          <span class="a3-log-name">Mario González</span>
+          <span class="a3-log-addr">Av. Providencia 1234</span>
+          <span class="a3-log-status"><span class="badge badge-carga">CARGA</span></span>
+        </div>
+        <div class="a3-log-entry">
+          <span class="a3-log-ts">08:42:33</span>
+          <span class="a3-log-code">ORD-4822</span>
+          <span class="a3-log-name">Ana Pérez</span>
+          <span class="a3-log-addr">Las Condes 890</span>
+          <span class="a3-log-status"><span class="badge badge-carga">CARGA</span></span>
+        </div>
+        <div class="a3-log-entry">
+          <span class="a3-log-ts">08:43:05</span>
+          <span class="a3-log-code">ORD-4830</span>
+          <span class="a3-log-name">Roberto Silva</span>
+          <span class="a3-log-addr">Vitacura 5555</span>
+          <span class="a3-log-status"><span class="badge badge-carga">CARGA</span></span>
+        </div>
+      </div>
+
+      <div class="a3-action-bar">
+        <div class="a3-count">LOADED: <strong id="a3Count">3</strong> packages</div>
+        <button class="a3-btn a3-btn-close" onclick="a3CloseRoute()">[ CERRAR RUTA ]</button>
+        <button class="a3-btn a3-btn-dispatch" disabled id="a3DispatchBtn">[ DESPACHAR → DT ]</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ APPROACH 4: TABLET HYBRID ══════════ -->
+<div id="a4" class="approach">
+
+  <!-- List View -->
+  <div id="a4-list" class="a4-list">
+    <div class="a4-list-header">
+      <div>
+        <h2>Despacho</h2>
+        <p>Rutas activas · Lunes 24 Mar 2026</p>
+      </div>
+      <button class="a4-new-btn" onclick="a4ShowBuilder()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva Ruta
+      </button>
+    </div>
+
+    <div class="a4-routes-grid">
+      <div class="a4-route-tile" onclick="a4ShowBuilder()">
+        <div class="a4-tile-top">
+          <div>
+            <div class="a4-tile-id">RUT-001</div>
+            <div class="a4-tile-meta">🚚 ZALDUENDO · Carlos M.</div>
+          </div>
+          <span class="badge badge-draft">Draft</span>
+        </div>
+        <div class="a4-tile-foot">
+          <div class="a4-tile-count">14 <span>paquetes</span></div>
+          <span style="font-size:12px;color:var(--text-muted)">08:42</span>
+        </div>
+      </div>
+
+      <div class="a4-route-tile">
+        <div class="a4-tile-top">
+          <div>
+            <div class="a4-tile-id">RUT-002</div>
+            <div class="a4-tile-meta">🚚 FURGÓN-04 · Ana R.</div>
+          </div>
+          <span class="badge badge-draft">Draft</span>
+        </div>
+        <div class="a4-tile-foot">
+          <div class="a4-tile-count">22 <span>paquetes</span></div>
+          <span style="font-size:12px;color:var(--text-muted)">09:15</span>
+        </div>
+      </div>
+
+      <div class="a4-route-tile a4-ready">
+        <div class="a4-tile-top">
+          <div>
+            <div class="a4-tile-id">RUT-003</div>
+            <div class="a4-tile-meta">🚚 CAM-08</div>
+          </div>
+          <span class="badge badge-listo">Listo</span>
+        </div>
+        <div class="a4-tile-foot">
+          <div class="a4-tile-count">8 <span>paquetes</span></div>
+          <button class="a4-new-btn" style="font-size:13px;padding:10px 16px;min-height:44px;border-radius:8px">Despachar →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Builder View (hidden by default) -->
+  <div id="a4-builder" class="a4-builder" style="display:none;">
+
+    <!-- LEFT: working area -->
+    <div class="a4-left">
+
+      <!-- Top bar -->
+      <div class="a4-topbar">
+        <button class="a4-back-btn" onclick="a4ShowList()">←</button>
+        <span class="a4-topbar-id">RUT-001</span>
+        <div class="a4-topbar-sep"></div>
+        <span class="a4-topbar-date">Lun 24 Mar 2026</span>
+        <div class="a4-topbar-sep"></div>
+        <span class="badge badge-draft" id="a4RouteBadge">Draft</span>
+      </div>
+
+      <!-- Scan zone -->
+      <div class="a4-scan-zone">
+        <div class="a4-scan-label">
+          <div class="a4-pulse"></div>
+          Escáner activo
+        </div>
+        <div class="a4-scan-row">
+          <input class="a4-scan-input" id="a4ScanInput"
+            placeholder="Escanea barcode, QR o número de orden…" autocomplete="off">
+        </div>
+        <div class="a4-scan-hint">Acepta código de paquete · número de orden · QR code</div>
+      </div>
+
+      <!-- Count strip -->
+      <div class="a4-count-strip">
+        <span>Paquetes escaneados</span>
+        <strong id="a4Count">3</strong>
+      </div>
+
+      <!-- Package list -->
+      <div class="a4-pkg-list" id="a4PkgList">
+        <div class="a4-pkg-row">
+          <span class="a4-pkg-num">1</span>
+          <div class="a4-pkg-icon">📦</div>
+          <div class="a4-pkg-body">
+            <div class="a4-pkg-id">ORD-4821</div>
+            <div class="a4-pkg-name">Mario González</div>
+            <div class="a4-pkg-addr">Av. Providencia 1234, Providencia</div>
+          </div>
+          <span class="badge badge-carga">En carga</span>
+          <button class="a4-pkg-remove" onclick="a4RemovePkg(this)">✕</button>
+        </div>
+        <div class="a4-pkg-row">
+          <span class="a4-pkg-num">2</span>
+          <div class="a4-pkg-icon">📦</div>
+          <div class="a4-pkg-body">
+            <div class="a4-pkg-id">ORD-4822</div>
+            <div class="a4-pkg-name">Ana Pérez</div>
+            <div class="a4-pkg-addr">Las Condes 890, Las Condes</div>
+          </div>
+          <span class="badge badge-carga">En carga</span>
+          <button class="a4-pkg-remove" onclick="a4RemovePkg(this)">✕</button>
+        </div>
+        <div class="a4-pkg-row">
+          <span class="a4-pkg-num">3</span>
+          <div class="a4-pkg-icon">📦</div>
+          <div class="a4-pkg-body">
+            <div class="a4-pkg-id">ORD-4830</div>
+            <div class="a4-pkg-name">Roberto Silva</div>
+            <div class="a4-pkg-addr">Vitacura 5555, Vitacura</div>
+          </div>
+          <span class="badge badge-carga">En carga</span>
+          <button class="a4-pkg-remove" onclick="a4RemovePkg(this)">✕</button>
+        </div>
+      </div>
+
+    </div><!-- /a4-left -->
+
+    <!-- RIGHT: route panel -->
+    <div class="a4-right">
+
+      <div class="a4-panel-section">
+        <h3>Vehículo</h3>
+        <div class="a4-field">
+          <div class="a4-field-label">Camión</div>
+          <select class="a4-select">
+            <option>ZALDUENDO</option>
+            <option>FURGÓN-04</option>
+            <option>CAM-08</option>
+            <option>PICK-02</option>
+          </select>
+        </div>
+        <div class="a4-field">
+          <div class="a4-field-label">Conductor (opcional)</div>
+          <input class="a4-text-input" placeholder="Nombre o RUT…">
+        </div>
+      </div>
+
+      <div class="a4-panel-section">
+        <h3>Resumen</h3>
+        <div class="a4-stat-grid">
+          <div class="a4-stat-box">
+            <div class="sv" id="a4StatPkgs">3</div>
+            <div class="sl">paquetes</div>
+          </div>
+          <div class="a4-stat-box">
+            <div class="sv" id="a4StatOrds">3</div>
+            <div class="sl">órdenes</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="a4-actions">
+        <button class="a4-btn-close" onclick="a4CloseRoute()">Cerrar Ruta</button>
+        <button class="a4-btn-dispatch" disabled id="a4DispatchBtn">
+          Despachar a DispatchTrack →
+        </button>
+      </div>
+
+    </div><!-- /a4-right -->
+
+  </div><!-- /a4-builder -->
+
+</div><!-- /a4 -->
+
+<script>
+/* ─── Tab & View Switching ──────────────────────────────────────────── */
+let currentTab = 1;
+
+function switchTab(n) {
+  document.querySelectorAll('.approach').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('a'+n).classList.add('active');
+  document.querySelectorAll('.tab-btn')[n-1].classList.add('active');
+  currentTab = n;
+  // Auto-focus scan input when switching to A4 builder
+  if (n === 4) {
+    const b = document.getElementById('a4-builder');
+    if (b && b.style.display !== 'none') setTimeout(()=>document.getElementById('a4ScanInput').focus(), 80);
+  }
+}
+
+function switchView(v) {
+  if (currentTab === 1) { v==='list' ? a1ShowList() : a1ShowBuilder(); }
+  else if (currentTab === 2) { v==='list' ? a2ShowList() : a2ShowBuilder(); }
+}
+
+/* ─── Approach 1 ────────────────────────────────────────────────────── */
+function a1ShowList() {
+  document.getElementById('a1-list').style.display = 'block';
+  document.getElementById('a1-builder').style.display = 'none';
+}
+function a1ShowBuilder() {
+  document.getElementById('a1-list').style.display = 'none';
+  document.getElementById('a1-builder').style.display = 'flex';
+  setTimeout(()=>document.getElementById('a1ScanInput').focus(), 50);
+}
+function a1CloseRoute() {
+  document.querySelectorAll('#a1PkgList .badge').forEach(b => {
+    b.className = 'badge badge-listo'; b.textContent = 'Listo';
+  });
+  document.querySelector('.a1-side .badge').className = 'badge badge-listo';
+  document.querySelector('.a1-side .badge').textContent = 'Listo';
+  document.getElementById('a1DispatchBtn').disabled = false;
+  document.getElementById('a1DispatchBtn').style.background = 'var(--accent)';
+  document.getElementById('a1DispatchBtn').style.color = 'var(--accent-fg)';
+  document.getElementById('a1DispatchBtn').style.border = '1px solid var(--accent)';
+}
+
+document.getElementById('a1ScanInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  const orders = ['ORD-48'+Math.floor(Math.random()*90+10)];
+  const names = ['Pedro Rojas','Carmen Vega','Diego Fuentes','Sofía Castro'];
+  const addrs = ['Manuel Montt 432','Apoquindo 3000','Irarrázaval 1100','Los Leones 234'];
+  const n = Math.floor(Math.random()*4);
+  const tbody = document.getElementById('a1PkgList');
+  const count = tbody.querySelectorAll('tr').length+1;
+  const tr = document.createElement('tr');
+  tr.className = 'new-row';
+  tr.innerHTML = `<td style="color:var(--text-muted)">${count}</td>
+    <td class="order-id">${orders[0]}</td><td class="client">${names[n]}</td>
+    <td class="address">${addrs[n]}</td>
+    <td><span class="badge badge-carga">En carga</span></td>
+    <td><button class="remove-btn" onclick="this.closest('tr').remove();a1UpdateCount()">✕</button></td>`;
+  tbody.insertBefore(tr, tbody.firstChild);
+  document.getElementById('a1Count').textContent = count;
+  e.target.value = '';
+});
+
+function a1UpdateCount() {
+  document.getElementById('a1Count').textContent =
+    document.getElementById('a1PkgList').querySelectorAll('tr').length;
+}
+
+/* ─── Approach 2 ────────────────────────────────────────────────────── */
+function a2ShowList() {
+  document.getElementById('a2-list').style.display = 'block';
+  document.getElementById('a2-builder').style.display = 'none';
+}
+function a2ShowBuilder() {
+  document.getElementById('a2-list').style.display = 'none';
+  document.getElementById('a2-builder').style.display = 'block';
+  setTimeout(()=>document.getElementById('a2ScanInput').focus(), 50);
+}
+function a2CloseRoute() {
+  document.querySelectorAll('#a2PkgList .badge').forEach(b => {
+    b.className = 'badge badge-listo'; b.textContent = 'Listo';
+  });
+  document.getElementById('a2DispatchBtn').disabled = false;
+}
+
+document.getElementById('a2ScanInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  const names = ['Pedro Rojas','Carmen Vega','Diego Fuentes','Sofía Castro'];
+  const addrs = ['Manuel Montt 432','Apoquindo 3000','Irarrázaval 1100','Los Leones 234'];
+  const n = Math.floor(Math.random()*4);
+  const list = document.getElementById('a2PkgList');
+  const count = list.querySelectorAll('.a2-pkg-card').length+1;
+  const div = document.createElement('div');
+  div.className = 'a2-pkg-card';
+  div.innerHTML = `<div class="a2-pkg-icon">📦</div>
+    <div class="a2-pkg-info">
+      <div class="a2-pkg-order">ORD-48${Math.floor(Math.random()*90+10)}</div>
+      <div class="a2-pkg-name">${names[n]}</div>
+      <div class="a2-pkg-addr">${addrs[n]}, Santiago</div>
+    </div>
+    <span class="badge badge-carga">En carga</span>
+    <button class="a2-pkg-remove" onclick="this.closest('.a2-pkg-card').remove();document.getElementById('a2Count').textContent=document.getElementById('a2PkgList').querySelectorAll('.a2-pkg-card').length">✕</button>`;
+  list.insertBefore(div, list.firstChild);
+  document.getElementById('a2Count').textContent = count;
+  e.target.value = '';
+});
+
+/* ─── Approach 3 ────────────────────────────────────────────────────── */
+function a3SelectRoute(el, id) {
+  document.querySelectorAll('.a3-route-item').forEach(r=>r.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('a3RouteId').textContent = id;
+}
+function a3CloseRoute() {
+  document.querySelectorAll('#a3Log .badge').forEach(b=>{
+    b.className='badge badge-listo';b.textContent='LISTO';
+  });
+  document.getElementById('a3DispatchBtn').disabled = false;
+  const log = document.getElementById('a3Log');
+  const entry = document.createElement('div');
+  entry.className = 'a3-log-entry';
+  const now = new Date(); const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  entry.innerHTML = `<span class="a3-log-ts">${ts}</span><span class="a3-log-code" style="color:var(--accent)">ROUTE CLOSED</span><span class="a3-log-name" style="color:var(--success)">All packages → listo_para_despacho</span><span class="a3-log-addr"></span><span class="a3-log-status"></span>`;
+  log.appendChild(entry); log.scrollTop = log.scrollHeight;
+}
+
+/* ─── Approach 4 ────────────────────────────────────────────────────── */
+const a4Names = ['Pedro Rojas','Carmen Vega','Diego Fuentes','Sofía Castro','Luis Mora','Valentina Ríos'];
+const a4Addrs = ['Manuel Montt 432, Ñuñoa','Apoquindo 3000, Las Condes','Irarrázaval 1100, Ñuñoa','Los Leones 234, Providencia','Vicuña Mackenna 890, Macul','Tobalaba 654, Providencia'];
+
+function a4ShowList() {
+  document.getElementById('a4-list').style.display = 'block';
+  document.getElementById('a4-builder').style.display = 'none';
+}
+function a4ShowBuilder() {
+  document.getElementById('a4-list').style.display = 'none';
+  document.getElementById('a4-builder').style.display = 'flex';
+  setTimeout(() => document.getElementById('a4ScanInput').focus(), 80);
+}
+function a4RemovePkg(btn) {
+  btn.closest('.a4-pkg-row').remove();
+  a4Recount();
+}
+function a4Recount() {
+  const rows = document.getElementById('a4PkgList').querySelectorAll('.a4-pkg-row');
+  rows.forEach((r, i) => { const n = r.querySelector('.a4-pkg-num'); if(n) n.textContent = i+1; });
+  const c = rows.length;
+  document.getElementById('a4Count').textContent = c;
+  document.getElementById('a4StatPkgs').textContent = c;
+  document.getElementById('a4StatOrds').textContent = c;
+}
+function a4CloseRoute() {
+  document.querySelectorAll('#a4PkgList .badge').forEach(b => {
+    b.className = 'badge badge-listo'; b.textContent = 'Listo';
+  });
+  document.getElementById('a4RouteBadge').className = 'badge badge-listo';
+  document.getElementById('a4RouteBadge').textContent = 'Listo';
+  document.getElementById('a4DispatchBtn').disabled = false;
+}
+
+document.getElementById('a4ScanInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim(); if (!val) return;
+  const n = Math.floor(Math.random() * a4Names.length);
+  const list = document.getElementById('a4PkgList');
+  const count = list.querySelectorAll('.a4-pkg-row').length + 1;
+  const row = document.createElement('div');
+  row.className = 'a4-pkg-row';
+  row.innerHTML = `
+    <span class="a4-pkg-num">${count}</span>
+    <div class="a4-pkg-icon">📦</div>
+    <div class="a4-pkg-body">
+      <div class="a4-pkg-id">ORD-48${Math.floor(Math.random()*90+10)}</div>
+      <div class="a4-pkg-name">${a4Names[n]}</div>
+      <div class="a4-pkg-addr">${a4Addrs[n]}</div>
+    </div>
+    <span class="badge badge-carga">En carga</span>
+    <button class="a4-pkg-remove" onclick="a4RemovePkg(this)">✕</button>`;
+  list.insertBefore(row, list.firstChild);
+  a4Recount();
+  e.target.value = '';
+});
+
+document.getElementById('a3ScanInput').addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const val = e.target.value.trim();
+  if (!val) return;
+  const names = ['Pedro Rojas','Carmen Vega','Diego Fuentes','Sofía Castro'];
+  const addrs = ['Manuel Montt 432','Apoquindo 3000','Irarrázaval 1100','Los Leones 234'];
+  const n = Math.floor(Math.random()*4);
+  const log = document.getElementById('a3Log');
+  const entry = document.createElement('div');
+  entry.className = 'a3-log-entry';
+  const now = new Date(); const ts = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+  const code = 'ORD-48'+Math.floor(Math.random()*90+10);
+  entry.innerHTML = `<span class="a3-log-ts">${ts}</span><span class="a3-log-code">${code}</span><span class="a3-log-name">${names[n]}</span><span class="a3-log-addr">${addrs[n]}</span><span class="a3-log-status"><span class="badge badge-carga">CARGA</span></span>`;
+  log.appendChild(entry); log.scrollTop = log.scrollHeight;
+  const c = log.querySelectorAll('.a3-log-entry').length - 2;
+  document.getElementById('a3Count').textContent = c;
+  e.target.value = '';
+});
+</script>
+</body>
+</html>

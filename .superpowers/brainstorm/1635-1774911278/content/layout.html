@@ -1,0 +1,65 @@
+<h2>OCR Test Page — Layout</h2>
+<p class="subtitle">Proposed layout for <code>/ocr-test</code>. Does this feel right?</p>
+
+<div class="mockup" style="max-width:480px;margin:0 auto;">
+  <div class="mockup-header">aureon.tractis.ai/ocr-test</div>
+  <div class="mockup-body" style="padding:1.5rem;display:flex;flex-direction:column;gap:1.2rem;background:#0f0e0c;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:0.75rem;">
+      <div style="width:28px;height:28px;border-radius:6px;background:#c9a84c;display:flex;align-items:center;justify-content:center;font-size:14px;">🔍</div>
+      <div>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-weight:600;color:#f0ebe3;">OCR Test</span>
+          <span style="font-size:10px;padding:2px 6px;border:1px solid #555;border-radius:4px;color:#888;">Dev Tool</span>
+        </div>
+        <p style="font-size:12px;color:#888;margin:0;">Fotografía un manifiesto y ve qué extrae Gemini 2.5 Flash</p>
+      </div>
+    </div>
+
+    <!-- Photo strip (empty state) -->
+    <div style="border:2px dashed #333;border-radius:8px;padding:2rem;text-align:center;color:#666;">
+      <div style="font-size:28px;margin-bottom:0.5rem;">📷</div>
+      <p style="font-size:13px;margin:0;">Sin fotos aún</p>
+    </div>
+
+    <!-- CTA -->
+    <button style="background:#c9a84c;color:#000;border:none;border-radius:8px;padding:0.75rem;font-weight:600;font-size:14px;cursor:pointer;">
+      📷 Abrir cámara
+    </button>
+
+    <hr style="border-color:#222;"/>
+
+    <!-- Results (after extraction) -->
+    <div style="opacity:0.4;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+        <span style="font-size:13px;color:#f0ebe3;font-weight:500;">3 órdenes encontradas · 2026-03-30</span>
+        <span style="font-size:11px;color:#c9a84c;cursor:pointer;">Ver JSON ›</span>
+      </div>
+
+      <!-- Order card -->
+      <div style="border:1px solid #333;border-radius:8px;padding:0.875rem;margin-bottom:0.5rem;background:#1a1812;">
+        <div style="display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <span style="font-size:10px;padding:2px 5px;border:1px solid #555;border-radius:4px;color:#888;">#1</span>
+            <span style="font-weight:600;color:#f0ebe3;font-size:13px;">ORD-12345</span>
+            <span style="color:#888;font-size:12px;">Empresa Musan</span>
+          </div>
+          <span style="font-size:10px;padding:2px 8px;background:#2a2218;border-radius:4px;color:#c9a84c;">2 bultos</span>
+        </div>
+        <div style="margin-top:0.6rem;font-size:11px;color:#888;display:grid;grid-template-columns:auto 1fr;gap:2px 8px;">
+          <span>Dirección</span><span style="color:#ccc;">Av. Libertador 1234, Santiago</span>
+          <span>Teléfono</span><span style="color:#ccc;font-family:monospace;">+56 9 8765 4321</span>
+        </div>
+      </div>
+
+      <!-- More cards placeholder -->
+      <div style="border:1px solid #2a2a2a;border-radius:8px;padding:0.75rem;opacity:0.5;background:#161310;">
+        <span style="font-size:12px;color:#666;">ORD-12346 · collapsed…</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="text-align:center;margin-top:1rem;">First card expands by default. Rest collapse. Raw JSON in a <code>&lt;pre&gt;</code> block via toggle.</p>

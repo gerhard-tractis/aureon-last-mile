@@ -1,0 +1,197 @@
+<h2>Screens 3 & 4: Discrepancy Review → Signature & Completion</h2>
+<p class="subtitle">Crew reviews missing packages, adds notes, then signs for custody transfer</p>
+
+<div class="split">
+  <div class="mockup">
+    <div class="mockup-header">Screen 3: Discrepancy Review</div>
+    <div class="mockup-body" style="background: #f8fafc; padding: 0;">
+      <!-- Header -->
+      <div style="background: white; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.2rem; cursor: pointer;">←</span>
+        <div style="flex: 1; text-align: center;">
+          <div style="font-weight: 700; font-size: 0.9rem;">Review — CARGA-00547</div>
+          <div style="font-size: 0.75rem; color: #64748b;">Falabella · Before signing</div>
+        </div>
+      </div>
+
+      <!-- Summary cards -->
+      <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+        <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 800; color: #16a34a;">408</div>
+          <div style="font-size: 0.65rem; color: #15803d;">Verified</div>
+        </div>
+        <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 800; color: #dc2626;">4</div>
+          <div style="font-size: 0.65rem; color: #b91c1c;">Missing</div>
+        </div>
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 10px; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 800; color: #ca8a04;">2</div>
+          <div style="font-size: 0.65rem; color: #a16207;">Not in manifest</div>
+        </div>
+      </div>
+
+      <!-- Missing packages section -->
+      <div style="padding: 0 16px;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: #dc2626; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+          <span>⚠ MISSING PACKAGES — Notes required</span>
+        </div>
+
+        <!-- Missing item 1 - with note -->
+        <div style="background: white; border: 1px solid #fecaca; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div>
+              <span style="font-weight: 700; font-size: 0.9rem;">CTN-98100</span>
+              <span style="font-size: 0.75rem; color: #64748b; margin-left: 8px;">Order #FA-2026-18800</span>
+            </div>
+            <span style="color: #16a34a; font-size: 0.75rem;">✓ noted</span>
+          </div>
+          <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; padding: 8px; font-size: 0.8rem; color: #9a3412;">
+            "Package not found at DC. Client confirmed it was sent to wrong facility."
+          </div>
+        </div>
+
+        <!-- Missing item 2 - with note -->
+        <div style="background: white; border: 1px solid #fecaca; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div>
+              <span style="font-weight: 700; font-size: 0.9rem;">CTN-98145</span>
+              <span style="font-size: 0.75rem; color: #64748b; margin-left: 8px;">Order #FA-2026-18830</span>
+            </div>
+            <span style="color: #16a34a; font-size: 0.75rem;">✓ noted</span>
+          </div>
+          <div style="background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px; padding: 8px; font-size: 0.8rem; color: #9a3412;">
+            "Damaged — refused pickup. Photos taken."
+          </div>
+        </div>
+
+        <!-- Missing item 3 - needs note -->
+        <div style="background: white; border: 2px solid #dc2626; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div>
+              <span style="font-weight: 700; font-size: 0.9rem;">CTN-98200</span>
+              <span style="font-size: 0.75rem; color: #64748b; margin-left: 8px;">Order #FA-2026-18870</span>
+            </div>
+            <span style="color: #dc2626; font-size: 0.75rem; font-weight: 600;">⚠ note required</span>
+          </div>
+          <textarea style="width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 0.8rem; min-height: 36px; resize: none;" placeholder="Why is this package missing?"></textarea>
+        </div>
+
+        <!-- Missing item 4 - needs note -->
+        <div style="background: white; border: 2px solid #dc2626; border-radius: 8px; margin-bottom: 8px; padding: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div>
+              <span style="font-weight: 700; font-size: 0.9rem;">CTN-98201</span>
+              <span style="font-size: 0.75rem; color: #64748b; margin-left: 8px;">Order #FA-2026-18871</span>
+            </div>
+            <span style="color: #dc2626; font-size: 0.75rem; font-weight: 600;">⚠ note required</span>
+          </div>
+          <textarea style="width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; font-size: 0.8rem; min-height: 36px; resize: none;" placeholder="Why is this package missing?"></textarea>
+        </div>
+      </div>
+
+      <!-- Not in manifest section (collapsed) -->
+      <div style="padding: 0 16px; margin-top: 8px;">
+        <div style="font-size: 0.8rem; font-weight: 600; color: #a16207; margin-bottom: 8px;">
+          ⚠ SCANNED BUT NOT IN MANIFEST (2)
+        </div>
+        <div style="background: #fefce8; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; font-size: 0.8rem; color: #92400e;">
+          CTN-99001 · CTN-99045 — Logged for review
+        </div>
+      </div>
+
+      <!-- Bottom actions -->
+      <div style="padding: 16px; margin-top: 12px; display: flex; gap: 8px;">
+        <button style="flex: 1; padding: 12px; background: white; color: #334155; border: 2px solid #cbd5e1; border-radius: 10px; font-weight: 600; font-size: 0.85rem;">
+          ← Back to Scanning
+        </button>
+        <button style="flex: 1; padding: 12px; background: #94a3b8; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem;">
+          Proceed to Sign →
+        </button>
+      </div>
+      <div style="text-align: center; font-size: 0.7rem; color: #dc2626; padding-bottom: 12px;">
+        ⚠ All missing packages must have notes before signing
+      </div>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-header">Screen 4: Signature & Completion</div>
+    <div class="mockup-body" style="background: #f8fafc; padding: 0;">
+      <!-- Header -->
+      <div style="background: white; padding: 12px 16px; border-bottom: 2px solid #e2e8f0; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 1.2rem; cursor: pointer;">←</span>
+        <div style="flex: 1; text-align: center;">
+          <div style="font-weight: 700; font-size: 0.9rem;">Complete Pickup</div>
+          <div style="font-size: 0.75rem; color: #64748b;">Falabella · CARGA-00547</div>
+        </div>
+      </div>
+
+      <!-- Summary stats -->
+      <div style="padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 1.8rem; font-weight: 800; color: #16a34a;">408</div>
+          <div style="font-size: 0.7rem; color: #64748b;">Packages Verified</div>
+        </div>
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 1.8rem; font-weight: 800; color: #dc2626;">4</div>
+          <div style="font-size: 0.7rem; color: #64748b;">Missing (noted)</div>
+        </div>
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 1.8rem; font-weight: 800; color: #e6c15c;">99.0%</div>
+          <div style="font-size: 0.7rem; color: #64748b;">Precision</div>
+        </div>
+        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; text-align: center;">
+          <div style="font-size: 1.8rem; font-weight: 800; color: #0f172a;">24:18</div>
+          <div style="font-size: 0.7rem; color: #64748b;">Time Elapsed</div>
+        </div>
+      </div>
+
+      <!-- Legal notice -->
+      <div style="margin: 0 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 10px 12px; font-size: 0.75rem; color: #1e40af;">
+        ⚖️ By signing below, the operator accepts custody and responsibility for all verified packages listed in this manifest.
+      </div>
+
+      <!-- Operator signature -->
+      <div style="padding: 16px;">
+        <div style="font-size: 0.8rem; font-weight: 700; color: #0f172a; margin-bottom: 6px;">OPERATOR SIGNATURE *</div>
+        <div style="background: white; border: 2px solid #e6c15c; border-radius: 8px; height: 100px; display: flex; align-items: center; justify-content: center; position: relative;">
+          <!-- Simulated signature -->
+          <svg width="200" height="60" viewBox="0 0 200 60">
+            <path d="M10,45 Q30,10 60,35 T110,25 T160,40 T190,20" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <button style="position: absolute; top: 4px; right: 4px; background: #f1f5f9; border: none; border-radius: 4px; padding: 2px 6px; font-size: 0.65rem; color: #64748b; cursor: pointer;">Clear</button>
+        </div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">Juan Pérez · Pickup Crew</div>
+      </div>
+
+      <!-- Client signature (optional) -->
+      <div style="padding: 0 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+          <div style="font-size: 0.8rem; font-weight: 700; color: #0f172a;">CLIENT SIGNATURE</div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 0.7rem; color: #64748b;">Optional</span>
+            <div style="width: 36px; height: 20px; background: #e6c15c; border-radius: 10px; position: relative;">
+              <div style="width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; right: 2px; top: 2px;"></div>
+            </div>
+          </div>
+        </div>
+        <div style="background: white; border: 2px dashed #cbd5e1; border-radius: 8px; height: 80px; display: flex; align-items: center; justify-content: center;">
+          <span style="font-size: 0.8rem; color: #94a3b8;">Tap to sign</span>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 6px;">
+          <input style="flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px; font-size: 0.8rem;" placeholder="Client representative name">
+        </div>
+      </div>
+
+      <!-- Complete button -->
+      <div style="padding: 16px; margin-top: 8px;">
+        <button style="width: 100%; padding: 16px; background: #16a34a; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 1rem;">
+          ✓ Complete & Generate Receipt
+        </button>
+        <div style="text-align: center; font-size: 0.7rem; color: #64748b; margin-top: 6px;">
+          Receipt will be saved and available for download
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

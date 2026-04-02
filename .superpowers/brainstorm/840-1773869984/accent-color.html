@@ -1,0 +1,132 @@
+<h2>Aureon standard accent color</h2>
+<p class="subtitle">This is the product's own brand color — active states, buttons, links, focus rings. Status colors (green/amber/red) are fixed regardless of choice.</p>
+
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<div class="cards" style="grid-template-columns:1fr 1fr;gap:14px;font-family:'Geist',sans-serif">
+
+  <!-- Electric Blue -->
+  <div class="card" data-choice="blue" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px;border-bottom:1px solid #e2e8f0">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <div style="height:4px;flex:1;background:#2563eb;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#dbeafe;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#dbeafe;border-radius:2px"></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+        <button style="background:#2563eb;color:white;border:none;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Asignar ruta</button>
+        <button style="background:transparent;color:#2563eb;border:1px solid #2563eb;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Ver detalle</button>
+      </div>
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:5px;overflow:hidden">
+        <div style="display:flex;border-bottom:1px solid #e2e8f0">
+          <div style="padding:7px 12px;font-size:11px;font-weight:600;color:#2563eb;border-bottom:2px solid #2563eb;margin-bottom:-1px">Activos</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Completados</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Alertas</div>
+        </div>
+        <div style="padding:8px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;background:#2563eb;border-radius:50%"></div>
+          <span style="font-size:11px;color:#0f172a">Zona Centro — 3 conductores</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#64748b;margin-left:auto">42/51</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Electric Blue <span style="font-size:12px;font-family:'Geist Mono',monospace;color:#64748b">#2563eb</span></h3>
+      <p>Current app color. Conventional for ops SaaS — trustworthy, readable, never distracts from status signals. Safe, effective.</p>
+    </div>
+  </div>
+
+  <!-- Indigo -->
+  <div class="card" data-choice="indigo" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px;border-bottom:1px solid #e2e8f0">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <div style="height:4px;flex:1;background:#4f46e5;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#e0e7ff;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#e0e7ff;border-radius:2px"></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+        <button style="background:#4f46e5;color:white;border:none;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Asignar ruta</button>
+        <button style="background:transparent;color:#4f46e5;border:1px solid #4f46e5;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Ver detalle</button>
+      </div>
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:5px;overflow:hidden">
+        <div style="display:flex;border-bottom:1px solid #e2e8f0">
+          <div style="padding:7px 12px;font-size:11px;font-weight:600;color:#4f46e5;border-bottom:2px solid #4f46e5;margin-bottom:-1px">Activos</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Completados</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Alertas</div>
+        </div>
+        <div style="padding:8px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;background:#4f46e5;border-radius:50%"></div>
+          <span style="font-size:11px;color:#0f172a">Zona Centro — 3 conductores</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#64748b;margin-left:auto">42/51</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Indigo <span style="font-size:12px;font-family:'Geist Mono',monospace;color:#64748b">#4f46e5</span></h3>
+      <p>More distinctive and premium. Feels deliberate rather than default. Used by Linear — gives the product a stronger identity without shouting.</p>
+    </div>
+  </div>
+
+  <!-- Teal/Cyan -->
+  <div class="card" data-choice="teal" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px;border-bottom:1px solid #e2e8f0">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <div style="height:4px;flex:1;background:#0891b2;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#cffafe;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#cffafe;border-radius:2px"></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+        <button style="background:#0891b2;color:white;border:none;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Asignar ruta</button>
+        <button style="background:transparent;color:#0891b2;border:1px solid #0891b2;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Ver detalle</button>
+      </div>
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:5px;overflow:hidden">
+        <div style="display:flex;border-bottom:1px solid #e2e8f0">
+          <div style="padding:7px 12px;font-size:11px;font-weight:600;color:#0891b2;border-bottom:2px solid #0891b2;margin-bottom:-1px">Activos</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Completados</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Alertas</div>
+        </div>
+        <div style="padding:8px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;background:#0891b2;border-radius:50%"></div>
+          <span style="font-size:11px;color:#0f172a">Zona Centro — 3 conductores</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#64748b;margin-left:auto">42/51</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Cyan/Teal <span style="font-size:12px;font-family:'Geist Mono',monospace;color:#64748b">#0891b2</span></h3>
+      <p>Unexpected for logistics — feels fresh, almost maritime. Very distinctive. Won't clash with operator custom colors (rare for a brand to use teal). High visibility.</p>
+    </div>
+  </div>
+
+  <!-- Slate (no-color) -->
+  <div class="card" data-choice="slate" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:16px;border-bottom:1px solid #e2e8f0">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <div style="height:4px;flex:1;background:#334155;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#e2e8f0;border-radius:2px"></div>
+        <div style="height:4px;flex:1;background:#e2e8f0;border-radius:2px"></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+        <button style="background:#0f172a;color:white;border:none;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Asignar ruta</button>
+        <button style="background:transparent;color:#334155;border:1px solid #334155;padding:6px 12px;border-radius:4px;font-family:'Geist',sans-serif;font-size:11px;font-weight:600;cursor:pointer">Ver detalle</button>
+      </div>
+      <div style="background:white;border:1px solid #e2e8f0;border-radius:5px;overflow:hidden">
+        <div style="display:flex;border-bottom:1px solid #e2e8f0">
+          <div style="padding:7px 12px;font-size:11px;font-weight:600;color:#0f172a;border-bottom:2px solid #0f172a;margin-bottom:-1px">Activos</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Completados</div>
+          <div style="padding:7px 12px;font-size:11px;color:#64748b">Alertas</div>
+        </div>
+        <div style="padding:8px 12px;display:flex;align-items:center;gap:8px">
+          <div style="width:8px;height:8px;background:#334155;border-radius:50%"></div>
+          <span style="font-size:11px;color:#0f172a">Zona Centro — 3 conductores</span>
+          <span style="font-family:'Geist Mono',monospace;font-size:10px;color:#64748b;margin-left:auto">42/51</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D — Slate (no-color) <span style="font-size:12px;font-family:'Geist Mono',monospace;color:#64748b">#0f172a</span></h3>
+      <p>No brand color — near-black on everything. Ultra-minimal, Stripe-level restraint. Status colors do ALL the visual work. Elegant but demands confidence.</p>
+    </div>
+  </div>
+
+</div>

@@ -1,0 +1,108 @@
+<h2>Mobile Field Worker Patterns</h2>
+<p class="subtitle">Pickup/reception flows are used on phones in warehouses. What density for mobile?</p>
+
+<div class="split">
+  <!-- Option A: Dense Mobile -->
+  <div class="mockup" data-choice="a" onclick="toggleSelect(this)" style="cursor:pointer; max-width:260px;">
+    <div class="mockup-header">A: Dense Mobile (same as desktop)</div>
+    <div class="mockup-body" style="padding:0;">
+      <div style="background:#f8fafc; font-family:system-ui; font-size:11px; color:#0f172a; width:240px; margin:0 auto;">
+        <!-- Status bar -->
+        <div style="background:#ca9a04; color:white; padding:10px 12px;">
+          <div style="font-size:8px; opacity:0.8;">Pickup &middot; Carga #LC-4821</div>
+          <div style="font-size:14px; font-weight:700;">12 / 18 escaneados</div>
+          <div style="background:rgba(255,255,255,0.2); border-radius:2px; height:4px; margin-top:4px;">
+            <div style="background:white; border-radius:2px; height:4px; width:67%;"></div>
+          </div>
+        </div>
+        <!-- Scanner input -->
+        <div style="padding:8px;">
+          <div style="background:white; border:2px solid #ca9a04; border-radius:4px; padding:6px 8px; font-size:10px; color:#94a3b8; margin-bottom:6px;">Escanear codigo de barras...</div>
+        </div>
+        <!-- Package list (compact) -->
+        <div style="padding:0 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #f1f5f9; font-size:9px;">
+            <div>
+              <div style="font-family:monospace; font-weight:500;">PKG-9281</div>
+              <div style="color:#94a3b8; font-size:8px;">Falabella &middot; 2.1kg</div>
+            </div>
+            <span style="background:#dcfce7; color:#16a34a; padding:1px 5px; border-radius:8px; font-size:7px;">&#10003;</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #f1f5f9; font-size:9px;">
+            <div>
+              <div style="font-family:monospace; font-weight:500;">PKG-9282</div>
+              <div style="color:#94a3b8; font-size:8px;">Falabella &middot; 0.8kg</div>
+            </div>
+            <span style="background:#dcfce7; color:#16a34a; padding:1px 5px; border-radius:8px; font-size:7px;">&#10003;</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #f1f5f9; font-size:9px;">
+            <div>
+              <div style="font-family:monospace; font-weight:500;">PKG-9283</div>
+              <div style="color:#94a3b8; font-size:8px;">MercadoLibre &middot; 3.5kg</div>
+            </div>
+            <span style="color:#94a3b8; font-size:8px;">pendiente</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #f1f5f9; font-size:9px;">
+            <div>
+              <div style="font-family:monospace; font-weight:500;">PKG-9284</div>
+              <div style="color:#94a3b8; font-size:8px;">Ripley &middot; 1.2kg</div>
+            </div>
+            <span style="color:#94a3b8; font-size:8px;">pendiente</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:9px;">
+            <div>
+              <div style="font-family:monospace; font-weight:500;">PKG-9285</div>
+              <div style="color:#94a3b8; font-size:8px;">Paris &middot; 4.0kg</div>
+            </div>
+            <span style="color:#94a3b8; font-size:8px;">pendiente</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Option B: Touch-Optimized -->
+  <div class="mockup" data-choice="b" onclick="toggleSelect(this)" style="cursor:pointer; max-width:260px;">
+    <div class="mockup-header">B: Touch-Optimized (larger targets)</div>
+    <div class="mockup-body" style="padding:0;">
+      <div style="background:#f8fafc; font-family:system-ui; font-size:11px; color:#0f172a; width:240px; margin:0 auto;">
+        <!-- Status bar -->
+        <div style="background:#ca9a04; color:white; padding:14px 16px;">
+          <div style="font-size:9px; opacity:0.8;">Pickup &middot; Carga #LC-4821</div>
+          <div style="font-size:22px; font-weight:700;">12 / 18</div>
+          <div style="background:rgba(255,255,255,0.2); border-radius:3px; height:6px; margin-top:6px;">
+            <div style="background:white; border-radius:3px; height:6px; width:67%;"></div>
+          </div>
+        </div>
+        <!-- Scanner input (larger) -->
+        <div style="padding:12px;">
+          <div style="background:white; border:2px solid #ca9a04; border-radius:8px; padding:12px; font-size:13px; color:#94a3b8; text-align:center;">&#128247; Escanear paquete</div>
+        </div>
+        <!-- Package cards (touch-friendly) -->
+        <div style="padding:0 12px; display:flex; flex-direction:column; gap:8px;">
+          <div style="background:white; border:1px solid #bbf7d0; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-family:monospace; font-weight:600; font-size:13px;">PKG-9281</div>
+              <div style="color:#64748b; font-size:10px;">Falabella &middot; 2.1kg</div>
+            </div>
+            <div style="width:28px; height:28px; background:#dcfce7; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#16a34a; font-size:14px;">&#10003;</div>
+          </div>
+          <div style="background:white; border:1px solid #bbf7d0; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-family:monospace; font-weight:600; font-size:13px;">PKG-9282</div>
+              <div style="color:#64748b; font-size:10px;">Falabella &middot; 0.8kg</div>
+            </div>
+            <div style="width:28px; height:28px; background:#dcfce7; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#16a34a; font-size:14px;">&#10003;</div>
+          </div>
+          <div style="background:white; border:1px solid #e2e8f0; border-radius:8px; padding:12px; display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-family:monospace; font-weight:600; font-size:13px;">PKG-9283</div>
+              <div style="color:#64748b; font-size:10px;">MercadoLibre &middot; 3.5kg</div>
+            </div>
+            <div style="width:28px; height:28px; background:#f1f5f9; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:10px;">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
