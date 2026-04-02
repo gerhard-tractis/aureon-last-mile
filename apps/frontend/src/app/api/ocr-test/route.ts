@@ -1,7 +1,7 @@
 // Keep extraction prompt in sync with apps/agents/src/tools/ocr/extract-manifest.ts
 import { NextRequest, NextResponse } from 'next/server';
 
-export const maxDuration = 60; // Gemini can be slow on multi-page manifests
+export const maxDuration = 300; // Large manifests (80+ orders) need time for full extraction
 
 const EXTRACTION_PROMPT = `Eres un sistema de extraccion de datos logisticos chilenos.
 
