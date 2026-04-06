@@ -6,7 +6,7 @@
 import {
   isValidHexColor,
   generateColorRamp as _generateColorRamp,
-} from '@/utils/generateColorRamp';
+} from '@/lib/utils/generateColorRamp';
 
 export { isValidHexColor };
 
