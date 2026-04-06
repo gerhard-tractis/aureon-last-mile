@@ -159,6 +159,37 @@ describe('useCameraIntake', () => {
     expect(result.current.result?.ordersCreated).toBe(5);
   });
 
+  it('includes parsedData from Realtime payload in result', async () => {
+    const fakeParsed = { orders: [{ order_number: 'ORD-1' }], pickup_point_code: 'PP-1' };
+    mockOn.mockImplementation((_event: string, _filter: unknown, cb: (payload: unknown) => void) => {
+      setTimeout(
+        () => cb({ new: { status: 'parsed', orders_created: 1, parsed_data: fakeParsed } }),
+        0,
+      );
+      return { on: mockOn, subscribe: mockSubscribe };
+    });
+
+    const { result } = renderHook(() => useCameraIntake());
+    await act(async () => {
+      await result.current.submit([makeFile()], 'pp-1');
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.status).toBe('success');
+    expect(result.current.result?.parsedData).toEqual(fakeParsed);
+  });
+
+  it('parsedData is null when not included in Realtime payload', async () => {
+    const { result } = renderHook(() => useCameraIntake());
+    await act(async () => {
+      await result.current.submit([makeFile()], 'pp-1');
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(result.current.status).toBe('success');
+    expect(result.current.result?.parsedData).toBeNull();
+  });
+
   it('uses submission ID in realtime filter', async () => {
     const { result } = renderHook(() => useCameraIntake());
 

@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
+import type { IntakeStatus } from '@/hooks/pickup/useCameraIntake';
 
 // ── ui mocks ──────────────────────────────────────────────────────────────────
 vi.mock('@/components/ui/button', () => ({
@@ -61,12 +62,31 @@ HTMLCanvasElement.prototype.toBlob = vi.fn().mockImplementation(function (
   cb(new Blob(['compressed'], { type: 'image/jpeg' }));
 }) as never;
 
-const mockFetch = vi.fn();
+// ── useCameraIntake mock ───────────────────────────────────────────────────────
+const mockSubmit = vi.fn();
+const mockReset = vi.fn();
 
-beforeEach(() => {
-  vi.stubGlobal('fetch', mockFetch);
-  mockFetch.mockReset();
-});
+interface MockIntakeState {
+  status: IntakeStatus;
+  result: { ordersCreated: number; parsedData: Record<string, unknown> | null } | null;
+  error: string | null;
+  uploadProgress: { current: number; total: number } | null;
+  submit: typeof mockSubmit;
+  reset: typeof mockReset;
+}
+
+let mockIntakeState: MockIntakeState = {
+  status: 'idle',
+  result: null,
+  error: null,
+  uploadProgress: null,
+  submit: mockSubmit,
+  reset: mockReset,
+};
+
+vi.mock('@/hooks/pickup/useCameraIntake', () => ({
+  useCameraIntake: () => mockIntakeState,
+}));
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 import OcrTestClient, { OrderCard } from './OcrTestClient';
@@ -95,11 +115,28 @@ const sampleOrder = {
   ],
 };
 
-const sampleResult = {
+const sampleParsedData = {
   pickup_point_code: '400',
   pickup_point_name: 'Paris Maipú',
   orders: [sampleOrder],
 };
+
+const samplePickupPoints = [
+  { id: 'pp-1', name: 'Paris Maipú', code: '400' },
+  { id: 'pp-2', name: 'Falabella Centro', code: '200' },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockIntakeState = {
+    status: 'idle',
+    result: null,
+    error: null,
+    uploadProgress: null,
+    submit: mockSubmit,
+    reset: mockReset,
+  };
+});
 
 // ── OcrTestClient tests ────────────────────────────────────────────────────────
 describe('OcrTestClient', () => {
@@ -111,8 +148,15 @@ describe('OcrTestClient', () => {
     expect(screen.queryByText('Extraer datos')).not.toBeInTheDocument();
   });
 
+  it('renders pickup point dropdown with options', () => {
+    render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    expect(screen.getByText('Seleccionar punto de retiro…')).toBeInTheDocument();
+    expect(screen.getByText('400 — Paris Maipú')).toBeInTheDocument();
+    expect(screen.getByText('200 — Falabella Centro')).toBeInTheDocument();
+  });
+
   it('shows thumbnail and action buttons after a photo is selected', async () => {
-    const { container } = render(<OcrTestClient />);
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     await addPhoto(container);
     expect(screen.getByAltText('Foto 1')).toBeInTheDocument();
     expect(screen.getByText('Extraer datos')).toBeInTheDocument();
@@ -121,67 +165,96 @@ describe('OcrTestClient', () => {
   });
 
   it('removes a thumbnail when the delete button is clicked', async () => {
-    const { container } = render(<OcrTestClient />);
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     await addPhoto(container);
     fireEvent.click(screen.getByLabelText('Eliminar foto 1'));
     expect(screen.queryByAltText('Foto 1')).not.toBeInTheDocument();
     expect(screen.getByText('Abrir cámara')).toBeInTheDocument();
   });
 
-  it('calls fetch with FormData containing the image when Extraer datos is clicked', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => sampleResult });
-    const { container } = render(<OcrTestClient />);
+  it('"Extraer datos" is disabled when no pickup point is selected', async () => {
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     await addPhoto(container);
-    fireEvent.click(screen.getByText('Extraer datos'));
-    expect(mockFetch).toHaveBeenCalledWith(
-      '/api/ocr-test',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    const { body } = mockFetch.mock.calls[0][1] as { body: FormData };
-    expect(body.getAll('images')).toHaveLength(1);
+    const btn = screen.getByText('Extraer datos').closest('button');
+    expect(btn).toBeDisabled();
   });
 
-  it('shows order cards and summary bar on successful extraction', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => sampleResult });
-    const { container } = render(<OcrTestClient />);
+  it('"Extraer datos" is enabled when a pickup point is selected', async () => {
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     await addPhoto(container);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pp-1' } });
+    const btn = screen.getByText('Extraer datos').closest('button');
+    expect(btn).not.toBeDisabled();
+  });
+
+  it('calls intake.submit with photos and selected pickup point ID', async () => {
+    mockSubmit.mockResolvedValue(undefined);
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    await addPhoto(container);
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pp-1' } });
     fireEvent.click(screen.getByText('Extraer datos'));
-    await waitFor(() => expect(screen.getByText(/1 orden encontrada/)).toBeInTheDocument());
+    await waitFor(() => expect(mockSubmit).toHaveBeenCalledOnce());
+    expect(mockSubmit).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.any(File)]),
+      'pp-1',
+    );
+  });
+
+  it('shows upload progress during uploading status', async () => {
+    mockIntakeState = {
+      ...mockIntakeState,
+      status: 'uploading',
+      uploadProgress: { current: 2, total: 5 },
+    };
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    await addPhoto(container);
+    expect(screen.getByText(/Subiendo 2\/5/)).toBeInTheDocument();
+  });
+
+  it('shows "Procesando manifiesto…" during processing status', async () => {
+    mockIntakeState = { ...mockIntakeState, status: 'processing' };
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    await addPhoto(container);
+    expect(screen.getByText('Procesando manifiesto…')).toBeInTheDocument();
+  });
+
+  it('shows order cards from parsedData on success', async () => {
+    mockIntakeState = {
+      ...mockIntakeState,
+      status: 'success',
+      result: { ordersCreated: 1, parsedData: sampleParsedData as Record<string, unknown> },
+    };
+    render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    expect(screen.getByText(/1 orden encontrada/)).toBeInTheDocument();
     expect(screen.getByText('ORD-001')).toBeInTheDocument();
     expect(screen.getByText('400 · Paris Maipú')).toBeInTheDocument();
   });
 
-  it('shows error box and no order cards on a failed extraction', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      json: async () => ({ error: 'OpenRouter error 429', detail: 'Rate limited' }),
-    });
-    const { container } = render(<OcrTestClient />);
-    await addPhoto(container);
-    fireEvent.click(screen.getByText('Extraer datos'));
-    await waitFor(() =>
-      expect(screen.getByText('OpenRouter error 429')).toBeInTheDocument(),
-    );
-    expect(screen.queryByText('ORD-001')).not.toBeInTheDocument();
+  it('shows error from intake.error on error status', async () => {
+    mockIntakeState = {
+      ...mockIntakeState,
+      status: 'error',
+      error: 'El manifiesto no pudo ser procesado',
+    };
+    render(<OcrTestClient pickupPoints={samplePickupPoints} />);
+    expect(screen.getByText('El manifiesto no pudo ser procesado')).toBeInTheDocument();
   });
 
-  it('resets to idle when Limpiar is clicked after a result', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => sampleResult });
-    const { container } = render(<OcrTestClient />);
+  it('calls intake.reset() when Limpiar is clicked', async () => {
+    const { container } = render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     await addPhoto(container);
-    fireEvent.click(screen.getByText('Extraer datos'));
-    await waitFor(() => screen.getByText('Limpiar'));
     fireEvent.click(screen.getByText('Limpiar'));
+    expect(mockReset).toHaveBeenCalledOnce();
     expect(screen.getByText('Abrir cámara')).toBeInTheDocument();
-    expect(screen.queryByText('ORD-001')).not.toBeInTheDocument();
   });
 
-  it('toggles the raw JSON block when Ver JSON / Ocultar JSON is clicked', async () => {
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => sampleResult });
-    const { container } = render(<OcrTestClient />);
-    await addPhoto(container);
-    fireEvent.click(screen.getByText('Extraer datos'));
-    await waitFor(() => screen.getByText('Ver JSON'));
+  it('toggles the raw JSON block when Ver JSON / Ocultar JSON is clicked', () => {
+    mockIntakeState = {
+      ...mockIntakeState,
+      status: 'success',
+      result: { ordersCreated: 1, parsedData: sampleParsedData as Record<string, unknown> },
+    };
+    render(<OcrTestClient pickupPoints={samplePickupPoints} />);
     expect(screen.queryByText(/"orders"/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Ver JSON'));
     expect(screen.getByText(/"orders"/)).toBeInTheDocument();
