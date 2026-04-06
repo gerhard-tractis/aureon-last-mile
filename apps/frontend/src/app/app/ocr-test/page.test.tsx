@@ -8,6 +8,17 @@ const mockGetSession = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/supabase/server', () => ({
   createSSRClient: vi.fn().mockResolvedValue({
     auth: { getSession: mockGetSession },
+    from: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            is: vi.fn().mockReturnValue({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            }),
+          }),
+        }),
+      }),
+    }),
   }),
 }));
 
@@ -29,7 +40,7 @@ import OcrTestPage from './page';
 function sessionWithRole(role: string) {
   return {
     data: {
-      session: { user: { app_metadata: { claims: { role } } } },
+      session: { user: { app_metadata: { claims: { role, operator_id: 'op-1' } } } },
     },
   };
 }

@@ -5,6 +5,7 @@ import { Camera, X, Loader2, ScanText, Trash2, ChevronDown, ChevronUp } from 'lu
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { useCameraIntake } from '@/hooks/pickup/useCameraIntake';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface ExtractedPackage {
@@ -29,6 +30,10 @@ interface ExtractionResult {
   pickup_point_name: string | null;
   orders: ExtractedOrder[];
   error?: string;
+}
+
+interface OcrTestClientProps {
+  pickupPoints?: { id: string; name: string; code: string }[];
 }
 
 // ── Image compression ─────────────────────────────────────────────────────────
@@ -145,15 +150,16 @@ export function OrderCard({ order, index }: { order: ExtractedOrder; index: numb
 }
 
 // ── OcrTestClient ──────────────────────────────────────────────────────────────
-export default function OcrTestClient() {
+export default function OcrTestClient({ pickupPoints = [] }: OcrTestClientProps) {
   const [photos, setPhotos] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
-  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
-  const [result, setResult] = useState<ExtractionResult | null>(null);
-  const [rawJson, setRawJson] = useState('');
+  const [selectedPickupPointId, setSelectedPickupPointId] = useState('');
   const [showRaw, setShowRaw] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const intake = useCameraIntake();
+
+  const extraction = intake.result?.parsedData as ExtractionResult | null;
+  const rawJson = extraction ? JSON.stringify(extraction, null, 2) : '';
 
   const addPhoto = useCallback(async (file: File) => {
     const compressed = await compressImage(file);
@@ -173,11 +179,9 @@ export default function OcrTestClient() {
     previews.forEach((url) => URL.revokeObjectURL(url));
     setPhotos([]);
     setPreviews([]);
-    setStatus('idle');
-    setResult(null);
-    setRawJson('');
-    setErrorMsg('');
-  }, [previews]);
+    setShowRaw(false);
+    intake.reset();
+  }, [previews, intake]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -186,43 +190,11 @@ export default function OcrTestClient() {
   };
 
   const runOcr = async () => {
-    if (photos.length === 0) return;
-    setStatus('loading');
-    setResult(null);
-    setErrorMsg('');
-
-    const formData = new FormData();
-    photos.forEach((f) => formData.append('images', f));
-
-    try {
-      const ocrUrl = process.env.NEXT_PUBLIC_OCR_API_URL ?? '/api/ocr-test';
-      const ocrSecret = process.env.NEXT_PUBLIC_OCR_API_SECRET;
-      const headers: HeadersInit = ocrSecret ? { Authorization: `Bearer ${ocrSecret}` } : {};
-      const res = await fetch(ocrUrl, { method: 'POST', headers, body: formData });
-
-      let json: ExtractionResult & { error?: string };
-      try {
-        json = (await res.json()) as ExtractionResult & { error?: string };
-      } catch {
-        setErrorMsg(`HTTP ${res.status}: respuesta no válida del servidor (¿imagen demasiado grande?)`);
-        setStatus('error');
-        return;
-      }
-      setRawJson(JSON.stringify(json, null, 2));
-
-      if (!res.ok) {
-        setErrorMsg(json.error ?? `HTTP ${res.status}`);
-        setStatus('error');
-        return;
-      }
-
-      setResult(json);
-      setStatus('done');
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Network error');
-      setStatus('error');
-    }
+    if (photos.length === 0 || !selectedPickupPointId) return;
+    await intake.submit(photos, selectedPickupPointId);
   };
+
+  const isProcessing = intake.status === 'uploading' || intake.status === 'processing';
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -239,6 +211,20 @@ export default function OcrTestClient() {
           </p>
         </div>
       </div>
+
+      {/* Pickup point selector */}
+      <select
+        value={selectedPickupPointId}
+        onChange={(e) => setSelectedPickupPointId(e.target.value)}
+        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text"
+      >
+        <option value="">Seleccionar punto de retiro…</option>
+        {pickupPoints.map((pp) => (
+          <option key={pp.id} value={pp.id}>
+            {pp.code} — {pp.name}
+          </option>
+        ))}
+      </select>
 
       {/* Hidden file input */}
       <input
@@ -293,11 +279,26 @@ export default function OcrTestClient() {
           </Button>
         ) : (
           <>
-            <Button onClick={runOcr} disabled={status === 'loading'} className="gap-2">
-              {status === 'loading' ? (
-                <><Loader2 className="size-4 animate-spin" />Procesando…</>
+            <Button
+              onClick={runOcr}
+              disabled={isProcessing || !selectedPickupPointId}
+              className="gap-2"
+            >
+              {intake.status === 'uploading' ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Subiendo {intake.uploadProgress?.current}/{intake.uploadProgress?.total}…
+                </>
+              ) : intake.status === 'processing' ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Procesando manifiesto…
+                </>
               ) : (
-                <><ScanText className="size-4" />Extraer datos</>
+                <>
+                  <ScanText className="size-4" />
+                  Extraer datos
+                </>
               )}
             </Button>
             <Button variant="ghost" onClick={reset} className="gap-2 text-text-secondary">
@@ -309,28 +310,28 @@ export default function OcrTestClient() {
       </div>
 
       {/* Error */}
-      {status === 'error' && (
+      {intake.status === 'error' && (
         <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-4 text-sm text-destructive">
-          {errorMsg}
+          {intake.error}
         </div>
       )}
 
       {/* Results */}
-      {status === 'done' && result && (
+      {intake.status === 'success' && extraction && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-sm font-medium text-text">
-                {result.orders.length} orden{result.orders.length !== 1 ? 'es' : ''} encontrada
-                {result.orders.length !== 1 ? 's' : ''}
+                {extraction.orders.length} orden{extraction.orders.length !== 1 ? 'es' : ''} encontrada
+                {extraction.orders.length !== 1 ? 's' : ''}
               </span>
-              {(result.pickup_point_code || result.pickup_point_name) && (
+              {(extraction.pickup_point_code || extraction.pickup_point_name) && (
                 <Badge variant="secondary" className="text-xs font-mono">
-                  {[result.pickup_point_code, result.pickup_point_name].filter(Boolean).join(' · ')}
+                  {[extraction.pickup_point_code, extraction.pickup_point_name].filter(Boolean).join(' · ')}
                 </Badge>
               )}
-              {result.error && (
-                <Badge variant="destructive" className="text-xs">{result.error}</Badge>
+              {extraction.error && (
+                <Badge variant="destructive" className="text-xs">{extraction.error}</Badge>
               )}
             </div>
             <Button
@@ -350,7 +351,7 @@ export default function OcrTestClient() {
           )}
 
           <div className="space-y-3">
-            {result.orders.map((order, i) => (
+            {extraction.orders.map((order, i) => (
               <OrderCard key={order.order_number} order={order} index={i} />
             ))}
           </div>

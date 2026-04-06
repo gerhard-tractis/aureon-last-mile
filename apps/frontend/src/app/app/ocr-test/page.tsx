@@ -17,5 +17,16 @@ export default async function OcrTestPage() {
     redirect('/app');
   }
 
-  return <OcrTestClient />;
+  const operatorId = session.user.app_metadata?.claims?.operator_id as string | undefined;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: pickupPoints } = (await (supabase as any)
+    .from('pickup_points')
+    .select('id, name, code')
+    .eq('operator_id', operatorId!)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .order('name')) as { data: { id: string; name: string; code: string }[] | null };
+
+  return <OcrTestClient pickupPoints={pickupPoints ?? []} />;
 }
