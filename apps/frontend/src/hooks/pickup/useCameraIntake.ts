@@ -6,6 +6,7 @@ export type IntakeStatus = 'idle' | 'uploading' | 'processing' | 'success' | 'er
 
 export interface IntakeResult {
   ordersCreated: number;
+  parsedData: Record<string, unknown> | null;
 }
 
 interface UseCameraIntakeReturn {
@@ -94,10 +95,10 @@ export function useCameraIntake(): UseCameraIntakeReturn {
             table: 'intake_submissions',
             filter: `id=eq.${submission.id}`,
           },
-          (payload: { new: { status: string; orders_created: number } }) => {
-            const { status: newStatus, orders_created } = payload.new;
+          (payload: { new: { status: string; orders_created: number; parsed_data?: Record<string, unknown> | null } }) => {
+            const { status: newStatus, orders_created, parsed_data } = payload.new;
             if (newStatus === 'parsed' || newStatus === 'needs_review' || newStatus === 'confirmed') {
-              setResult({ ordersCreated: orders_created ?? 0 });
+              setResult({ ordersCreated: orders_created ?? 0, parsedData: parsed_data ?? null });
               setStatus('success');
             } else if (newStatus === 'failed' || newStatus === 'rejected') {
               setStatus('error');
