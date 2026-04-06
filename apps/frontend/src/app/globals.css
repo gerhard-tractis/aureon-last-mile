@@ -171,24 +171,30 @@ html.custom {
   --color-status-info:           #3b82f6;
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
-
-  /* ---- SIDEBAR TOKENS — warm charcoal, all modes ------------ */
-  --color-sidebar-bg:          #1c1917;
-  --color-sidebar-text:        #a8a29e;
-  --color-sidebar-text-active: #ca9a04;
-  --color-sidebar-hover:       rgba(255,255,255,0.06);
-  --color-sidebar-section:     #78716c;
-  --color-sidebar-border:      #292524;
 }
 
-/* Dark mode sidebar — deeper warm black to sit below content */
+/* ---- SIDEBAR TOKENS — mode-aware (Direction A) ------------
+   Light: warm linen sidebar, subtle against white content
+   Dark:  warm charcoal lifted slightly above content bg
+   Custom: inherits light defaults until BrandingProvider loads
+   ----------------------------------------------------------- */
+html.light,
+html.custom {
+  --color-sidebar-bg:          #f5f3f0;                /* warm linen */
+  --color-sidebar-text:        #64594d;                /* warm gray */
+  --color-sidebar-text-active: #ca9a04;                /* gold */
+  --color-sidebar-hover:       rgba(0,0,0,0.045);
+  --color-sidebar-section:     #a8a29e;
+  --color-sidebar-border:      #e8e0d8;                /* warm stone */
+}
+
 html.dark {
-  --color-sidebar-bg:          #0c0a08;
-  --color-sidebar-text:        #a8a29e;
-  --color-sidebar-text-active: #e6c15c;
-  --color-sidebar-hover:       rgba(255,255,255,0.06);
+  --color-sidebar-bg:          #1a1714;                /* lifted above #13110d content */
+  --color-sidebar-text:        #b8ab9a;                /* warm sand */
+  --color-sidebar-text-active: #e6c15c;                /* lighter gold */
+  --color-sidebar-hover:       rgba(255,255,255,0.08);
   --color-sidebar-section:     #78716c;
-  --color-sidebar-border:      #1c1917;
+  --color-sidebar-border:      #2a2218;                /* matches content border */
 }
 
 /* Dark mode overrides for status backgrounds (semi-transparent) */
