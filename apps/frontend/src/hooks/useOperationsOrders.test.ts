@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { useOperationsOrders, type OperationsOrder } from './useOperationsOrders';
-import type { OpsControlFilterState } from '@/stores/useOpsControlFilterStore';
+import type { OpsControlFilterState } from '@/lib/stores/useOpsControlFilterStore';
 
 const mockFrom = vi.fn();
 

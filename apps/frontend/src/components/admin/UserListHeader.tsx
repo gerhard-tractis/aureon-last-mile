@@ -5,7 +5,7 @@
  * Displays page title and Create User button
  */
 
-import { useAdminStore } from '@/stores/adminStore';
+import { useAdminStore } from '@/lib/stores/adminStore';
 
 export const UserListHeader = () => {
   const { setCreateFormOpen } = useAdminStore();

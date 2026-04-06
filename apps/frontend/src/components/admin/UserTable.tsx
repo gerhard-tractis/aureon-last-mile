@@ -6,7 +6,7 @@
  */
 
 import { useMemo } from 'react';
-import { useAdminStore } from '@/stores/adminStore';
+import { useAdminStore } from '@/lib/stores/adminStore';
 import { formatDateTimeShort } from '@/lib/utils/dateFormat';
 import { getRoleDisplayName } from '@/lib/validation/userSchema';
 import { DataTable, type ColumnDef } from '@/components/data-table/DataTable';

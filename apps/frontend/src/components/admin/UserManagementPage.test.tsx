@@ -74,7 +74,7 @@ vi.mock('@/hooks/useUsers', () => ({
   useUsers: vi.fn(() => mockUsersReturn),
 }));
 
-vi.mock('@/stores/adminStore', () => ({
+vi.mock('@/lib/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 

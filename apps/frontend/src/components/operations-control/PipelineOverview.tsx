@@ -1,7 +1,7 @@
 "use client";
 
 import { usePipelineCounts } from '@/hooks/usePipelineCounts';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
 import type { PipelineStageCount } from '@/hooks/usePipelineCounts';
 import { PipelineCard } from './PipelineCard';

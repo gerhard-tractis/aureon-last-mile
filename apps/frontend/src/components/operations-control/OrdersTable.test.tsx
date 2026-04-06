@@ -38,7 +38,7 @@ vi.mock('@/hooks/useOperationsOrders', () => ({
   useOperationsOrders: vi.fn(() => ({ data: [], isLoading: false, isError: false })),
 }));
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(() => ({
     search: '',
     datePreset: 'today',
@@ -55,7 +55,7 @@ vi.mock('@/stores/useOpsControlFilterStore', () => ({
 }));
 
 import { useOperationsOrders } from '@/hooks/useOperationsOrders';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 // --- Helpers ---
 

@@ -24,11 +24,11 @@ const defaultStoreState = {
   clearAllFilters: mockClearAllFilters,
 };
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(() => defaultStoreState),
 }));
 
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 describe('OrdersFilterToolbar', () => {
   beforeEach(() => {

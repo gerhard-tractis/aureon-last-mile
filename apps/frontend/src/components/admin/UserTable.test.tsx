@@ -15,7 +15,7 @@ let mockAdminStoreReturn = {
 };
 
 // Mock the adminStore
-vi.mock('@/stores/adminStore', () => ({
+vi.mock('@/lib/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 

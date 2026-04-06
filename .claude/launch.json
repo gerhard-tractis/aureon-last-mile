@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/start-frontend.js"],
+      "port": 3000,
+      "autoPort": true
+    },
+    {
+      "name": "mobile",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/start-mobile.js"],
+      "port": 8081,
+      "autoPort": true
+    },
+    {
+      "name": "worker",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["apps/worker/node_modules/ts-node/dist/bin.js", "apps/worker/src/index.ts"],
+      "port": 4000,
+      "autoPort": true
+    }
+  ]
+}

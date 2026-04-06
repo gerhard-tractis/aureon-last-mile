@@ -1,0 +1,58 @@
+<h2>Epic 4A: Pickup Verification — Screen Flow</h2>
+<p class="subtitle">4 screens for the core scanning workflow</p>
+
+<div class="options">
+  <div class="option" data-choice="flow">
+    <div class="letter">→</div>
+    <div class="content">
+      <h3>Screen 1: Manifest List</h3>
+      <p><strong>/pickup</strong> — Shows all unconsumed manifests grouped by <code>external_load_id</code>. Each card shows retailer name, order count, package count. Two tabs: "Active" (default) and "Completed". Tapping an active card creates/resumes a manifest record and navigates to scanning.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="flow">
+    <div class="letter">→</div>
+    <div class="content">
+      <h3>Screen 2: Scanning</h3>
+      <p><strong>/pickup/scan/[external_load_id]</strong> — Auto-focused text input captures barcode scanner keystrokes. Shows progress bar (packages scanned / total), scan history list (last 10 scans with status icons), and live counters (verified, errors, duplicates). Distinct audio feedback for each result. Error popup for "not found".</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="flow">
+    <div class="letter">→</div>
+    <div class="content">
+      <h3>Screen 3: Discrepancy Review</h3>
+      <p><strong>/pickup/review/[external_load_id]</strong> — Lists all missing/unscanned packages. Crew adds a note per missing package (required before signing). Also shows "not found" scans (barcodes scanned but not in manifest). "Continue Scanning" button to go back if needed.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="flow">
+    <div class="letter">→</div>
+    <div class="content">
+      <h3>Screen 4: Signature & Completion</h3>
+      <p><strong>/pickup/complete/[external_load_id]</strong> — Summary stats (verified, missing, precision, time elapsed). Operator signature pad (required). Optional client signature toggle. "Complete & Generate Receipt" button. Receipt shows full audit trail with discrepancy notes — the legal custody transfer document.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>Key UX Decisions</h3>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 12px;">
+    <div style="background: #1a1a2e; padding: 16px; border-radius: 8px;">
+      <strong style="color: #e6c15c;">Input method</strong>
+      <p style="margin-top: 4px; font-size: 0.85em;">Hardware scanner (BT/USB) → focused text input + Enter. No camera.</p>
+    </div>
+    <div style="background: #1a1a2e; padding: 16px; border-radius: 8px;">
+      <strong style="color: #e6c15c;">Feedback priority</strong>
+      <p style="margin-top: 4px; font-size: 0.85em;">Audio first (distinct tones), haptic second, visual third. Rapid scanning support.</p>
+    </div>
+    <div style="background: #1a1a2e; padding: 16px; border-radius: 8px;">
+      <strong style="color: #e6c15c;">Error handling</strong>
+      <p style="margin-top: 4px; font-size: 0.85em;">"Not found" → error sound + popup. Crew dismisses and continues. Logged for review.</p>
+    </div>
+    <div style="background: #1a1a2e; padding: 16px; border-radius: 8px;">
+      <strong style="color: #e6c15c;">Completion gate</strong>
+      <p style="margin-top: 4px; font-size: 0.85em;">If discrepancies exist, crew must add notes before signing. Notes appear on receipt.</p>
+    </div>
+  </div>
+</div>

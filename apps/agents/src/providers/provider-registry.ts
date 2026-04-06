@@ -1,13 +1,9 @@
 // src/providers/provider-registry.ts — Model name → provider resolution
 
-import { ClaudeProvider } from './claude';
-import { GroqProvider } from './groq';
 import { OpenRouterProvider } from './openrouter';
 import type { LLMProvider } from './types';
 
 export interface ProviderRegistryConfig {
-  anthropicApiKey: string;
-  groqApiKey: string;
   openrouterApiKey: string;
 }
 
@@ -21,7 +17,7 @@ export class ProviderRegistry {
 
   /**
    * Resolve a model name in the format "provider:model-name" to an LLMProvider.
-   * Supported prefixes: "groq", "claude".
+   * Supported prefixes: "openrouter".
    */
   getProvider(modelName: string): LLMProvider {
     if (this.cache.has(modelName)) {
@@ -38,17 +34,11 @@ export class ProviderRegistry {
 
     let provider: LLMProvider;
     switch (prefix) {
-      case 'groq':
-        provider = new GroqProvider(this.config.groqApiKey, model);
-        break;
-      case 'claude':
-        provider = new ClaudeProvider(this.config.anthropicApiKey, model);
-        break;
       case 'openrouter':
         provider = new OpenRouterProvider(this.config.openrouterApiKey, model);
         break;
       default:
-        throw new Error(`Unknown provider prefix in model name: "${modelName}"`);
+        throw new Error(`Unknown provider prefix: "${prefix}". Supported: openrouter`);
     }
 
     this.cache.set(modelName, provider);

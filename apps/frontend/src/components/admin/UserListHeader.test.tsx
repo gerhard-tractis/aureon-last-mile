@@ -10,7 +10,7 @@ import { UserListHeader } from './UserListHeader';
 // Mock the adminStore at top level
 const mockSetCreateFormOpen = vi.fn();
 
-vi.mock('@/stores/adminStore', () => ({
+vi.mock('@/lib/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => ({
     setCreateFormOpen: mockSetCreateFormOpen,
   })),

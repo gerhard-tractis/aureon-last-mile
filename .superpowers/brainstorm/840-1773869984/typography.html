@@ -1,0 +1,118 @@
+<h2>Typography — pick the product's voice</h2>
+<p class="subtitle">Display font sets the character. Data font handles numbers and status. Both must work at small sizes in dense layouts.</p>
+
+<div class="cards" style="grid-template-columns:1fr 1fr;gap:16px">
+
+  <div class="card" data-choice="geist" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:18px 20px;border-bottom:1px solid #e2e8f0">
+      <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+      <div style="font-family:'Geist',sans-serif">
+        <div style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#64748b;text-transform:uppercase;margin-bottom:10px">OPERACIONES — HOY</div>
+        <div style="font-size:32px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1">142</div>
+        <div style="font-size:13px;color:#64748b;margin-top:3px;margin-bottom:14px">entregas programadas</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:3px">ACTIVO</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Carlos Muñoz</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:11px;color:#64748b">18/22</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:3px">ALERTA</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Ana Rojas</span>
+            <span style="font-family:'Geist Mono',monospace;font-size:11px;color:#64748b">11/15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3 style="font-family:'Geist',sans-serif">A — Geist + Geist Mono</h3>
+      <p>Vercel's own font. Engineered for interfaces — near-zero optical noise, excellent tabular numbers. Clean authority with zero fuss.</p>
+      <p style="font-size:11px;color:#71717a;margin-top:6px">Used by: Vercel Dashboard, Linear-adjacent products</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="ibm" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:18px 20px;border-bottom:1px solid #e2e8f0">
+      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+      <div style="font-family:'IBM Plex Sans',sans-serif">
+        <div style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#64748b;text-transform:uppercase;margin-bottom:10px">OPERACIONES — HOY</div>
+        <div style="font-size:32px;font-weight:700;color:#0f172a;letter-spacing:-0.01em;line-height:1">142</div>
+        <div style="font-size:13px;color:#64748b;margin-top:3px;margin-bottom:14px">entregas programadas</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:600;letter-spacing:0.06em;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:3px">ACTIVO</span>
+            <span style="font-size:12px;font-weight:400;color:#0f172a;flex:1">Carlos Muñoz</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#64748b">18/22</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:600;letter-spacing:0.06em;background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:3px">ALERTA</span>
+            <span style="font-size:12px;font-weight:400;color:#0f172a;flex:1">Ana Rojas</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#64748b">11/15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3 style="font-family:'IBM Plex Sans',sans-serif">B — IBM Plex Sans + Plex Mono</h3>
+      <p>Built for enterprise software. More mechanical character — feels like serious operational tooling, not a startup SaaS. Excellent legibility at small sizes.</p>
+      <p style="font-size:11px;color:#71717a;margin-top:6px">Used by: IBM Cloud, Grafana, industrial SaaS</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="dm" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:18px 20px;border-bottom:1px solid #e2e8f0">
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+      <div style="font-family:'DM Sans',sans-serif">
+        <div style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#64748b;text-transform:uppercase;margin-bottom:10px">OPERACIONES — HOY</div>
+        <div style="font-size:32px;font-weight:800;color:#0f172a;letter-spacing:-0.03em;line-height:1">142</div>
+        <div style="font-size:13px;color:#64748b;margin-top:3px;margin-bottom:14px">entregas programadas</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:3px">ACTIVO</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Carlos Muñoz</span>
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:#64748b">18/22</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:3px">ALERTA</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Ana Rojas</span>
+            <span style="font-family:'DM Mono',monospace;font-size:11px;color:#64748b">11/15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3 style="font-family:'DM Sans',sans-serif">C — DM Sans + DM Mono</h3>
+      <p>Slightly more approachable than Geist — same precision family but friendlier curves. Less "startup", more "professional product". Strong at display sizes.</p>
+      <p style="font-size:11px;color:#71717a;margin-top:6px">Used by: Figma community, modern SaaS UIs</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="outfit" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#f8fafc;padding:18px 20px;border-bottom:1px solid #e2e8f0">
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+      <div style="font-family:'Outfit',sans-serif">
+        <div style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#64748b;text-transform:uppercase;margin-bottom:10px">OPERACIONES — HOY</div>
+        <div style="font-size:32px;font-weight:900;color:#0f172a;letter-spacing:-0.03em;line-height:1">142</div>
+        <div style="font-size:13px;color:#64748b;margin-top:3px;margin-bottom:14px">entregas programadas</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:3px">ACTIVO</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Carlos Muñoz</span>
+            <span style="font-family:'Fira Code',monospace;font-size:11px;color:#64748b">18/22</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;background:#fef9c3;color:#854d0e;padding:2px 6px;border-radius:3px">ALERTA</span>
+            <span style="font-size:12px;font-weight:500;color:#0f172a;flex:1">Ana Rojas</span>
+            <span style="font-family:'Fira Code',monospace;font-size:11px;color:#64748b">11/15</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3 style="font-family:'Outfit',sans-serif">D — Outfit + Fira Code</h3>
+      <p>Outfit's geometric boldness gives big numbers real visual punch. Fira Code's ligatures make IDs and codes feel intentional. More personality than the others.</p>
+      <p style="font-size:11px;color:#71717a;margin-top:6px">Used by: Bold SaaS products, dashboards that want character</p>
+    </div>
+  </div>
+
+</div>

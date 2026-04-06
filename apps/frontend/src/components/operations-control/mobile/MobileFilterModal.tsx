@@ -1,9 +1,9 @@
 "use client";
 
 import { X } from 'lucide-react';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
-import type { OpsControlFilterState } from '@/stores/useOpsControlFilterStore';
+import type { OpsControlFilterState } from '@/lib/stores/useOpsControlFilterStore';
 
 export interface MobileFilterModalProps {
   open: boolean;
