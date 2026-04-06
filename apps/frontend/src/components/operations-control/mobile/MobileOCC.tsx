@@ -7,7 +7,7 @@ import { MobileStatusCards } from './MobileStatusCards';
 import { MobileOrdersList } from './MobileOrdersList';
 import { usePriorityCounts } from '@/hooks/usePriorityCounts';
 import { useOperationsOrders } from '@/hooks/useOperationsOrders';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

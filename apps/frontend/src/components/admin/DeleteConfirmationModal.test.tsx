@@ -24,7 +24,7 @@ vi.mock('@/hooks/useUsers', () => ({
   useDeleteUser: vi.fn(() => mockDeleteUserReturn),
 }));
 
-vi.mock('@/stores/adminStore', () => ({
+vi.mock('@/lib/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 

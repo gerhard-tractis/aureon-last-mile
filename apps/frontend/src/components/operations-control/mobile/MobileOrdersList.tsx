@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { Search, Filter } from 'lucide-react';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
 import type { OrderPriority } from '@/lib/types/pipeline';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 import { MobileOrderCard } from './MobileOrderCard';
 import { MobileFilterModal } from './MobileFilterModal';
 import { MobilePullToRefresh } from './MobilePullToRefresh';

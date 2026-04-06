@@ -10,7 +10,7 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useAdminStore } from '@/stores/adminStore';
+import { useAdminStore } from '@/lib/stores/adminStore';
 import { useCreateUser, useUpdateUser, useUsers } from '@/hooks/useUsers';
 import { createUserSchema, updateUserSchema, roleOptions, type CreateUserFormData, type UpdateUserFormData } from '@/lib/validation/userSchema';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';

@@ -4,7 +4,7 @@
  */
 
 import { ChevronRight } from 'lucide-react';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 type StatusKey = 'urgent' | 'alert' | 'ok' | 'late';
 

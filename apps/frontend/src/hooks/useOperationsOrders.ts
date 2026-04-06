@@ -1,6 +1,6 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
-import type { OpsControlFilterState } from '@/stores/useOpsControlFilterStore';
+import type { OpsControlFilterState } from '@/lib/stores/useOpsControlFilterStore';
 
 export type OperationsOrder = {
   id: string;

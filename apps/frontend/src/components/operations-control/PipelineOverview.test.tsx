@@ -12,12 +12,12 @@ vi.mock('@/hooks/usePipelineCounts', () => ({
   usePipelineCounts: vi.fn(),
 }));
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(),
 }));
 
 import { usePipelineCounts } from '@/hooks/usePipelineCounts';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 const mockUsePipelineCounts = vi.mocked(usePipelineCounts);
 const mockUseOpsControlFilterStore = vi.mocked(useOpsControlFilterStore);

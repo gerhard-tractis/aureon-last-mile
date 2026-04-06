@@ -31,7 +31,7 @@ vi.mock('@/hooks/useOperationsOrders', () => ({
   useOperationsOrders: () => ({ data: [], isLoading: false }),
 }));
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: () => ({
     stageFilter: null,
     datePreset: 'today',

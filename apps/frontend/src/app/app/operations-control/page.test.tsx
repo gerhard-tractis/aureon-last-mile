@@ -19,7 +19,7 @@ vi.mock('@/hooks/useRealtimeStatus', () => ({
   useRealtimeStatus: vi.fn(() => 'connected'),
 }));
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(() => ({
     statusFilter: 'all',
     setStatusFilter: vi.fn(),

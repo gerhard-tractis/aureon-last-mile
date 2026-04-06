@@ -7,7 +7,7 @@
  */
 
 import { useUsers } from '@/hooks/useUsers';
-import { useAdminStore } from '@/stores/adminStore';
+import { useAdminStore } from '@/lib/stores/adminStore';
 import { UserListHeader } from './UserListHeader';
 import { UserTable } from './UserTable';
 import { UserForm } from './UserForm';

@@ -6,7 +6,7 @@
  */
 
 import { useDeleteUser } from '@/hooks/useUsers';
-import { useAdminStore } from '@/stores/adminStore';
+import { useAdminStore } from '@/lib/stores/adminStore';
 
 export const DeleteConfirmationModal = () => {
   const { isDeleteConfirmOpen, selectedUserId, setDeleteConfirmOpen } = useAdminStore();

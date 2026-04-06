@@ -5,7 +5,7 @@
  * Toolbar with search + filter controls that syncs with useOpsControlFilterStore.
  */
 
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 import { PIPELINE_STAGES } from '@/lib/types/pipeline';
 
 export function OrdersFilterToolbar() {

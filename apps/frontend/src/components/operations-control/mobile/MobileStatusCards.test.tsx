@@ -22,11 +22,11 @@ const defaultStoreState = {
   clearAllFilters: vi.fn(),
 };
 
-vi.mock('@/stores/useOpsControlFilterStore', () => ({
+vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: vi.fn(() => defaultStoreState),
 }));
 
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 
 const defaultCounts = { urgent: 3, alert: 12, ok: 45, late: 2 };
 

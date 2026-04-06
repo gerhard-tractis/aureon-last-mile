@@ -8,7 +8,7 @@
 import { useMemo } from 'react';
 import { useOperationsOrders } from '@/hooks/useOperationsOrders';
 import type { OperationsOrder } from '@/hooks/useOperationsOrders';
-import { useOpsControlFilterStore } from '@/stores/useOpsControlFilterStore';
+import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
 import { DataTable, type ColumnDef } from '@/components/data-table/DataTable';
 import type { FilterChip } from '@/components/data-table/DataTableToolbar';
 import { StatusBadge } from '@/components/StatusBadge';
