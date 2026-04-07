@@ -11,22 +11,6 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
-vi.mock('@/lib/supabase/client', () => ({
-  createSPAClient: () => ({
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          eq: () => ({
-            is: () => ({
-              then: (cb: (r: { data: { id: string }[] }) => void) => cb({ data: [{ id: 'p1' }, { id: 'p2' }] }),
-            }),
-          }),
-        }),
-      }),
-    }),
-  }),
-}));
-
 vi.mock('@/components/reception/QRHandoff', () => ({
   QRHandoff: () => <div data-testid="qr-handoff" />,
 }));
@@ -46,6 +30,7 @@ describe('HandoffPage', () => {
   beforeEach(() => {
     mockUseQRHandoff.mockReturnValue({
       manifest: { id: 'm1', retailer_name: 'Easy', reception_status: null },
+      verifiedPackageCount: 0,
       isLoading: false,
       isHandoffComplete: false,
       isSubmitting: false,
@@ -82,5 +67,24 @@ describe('HandoffPage', () => {
     const { container } = render(<HandoffPage />);
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain('sm:p-6');
+  });
+
+  it('displays verifiedPackageCount from the useQRHandoff hook', () => {
+    // Regression: the page used to run its own Supabase query that filtered
+    // packages by a non-existent manifest_id column and silently rendered 0.
+    // The single source of truth is now the hook's verifiedPackageCount.
+    mockUseQRHandoff.mockReturnValue({
+      manifest: { id: 'm1', retailer_name: 'Easy', reception_status: null },
+      verifiedPackageCount: 7,
+      isLoading: false,
+      isHandoffComplete: false,
+      isSubmitting: false,
+      qrPayload: null,
+      error: null,
+      initiateHandoff: vi.fn(),
+    });
+
+    render(<HandoffPage />);
+    expect(screen.getByText(/7 paquetes verificados/i)).toBeInTheDocument();
   });
 });
