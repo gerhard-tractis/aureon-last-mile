@@ -10,6 +10,14 @@ export interface ManifestForHandoff {
 
 interface UseQRHandoffReturn {
   manifest: ManifestForHandoff | null;
+  /**
+   * Count of unique packages verified for this manifest, derived from
+   * `pickup_scans` rows where `scan_result = 'verified'`. Deduplicated by
+   * `package_id` so a re-scanned package is counted once. This is the single
+   * source of truth used both for the on-screen counter and for the
+   * `expected_count` field on the hub_receptions row created at handoff.
+   */
+  verifiedPackageCount: number;
   isLoading: boolean;
   isHandoffComplete: boolean;
   isSubmitting: boolean;
@@ -30,6 +38,7 @@ export function useQRHandoff(
   operatorId: string | null
 ): UseQRHandoffReturn {
   const [manifest, setManifest] = useState<ManifestForHandoff | null>(null);
+  const [verifiedPackageCount, setVerifiedPackageCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isHandoffComplete, setIsHandoffComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,6 +69,36 @@ export function useQRHandoff(
       });
   }, [externalLoadId, operatorId]);
 
+  // Once the manifest is known, count verified packages from pickup_scans.
+  // The `packages` table has no `manifest_id` column — packages are linked
+  // to manifests only through `pickup_scans(manifest_id, package_id)`. Use
+  // that table as the single source of truth and dedupe by package_id so a
+  // double-scan of the same label still counts once.
+  useEffect(() => {
+    if (!manifest?.id || !operatorId) return;
+
+    const supabase = createSPAClient();
+    supabase
+      .from('pickup_scans')
+      .select('package_id')
+      .eq('operator_id', operatorId)
+      .eq('manifest_id', manifest.id)
+      .eq('scan_result', 'verified')
+      .is('deleted_at', null)
+      .then(({ data, error: scansError }) => {
+        if (scansError) {
+          setError(scansError.message);
+          return;
+        }
+        const uniqueIds = new Set(
+          (data ?? [])
+            .map((row: { package_id: string | null }) => row.package_id)
+            .filter((id): id is string => id !== null)
+        );
+        setVerifiedPackageCount(uniqueIds.size);
+      });
+  }, [manifest?.id, operatorId]);
+
   const initiateHandoff = useCallback(async () => {
     if (!manifest || !operatorId) return;
 
@@ -74,17 +113,10 @@ export function useQRHandoff(
       const userId = authData.user?.id;
       if (!userId) throw new Error('No authenticated user');
 
-      // Count verificado packages for expected_count
-      const { data: packages, error: pkgError } = await supabase
-        .from('packages')
-        .select('id')
-        .eq('manifest_id', manifest.id)
-        .eq('status', 'verificado')
-        .is('deleted_at', null);
-
-      if (pkgError) throw pkgError;
-
-      const expectedCount = packages?.length ?? 0;
+      // expected_count comes from the pickup_scans-derived count fetched
+      // when the manifest loaded. This is the same value rendered on screen,
+      // so the hub is told to expect exactly what the operator saw.
+      const expectedCount = verifiedPackageCount;
 
       // Create hub_receptions record
       const { error: insertError } = await supabase
@@ -119,10 +151,11 @@ export function useQRHandoff(
     } finally {
       setIsSubmitting(false);
     }
-  }, [manifest, operatorId]);
+  }, [manifest, operatorId, verifiedPackageCount]);
 
   return {
     manifest,
+    verifiedPackageCount,
     isLoading,
     isHandoffComplete,
     isSubmitting,
