@@ -17,6 +17,7 @@ export default function HandoffPage() {
   const {
     manifest,
     verifiedPackageCount,
+    isCountLoading,
     isLoading,
     isHandoffComplete,
     isSubmitting,
@@ -24,6 +25,23 @@ export default function HandoffPage() {
     error,
     initiateHandoff,
   } = useQRHandoff(loadId, operatorId);
+
+  // The "Entregar en bodega" button must be locked out in four cases:
+  //   1. The handoff request is currently in flight (`isSubmitting`).
+  //   2. The pickup_scans count hasn't loaded yet — pressing during this
+  //      brief window would commit a 0-package handoff before the real
+  //      count arrives (`isCountLoading`).
+  //   3. The manifest legitimately has zero verified packages — there is
+  //      nothing to hand off, the receiving hub would be told to expect a
+  //      meaningless empty load.
+  //   4. The manifest has already been handed off once
+  //      (`reception_status` is non-null) — pressing again would create a
+  //      second hub_receptions row competing with the first.
+  const isHandoffDisabled =
+    isSubmitting ||
+    isCountLoading ||
+    verifiedPackageCount === 0 ||
+    !!manifest?.reception_status;
 
   // Show QR code after handoff
   if (isHandoffComplete && qrPayload) {
@@ -92,7 +110,7 @@ export default function HandoffPage() {
       {/* Handoff Button */}
       <Button
         onClick={initiateHandoff}
-        disabled={isSubmitting}
+        disabled={isHandoffDisabled}
         className="w-full"
         size="lg"
       >
