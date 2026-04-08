@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
@@ -13,12 +14,25 @@ const mockCompleted = [
     total_orders: 2, total_packages: 4, completed_at: new Date().toISOString(),
   },
 ];
+const mockInTransit = [
+  {
+    id: 'i1',
+    external_load_id: 'CARGA-INT-1',
+    retailer_name: 'Falabella',
+    total_orders: 7,
+    total_packages: 14,
+    reception_status: 'awaiting_reception',
+    updated_at: new Date().toISOString(),
+  },
+];
 
 const mockUsePendingManifests = vi.fn();
 const mockUseCompletedManifests = vi.fn();
+const mockUseInTransitManifests = vi.fn();
 vi.mock('@/hooks/pickup/useManifests', () => ({
   usePendingManifests: (...args: unknown[]) => mockUsePendingManifests(...args),
   useCompletedManifests: (...args: unknown[]) => mockUseCompletedManifests(...args),
+  useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
 }));
 
 vi.mock('@/hooks/useOperatorId', () => ({
@@ -41,8 +55,9 @@ vi.mock('@/components/pickup/ClientFilter', () => ({
   ClientFilter: () => null,
 }));
 
+const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: mockPush, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(),
   usePathname: () => '/app/pickup',
 }));
@@ -50,8 +65,10 @@ vi.mock('next/navigation', () => ({
 // ── Tests ────────────────────────────────────────────────────────────────────
 describe('PickupPage', () => {
   beforeEach(() => {
+    mockPush.mockClear();
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
+    mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
   });
 
   describe('KPI cards', () => {
@@ -80,6 +97,46 @@ describe('PickupPage', () => {
       render(<PickupPage />);
       expect(screen.getByRole('tab', { name: 'Activos' })).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: 'Completados' })).toBeInTheDocument();
+    });
+
+    it('renders the "En tránsito" tab between Activos and Completados', () => {
+      render(<PickupPage />);
+      expect(screen.getByRole('tab', { name: 'En tránsito' })).toBeInTheDocument();
+    });
+  });
+
+  describe('En tránsito tab', () => {
+    it('shows in-transit manifests when the tab is selected', async () => {
+      const user = userEvent.setup();
+      render(<PickupPage />);
+      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
+      expect(screen.getByText('Falabella')).toBeInTheDocument();
+      expect(screen.getByText('CARGA-INT-1')).toBeInTheDocument();
+    });
+
+    it('renders an empty state when there are no in-transit manifests', async () => {
+      mockUseInTransitManifests.mockReturnValue({ data: [], isLoading: false });
+      const user = userEvent.setup();
+      render(<PickupPage />);
+      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
+      expect(screen.getByText('Sin manifiestos en tránsito')).toBeInTheDocument();
+    });
+
+    it('shows the "Entregado a bodega" badge on in-transit cards', async () => {
+      const user = userEvent.setup();
+      render(<PickupPage />);
+      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
+      expect(screen.getByText(/entregado a bodega/i)).toBeInTheDocument();
+    });
+
+    it('routes to /app/pickup/handoff/[loadId] when an in-transit card is clicked', async () => {
+      const user = userEvent.setup();
+      render(<PickupPage />);
+      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
+      const card = screen.getByText('Falabella').closest('[role="button"]') as HTMLElement;
+      expect(card).toBeTruthy();
+      await user.click(card);
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/handoff/CARGA-INT-1');
     });
   });
 

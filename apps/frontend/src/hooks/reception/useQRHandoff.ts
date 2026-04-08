@@ -103,7 +103,17 @@ export function useQRHandoff(
         if (fetchError) {
           setError(fetchError.message);
         } else if (data) {
-          setManifest(data as ManifestForHandoff);
+          const loadedManifest = data as ManifestForHandoff;
+          setManifest(loadedManifest);
+          // If the manifest was already handed off (reception_status set),
+          // short-circuit straight to the QR view. This happens when the
+          // operator opens the manifest from the En tránsito tab — they need
+          // to see the QR they handed off, not the form they can no longer
+          // submit (button is disabled by the re-handoff guard).
+          if (loadedManifest.reception_status) {
+            setQrPayload(loadedManifest.id);
+            setIsHandoffComplete(true);
+          }
         }
         setIsLoading(false);
       });

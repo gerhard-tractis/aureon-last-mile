@@ -14,7 +14,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { ManifestCard } from '@/components/pickup/ManifestCard';
 import { ClientFilter } from '@/components/pickup/ClientFilter';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
-import { usePendingManifests, useCompletedManifests } from '@/hooks/pickup/useManifests';
+import { usePendingManifests, useCompletedManifests, useInTransitManifests } from '@/hooks/pickup/useManifests';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n/useTranslation';
@@ -36,7 +36,7 @@ function PickupPageContent() {
   const searchParams = useSearchParams();
   const { t } = useTranslation();
   const { operatorId } = useOperatorId();
-  const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
+  const [activeTab, setActiveTab] = useState<'active' | 'in_transit' | 'completed'>('active');
   const [intakeOpen, setIntakeOpen] = useState(false);
 
   const selectedClient = searchParams.get('client');
@@ -50,6 +50,8 @@ function PickupPageContent() {
 
   const { data: pendingManifests, isLoading: pendingLoading } =
     usePendingManifests(operatorId);
+  const { data: inTransitManifests, isLoading: inTransitLoading } =
+    useInTransitManifests(operatorId);
   const { data: completedManifests, isLoading: completedLoading } =
     useCompletedManifests(operatorId);
 
@@ -84,7 +86,16 @@ function PickupPageContent() {
     [completedManifests, selectedClient],
   );
 
-  // ── Manifest click handler ─────────────────────────────────────────────────
+  const filteredInTransit = useMemo(
+    () => selectedClient
+      ? (inTransitManifests ?? []).filter((m) => m.retailer_name === selectedClient)
+      : (inTransitManifests ?? []),
+    [inTransitManifests, selectedClient],
+  );
+
+  // ── Manifest click handlers ────────────────────────────────────────────────
+  // Active tab: ensure a manifest row exists for the load (creating one on
+  // first scan), then navigate to the scan flow.
   const handleManifestClick = async (
     externalLoadId: string,
     retailerName: string | null,
@@ -113,6 +124,14 @@ function PickupPageContent() {
     router.push(`/app/pickup/scan/${encodeURIComponent(externalLoadId)}`);
   };
 
+  // En tránsito tab: the manifest row already exists (it was created during
+  // the original scan flow and now has reception_status set), so skip the
+  // upsert and route straight to the handoff page. The handoff page detects
+  // reception_status on load and short-circuits to the QR view.
+  const handleInTransitClick = (externalLoadId: string) => {
+    router.push(`/app/pickup/handoff/${encodeURIComponent(externalLoadId)}`);
+  };
+
   return (
     <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 max-w-4xl mx-auto">
       {/* Header */}
@@ -137,9 +156,10 @@ function PickupPageContent() {
       )}
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'completed')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'in_transit' | 'completed')}>
         <TabsList>
           <TabsTrigger value="active">Activos</TabsTrigger>
+          <TabsTrigger value="in_transit">En tránsito</TabsTrigger>
           <TabsTrigger value="completed">Completados</TabsTrigger>
         </TabsList>
 
@@ -166,6 +186,34 @@ function PickupPageContent() {
                   onClick={() => handleManifestClick(
                     m.external_load_id, m.retailer_name, m.order_count, m.package_count,
                   )}
+                />
+              ))
+            )}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="in_transit">
+          <div className="space-y-3">
+            {inTransitLoading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
+              ))
+            ) : filteredInTransit.length === 0 ? (
+              <EmptyState
+                icon={Package}
+                title="Sin manifiestos en tránsito"
+                description="Los manifiestos entregados a bodega aparecerán aquí."
+              />
+            ) : (
+              filteredInTransit.map((m) => (
+                <ManifestCard
+                  key={m.id}
+                  externalLoadId={m.external_load_id}
+                  retailerName={m.retailer_name}
+                  orderCount={m.total_orders ?? 0}
+                  packageCount={m.total_packages ?? 0}
+                  inTransit
+                  onClick={() => handleInTransitClick(m.external_load_id)}
                 />
               ))
             )}

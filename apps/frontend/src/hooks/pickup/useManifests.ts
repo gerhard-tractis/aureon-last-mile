@@ -17,6 +17,16 @@ export interface CompletedManifest {
   completed_at: string;
 }
 
+export interface InTransitManifest {
+  id: string;
+  external_load_id: string;
+  retailer_name: string | null;
+  total_orders: number | null;
+  total_packages: number | null;
+  reception_status: string;
+  updated_at: string;
+}
+
 const PICKUP_QUERY_OPTIONS = {
   staleTime: 30_000,
   refetchInterval: 60_000,
@@ -44,6 +54,20 @@ export function useCompletedManifests(operatorId: string | null) {
       const { data, error } = await (supabase.rpc as CallableFunction)('get_completed_manifests');
       if (error) throw error;
       return data as CompletedManifest[];
+    },
+    enabled: !!operatorId,
+    ...PICKUP_QUERY_OPTIONS,
+  });
+}
+
+export function useInTransitManifests(operatorId: string | null) {
+  return useQuery({
+    queryKey: ['pickup', 'manifests', 'in_transit', operatorId],
+    queryFn: async () => {
+      const supabase = createSPAClient();
+      const { data, error } = await (supabase.rpc as CallableFunction)('get_in_transit_manifests');
+      if (error) throw error;
+      return data as InTransitManifest[];
     },
     enabled: !!operatorId,
     ...PICKUP_QUERY_OPTIONS,

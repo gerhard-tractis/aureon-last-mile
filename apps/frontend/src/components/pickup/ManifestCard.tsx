@@ -1,6 +1,6 @@
 'use client';
 
-import { Package, ShoppingCart } from 'lucide-react';
+import { Package, ShoppingCart, Truck } from 'lucide-react';
 
 interface ManifestCardProps {
   externalLoadId: string;
@@ -8,6 +8,12 @@ interface ManifestCardProps {
   orderCount: number;
   packageCount: number;
   completedAt?: string;
+  /**
+   * If true, render an "Entregado a bodega" badge below the main row so
+   * the operator can recognise at a glance that this manifest is already
+   * handed off and tapping it will show the QR (not re-enter the scan flow).
+   */
+  inTransit?: boolean;
   interactive?: boolean;
   onClick: () => void;
 }
@@ -18,6 +24,7 @@ export function ManifestCard({
   orderCount,
   packageCount,
   completedAt,
+  inTransit = false,
   interactive = true,
   onClick,
 }: ManifestCardProps) {
@@ -63,6 +70,12 @@ export function ManifestCard({
         <p className="text-xs text-text-muted mt-2">
           Completado el {new Date(completedAt).toLocaleDateString()}
         </p>
+      )}
+      {inTransit && (
+        <div className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent">
+          <Truck className="h-3 w-3" />
+          <span>Entregado a bodega</span>
+        </div>
       )}
     </div>
   );
