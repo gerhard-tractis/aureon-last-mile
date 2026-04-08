@@ -1,6 +1,9 @@
 # Claude settings - local configuration only
 .claude/settings.local.json
 
+# Brainstorming companion (visual mockup sessions)
+.superpowers/
+
 # Dependencies
 node_modules/
 venv/
