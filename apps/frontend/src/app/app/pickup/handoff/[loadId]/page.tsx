@@ -1,11 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useQRHandoff } from '@/hooks/reception/useQRHandoff';
 import { QRHandoff } from '@/components/reception/QRHandoff';
-import { createSPAClient } from '@/lib/supabase/client';
 import { Loader2, Truck, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
@@ -16,10 +14,9 @@ export default function HandoffPage() {
   const loadId = decodeURIComponent(params.loadId as string);
   const { operatorId } = useOperatorId();
 
-  const [packageCount, setPackageCount] = useState<number>(0);
-
   const {
     manifest,
+    verifiedPackageCount,
     isLoading,
     isHandoffComplete,
     isSubmitting,
@@ -28,29 +25,13 @@ export default function HandoffPage() {
     initiateHandoff,
   } = useQRHandoff(loadId, operatorId);
 
-  // Fetch package count for display
-  useEffect(() => {
-    if (!manifest?.id || !operatorId) return;
-
-    const supabase = createSPAClient();
-    supabase
-      .from('packages')
-      .select('id')
-      .eq('manifest_id', manifest.id)
-      .eq('status', 'verificado')
-      .is('deleted_at', null)
-      .then(({ data }) => {
-        setPackageCount(data?.length ?? 0);
-      });
-  }, [manifest?.id, operatorId]);
-
   // Show QR code after handoff
   if (isHandoffComplete && qrPayload) {
     return (
       <QRHandoff
         qrPayload={qrPayload}
         retailerName={manifest?.retailer_name ?? null}
-        packageCount={packageCount}
+        packageCount={verifiedPackageCount}
         onDismiss={() => router.push('/app/pickup')}
       />
     );
@@ -86,7 +67,7 @@ export default function HandoffPage() {
               {manifest.retailer_name ?? 'Sin retailer'}
             </p>
             <p className="font-mono text-sm text-text-secondary">
-              {packageCount} paquetes verificados
+              {verifiedPackageCount} paquetes verificados
             </p>
           </div>
         </div>

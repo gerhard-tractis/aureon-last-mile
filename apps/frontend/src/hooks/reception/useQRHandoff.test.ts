@@ -50,7 +50,8 @@ function createWrapper() {
 describe('useQRHandoff', () => {
   let manifestChain: ReturnType<typeof buildChain>;
   let receptionChain: ReturnType<typeof buildChain>;
-  let packageChain: ReturnType<typeof buildChain>;
+  let pickupScansChain: ReturnType<typeof buildChain>;
+  let packagesChain: ReturnType<typeof buildChain>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,12 +63,25 @@ describe('useQRHandoff', () => {
 
     manifestChain = buildChain({ data: null, error: null });
     receptionChain = buildChain({ data: null, error: null });
-    packageChain = buildChain({ data: null, error: null });
+    pickupScansChain = buildChain({ data: [], error: null });
+    // The pickup_scans query terminates on `.is('deleted_at', null).then(...)`,
+    // so the default `.is` mock must resolve to a Promise (not return the
+    // chain) — otherwise tests that only care about manifest loading still
+    // need to know about pickup_scans plumbing.
+    pickupScansChain.is = vi.fn().mockResolvedValue({ data: [], error: null });
+    // packagesChain exists so tests can prove the hook never consults the
+    // `packages` table for counting verified packages. Any reference to it
+    // from the implementation would be a regression.
+    packagesChain = buildChain({
+      data: [{ id: 'WRONG_SOURCE_1' }, { id: 'WRONG_SOURCE_2' }, { id: 'WRONG_SOURCE_3' }],
+      error: null,
+    });
 
     mockFromHandler = (table: string) => {
       if (table === 'manifests') return manifestChain;
       if (table === 'hub_receptions') return receptionChain;
-      if (table === 'packages') return packageChain;
+      if (table === 'pickup_scans') return pickupScansChain;
+      if (table === 'packages') return packagesChain;
       return buildChain({ data: null, error: null });
     };
   });
@@ -124,9 +138,13 @@ describe('useQRHandoff', () => {
 
     manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
 
-    // Package count: 3 verificado packages
-    packageChain.is = vi.fn().mockResolvedValue({
-      data: [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }],
+    // Verified package count comes from pickup_scans, deduped by package_id
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [
+        { package_id: 'pkg-1' },
+        { package_id: 'pkg-2' },
+        { package_id: 'pkg-3' },
+      ],
       error: null,
     });
 
@@ -142,6 +160,7 @@ describe('useQRHandoff', () => {
     );
 
     await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(3));
 
     await act(async () => {
       await result.current.initiateHandoff();
@@ -169,7 +188,7 @@ describe('useQRHandoff', () => {
     };
 
     manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
-    packageChain.is = vi.fn().mockResolvedValue({ data: [{ id: 'p1' }], error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({ data: [{ package_id: 'pkg-1' }], error: null });
     receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'reception-002' }, error: null });
     manifestChain.update = vi.fn().mockReturnValue(manifestChain);
 
@@ -196,7 +215,7 @@ describe('useQRHandoff', () => {
     };
 
     manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
-    packageChain.is = vi.fn().mockResolvedValue({ data: [], error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({ data: [], error: null });
     receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'reception-003' }, error: null });
     manifestChain.update = vi.fn().mockReturnValue(manifestChain);
 
@@ -224,7 +243,7 @@ describe('useQRHandoff', () => {
     };
 
     manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
-    packageChain.is = vi.fn().mockResolvedValue({ data: [{ id: 'p1' }], error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({ data: [{ package_id: 'pkg-1' }], error: null });
     receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'reception-004' }, error: null });
     manifestChain.update = vi.fn().mockReturnValue(manifestChain);
 
@@ -253,7 +272,7 @@ describe('useQRHandoff', () => {
     };
 
     manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
-    packageChain.is = vi.fn().mockResolvedValue({ data: [], error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({ data: [], error: null });
     receptionChain.insert = vi.fn().mockResolvedValue({ data: null, error: { message: 'insert failed' } });
 
     const { result } = renderHook(
@@ -269,5 +288,118 @@ describe('useQRHandoff', () => {
 
     expect(result.current.isHandoffComplete).toBe(false);
     expect(result.current.error).toBeTruthy();
+  });
+
+  it('exposes verifiedPackageCount derived from pickup_scans rows', async () => {
+    // Regression for bug: handoff page displayed "0 paquetes verificados"
+    // because it queried packages.manifest_id (a non-existent column) instead
+    // of counting verified pickup_scans rows.
+    const manifestData = {
+      id: 'manifest-uuid-count',
+      external_load_id: 'CARGA-COUNT',
+      retailer_name: 'Easy',
+      reception_status: null,
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [
+        { package_id: 'pkg-a' },
+        { package_id: 'pkg-b' },
+        { package_id: 'pkg-c' },
+        { package_id: 'pkg-d' },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-COUNT', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(4));
+  });
+
+  it('deduplicates verified package_ids when the same package is scanned twice', async () => {
+    // A double-scan creates two pickup_scans rows with scan_result='verified'
+    // and the same package_id. The count must reflect unique packages, not raw
+    // scan rows — otherwise hub_receptions.expected_count is inflated and the
+    // hub is told to expect phantom packages.
+    const manifestData = {
+      id: 'manifest-uuid-dedupe',
+      external_load_id: 'CARGA-DEDUPE',
+      retailer_name: 'Easy',
+      reception_status: null,
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [
+        { package_id: 'pkg-1' }, // first scan
+        { package_id: 'pkg-2' },
+        { package_id: 'pkg-1' }, // duplicate scan of pkg-1
+        { package_id: 'pkg-3' },
+        { package_id: 'pkg-2' }, // duplicate scan of pkg-2
+      ],
+      error: null,
+    });
+    receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'r1' }, error: null });
+    manifestChain.update = vi.fn().mockReturnValue(manifestChain);
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-DEDUPE', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(3));
+
+    await act(async () => {
+      await result.current.initiateHandoff();
+    });
+
+    expect(receptionChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ expected_count: 3 })
+    );
+  });
+
+  it('never reads from the packages table for verified counts (regression guard)', async () => {
+    // If the implementation regresses to querying `packages` (by manifest_id
+    // or otherwise), packagesChain would return three "WRONG_SOURCE_*" rows
+    // and expected_count would land at 3 — but pickup_scans reports 1, so the
+    // assertion below catches the regression.
+    const manifestData = {
+      id: 'manifest-uuid-guard',
+      external_load_id: 'CARGA-GUARD',
+      retailer_name: 'Easy',
+      reception_status: null,
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [{ package_id: 'pkg-only' }],
+      error: null,
+    });
+    receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'r1' }, error: null });
+    manifestChain.update = vi.fn().mockReturnValue(manifestChain);
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-GUARD', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(1));
+
+    await act(async () => {
+      await result.current.initiateHandoff();
+    });
+
+    expect(receptionChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ expected_count: 1 })
+    );
+    // The packagesChain should never have been consulted.
+    expect(packagesChain.select).not.toHaveBeenCalled();
   });
 });

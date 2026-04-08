@@ -4,15 +4,53 @@ on:
   push:
     branches: [main]
 
-# All deploy jobs run sequentially — a failed migration never reaches app deploys
+# All deploy jobs run sequentially within their dependency chain — a failed
+# migration never reaches app deploys. Jobs are gated on path filters so a
+# CSS-only or docs-only push doesn't trigger DB or VPS work.
 concurrency:
   group: production-deploy
   cancel-in-progress: false
 
 jobs:
+  # ─── 0. Detect what changed ──────────────────────────────────────────────────
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      database: ${{ steps.filter.outputs.database }}
+      edge_functions: ${{ steps.filter.outputs.edge_functions }}
+      worker: ${{ steps.filter.outputs.worker }}
+      agents: ${{ steps.filter.outputs.agents }}
+      solver: ${{ steps.filter.outputs.solver }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Filter paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            database:
+              - 'packages/database/supabase/migrations/**'
+              - 'packages/database/supabase/seed.sql'
+              - 'packages/database/supabase/config.toml'
+            edge_functions:
+              - 'packages/database/supabase/functions/**'
+            worker:
+              - 'apps/worker/**'
+            agents:
+              - 'apps/agents/**'
+            solver:
+              - 'sidecar/or-tools/**'
+
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
   deploy-supabase:
     name: Deploy Supabase Migrations
+    needs: changes
+    if: needs.changes.outputs.database == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
@@ -25,12 +63,13 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.20.12
 
       - name: Link Supabase project
         run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: Run migrations
         run: supabase db push
@@ -41,7 +80,11 @@ jobs:
   # ─── 2. Edge Functions ───────────────────────────────────────────────────────
   deploy-edge-functions:
     name: Deploy Supabase Edge Functions
-    needs: deploy-supabase
+    needs: [changes, deploy-supabase]
+    if: |
+      always() &&
+      needs.changes.outputs.edge_functions == 'true' &&
+      (needs.deploy-supabase.result == 'success' || needs.deploy-supabase.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
@@ -54,7 +97,7 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.20.12
 
       - name: Deploy Edge Functions
         run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -62,9 +105,18 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
   # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
+  # NOTE: Vercel's Git integration deploys automatically on push to main and
+  # runs in parallel with this workflow. This job exists to (a) enforce the
+  # "migrations before app code" ordering and (b) provide rollback-on-failure.
+  # It only runs when DB or edge function migrations actually shipped — for
+  # pure frontend pushes, the Vercel Git integration is the source of truth.
   deploy-vercel:
     name: Deploy to Vercel
-    needs: [deploy-supabase, deploy-edge-functions]
+    needs: [changes, deploy-supabase, deploy-edge-functions]
+    if: |
+      always() &&
+      !failure() && !cancelled() &&
+      (needs.changes.outputs.database == 'true' || needs.changes.outputs.edge_functions == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -87,10 +139,14 @@ jobs:
           vercel rollback --yes --token=${{ secrets.VERCEL_TOKEN }}
           echo "::error::Vercel deployment failed — rolled back to previous version"
 
-  # ─── 3. Worker (VPS) ─────────────────────────────────────────────────────────
+  # ─── 4. Worker (VPS) ─────────────────────────────────────────────────────────
   deploy-worker:
     name: Deploy Worker to VPS
-    needs: [deploy-supabase, deploy-edge-functions]
+    needs: [changes, deploy-supabase, deploy-edge-functions]
+    if: |
+      always() &&
+      !failure() && !cancelled() &&
+      needs.changes.outputs.worker == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
@@ -102,19 +158,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for worker changes
-        id: worker-changes
-        run: |
-          CHANGED=$(cd ~/aureon-last-mile && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- apps/worker/ | wc -l)
-          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
-
       - name: Deploy worker
-        if: steps.worker-changes.outputs.changed != '0'
         run: bash ~/aureon-last-mile/apps/worker/scripts/deploy.sh
-
-      - name: No worker changes
-        if: steps.worker-changes.outputs.changed == '0'
-        run: echo "No apps/worker changes detected — skipping worker deploy"
 
       - name: Report failure
         if: failure()
@@ -122,10 +167,14 @@ jobs:
           echo "::error::VPS worker deployment failed."
           echo "To debug: sudo journalctl -u aureon-worker -n 50"
 
-  # ─── 4. Agents Suite (VPS) ───────────────────────────────────────────────────
+  # ─── 5. Agents Suite (VPS) ───────────────────────────────────────────────────
   deploy-agents:
     name: Deploy Agents to VPS
-    needs: [deploy-supabase, deploy-edge-functions]
+    needs: [changes, deploy-supabase, deploy-edge-functions]
+    if: |
+      always() &&
+      !failure() && !cancelled() &&
+      needs.changes.outputs.agents == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
@@ -137,19 +186,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for agents changes
-        id: agents-changes
-        run: |
-          CHANGED=$(cd ~/aureon-last-mile && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- apps/agents/ | wc -l)
-          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
-
       - name: Deploy agents
-        if: steps.agents-changes.outputs.changed != '0'
         run: bash ~/aureon-last-mile/apps/agents/scripts/deploy.sh
-
-      - name: No agents changes
-        if: steps.agents-changes.outputs.changed == '0'
-        run: echo "No apps/agents changes detected — skipping agents deploy"
 
       - name: Report failure
         if: failure()
@@ -157,10 +195,14 @@ jobs:
           echo "::error::VPS agents deployment failed."
           echo "To debug: sudo journalctl -u aureon-agents -n 50"
 
-  # ─── 5. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
+  # ─── 6. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
   deploy-solver:
     name: Deploy OR-Tools Solver to VPS
-    needs: [deploy-supabase, deploy-edge-functions]
+    needs: [changes, deploy-supabase, deploy-edge-functions]
+    if: |
+      always() &&
+      !failure() && !cancelled() &&
+      needs.changes.outputs.solver == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
@@ -171,14 +213,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check for solver changes
-        id: solver-changes
-        run: |
-          CHANGED=$(cd ~/sidecar && git diff ${{ github.event.before }} ${{ github.sha }} --name-only -- sidecar/or-tools/ | wc -l)
-          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
-
       - name: Install dependencies and restart
-        if: steps.solver-changes.outputs.changed != '0'
         run: |
           cd ~/sidecar/sidecar/or-tools
           source ~/.venv/bin/activate
@@ -188,10 +223,6 @@ jobs:
           sudo systemctl restart aureon-solver
           sleep 2
           curl -sf http://127.0.0.1:8090/api/v1/health
-
-      - name: No solver changes
-        if: steps.solver-changes.outputs.changed == '0'
-        run: echo "No sidecar/or-tools changes detected — skipping solver deploy"
 
       - name: Report failure
         if: failure()
