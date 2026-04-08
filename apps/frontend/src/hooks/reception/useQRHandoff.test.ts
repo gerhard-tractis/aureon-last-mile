@@ -489,4 +489,37 @@ describe('useQRHandoff', () => {
     await waitFor(() => expect(result.current.verifiedPackageCount).toBe(1));
     expect(result.current.isCountLoading).toBe(false);
   });
+
+  it('immediately enters QR-shown state when manifest already has reception_status', async () => {
+    // Operator opens an already-handed-off manifest from the En tránsito tab.
+    // The page must short-circuit to the QR view without requiring the
+    // operator to press the (now disabled) "Entregar en bodega" button —
+    // otherwise they'd be stuck on a form they can't submit and would never
+    // see the QR they need to present at the warehouse.
+    const manifestData = {
+      id: 'manifest-uuid-already',
+      external_load_id: 'CARGA-ALREADY',
+      retailer_name: 'Easy',
+      reception_status: 'awaiting_reception',
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [{ package_id: 'pkg-1' }, { package_id: 'pkg-2' }],
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-ALREADY', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.isHandoffComplete).toBe(true));
+
+    // qrPayload must be the manifest UUID — same value the form-submit path
+    // sets, so the existing render branch in handoff/[loadId]/page.tsx that
+    // checks `isHandoffComplete && qrPayload` mounts QRHandoff identically.
+    expect(result.current.qrPayload).toBe('manifest-uuid-already');
+  });
 });
