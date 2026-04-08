@@ -26,18 +26,29 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, back: mockBack }),
 }));
 
+/**
+ * Default useQRHandoff return shape used by every test. Tests that exercise
+ * a specific guard or visual state override only the relevant fields via
+ * `mockHandoff({ verifiedPackageCount: 7 })`.
+ */
+function mockHandoff(overrides: Record<string, unknown> = {}) {
+  mockUseQRHandoff.mockReturnValue({
+    manifest: { id: 'm1', retailer_name: 'Easy', reception_status: null },
+    verifiedPackageCount: 3,
+    isCountLoading: false,
+    isLoading: false,
+    isHandoffComplete: false,
+    isSubmitting: false,
+    qrPayload: null,
+    error: null,
+    initiateHandoff: vi.fn(),
+    ...overrides,
+  });
+}
+
 describe('HandoffPage', () => {
   beforeEach(() => {
-    mockUseQRHandoff.mockReturnValue({
-      manifest: { id: 'm1', retailer_name: 'Easy', reception_status: null },
-      verifiedPackageCount: 0,
-      isLoading: false,
-      isHandoffComplete: false,
-      isSubmitting: false,
-      qrPayload: null,
-      error: null,
-      initiateHandoff: vi.fn(),
-    });
+    mockHandoff();
   });
 
   it('renders "Entrega en bodega" header', () => {
@@ -73,18 +84,45 @@ describe('HandoffPage', () => {
     // Regression: the page used to run its own Supabase query that filtered
     // packages by a non-existent manifest_id column and silently rendered 0.
     // The single source of truth is now the hook's verifiedPackageCount.
-    mockUseQRHandoff.mockReturnValue({
-      manifest: { id: 'm1', retailer_name: 'Easy', reception_status: null },
-      verifiedPackageCount: 7,
-      isLoading: false,
-      isHandoffComplete: false,
-      isSubmitting: false,
-      qrPayload: null,
-      error: null,
-      initiateHandoff: vi.fn(),
-    });
-
+    mockHandoff({ verifiedPackageCount: 7 });
     render(<HandoffPage />);
     expect(screen.getByText(/7 paquetes verificados/i)).toBeInTheDocument();
+  });
+
+  it('disables "Entregar en bodega" when verifiedPackageCount is 0', () => {
+    // Operator hasn't scanned anything yet — handing off with zero packages
+    // would write a meaningless hub_receptions row promising no inventory.
+    mockHandoff({ verifiedPackageCount: 0, isCountLoading: false });
+    render(<HandoffPage />);
+    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    expect(btn).toBeDisabled();
+  });
+
+  it('disables "Entregar en bodega" while the count is still loading', () => {
+    // Brief race window between manifest load and pickup_scans fetch — the
+    // count is 0 only because the fetch hasn't completed yet, NOT because
+    // there are no verified packages. The button must not commit a phantom
+    // 0-package handoff during this window.
+    mockHandoff({ verifiedPackageCount: 0, isCountLoading: true });
+    render(<HandoffPage />);
+    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    expect(btn).toBeDisabled();
+  });
+
+  it('disables "Entregar en bodega" when the manifest already has reception_status set', () => {
+    // The manifest has already been handed off once. Pressing the button
+    // again would create a second hub_receptions row competing with the
+    // first — the hub would see two pending receptions for the same load.
+    mockHandoff({
+      manifest: {
+        id: 'm1',
+        retailer_name: 'Easy',
+        reception_status: 'awaiting_reception',
+      },
+      verifiedPackageCount: 5,
+    });
+    render(<HandoffPage />);
+    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    expect(btn).toBeDisabled();
   });
 });

@@ -16,14 +16,53 @@ interface UseQRHandoffReturn {
    * `package_id` so a re-scanned package is counted once. This is the single
    * source of truth used both for the on-screen counter and for the
    * `expected_count` field on the hub_receptions row created at handoff.
+   * Refreshed at handoff time to avoid sending a stale snapshot to the hub.
    */
   verifiedPackageCount: number;
+  /**
+   * `true` until the initial pickup_scans fetch resolves. Distinguishes
+   * "still loading" from "loaded as zero", which the handoff button needs to
+   * avoid committing a phantom 0-package handoff during the brief load race.
+   */
+  isCountLoading: boolean;
   isLoading: boolean;
   isHandoffComplete: boolean;
   isSubmitting: boolean;
   qrPayload: string | null;
   error: string | null;
   initiateHandoff: () => Promise<void>;
+}
+
+/**
+ * Count unique verified packages for a manifest from pickup_scans, deduped
+ * by package_id. Shared by the page-load useEffect and the initiateHandoff
+ * refetch so both code paths use the exact same query and dedup logic.
+ *
+ * Returns null if the query errored (caller decides how to surface the error).
+ */
+async function fetchVerifiedPackageCount(
+  supabase: ReturnType<typeof createSPAClient>,
+  operatorId: string,
+  manifestId: string
+): Promise<{ count: number | null; error: string | null }> {
+  const { data, error: scansError } = await supabase
+    .from('pickup_scans')
+    .select('package_id')
+    .eq('operator_id', operatorId)
+    .eq('manifest_id', manifestId)
+    .eq('scan_result', 'verified')
+    .is('deleted_at', null);
+
+  if (scansError) {
+    return { count: null, error: scansError.message };
+  }
+
+  const uniqueIds = new Set(
+    (data ?? [])
+      .map((row: { package_id: string | null }) => row.package_id)
+      .filter((id): id is string => id !== null)
+  );
+  return { count: uniqueIds.size, error: null };
 }
 
 /**
@@ -39,6 +78,7 @@ export function useQRHandoff(
 ): UseQRHandoffReturn {
   const [manifest, setManifest] = useState<ManifestForHandoff | null>(null);
   const [verifiedPackageCount, setVerifiedPackageCount] = useState<number>(0);
+  const [isCountLoading, setIsCountLoading] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isHandoffComplete, setIsHandoffComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -77,26 +117,18 @@ export function useQRHandoff(
   useEffect(() => {
     if (!manifest?.id || !operatorId) return;
 
+    setIsCountLoading(true);
     const supabase = createSPAClient();
-    supabase
-      .from('pickup_scans')
-      .select('package_id')
-      .eq('operator_id', operatorId)
-      .eq('manifest_id', manifest.id)
-      .eq('scan_result', 'verified')
-      .is('deleted_at', null)
-      .then(({ data, error: scansError }) => {
-        if (scansError) {
-          setError(scansError.message);
-          return;
+    fetchVerifiedPackageCount(supabase, operatorId, manifest.id).then(
+      ({ count, error: countError }) => {
+        if (countError) {
+          setError(countError);
+        } else if (count !== null) {
+          setVerifiedPackageCount(count);
         }
-        const uniqueIds = new Set(
-          (data ?? [])
-            .map((row: { package_id: string | null }) => row.package_id)
-            .filter((id): id is string => id !== null)
-        );
-        setVerifiedPackageCount(uniqueIds.size);
-      });
+        setIsCountLoading(false);
+      }
+    );
   }, [manifest?.id, operatorId]);
 
   const initiateHandoff = useCallback(async () => {
@@ -113,10 +145,18 @@ export function useQRHandoff(
       const userId = authData.user?.id;
       if (!userId) throw new Error('No authenticated user');
 
-      // expected_count comes from the pickup_scans-derived count fetched
-      // when the manifest loaded. This is the same value rendered on screen,
-      // so the hub is told to expect exactly what the operator saw.
-      const expectedCount = verifiedPackageCount;
+      // Refetch the count right before insert. The page-load snapshot in
+      // verifiedPackageCount could be stale if more packages were scanned
+      // between opening the handoff page and pressing the button (e.g. on
+      // another device, or after a navigate-back-and-rescan flow). Use the
+      // fresh value for hub_receptions.expected_count and update the local
+      // state so the QR view shows the operator the same number that was
+      // actually committed.
+      const { count: freshCount, error: countError } =
+        await fetchVerifiedPackageCount(supabase, operatorId, manifest.id);
+      if (countError) throw new Error(countError);
+      const expectedCount = freshCount ?? 0;
+      setVerifiedPackageCount(expectedCount);
 
       // Create hub_receptions record
       const { error: insertError } = await supabase
@@ -151,11 +191,12 @@ export function useQRHandoff(
     } finally {
       setIsSubmitting(false);
     }
-  }, [manifest, operatorId, verifiedPackageCount]);
+  }, [manifest, operatorId]);
 
   return {
     manifest,
     verifiedPackageCount,
+    isCountLoading,
     isLoading,
     isHandoffComplete,
     isSubmitting,

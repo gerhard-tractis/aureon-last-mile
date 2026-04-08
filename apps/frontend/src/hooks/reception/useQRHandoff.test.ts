@@ -402,4 +402,91 @@ describe('useQRHandoff', () => {
     // The packagesChain should never have been consulted.
     expect(packagesChain.select).not.toHaveBeenCalled();
   });
+
+  it('refetches verified count from pickup_scans inside initiateHandoff', async () => {
+    // Stale-count guard: the page-load count is a snapshot. If more packages
+    // get scanned between opening the handoff page and pressing the button,
+    // expected_count must reflect the fresh value, not the stale snapshot —
+    // otherwise the hub is told to expect fewer packages than actually arrive.
+    const manifestData = {
+      id: 'manifest-uuid-stale',
+      external_load_id: 'CARGA-STALE',
+      retailer_name: 'Easy',
+      reception_status: null,
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+
+    // First call (page-load useEffect): 2 verified packages.
+    // Second call (initiateHandoff refetch): 5 verified packages — someone
+    // scanned 3 more between page load and button press.
+    pickupScansChain.is = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{ package_id: 'pkg-1' }, { package_id: 'pkg-2' }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [
+          { package_id: 'pkg-1' },
+          { package_id: 'pkg-2' },
+          { package_id: 'pkg-3' },
+          { package_id: 'pkg-4' },
+          { package_id: 'pkg-5' },
+        ],
+        error: null,
+      });
+
+    receptionChain.insert = vi.fn().mockResolvedValue({ data: { id: 'r1' }, error: null });
+    manifestChain.update = vi.fn().mockReturnValue(manifestChain);
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-STALE', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    // Wait for the page-load fetch to settle on 2.
+    await waitFor(() => expect(result.current.manifest).not.toBeNull());
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(2));
+
+    await act(async () => {
+      await result.current.initiateHandoff();
+    });
+
+    // hub_receptions row must use the FRESH count, not the snapshot.
+    expect(receptionChain.insert).toHaveBeenCalledWith(
+      expect.objectContaining({ expected_count: 5 })
+    );
+
+    // The on-screen count must also be updated so the QR view, which renders
+    // the same value, shows the correct number to the operator.
+    expect(result.current.verifiedPackageCount).toBe(5);
+  });
+
+  it('exposes isCountLoading=true until the initial pickup_scans fetch resolves', async () => {
+    // The button must distinguish "still loading" from "loaded with zero
+    // results" — both cases would otherwise show count=0 and be wrongly
+    // interpreted as a legitimate empty handoff.
+    const manifestData = {
+      id: 'manifest-uuid-loading',
+      external_load_id: 'CARGA-LOADING',
+      retailer_name: 'Easy',
+      reception_status: null,
+    };
+
+    manifestChain.single = vi.fn().mockResolvedValue({ data: manifestData, error: null });
+    pickupScansChain.is = vi.fn().mockResolvedValue({
+      data: [{ package_id: 'pkg-1' }],
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => useQRHandoff('CARGA-LOADING', 'op-123'),
+      { wrapper: createWrapper() }
+    );
+
+    // Once the pickup_scans fetch resolves, isCountLoading should flip to false
+    // and verifiedPackageCount should reflect the fetched count.
+    await waitFor(() => expect(result.current.verifiedPackageCount).toBe(1));
+    expect(result.current.isCountLoading).toBe(false);
+  });
 });
