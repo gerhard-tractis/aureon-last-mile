@@ -27,12 +27,14 @@ export type OpsControlSnapshotResult = {
 async function fetchSnapshot(operatorId: string): Promise<OpsSnapshot> {
   const client = createSPAClient();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = client as any;
   const [orders, routes, pickups, returns, slaConfig] = await Promise.all([
     client.from('orders').select('*').eq('operator_id', operatorId).is('deleted_at', null),
     client.from('routes').select('*').eq('operator_id', operatorId),
-    client.from('pickups').select('*').eq('operator_id', operatorId),
-    client.from('returns').select('*').eq('operator_id', operatorId).is('deleted_at', null),
-    client.from('retailer_return_sla_config').select('*').eq('operator_id', operatorId),
+    db.from('pickups').select('*').eq('operator_id', operatorId),
+    db.from('returns').select('*').eq('operator_id', operatorId).is('deleted_at', null),
+    db.from('retailer_return_sla_config').select('*').eq('operator_id', operatorId),
   ]);
 
   if (orders.error) throw orders.error;

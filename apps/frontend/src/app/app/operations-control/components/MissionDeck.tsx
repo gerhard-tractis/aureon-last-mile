@@ -80,7 +80,7 @@ export function MissionDeck({ operatorId }: MissionDeckProps) {
       case 'docks':         return <DocksPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
       case 'delivery':      return <DeliveryPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
       case 'returns':       return <ReturnsPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'reverse':       return <ReversePlaceholderPanel />;
+      case 'reverse':       return <ReversePlaceholderPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
     }
   };
 

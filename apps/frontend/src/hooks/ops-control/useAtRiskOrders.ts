@@ -37,7 +37,7 @@ export function useAtRiskOrders(
     const atRisk: AtRiskOrder[] = [];
 
     for (const order of snapshot.orders) {
-      const risk = classifyRisk(order as Parameters<typeof classifyRisk>[0], now);
+      const risk = classifyRisk(order as unknown as Parameters<typeof classifyRisk>[0], now);
       if (risk.status !== 'late' && risk.status !== 'at_risk') continue;
 
       atRisk.push({

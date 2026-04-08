@@ -82,7 +82,7 @@ function delivery(items: Item[]): StageHealthResult {
 
 function returns(items: Item[]): StageHealthResult {
   const DEFAULT_SLA_HOURS = 24;
-  let worst: HealthStatus = 'ok';
+  let worst = 'ok' as HealthStatus;
   let worstDelta = 'Sin incidencias';
 
   for (const item of items) {
