@@ -6,6 +6,13 @@
 --          tab and tapping them re-enters the scan flow instead of showing
 --          the operator the QR code they need to present at the warehouse.
 --
+-- NOTE: Originally shipped in PR #214 but did not deploy because the pinned
+--       Supabase CLI version (2.20.12) rejected config.toml's
+--       db.major_version=17 with "Failed reading config: Invalid db.major_version: 17".
+--       Re-touched here so the path filter on packages/database/supabase/migrations/**
+--       triggers deploy-supabase again, this time with the bumped CLI (2.88.1).
+--       The SQL itself is unchanged.
+--
 -- Two SQL changes in one migration:
 --   1. CREATE OR REPLACE get_pending_manifests() — exclude manifests where
 --      reception_status IS NOT NULL (i.e. already handed off). The previous
