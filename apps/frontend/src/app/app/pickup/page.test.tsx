@@ -5,8 +5,8 @@ import PickupPage from './page';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 const mockPending = [
-  { external_load_id: 'CARGA-001', retailer_name: 'Easy', order_count: 5, package_count: 12 },
-  { external_load_id: 'CARGA-002', retailer_name: 'Sodimac', order_count: 3, package_count: 8 },
+  { external_load_id: 'CARGA-001', retailer_name: 'Easy', order_count: 5, package_count: 12, created_at: '2026-04-09T10:00:00Z' },
+  { external_load_id: 'CARGA-002', retailer_name: 'Sodimac', order_count: 3, package_count: 8, created_at: '2026-04-09T11:00:00Z' },
 ];
 const mockCompleted = [
   {
@@ -153,6 +153,14 @@ describe('PickupPage', () => {
       render(<PickupPage />);
       expect(screen.getByText('Easy')).toBeInTheDocument();
       expect(screen.getByText('Sodimac')).toBeInTheDocument();
+    });
+
+    it('shows the creation date on pending manifest cards', () => {
+      render(<PickupPage />);
+      // created_at '2026-04-09T10:00:00Z' → toLocaleDateString() output
+      const expected = new Date('2026-04-09T10:00:00Z').toLocaleDateString();
+      const els = screen.getAllByText(`Creado el ${expected}`);
+      expect(els.length).toBeGreaterThan(0);
     });
   });
 

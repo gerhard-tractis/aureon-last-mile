@@ -7,6 +7,7 @@ interface ManifestCardProps {
   retailerName: string | null;
   orderCount: number;
   packageCount: number;
+  createdAt?: string;
   completedAt?: string;
   /**
    * If true, render a "Pickup confirmado" badge below the main row so
@@ -23,6 +24,7 @@ export function ManifestCard({
   retailerName,
   orderCount,
   packageCount,
+  createdAt,
   completedAt,
   inTransit = false,
   interactive = true,
@@ -66,6 +68,11 @@ export function ManifestCard({
           </div>
         </div>
       </div>
+      {createdAt && (
+        <p className="text-xs text-text-muted mt-2">
+          Creado el {new Date(createdAt).toLocaleDateString()}
+        </p>
+      )}
       {completedAt && (
         <p className="text-xs text-text-muted mt-2">
           Completado el {new Date(completedAt).toLocaleDateString()}
