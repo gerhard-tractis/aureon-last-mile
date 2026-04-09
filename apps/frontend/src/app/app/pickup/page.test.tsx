@@ -122,11 +122,11 @@ describe('PickupPage', () => {
       expect(screen.getByText('Sin manifiestos en tránsito')).toBeInTheDocument();
     });
 
-    it('shows the "Entregado a bodega" badge on in-transit cards', async () => {
+    it('shows the "Pickup confirmado" badge on in-transit cards', async () => {
       const user = userEvent.setup();
       render(<PickupPage />);
       await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
-      expect(screen.getByText(/entregado a bodega/i)).toBeInTheDocument();
+      expect(screen.getByText(/pickup confirmado/i)).toBeInTheDocument();
     });
 
     it('routes to /app/pickup/handoff/[loadId] when an in-transit card is clicked', async () => {

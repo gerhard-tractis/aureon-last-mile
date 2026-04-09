@@ -9,7 +9,7 @@ interface ManifestCardProps {
   packageCount: number;
   completedAt?: string;
   /**
-   * If true, render an "Entregado a bodega" badge below the main row so
+   * If true, render a "Pickup confirmado" badge below the main row so
    * the operator can recognise at a glance that this manifest is already
    * handed off and tapping it will show the QR (not re-enter the scan flow).
    */
@@ -74,7 +74,7 @@ export function ManifestCard({
       {inTransit && (
         <div className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent">
           <Truck className="h-3 w-3" />
-          <span>Entregado a bodega</span>
+          <span>Pickup confirmado</span>
         </div>
       )}
     </div>
