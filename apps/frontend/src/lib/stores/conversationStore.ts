@@ -13,7 +13,7 @@ export const INITIAL_CONVERSATION_STATE: Pick<ConversationStoreState, 'selectedS
   unreadSessionIds: new Set(),
 };
 
-export const useConversationStore = create<ConversationStoreState>()((set, get) => ({
+export const useConversationStore = create<ConversationStoreState>()((set, _get) => ({
   ...INITIAL_CONVERSATION_STATE,
 
   selectSession: (id) =>

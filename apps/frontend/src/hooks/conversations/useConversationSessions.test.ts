@@ -12,8 +12,10 @@ vi.mock('@/lib/conversations/queries', () => ({
 
 function createWrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: React.ReactNode }) =>
-    React.createElement(QueryClientProvider, { client: qc }, children);
+  function Wrapper({ children }: { children: React.ReactNode }) {
+    return React.createElement(QueryClientProvider, { client: qc }, children);
+  }
+  return Wrapper;
 }
 
 const FILTERS = { statuses: [], dateFrom: null, dateTo: null, search: '' };
