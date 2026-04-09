@@ -1,41 +1,67 @@
 'use client';
 
 import { Suspense, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { useOperatorId } from '@/hooks/useOperatorId';
+import { useDashboardPeriod } from '@/hooks/dashboard/useDashboardPeriod';
+import { PageShell } from '@/components/PageShell';
+import { DashboardHeader } from '@/app/app/dashboard/components/DashboardHeader';
+import { NorthStarStrip } from '@/app/app/dashboard/components/NorthStarStrip';
+import { CpoChapter } from '@/app/app/dashboard/components/chapters/CpoChapter';
+import { OtifChapter } from '@/app/app/dashboard/components/chapters/OtifChapter';
+import { NpsChapter } from '@/app/app/dashboard/components/chapters/NpsChapter';
+import { DrillSheet } from '@/app/app/dashboard/components/drill/DrillSheet';
 
-const ANALYTICS_MAP: Record<string, string> = {
-  analytics_otif: 'otif',
-  analytics_unit_economics: 'unit_economics',
-  analytics_cx: 'cx',
-};
+const ALLOWED_ROLES = ['operations_manager', 'admin'];
 
-const OPS_TABS = ['loading', 'pickup', 'reception', 'distribution', 'routing', 'lastmile'];
+function DashboardSkeleton() {
+  return (
+    <div data-testid="dashboard-skeleton" className="animate-pulse p-6">
+      <div className="h-8 bg-muted rounded w-48" />
+    </div>
+  );
+}
 
-function DashboardRedirect() {
+function DashboardContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const { operatorId, role } = useOperatorId();
+  const { period, setPreset, setCustomRange } = useDashboardPeriod();
 
   useEffect(() => {
-    const tab = searchParams.get('tab');
-
-    if (tab && ANALYTICS_MAP[tab]) {
-      router.replace(`/app/dashboard/analitica?tab=${ANALYTICS_MAP[tab]}`);
-    } else if (tab === 'delivery') {
-      router.replace('/app/dashboard/operaciones?tab=lastmile');
-    } else if (tab && OPS_TABS.includes(tab)) {
-      router.replace(`/app/dashboard/operaciones?tab=${tab}`);
-    } else {
-      router.replace('/app/dashboard/operaciones');
+    if (role && !ALLOWED_ROLES.includes(role)) {
+      router.push('/app');
     }
-  }, [router, searchParams]);
+  }, [role, router]);
 
-  return null;
+  if (!role) return <DashboardSkeleton />;
+  if (!ALLOWED_ROLES.includes(role)) return null;
+  if (!operatorId) return <DashboardSkeleton />;
+
+  return (
+    <PageShell title="Dashboard ejecutivo">
+      <DashboardHeader
+        period={period}
+        onSetPreset={setPreset}
+        onSetCustomRange={setCustomRange}
+      />
+      <NorthStarStrip operatorId={operatorId} year={period.year} month={period.month} />
+      <main className="max-w-7xl mx-auto space-y-16 py-8 px-4 md:px-6 lg:px-8">
+        <CpoChapter operatorId={operatorId} period={period} />
+        <OtifChapter operatorId={operatorId} period={period} />
+        <NpsChapter operatorId={operatorId} period={period} />
+      </main>
+      <DrillSheet />
+      <footer className="text-xs text-muted-foreground text-center py-6 border-t">
+        Dashboard ejecutivo · datos pre-agregados · sincronizado por cron 02:30 UTC
+      </footer>
+    </PageShell>
+  );
 }
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={null}>
-      <DashboardRedirect />
+    <Suspense fallback={<DashboardSkeleton />}>
+      <DashboardContent />
     </Suspense>
   );
 }
