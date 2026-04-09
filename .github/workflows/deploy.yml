@@ -63,7 +63,15 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: 2.20.12
+          # Must be a version that recognises Postgres 17 in config.toml's
+          # db.major_version. The earlier 2.20.x pin rejected major_version=17
+          # with "Failed reading config: Invalid db.major_version: 17", which
+          # silently broke production migration deploys for every PR that
+          # touched packages/database/supabase/migrations/** (the path filter
+          # only triggers this job on actual migration changes, so the bug
+          # went undetected until PR #214 — the first migration since the
+          # PG17 bump — failed in 16s at the link step).
+          version: 2.88.1
 
       - name: Link Supabase project
         run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
@@ -97,7 +105,15 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: 2.20.12
+          # Must be a version that recognises Postgres 17 in config.toml's
+          # db.major_version. The earlier 2.20.x pin rejected major_version=17
+          # with "Failed reading config: Invalid db.major_version: 17", which
+          # silently broke production migration deploys for every PR that
+          # touched packages/database/supabase/migrations/** (the path filter
+          # only triggers this job on actual migration changes, so the bug
+          # went undetected until PR #214 — the first migration since the
+          # PG17 bump — failed in 16s at the link step).
+          version: 2.88.1
 
       - name: Deploy Edge Functions
         run: supabase functions deploy --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
