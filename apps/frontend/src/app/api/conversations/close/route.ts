@@ -1,9 +1,13 @@
 // src/app/api/conversations/close/route.ts
+// customer_sessions is not in generated types yet (spec-24 pending regen).
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UntypedClient = { from: (table: string) => any; auth: any };
+
 export async function POST(req: NextRequest) {
-  const supabase = await createSSRClient();
+  const supabase = (await createSSRClient()) as unknown as UntypedClient;
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

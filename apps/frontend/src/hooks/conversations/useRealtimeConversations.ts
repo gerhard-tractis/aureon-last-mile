@@ -10,7 +10,7 @@ import { useConversationStore } from '@/lib/stores/conversationStore';
  */
 export function useRealtimeConversations(operatorId: string | null) {
   const queryClient = useQueryClient();
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (!operatorId) return;

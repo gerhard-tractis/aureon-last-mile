@@ -1,12 +1,17 @@
 // src/lib/conversations/queries.ts
+// customer_sessions and customer_session_messages are not yet in the generated
+// Database types (spec-24 migration pending type regen). Cast to bypass strict typing.
 import { createSPAClient } from '@/lib/supabase/client';
 import type { ConversationSession, SessionMessage, ConversationFilters } from './types';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UntypedClient = { from: (table: string) => any };
 
 export async function fetchSessions(
   operatorId: string,
   filters: ConversationFilters,
 ): Promise<ConversationSession[]> {
-  const supabase = createSPAClient();
+  const supabase = createSPAClient() as unknown as UntypedClient;
 
   let query = supabase
     .from('customer_sessions')
@@ -40,7 +45,7 @@ export async function fetchSessions(
 }
 
 export async function fetchMessages(sessionId: string): Promise<SessionMessage[]> {
-  const supabase = createSPAClient();
+  const supabase = createSPAClient() as unknown as UntypedClient;
   const { data, error } = await supabase
     .from('customer_session_messages')
     .select('*')
@@ -49,5 +54,5 @@ export async function fetchMessages(sessionId: string): Promise<SessionMessage[]
     .order('created_at', { ascending: true });
 
   if (error) throw error;
-  return (data ?? []) as SessionMessage[];
+  return (data ?? []) as unknown as SessionMessage[];
 }

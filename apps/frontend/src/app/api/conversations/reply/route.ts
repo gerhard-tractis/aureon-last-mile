@@ -1,6 +1,10 @@
 // src/app/api/conversations/reply/route.ts
+// customer_sessions/messages are not in generated types yet (spec-24 pending regen).
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type UntypedClient = { from: (table: string) => any; auth: any };
 
 const WA_API_VERSION = 'v18.0';
 const WA_BASE_URL = `https://graph.facebook.com/${WA_API_VERSION}`;
@@ -34,7 +38,7 @@ async function sendWhatsApp(phone: string, body: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createSSRClient();
+  const supabase = (await createSSRClient()) as unknown as UntypedClient;
 
   // 1. Auth check
   const { data: { user } } = await supabase.auth.getUser();
@@ -67,14 +71,15 @@ export async function POST(req: NextRequest) {
   if (sessErr || !session) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 });
   }
-  if (session.status !== 'escalated') {
+  const sess = session as { id: string; operator_id: string; customer_phone: string; status: string };
+  if (sess.status !== 'escalated') {
     return NextResponse.json({ error: 'Session is not escalated' }, { status: 422 });
   }
 
   // 5. Send via WhatsApp
   let externalMessageId: string;
   try {
-    externalMessageId = await sendWhatsApp(session.customer_phone, msgBody);
+    externalMessageId = await sendWhatsApp(sess.customer_phone, msgBody);
   } catch (err) {
     return NextResponse.json(
       { error: `WhatsApp send failed: ${(err as Error).message}` },
@@ -100,5 +105,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msgErr.message }, { status: 500 });
   }
 
-  return NextResponse.json({ message_id: msg.id, created_at: msg.created_at });
+  const inserted = msg as { id: string; created_at: string };
+  return NextResponse.json({ message_id: inserted.id, created_at: inserted.created_at });
 }
