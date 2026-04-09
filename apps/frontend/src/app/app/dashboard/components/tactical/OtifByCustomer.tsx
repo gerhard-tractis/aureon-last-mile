@@ -10,16 +10,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface CustomerRow {
-  customer_name: string;
-  total_orders: number;
-  delivered_orders: number;
-  otif_pct: number;
-}
+import type { OtifByCustomerRow } from '@/hooks/dashboard/useOtifChapter';
 
 interface OtifByCustomerProps {
-  data: CustomerRow[] | undefined;
+  data: OtifByCustomerRow[] | undefined;
   isLoading: boolean;
 }
 

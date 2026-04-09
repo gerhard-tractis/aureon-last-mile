@@ -10,16 +10,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface RegionRow {
-  region_name: string;
-  total_orders: number;
-  delivered_orders: number;
-  otif_pct: number;
-}
+import type { OtifByRegionRow } from '@/hooks/dashboard/useOtifChapter';
 
 interface OtifByRegionProps {
-  data: RegionRow[] | undefined;
+  data: OtifByRegionRow[] | undefined;
   isLoading: boolean;
 }
 

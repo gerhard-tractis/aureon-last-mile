@@ -2,6 +2,26 @@ import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import type { DashboardPeriod } from '@/app/app/dashboard/lib/period';
 
+export interface OtifByRegionRow {
+  region_name: string;
+  total_orders: number;
+  delivered_orders: number;
+  otif_pct: number;
+}
+
+export interface OtifByCustomerRow {
+  customer_name: string;
+  total_orders: number;
+  delivered_orders: number;
+  otif_pct: number;
+}
+
+export interface LateReasonRow {
+  reason: string;
+  count: number;
+  pct: number;
+}
+
 function toISODate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -21,7 +41,7 @@ export function useOtifChapter(operatorId: string, period: DashboardPeriod) {
         { p_operator_id: operatorId, p_start: pStart, p_end: pEnd },
       );
       if (error) throw error;
-      return (data as unknown[]) ?? [];
+      return (data as OtifByRegionRow[]) ?? [];
     },
     enabled: !!operatorId,
     staleTime: 5 * 60 * 1000,
@@ -35,7 +55,7 @@ export function useOtifChapter(operatorId: string, period: DashboardPeriod) {
         { p_operator_id: operatorId, p_start: pStart, p_end: pEnd },
       );
       if (error) throw error;
-      return (data as unknown[]) ?? [];
+      return (data as OtifByCustomerRow[]) ?? [];
     },
     enabled: !!operatorId,
     staleTime: 5 * 60 * 1000,
@@ -49,7 +69,7 @@ export function useOtifChapter(operatorId: string, period: DashboardPeriod) {
         { p_operator_id: operatorId, p_start: pStart, p_end: pEnd },
       );
       if (error) throw error;
-      return (data as unknown[]) ?? [];
+      return (data as LateReasonRow[]) ?? [];
     },
     enabled: !!operatorId,
     staleTime: 5 * 60 * 1000,

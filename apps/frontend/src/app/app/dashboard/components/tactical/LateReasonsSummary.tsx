@@ -1,14 +1,9 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface LateReason {
-  reason: string;
-  count: number;
-  pct: number;
-}
+import type { LateReasonRow } from '@/hooks/dashboard/useOtifChapter';
 
 interface LateReasonsSummaryProps {
-  data: LateReason[] | undefined;
+  data: LateReasonRow[] | undefined;
   isLoading: boolean;
 }
 
