@@ -30,9 +30,9 @@ export function ReplyBox({ onSend, isPending, error }: ReplyBoxProps) {
   };
 
   return (
-    <div className="border-t border-slate-800 px-4 py-3">
-      {isPending && <p className="text-xs text-slate-400 mb-1">Enviando...</p>}
-      {error && <p className="text-xs text-red-400 mb-1">{error}</p>}
+    <div className="border-t border-border px-4 py-3 bg-background">
+      {isPending && <p className="text-xs text-text-muted mb-1">Enviando...</p>}
+      {error && <p className="text-xs text-status-error mb-1">{error}</p>}
       <div className="flex items-end gap-2">
         <textarea
           ref={textareaRef}
@@ -41,12 +41,12 @@ export function ReplyBox({ onSend, isPending, error }: ReplyBoxProps) {
           onKeyDown={handleKeyDown}
           placeholder="Escribir respuesta al cliente vía WhatsApp..."
           rows={1}
-          className="flex-1 resize-none bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-slate-600 max-h-24 overflow-y-auto"
+          className="flex-1 resize-none bg-surface border border-border rounded-xl px-3 py-2 text-sm text-text placeholder:text-text-muted focus:outline-none focus:ring-1 focus:ring-accent max-h-24 overflow-y-auto"
         />
         <button
           onClick={handleSend}
           disabled={!canSend}
-          className="w-10 h-10 rounded-full bg-sky-600 flex items-center justify-center text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-sky-500 transition-colors shrink-0"
+          className="w-10 h-10 rounded-full bg-accent text-accent-foreground flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:opacity-90 transition-opacity shrink-0"
         >
           <Send className="w-4 h-4" />
         </button>
