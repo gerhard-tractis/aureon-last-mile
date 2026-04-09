@@ -6,6 +6,7 @@ export interface PendingManifest {
   retailer_name: string | null;
   order_count: number;
   package_count: number;
+  created_at: string;
 }
 
 export interface CompletedManifest {
