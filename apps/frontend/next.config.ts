@@ -12,6 +12,30 @@ const withSerwist = withSerwistInit({
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@aureon/database'],
+  async redirects() {
+    return [
+      {
+        source: '/app/dashboard/operaciones',
+        destination: '/app/dashboard',
+        permanent: true,
+      },
+      {
+        source: '/app/dashboard/operaciones/:path*',
+        destination: '/app/dashboard',
+        permanent: true,
+      },
+      {
+        source: '/app/dashboard/analitica',
+        destination: '/app/dashboard',
+        permanent: true,
+      },
+      {
+        source: '/app/dashboard/analitica/:path*',
+        destination: '/app/dashboard',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     return [
       {
