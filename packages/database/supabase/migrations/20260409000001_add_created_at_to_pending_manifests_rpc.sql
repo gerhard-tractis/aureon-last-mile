@@ -5,6 +5,10 @@
 -- Template: latest definition from 20260408000001_add_in_transit_manifests_rpc.sql
 -- ============================================================================
 
+-- DROP required: PostgreSQL forbids CREATE OR REPLACE when the return type changes.
+-- Adding created_at to the RETURNS TABLE is a return-type change.
+DROP FUNCTION IF EXISTS public.get_pending_manifests();
+
 CREATE OR REPLACE FUNCTION public.get_pending_manifests()
 RETURNS TABLE (
   external_load_id VARCHAR(100),
