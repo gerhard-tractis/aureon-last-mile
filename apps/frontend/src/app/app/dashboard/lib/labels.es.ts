@@ -11,9 +11,6 @@ export const CHAPTER_LABELS = {
   cpo: 'CPO',
   otif: 'OTIF',
   nps: 'NPS / CSAT',
-  cpoAnnotation: 'CAPÍTULO 01',
-  otifAnnotation: 'CAPÍTULO 02',
-  npsAnnotation: 'CAPÍTULO 03',
 } as const;
 
 // ---------------------------------------------------------------------------

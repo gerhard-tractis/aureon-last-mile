@@ -5,18 +5,9 @@ import { ChapterHeroBand } from './ChapterHeroBand';
 import { ChapterPlaceholder } from './ChapterPlaceholder';
 
 describe('Chapter', () => {
-  it('renders annotation text', () => {
-    render(
-      <Chapter annotation="CAPÍTULO 01" headline="CPO">
-        <div>content</div>
-      </Chapter>,
-    );
-    expect(screen.getByText('CAPÍTULO 01')).toBeInTheDocument();
-  });
-
   it('renders headline text', () => {
     render(
-      <Chapter annotation="CAPÍTULO 01" headline="CPO">
+      <Chapter headline="CPO">
         <div>content</div>
       </Chapter>,
     );
@@ -25,7 +16,7 @@ describe('Chapter', () => {
 
   it('headline has italic class', () => {
     render(
-      <Chapter annotation="CAPÍTULO 02" headline="OTIF">
+      <Chapter headline="OTIF">
         <span />
       </Chapter>,
     );
@@ -35,7 +26,7 @@ describe('Chapter', () => {
 
   it('renders children', () => {
     render(
-      <Chapter annotation="CAPÍTULO 03" headline="NPS">
+      <Chapter headline="NPS">
         <span data-testid="child">child content</span>
       </Chapter>,
     );

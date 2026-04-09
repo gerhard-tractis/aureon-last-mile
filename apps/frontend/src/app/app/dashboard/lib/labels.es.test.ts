@@ -23,18 +23,6 @@ describe('CHAPTER_LABELS', () => {
   it('has NPS/CSAT chapter title', () => {
     expect(CHAPTER_LABELS.nps).toBe('NPS / CSAT');
   });
-
-  it('has CPO annotation', () => {
-    expect(CHAPTER_LABELS.cpoAnnotation).toBe('CAPÍTULO 01');
-  });
-
-  it('has OTIF annotation', () => {
-    expect(CHAPTER_LABELS.otifAnnotation).toBe('CAPÍTULO 02');
-  });
-
-  it('has NPS annotation', () => {
-    expect(CHAPTER_LABELS.npsAnnotation).toBe('CAPÍTULO 03');
-  });
 });
 
 // ---------------------------------------------------------------------------
