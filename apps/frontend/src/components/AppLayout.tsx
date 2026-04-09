@@ -14,6 +14,7 @@ import {
   PanelLeft,
   Layers,
   Truck,
+  MessageSquare,
 } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
@@ -78,6 +79,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { href: '/app/dispatch',           label: 'Despacho',     icon: Truck,           show: permissions.includes('dispatch') || permissions.includes('admin') },
     { href: '/app/capacity-planning',  label: 'Capacidad',    icon: Calendar,        show: isAdminOrManager },
     { href: '/app/audit-logs',         label: 'Auditoría',    icon: FileText,        show: isAdminOrManager },
+    { href: '/app/conversations',       label: 'Conversaciones', icon: MessageSquare, show: isAdminOrManager || permissions.includes('customer_service') },
   ].filter((item) => item.show);
 
   function SidebarInner({ mobilePinned = false }: { mobilePinned?: boolean }) {
