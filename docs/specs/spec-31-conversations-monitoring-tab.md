@@ -346,11 +346,12 @@ git commit -m "feat(conversations): add TypeScript types (spec-31)"
 ```ts
 // src/lib/stores/conversationStore.test.ts
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useConversationStore } from './conversationStore';
+import { useConversationStore, INITIAL_CONVERSATION_STATE } from './conversationStore';
 
 describe('conversationStore', () => {
   beforeEach(() => {
-    useConversationStore.setState(useConversationStore.getInitialState());
+    // Reset to initial state between tests using Zustand's setState
+    useConversationStore.setState(INITIAL_CONVERSATION_STATE);
   });
 
   it('starts with no selected session', () => {
@@ -398,9 +399,14 @@ interface ConversationStoreState {
   markUnread: (id: string) => void;
 }
 
-export const useConversationStore = create<ConversationStoreState>()((set, get) => ({
+// Exported so tests can reset state with useConversationStore.setState(INITIAL_CONVERSATION_STATE)
+export const INITIAL_CONVERSATION_STATE: Pick<ConversationStoreState, 'selectedSessionId' | 'unreadSessionIds'> = {
   selectedSessionId: null,
   unreadSessionIds: new Set(),
+};
+
+export const useConversationStore = create<ConversationStoreState>()((set, get) => ({
+  ...INITIAL_CONVERSATION_STATE,
 
   selectSession: (id) =>
     set((state) => {
@@ -774,8 +780,7 @@ This route handles operator → customer WhatsApp reply. It needs WA credentials
 ```ts
 // src/app/api/conversations/reply/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createSSRClient } from '@/lib/supabase/server';
 
 const WA_API_VERSION = 'v18.0';
 const WA_BASE_URL = `https://graph.facebook.com/${WA_API_VERSION}`;
@@ -809,12 +814,7 @@ async function sendWhatsApp(phone: string, body: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll() } },
-  );
+  const supabase = await createSSRClient();
 
   // 1. Auth check
   const { data: { user } } = await supabase.auth.getUser();
@@ -911,16 +911,10 @@ git commit -m "feat(conversations): add reply API route with WhatsApp dispatch (
 ```ts
 // src/app/api/conversations/close/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createSSRClient } from '@/lib/supabase/server';
 
 export async function POST(req: NextRequest) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll() } },
-  );
+  const supabase = await createSSRClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -1811,6 +1805,29 @@ export function ConversationList({
               {opt.label}
             </button>
           ))}
+        </div>
+        {/* Date range */}
+        <div className="flex gap-1.5">
+          <input
+            type="date"
+            value={filters.dateFrom ?? ''}
+            onChange={(e) => onFiltersChange({ ...filters, dateFrom: e.target.value || null })}
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-slate-600"
+          />
+          <input
+            type="date"
+            value={filters.dateTo ?? ''}
+            onChange={(e) => onFiltersChange({ ...filters, dateTo: e.target.value || null })}
+            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-none focus:border-slate-600"
+          />
+          {(filters.dateFrom || filters.dateTo) && (
+            <button
+              onClick={() => onFiltersChange({ ...filters, dateFrom: null, dateTo: null })}
+              className="text-xs text-slate-500 hover:text-slate-300 px-1"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
