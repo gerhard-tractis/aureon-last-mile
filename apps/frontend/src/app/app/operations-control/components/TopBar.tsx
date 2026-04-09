@@ -40,34 +40,34 @@ export function TopBar({ warehouseCode, now }: TopBarProps) {
   return (
     <header
       className="flex items-center justify-between px-6 py-3 border-b"
-      style={{ background: 'var(--md-bg)', borderColor: 'var(--md-hairline)' }}
+      style={{ background: 'var(--color-background)', borderColor: 'var(--color-border)' }}
     >
       {/* Left: brand */}
       <div
         className="flex items-center gap-2 text-sm tracking-widest uppercase"
-        style={{ color: 'var(--md-dim)', fontFamily: 'var(--font-sans)' }}
+        style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-sans)' }}
       >
-        <span style={{ color: 'var(--md-text)', fontFamily: 'var(--font-display)' }}>
+        <span style={{ color: 'var(--color-text)', fontFamily: 'var(--font-display)' }}>
           Aureon
         </span>
-        <span style={{ color: 'var(--md-hairline-2)' }}>·</span>
+        <span style={{ color: 'var(--color-border-subtle)' }}>·</span>
         <span>Control de Operaciones</span>
-        <span style={{ color: 'var(--md-hairline-2)' }}>·</span>
-        <span style={{ color: 'var(--md-cobalt)' }}>Mission Deck</span>
+        <span style={{ color: 'var(--color-border-subtle)' }}>·</span>
+        <span style={{ color: 'var(--color-status-info)' }}>Mission Deck</span>
       </div>
 
       {/* Right: warehouse + date + clock + live dot */}
       <div
         className="flex items-center gap-4 text-xs"
-        style={{ color: 'var(--md-dim)', fontFamily: 'var(--font-mono)' }}
+        style={{ color: 'var(--color-text-secondary)', fontFamily: 'var(--font-mono)' }}
       >
         {warehouseCode && (
           <span
             className="px-2 py-0.5 rounded border text-xs tracking-widest"
             style={{
-              color: 'var(--md-text)',
-              borderColor: 'var(--md-hairline)',
-              background: 'var(--md-panel)',
+              color: 'var(--color-text)',
+              borderColor: 'var(--color-border)',
+              background: 'var(--color-surface)',
             }}
           >
             {warehouseCode}
@@ -80,7 +80,7 @@ export function TopBar({ warehouseCode, now }: TopBarProps) {
 
         <span
           data-testid="clock-time"
-          style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--md-text)' }}
+          style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--color-text)' }}
         >
           {formatTime(tick)}
         </span>
@@ -89,12 +89,12 @@ export function TopBar({ warehouseCode, now }: TopBarProps) {
         <span className="flex items-center gap-1.5">
           <span
             className="inline-block w-2 h-2 rounded-full animate-pulse"
-            style={{ background: 'var(--md-mint)' }}
+            style={{ background: 'var(--color-status-success)' }}
             aria-hidden="true"
           />
           <span
             className="tracking-widest text-xs"
-            style={{ color: 'var(--md-mint)', fontFamily: 'var(--font-sans)' }}
+            style={{ color: 'var(--color-status-success)', fontFamily: 'var(--font-sans)' }}
           >
             EN VIVO
           </span>

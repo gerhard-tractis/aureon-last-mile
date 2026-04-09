@@ -20,8 +20,8 @@ export function AtRiskBar({ orders, total, onSelect }: AtRiskBarProps) {
       onClick={onSelect}
       className="w-full flex items-center gap-3 px-4 py-2 text-xs text-left transition-opacity hover:opacity-90"
       style={{
-        background: 'var(--md-crimson)',
-        color: 'var(--md-text)',
+        background: 'var(--color-status-error)',
+        color: 'var(--color-text)',
         fontFamily: 'var(--font-mono)',
       }}
     >
@@ -45,7 +45,7 @@ export function AtRiskBar({ orders, total, onSelect }: AtRiskBarProps) {
             className="px-1.5 py-0.5 rounded text-xs"
             style={{
               background: 'rgba(0,0,0,0.25)',
-              color: 'var(--md-text)',
+              color: 'var(--color-text)',
               fontVariantNumeric: 'tabular-nums',
             }}
           >

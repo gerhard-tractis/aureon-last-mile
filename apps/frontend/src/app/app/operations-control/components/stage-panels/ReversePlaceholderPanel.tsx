@@ -26,7 +26,7 @@ export function ReversePlaceholderPanel(_props: StagePanelProps) {
         style={{
           textAlign: 'center',
           padding: '2rem',
-          color: 'var(--md-dim)',
+          color: 'var(--color-text-secondary)',
           fontFamily: 'var(--font-sans)',
           fontSize: '0.9rem',
         }}

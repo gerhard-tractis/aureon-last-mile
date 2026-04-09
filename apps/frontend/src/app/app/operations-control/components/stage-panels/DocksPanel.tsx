@@ -9,19 +9,19 @@ const TH: React.CSSProperties = {
   padding: '6px 12px',
   textAlign: 'left',
   fontFamily: 'var(--font-sans)',
-  color: 'var(--md-dim)',
+  color: 'var(--color-text-secondary)',
   fontWeight: 500,
   fontSize: '0.7rem',
   textTransform: 'uppercase',
   letterSpacing: '0.08em',
-  borderBottom: '1px solid var(--md-hairline)',
+  borderBottom: '1px solid var(--color-border)',
   whiteSpace: 'nowrap',
 };
 
 const TD: React.CSSProperties = {
   padding: '8px 12px',
-  borderBottom: '1px solid var(--md-hairline)',
-  color: 'var(--md-text)',
+  borderBottom: '1px solid var(--color-border)',
+  color: 'var(--color-text)',
   fontSize: '0.8rem',
   fontFamily: 'var(--font-mono)',
   fontVariantNumeric: 'tabular-nums',
@@ -31,7 +31,7 @@ const TD: React.CSSProperties = {
 const EMPTY_TD: React.CSSProperties = {
   ...TD,
   textAlign: 'center',
-  color: 'var(--md-dimmer)',
+  color: 'var(--color-text-muted)',
   fontFamily: 'var(--font-sans)',
   padding: '24px',
 };
@@ -91,7 +91,7 @@ export function DocksPanel({ operatorId, lastSyncAt }: StagePanelProps) {
             ) : (
               rows.map((row, i) => (
                 <tr key={(row['route_id'] as string) ?? i}>
-                  <td style={{ ...TD, color: 'var(--md-cobalt)', fontWeight: 600 }}>
+                  <td style={{ ...TD, color: 'var(--color-status-info)', fontWeight: 600 }}>
                     {(row['route_id'] as string) ?? '—'}
                   </td>
                   <td style={TD}>{(row['dock'] as string) ?? '—'}</td>
