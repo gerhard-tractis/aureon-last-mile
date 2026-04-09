@@ -56,9 +56,9 @@ describe('HandoffPage', () => {
     expect(screen.getByText('Entrega en bodega')).toBeInTheDocument();
   });
 
-  it('renders shadcn Button for "Entregar en bodega"', () => {
+  it('renders shadcn Button for "Confirmar Pickup"', () => {
     render(<HandoffPage />);
-    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    const btn = screen.getByRole('button', { name: /confirmar pickup/i });
     expect(btn).toBeInTheDocument();
   });
 
@@ -89,27 +89,27 @@ describe('HandoffPage', () => {
     expect(screen.getByText(/7 paquetes verificados/i)).toBeInTheDocument();
   });
 
-  it('disables "Entregar en bodega" when verifiedPackageCount is 0', () => {
+  it('disables "Confirmar Pickup" when verifiedPackageCount is 0', () => {
     // Operator hasn't scanned anything yet — handing off with zero packages
     // would write a meaningless hub_receptions row promising no inventory.
     mockHandoff({ verifiedPackageCount: 0, isCountLoading: false });
     render(<HandoffPage />);
-    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    const btn = screen.getByRole('button', { name: /confirmar pickup/i });
     expect(btn).toBeDisabled();
   });
 
-  it('disables "Entregar en bodega" while the count is still loading', () => {
+  it('disables "Confirmar Pickup" while the count is still loading', () => {
     // Brief race window between manifest load and pickup_scans fetch — the
     // count is 0 only because the fetch hasn't completed yet, NOT because
     // there are no verified packages. The button must not commit a phantom
     // 0-package handoff during this window.
     mockHandoff({ verifiedPackageCount: 0, isCountLoading: true });
     render(<HandoffPage />);
-    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    const btn = screen.getByRole('button', { name: /confirmar pickup/i });
     expect(btn).toBeDisabled();
   });
 
-  it('disables "Entregar en bodega" when the manifest already has reception_status set', () => {
+  it('disables "Confirmar Pickup" when the manifest already has reception_status set', () => {
     // The manifest has already been handed off once. Pressing the button
     // again would create a second hub_receptions row competing with the
     // first — the hub would see two pending receptions for the same load.
@@ -122,7 +122,7 @@ describe('HandoffPage', () => {
       verifiedPackageCount: 5,
     });
     render(<HandoffPage />);
-    const btn = screen.getByRole('button', { name: /entregar en bodega/i });
+    const btn = screen.getByRole('button', { name: /confirmar pickup/i });
     expect(btn).toBeDisabled();
   });
 });

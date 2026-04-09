@@ -26,7 +26,7 @@ export default function HandoffPage() {
     initiateHandoff,
   } = useQRHandoff(loadId, operatorId);
 
-  // The "Entregar en bodega" button must be locked out in four cases:
+  // The "Confirmar Pickup" button must be locked out in four cases:
   //   1. The handoff request is currently in flight (`isSubmitting`).
   //   2. The pickup_scans count hasn't loaded yet — pressing during this
   //      brief window would commit a 0-package handoff before the real
@@ -120,7 +120,7 @@ export default function HandoffPage() {
             Generando QR...
           </>
         ) : (
-          'Entregar en bodega'
+          'Confirmar Pickup'
         )}
       </Button>
 
