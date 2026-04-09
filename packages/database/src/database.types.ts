@@ -536,6 +536,50 @@ export type Database = {
           },
         ]
       }
+      retailer_return_sla_config: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          notes: string | null
+          operator_id: string
+          retailer_id: string
+          retailer_name: string
+          sla_hours: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          operator_id: string
+          retailer_id: string
+          retailer_name: string
+          sla_hours: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          operator_id?: string
+          retailer_id?: string
+          retailer_name?: string
+          sla_hours?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retailer_return_sla_config_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       todo_list: {
         Row: {
           created_at: string

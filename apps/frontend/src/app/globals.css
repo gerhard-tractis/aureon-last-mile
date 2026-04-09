@@ -171,6 +171,20 @@ html.custom {
   --color-status-info:           #3b82f6;
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
+
+  /* ---- MISSION DECK PALETTE --------------------------------- */
+  --md-bg:        #07090d;
+  --md-panel:     #0e1218;
+  --md-panel-2:   #11161e;
+  --md-hairline:  #1a2130;
+  --md-hairline-2:#222b3d;
+  --md-text:      #e6ebf2;
+  --md-dim:       #7a8597;
+  --md-dimmer:    #4b5568;
+  --md-cobalt:    #3b82f6;
+  --md-amber:     #f5a524;
+  --md-crimson:   #ef4444;
+  --md-mint:      #10b981;
 }
 
 /* ---- SIDEBAR TOKENS — mode-aware (Direction A) ------------
