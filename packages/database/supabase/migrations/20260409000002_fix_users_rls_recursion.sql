@@ -1,5 +1,6 @@
 -- ============================================================================
 -- Migration: fix infinite recursion in users_admin_full_access RLS policy
+-- Note: re-touched to retrigger deploy-supabase path filter after --include-all fix
 --
 -- Root cause:
 --   The "users_admin_full_access" policy uses
