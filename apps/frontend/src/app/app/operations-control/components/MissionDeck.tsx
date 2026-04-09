@@ -47,9 +47,9 @@ export function MissionDeck({ operatorId }: MissionDeckProps) {
 
   if (isLoading && !snapshot) {
     return (
-      <div style={{ background: 'var(--md-bg)', minHeight: '100vh', color: 'var(--md-text)' }}>
+      <div className="min-h-screen bg-background text-text">
         <TopBar warehouseCode="SCL-01" />
-        <div style={{ padding: '24px', color: 'var(--md-dim)' }}>Cargando...</div>
+        <div className="p-6 text-text-secondary">Cargando...</div>
       </div>
     );
   }
@@ -85,7 +85,7 @@ export function MissionDeck({ operatorId }: MissionDeckProps) {
   };
 
   return (
-    <div style={{ background: 'var(--md-bg)', minHeight: '100vh', color: 'var(--md-text)' }}>
+    <div className="min-h-screen bg-background text-text">
       <TopBar warehouseCode="SCL-01" />
       <AtRiskBar
         orders={atRiskOrders.slice(0, 3)}

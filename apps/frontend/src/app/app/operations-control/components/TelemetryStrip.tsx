@@ -36,8 +36,8 @@ export function TelemetryStrip({ stages, activeStage, onStageChange }: Telemetry
       style={{
         display: 'flex',
         width: '100%',
-        background: 'var(--md-panel)',
-        border: '1px solid var(--md-hairline)',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
         borderRadius: '4px',
         overflow: 'hidden',
       }}
