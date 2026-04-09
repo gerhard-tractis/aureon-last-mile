@@ -184,7 +184,7 @@ html.custom {
   --md-cobalt:    #3b82f6;
   --md-amber:     #f5a524;
   --md-crimson:   #ef4444;
-  --md-mint:      #10b981; 2933349 (feat(spec-29): wire Fraunces + Geist fonts and Mission Deck color tokens)
+  --md-mint:      #10b981;
 }
 
 /* ---- SIDEBAR TOKENS — mode-aware (Direction A) ------------
