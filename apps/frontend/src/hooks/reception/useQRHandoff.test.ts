@@ -493,7 +493,7 @@ describe('useQRHandoff', () => {
   it('immediately enters QR-shown state when manifest already has reception_status', async () => {
     // Operator opens an already-handed-off manifest from the En tránsito tab.
     // The page must short-circuit to the QR view without requiring the
-    // operator to press the (now disabled) "Entregar en bodega" button —
+    // operator to press the (now disabled) "Confirmar Pickup" button —
     // otherwise they'd be stuck on a form they can't submit and would never
     // see the QR they need to present at the warehouse.
     const manifestData = {
