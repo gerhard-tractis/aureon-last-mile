@@ -24,17 +24,17 @@ export interface DrillDownPanelProps {
 const PANEL: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  background: 'var(--md-panel)',
-  border: '1px solid var(--md-hairline)',
+  background: 'var(--color-surface)',
+  border: '1px solid var(--color-border)',
   borderRadius: '4px',
   overflow: 'hidden',
 };
 
 const BTN: React.CSSProperties = {
   background: 'none',
-  border: '1px solid var(--md-hairline)',
+  border: '1px solid var(--color-border)',
   borderRadius: '3px',
-  color: 'var(--md-text)',
+  color: 'var(--color-text)',
   padding: '4px 12px',
   fontSize: '0.75rem',
   cursor: 'pointer',
@@ -43,7 +43,7 @@ const BTN: React.CSSProperties = {
 
 const BTN_DISABLED: React.CSSProperties = {
   ...BTN,
-  color: 'var(--md-dimmer)',
+  color: 'var(--color-text-muted)',
   cursor: 'not-allowed',
 };
 
@@ -68,7 +68,7 @@ export function DrillDownPanel({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 16px',
-          borderBottom: '1px solid var(--md-hairline)',
+          borderBottom: '1px solid var(--color-border)',
           gap: '12px',
         }}
       >
@@ -79,7 +79,7 @@ export function DrillDownPanel({
               fontFamily: 'var(--font-display)',
               fontSize: '1.1rem',
               fontWeight: 700,
-              color: 'var(--md-text)',
+              color: 'var(--color-text)',
               margin: 0,
             }}
           >
@@ -89,7 +89,7 @@ export function DrillDownPanel({
             style={{
               fontFamily: 'var(--font-sans)',
               fontSize: '0.75rem',
-              color: 'var(--md-dim)',
+              color: 'var(--color-text-secondary)',
               margin: 0,
             }}
           >
@@ -105,8 +105,8 @@ export function DrillDownPanel({
               ...BTN,
               textDecoration: 'none',
               display: 'inline-block',
-              color: 'var(--md-cobalt)',
-              borderColor: 'var(--md-cobalt)',
+              color: 'var(--color-status-info)',
+              borderColor: 'var(--color-status-info)',
             }}
           >
             {deepLinkLabel}
@@ -123,7 +123,7 @@ export function DrillDownPanel({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(4, 1fr)',
-          borderBottom: '1px solid var(--md-hairline)',
+          borderBottom: '1px solid var(--color-border)',
         }}
       >
         {kpis.slice(0, 4).map((kpi) => (
@@ -131,7 +131,7 @@ export function DrillDownPanel({
             key={kpi.label}
             style={{
               padding: '12px 16px',
-              borderRight: '1px solid var(--md-hairline)',
+              borderRight: '1px solid var(--color-border)',
               display: 'flex',
               flexDirection: 'column',
               gap: '4px',
@@ -141,7 +141,7 @@ export function DrillDownPanel({
               style={{
                 fontFamily: 'var(--font-sans)',
                 fontSize: '0.65rem',
-                color: 'var(--md-dimmer)',
+                color: 'var(--color-text-muted)',
                 textTransform: 'uppercase',
                 letterSpacing: '0.08em',
               }}
@@ -153,14 +153,14 @@ export function DrillDownPanel({
                 fontFamily: 'var(--font-mono)',
                 fontSize: '1.4rem',
                 fontWeight: 700,
-                color: 'var(--md-text)',
+                color: 'var(--color-text)',
                 fontVariantNumeric: 'tabular-nums',
                 lineHeight: 1,
               }}
             >
               {kpi.value}
               {kpi.trend && (
-                <span style={{ fontSize: '0.8rem', marginLeft: '4px', color: 'var(--md-dim)' }}>
+                <span style={{ fontSize: '0.8rem', marginLeft: '4px', color: 'var(--color-text-secondary)' }}>
                   {kpi.trend}
                 </span>
               )}
@@ -179,10 +179,10 @@ export function DrillDownPanel({
           alignItems: 'center',
           gap: '10px',
           padding: '8px 16px',
-          borderTop: '1px solid var(--md-hairline)',
+          borderTop: '1px solid var(--color-border)',
           fontFamily: 'var(--font-sans)',
           fontSize: '0.75rem',
-          color: 'var(--md-dim)',
+          color: 'var(--color-text-secondary)',
         }}
       >
         <button
@@ -206,7 +206,7 @@ export function DrillDownPanel({
         </button>
 
         {/* Footer hint — pushed right */}
-        <span style={{ marginLeft: 'auto', color: 'var(--md-dimmer)', fontSize: '0.7rem' }}>
+        <span style={{ marginLeft: 'auto', color: 'var(--color-text-muted)', fontSize: '0.7rem' }}>
           Tiempo real · Supabase Realtime
           {lastSyncAt && (
             <> · {lastSyncAt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}</>

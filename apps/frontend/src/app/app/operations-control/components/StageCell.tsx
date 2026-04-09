@@ -15,10 +15,10 @@ export interface StageCellProps {
 }
 
 const HEALTH_BORDER: Record<HealthStatus, string> = {
-  ok:      'var(--md-mint)',
-  warn:    'var(--md-amber)',
-  crit:    'var(--md-crimson)',
-  neutral: 'var(--md-hairline)',
+  ok:      'var(--color-status-success)',
+  warn:    'var(--color-status-warning)',
+  crit:    'var(--color-status-error)',
+  neutral: 'var(--color-border)',
 };
 
 const HEALTH_BG: Record<HealthStatus, string> = {
@@ -37,7 +37,7 @@ export function StageCell({
   isSelected,
   onSelect,
 }: StageCellProps) {
-  const borderColor = isSelected ? 'var(--md-cobalt)' : HEALTH_BORDER[health];
+  const borderColor = isSelected ? 'var(--color-status-info)' : HEALTH_BORDER[health];
   const bg = isSelected ? 'rgba(30,100,255,0.08)' : HEALTH_BG[health];
 
   return (
@@ -74,7 +74,7 @@ export function StageCell({
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '0.65rem',
-            color: 'var(--md-dimmer)',
+            color: 'var(--color-text-muted)',
             fontVariantNumeric: 'tabular-nums',
           }}
         >
@@ -84,7 +84,7 @@ export function StageCell({
           style={{
             fontFamily: 'var(--font-display)',
             fontSize: '0.75rem',
-            color: isSelected ? 'var(--md-cobalt)' : 'var(--md-dim)',
+            color: isSelected ? 'var(--color-status-info)' : 'var(--color-text-secondary)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -102,7 +102,7 @@ export function StageCell({
           fontSize: '1.6rem',
           fontWeight: 700,
           fontVariantNumeric: 'tabular-nums',
-          color: 'var(--md-text)',
+          color: 'var(--color-text)',
           lineHeight: 1,
         }}
       >
@@ -114,7 +114,7 @@ export function StageCell({
         style={{
           fontFamily: 'var(--font-mono)',
           fontSize: '0.7rem',
-          color: 'var(--md-dimmer)',
+          color: 'var(--color-text-muted)',
           fontVariantNumeric: 'tabular-nums',
         }}
       >

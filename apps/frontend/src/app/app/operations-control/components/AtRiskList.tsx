@@ -15,19 +15,19 @@ const TH_STYLE: React.CSSProperties = {
   padding: '6px 12px',
   textAlign: 'left',
   fontFamily: 'var(--font-sans)',
-  color: 'var(--md-dim)',
+  color: 'var(--color-text-secondary)',
   fontWeight: 500,
   fontSize: '0.7rem',
   textTransform: 'uppercase',
   letterSpacing: '0.08em',
-  borderBottom: '1px solid var(--md-hairline)',
+  borderBottom: '1px solid var(--color-border)',
   whiteSpace: 'nowrap',
 };
 
 const TD_STYLE: React.CSSProperties = {
   padding: '8px 12px',
-  borderBottom: '1px solid var(--md-hairline)',
-  color: 'var(--md-text)',
+  borderBottom: '1px solid var(--color-border)',
+  color: 'var(--color-text)',
   fontSize: '0.8rem',
   fontFamily: 'var(--font-mono)',
   fontVariantNumeric: 'tabular-nums',
@@ -40,8 +40,8 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
   return (
     <div
       style={{
-        background: 'var(--md-panel)',
-        border: '1px solid var(--md-hairline)',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
         borderRadius: '4px',
         overflow: 'hidden',
       }}
@@ -67,7 +67,7 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
                   style={{
                     ...TD_STYLE,
                     textAlign: 'center',
-                    color: 'var(--md-dimmer)',
+                    color: 'var(--color-text-muted)',
                     fontFamily: 'var(--font-sans)',
                     padding: '24px',
                   }}
@@ -78,7 +78,7 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
             ) : (
               orders.map((order) => (
                 <tr key={order.id} style={{ transition: 'background 0.1s' }}>
-                  <td style={{ ...TD_STYLE, color: 'var(--md-cobalt)', fontWeight: 600 }}>
+                  <td style={{ ...TD_STYLE, color: 'var(--color-status-info)', fontWeight: 600 }}>
                     {order.id}
                   </td>
                   <td style={{ ...TD_STYLE, fontFamily: 'var(--font-sans)' }}>
@@ -106,8 +106,8 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
                       ...TD_STYLE,
                       color:
                         order.status === 'late'
-                          ? 'var(--md-crimson)'
-                          : 'var(--md-amber)',
+                          ? 'var(--color-status-error)'
+                          : 'var(--color-status-warning)',
                     }}
                   >
                     {order.label}
@@ -129,10 +129,10 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
             alignItems: 'center',
             gap: '12px',
             padding: '8px 12px',
-            borderTop: '1px solid var(--md-hairline)',
+            borderTop: '1px solid var(--color-border)',
             fontFamily: 'var(--font-sans)',
             fontSize: '0.75rem',
-            color: 'var(--md-dim)',
+            color: 'var(--color-text-secondary)',
           }}
         >
           <button
@@ -141,8 +141,8 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
             disabled={page <= 1}
             style={{
               background: 'none',
-              border: '1px solid var(--md-hairline)',
-              color: page <= 1 ? 'var(--md-dimmer)' : 'var(--md-text)',
+              border: '1px solid var(--color-border)',
+              color: page <= 1 ? 'var(--color-text-muted)' : 'var(--color-text)',
               padding: '3px 10px',
               borderRadius: '3px',
               cursor: page <= 1 ? 'not-allowed' : 'pointer',
@@ -162,8 +162,8 @@ export function AtRiskList({ orders, page, pageCount, onPageChange }: AtRiskList
             disabled={page >= pageCount}
             style={{
               background: 'none',
-              border: '1px solid var(--md-hairline)',
-              color: page >= pageCount ? 'var(--md-dimmer)' : 'var(--md-text)',
+              border: '1px solid var(--color-border)',
+              color: page >= pageCount ? 'var(--color-text-muted)' : 'var(--color-text)',
               padding: '3px 10px',
               borderRadius: '3px',
               cursor: page >= pageCount ? 'not-allowed' : 'pointer',
