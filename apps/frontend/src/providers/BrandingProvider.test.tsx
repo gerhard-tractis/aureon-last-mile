@@ -17,7 +17,7 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 // Mock useOperatorId to return a stable operator ID immediately
-vi.mock('@/hooks/useDashboardMetrics', () => ({
+vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'test-op-id', role: 'admin' }),
 }));
 
