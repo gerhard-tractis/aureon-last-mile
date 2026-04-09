@@ -3,10 +3,10 @@
 import type { SessionMessage } from '@/lib/conversations/types';
 
 const WA_STATUS_ICONS: Record<string, string> = {
-  sent: '✓',
+  sent:      '✓',
   delivered: '✓✓',
-  read: '✓✓',
-  failed: '✗',
+  read:      '✓✓',
+  failed:    '✗',
 };
 
 interface MessageBubbleProps {
@@ -19,12 +19,15 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     hour: '2-digit', minute: '2-digit',
   });
 
-  const bubbleColor =
+  // Customer messages: neutral surface card
+  // Agent (WISMO): accent (gold) bubble
+  // Operator reply: info (blue) bubble — distinct from agent
+  const bubbleClass =
     message.role === 'operator'
-      ? 'bg-purple-600'
+      ? 'bg-status-info-bg border border-status-info-border text-text'
       : message.role === 'system'
-        ? 'bg-sky-600'
-        : 'bg-slate-800';
+        ? 'bg-accent text-accent-foreground'
+        : 'bg-surface border border-border text-text';
 
   const label =
     message.role === 'operator' ? 'Operador' : message.role === 'system' ? 'Agente' : null;
@@ -34,13 +37,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       data-testid={`bubble-${message.id}`}
       className={`flex flex-col ${isOutbound ? 'items-end' : 'items-start'}`}
     >
-      <div className={`max-w-[65%] rounded-xl px-3 py-2 ${bubbleColor}`}>
-        <p className="text-sm text-white whitespace-pre-wrap">{message.body}</p>
+      <div className={`max-w-[65%] rounded-xl px-3 py-2 ${bubbleClass}`}>
+        <p className="text-sm whitespace-pre-wrap">{message.body}</p>
         <div className={`flex items-center gap-1 mt-1 text-xs ${isOutbound ? 'justify-end' : ''}`}>
-          <span className="text-slate-300">{time}</span>
-          {label && <span className="text-slate-300">· {label}</span>}
+          <span className="text-text-muted">{time}</span>
+          {label && <span className="text-text-muted">· {label}</span>}
           {isOutbound && message.wa_status && (
-            <span className={message.wa_status === 'read' ? 'text-sky-400' : message.wa_status === 'failed' ? 'text-red-400' : 'text-slate-400'}>
+            <span className={
+              message.wa_status === 'read'   ? 'text-status-info' :
+              message.wa_status === 'failed' ? 'text-status-error' :
+              'text-text-muted'
+            }>
               {WA_STATUS_ICONS[message.wa_status] ?? ''}
             </span>
           )}

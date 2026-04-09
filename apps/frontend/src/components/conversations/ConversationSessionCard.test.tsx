@@ -18,11 +18,11 @@ describe('ConversationSessionCard', () => {
     expect(screen.getByText(/#4521/)).toBeInTheDocument();
   });
 
-  it('shows escalated badge with amber border', () => {
+  it('shows escalated badge with warning border', () => {
     const { container } = render(
       <ConversationSessionCard session={session} isSelected={false} isUnread={false} onClick={() => {}} />,
     );
-    expect(container.firstChild).toHaveClass('border-l-amber-500');
+    expect(container.firstChild).toHaveClass('border-l-status-warning');
   });
 
   it('shows unread dot when isUnread is true', () => {
