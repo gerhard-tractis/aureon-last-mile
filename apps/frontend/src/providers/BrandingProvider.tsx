@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
-import { useOperatorId } from '@/hooks/useDashboardMetrics';
+import { useOperatorId } from '@/hooks/useOperatorId';
 import {
   generateBrandTokens,
   isValidHexColor,

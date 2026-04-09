@@ -1,6 +1,6 @@
 # Spec 30 — Dashboard Rebuild (Editorial C-level)
 
-**Status:** backlog
+**Status:** in progress
 
 ## Context & Problem
 
