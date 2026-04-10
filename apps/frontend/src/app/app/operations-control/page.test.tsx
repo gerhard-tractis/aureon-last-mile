@@ -1,87 +1,72 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import OpsControlPage from './page';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import type React from 'react';
 
 // Mock next/navigation
-const mockReplace = vi.fn();
 vi.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ replace: vi.fn() }),
   usePathname: () => '/app/operations-control',
 }));
 
-// Mock useOperatorId
+// Mock hooks
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: vi.fn(() => ({ operatorId: 'op-1', role: 'admin', permissions: [] })),
 }));
-
-// Mock useOpsControlSnapshot
-vi.mock('@/hooks/ops-control/useOpsControlSnapshot', () => ({
-  useOpsControlSnapshot: vi.fn(() => ({
-    snapshot: {
-      orders: [],
-      routes: [],
-      pickups: [],
-      returns: [],
-      retailerSlaConfig: [],
-      fetchedAt: new Date(),
-    },
-    isLoading: false,
-    error: null,
-    lastSyncAt: new Date(),
-  })),
+vi.mock('@/hooks/useIsMobile', () => ({
+  useIsMobile: vi.fn(() => false),
+}));
+vi.mock('@/hooks/useRealtimeStatus', () => ({
+  useRealtimeStatus: vi.fn(() => 'connected' as const),
 }));
 
-// Mock useAtRiskOrders
-vi.mock('@/hooks/ops-control/useAtRiskOrders', () => ({
-  useAtRiskOrders: vi.fn(() => ({ orders: [], total: 0, pageCount: 1 })),
+// Mock child components
+vi.mock('@/components/PageShell', () => ({
+  PageShell: ({ title, actions, children }: { title: string; actions?: React.ReactNode; children: React.ReactNode }) => (
+    <div data-testid="page-shell"><h1>{title}</h1>{actions}{children}</div>
+  ),
+}));
+vi.mock('@/components/operations-control/RealtimeStatusIndicator', () => ({
+  RealtimeStatusIndicator: ({ status }: { status: string }) => (
+    <span data-testid="realtime-indicator">{status}</span>
+  ),
+}));
+vi.mock('@/components/operations-control/mobile/MobileOCC', () => ({
+  MobileOCC: () => <div data-testid="mobile-occ" />,
+}));
+vi.mock('./components/OpsControlDesktop', () => ({
+  OpsControlDesktop: () => <div data-testid="ops-desktop" />,
 }));
 
-// Mock useStageBreakdown
-vi.mock('@/hooks/ops-control/useStageBreakdown', () => ({
-  useStageBreakdown: vi.fn(() => ({
-    rows: [],
-    total: 0,
-    pageCount: 1,
-    stageHealth: { status: 'ok', delta: '', reasonsByOrder: new Map() },
-  })),
-}));
+import OpsControlPage from './page';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useOperatorId } from '@/hooks/useOperatorId';
 
-describe('OpsControlPage (Mission Deck)', () => {
-  it('renders TopBar with Aureon branding (EN VIVO text)', () => {
+describe('OpsControlPage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('renders PageShell with title on desktop', () => {
     render(<OpsControlPage />);
-    expect(screen.getByText('EN VIVO')).toBeDefined();
+    expect(screen.getByTestId('page-shell')).toBeDefined();
+    expect(screen.getByText('Control de Operaciones')).toBeDefined();
+    expect(screen.getByTestId('ops-desktop')).toBeDefined();
   });
 
-  it('renders AtRiskBar with "órdenes en riesgo" text', () => {
+  it('renders RealtimeStatusIndicator in actions', () => {
     render(<OpsControlPage />);
-    expect(screen.getByText('órdenes en riesgo')).toBeDefined();
+    expect(screen.getByTestId('realtime-indicator')).toBeDefined();
   });
 
-  it('renders TelemetryStrip with 7 Spanish stage buttons', () => {
+  it('renders MobileOCC on mobile', () => {
+    vi.mocked(useIsMobile).mockReturnValue(true);
     render(<OpsControlPage />);
-    expect(screen.getByText('Recogida')).toBeDefined();
-    expect(screen.getByText('Recepción')).toBeDefined();
-    expect(screen.getByText('Consolidación')).toBeDefined();
-    expect(screen.getByText('Andenes')).toBeDefined();
-    expect(screen.getByText('Reparto')).toBeDefined();
-    expect(screen.getByText('Devoluciones')).toBeDefined();
-    expect(screen.getByText('Logística Inversa')).toBeDefined();
+    expect(screen.getByTestId('mobile-occ')).toBeDefined();
+    expect(screen.queryByTestId('page-shell')).toBeNull();
   });
 
-  it('shows AtRiskList by default (no ?stage= param) with table headers', () => {
+  it('renders loading when no operatorId', () => {
+    vi.mocked(useOperatorId).mockReturnValue({ operatorId: null } as ReturnType<typeof useOperatorId>);
     render(<OpsControlPage />);
-    expect(screen.getByText('Pedido')).toBeDefined();
-    expect(screen.getByText('Cliente')).toBeDefined();
-  });
-
-  it('renders PickupPanel when Recogida stage cell is clicked', () => {
-    render(<OpsControlPage />);
-    const recogidaBtn = screen.getByText('Recogida');
-    fireEvent.click(recogidaBtn);
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining('stage=pickup'),
-      { scroll: false }
-    );
+    expect(screen.getByText('Cargando...')).toBeDefined();
   });
 });
