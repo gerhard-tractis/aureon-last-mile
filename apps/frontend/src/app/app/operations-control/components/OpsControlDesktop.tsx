@@ -10,9 +10,9 @@ import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import type { StageKey } from '../lib/labels.es';
 import { Skeleton } from '@/components/ui/skeleton';
 
-import { TelemetryStrip } from './TelemetryStrip';
-import { AtRiskBar } from './AtRiskBar';
-import { AtRiskList } from './AtRiskList';
+import { StageStrip } from './StageStrip';
+import { AtRiskBanner } from './AtRiskBanner';
+import { AtRiskTable } from './AtRiskTable';
 import { PickupPanel } from './stage-panels/PickupPanel';
 import { ReceptionPanel } from './stage-panels/ReceptionPanel';
 import { ConsolidationPanel } from './stage-panels/ConsolidationPanel';
@@ -68,7 +68,7 @@ export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
   const renderPanel = () => {
     if (!activeStage) {
       return (
-        <AtRiskList
+        <AtRiskTable
           orders={atRiskOrders}
           total={atRiskTotal}
           page={atRiskPage}
@@ -92,14 +92,14 @@ export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
   return (
     <div className="space-y-4">
       {atRiskTotal > 0 && (
-        <AtRiskBar
+        <AtRiskBanner
           orders={atRiskOrders.slice(0, 3)}
           total={atRiskTotal}
-          onSelect={() => setStage(null)}
+          onViewAll={() => setStage(null)}
         />
       )}
 
-      <TelemetryStrip
+      <StageStrip
         stages={stages}
         activeStage={activeStage}
         onStageChange={setStage}
