@@ -31,7 +31,7 @@ export function StagePanel({
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
         <div>
-          <h2 className="text-lg font-semibold text-text">{title}</h2>
+          <h2 className="text-lg font-semibold text-text" data-testid="drilldown-title">{title}</h2>
           <p className="text-sm text-text-secondary">{subtitle}</p>
         </div>
         {deepLink !== null ? (

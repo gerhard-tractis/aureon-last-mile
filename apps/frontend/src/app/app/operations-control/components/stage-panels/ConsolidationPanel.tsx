@@ -1,40 +1,10 @@
 "use client";
 
 import { useState } from 'react';
-import { DrillDownPanel } from '../DrillDownPanel';
+import { StagePanel } from '../StagePanel';
 import { useStageBreakdown } from '@/hooks/ops-control/useStageBreakdown';
+import { TH, TD, TD_MONO, TD_LINK, TD_EMPTY, TR } from './tableStyles';
 import type { StagePanelProps } from './PickupPanel';
-
-const TH: React.CSSProperties = {
-  padding: '6px 12px',
-  textAlign: 'left',
-  fontFamily: 'var(--font-sans)',
-  color: 'var(--color-text-secondary)',
-  fontWeight: 500,
-  fontSize: '0.7rem',
-  textTransform: 'uppercase',
-  letterSpacing: '0.08em',
-  borderBottom: '1px solid var(--color-border)',
-  whiteSpace: 'nowrap',
-};
-
-const TD: React.CSSProperties = {
-  padding: '8px 12px',
-  borderBottom: '1px solid var(--color-border)',
-  color: 'var(--color-text)',
-  fontSize: '0.8rem',
-  fontFamily: 'var(--font-mono)',
-  fontVariantNumeric: 'tabular-nums',
-  whiteSpace: 'nowrap',
-};
-
-const EMPTY_TD: React.CSSProperties = {
-  ...TD,
-  textAlign: 'center',
-  color: 'var(--color-text-muted)',
-  fontFamily: 'var(--font-sans)',
-  padding: '24px',
-};
 
 export function ConsolidationPanel({ operatorId, lastSyncAt }: StagePanelProps) {
   const [page, setPage] = useState(1);
@@ -55,7 +25,7 @@ export function ConsolidationPanel({ operatorId, lastSyncAt }: StagePanelProps) 
   ];
 
   return (
-    <DrillDownPanel
+    <StagePanel
       title="Consolidación"
       subtitle="Órdenes agrupadas por andén destino"
       deepLink="/app/distribution"
@@ -66,34 +36,34 @@ export function ConsolidationPanel({ operatorId, lastSyncAt }: StagePanelProps) 
       onPageChange={setPage}
       lastSyncAt={lastSyncAt}
     >
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
           <thead>
-            <tr>
-              <th style={TH}>Andén destino</th>
-              <th style={TH}># Órdenes</th>
-              <th style={TH}>Listas desde</th>
-              <th style={TH}>Estado</th>
+            <tr className="border-b border-border">
+              <th className={TH}>Andén destino</th>
+              <th className={TH}># Órdenes</th>
+              <th className={TH}>Listas desde</th>
+              <th className={TH}>Estado</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} style={EMPTY_TD}>
+                <td colSpan={4} className={TD_EMPTY}>
                   Sin elementos en esta etapa
                 </td>
               </tr>
             ) : (
               rows.map((row, i) => (
-                <tr key={(row['dest_dock'] as string) ?? i}>
-                  <td style={{ ...TD, color: 'var(--color-status-info)', fontWeight: 600 }}>
+                <tr key={(row['dest_dock'] as string) ?? i} className={TR}>
+                  <td className={TD_LINK}>
                     {(row['dest_dock'] as string) ?? '—'}
                   </td>
-                  <td style={TD}>{String(row['order_count'] ?? '—')}</td>
-                  <td style={{ ...TD, fontFamily: 'var(--font-sans)' }}>
+                  <td className={TD_MONO}>{String(row['order_count'] ?? '—')}</td>
+                  <td className={TD}>
                     {(row['ready_since'] as string) ?? '—'}
                   </td>
-                  <td style={{ ...TD, fontFamily: 'var(--font-sans)' }}>
+                  <td className={TD}>
                     {(row['status'] as string) ?? '—'}
                   </td>
                 </tr>
@@ -102,6 +72,6 @@ export function ConsolidationPanel({ operatorId, lastSyncAt }: StagePanelProps) 
           </tbody>
         </table>
       </div>
-    </DrillDownPanel>
+    </StagePanel>
   );
 }
