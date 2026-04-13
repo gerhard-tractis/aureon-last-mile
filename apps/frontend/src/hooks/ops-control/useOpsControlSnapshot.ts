@@ -24,36 +24,30 @@ export type OpsControlSnapshotResult = {
   lastSyncAt: Date | null;
 };
 
+/**
+ * Single RPC call — returns only in-progress orders/routes/manifests.
+ * Delivered (entregado) and cancelled orders are excluded server-side.
+ */
 async function fetchSnapshot(operatorId: string): Promise<OpsSnapshot> {
   const client = createSPAClient();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = client as any;
-  const [orders, routes, pickups, returns, slaConfig] = await Promise.all([
-    client.from('orders').select('*').eq('operator_id', operatorId).is('deleted_at', null),
-    client.from('routes').select('*').eq('operator_id', operatorId),
-    db.from('pickups').select('*').eq('operator_id', operatorId),
-    db.from('returns').select('*').eq('operator_id', operatorId).is('deleted_at', null),
-    db.from('retailer_return_sla_config').select('*').eq('operator_id', operatorId),
-  ]);
+  const { data, error } = await client.rpc('get_ops_control_snapshot', {
+    p_operator_id: operatorId,
+  });
 
-  if (orders.error) throw orders.error;
-  if (routes.error) throw routes.error;
-  if (pickups.error) throw pickups.error;
-  if (returns.error) throw returns.error;
-  if (slaConfig.error) throw slaConfig.error;
+  if (error) throw error;
+
+  const result = data as Record<string, unknown[]> | null;
 
   return {
-    orders: (orders.data ?? []) as OrderRow[],
-    routes: (routes.data ?? []) as RouteRow[],
-    pickups: (pickups.data ?? []) as PickupRow[],
-    returns: (returns.data ?? []) as ReturnRow[],
-    retailerSlaConfig: (slaConfig.data ?? []) as RetailerSlaConfigRow[],
+    orders: (result?.orders ?? []) as OrderRow[],
+    routes: (result?.routes ?? []) as RouteRow[],
+    pickups: (result?.manifests ?? []) as PickupRow[],
+    returns: [] as ReturnRow[], // No returns table yet
+    retailerSlaConfig: (result?.sla_config ?? []) as RetailerSlaConfigRow[],
     fetchedAt: new Date(),
   };
 }
-
-type TableKey = 'orders' | 'routes' | 'pickups' | 'returns';
 
 function upsertRow(
   rows: Record<string, unknown>[],
@@ -73,36 +67,32 @@ function removeRow(
   return rows.filter((r) => r['id'] !== deleted['id']);
 }
 
+/** Terminal statuses excluded by the RPC — skip realtime upserts for these */
+const EXCLUDED_ORDER_STATUSES = new Set(['entregado', 'cancelado']);
+const EXCLUDED_ROUTE_STATUSES = new Set(['completed', 'cancelled']);
+
 export function useOpsControlSnapshot(
   operatorId: string | null
 ): OpsControlSnapshotResult {
   const snapshotRef = useRef<OpsSnapshot | null>(null);
   const [version, setVersion] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
-  const wasSubscribed = useRef(false);
-  // Track the last query data object to detect a real refetch (not a Realtime update)
   const lastQueryData = useRef<OpsSnapshot | null>(null);
 
-  const {
-    data,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['ops-control', operatorId, 'snapshot'],
     queryFn: () => fetchSnapshot(operatorId!),
     enabled: !!operatorId,
-    staleTime: Infinity,
-    refetchInterval: false,
+    staleTime: 30_000,        // 30s — realtime fills the gap
+    refetchOnWindowFocus: true,
+    retry: 2,
   });
 
-  // Only overwrite the live snapshot when a genuinely new query result arrives
+  // Sync query data into the mutable ref
   if (data && data !== lastQueryData.current) {
     lastQueryData.current = data;
     snapshotRef.current = data;
-    if (!lastSyncAt) {
-      setLastSyncAt(new Date());
-    }
+    if (!lastSyncAt) setLastSyncAt(new Date());
   }
 
   useEffect(() => {
@@ -110,75 +100,65 @@ export function useOpsControlSnapshot(
 
     const client = createSPAClient();
 
-    const tables: { table: string; key: TableKey }[] = [
-      { table: 'orders', key: 'orders' },
-      { table: 'routes', key: 'routes' },
-      { table: 'pickups', key: 'pickups' },
-      { table: 'returns', key: 'returns' },
-    ];
+    // Subscribe to orders + routes — the two tables that change most
+    const ordersCh = client
+      .channel(`ops:${operatorId}:orders`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders', filter: `operator_id=eq.${operatorId}` },
+        (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
+          const current = snapshotRef.current;
+          if (!current) return;
 
-    const channels = tables.map(({ table, key }) => {
-      const channelName = `ops-control:${operatorId}:${table}`;
-      const channel = client.channel(channelName);
-
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table,
-            filter: `operator_id=eq.${operatorId}`,
-          },
-          (payload: {
-            eventType: string;
-            new: Record<string, unknown>;
-            old: Record<string, unknown>;
-          }) => {
-            const current = snapshotRef.current;
-            if (!current) return;
-
-            let updated: OpsSnapshot;
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              updated = {
-                ...current,
-                [key]: upsertRow(current[key] as Record<string, unknown>[], payload.new),
-              };
-            } else if (payload.eventType === 'DELETE') {
-              updated = {
-                ...current,
-                [key]: removeRow(current[key] as Record<string, unknown>[], payload.old),
-              };
+          if (payload.eventType === 'DELETE') {
+            snapshotRef.current = { ...current, orders: removeRow(current.orders, payload.old) };
+          } else {
+            const row = payload.new;
+            // If order transitioned to a terminal status, remove it from the snapshot
+            if (EXCLUDED_ORDER_STATUSES.has(row['status'] as string)) {
+              snapshotRef.current = { ...current, orders: removeRow(current.orders, row) };
             } else {
-              return;
+              snapshotRef.current = { ...current, orders: upsertRow(current.orders, row) };
             }
-
-            snapshotRef.current = updated;
-            setLastSyncAt(new Date());
-            setVersion((v) => v + 1);
           }
-        )
-        .subscribe((status: string) => {
-          if (status === 'SUBSCRIBED') {
-            if (wasSubscribed.current) {
-              refetch();
+          setLastSyncAt(new Date());
+          setVersion((v) => v + 1);
+        }
+      )
+      .subscribe();
+
+    const routesCh = client
+      .channel(`ops:${operatorId}:routes`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'routes', filter: `operator_id=eq.${operatorId}` },
+        (payload: { eventType: string; new: Record<string, unknown>; old: Record<string, unknown> }) => {
+          const current = snapshotRef.current;
+          if (!current) return;
+
+          if (payload.eventType === 'DELETE') {
+            snapshotRef.current = { ...current, routes: removeRow(current.routes, payload.old) };
+          } else {
+            const row = payload.new;
+            if (EXCLUDED_ROUTE_STATUSES.has(row['status'] as string)) {
+              snapshotRef.current = { ...current, routes: removeRow(current.routes, row) };
+            } else {
+              snapshotRef.current = { ...current, routes: upsertRow(current.routes, row) };
             }
-            wasSubscribed.current = true;
           }
-        });
-
-      return channel;
-    });
+          setLastSyncAt(new Date());
+          setVersion((v) => v + 1);
+        }
+      )
+      .subscribe();
 
     return () => {
-      for (const ch of channels) {
-        client.removeChannel(ch);
-      }
+      client.removeChannel(ordersCh);
+      client.removeChannel(routesCh);
     };
-  }, [operatorId, !!data, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [operatorId, !!data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Use version to force re-reads of the ref
-  void version;
+  void version; // Force re-reads of the ref
 
   return {
     snapshot: snapshotRef.current,
