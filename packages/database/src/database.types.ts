@@ -866,6 +866,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      get_ops_control_snapshot: {
+        Args: {
+          p_operator_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       delivery_attempt_status_enum:
