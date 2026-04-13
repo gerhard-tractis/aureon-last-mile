@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ReceptionDetailList } from './ReceptionDetailList';
 
 describe('ReceptionDetailList', () => {
@@ -10,32 +11,41 @@ describe('ReceptionDetailList', () => {
   ];
 
   it('renders all packages', () => {
-    render(<ReceptionDetailList packages={mockPackages} />);
+    render(<ReceptionDetailList packages={mockPackages} onManualReceive={vi.fn()} />);
     expect(screen.getByText('CTN001')).toBeInTheDocument();
     expect(screen.getByText('CTN002')).toBeInTheDocument();
     expect(screen.getByText('CTN003')).toBeInTheDocument();
   });
 
   it('shows order numbers', () => {
-    render(<ReceptionDetailList packages={mockPackages} />);
+    render(<ReceptionDetailList packages={mockPackages} onManualReceive={vi.fn()} />);
     expect(screen.getByText('ORD-100')).toBeInTheDocument();
     expect(screen.getByText('ORD-101')).toBeInTheDocument();
   });
 
-  it('shows "Recibido" for received packages', () => {
-    render(<ReceptionDetailList packages={mockPackages} />);
-    const received = screen.getAllByText('Recibido');
-    expect(received).toHaveLength(2);
+  it('shows check icon for received packages', () => {
+    render(<ReceptionDetailList packages={mockPackages} onManualReceive={vi.fn()} />);
+    const icons = screen.getAllByTestId('received-icon');
+    expect(icons).toHaveLength(2);
   });
 
-  it('shows "Pendiente" for pending packages', () => {
-    render(<ReceptionDetailList packages={mockPackages} />);
-    const pending = screen.getAllByText('Pendiente');
-    expect(pending).toHaveLength(1);
+  it('shows "Marcar Recibido" button for pending packages', () => {
+    render(<ReceptionDetailList packages={mockPackages} onManualReceive={vi.fn()} />);
+    const buttons = screen.getAllByRole('button', { name: /marcar recibido/i });
+    expect(buttons).toHaveLength(1);
+  });
+
+  it('calls onManualReceive with package label when button clicked', async () => {
+    const user = userEvent.setup();
+    const onManualReceive = vi.fn();
+    render(<ReceptionDetailList packages={mockPackages} onManualReceive={onManualReceive} />);
+    const btn = screen.getByRole('button', { name: /marcar recibido/i });
+    await user.click(btn);
+    expect(onManualReceive).toHaveBeenCalledWith('CTN002');
   });
 
   it('shows empty message when no packages', () => {
-    render(<ReceptionDetailList packages={[]} />);
+    render(<ReceptionDetailList packages={[]} onManualReceive={vi.fn()} />);
     expect(screen.getByText('No hay paquetes en esta carga')).toBeInTheDocument();
   });
 
@@ -44,7 +54,7 @@ describe('ReceptionDetailList', () => {
       { id: 'pkg-a', label: 'AAA', orderNumber: 'ORD-1', received: false },
       { id: 'pkg-b', label: 'BBB', orderNumber: 'ORD-2', received: true },
     ];
-    render(<ReceptionDetailList packages={items} />);
+    render(<ReceptionDetailList packages={items} onManualReceive={vi.fn()} />);
     const labels = screen.getAllByTestId('package-label');
     // Received first
     expect(labels[0].textContent).toBe('BBB');

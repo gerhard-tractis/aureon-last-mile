@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import { CheckCircle, Circle } from 'lucide-react';
+import { CheckCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export interface ReceptionPackageItem {
   id: string;
@@ -12,9 +13,10 @@ export interface ReceptionPackageItem {
 
 interface ReceptionDetailListProps {
   packages: ReceptionPackageItem[];
+  onManualReceive: (label: string) => void;
 }
 
-export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
+export function ReceptionDetailList({ packages, onManualReceive }: ReceptionDetailListProps) {
   const sorted = useMemo(() => {
     return [...packages].sort((a, b) => {
       // Received first, then pending
@@ -42,10 +44,8 @@ export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
           }`}
         >
           {pkg.received ? (
-            <CheckCircle className="h-5 w-5 text-status-success flex-shrink-0" />
-          ) : (
-            <Circle className="h-5 w-5 text-text-muted flex-shrink-0" />
-          )}
+            <CheckCircle className="h-5 w-5 text-status-success flex-shrink-0" data-testid="received-icon" />
+          ) : null}
           <div className="flex-1 min-w-0">
             <span
               data-testid="package-label"
@@ -55,13 +55,20 @@ export function ReceptionDetailList({ packages }: ReceptionDetailListProps) {
             </span>
             <span className="text-xs text-text-secondary">{pkg.orderNumber}</span>
           </div>
-          <span
-            className={`text-xs font-medium ${
-              pkg.received ? 'text-status-success' : 'text-text-muted'
-            }`}
-          >
-            {pkg.received ? 'Recibido' : 'Pendiente'}
-          </span>
+          <div className="flex-shrink-0">
+            {pkg.received ? (
+              <span className="text-xs font-medium text-status-success">Recibido</span>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onManualReceive(pkg.label)}
+                aria-label="Marcar Recibido"
+              >
+                Marcar Recibido
+              </Button>
+            )}
+          </div>
         </div>
       ))}
     </div>
