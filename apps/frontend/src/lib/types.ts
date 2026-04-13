@@ -1464,6 +1464,10 @@ export type Database = {
         Args: { p_operator_id: string }
         Returns: { comuna_raw: string; order_count: number }[]
       }
+      get_ops_control_snapshot: {
+        Args: { p_operator_id: string }
+        Returns: Json
+      }
     }
     Enums: {
       routing_provider_enum:
