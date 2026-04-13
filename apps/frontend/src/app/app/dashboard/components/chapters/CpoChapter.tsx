@@ -19,7 +19,6 @@ export function CpoChapter({ operatorId, period }: CpoChapterProps) {
 
   return (
     <Chapter
-      annotation={CHAPTER_LABELS.cpoAnnotation}
       headline={CHAPTER_LABELS.cpo}
     >
       <ChapterPlaceholder reason={PLACEHOLDER_COPY.cpo} />

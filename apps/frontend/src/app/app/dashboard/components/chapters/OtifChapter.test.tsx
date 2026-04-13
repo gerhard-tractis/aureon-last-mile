@@ -16,9 +16,8 @@ vi.mock('@/hooks/dashboard/useOtifChapter', () => ({
 }));
 
 vi.mock('@/app/app/dashboard/components/Chapter', () => ({
-  Chapter: ({ annotation, headline, children }: { annotation: string; headline: string; children: React.ReactNode }) => (
+  Chapter: ({ headline, children }: { headline: string; children: React.ReactNode }) => (
     <div>
-      <span data-testid="annotation">{annotation}</span>
       <span data-testid="headline">{headline}</span>
       {children}
     </div>
@@ -109,11 +108,6 @@ describe('OtifChapter', () => {
       isLoading: false,
       isError: false,
     });
-  });
-
-  it('renders annotation CAPÍTULO 02', () => {
-    render(<OtifChapter operatorId="op-1" period={PERIOD} />);
-    expect(screen.getByTestId('annotation')).toHaveTextContent('CAPÍTULO 02');
   });
 
   it('renders headline OTIF', () => {

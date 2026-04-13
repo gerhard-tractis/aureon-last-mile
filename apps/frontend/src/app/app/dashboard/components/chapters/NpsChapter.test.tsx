@@ -8,9 +8,8 @@ import type { DashboardPeriod } from '@/app/app/dashboard/lib/period';
 // ---------------------------------------------------------------------------
 
 vi.mock('@/app/app/dashboard/components/Chapter', () => ({
-  Chapter: ({ annotation, headline, children }: { annotation: string; headline: string; children: React.ReactNode }) => (
+  Chapter: ({ headline, children }: { headline: string; children: React.ReactNode }) => (
     <div>
-      <span data-testid="annotation">{annotation}</span>
       <span data-testid="headline">{headline}</span>
       {children}
     </div>
@@ -44,11 +43,6 @@ const PERIOD: DashboardPeriod = {
 // ---------------------------------------------------------------------------
 
 describe('NpsChapter', () => {
-  it('renders annotation CAPÍTULO 03', () => {
-    render(<NpsChapter operatorId="op-1" period={PERIOD} />);
-    expect(screen.getByTestId('annotation')).toHaveTextContent('CAPÍTULO 03');
-  });
-
   it('renders headline NPS / CSAT', () => {
     render(<NpsChapter operatorId="op-1" period={PERIOD} />);
     expect(screen.getByTestId('headline')).toHaveTextContent('NPS / CSAT');
