@@ -49,11 +49,11 @@ export default function ReceptionPage() {
   );
 
   const handleActiveCardClick = (manifest: ReceptionManifest) => {
-    const inProgressReception = manifest.hub_receptions.find(
-      (r) => r.status === 'in_progress'
+    const activeReception = manifest.hub_receptions.find(
+      (r) => r.status === 'in_progress' || r.status === 'pending'
     );
-    if (inProgressReception) {
-      router.push(`/app/reception/scan/${inProgressReception.id}`);
+    if (activeReception) {
+      router.push(`/app/reception/scan/${activeReception.id}`);
     }
   };
 
@@ -116,7 +116,7 @@ export default function ReceptionPage() {
                   receivedCount={inProgressReception?.received_count}
                   expectedCount={inProgressReception?.expected_count}
                   driverName={driverName}
-                  interactive={isInProgress}
+                  interactive={true}
                   onClick={() => handleActiveCardClick(manifest)}
                 />
               );

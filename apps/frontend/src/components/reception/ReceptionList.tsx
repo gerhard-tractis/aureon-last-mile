@@ -20,13 +20,12 @@ export function ReceptionList({ manifests }: ReceptionListProps) {
   }
 
   const handleCardClick = (manifest: ReceptionManifest) => {
-    const inProgressReception = manifest.hub_receptions.find(
-      (r) => r.status === 'in_progress'
+    const activeReception = manifest.hub_receptions.find(
+      (r) => r.status === 'in_progress' || r.status === 'pending'
     );
-    if (inProgressReception) {
-      router.push(`/app/reception/scan/${inProgressReception.id}`);
+    if (activeReception) {
+      router.push(`/app/reception/scan/${activeReception.id}`);
     }
-    // For awaiting_reception, the user should use the QR scanner
   };
 
   return (
