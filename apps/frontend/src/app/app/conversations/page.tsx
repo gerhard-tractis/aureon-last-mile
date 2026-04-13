@@ -39,11 +39,11 @@ function ConversationsContent() {
         filters={filters}
         onFiltersChange={setFilters}
       />
-      <div className="flex-1 bg-slate-950">
+      <div className="flex-1 bg-background">
         {selectedSession ? (
           <ConversationThread session={selectedSession} canReply={canReply} />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-slate-500">
+          <div className="flex flex-col items-center justify-center h-full text-text-muted">
             <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
             <p className="text-sm">Selecciona una conversación</p>
           </div>
