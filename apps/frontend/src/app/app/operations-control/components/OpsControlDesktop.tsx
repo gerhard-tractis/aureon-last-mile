@@ -6,10 +6,13 @@ import { useAtRiskOrders } from '@/hooks/ops-control/useAtRiskOrders';
 import { useStageQuery } from '../lib/useStageQuery';
 import { computeStageHealth } from '../lib/health';
 import { STAGE_KEYS } from '../lib/labels.es';
-import { TopBar } from './TopBar';
-import { AtRiskBar } from './AtRiskBar';
-import { AtRiskList } from './AtRiskList';
-import { TelemetryStrip } from './TelemetryStrip';
+import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
+import type { StageKey } from '../lib/labels.es';
+import { Skeleton } from '@/components/ui/skeleton';
+
+import { StageStrip } from './StageStrip';
+import { AtRiskBanner } from './AtRiskBanner';
+import { AtRiskTable } from './AtRiskTable';
 import { PickupPanel } from './stage-panels/PickupPanel';
 import { ReceptionPanel } from './stage-panels/ReceptionPanel';
 import { ConsolidationPanel } from './stage-panels/ConsolidationPanel';
@@ -17,8 +20,6 @@ import { DocksPanel } from './stage-panels/DocksPanel';
 import { DeliveryPanel } from './stage-panels/DeliveryPanel';
 import { ReturnsPanel } from './stage-panels/ReturnsPanel';
 import { ReversePlaceholderPanel } from './stage-panels/ReversePlaceholderPanel';
-import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
-import type { StageKey } from '../lib/labels.es';
 
 function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, unknown>[] {
   switch (key) {
@@ -32,24 +33,27 @@ function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, 
   }
 }
 
-export interface MissionDeckProps {
-  operatorId: string | null;
+interface OpsControlDesktopProps {
+  operatorId: string;
 }
 
-export function MissionDeck({ operatorId }: MissionDeckProps) {
+export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
   const { snapshot, isLoading, lastSyncAt } = useOpsControlSnapshot(operatorId);
   const { activeStage, setStage } = useStageQuery();
   const [atRiskPage, setAtRiskPage] = useState(1);
   const { orders: atRiskOrders, total: atRiskTotal, pageCount: atRiskPageCount } =
     useAtRiskOrders(operatorId, new Date(), atRiskPage);
 
-  if (!operatorId) return <div>Sin operador</div>;
-
   if (isLoading && !snapshot) {
     return (
-      <div style={{ background: 'var(--color-background)', minHeight: '100vh', color: 'var(--color-text)' }}>
-        <TopBar warehouseCode="SCL-01" />
-        <div style={{ padding: '24px', color: 'var(--color-text-secondary)' }}>Cargando...</div>
+      <div className="space-y-4">
+        <Skeleton className="h-10 w-full rounded-md" />
+        <div className="grid grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-md" />
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full rounded-lg" />
       </div>
     );
   }
@@ -64,7 +68,7 @@ export function MissionDeck({ operatorId }: MissionDeckProps) {
   const renderPanel = () => {
     if (!activeStage) {
       return (
-        <AtRiskList
+        <AtRiskTable
           orders={atRiskOrders}
           total={atRiskTotal}
           page={atRiskPage}
@@ -73,31 +77,35 @@ export function MissionDeck({ operatorId }: MissionDeckProps) {
         />
       );
     }
+    const props = { operatorId, lastSyncAt };
     switch (activeStage) {
-      case 'pickup':        return <PickupPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'reception':     return <ReceptionPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'consolidation': return <ConsolidationPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'docks':         return <DocksPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'delivery':      return <DeliveryPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'returns':       return <ReturnsPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
-      case 'reverse':       return <ReversePlaceholderPanel operatorId={operatorId} lastSyncAt={lastSyncAt} />;
+      case 'pickup':        return <PickupPanel {...props} />;
+      case 'reception':     return <ReceptionPanel {...props} />;
+      case 'consolidation': return <ConsolidationPanel {...props} />;
+      case 'docks':         return <DocksPanel {...props} />;
+      case 'delivery':      return <DeliveryPanel {...props} />;
+      case 'returns':       return <ReturnsPanel {...props} />;
+      case 'reverse':       return <ReversePlaceholderPanel {...props} />;
     }
   };
 
   return (
-    <div style={{ background: 'var(--color-background)', minHeight: '100vh', color: 'var(--color-text)' }}>
-      <TopBar warehouseCode="SCL-01" />
-      <AtRiskBar
-        orders={atRiskOrders.slice(0, 3)}
-        total={atRiskTotal}
-        onSelect={() => setStage(null)}
-      />
-      <TelemetryStrip
+    <div className="space-y-4">
+      {atRiskTotal > 0 && (
+        <AtRiskBanner
+          orders={atRiskOrders.slice(0, 3)}
+          total={atRiskTotal}
+          onViewAll={() => setStage(null)}
+        />
+      )}
+
+      <StageStrip
         stages={stages}
         activeStage={activeStage}
         onStageChange={setStage}
       />
-      <div style={{ padding: '16px' }}>{renderPanel()}</div>
+
+      {renderPanel()}
     </div>
   );
 }

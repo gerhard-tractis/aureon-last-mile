@@ -1,6 +1,6 @@
 "use client";
 
-import { DrillDownPanel } from '../DrillDownPanel';
+import { StagePanel } from '../StagePanel';
 import type { StagePanelProps } from './PickupPanel';
 
 const PLACEHOLDER_KPIS = [
@@ -12,7 +12,7 @@ const PLACEHOLDER_KPIS = [
 
 export function ReversePlaceholderPanel(_props: StagePanelProps) {
   return (
-    <DrillDownPanel
+    <StagePanel
       title="Logística Inversa"
       subtitle="Etapa 07 · Próximamente"
       deepLink={null}
@@ -22,17 +22,9 @@ export function ReversePlaceholderPanel(_props: StagePanelProps) {
       onPageChange={() => {}}
       lastSyncAt={null}
     >
-      <div
-        style={{
-          textAlign: 'center',
-          padding: '2rem',
-          color: 'var(--color-text-secondary)',
-          fontFamily: 'var(--font-sans)',
-          fontSize: '0.9rem',
-        }}
-      >
+      <div className="text-center py-8 text-text-secondary text-sm">
         Próximamente
       </div>
-    </DrillDownPanel>
+    </StagePanel>
   );
 }
