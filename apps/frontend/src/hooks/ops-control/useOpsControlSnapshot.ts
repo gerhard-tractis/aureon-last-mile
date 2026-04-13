@@ -79,7 +79,7 @@ export function useOpsControlSnapshot(
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const lastQueryData = useRef<OpsSnapshot | null>(null);
 
-  const { data, isLoading, error, refetch } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['ops-control', operatorId, 'snapshot'],
     queryFn: () => fetchSnapshot(operatorId!),
     enabled: !!operatorId,
