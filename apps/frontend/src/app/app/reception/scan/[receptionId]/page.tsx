@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ReceptionScanner } from '@/components/reception/ReceptionScanner';
 import {
   ReceptionDetailList,
-  ReceptionPackageItem,
+  type ReceptionPackageItem,
 } from '@/components/reception/ReceptionDetailList';
 import {
   useReceptionScans,
@@ -201,6 +201,13 @@ export default function ReceptionScanPage() {
     [meta, operatorId, userId, receptionId, scanMutation]
   );
 
+  const handleManualReceive = useCallback(
+    (packageLabel: string) => {
+      handleScan(packageLabel);
+    },
+    [handleScan]
+  );
+
   return (
     <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
       <ReceptionStepBreadcrumb current="scan" />
@@ -247,7 +254,7 @@ export default function ReceptionScanPage() {
           <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Paquetes</p>
         </div>
         <div className="p-3">
-          <ReceptionDetailList packages={packageItems} />
+          <ReceptionDetailList packages={packageItems} onManualReceive={handleManualReceive} />
         </div>
       </div>
 
