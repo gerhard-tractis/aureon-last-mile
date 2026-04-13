@@ -6,12 +6,16 @@
         "-y",
         "@supabase/mcp-server-supabase@latest",
         "--access-token",
-        "sbp_42e24919c87af44a2626b52dbc6dfd55eff3b692"
+        "sbp_9f10713a3f9db0d3c78f31ead753b984e1e8f76d"
       ]
     },
     "n8n-mcp": {
       "command": "n8n-mcp",
-      "args": []
+      "args": [],
+      "env": {
+        "N8N_API_URL": "https://n8n.tractis.ai",
+        "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2MWMyZTEwNC0zMjdlLTQ2M2QtYWM3Yy01YmY4NDhhOThkMGQiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwianRpIjoiNGYyODNiYTgtNjNmYy00NDdkLTljZjUtNDljOWIxMmZlZmU1IiwiaWF0IjoxNzcyMDQ2NDEwfQ.bzCD4NoFD4koK9Bm6Kw7DGON9Rvq59Gz7JIofUFHfJg"
+      }
     },
     "playwright": {
       "command": "npx",
