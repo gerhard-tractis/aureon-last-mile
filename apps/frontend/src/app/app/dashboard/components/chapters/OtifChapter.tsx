@@ -37,7 +37,6 @@ export function OtifChapter({ operatorId, period }: OtifChapterProps) {
 
   return (
     <Chapter
-      annotation={CHAPTER_LABELS.otifAnnotation}
       headline={CHAPTER_LABELS.otif}
     >
       <ChapterHeroBand

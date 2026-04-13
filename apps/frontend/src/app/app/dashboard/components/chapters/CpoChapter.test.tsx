@@ -12,9 +12,8 @@ vi.mock('@/hooks/dashboard/useCpoChapter', () => ({
 }));
 
 vi.mock('@/app/app/dashboard/components/Chapter', () => ({
-  Chapter: ({ annotation, headline, children }: { annotation: string; headline: string; children: React.ReactNode }) => (
+  Chapter: ({ headline, children }: { headline: string; children: React.ReactNode }) => (
     <div>
-      <span data-testid="annotation">{annotation}</span>
       <span data-testid="headline">{headline}</span>
       {children}
     </div>
@@ -96,11 +95,6 @@ describe('CpoChapter', () => {
       isError: false,
       fetchStatus: 'idle',
     });
-  });
-
-  it('renders annotation CAPÍTULO 01', () => {
-    render(<CpoChapter operatorId="op-1" period={PERIOD} />);
-    expect(screen.getByTestId('annotation')).toHaveTextContent('CAPÍTULO 01');
   });
 
   it('renders chapter headline CPO', () => {

@@ -38,7 +38,6 @@ function NpsTacticalPlaceholder({ title, explanation }: PlaceholderCardProps) {
 export function NpsChapter({ operatorId: _operatorId, period: _period }: NpsChapterProps) {
   return (
     <Chapter
-      annotation={CHAPTER_LABELS.npsAnnotation}
       headline={CHAPTER_LABELS.nps}
     >
       <ChapterPlaceholder reason={PLACEHOLDER_COPY.nps} />
