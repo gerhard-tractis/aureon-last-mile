@@ -13,7 +13,7 @@ export const UserListHeader = () => {
   return (
     <div className="flex items-center justify-between mb-6">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground">User Management</h1>
+        <h2 className="text-2xl font-semibold text-foreground">User Management</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Create and manage user accounts and roles
         </p>
