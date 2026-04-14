@@ -11,13 +11,22 @@ import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot
 
 const mockUseSnapshot = vi.mocked(useOpsControlSnapshot);
 
-const MANIFESTS = [
-  { id: 'm-1', external_load_id: 'CARGA-001', retailer_name: 'Paris', pickup_point_name: 'CD Paris Juncal', effective_delivery_date: '2026-03-02', order_count: 5, total_packages: 8, status: 'in_progress', reception_status: 'awaiting_reception' },
-  { id: 'm-2', external_load_id: 'CARGA-002', retailer_name: 'Easy', pickup_point_name: 'CD Easy Laguna', effective_delivery_date: '2026-03-05', order_count: 3, total_packages: 4, status: 'in_progress', reception_status: 'awaiting_reception' },
-  { id: 'm-3', external_load_id: 'CARGA-003', retailer_name: 'Paris', pickup_point_name: 'CD Paris 152', effective_delivery_date: '2026-03-07', order_count: 2, total_packages: 3, status: 'in_progress', reception_status: 'awaiting_reception' },
+const ORDERS = [
+  {
+    id: 'o-1', order_number: '67823485', customer_name: 'Constanza Lagos',
+    retailer_name: 'Paris', external_load_id: '45021609', pickup_point_name: 'CD Paris Juncal',
+    effective_delivery_date: '2026-03-02', comuna: 'Ñuñoa', status: 'verificado',
+    packages: [{ id: 'p-1', label: 'DD033412141', status: 'verificado', declared_box_count: 1 }],
+  },
+  {
+    id: 'o-2', order_number: '2916909648', customer_name: 'Juan Perez',
+    retailer_name: 'Easy', external_load_id: 'CARGA001', pickup_point_name: 'CD Easy Laguna',
+    effective_delivery_date: '2026-03-05', comuna: 'Las Condes', status: 'verificado',
+    packages: [{ id: 'p-2', label: 'LPNCL003305', status: 'verificado', declared_box_count: 1 }],
+  },
 ];
 
-function mockSnapshot(pickups = MANIFESTS) {
+function mockSnapshot(pickups = ORDERS) {
   mockUseSnapshot.mockReturnValue({
     snapshot: {
       orders: [], routes: [], pickups, returns: [],
@@ -42,54 +51,57 @@ describe('PickupPanel', () => {
     expect(screen.getByTestId('drilldown-title').textContent).toBe('Recogida');
   });
 
-  it('renders KPIs: En tránsito, Clientes, Puntos pickup, Órdenes', () => {
+  it('renders KPIs', () => {
     render(<PickupPanel {...defaultProps} />);
-    expect(screen.getByText('En tránsito')).toBeDefined();
+    expect(screen.getAllByText('Órdenes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bultos').length).toBeGreaterThan(0);
     expect(screen.getByText('Clientes')).toBeDefined();
     expect(screen.getByText('Puntos pickup')).toBeDefined();
-    expect(screen.getByText('Órdenes')).toBeDefined();
   });
 
-  it('renders table headers', () => {
+  it('renders order-level table headers', () => {
     render(<PickupPanel {...defaultProps} />);
-    expect(screen.getByText('Carga')).toBeDefined();
+    expect(screen.getByText('Orden')).toBeDefined();
     expect(screen.getByText('Cliente')).toBeDefined();
     expect(screen.getByText('Punto Pickup')).toBeDefined();
     expect(screen.getByText('Fecha entrega')).toBeDefined();
+    expect(screen.getByText('Comuna')).toBeDefined();
   });
 
-  it('renders deep-link to /app/pickup', () => {
+  it('renders a row per order', () => {
     render(<PickupPanel {...defaultProps} />);
-    const link = screen.getByRole('link');
-    expect((link as HTMLAnchorElement).href).toContain('/app/pickup');
+    expect(screen.getByText('67823485')).toBeDefined();
+    expect(screen.getByText('2916909648')).toBeDefined();
   });
 
-  it('renders a row per manifest', () => {
+  it('expands order to show packages on click', async () => {
     render(<PickupPanel {...defaultProps} />);
-    expect(screen.getByText('CARGA-001')).toBeDefined();
-    expect(screen.getByText('CARGA-002')).toBeDefined();
-    expect(screen.getByText('CARGA-003')).toBeDefined();
-  });
+    expect(screen.queryByText('DD033412141')).toBeNull();
 
-  it('shows empty state when no manifests', () => {
-    mockSnapshot([]);
-    render(<PickupPanel {...defaultProps} />);
-    expect(screen.getByText('Sin pickups en tránsito')).toBeDefined();
+    const row = screen.getByText('67823485').closest('tr')!;
+    await userEvent.click(row);
+
+    expect(screen.getByText('DD033412141')).toBeDefined();
+    expect(screen.getByText('Etiqueta')).toBeDefined();
   });
 
   it('filters by client', async () => {
     render(<PickupPanel {...defaultProps} />);
     const select = screen.getAllByRole('combobox')[0];
     await userEvent.selectOptions(select, 'Easy');
-    expect(screen.getByText('CARGA-002')).toBeDefined();
-    expect(screen.queryByText('CARGA-001')).toBeNull();
-    expect(screen.queryByText('CARGA-003')).toBeNull();
+    expect(screen.getByText('2916909648')).toBeDefined();
+    expect(screen.queryByText('67823485')).toBeNull();
   });
 
-  it('shows clear filters button when filter active', async () => {
+  it('shows empty state', () => {
+    mockSnapshot([]);
     render(<PickupPanel {...defaultProps} />);
-    const select = screen.getAllByRole('combobox')[0];
-    await userEvent.selectOptions(select, 'Easy');
-    expect(screen.getByText('Limpiar filtros')).toBeDefined();
+    expect(screen.getByText('Sin órdenes en tránsito')).toBeDefined();
+  });
+
+  it('renders deep-link to /app/pickup', () => {
+    render(<PickupPanel {...defaultProps} />);
+    const link = screen.getByRole('link');
+    expect((link as HTMLAnchorElement).href).toContain('/app/pickup');
   });
 });
