@@ -1,7 +1,10 @@
 -- =============================================================
--- Enrich ops-control snapshot: orders key now returns the same
--- shape as manifests — pickup_point_name, effective_delivery_date,
--- comuna, and nested packages array.
+-- Enrich ops-control snapshot:
+-- 1. Orders key now returns the same enriched shape as manifests
+--    (pickup_point_name, effective_delivery_date, nested packages).
+-- 2. Fix manifests filter: allow completed manifests awaiting
+--    reception (the trigger sets reception_status on completion,
+--    so excluding completed was contradictory).
 -- =============================================================
 
 CREATE OR REPLACE FUNCTION get_ops_control_snapshot(
@@ -82,7 +85,7 @@ AS $$
           FROM manifests m
           WHERE m.operator_id     = p_operator_id
             AND m.deleted_at IS NULL
-            AND m.status NOT IN ('completed', 'cancelled')
+            AND m.status != 'cancelled'
             AND m.reception_status = 'awaiting_reception'
         )
     ), '[]'::jsonb),
