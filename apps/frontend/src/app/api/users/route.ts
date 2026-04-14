@@ -31,7 +31,7 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
 
 const VALID_PERMISSIONS = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
 
-// Validation schema for creating users
+// Validation schema for creating users (operator_id is derived from JWT, not the request body)
 const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
@@ -39,8 +39,6 @@ const createUserSchema = z.object({
     message: 'Invalid role'
   }),
   permissions: z.array(z.enum(VALID_PERMISSIONS)).default([]),
-  operator_id: z.string().uuid('Invalid operator ID')
-// Note: permissions uses .default([]) at API layer so it's optional from callers
 });
 
 /**
@@ -177,18 +175,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, full_name, role, permissions, operator_id } = validation.data;
+    const { email, full_name, role, permissions } = validation.data;
 
-    // Validate operator_id matches admin's operator (prevent cross-operator user creation)
-    const adminOperatorId = session.user.app_metadata?.claims?.operator_id;
-    if (operator_id !== adminOperatorId) {
+    // operator_id always comes from the admin's JWT — never from the request body
+    const operator_id = session.user.app_metadata?.claims?.operator_id;
+    if (!operator_id) {
       return NextResponse.json(
-        {
-          code: 'FORBIDDEN',
-          message: 'Cannot create users for a different operator',
-          field: 'operator_id',
-          timestamp: new Date().toISOString()
-        },
+        { code: 'FORBIDDEN', message: 'No operator associated with your account', timestamp: new Date().toISOString() },
         { status: 403 }
       );
     }
