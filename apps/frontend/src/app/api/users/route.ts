@@ -29,6 +29,8 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
   return { allowed: true };
 }
 
+const VALID_PERMISSIONS = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
+
 // Validation schema for creating users
 const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
@@ -36,7 +38,9 @@ const createUserSchema = z.object({
   role: z.enum(['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
     message: 'Invalid role'
   }),
+  permissions: z.array(z.enum(VALID_PERMISSIONS)).default([]),
   operator_id: z.string().uuid('Invalid operator ID')
+// Note: permissions uses .default([]) at API layer so it's optional from callers
 });
 
 /**
@@ -63,7 +67,7 @@ export async function GET(_request: NextRequest) {
     // RLS policy auto-filters: WHERE operator_id = get_operator_id() AND deleted_at IS NULL
     const { data: users, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role, operator_id, created_at, deleted_at')
+      .select('id, email, full_name, role, permissions, operator_id, created_at, deleted_at')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
 
@@ -173,7 +177,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, full_name, role, operator_id } = validation.data;
+    const { email, full_name, role, permissions, operator_id } = validation.data;
 
     // Validate operator_id matches admin's operator (prevent cross-operator user creation)
     const adminOperatorId = session.user.app_metadata?.claims?.operator_id;
@@ -293,7 +297,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(createdUser, { status: 201 });
+    // Update permissions on the public.users record (trigger sets defaults, we override)
+    if (permissions.length > 0) {
+      await supabase
+        .from('users')
+        // @ts-ignore - Supabase TypeScript inference issue
+        .update({ permissions })
+        .eq('id', authUser.user.id);
+    }
+
+    return NextResponse.json({ ...createdUser, permissions }, { status: 201 });
   } catch (error) {
     console.error('Unexpected error in POST /api/users:', error);
     return NextResponse.json(

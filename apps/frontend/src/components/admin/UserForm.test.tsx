@@ -17,6 +17,7 @@ let mockUsersReturn = {
       email: 'existing@test.com',
       full_name: 'Existing User',
       role: 'admin',
+      permissions: [] as string[],
       operator_id: 'op-1',
       created_at: '2026-02-16T14:30:00Z',
       deleted_at: null as string | null,
@@ -26,6 +27,7 @@ let mockUsersReturn = {
       email: 'edit@test.com',
       full_name: 'Edit User',
       role: 'operations_manager',
+      permissions: ['pickup', 'reception'] as string[],
       operator_id: 'op-1',
       created_at: '2026-02-16T14:30:00Z',
       deleted_at: null as string | null,
@@ -70,6 +72,7 @@ describe('UserForm', () => {
           email: 'existing@test.com',
           full_name: 'Existing User',
           role: 'admin',
+          permissions: [] as string[],
           operator_id: 'op-1',
           created_at: '2026-02-16T14:30:00Z',
           deleted_at: null as string | null,
@@ -79,6 +82,7 @@ describe('UserForm', () => {
           email: 'edit@test.com',
           full_name: 'Edit User',
           role: 'operations_manager',
+          permissions: ['pickup', 'reception'] as string[],
           operator_id: 'op-1',
           created_at: '2026-02-16T14:30:00Z',
           deleted_at: null as string | null,
@@ -100,17 +104,17 @@ describe('UserForm', () => {
   });
 
   describe('Create Mode', () => {
-    it('should render form title as "Create New User"', () => {
+    it('should render form title as "Crear Usuario"', () => {
       render(<UserForm mode="create" />);
-      expect(screen.getByText('Create New User')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Crear Usuario' })).toBeInTheDocument();
     });
 
     it('should render all form fields for create mode', () => {
       render(<UserForm mode="create" />);
 
       expect(screen.getByLabelText(/Email/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Full Name/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Role/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Nombre completo/)).toBeInTheDocument();
+      expect(screen.getByLabelText(/Rol/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Operator ID/)).toBeInTheDocument();
     });
 
@@ -134,14 +138,24 @@ describe('UserForm', () => {
       render(<UserForm mode="create" />);
 
       expect(
-        screen.getByText('User will receive a password setup email')
+        screen.getByText('El usuario recibirá un email para configurar su contraseña.')
       ).toBeInTheDocument();
     });
 
-    it('should render "Create User" submit button', () => {
+    it('should render permission checkboxes', () => {
       render(<UserForm mode="create" />);
 
-      expect(screen.getByText('Create User')).toBeInTheDocument();
+      expect(screen.getByLabelText('Pickup')).toBeInTheDocument();
+      expect(screen.getByLabelText('Recepción')).toBeInTheDocument();
+      expect(screen.getByLabelText('Distribución')).toBeInTheDocument();
+      expect(screen.getByLabelText('Despacho')).toBeInTheDocument();
+      expect(screen.getByLabelText('Conversaciones')).toBeInTheDocument();
+    });
+
+    it('should render "Crear Usuario" submit button', () => {
+      render(<UserForm mode="create" />);
+
+      expect(screen.getByRole('button', { name: 'Crear Usuario' })).toBeInTheDocument();
     });
 
     it('should call createUser mutation on valid form submission', async () => {
@@ -151,8 +165,8 @@ describe('UserForm', () => {
       render(<UserForm mode="create" />);
 
       const emailInput = screen.getByLabelText(/Email/);
-      const fullNameInput = screen.getByLabelText(/Full Name/);
-      const roleSelect = screen.getByLabelText(/Role/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
+      const roleSelect = screen.getByLabelText(/Rol/);
       const operatorInput = screen.getByLabelText(/Operator ID/);
 
       await userEvent.type(emailInput, 'newuser@test.com');
@@ -160,7 +174,7 @@ describe('UserForm', () => {
       await userEvent.selectOptions(roleSelect, 'admin');
       await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -208,7 +222,7 @@ describe('UserForm', () => {
         { timeout: 1000 }
       );
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       expect(submitButton).toBeDisabled();
 
       fireEvent.click(submitButton);
@@ -227,8 +241,8 @@ describe('UserForm', () => {
       render(<UserForm mode="create" />);
 
       const emailInput = screen.getByLabelText(/Email/);
-      const fullNameInput = screen.getByLabelText(/Full Name/);
-      const roleSelect = screen.getByLabelText(/Role/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
+      const roleSelect = screen.getByLabelText(/Rol/);
       const operatorInput = screen.getByLabelText(/Operator ID/);
 
       await userEvent.type(emailInput, 'newuser@test.com');
@@ -236,7 +250,7 @@ describe('UserForm', () => {
       await userEvent.selectOptions(roleSelect, 'admin');
       await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -251,6 +265,7 @@ describe('UserForm', () => {
       email: 'edit@test.com',
       full_name: 'Edit User',
       role: 'operations_manager',
+      permissions: ['pickup', 'reception'] as string[],
       operator_id: 'op-1',
       created_at: '2026-02-16T14:30:00Z',
       deleted_at: null as string | null,
@@ -260,41 +275,54 @@ describe('UserForm', () => {
       mockUsersReturn.data = [mockUser];
     });
 
-    it('should render form title as "Edit User"', () => {
+    it('should render form title as "Editar Usuario"', () => {
       render(<UserForm mode="edit" userId="123" />);
-      expect(screen.getByText('Edit User')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Editar Usuario' })).toBeInTheDocument();
     });
 
     it('should display email as read-only', () => {
       render(<UserForm mode="edit" userId="123" />);
 
       expect(screen.getByText('edit@test.com')).toBeInTheDocument();
-      expect(screen.getByText('Email cannot be changed')).toBeInTheDocument();
+      expect(screen.getByText('El email no se puede cambiar.')).toBeInTheDocument();
     });
 
     it('should display operator_id as read-only', () => {
       render(<UserForm mode="edit" userId="123" />);
 
       expect(screen.getByText('op-1')).toBeInTheDocument();
-      expect(screen.getByText('Operator ID cannot be changed')).toBeInTheDocument();
     });
 
     it('should pre-fill form with user data', async () => {
       render(<UserForm mode="edit" userId="123" />);
 
       await waitFor(() => {
-        const fullNameInput = screen.getByLabelText(/Full Name/) as HTMLInputElement;
-        const roleSelect = screen.getByLabelText(/Role/) as HTMLSelectElement;
+        const fullNameInput = screen.getByLabelText(/Nombre completo/) as HTMLInputElement;
+        const roleSelect = screen.getByLabelText(/Rol/) as HTMLSelectElement;
 
         expect(fullNameInput.value).toBe('Edit User');
         expect(roleSelect.value).toBe('operations_manager');
       });
     });
 
-    it('should render "Save Changes" submit button', () => {
+    it('should pre-fill permissions checkboxes', async () => {
       render(<UserForm mode="edit" userId="123" />);
 
-      expect(screen.getByText('Save Changes')).toBeInTheDocument();
+      await waitFor(() => {
+        const pickupCheckbox = screen.getByLabelText('Pickup') as HTMLInputElement;
+        const recepcionCheckbox = screen.getByLabelText('Recepción') as HTMLInputElement;
+        const distribucionCheckbox = screen.getByLabelText('Distribución') as HTMLInputElement;
+
+        expect(pickupCheckbox.checked).toBe(true);
+        expect(recepcionCheckbox.checked).toBe(true);
+        expect(distribucionCheckbox.checked).toBe(false);
+      });
+    });
+
+    it('should render "Guardar Cambios" submit button', () => {
+      render(<UserForm mode="edit" userId="123" />);
+
+      expect(screen.getByRole('button', { name: 'Guardar Cambios' })).toBeInTheDocument();
     });
 
     it('should call updateUser mutation on valid form submission', async () => {
@@ -303,14 +331,14 @@ describe('UserForm', () => {
 
       render(<UserForm mode="edit" userId="123" />);
 
-      const fullNameInput = screen.getByLabelText(/Full Name/);
-      const roleSelect = screen.getByLabelText(/Role/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
+      const roleSelect = screen.getByLabelText(/Rol/);
 
       await userEvent.clear(fullNameInput);
       await userEvent.type(fullNameInput, 'Updated User');
       await userEvent.selectOptions(roleSelect, 'admin');
 
-      const submitButton = screen.getByText('Save Changes');
+      const submitButton = screen.getByRole('button', { name: 'Guardar Cambios' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -338,11 +366,11 @@ describe('UserForm', () => {
 
       render(<UserForm mode="edit" userId="123" />);
 
-      const fullNameInput = screen.getByLabelText(/Full Name/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
       await userEvent.clear(fullNameInput);
       await userEvent.type(fullNameInput, 'Updated User');
 
-      const submitButton = screen.getByText('Save Changes');
+      const submitButton = screen.getByRole('button', { name: 'Guardar Cambios' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -361,7 +389,7 @@ describe('UserForm', () => {
       const emailInput = screen.getByLabelText(/Email/) as HTMLInputElement;
       await userEvent.type(emailInput, 'invalid-email');
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       // Browser validation should prevent submission
@@ -377,10 +405,10 @@ describe('UserForm', () => {
 
       render(<UserForm mode="create" />);
 
-      const fullNameInput = screen.getByLabelText(/Full Name/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
       await userEvent.type(fullNameInput, 'A');
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -398,7 +426,7 @@ describe('UserForm', () => {
       const operatorInput = screen.getByLabelText(/Operator ID/);
       await userEvent.type(operatorInput, 'not-a-uuid');
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -424,7 +452,7 @@ describe('UserForm', () => {
 
       render(<UserForm mode="create" />);
 
-      const cancelButton = screen.getByText('Cancel');
+      const cancelButton = screen.getByText('Cancelar');
       fireEvent.click(cancelButton);
 
       expect(mockSetCreateFormOpen).toHaveBeenCalledWith(false);
@@ -436,7 +464,7 @@ describe('UserForm', () => {
 
       render(<UserForm mode="edit" userId="123" />);
 
-      const cancelButton = screen.getByText('Cancel');
+      const cancelButton = screen.getByText('Cancelar');
       fireEvent.click(cancelButton);
 
       expect(mockSetEditFormOpen).toHaveBeenCalledWith(false);
@@ -450,28 +478,28 @@ describe('UserForm', () => {
       render(<UserForm mode="create" />);
 
       const emailInput = screen.getByLabelText(/Email/);
-      const fullNameInput = screen.getByLabelText(/Full Name/);
-      const roleSelect = screen.getByLabelText(/Role/);
+      const fullNameInput = screen.getByLabelText(/Nombre completo/);
+      const roleSelect = screen.getByLabelText(/Rol/);
 
       expect(emailInput).toBeDisabled();
       expect(fullNameInput).toBeDisabled();
       expect(roleSelect).toBeDisabled();
     });
 
-    it('should show "Creating..." text when creating', () => {
+    it('should show "Creando..." text when creating', () => {
       mockCreateUserReturn.isPending = true;
 
       render(<UserForm mode="create" />);
 
-      expect(screen.getByText('Creating...')).toBeInTheDocument();
+      expect(screen.getByText('Creando...')).toBeInTheDocument();
     });
 
-    it('should show "Saving..." text when editing', () => {
+    it('should show "Guardando..." text when editing', () => {
       mockUpdateUserReturn.isPending = true;
 
       render(<UserForm mode="edit" userId="123" />);
 
-      expect(screen.getByText('Saving...')).toBeInTheDocument();
+      expect(screen.getByText('Guardando...')).toBeInTheDocument();
     });
 
     it('should show spinner when isPending is true', () => {
@@ -489,12 +517,12 @@ describe('UserForm', () => {
     it('should render all 5 role options', () => {
       render(<UserForm mode="create" />);
 
-      const roleSelect = screen.getByLabelText(/Role/);
+      const roleSelect = screen.getByLabelText(/Rol/);
       const options = roleSelect.querySelectorAll('option');
 
       // 1 placeholder + 5 roles = 6 options
       expect(options.length).toBe(6);
-      expect(options[0].textContent).toBe('Select a role');
+      expect(options[0].textContent).toBe('Seleccionar rol');
       expect(options[1].textContent).toBe('Pickup Crew');
       expect(options[2].textContent).toBe('Warehouse Staff');
       expect(options[3].textContent).toBe('Loading Crew');
@@ -507,7 +535,7 @@ describe('UserForm', () => {
     it('should have accent submit button', () => {
       render(<UserForm mode="create" />);
 
-      const submitButton = screen.getByText('Create User');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       expect(submitButton.className).toContain('bg-accent');
     });
 
