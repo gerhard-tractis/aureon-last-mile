@@ -11,7 +11,6 @@ export type RetailerSlaConfigRow = Record<string, unknown>;
 /** Map order status → ops-control stage key */
 function orderStage(status: unknown): string | null {
   switch (status) {
-    case 'verificado':            return 'reception';
     case 'en_bodega':
     case 'asignado':              return 'consolidation';
     case 'en_carga':

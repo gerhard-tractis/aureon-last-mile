@@ -40,9 +40,8 @@ function getItems(
 ): Record<string, unknown>[] {
   switch (stageKey) {
     case 'pickup':
-      return snapshot.pickups;
     case 'reception':
-      return snapshot.orders.filter((o) => o['stage'] === 'reception');
+      return snapshot.pickups;
     case 'consolidation':
       return snapshot.orders.filter((o) => o['stage'] === 'consolidation');
     case 'docks':
