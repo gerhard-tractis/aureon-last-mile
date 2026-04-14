@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { Plus, Route, Package, Truck, TrendingUp } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -28,11 +29,17 @@ function RouteSkeleton() {
 
 export default function DispatchPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { operatorId } = useOperatorId();
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
   const { data: openRoutes, isLoading: openLoading } = useDispatchRoutesByStatus(operatorId, ['draft', 'planned']);
   const { data: inProgressRoutes, isLoading: inProgressLoading } = useDispatchRoutesByStatus(operatorId, ['in_progress']);
   const { data: completedRoutes, isLoading: completedLoading } = useDispatchRoutesByStatus(operatorId, ['completed', 'cancelled'], sinceDateStr);
+
+  const handleDeleteRoute = async (routeId: string) => {
+    await fetch(`/api/dispatch/routes/${routeId}`, { method: 'DELETE' });
+    await queryClient.invalidateQueries({ queryKey: ['dispatch', 'routes'] });
+  };
 
   const handleNewRoute = async () => {
     const res = await fetch('/api/dispatch/routes', { method: 'POST' });
@@ -107,7 +114,12 @@ export default function DispatchPage() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {openRoutes.map((route) => (
-                <RouteListTile key={route.id} route={route} onClick={() => navigateToRoute(route.id)} />
+                <RouteListTile
+                  key={route.id}
+                  route={route}
+                  onClick={() => navigateToRoute(route.id)}
+                  onDelete={() => handleDeleteRoute(route.id)}
+                />
               ))}
             </div>
           )}
