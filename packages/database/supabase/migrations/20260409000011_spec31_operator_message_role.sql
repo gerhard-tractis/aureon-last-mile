@@ -3,7 +3,7 @@
 -- are distinguished from WISMO agent messages ('system').
 
 ALTER TABLE public.customer_session_messages
-  DROP CONSTRAINT chk_session_message_role;
+  DROP CONSTRAINT IF EXISTS chk_session_message_role;
 
 ALTER TABLE public.customer_session_messages
   ADD CONSTRAINT chk_session_message_role
