@@ -26,8 +26,8 @@ export function ReturnsPanel({ operatorId, lastSyncAt }: StagePanelProps) {
 
   return (
     <StagePanel
-      title="Devoluciones"
-      subtitle="Devoluciones agrupadas por retailer y razón"
+      title="Reingresos"
+      subtitle="Reingresos agrupados por retailer y razón"
       deepLink={null}
       kpis={kpis}
       page={page}

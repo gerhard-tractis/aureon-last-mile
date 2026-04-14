@@ -16,8 +16,8 @@ export const STAGE_LABELS: Record<StageKey, string> = {
   consolidation: 'Consolidación',
   docks:         'Andenes',
   delivery:      'Reparto',
-  returns:       'Devoluciones',
-  reverse:       'Logística Inversa',
+  returns:       'Reingresos',
+  reverse:       'Cambios y Devoluciones',
 };
 
 export const REASON_LABELS: Record<string, string> = {

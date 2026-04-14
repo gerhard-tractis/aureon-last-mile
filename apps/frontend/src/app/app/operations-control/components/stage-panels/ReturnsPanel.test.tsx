@@ -24,9 +24,9 @@ beforeEach(() => {
 describe('ReturnsPanel', () => {
   const defaultProps = { operatorId: 'op-1', lastSyncAt: null };
 
-  it('renders title "Devoluciones"', () => {
+  it('renders title "Reingresos"', () => {
     render(<ReturnsPanel {...defaultProps} />);
-    expect(screen.getByTestId('drilldown-title').textContent).toBe('Devoluciones');
+    expect(screen.getByTestId('drilldown-title').textContent).toBe('Reingresos');
   });
 
   it('renders 4 KPIs: Pendientes, Por retailer, Antigüedad máx, Próx. corte SLA', () => {
