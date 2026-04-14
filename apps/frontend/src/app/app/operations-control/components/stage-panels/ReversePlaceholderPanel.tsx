@@ -13,7 +13,7 @@ const PLACEHOLDER_KPIS = [
 export function ReversePlaceholderPanel(_props: StagePanelProps) {
   return (
     <StagePanel
-      title="Logística Inversa"
+      title="Cambios y Devoluciones"
       subtitle="Etapa 07 · Próximamente"
       deepLink={null}
       kpis={PLACEHOLDER_KPIS}

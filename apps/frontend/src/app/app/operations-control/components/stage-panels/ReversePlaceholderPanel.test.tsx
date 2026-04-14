@@ -11,9 +11,9 @@ vi.mock('@/hooks/ops-control/useStageBreakdown', () => ({
 describe('ReversePlaceholderPanel', () => {
   const defaultProps = { operatorId: 'op-1', lastSyncAt: null };
 
-  it('renders title "Logística Inversa"', () => {
+  it('renders title "Cambios y Devoluciones"', () => {
     render(<ReversePlaceholderPanel {...defaultProps} />);
-    expect(screen.getByTestId('drilldown-title').textContent).toBe('Logística Inversa');
+    expect(screen.getByTestId('drilldown-title').textContent).toBe('Cambios y Devoluciones');
   });
 
   it('renders "Próximamente" placeholder content', () => {

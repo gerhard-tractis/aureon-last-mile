@@ -13,8 +13,8 @@ describe('labels.es', () => {
     expect(STAGE_LABELS.consolidation).toBe('Consolidación');
     expect(STAGE_LABELS.docks).toBe('Andenes');
     expect(STAGE_LABELS.delivery).toBe('Reparto');
-    expect(STAGE_LABELS.returns).toBe('Devoluciones');
-    expect(STAGE_LABELS.reverse).toBe('Logística Inversa');
+    expect(STAGE_LABELS.returns).toBe('Reingresos');
+    expect(STAGE_LABELS.reverse).toBe('Cambios y Devoluciones');
   });
   it('exposes reason flags in Spanish', () => {
     expect(REASON_LABELS.no_driver).toBe('Sin conductor');

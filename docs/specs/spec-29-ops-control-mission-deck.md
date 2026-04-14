@@ -128,8 +128,8 @@ Always visible. Each stage cell shows:
 | 03 | `consolidation` | Consolidación |
 | 04 | `docks` | Andenes |
 | 05 | `delivery` | Reparto |
-| 06 | `returns` | Devoluciones |
-| 07 | `reverse` | Logística Inversa |
+| 06 | `returns` | Reingresos |
+| 07 | `reverse` | Cambios y Devoluciones |
 
 ##### Health rules per stage (initial heuristics)
 - **Pickup** — crit if any pickup overdue > 2h; warn if > 30 min.
@@ -157,8 +157,8 @@ Per selected stage:
 | Consolidación | by destination dock | Listas · Andenes destino · Antigüedad máx · Próx. corte | Andén destino · # órdenes · Listas desde · Estado |
 | Andenes | by route | Rutas listas · Avg dwell · Más antigua inactiva · Órdenes en andén | Ruta · Andén · Conductor · Órdenes · Dwell · Estado · Ventana |
 | Reparto | by route | Rutas activas · En tiempo · Atrasadas · Entregadas hoy | Ruta · Conductor · Progreso · Entregadas / total · Próx. parada · Estado |
-| Devoluciones | by retailer + reason | Pendientes · Por retailer · Antigüedad máx · Próx. corte SLA | Retailer · Pedido · Razón · Antigüedad · SLA · Estado |
-| Logística Inversa | — | placeholder | — `Próximamente` empty state |
+| Reingresos | by retailer + reason | Pendientes · Por retailer · Antigüedad máx · Próx. corte SLA | Retailer · Pedido · Razón · Antigüedad · SLA · Estado |
+| Cambios y Devoluciones | — | placeholder | — `Próximamente` empty state |
 
 Each table is **read-only**. The only action affordance is `Abrir en {Module} →` in the header.
 
@@ -170,8 +170,8 @@ Each table is **read-only**. The only action affordance is `Abrir en {Module} �
 | Consolidación | `/app/distribution` |
 | Andenes | `/app/dispatch` |
 | Reparto | `/app/dispatch?view=routes` |
-| Devoluciones | _standby_ — no dedicated module exists yet. Render the deep-link button as **disabled** with tooltip `Próximamente`. Wire later when a returns module ships. |
-| Logística Inversa | n/a (placeholder) |
+| Reingresos | _standby_ — no dedicated module exists yet. Render the deep-link button as **disabled** with tooltip `Próximamente`. Wire later when a returns module ships. |
+| Cambios y Devoluciones | n/a (placeholder) |
 
 ### Data flow
 
@@ -341,7 +341,7 @@ _None — all open items above have been resolved._
   -- =============================================================================
   -- Migration: <timestamp>_spec29_retailer_return_sla_config.sql
   -- Description: Spec-29 — per-retailer return-to-retail SLA configuration.
-  --   Read by the Ops Control Mission Deck "Devoluciones" stage.
+  --   Read by the Ops Control Mission Deck "Reingresos" stage.
   -- =============================================================================
 
   CREATE TABLE IF NOT EXISTS public.retailer_return_sla_config (
@@ -404,7 +404,7 @@ These are the brain of the dashboard. Tests first, no DOM, no Supabase.
     });
     it('returns Spanish labels', () => {
       expect(STAGE_LABELS.docks).toBe('Andenes');
-      expect(STAGE_LABELS.reverse).toBe('Logística Inversa');
+      expect(STAGE_LABELS.reverse).toBe('Cambios y Devoluciones');
     });
     it('exposes reason flags', () => {
       expect(REASON_LABELS.no_driver).toBe('Sin conductor');
@@ -678,7 +678,7 @@ Each task:
   - [ ] Clicking each of the 7 stage cells loads the matching panel.
   - [ ] URL reflects `?stage=...` and survives reload.
   - [ ] Pagination works (25 rows/page) on at-risk list and on a populated stage.
-  - [ ] Devoluciones deep-link button is **disabled** with `Próximamente` tooltip.
+  - [ ] Reingresos deep-link button is **disabled** with `Próximamente` tooltip.
   - [ ] All copy is Spanish.
   - [ ] Realtime: editing an order in Studio updates the dashboard live.
 

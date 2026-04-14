@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Migration: 20260406000001_spec29_retailer_return_sla_config.sql
 -- Description: Spec-29 — per-retailer return-to-retail SLA configuration.
---   Read by the Ops Control Mission Deck "Devoluciones" stage.
+--   Read by the Ops Control Mission Deck "Reingresos" stage.
 --   Table order:
 --   1. retailer_return_sla_config — per-operator, per-retailer SLA hours
 --   2. Index on operator_id (active rows only)
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS public.retailer_return_sla_config (
 );
 
 COMMENT ON TABLE public.retailer_return_sla_config IS
-  'Per-retailer return SLA in hours. Consumed by the Ops Control Mission Deck Devoluciones stage.';
+  'Per-retailer return SLA in hours. Consumed by the Ops Control Mission Deck Reingresos stage.';
 
 COMMENT ON COLUMN public.retailer_return_sla_config.retailer_id IS
   'External retailer identifier (e.g. ERP code). Unique per operator.';
