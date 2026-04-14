@@ -251,34 +251,6 @@ const CreateUserFormInternal = () => {
             )}
           />
 
-          {/* Operator ID */}
-          <div>
-            <label
-              htmlFor="operator_id"
-              className="block text-sm font-medium text-foreground mb-1"
-            >
-              Operator ID *
-            </label>
-            <input
-              id="operator_id"
-              type="text"
-              {...register('operator_id')}
-              disabled={isPending}
-              placeholder="e.g., 550e8400-e29b-41d4-a716-446655440000"
-              className="w-full px-3 py-2 border border-border rounded-md bg-surface text-[var(--color-text)] focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed"
-              aria-describedby={errors.operator_id ? 'operator_id-error' : undefined}
-              aria-invalid={!!errors.operator_id}
-            />
-            {errors.operator_id && (
-              <p id="operator_id-error" className="mt-1 text-sm text-[var(--color-status-error)]" role="alert">
-                {errors.operator_id.message}
-              </p>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">
-              UUID del operador al que pertenece este usuario.
-            </p>
-          </div>
-
           {/* Actions */}
           <div className="flex gap-3 justify-end pt-4">
             <button
@@ -455,16 +427,6 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               />
             )}
           />
-
-          {/* Operator ID — read-only */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1">
-              Operator ID
-            </label>
-            <div className="w-full px-3 py-2 border border-border rounded-md bg-muted text-muted-foreground text-sm font-mono">
-              {user.operator_id}
-            </div>
-          </div>
 
           {/* Actions */}
           <div className="flex gap-3 justify-end pt-4">

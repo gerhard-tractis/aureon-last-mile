@@ -8,7 +8,6 @@ export interface CreateUserInput {
   full_name: string;
   role: 'pickup_crew' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
   permissions: string[];
-  operator_id: string;
 }
 
 export interface UpdateUserInput {

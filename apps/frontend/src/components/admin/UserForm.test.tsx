@@ -115,7 +115,6 @@ describe('UserForm', () => {
       expect(screen.getByLabelText(/Email/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Nombre completo/)).toBeInTheDocument();
       expect(screen.getByLabelText(/Rol/)).toBeInTheDocument();
-      expect(screen.getByLabelText(/Operator ID/)).toBeInTheDocument();
     });
 
     it('should have editable email field in create mode', () => {
@@ -124,14 +123,6 @@ describe('UserForm', () => {
       const emailInput = screen.getByLabelText(/Email/) as HTMLInputElement;
       expect(emailInput).not.toBeDisabled();
       expect(emailInput.type).toBe('email');
-    });
-
-    it('should have editable operator_id field in create mode', () => {
-      render(<UserForm mode="create" />);
-
-      const operatorInput = screen.getByLabelText(/Operator ID/) as HTMLInputElement;
-      expect(operatorInput).not.toBeDisabled();
-      expect(operatorInput.type).toBe('text');
     });
 
     it('should display password setup hint', () => {
@@ -167,12 +158,10 @@ describe('UserForm', () => {
       const emailInput = screen.getByLabelText(/Email/);
       const fullNameInput = screen.getByLabelText(/Nombre completo/);
       const roleSelect = screen.getByLabelText(/Rol/);
-      const operatorInput = screen.getByLabelText(/Operator ID/);
 
       await userEvent.type(emailInput, 'newuser@test.com');
       await userEvent.type(fullNameInput, 'New User');
       await userEvent.selectOptions(roleSelect, 'admin');
-      await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
       const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
@@ -183,7 +172,6 @@ describe('UserForm', () => {
             email: 'newuser@test.com',
             full_name: 'New User',
             role: 'admin',
-            operator_id: '550e8400-e29b-41d4-a716-446655440000',
           }),
           expect.any(Object)
         );
@@ -243,12 +231,10 @@ describe('UserForm', () => {
       const emailInput = screen.getByLabelText(/Email/);
       const fullNameInput = screen.getByLabelText(/Nombre completo/);
       const roleSelect = screen.getByLabelText(/Rol/);
-      const operatorInput = screen.getByLabelText(/Operator ID/);
 
       await userEvent.type(emailInput, 'newuser@test.com');
       await userEvent.type(fullNameInput, 'New User');
       await userEvent.selectOptions(roleSelect, 'admin');
-      await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
       const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
@@ -285,12 +271,6 @@ describe('UserForm', () => {
 
       expect(screen.getByText('edit@test.com')).toBeInTheDocument();
       expect(screen.getByText('El email no se puede cambiar.')).toBeInTheDocument();
-    });
-
-    it('should display operator_id as read-only', () => {
-      render(<UserForm mode="edit" userId="123" />);
-
-      expect(screen.getByText('op-1')).toBeInTheDocument();
     });
 
     it('should pre-fill form with user data', async () => {
@@ -417,23 +397,6 @@ describe('UserForm', () => {
       });
     });
 
-    it('should prevent submission with invalid UUID (Zod validation)', async () => {
-      const mockMutate = vi.fn();
-      mockCreateUserReturn.mutate = mockMutate;
-
-      render(<UserForm mode="create" />);
-
-      const operatorInput = screen.getByLabelText(/Operator ID/);
-      await userEvent.type(operatorInput, 'not-a-uuid');
-
-      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
-      fireEvent.click(submitButton);
-
-      await waitFor(() => {
-        // Mutation should not be called for invalid operator ID
-        expect(mockMutate).not.toHaveBeenCalled();
-      });
-    });
 
     it('should have aria-invalid attribute on form fields', async () => {
       render(<UserForm mode="create" />);

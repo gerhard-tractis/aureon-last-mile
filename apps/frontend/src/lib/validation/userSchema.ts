@@ -30,8 +30,7 @@ export const createUserSchema = z.object({
     ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
     { message: 'Please select a valid role' }
   ),
-  permissions: z.array(z.enum(PERMISSION_VALUES)),
-  operator_id: z.string().uuid('Invalid operator ID')
+  permissions: z.array(z.enum(PERMISSION_VALUES))
 });
 
 /**
