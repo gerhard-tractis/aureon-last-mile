@@ -6,6 +6,20 @@
 import { z } from 'zod';
 
 /**
+ * Available module permissions
+ */
+export const PERMISSION_VALUES = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
+export type Permission = typeof PERMISSION_VALUES[number];
+
+export const permissionOptions: { value: Permission; label: string }[] = [
+  { value: 'pickup', label: 'Pickup' },
+  { value: 'reception', label: 'Recepción' },
+  { value: 'distribution', label: 'Distribución' },
+  { value: 'dispatch', label: 'Despacho' },
+  { value: 'customer_service', label: 'Conversaciones' },
+];
+
+/**
  * User creation schema
  * Used when creating a new user
  */
@@ -16,6 +30,7 @@ export const createUserSchema = z.object({
     ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
     { message: 'Please select a valid role' }
   ),
+  permissions: z.array(z.enum(PERMISSION_VALUES)),
   operator_id: z.string().uuid('Invalid operator ID')
 });
 
@@ -25,12 +40,16 @@ export const createUserSchema = z.object({
  * Email and operator_id cannot be changed
  */
 export const updateUserSchema = z.object({
-  full_name: z.string().min(2, 'Name must be at least 2 characters'),
+  full_name: z.string().min(2, 'Name must be at least 2 characters').optional(),
   role: z.enum(
     ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
     { message: 'Please select a valid role' }
-  )
-});
+  ).optional(),
+  permissions: z.array(z.enum(PERMISSION_VALUES)).optional(),
+}).refine(
+  (data) => data.full_name !== undefined || data.role !== undefined || data.permissions !== undefined,
+  { message: 'At least one field must be provided' }
+);
 
 /**
  * TypeScript types inferred from schemas

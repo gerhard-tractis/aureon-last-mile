@@ -7,12 +7,14 @@ export interface CreateUserInput {
   email: string;
   full_name: string;
   role: 'pickup_crew' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
+  permissions: string[];
   operator_id: string;
 }
 
 export interface UpdateUserInput {
   full_name?: string;
   role?: 'pickup_crew' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
+  permissions?: string[];
 }
 
 export interface User {
@@ -20,6 +22,7 @@ export interface User {
   email: string;
   full_name: string;
   role: string;
+  permissions: string[];
   operator_id: string;
   created_at: string;
   deleted_at: string | null;
