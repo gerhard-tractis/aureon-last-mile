@@ -12,7 +12,8 @@ export interface StagePanelProps {
 }
 
 type PickupOrder = Record<string, unknown>;
-type Package = { id: string; label: string; status: string; declared_box_count: number | null };
+type SkuItem = { sku: string; quantity: number; description: string };
+type Package = { id: string; label: string; status: string; declared_box_count: number | null; sku_items: SkuItem[] | null };
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—';
@@ -164,18 +165,28 @@ export function PickupPanel({ operatorId, lastSyncAt }: StagePanelProps) {
                             <thead>
                               <tr className="border-b border-border-subtle">
                                 <th className="px-2 py-1 text-left text-text-muted font-medium">Etiqueta</th>
+                                <th className="px-2 py-1 text-left text-text-muted font-medium">SKU</th>
+                                <th className="px-2 py-1 text-left text-text-muted font-medium">Descripción</th>
+                                <th className="px-2 py-1 text-left text-text-muted font-medium">Cant.</th>
                                 <th className="px-2 py-1 text-left text-text-muted font-medium">Estado</th>
                                 <th className="px-2 py-1 text-left text-text-muted font-medium">Cajas</th>
                               </tr>
                             </thead>
                             <tbody>
-                              {packages.map((pkg) => (
-                                <tr key={pkg.id} className="border-b border-border-subtle last:border-0">
-                                  <td className="px-2 py-1 font-mono">{pkg.label ?? '—'}</td>
-                                  <td className="px-2 py-1">{pkg.status ?? '—'}</td>
-                                  <td className="px-2 py-1 font-mono">{pkg.declared_box_count ?? '—'}</td>
-                                </tr>
-                              ))}
+                              {packages.map((pkg) => {
+                                const skus = pkg.sku_items ?? [];
+                                const firstSku = skus[0];
+                                return (
+                                  <tr key={pkg.id} className="border-b border-border-subtle last:border-0">
+                                    <td className="px-2 py-1 font-mono">{pkg.label ?? '—'}</td>
+                                    <td className="px-2 py-1 font-mono">{firstSku?.sku ?? '—'}</td>
+                                    <td className="px-2 py-1 max-w-[250px] truncate">{firstSku?.description ?? '—'}</td>
+                                    <td className="px-2 py-1 font-mono">{firstSku?.quantity ?? '—'}</td>
+                                    <td className="px-2 py-1">{pkg.status ?? '—'}</td>
+                                    <td className="px-2 py-1 font-mono">{pkg.declared_box_count ?? '—'}</td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </td>

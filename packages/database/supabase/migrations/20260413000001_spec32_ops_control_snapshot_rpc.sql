@@ -47,7 +47,8 @@ AS $$
             'id',                 p.id,
             'label',              p.label,
             'status',             p.status,
-            'declared_box_count', p.declared_box_count
+            'declared_box_count', p.declared_box_count,
+            'sku_items',          p.sku_items
           ))
           FROM packages p
           WHERE p.order_id = o.id
