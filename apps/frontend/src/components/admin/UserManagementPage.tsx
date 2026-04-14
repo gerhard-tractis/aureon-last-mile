@@ -24,7 +24,7 @@ export const UserManagementPage = () => {
     <div className="min-h-screen bg-background py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <UserListHeader />
-        <UserTable users={users || []} isLoading={isLoading} />
+        <UserTable users={users || []} isLoading={isLoading} userRole="admin" />
         {isCreateFormOpen && <UserForm mode="create" />}
         {isEditFormOpen && selectedUserId && <UserForm mode="edit" userId={selectedUserId} />}
         <DeleteConfirmationModal
