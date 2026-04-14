@@ -8,6 +8,37 @@ export type PickupRow = Record<string, unknown>;
 export type ReturnRow = Record<string, unknown>;
 export type RetailerSlaConfigRow = Record<string, unknown>;
 
+/** Map order status → ops-control stage key */
+function orderStage(status: unknown): string | null {
+  switch (status) {
+    case 'verificado':            return 'reception';
+    case 'en_bodega':
+    case 'asignado':              return 'consolidation';
+    case 'en_carga':
+    case 'listo_para_despacho':   return 'docks';
+    case 'en_ruta':               return 'delivery';
+    default:                      return null;
+  }
+}
+
+/** Map route status → ops-control stage key */
+function routeStage(status: unknown): string | null {
+  switch (status) {
+    case 'draft':
+    case 'planned':       return 'docks';
+    case 'in_progress':   return 'delivery';
+    default:              return null;
+  }
+}
+
+function enrichOrder(o: OrderRow): OrderRow {
+  return { ...o, stage: orderStage(o['status']) };
+}
+
+function enrichRoute(r: RouteRow): RouteRow {
+  return { ...r, stage: routeStage(r['status']) };
+}
+
 export type OpsSnapshot = {
   orders: OrderRow[];
   routes: RouteRow[];
@@ -40,8 +71,8 @@ async function fetchSnapshot(operatorId: string): Promise<OpsSnapshot> {
   const result = data as Record<string, unknown[]> | null;
 
   return {
-    orders: (result?.orders ?? []) as OrderRow[],
-    routes: (result?.routes ?? []) as RouteRow[],
+    orders: ((result?.orders ?? []) as OrderRow[]).map(enrichOrder),
+    routes: ((result?.routes ?? []) as RouteRow[]).map(enrichRoute),
     pickups: (result?.manifests ?? []) as PickupRow[],
     returns: [] as ReturnRow[], // No returns table yet
     retailerSlaConfig: (result?.sla_config ?? []) as RetailerSlaConfigRow[],
@@ -113,7 +144,7 @@ export function useOpsControlSnapshot(
           if (payload.eventType === 'DELETE') {
             snapshotRef.current = { ...current, orders: removeRow(current.orders, payload.old) };
           } else {
-            const row = payload.new;
+            const row = enrichOrder(payload.new);
             // If order transitioned to a terminal status, remove it from the snapshot
             if (EXCLUDED_ORDER_STATUSES.has(row['status'] as string)) {
               snapshotRef.current = { ...current, orders: removeRow(current.orders, row) };
@@ -139,7 +170,7 @@ export function useOpsControlSnapshot(
           if (payload.eventType === 'DELETE') {
             snapshotRef.current = { ...current, routes: removeRow(current.routes, payload.old) };
           } else {
-            const row = payload.new;
+            const row = enrichRoute(payload.new);
             if (EXCLUDED_ROUTE_STATUSES.has(row['status'] as string)) {
               snapshotRef.current = { ...current, routes: removeRow(current.routes, row) };
             } else {
