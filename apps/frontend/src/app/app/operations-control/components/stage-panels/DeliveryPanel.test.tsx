@@ -12,13 +12,13 @@ const mockUseStageBreakdown = vi.mocked(useStageBreakdown);
 
 const NEUTRAL = { status: 'neutral', delta: '—', reasonsByOrder: new Map() };
 
+const ORDERS = [
+  { id: 'o-1', order_number: 'ORD-030', retailer_name: 'Paris', pickup_point_name: 'CD Paris', external_load_id: 'L1', effective_delivery_date: '2026-03-02', comuna: 'Ñuñoa', status: 'en_ruta', packages: [] },
+  { id: 'o-2', order_number: 'ORD-031', retailer_name: 'Easy', pickup_point_name: 'CD Easy', external_load_id: 'L2', effective_delivery_date: '2026-03-05', comuna: 'Las Condes', status: 'en_ruta', packages: [] },
+];
+
 beforeEach(() => {
-  mockUseStageBreakdown.mockReturnValue({
-    rows: [],
-    total: 0,
-    pageCount: 1,
-    stageHealth: NEUTRAL,
-  });
+  mockUseStageBreakdown.mockReturnValue({ rows: [], total: 0, pageCount: 1, stageHealth: NEUTRAL });
 });
 
 describe('DeliveryPanel', () => {
@@ -29,22 +29,12 @@ describe('DeliveryPanel', () => {
     expect(screen.getByTestId('drilldown-title').textContent).toBe('Reparto');
   });
 
-  it('renders 4 KPIs: Rutas activas, En tiempo, Atrasadas, Entregadas hoy', () => {
+  it('renders 4 KPIs: Órdenes, Bultos, Clientes, Puntos pickup', () => {
     render(<DeliveryPanel {...defaultProps} />);
-    expect(screen.getByText('Rutas activas')).toBeDefined();
-    expect(screen.getByText('En tiempo')).toBeDefined();
-    expect(screen.getByText('Atrasadas')).toBeDefined();
-    expect(screen.getByText('Entregadas hoy')).toBeDefined();
-  });
-
-  it('renders table headers: Ruta, Conductor, Progreso, Entregadas / total, Próx. parada, Estado', () => {
-    render(<DeliveryPanel {...defaultProps} />);
-    expect(screen.getByText('Ruta')).toBeDefined();
-    expect(screen.getByText('Conductor')).toBeDefined();
-    expect(screen.getByText('Progreso')).toBeDefined();
-    expect(screen.getByText('Entregadas / total')).toBeDefined();
-    expect(screen.getByText('Próx. parada')).toBeDefined();
-    expect(screen.getByText('Estado')).toBeDefined();
+    expect(screen.getAllByText('Órdenes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bultos').length).toBeGreaterThan(0);
+    expect(screen.getByText('Clientes')).toBeDefined();
+    expect(screen.getByText('Puntos pickup')).toBeDefined();
   });
 
   it('renders deep-link pointing to /app/dispatch?view=routes', () => {
@@ -55,21 +45,13 @@ describe('DeliveryPanel', () => {
 
   it('shows empty state when rows is empty', () => {
     render(<DeliveryPanel {...defaultProps} />);
-    expect(screen.getByText('Sin elementos en esta etapa')).toBeDefined();
+    expect(screen.getByText('Sin órdenes en esta etapa')).toBeDefined();
   });
 
-  it('renders a row for each returned item', () => {
-    mockUseStageBreakdown.mockReturnValue({
-      rows: [
-        { route_id: 'R-10', driver: 'Ana', progress_pct: 60, delivered_count: 6, total_count: 10, next_stop: 'Calle 5', status: 'active' },
-        { route_id: 'R-11', driver: 'Luis', progress_pct: 80, delivered_count: 8, total_count: 10, next_stop: 'Calle 8', status: 'active' },
-      ],
-      total: 2,
-      pageCount: 1,
-      stageHealth: NEUTRAL,
-    });
+  it('renders a row for each order', () => {
+    mockUseStageBreakdown.mockReturnValue({ rows: ORDERS, total: 2, pageCount: 1, stageHealth: NEUTRAL });
     render(<DeliveryPanel {...defaultProps} />);
-    expect(screen.getByText('R-10')).toBeDefined();
-    expect(screen.getByText('R-11')).toBeDefined();
+    expect(screen.getByText('ORD-030')).toBeDefined();
+    expect(screen.getByText('ORD-031')).toBeDefined();
   });
 });

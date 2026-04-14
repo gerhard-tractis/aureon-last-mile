@@ -96,7 +96,7 @@ describe('PickupPanel', () => {
   it('shows empty state', () => {
     mockSnapshot([]);
     render(<PickupPanel {...defaultProps} />);
-    expect(screen.getByText('Sin órdenes en tránsito')).toBeDefined();
+    expect(screen.getByText('Sin órdenes en esta etapa')).toBeDefined();
   });
 
   it('renders deep-link to /app/pickup', () => {

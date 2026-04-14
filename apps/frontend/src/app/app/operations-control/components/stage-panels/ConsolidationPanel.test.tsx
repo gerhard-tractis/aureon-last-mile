@@ -12,13 +12,13 @@ const mockUseStageBreakdown = vi.mocked(useStageBreakdown);
 
 const NEUTRAL = { status: 'neutral', delta: '—', reasonsByOrder: new Map() };
 
+const ORDERS = [
+  { id: 'o-1', order_number: 'ORD-010', retailer_name: 'Paris', pickup_point_name: 'CD Paris', external_load_id: 'L1', effective_delivery_date: '2026-03-02', comuna: 'Ñuñoa', status: 'en_bodega', packages: [] },
+  { id: 'o-2', order_number: 'ORD-011', retailer_name: 'Easy', pickup_point_name: 'CD Easy', external_load_id: 'L2', effective_delivery_date: '2026-03-05', comuna: 'Las Condes', status: 'asignado', packages: [] },
+];
+
 beforeEach(() => {
-  mockUseStageBreakdown.mockReturnValue({
-    rows: [],
-    total: 0,
-    pageCount: 1,
-    stageHealth: NEUTRAL,
-  });
+  mockUseStageBreakdown.mockReturnValue({ rows: [], total: 0, pageCount: 1, stageHealth: NEUTRAL });
 });
 
 describe('ConsolidationPanel', () => {
@@ -29,20 +29,12 @@ describe('ConsolidationPanel', () => {
     expect(screen.getByTestId('drilldown-title').textContent).toBe('Consolidación');
   });
 
-  it('renders 4 KPIs: Listas, Andenes destino, Antigüedad máx, Próx. corte', () => {
+  it('renders 4 KPIs: Órdenes, Bultos, Clientes, Puntos pickup', () => {
     render(<ConsolidationPanel {...defaultProps} />);
-    expect(screen.getByText('Listas')).toBeDefined();
-    expect(screen.getByText('Andenes destino')).toBeDefined();
-    expect(screen.getByText('Antigüedad máx')).toBeDefined();
-    expect(screen.getByText('Próx. corte')).toBeDefined();
-  });
-
-  it('renders table headers: Andén destino, # Órdenes, Listas desde, Estado', () => {
-    render(<ConsolidationPanel {...defaultProps} />);
-    expect(screen.getByText('Andén destino')).toBeDefined();
-    expect(screen.getByText('# Órdenes')).toBeDefined();
-    expect(screen.getByText('Listas desde')).toBeDefined();
-    expect(screen.getByText('Estado')).toBeDefined();
+    expect(screen.getAllByText('Órdenes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bultos').length).toBeGreaterThan(0);
+    expect(screen.getByText('Clientes')).toBeDefined();
+    expect(screen.getByText('Puntos pickup')).toBeDefined();
   });
 
   it('renders deep-link pointing to /app/distribution', () => {
@@ -53,21 +45,13 @@ describe('ConsolidationPanel', () => {
 
   it('shows empty state when rows is empty', () => {
     render(<ConsolidationPanel {...defaultProps} />);
-    expect(screen.getByText('Sin elementos en esta etapa')).toBeDefined();
+    expect(screen.getByText('Sin órdenes en esta etapa')).toBeDefined();
   });
 
-  it('renders a row for each returned item', () => {
-    mockUseStageBreakdown.mockReturnValue({
-      rows: [
-        { dest_dock: 'Andén 1', order_count: 10, ready_since: '08:00', status: 'ready' },
-        { dest_dock: 'Andén 2', order_count: 5, ready_since: '09:30', status: 'pending' },
-      ],
-      total: 2,
-      pageCount: 1,
-      stageHealth: NEUTRAL,
-    });
+  it('renders a row for each order', () => {
+    mockUseStageBreakdown.mockReturnValue({ rows: ORDERS, total: 2, pageCount: 1, stageHealth: NEUTRAL });
     render(<ConsolidationPanel {...defaultProps} />);
-    expect(screen.getByText('Andén 1')).toBeDefined();
-    expect(screen.getByText('Andén 2')).toBeDefined();
+    expect(screen.getByText('ORD-010')).toBeDefined();
+    expect(screen.getByText('ORD-011')).toBeDefined();
   });
 });

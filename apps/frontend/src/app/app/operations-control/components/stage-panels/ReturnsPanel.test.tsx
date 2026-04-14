@@ -12,13 +12,13 @@ const mockUseStageBreakdown = vi.mocked(useStageBreakdown);
 
 const NEUTRAL = { status: 'neutral', delta: '—', reasonsByOrder: new Map() };
 
+const ORDERS = [
+  { id: 'o-1', order_number: 'ORD-040', retailer_name: 'Paris', pickup_point_name: 'CD Paris', external_load_id: 'L1', effective_delivery_date: '2026-03-02', comuna: 'Ñuñoa', status: 'devuelto', packages: [] },
+  { id: 'o-2', order_number: 'ORD-041', retailer_name: 'Easy', pickup_point_name: 'CD Easy', external_load_id: 'L2', effective_delivery_date: '2026-03-05', comuna: 'Las Condes', status: 'devuelto', packages: [] },
+];
+
 beforeEach(() => {
-  mockUseStageBreakdown.mockReturnValue({
-    rows: [],
-    total: 0,
-    pageCount: 1,
-    stageHealth: NEUTRAL,
-  });
+  mockUseStageBreakdown.mockReturnValue({ rows: [], total: 0, pageCount: 1, stageHealth: NEUTRAL });
 });
 
 describe('ReturnsPanel', () => {
@@ -29,22 +29,12 @@ describe('ReturnsPanel', () => {
     expect(screen.getByTestId('drilldown-title').textContent).toBe('Reingresos');
   });
 
-  it('renders 4 KPIs: Pendientes, Por retailer, Antigüedad máx, Próx. corte SLA', () => {
+  it('renders 4 KPIs: Órdenes, Bultos, Clientes, Puntos pickup', () => {
     render(<ReturnsPanel {...defaultProps} />);
-    expect(screen.getByText('Pendientes')).toBeDefined();
-    expect(screen.getByText('Por retailer')).toBeDefined();
-    expect(screen.getByText('Antigüedad máx')).toBeDefined();
-    expect(screen.getByText('Próx. corte SLA')).toBeDefined();
-  });
-
-  it('renders table headers: Retailer, Pedido, Razón, Antigüedad, SLA, Estado', () => {
-    render(<ReturnsPanel {...defaultProps} />);
-    expect(screen.getByText('Retailer')).toBeDefined();
-    expect(screen.getByText('Pedido')).toBeDefined();
-    expect(screen.getByText('Razón')).toBeDefined();
-    expect(screen.getByText('Antigüedad')).toBeDefined();
-    expect(screen.getByText('SLA')).toBeDefined();
-    expect(screen.getByText('Estado')).toBeDefined();
+    expect(screen.getAllByText('Órdenes').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bultos').length).toBeGreaterThan(0);
+    expect(screen.getByText('Clientes')).toBeDefined();
+    expect(screen.getByText('Puntos pickup')).toBeDefined();
   });
 
   it('renders a disabled button (no returns module yet)', () => {
@@ -55,21 +45,13 @@ describe('ReturnsPanel', () => {
 
   it('shows empty state when rows is empty', () => {
     render(<ReturnsPanel {...defaultProps} />);
-    expect(screen.getByText('Sin elementos en esta etapa')).toBeDefined();
+    expect(screen.getByText('Sin órdenes en esta etapa')).toBeDefined();
   });
 
-  it('renders a row for each returned item', () => {
-    mockUseStageBreakdown.mockReturnValue({
-      rows: [
-        { retailer: 'Retail A', order_id: 'PED-001', reason: 'damaged', age_minutes: 120, sla_deadline: '18:00', status: 'pending' },
-        { retailer: 'Retail B', order_id: 'PED-002', reason: 'wrong_item', age_minutes: 60, sla_deadline: '20:00', status: 'pending' },
-      ],
-      total: 2,
-      pageCount: 1,
-      stageHealth: NEUTRAL,
-    });
+  it('renders a row for each order', () => {
+    mockUseStageBreakdown.mockReturnValue({ rows: ORDERS, total: 2, pageCount: 1, stageHealth: NEUTRAL });
     render(<ReturnsPanel {...defaultProps} />);
-    expect(screen.getByText('PED-001')).toBeDefined();
-    expect(screen.getByText('PED-002')).toBeDefined();
+    expect(screen.getByText('ORD-040')).toBeDefined();
+    expect(screen.getByText('ORD-041')).toBeDefined();
   });
 });
