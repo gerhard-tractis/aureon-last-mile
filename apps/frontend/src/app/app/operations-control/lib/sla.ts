@@ -22,7 +22,10 @@ export interface RiskResult {
 }
 
 function toISO(date: string, time: string): string {
-  return `${date}T${time}:00`;
+  // PostgreSQL TIME columns serialize as "HH:MM:SS" via row_to_json.
+  // Normalise to "HH:MM" so the appended ":00" produces a valid ISO string.
+  const hhmm = time.slice(0, 5);
+  return `${date}T${hhmm}:00`;
 }
 
 function fmtDuration(totalMinutes: number): string {
@@ -52,7 +55,10 @@ export function effectiveWindow(order: OrderWindow): EffectiveWindow {
 }
 
 export function classifyRisk(order: OrderWindow, now: Date): RiskResult {
-  if (order.delivered_at !== null) {
+  // Use loose equality: treats both null and undefined as "not delivered".
+  // The snapshot RPC filters out 'entregado' orders server-side, so
+  // delivered_at may simply be absent from the payload.
+  if (order.delivered_at != null) {
     return { status: 'none', minutesRemaining: 0, label: '—' };
   }
 
