@@ -35,6 +35,7 @@ AS $$
       WHERE m.operator_id = p_operator_id
         AND m.deleted_at IS NULL
         AND m.status NOT IN ('completed', 'cancelled')
+        AND m.reception_status = 'awaiting_reception'
     ), '[]'::jsonb),
 
     'sla_config', COALESCE((
