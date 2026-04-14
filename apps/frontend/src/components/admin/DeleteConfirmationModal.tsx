@@ -1,65 +1,62 @@
 'use client';
 
-/**
- * Delete Confirmation Modal
- * Shows warning about soft delete and confirms user deletion
- */
+interface DeleteConfirmationModalProps {
+  isOpen: boolean;
+  entityName: string;
+  itemName?: string;
+  warningText?: string;
+  isPending: boolean;
+  isDisabled?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
 
-import { useDeleteUser } from '@/hooks/useUsers';
-import { useAdminStore } from '@/lib/stores/adminStore';
-
-export const DeleteConfirmationModal = () => {
-  const { isDeleteConfirmOpen, selectedUserId, setDeleteConfirmOpen } = useAdminStore();
-  const { mutate: deleteUser, isPending } = useDeleteUser();
-
-  if (!isDeleteConfirmOpen) return null;
-
-  const handleDelete = () => {
-    if (selectedUserId) {
-      deleteUser(selectedUserId, {
-        onSuccess: () => {
-          setDeleteConfirmOpen(false);
-        }
-      });
-    }
-  };
-
-  const handleCancel = () => {
-    setDeleteConfirmOpen(false);
-  };
+export const DeleteConfirmationModal = ({
+  isOpen,
+  entityName,
+  itemName,
+  warningText,
+  isPending,
+  isDisabled = false,
+  onConfirm,
+  onCancel,
+}: DeleteConfirmationModalProps) => {
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-card rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
         <h2 className="text-xl font-semibold text-foreground mb-4">
-          Delete User
+          Eliminar {entityName}
         </h2>
 
         <p className="text-foreground mb-4">
-          Are you sure you want to delete this user?
+          {itemName
+            ? `¿Estás seguro de que quieres eliminar ${entityName.toLowerCase()} "${itemName}"?`
+            : `¿Estás seguro de que quieres eliminar este ${entityName.toLowerCase()}?`}
         </p>
 
-        <div className="bg-[var(--color-status-warning-bg)] border border-[var(--color-status-warning-border)] rounded-md p-4 mb-6">
-          <p className="text-sm text-[var(--color-text)]">
-            <strong>Warning:</strong> User will be soft-deleted (sets deleted_at timestamp).
-            They can no longer log in. This action can be reversed by setting deleted_at = NULL
-            in the database.
-          </p>
-        </div>
+        {warningText && (
+          <div className="bg-[var(--color-status-warning-bg)] border border-[var(--color-status-warning-border)] rounded-md p-4 mb-6">
+            <p className="text-sm text-[var(--color-text)]">
+              <strong>Advertencia:</strong> {warningText}
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-3 justify-end">
           <button
             type="button"
-            onClick={handleCancel}
+            onClick={onCancel}
             disabled={isPending}
             className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Cancel
+            Cancelar
           </button>
           <button
             type="button"
-            onClick={handleDelete}
-            disabled={isPending}
+            onClick={onConfirm}
+            disabled={isPending || isDisabled}
             className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isPending && (
@@ -68,7 +65,7 @@ export const DeleteConfirmationModal = () => {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             )}
-            {isPending ? 'Deleting...' : 'Delete'}
+            {isPending ? 'Eliminando...' : 'Eliminar'}
           </button>
         </div>
       </div>

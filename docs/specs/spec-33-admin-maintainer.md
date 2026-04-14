@@ -1,6 +1,6 @@
 # Spec 33 — Admin Maintainer
 
-**Status:** backlog
+**Status:** in progress
 
 ## Overview
 
@@ -2556,4 +2556,122 @@ Verify:
 
 ```bash
 git commit -m "fix(spec-33): address any issues found during verification"
+```
+
+---
+
+## Review Fixes — MUST APPLY
+
+The following corrections from plan review **must be applied** during implementation. They override the inline code above where they conflict.
+
+### RF-1: All API routes must have try/catch (HIGH)
+
+Every exported handler in Tasks 5–8 must wrap its entire body in try/catch returning `{ code: 'INTERNAL_ERROR', message, timestamp }` with status 500. Match the pattern in `apps/frontend/src/app/api/users/route.ts`.
+
+### RF-2: API routes must use Zod for input validation (HIGH)
+
+Replace ad-hoc `if (!name)` checks with Zod schemas + `.safeParse()`. Define schemas at the top of each route file:
+
+```typescript
+// clients route.ts
+const createClientSchema = z.object({ name: z.string().min(1).max(100) });
+
+// pickup-points route.ts
+const createPickupPointSchema = z.object({
+  name: z.string().min(1),
+  code: z.string().min(1),
+  tenant_client_id: z.string().uuid(),
+  pickup_locations: z.array(z.object({
+    name: z.string().min(1),
+    address: z.string().min(1),
+    comuna: z.string().optional(),
+    contact_name: z.string().optional(),
+    contact_phone: z.string().optional(),
+  })).min(1),
+});
+```
+
+Return validation errors matching the users pattern: `{ code: 'VALIDATION_ERROR', message, field, timestamp }`.
+
+### RF-3: tenant_clients RLS — document API-level enforcement (HIGH)
+
+The existing `tenant_clients_tenant_isolation` policy allows ALL operations for any authenticated user in the same operator (no role check). Role enforcement for writes happens at the API route level only. Add a comment in each client API route: `// Note: RLS allows all authenticated writes per operator; role check is enforced here at API level`.
+
+### RF-4: Slug collision check must include soft-deleted records (HIGH)
+
+In Task 5 POST handler, **remove** `.is('deleted_at', null)` from slug uniqueness checks. The DB unique constraint `UNIQUE (operator_id, slug)` includes soft-deleted rows:
+
+```typescript
+// CORRECT — includes soft-deleted records to match DB constraint
+const { data: existing } = await supabase
+  .from('tenant_clients')
+  .select('slug')
+  .eq('slug', slug);
+```
+
+Apply same fix to the while-loop collision check.
+
+### RF-5: PUT routes must return 404 for missing records (HIGH)
+
+In Tasks 6 and 8, fetch the record before updating:
+
+```typescript
+const { data: existing } = await supabase
+  .from('tenant_clients')  // or 'pickup_points'
+  .select('id')
+  .eq('id', id)
+  .is('deleted_at', null)
+  .single();
+
+if (!existing) {
+  return NextResponse.json(
+    { code: 'NOT_FOUND', message: 'Record not found', timestamp: new Date().toISOString() },
+    { status: 404 }
+  );
+}
+```
+
+### RF-6: UserManagement must accept userRole, hide delete for non-admin (MEDIUM)
+
+Task 18: `UserManagement` accepts `userRole` prop, passes to `UserTable`. `UserTable` conditionally renders Delete button only for `userRole === 'admin'`. `AdminPage` passes `userRole` to `UserManagement`.
+
+### RF-7: Generalize DeleteConfirmationModal instead of inlining (MEDIUM)
+
+Refactor existing `DeleteConfirmationModal` to accept:
+
+```typescript
+interface DeleteConfirmationModalProps {
+  isOpen: boolean;
+  entityName: string;       // "Cliente", "Punto de Retiro", "Usuario"
+  itemName: string;         // e.g., "Easy", "Bodega Central"
+  warningText?: string;     // optional extra warning
+  isPending: boolean;
+  isDisabled?: boolean;     // disable when client has active pickup points
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+```
+
+Use in all three management containers. Remove inline delete dialogs from ClientManagement and PickupPointManagement.
+
+### RF-8: Rename UserManagementPage.test.tsx (MEDIUM)
+
+Task 18 must also rename `UserManagementPage.test.tsx` → `UserManagement.test.tsx` and update its imports.
+
+### RF-9: Fix duplicate h1 heading (LOW)
+
+`UserListHeader` must change `<h1>` → `<h2>`. `AdminPage` owns the single `<h1>`.
+
+### RF-10: Wrap AdminPage in Suspense (LOW)
+
+In Task 20, wrap `<AdminPage>` in `<Suspense>` in the server component because it uses `useSearchParams()`:
+
+```typescript
+import { Suspense } from 'react';
+
+return (
+  <Suspense>
+    <AdminPage userRole={userRole} />
+  </Suspense>
+);
 ```

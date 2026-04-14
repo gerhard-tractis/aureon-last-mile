@@ -1385,6 +1385,125 @@ export type Database = {
           },
         ]
       }
+      tenant_clients: {
+        Row: {
+          id: string
+          operator_id: string
+          name: string
+          slug: string
+          connector_type: string | null
+          connector_config: Json
+          is_active: boolean
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          name: string
+          slug: string
+          connector_type?: string | null
+          connector_config?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          name?: string
+          slug?: string
+          connector_type?: string | null
+          connector_config?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_clients_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pickup_points: {
+        Row: {
+          id: string
+          operator_id: string
+          tenant_client_id: string
+          name: string
+          code: string
+          intake_method: string
+          intake_config: Json
+          parsing_rules: Json
+          order_defaults: Json
+          confirmation_config: Json
+          sla_config: Json
+          pickup_locations: Json
+          is_active: boolean
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          tenant_client_id: string
+          name: string
+          code: string
+          intake_method: string
+          intake_config?: Json
+          parsing_rules?: Json
+          order_defaults?: Json
+          confirmation_config?: Json
+          sla_config?: Json
+          pickup_locations?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          tenant_client_id?: string
+          name?: string
+          code?: string
+          intake_method?: string
+          intake_config?: Json
+          parsing_rules?: Json
+          order_defaults?: Json
+          confirmation_config?: Json
+          sla_config?: Json
+          pickup_locations?: Json
+          is_active?: boolean
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_points_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_points_tenant_client_id_fkey"
+            columns: ["tenant_client_id"]
+            isOneToOne: false
+            referencedRelation: "tenant_clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

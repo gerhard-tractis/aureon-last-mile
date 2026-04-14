@@ -15,12 +15,15 @@ import type { User } from '@/lib/api/users';
 interface UserTableProps {
   users: User[];
   isLoading: boolean;
+  userRole: string;
 }
 
-export const UserTable = ({ users, isLoading }: UserTableProps) => {
+export const UserTable = ({ users, isLoading, userRole }: UserTableProps) => {
   const { setEditFormOpen, setDeleteConfirmOpen } = useAdminStore();
 
-  const columns: ColumnDef<User>[] = useMemo(() => [
+  const columns: ColumnDef<User>[] = useMemo(() => {
+    const isAdmin = userRole === 'admin';
+    return [
     {
       accessorKey: 'full_name',
       header: 'Nombre',
@@ -59,16 +62,19 @@ export const UserTable = ({ users, isLoading }: UserTableProps) => {
           >
             Editar
           </button>
-          <button
-            onClick={() => setDeleteConfirmOpen(true, row.id)}
-            className="text-xs text-[var(--color-status-error)] hover:underline"
-          >
-            Eliminar
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setDeleteConfirmOpen(true, row.id)}
+              className="text-xs text-[var(--color-status-error)] hover:underline"
+            >
+              Eliminar
+            </button>
+          )}
         </div>
       ),
     },
-  ], [setEditFormOpen, setDeleteConfirmOpen]);
+  ];
+  }, [userRole, setEditFormOpen, setDeleteConfirmOpen]);
 
   return (
     <DataTable

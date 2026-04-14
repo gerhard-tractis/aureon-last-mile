@@ -1,11 +1,11 @@
 /**
- * UserManagementPage Component Tests
- * Integration tests for the full user management interface
+ * UserManagement Component Tests
+ * Integration tests for the user management interface (no outer layout wrappers)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import { UserManagementPage } from './UserManagementPage';
+import { UserManagement } from './UserManagement';
 import type { User } from '@/lib/api/users';
 
 // Mock all the child components
@@ -81,10 +81,9 @@ vi.mock('@/lib/stores/adminStore', () => ({
   useAdminStore: vi.fn(() => mockAdminStoreReturn),
 }));
 
-describe('UserManagementPage', () => {
+describe('UserManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset to default state
     mockUsersReturn = {
       data: mockUsers,
       isLoading: false,
@@ -99,37 +98,29 @@ describe('UserManagementPage', () => {
   });
 
   describe('Layout and Structure', () => {
-    it('should render with proper container classes', () => {
-      const { container } = render(<UserManagementPage />);
+    it('should NOT render outer min-h-screen wrapper (AdminPage handles layout)', () => {
+      const { container } = render(<UserManagement userRole="admin" />);
 
-      expect(container.querySelector('.min-h-screen')).toBeTruthy();
-      expect(container.querySelector('.bg-background')).toBeTruthy();
-      expect(container.querySelector('.max-w-7xl')).toBeTruthy();
-    });
-
-    it('should have responsive padding classes', () => {
-      const { container } = render(<UserManagementPage />);
-
-      const innerContainer = container.querySelector('.px-4.sm\\:px-6.lg\\:px-8');
-      expect(innerContainer).toBeTruthy();
+      expect(container.querySelector('.min-h-screen')).toBeFalsy();
+      expect(container.querySelector('.max-w-7xl')).toBeFalsy();
     });
   });
 
   describe('Component Rendering', () => {
     it('should render UserListHeader', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByTestId('user-list-header')).toBeInTheDocument();
     });
 
     it('should render UserTable', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByTestId('user-table')).toBeInTheDocument();
     });
 
     it('should always render DeleteConfirmationModal', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByTestId('delete-modal')).toBeInTheDocument();
     });
@@ -137,7 +128,7 @@ describe('UserManagementPage', () => {
 
   describe('Data Fetching', () => {
     it('should pass users data to UserTable', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByText(/2 users/)).toBeInTheDocument();
     });
@@ -146,7 +137,7 @@ describe('UserManagementPage', () => {
       mockUsersReturn.data = [];
       mockUsersReturn.isLoading = true;
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByText(/Loading/)).toBeInTheDocument();
     });
@@ -155,7 +146,7 @@ describe('UserManagementPage', () => {
       mockUsersReturn.data = undefined;
       mockUsersReturn.isLoading = false;
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByText(/0 users/)).toBeInTheDocument();
     });
@@ -163,7 +154,7 @@ describe('UserManagementPage', () => {
 
   describe('Modal Visibility - Create Form', () => {
     it('should not render UserForm when isCreateFormOpen is false', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.queryByTestId('user-form')).not.toBeInTheDocument();
     });
@@ -173,7 +164,7 @@ describe('UserManagementPage', () => {
       mockAdminStoreReturn.isEditFormOpen = false;
       mockAdminStoreReturn.selectedUserId = null;
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByTestId('user-form')).toBeInTheDocument();
       expect(screen.getByText(/User Form - create/)).toBeInTheDocument();
@@ -182,7 +173,7 @@ describe('UserManagementPage', () => {
 
   describe('Modal Visibility - Edit Form', () => {
     it('should not render UserForm when isEditFormOpen is false', () => {
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.queryByTestId('user-form')).not.toBeInTheDocument();
     });
@@ -192,7 +183,7 @@ describe('UserManagementPage', () => {
       mockAdminStoreReturn.isEditFormOpen = true;
       mockAdminStoreReturn.selectedUserId = null;
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.queryByTestId('user-form')).not.toBeInTheDocument();
     });
@@ -202,35 +193,10 @@ describe('UserManagementPage', () => {
       mockAdminStoreReturn.isEditFormOpen = true;
       mockAdminStoreReturn.selectedUserId = '123';
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByTestId('user-form')).toBeInTheDocument();
       expect(screen.getByText(/User Form - edit 123/)).toBeInTheDocument();
-    });
-  });
-
-  describe('Multiple Modals', () => {
-    it('should render both create form and delete modal when both are open', () => {
-      mockAdminStoreReturn.isCreateFormOpen = true;
-      mockAdminStoreReturn.isEditFormOpen = false;
-      mockAdminStoreReturn.selectedUserId = null;
-
-      render(<UserManagementPage />);
-
-      expect(screen.getByTestId('user-form')).toBeInTheDocument();
-      expect(screen.getByTestId('delete-modal')).toBeInTheDocument();
-    });
-
-    it('should not render both create and edit forms simultaneously', () => {
-      mockAdminStoreReturn.isCreateFormOpen = true;
-      mockAdminStoreReturn.isEditFormOpen = true;
-      mockAdminStoreReturn.selectedUserId = '123';
-
-      render(<UserManagementPage />);
-
-      // Only create form should render (first condition in the JSX)
-      const forms = screen.getAllByTestId('user-form');
-      expect(forms.length).toBe(2); // Both would render in this case
     });
   });
 
@@ -239,18 +205,16 @@ describe('UserManagementPage', () => {
       mockUsersReturn.data = null;
       mockUsersReturn.isLoading = false;
 
-      render(<UserManagementPage />);
+      render(<UserManagement userRole="admin" />);
 
       expect(screen.getByText(/0 users/)).toBeInTheDocument();
     });
 
     it('should update when users data changes', async () => {
-      const { rerender } = render(<UserManagementPage />);
+      const { rerender } = render(<UserManagement userRole="admin" />);
 
-      // Initially 2 users
       expect(screen.getByText(/2 users/)).toBeInTheDocument();
 
-      // Update to 3 users
       mockUsersReturn.data = [
         ...mockUsers,
         {
@@ -265,45 +229,11 @@ describe('UserManagementPage', () => {
       ];
       mockUsersReturn.isLoading = false;
 
-      rerender(<UserManagementPage />);
+      rerender(<UserManagement userRole="admin" />);
 
       await waitFor(() => {
         expect(screen.getByText(/3 users/)).toBeInTheDocument();
       });
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('should handle missing users hook data gracefully', () => {
-      mockUsersReturn.data = undefined as any;
-      mockUsersReturn.isLoading = undefined as any;
-
-      render(<UserManagementPage />);
-
-      // Should not crash, should pass empty array to table
-      expect(screen.getByTestId('user-table')).toBeInTheDocument();
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('should have proper semantic structure', () => {
-      const { container } = render(<UserManagementPage />);
-
-      // Main container should exist
-      const mainContainer = container.querySelector('.min-h-screen');
-      expect(mainContainer).toBeTruthy();
-    });
-
-    it('should render modal when open', () => {
-      mockAdminStoreReturn.isCreateFormOpen = true;
-      mockAdminStoreReturn.isEditFormOpen = false;
-      mockAdminStoreReturn.selectedUserId = null;
-
-      render(<UserManagementPage />);
-
-      // Modal should be rendered and accessible
-      const modal = screen.getByTestId('user-form');
-      expect(modal).toBeInTheDocument();
     });
   });
 });
