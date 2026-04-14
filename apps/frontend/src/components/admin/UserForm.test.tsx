@@ -106,7 +106,7 @@ describe('UserForm', () => {
   describe('Create Mode', () => {
     it('should render form title as "Crear Usuario"', () => {
       render(<UserForm mode="create" />);
-      expect(screen.getByText('Crear Usuario')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Crear Usuario' })).toBeInTheDocument();
     });
 
     it('should render all form fields for create mode', () => {
@@ -155,7 +155,7 @@ describe('UserForm', () => {
     it('should render "Crear Usuario" submit button', () => {
       render(<UserForm mode="create" />);
 
-      expect(screen.getByText('Crear Usuario')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Crear Usuario' })).toBeInTheDocument();
     });
 
     it('should call createUser mutation on valid form submission', async () => {
@@ -174,7 +174,7 @@ describe('UserForm', () => {
       await userEvent.selectOptions(roleSelect, 'admin');
       await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -222,7 +222,7 @@ describe('UserForm', () => {
         { timeout: 1000 }
       );
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       expect(submitButton).toBeDisabled();
 
       fireEvent.click(submitButton);
@@ -250,7 +250,7 @@ describe('UserForm', () => {
       await userEvent.selectOptions(roleSelect, 'admin');
       await userEvent.type(operatorInput, '550e8400-e29b-41d4-a716-446655440000');
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -277,7 +277,7 @@ describe('UserForm', () => {
 
     it('should render form title as "Editar Usuario"', () => {
       render(<UserForm mode="edit" userId="123" />);
-      expect(screen.getByText('Editar Usuario')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Editar Usuario' })).toBeInTheDocument();
     });
 
     it('should display email as read-only', () => {
@@ -322,7 +322,7 @@ describe('UserForm', () => {
     it('should render "Guardar Cambios" submit button', () => {
       render(<UserForm mode="edit" userId="123" />);
 
-      expect(screen.getByText('Guardar Cambios')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Guardar Cambios' })).toBeInTheDocument();
     });
 
     it('should call updateUser mutation on valid form submission', async () => {
@@ -338,7 +338,7 @@ describe('UserForm', () => {
       await userEvent.type(fullNameInput, 'Updated User');
       await userEvent.selectOptions(roleSelect, 'admin');
 
-      const submitButton = screen.getByText('Guardar Cambios');
+      const submitButton = screen.getByRole('button', { name: 'Guardar Cambios' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -370,7 +370,7 @@ describe('UserForm', () => {
       await userEvent.clear(fullNameInput);
       await userEvent.type(fullNameInput, 'Updated User');
 
-      const submitButton = screen.getByText('Guardar Cambios');
+      const submitButton = screen.getByRole('button', { name: 'Guardar Cambios' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -389,7 +389,7 @@ describe('UserForm', () => {
       const emailInput = screen.getByLabelText(/Email/) as HTMLInputElement;
       await userEvent.type(emailInput, 'invalid-email');
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       // Browser validation should prevent submission
@@ -408,7 +408,7 @@ describe('UserForm', () => {
       const fullNameInput = screen.getByLabelText(/Nombre completo/);
       await userEvent.type(fullNameInput, 'A');
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -426,7 +426,7 @@ describe('UserForm', () => {
       const operatorInput = screen.getByLabelText(/Operator ID/);
       await userEvent.type(operatorInput, 'not-a-uuid');
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       fireEvent.click(submitButton);
 
       await waitFor(() => {
@@ -535,7 +535,7 @@ describe('UserForm', () => {
     it('should have accent submit button', () => {
       render(<UserForm mode="create" />);
 
-      const submitButton = screen.getByText('Crear Usuario');
+      const submitButton = screen.getByRole('button', { name: 'Crear Usuario' });
       expect(submitButton.className).toContain('bg-accent');
     });
 
