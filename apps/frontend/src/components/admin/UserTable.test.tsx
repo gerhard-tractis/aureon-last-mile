@@ -65,26 +65,26 @@ describe('UserTable', () => {
 
   describe('Loading State', () => {
     it('should display loading skeleton when isLoading is true', () => {
-      const { container } = render(<UserTable users={[]} isLoading={true} />);
+      const { container } = render(<UserTable users={[]} isLoading={true} userRole="admin" />);
       expect(container.querySelector('.animate-pulse')).toBeTruthy();
     });
   });
 
   describe('Empty State', () => {
     it('should display empty message when users array is empty', () => {
-      render(<UserTable users={[]} isLoading={false} />);
+      render(<UserTable users={[]} isLoading={false} userRole="admin" />);
       expect(screen.getByText('No hay usuarios')).toBeInTheDocument();
     });
 
     it('should display empty message when users is null', () => {
-      render(<UserTable users={null as any} isLoading={false} />);
+      render(<UserTable users={null as any} isLoading={false} userRole="admin" />);
       expect(screen.getByText('No hay usuarios')).toBeInTheDocument();
     });
   });
 
   describe('Table Rendering', () => {
     it('should render column headers', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       expect(screen.getByText('Nombre')).toBeInTheDocument();
       expect(screen.getByText('Email')).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe('UserTable', () => {
     });
 
     it('should render all users in the table', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       expect(screen.getByText('admin@test.com')).toBeInTheDocument();
       expect(screen.getByText('Admin User')).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('UserTable', () => {
     });
 
     it('should render role badges with correct display names', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       expect(screen.getByText('Administrator')).toBeInTheDocument();
       expect(screen.getByText('Operations Manager')).toBeInTheDocument();
@@ -113,7 +113,7 @@ describe('UserTable', () => {
     });
 
     it('should format dates correctly', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       // Should display formatted dates (mocked to return 16/02/2026 14:30)
       const formattedDates = screen.getAllByText('16/02/2026 14:30');
@@ -123,7 +123,7 @@ describe('UserTable', () => {
 
   describe('Action Buttons', () => {
     it('should render Editar and Eliminar buttons for each user', () => {
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       const editButtons = screen.getAllByText('Editar');
       const deleteButtons = screen.getAllByText('Eliminar');
@@ -136,7 +136,7 @@ describe('UserTable', () => {
       const mockSetEditFormOpen = vi.fn();
       mockAdminStoreReturn.setEditFormOpen = mockSetEditFormOpen;
 
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       const editButtons = screen.getAllByText('Editar');
       fireEvent.click(editButtons[0]); // Click first Editar button
@@ -148,18 +148,25 @@ describe('UserTable', () => {
       const mockSetDeleteConfirmOpen = vi.fn();
       mockAdminStoreReturn.setDeleteConfirmOpen = mockSetDeleteConfirmOpen;
 
-      render(<UserTable users={mockUsers} isLoading={false} />);
+      render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       const deleteButtons = screen.getAllByText('Eliminar');
       fireEvent.click(deleteButtons[1]); // Click second Eliminar button
 
       expect(mockSetDeleteConfirmOpen).toHaveBeenCalledWith(true, '2');
     });
+
+    it('should hide Eliminar buttons for non-admin roles', () => {
+      render(<UserTable users={mockUsers} isLoading={false} userRole="operations_manager" />);
+
+      expect(screen.queryAllByText('Eliminar')).toHaveLength(0);
+      expect(screen.getAllByText('Editar')).toHaveLength(3);
+    });
   });
 
   describe('Accessibility', () => {
     it('should have proper table structure', () => {
-      const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
+      const { container } = render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       expect(container.querySelector('table')).toBeInTheDocument();
       expect(container.querySelector('thead')).toBeInTheDocument();
@@ -167,7 +174,7 @@ describe('UserTable', () => {
     });
 
     it('should have scope attribute on th elements', () => {
-      const { container } = render(<UserTable users={mockUsers} isLoading={false} />);
+      const { container } = render(<UserTable users={mockUsers} isLoading={false} userRole="admin" />);
 
       const headers = container.querySelectorAll('th');
       expect(headers.length).toBeGreaterThan(0);
