@@ -23,11 +23,13 @@ interface Props {
   routeClosed: boolean;
   dispatching: boolean;
   dispatchError: string | null;
+  canDelete?: boolean;
   onVehicleChange: (v: string) => void;
   onDriverChange: (v: string) => void;
   onClose: () => void;
   onDispatch: () => void;
   onRetry: () => void;
+  onDelete?: () => void;
 }
 
 export function RoutePanel({
@@ -38,11 +40,13 @@ export function RoutePanel({
   routeClosed,
   dispatching,
   dispatchError,
+  canDelete,
   onVehicleChange,
   onDriverChange,
   onClose,
   onDispatch,
   onRetry,
+  onDelete,
 }: Props) {
   return (
     <div className="w-full md:w-[340px] shrink-0 flex flex-col bg-surface border-l-[1.5px] border-border">
@@ -168,6 +172,36 @@ export function RoutePanel({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {canDelete && onDelete && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full h-10 rounded-[10px] text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                Eliminar Ruta
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>¿Eliminar esta ruta?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Los paquetes asignados volverán al estado <strong>asignado</strong>. Esta acción no se puede deshacer.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={onDelete}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
     </div>
   );

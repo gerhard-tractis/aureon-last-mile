@@ -71,6 +71,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     }
   };
 
+  const handleDelete = async () => {
+    await fetch(`/api/dispatch/routes/${routeId}`, { method: 'DELETE' });
+    router.push('/app/dispatch');
+  };
+
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-53px)] overflow-hidden">
       {/* Left panel */}
@@ -126,11 +131,13 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         routeClosed={routeClosed}
         dispatching={dispatching}
         dispatchError={dispatchError}
+        canDelete={!routeClosed}
         onVehicleChange={setSelectedVehicle}
         onDriverChange={setDriverName}
         onClose={handleClose}
         onDispatch={handleDispatch}
         onRetry={handleDispatch}
+        onDelete={handleDelete}
       />
     </div>
   );
