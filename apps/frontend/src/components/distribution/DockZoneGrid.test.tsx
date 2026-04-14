@@ -48,4 +48,15 @@ describe('DockZoneGrid', () => {
     expect(screen.getByText(/activa al menos uno/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /configurar andenes/i })).toHaveAttribute('href', '/app/distribution/settings');
   });
+
+  it('shows sectorized package count on zone card', () => {
+    render(<DockZoneGrid zones={zones} sectorizedCounts={{ z1: 7, z2: 3 }} />);
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+  });
+
+  it('shows zero count label when zone has no sectorized packages', () => {
+    render(<DockZoneGrid zones={zones} sectorizedCounts={{}} />);
+    expect(screen.getAllByText('0')).toHaveLength(2);
+  });
 });

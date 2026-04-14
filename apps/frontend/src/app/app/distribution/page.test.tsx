@@ -22,6 +22,11 @@ vi.mock('@/hooks/distribution/useDockZones', () => ({
   useDockZones: (...args: unknown[]) => mockUseDockZones(...args),
 }));
 
+const mockUseSectorizedByZone = vi.fn();
+vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
+  useSectorizedByZone: (...args: unknown[]) => mockUseSectorizedByZone(...args),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
@@ -41,6 +46,7 @@ describe('DistributionPage', () => {
   beforeEach(() => {
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
+    mockUseSectorizedByZone.mockReturnValue({ data: {} });
   });
 
   describe('KPI cards', () => {
@@ -79,6 +85,14 @@ describe('DistributionPage', () => {
       expect(screen.getByRole('link', { name: /lote/i })).toHaveAttribute('href', '/app/distribution/batch');
       expect(screen.getByRole('link', { name: /rápido/i })).toHaveAttribute('href', '/app/distribution/quicksort');
       expect(screen.getByRole('link', { name: /andenes/i })).toHaveAttribute('href', '/app/distribution/settings');
+    });
+  });
+
+  describe('Sectorized counts', () => {
+    it('passes sectorized counts from hook to the zone grid', () => {
+      mockUseSectorizedByZone.mockReturnValue({ data: { z1: 12 } });
+      render(<DistributionPage />);
+      expect(screen.getByText('12')).toBeInTheDocument();
     });
   });
 
