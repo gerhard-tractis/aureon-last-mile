@@ -8,11 +8,18 @@
  */
 
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useAdminStore } from '@/lib/stores/adminStore';
 import { useCreateUser, useUpdateUser, useUsers } from '@/hooks/useUsers';
-import { createUserSchema, updateUserSchema, roleOptions, type CreateUserFormData, type UpdateUserFormData } from '@/lib/validation/userSchema';
+import {
+  createUserSchema,
+  updateUserSchema,
+  roleOptions,
+  permissionOptions,
+  type CreateUserFormData,
+  type UpdateUserFormData,
+} from '@/lib/validation/userSchema';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 interface UserFormProps {
@@ -28,6 +35,52 @@ export const UserForm = ({ mode, userId }: UserFormProps) => {
   }
 };
 
+function PermissionsField({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+  disabled: boolean;
+}) {
+  const toggle = (perm: string) => {
+    if (value.includes(perm)) {
+      onChange(value.filter((p) => p !== perm));
+    } else {
+      onChange([...value, perm]);
+    }
+  };
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-foreground mb-2">
+        Permisos
+      </label>
+      <div className="space-y-2">
+        {permissionOptions.map((opt) => (
+          <label
+            key={opt.value}
+            className="flex items-center gap-2 cursor-pointer select-none"
+          >
+            <input
+              type="checkbox"
+              checked={value.includes(opt.value)}
+              onChange={() => toggle(opt.value)}
+              disabled={disabled}
+              className="h-4 w-4 rounded border-border accent-accent disabled:opacity-50"
+            />
+            <span className="text-sm text-foreground">{opt.label}</span>
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Selecciona los módulos a los que tendrá acceso este usuario.
+      </p>
+    </div>
+  );
+}
+
 // Separate component for creating users
 const CreateUserFormInternal = () => {
   const { setCreateFormOpen } = useAdminStore();
@@ -38,11 +91,13 @@ const CreateUserFormInternal = () => {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
     reset,
-    watch
+    watch,
   } = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
+    defaultValues: { permissions: [] },
   });
 
   const emailValue = watch('email');
@@ -55,7 +110,9 @@ const CreateUserFormInternal = () => {
     }
 
     const timeoutId = setTimeout(() => {
-      const emailExists = users?.some(u => u.email.toLowerCase() === emailValue.toLowerCase());
+      const emailExists = users?.some(
+        (u) => u.email.toLowerCase() === emailValue.toLowerCase()
+      );
       if (emailExists) {
         setEmailCheckError('Email already in use');
       } else {
@@ -73,7 +130,7 @@ const CreateUserFormInternal = () => {
       onSuccess: () => {
         setCreateFormOpen(false);
         reset();
-      }
+      },
     });
   };
 
@@ -83,16 +140,24 @@ const CreateUserFormInternal = () => {
   };
 
   return (
-    <Sheet open={true} onOpenChange={(open) => { if (!open) setCreateFormOpen(false); }}>
+    <Sheet
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) setCreateFormOpen(false);
+      }}
+    >
       <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Create New User</SheetTitle>
+          <SheetTitle>Crear Usuario</SheetTitle>
         </SheetHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
-          {/* Email field */}
+          {/* Email */}
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
               Email *
             </label>
             <input
@@ -115,14 +180,17 @@ const CreateUserFormInternal = () => {
               </p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
-              User will receive a password setup email
+              El usuario recibirá un email para configurar su contraseña.
             </p>
           </div>
 
-          {/* Full Name field */}
+          {/* Full Name */}
           <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-foreground mb-1">
-              Full Name *
+            <label
+              htmlFor="full_name"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
+              Nombre completo *
             </label>
             <input
               id="full_name"
@@ -140,10 +208,13 @@ const CreateUserFormInternal = () => {
             )}
           </div>
 
-          {/* Role field */}
+          {/* Role */}
           <div>
-            <label htmlFor="role" className="block text-sm font-medium text-foreground mb-1">
-              Role *
+            <label
+              htmlFor="role"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
+              Rol *
             </label>
             <select
               id="role"
@@ -153,7 +224,7 @@ const CreateUserFormInternal = () => {
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
-              <option value="">Select a role</option>
+              <option value="">Seleccionar rol</option>
               {roleOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -167,9 +238,25 @@ const CreateUserFormInternal = () => {
             )}
           </div>
 
-          {/* Operator ID field */}
+          {/* Permissions */}
+          <Controller
+            name="permissions"
+            control={control}
+            render={({ field }) => (
+              <PermissionsField
+                value={field.value ?? []}
+                onChange={field.onChange}
+                disabled={isPending}
+              />
+            )}
+          />
+
+          {/* Operator ID */}
           <div>
-            <label htmlFor="operator_id" className="block text-sm font-medium text-foreground mb-1">
+            <label
+              htmlFor="operator_id"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
               Operator ID *
             </label>
             <input
@@ -188,11 +275,11 @@ const CreateUserFormInternal = () => {
               </p>
             )}
             <p className="mt-1 text-xs text-muted-foreground">
-              UUID of the operator this user belongs to
+              UUID del operador al que pertenece este usuario.
             </p>
           </div>
 
-          {/* Form actions */}
+          {/* Actions */}
           <div className="flex gap-3 justify-end pt-4">
             <button
               type="button"
@@ -200,7 +287,7 @@ const CreateUserFormInternal = () => {
               disabled={isPending}
               className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Cancel
+              Cancelar
             </button>
             <button
               type="submit"
@@ -213,7 +300,7 @@ const CreateUserFormInternal = () => {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               )}
-              {isPending ? 'Creating...' : 'Create User'}
+              {isPending ? 'Creando...' : 'Crear Usuario'}
             </button>
           </div>
         </form>
@@ -228,26 +315,31 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
   const { data: users } = useUsers();
   const { mutate: updateUser, isPending } = useUpdateUser();
 
-  const user = users?.find(u => u.id === userId);
+  const user = users?.find((u) => u.id === userId);
 
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
-    reset
+    reset,
   } = useForm<UpdateUserFormData>({
     resolver: zodResolver(updateUserSchema),
-    defaultValues: user ? {
-      full_name: user.full_name,
-      role: user.role as UpdateUserFormData['role']
-    } : undefined
+    defaultValues: user
+      ? {
+          full_name: user.full_name,
+          role: user.role as UpdateUserFormData['role'],
+          permissions: (user.permissions ?? []) as UpdateUserFormData['permissions'],
+        }
+      : undefined,
   });
 
   useEffect(() => {
     if (user) {
       reset({
         full_name: user.full_name,
-        role: user.role as UpdateUserFormData['role']
+        role: user.role as UpdateUserFormData['role'],
+        permissions: (user.permissions ?? []) as UpdateUserFormData['permissions'],
       });
     }
   }, [user, reset]);
@@ -258,7 +350,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
       {
         onSuccess: () => {
           setEditFormOpen(false);
-        }
+        },
       }
     );
   };
@@ -272,14 +364,19 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
   }
 
   return (
-    <Sheet open={true} onOpenChange={(open) => { if (!open) setEditFormOpen(false); }}>
+    <Sheet
+      open={true}
+      onOpenChange={(open) => {
+        if (!open) setEditFormOpen(false);
+      }}
+    >
       <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Edit User</SheetTitle>
+          <SheetTitle>Editar Usuario</SheetTitle>
         </SheetHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-4 space-y-4">
-          {/* Show email as read-only */}
+          {/* Email — read-only */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
               Email
@@ -288,14 +385,17 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               {user.email}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Email cannot be changed
+              El email no se puede cambiar.
             </p>
           </div>
 
-          {/* Full Name field */}
+          {/* Full Name */}
           <div>
-            <label htmlFor="full_name" className="block text-sm font-medium text-foreground mb-1">
-              Full Name *
+            <label
+              htmlFor="full_name"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
+              Nombre completo *
             </label>
             <input
               id="full_name"
@@ -313,10 +413,13 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
             )}
           </div>
 
-          {/* Role field */}
+          {/* Role */}
           <div>
-            <label htmlFor="role" className="block text-sm font-medium text-foreground mb-1">
-              Role *
+            <label
+              htmlFor="role"
+              className="block text-sm font-medium text-foreground mb-1"
+            >
+              Rol *
             </label>
             <select
               id="role"
@@ -326,7 +429,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               aria-describedby={errors.role ? 'role-error' : undefined}
               aria-invalid={!!errors.role}
             >
-              <option value="">Select a role</option>
+              <option value="">Seleccionar rol</option>
               {roleOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -340,7 +443,20 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
             )}
           </div>
 
-          {/* Show operator_id as read-only */}
+          {/* Permissions */}
+          <Controller
+            name="permissions"
+            control={control}
+            render={({ field }) => (
+              <PermissionsField
+                value={field.value ?? []}
+                onChange={field.onChange}
+                disabled={isPending}
+              />
+            )}
+          />
+
+          {/* Operator ID — read-only */}
           <div>
             <label className="block text-sm font-medium text-foreground mb-1">
               Operator ID
@@ -348,12 +464,9 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
             <div className="w-full px-3 py-2 border border-border rounded-md bg-muted text-muted-foreground text-sm font-mono">
               {user.operator_id}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Operator ID cannot be changed
-            </p>
           </div>
 
-          {/* Form actions */}
+          {/* Actions */}
           <div className="flex gap-3 justify-end pt-4">
             <button
               type="button"
@@ -361,7 +474,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
               disabled={isPending}
               className="px-4 py-2 border border-border rounded-md text-foreground hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Cancel
+              Cancelar
             </button>
             <button
               type="submit"
@@ -374,7 +487,7 @@ const EditUserFormInternal = ({ userId }: { userId: string }) => {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               )}
-              {isPending ? 'Saving...' : 'Save Changes'}
+              {isPending ? 'Guardando...' : 'Guardar Cambios'}
             </button>
           </div>
         </form>

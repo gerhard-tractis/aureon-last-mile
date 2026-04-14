@@ -2,15 +2,18 @@ import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 
+const VALID_PERMISSIONS = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
+
 // Validation schema for updating users
 const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters').optional(),
   role: z.enum(['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
     message: 'Invalid role'
-  }).optional()
+  }).optional(),
+  permissions: z.array(z.enum(VALID_PERMISSIONS)).optional(),
 }).refine(
-  (data) => data.full_name !== undefined || data.role !== undefined,
-  { message: 'At least one field (full_name or role) must be provided' }
+  (data) => data.full_name !== undefined || data.role !== undefined || data.permissions !== undefined,
+  { message: 'At least one field must be provided' }
 );
 
 /**
@@ -125,8 +128,8 @@ export async function PUT(
       // @ts-ignore - Supabase TypeScript inference issue, works correctly at runtime
       .update(updateData)
       .eq('id', id)
-      .select('id, email, full_name, role, operator_id, created_at, deleted_at')
-      .single<{ id: string; email: string; full_name: string; role: string; operator_id: string; created_at: string; deleted_at: string | null }>();
+      .select('id, email, full_name, role, permissions, operator_id, created_at, deleted_at')
+      .single<{ id: string; email: string; full_name: string; role: string; permissions: string[]; operator_id: string; created_at: string; deleted_at: string | null }>();
 
     if (updateError) {
       console.error('Error updating user:', updateError);

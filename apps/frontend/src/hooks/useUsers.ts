@@ -59,9 +59,9 @@ export const useUpdateUser = () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('User updated successfully');
 
-      // Warn if role changed (JWT claims won't update until re-auth)
+      // Warn if role or permissions changed (JWT claims won't update until re-auth)
       if (data.roleChanged) {
-        toast.warning('User must re-authenticate to receive new role permissions', {
+        toast.warning('El usuario debe volver a iniciar sesión para que los cambios tengan efecto', {
           duration: 5000
         });
       }
