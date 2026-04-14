@@ -116,16 +116,17 @@ describe('useStageBreakdown', () => {
     expect(result.current.total).toBe(2);
   });
 
-  it('returns pickups data for "reception" stage (manifest-based)', () => {
-    const pickups = [
-      { id: 'p1', external_load_id: 'L1', dwell_minutes: 100 },
-      { id: 'p2', external_load_id: 'L2', dwell_minutes: 200 },
+  it('filters orders by stage for "reception" (en_bodega orders)', () => {
+    const orders = [
+      { id: 'o1', stage: 'reception', status: 'en_bodega' },
+      { id: 'o2', stage: 'consolidation', status: 'asignado' },
     ];
-    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot({ pickups }), isLoading: false, error: null });
+    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot({ orders }), isLoading: false, error: null });
 
     const { result } = renderHook(() => useStageBreakdown('reception', 'op-1', 1));
 
-    expect(result.current.rows).toHaveLength(2);
+    expect(result.current.rows).toHaveLength(1);
+    expect(result.current.rows[0].id).toBe('o1');
   });
 
   it('filters routes by stage for "docks"', () => {

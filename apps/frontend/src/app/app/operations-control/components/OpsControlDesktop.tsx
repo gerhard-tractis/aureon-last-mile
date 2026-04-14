@@ -23,8 +23,8 @@ import { ReversePlaceholderPanel } from './stage-panels/ReversePlaceholderPanel'
 
 function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, unknown>[] {
   switch (key) {
-    case 'pickup':
-    case 'reception':     return snapshot.pickups as Record<string, unknown>[];
+    case 'pickup':        return snapshot.pickups as Record<string, unknown>[];
+    case 'reception':     return snapshot.orders.filter((o) => o['stage'] === 'reception') as Record<string, unknown>[];
     case 'consolidation': return snapshot.orders.filter((o) => o['stage'] === 'consolidation') as Record<string, unknown>[];
     case 'docks':         return snapshot.routes.filter((r) => r['stage'] === 'docks') as Record<string, unknown>[];
     case 'delivery':      return snapshot.routes.filter((r) => r['stage'] === 'delivery' || r['status'] === 'active') as Record<string, unknown>[];
