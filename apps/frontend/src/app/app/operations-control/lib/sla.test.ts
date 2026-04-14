@@ -70,4 +70,38 @@ describe('classifyRisk', () => {
     const r = classifyRisk(baseOrder, new Date('2026-04-06T12:00:00'));
     expect(r.label).toContain('restantes');
   });
+
+  it('treats undefined delivered_at (field missing from snapshot) as not-yet-delivered', () => {
+    const { delivered_at: _, ...orderWithoutDeliveredAt } = baseOrder;
+    const r = classifyRisk(orderWithoutDeliveredAt as Parameters<typeof classifyRisk>[0], new Date('2026-04-06T19:00:00'));
+    expect(r.status).toBe('late');
+  });
+});
+
+describe('effectiveWindow — PostgreSQL TIME format', () => {
+  it('handles HH:MM:SS time format from PostgreSQL row_to_json', () => {
+    const w = effectiveWindow({
+      ...baseOrder,
+      delivery_window_start: '14:00:00',
+      delivery_window_end: '18:00:00',
+    });
+    expect(w.startISO).toBe('2026-04-06T14:00:00');
+    expect(w.endISO).toBe('2026-04-06T18:00:00');
+  });
+
+  it('classifyRisk correctly classifies LATE with HH:MM:SS time format', () => {
+    const r = classifyRisk(
+      { ...baseOrder, delivery_window_start: '14:00:00', delivery_window_end: '18:00:00' },
+      new Date('2026-04-06T19:00:00'),
+    );
+    expect(r.status).toBe('late');
+  });
+
+  it('classifyRisk correctly classifies OK with HH:MM:SS time format', () => {
+    const r = classifyRisk(
+      { ...baseOrder, delivery_window_start: '14:00:00', delivery_window_end: '18:00:00' },
+      new Date('2026-04-06T11:00:00'),
+    );
+    expect(r.status).toBe('ok');
+  });
 });
