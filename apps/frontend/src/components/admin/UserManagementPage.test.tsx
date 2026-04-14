@@ -66,12 +66,15 @@ let mockUsersReturn = {
 let mockAdminStoreReturn = {
   isCreateFormOpen: false,
   isEditFormOpen: false,
+  isDeleteConfirmOpen: false,
   selectedUserId: null as string | null,
+  setDeleteConfirmOpen: vi.fn(),
 };
 
 // Mock the hooks
 vi.mock('@/hooks/useUsers', () => ({
   useUsers: vi.fn(() => mockUsersReturn),
+  useDeleteUser: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
 }));
 
 vi.mock('@/lib/stores/adminStore', () => ({
@@ -89,7 +92,9 @@ describe('UserManagementPage', () => {
     mockAdminStoreReturn = {
       isCreateFormOpen: false,
       isEditFormOpen: false,
+      isDeleteConfirmOpen: false,
       selectedUserId: null,
+      setDeleteConfirmOpen: vi.fn(),
     };
   });
 

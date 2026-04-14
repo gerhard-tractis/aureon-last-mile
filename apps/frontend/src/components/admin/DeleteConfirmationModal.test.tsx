@@ -1,220 +1,58 @@
-/**
- * DeleteConfirmationModal Component Tests
- * Tests deletion confirmation modal behavior
- */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
-// Create mock implementations that can be reconfigured
-let mockDeleteUserReturn = {
-  mutate: vi.fn(),
+const defaultProps = {
+  isOpen: true,
+  entityName: 'Usuario',
   isPending: false,
+  onConfirm: vi.fn(),
+  onCancel: vi.fn(),
 };
-
-let mockAdminStoreReturn = {
-  isDeleteConfirmOpen: true,
-  selectedUserId: '123' as string | null,
-  setDeleteConfirmOpen: vi.fn(),
-};
-
-// Mock the hooks at top level
-vi.mock('@/hooks/useUsers', () => ({
-  useDeleteUser: vi.fn(() => mockDeleteUserReturn),
-}));
-
-vi.mock('@/lib/stores/adminStore', () => ({
-  useAdminStore: vi.fn(() => mockAdminStoreReturn),
-}));
 
 describe('DeleteConfirmationModal', () => {
-  beforeEach(() => {
-    // Reset to default state
-    mockDeleteUserReturn = {
-      mutate: vi.fn(),
-      isPending: false,
-    };
-
-    mockAdminStoreReturn = {
-      isDeleteConfirmOpen: true,
-      selectedUserId: '123' as string | null,
-      setDeleteConfirmOpen: vi.fn(),
-    };
+  it('renders nothing when isOpen is false', () => {
+    const { container } = render(<DeleteConfirmationModal {...defaultProps} isOpen={false} />);
+    expect(container.firstChild).toBeNull();
   });
 
-  describe('Visibility', () => {
-    it('should not render when isDeleteConfirmOpen is false', () => {
-      mockAdminStoreReturn.isDeleteConfirmOpen = false;
-      mockAdminStoreReturn.selectedUserId = null;
-
-      const { container } = render(<DeleteConfirmationModal />);
-      expect(container.firstChild).toBeNull();
-    });
-
-    it('should render when isDeleteConfirmOpen is true', () => {
-      render(<DeleteConfirmationModal />);
-      expect(screen.getByText('Delete User')).toBeInTheDocument();
-    });
+  it('renders when isOpen is true', () => {
+    render(<DeleteConfirmationModal {...defaultProps} />);
+    expect(screen.getByText('Eliminar Usuario')).toBeDefined();
   });
 
-  describe('Content', () => {
-    it('should display confirmation message', () => {
-      render(<DeleteConfirmationModal />);
-      expect(
-        screen.getByText('Are you sure you want to delete this user?')
-      ).toBeInTheDocument();
-    });
-
-    it('should display soft delete warning', () => {
-      render(<DeleteConfirmationModal />);
-      expect(screen.getByText(/Warning:/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/User will be soft-deleted/)
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(/They can no longer log in/)
-      ).toBeInTheDocument();
-    });
-
-    it('should display Cancel button', () => {
-      render(<DeleteConfirmationModal />);
-      expect(screen.getByText('Cancel')).toBeInTheDocument();
-    });
-
-    it('should display Delete button', () => {
-      render(<DeleteConfirmationModal />);
-      expect(screen.getByText('Delete')).toBeInTheDocument();
-    });
+  it('shows itemName in message when provided', () => {
+    render(<DeleteConfirmationModal {...defaultProps} itemName="Easy" />);
+    expect(screen.getByText(/Easy/)).toBeDefined();
   });
 
-  describe('Cancel Action', () => {
-    it('should call setDeleteConfirmOpen(false) when Cancel is clicked', () => {
-      render(<DeleteConfirmationModal />);
-
-      const cancelButton = screen.getByText('Cancel');
-      fireEvent.click(cancelButton);
-
-      expect(mockAdminStoreReturn.setDeleteConfirmOpen).toHaveBeenCalledWith(false);
-    });
+  it('shows warningText when provided', () => {
+    render(<DeleteConfirmationModal {...defaultProps} warningText="This cannot be undone." />);
+    expect(screen.getByText(/This cannot be undone/)).toBeDefined();
   });
 
-  describe('Delete Action', () => {
-    it('should call deleteUser mutation when Delete is clicked', () => {
-      render(<DeleteConfirmationModal />);
-
-      const deleteButton = screen.getByText('Delete');
-      fireEvent.click(deleteButton);
-
-      expect(mockDeleteUserReturn.mutate).toHaveBeenCalledWith(
-        '123',
-        expect.objectContaining({
-          onSuccess: expect.any(Function),
-        })
-      );
-    });
-
-    it('should close modal on successful deletion', async () => {
-      mockDeleteUserReturn.mutate = vi.fn((userId, { onSuccess }) => {
-        onSuccess();
-      });
-
-      render(<DeleteConfirmationModal />);
-
-      const deleteButton = screen.getByText('Delete');
-      fireEvent.click(deleteButton);
-
-      await waitFor(() => {
-        expect(mockAdminStoreReturn.setDeleteConfirmOpen).toHaveBeenCalledWith(false);
-      });
-    });
-
-    it('should not call deleteUser when selectedUserId is null', () => {
-      mockAdminStoreReturn.selectedUserId = null;
-
-      render(<DeleteConfirmationModal />);
-
-      const deleteButton = screen.getByText('Delete');
-      fireEvent.click(deleteButton);
-
-      expect(mockDeleteUserReturn.mutate).not.toHaveBeenCalled();
-    });
+  it('calls onCancel when Cancelar is clicked', () => {
+    const onCancel = vi.fn();
+    render(<DeleteConfirmationModal {...defaultProps} onCancel={onCancel} />);
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(onCancel).toHaveBeenCalled();
   });
 
-  describe('Loading State', () => {
-    it('should disable buttons when isPending is true', () => {
-      mockDeleteUserReturn.isPending = true;
-
-      render(<DeleteConfirmationModal />);
-
-      const cancelButton = screen.getByText('Cancel');
-      const deleteButton = screen.getByText('Deleting...');
-
-      expect(cancelButton).toBeDisabled();
-      expect(deleteButton).toBeDisabled();
-    });
-
-    it('should show "Deleting..." text when isPending is true', () => {
-      mockDeleteUserReturn.isPending = true;
-
-      render(<DeleteConfirmationModal />);
-
-      expect(screen.getByText('Deleting...')).toBeInTheDocument();
-    });
-
-    it('should show spinner icon when isPending is true', () => {
-      mockDeleteUserReturn.isPending = true;
-
-      const { container } = render(<DeleteConfirmationModal />);
-
-      const spinner = container.querySelector('.animate-spin');
-      expect(spinner).toBeTruthy();
-    });
-
-    it('should show "Delete" text when isPending is false', () => {
-      render(<DeleteConfirmationModal />);
-
-      expect(screen.getByText('Delete')).toBeInTheDocument();
-    });
+  it('calls onConfirm when Eliminar is clicked', () => {
+    const onConfirm = vi.fn();
+    render(<DeleteConfirmationModal {...defaultProps} onConfirm={onConfirm} />);
+    fireEvent.click(screen.getByText('Eliminar'));
+    expect(onConfirm).toHaveBeenCalled();
   });
 
-  describe('Styling', () => {
-    it('should have destructive background on Delete button', () => {
-      render(<DeleteConfirmationModal />);
-
-      const deleteButton = screen.getByText('Delete');
-      expect(deleteButton.className).toContain('bg-destructive');
-    });
-
-    it('should have warning token box', () => {
-      const { container } = render(<DeleteConfirmationModal />);
-
-      // Warning box uses CSS custom property tokens
-      const warningBox = container.querySelector('[class*="status-warning-bg"]');
-      expect(warningBox).toBeTruthy();
-    });
-
-    it('should have modal overlay', () => {
-      const { container } = render(<DeleteConfirmationModal />);
-
-      const overlay = container.querySelector('.bg-black.bg-opacity-50');
-      expect(overlay).toBeTruthy();
-    });
+  it('disables buttons when isPending', () => {
+    render(<DeleteConfirmationModal {...defaultProps} isPending={true} />);
+    expect(screen.getByText('Cancelar')).toBeDisabled();
+    expect(screen.getByText('Eliminando...')).toBeDisabled();
   });
 
-  describe('Accessibility', () => {
-    it('should have proper heading', () => {
-      render(<DeleteConfirmationModal />);
-
-      const heading = screen.getByRole('heading', { level: 2 });
-      expect(heading).toHaveTextContent('Delete User');
-    });
-
-    it('should have clickable buttons', () => {
-      render(<DeleteConfirmationModal />);
-
-      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
-    });
+  it('disables confirm button when isDisabled', () => {
+    render(<DeleteConfirmationModal {...defaultProps} isDisabled={true} />);
+    expect(screen.getByText('Eliminar')).toBeDisabled();
   });
 });
