@@ -140,20 +140,19 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        id: deploy
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
+        run: npx vercel@latest --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
       - name: Rollback on failure
         if: failure()
         run: |
-          npm i -g vercel
-          vercel rollback --yes --token=${{ secrets.VERCEL_TOKEN }}
+          npx vercel@latest rollback --yes --token=${{ secrets.VERCEL_TOKEN }}
           echo "::error::Vercel deployment failed — rolled back to previous version"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   # ─── 4. Worker (VPS) ─────────────────────────────────────────────────────────
   deploy-worker:
