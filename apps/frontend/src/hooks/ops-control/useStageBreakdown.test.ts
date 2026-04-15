@@ -129,16 +129,16 @@ describe('useStageBreakdown', () => {
     expect(result.current.rows[0].id).toBe('o1');
   });
 
-  it('filters routes by stage for "docks"', () => {
-    const routes = [
-      { id: 'r1', stage: 'docks', idle_minutes: 40 },
-      { id: 'r2', stage: 'delivery', idle_minutes: 10 },
+  it('filters orders by stage for "docks"', () => {
+    const orders = [
+      { id: 'o1', stage: 'docks', status: 'en_carga', idle_minutes: 40 },
+      { id: 'o2', stage: 'consolidation', status: 'asignado', idle_minutes: 5 },
     ];
-    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot({ routes }), isLoading: false, error: null });
+    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot({ orders }), isLoading: false, error: null });
 
     const { result } = renderHook(() => useStageBreakdown('docks', 'op-1', 1));
 
     expect(result.current.rows).toHaveLength(1);
-    expect(result.current.rows[0].id).toBe('r1');
+    expect(result.current.rows[0].id).toBe('o1');
   });
 });
