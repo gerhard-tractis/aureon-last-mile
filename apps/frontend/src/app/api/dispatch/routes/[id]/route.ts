@@ -51,7 +51,7 @@ export async function DELETE(
         .eq('operator_id', operatorId);
 
       // 3. Reset packages back to 'asignado'
-      const orderIds = dispatches.map((d) => d.order_id).filter(Boolean);
+      const orderIds = dispatches.map((d) => d.order_id).filter((id): id is string => id != null);
       if (orderIds.length > 0) {
         await supabase
           .from('packages')
