@@ -3,7 +3,7 @@
 -- Purpose: Pre-aggregated monthly rollup for C-level dashboard north-stars.
 --          One row per operator per month. Populated nightly by calculate_dashboard_monthly_rollup().
 
-CREATE TABLE public.dashboard_monthly_rollup (
+CREATE TABLE IF NOT EXISTS public.dashboard_monthly_rollup (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   operator_id         UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
   period_year         INT NOT NULL CHECK (period_year BETWEEN 2020 AND 2100),

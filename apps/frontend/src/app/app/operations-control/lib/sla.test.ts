@@ -78,6 +78,16 @@ describe('classifyRisk', () => {
   });
 });
 
+describe('effectiveWindow — null time windows', () => {
+  it('returns none when delivery_window_end is null (no SLA window set)', () => {
+    const r = classifyRisk(
+      { ...baseOrder, delivery_window_start: null as unknown as string, delivery_window_end: null as unknown as string },
+      new Date('2026-04-06T19:00:00'),
+    );
+    expect(r.status).toBe('none');
+  });
+});
+
 describe('effectiveWindow — PostgreSQL TIME format', () => {
   it('handles HH:MM:SS time format from PostgreSQL row_to_json', () => {
     const w = effectiveWindow({

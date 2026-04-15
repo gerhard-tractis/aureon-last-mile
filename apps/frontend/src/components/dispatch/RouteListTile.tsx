@@ -1,11 +1,24 @@
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { BadgeVariant } from '@/components/StatusBadge';
 import type { DispatchRoute, RouteStatus } from '@/lib/dispatch/types';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface Props {
   route: DispatchRoute;
   onClick: () => void;
+  onDelete?: () => void;
 }
 
 const ROUTE_STATUS_CONFIG: Record<RouteStatus, { label: string; variant: BadgeVariant }> = {
@@ -40,9 +53,10 @@ function formatCreationTime(isoStr: string): string {
   });
 }
 
-export function RouteListTile({ route, onClick }: Props) {
+export function RouteListTile({ route, onClick, onDelete }: Props) {
   const statusConfig = ROUTE_STATUS_CONFIG[route.status];
   const overdue = isOverdue(route.route_date, route.status);
+  const canDelete = route.status === 'draft' || route.status === 'planned';
 
   const routeLabel = route.external_route_id ?? route.id.slice(0, 8).toUpperCase();
 
@@ -62,16 +76,48 @@ export function RouteListTile({ route, onClick }: Props) {
         overdue && 'border-status-warning-border bg-status-warning-bg',
       )}
     >
-      {/* Header row: route ID + status badge */}
+      {/* Header row: route ID + status badge + delete */}
       <div className="flex items-start justify-between gap-2">
         <span className="font-mono text-base font-bold text-accent">
           {routeLabel}
         </span>
-        <StatusBadge
-          status={statusConfig.label}
-          variant={statusConfig.variant}
-          size="sm"
-        />
+        <div className="flex items-center gap-1.5">
+          <StatusBadge
+            status={statusConfig.label}
+            variant={statusConfig.variant}
+            size="sm"
+          />
+          {canDelete && onDelete && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded p-0.5 text-text-secondary hover:text-status-error transition-colors"
+                  aria-label="Eliminar ruta"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Eliminar ruta {routeLabel}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Los paquetes asignados volverán al estado <strong>asignado</strong>. Esta acción no se puede deshacer.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Eliminar
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {/* Middle row: driver + truck */}

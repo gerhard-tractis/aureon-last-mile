@@ -11,8 +11,8 @@ interface OrderWindow {
 }
 
 export interface EffectiveWindow {
-  startISO: string;
-  endISO: string;
+  startISO: string | null;
+  endISO: string | null;
 }
 
 export interface RiskResult {
@@ -21,7 +21,8 @@ export interface RiskResult {
   label: string;
 }
 
-function toISO(date: string, time: string): string {
+function toISO(date: string | null | undefined, time: string | null | undefined): string | null {
+  if (!date || !time) return null;
   // PostgreSQL TIME columns serialize as "HH:MM:SS" via row_to_json.
   // Normalise to "HH:MM" so the appended ":00" produces a valid ISO string.
   const hhmm = time.slice(0, 5);
@@ -62,7 +63,12 @@ export function classifyRisk(order: OrderWindow, now: Date): RiskResult {
     return { status: 'none', minutesRemaining: 0, label: '—' };
   }
 
-  const { endISO } = effectiveWindow(order);
+  // Orders without a delivery window cannot be SLA-classified.
+  const win = effectiveWindow(order);
+  if (!win.endISO) {
+    return { status: 'none', minutesRemaining: 0, label: '—' };
+  }
+  const { endISO } = win;
   const endMs = new Date(endISO).getTime();
   const remainingMinutes = Math.floor((endMs - now.getTime()) / 60_000);
 
