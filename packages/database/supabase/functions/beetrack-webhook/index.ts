@@ -203,33 +203,42 @@ async function handleRoute(
     vehicleId = await upsertFleetVehicle(supabase, truck, vehicleType, truckDriver);
   }
 
-  const routeRow = {
-    operator_id: MUSAN_OPERATOR_ID,
-    provider: PROVIDER,
-    external_route_id: externalRouteId,
-    route_date: body.date as string,
-    driver_name: (body.truck_driver as string) ?? null,
-    vehicle_id: vehicleId,
-    status: routeStatus,
-    start_time: (body.started_at as string) ?? null,
-    end_time: (body.ended_at as string) ?? null,
-    total_km: (body.kpi_distance as number) ?? null,
-    raw_data: body,
-  };
-
-  const { data: upsertedRoute, error } = await supabase
+  // Only update routes that originated in our system. Routes created directly
+  // in DispatchTrack will not have a matching local record — skip them.
+  const { data: existingRoute } = await supabase
     .from('routes')
-    .upsert(routeRow, {
-      onConflict: 'operator_id,provider,external_route_id',
-      ignoreDuplicates: false,
-    })
     .select('id')
-    .single();
+    .eq('operator_id', MUSAN_OPERATOR_ID)
+    .eq('provider', PROVIDER)
+    .eq('external_route_id', externalRouteId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!existingRoute) {
+    console.log(`beetrack-webhook: route/${body.event} route=${externalRouteId} — not managed by this system, skipping`);
+    return json({ ok: true, skipped: 'route not managed by this system' });
+  }
+
+  const { error } = await supabase
+    .from('routes')
+    .update({
+      driver_name: (body.truck_driver as string) ?? null,
+      vehicle_id: vehicleId,
+      status: routeStatus,
+      start_time: (body.started_at as string) ?? null,
+      end_time: (body.ended_at as string) ?? null,
+      total_km: (body.kpi_distance as number) ?? null,
+      raw_data: body,
+    })
+    .eq('id', existingRoute.id)
+    .eq('operator_id', MUSAN_OPERATOR_ID);
 
   if (error) {
-    console.error(`beetrack-webhook: route upsert failed`, error);
+    console.error(`beetrack-webhook: route update failed`, error);
     return json({ ok: false, error: error.message }, 500);
   }
+
+  const upsertedRoute = existingRoute;
 
   // Backfill: link dispatches that reference this route but have no route_id FK yet
   if (upsertedRoute?.id) {
