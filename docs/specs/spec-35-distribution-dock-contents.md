@@ -46,17 +46,17 @@ Extend to:
 export interface PendingPackage {
   id: string;
   label: string;
-  status: string;                     // from packages.status
+  status: string;                        // from packages.status
   order_id: string;
-  order_number: string | null;        // from orders.order_number
-  customer_name: string | null;       // from orders.customer_name (or existing field)
-  address: string | null;             // from orders.address / delivery_address
+  order_number: string | null;           // from orders.order_number
+  customer_name: string | null;          // from orders.customer_name
+  delivery_address: string | null;       // from orders.delivery_address
   comunaId: string | null;
-  comuna_name: string | null;         // from comunas.name (join)
+  comuna_name: string | null;            // chile_comunas.nombre via FK; fallback to orders.comuna (legacy text)
   delivery_date: string;
-  delivery_window_start: string | null; // from orders.delivery_window_start
-  delivery_window_end: string | null;   // from orders.delivery_window_end
-  is_due_soon: boolean;               // computed: delivery_date === today
+  delivery_window_start: string | null;  // TIME as "HH:MM:SS" — format to "HH:MM" in the UI
+  delivery_window_end: string | null;    // TIME as "HH:MM:SS" — format to "HH:MM" in the UI
+  is_due_soon: boolean;                  // computed client-side: delivery_date === today
 }
 ```
 
@@ -69,10 +69,10 @@ Keep `ZoneGroup` unchanged — it already carries `zone` and `matchResult`, whic
 .select(`
   id, label, status, order_id,
   orders!inner(
-    order_number, customer_name, address,
-    comuna_id, delivery_date,
+    order_number, customer_name, delivery_address,
+    comuna, comuna_id, delivery_date,
     delivery_window_start, delivery_window_end,
-    comunas ( name )
+    chile_comunas ( nombre )
   )
 `)
 .eq('operator_id', operatorId!)
@@ -81,7 +81,14 @@ Keep `ZoneGroup` unchanged — it already carries `zone` and `matchResult`, whic
 .order('created_at', { ascending: true });
 ```
 
-> Verify the exact column names on `orders` / `comunas` at implementation time — use whatever `useOpsControlSnapshot` already pulls if naming differs.
+**Notes for the implementer:**
+
+- The join table is `public.chile_comunas` (not `comunas`), and the name column is `nombre` (not `name`). The FK `orders.comuna_id → chile_comunas.id` is defined in migration `20260321000001`; PostgREST detects it automatically.
+- When mapping to `PendingPackage.comuna_name`, prefer `orders.chile_comunas.nombre`; if `comuna_id` is null, fall back to the legacy `orders.comuna` text column. Never show both.
+- The address column is `orders.delivery_address` — not `orders.address`. There is also a newer `destination_address` JSONB; **use `delivery_address`** for this spec (it's the plain-text field rendered on all current screens).
+- `delivery_window_start` / `_end` come back as `HH:MM:SS` strings (Postgres `TIME`). In the UI, slice to `HH:MM` (`value.slice(0, 5)`). Render as `09:00–13:00`; when either side is null, show a dash.
+- **Soft-delete scoping:** the filter `.is('deleted_at', null)` already applies to `packages`. `orders` also has `deleted_at`, but by business rule a live `en_bodega` package always has a live order, so no extra filter is needed. If this ever changes, add `.is('orders.deleted_at', null)`.
+- **Operator scoping:** `packages.operator_id = operatorId` is the single explicit scope. The embedded `orders` and `chile_comunas` rows are scoped by RLS on those tables (same pattern as every other query in this file and in sibling distribution hooks).
 
 ---
 
@@ -252,6 +259,6 @@ interface PendingPackageListProps {
 
 ## Risks & Mitigations
 
-- **`orders` column names** may differ from the ones assumed above (`customer_name`, `address`, `delivery_window_start/end`). **Mitigation:** at Task 1 implementation time, read the `orders` table definition (latest migration) and use the correct names; update this spec if corrections are needed.
+- **Schema drift** — column names assumed above (`customer_name`, `delivery_address`, `delivery_window_start/end`) and the join table (`chile_comunas(nombre)`) were verified against the latest migrations at spec time, but migrations evolve. **Mitigation:** at Task 1 implementation time, re-read the most recent `orders` migration and confirm; update this spec if corrections are needed.
 - **Query weight** increases because we join `comunas` and pull more columns. **Mitigation:** query runs only on distribution pages, with 15s `staleTime`. If it degrades UX, move to an RPC with a projection.
 - **Test brittleness** around React Query mocking — reuse the patterns already used in sibling `.test.tsx` files in the same directory.
