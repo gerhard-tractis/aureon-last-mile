@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Plus, Route, Package, Truck, TrendingUp, Inbox } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -125,7 +126,7 @@ function DispatchCompletedTab({
   );
 }
 
-export default function DispatchPage() {
+function DispatchPageContent() {
   const router   = useRouter();
   const params   = useSearchParams();
   const pathname = usePathname();
@@ -247,5 +248,13 @@ export default function DispatchPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function DispatchPage() {
+  return (
+    <Suspense>
+      <DispatchPageContent />
+    </Suspense>
   );
 }
