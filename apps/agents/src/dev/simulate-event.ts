@@ -14,7 +14,7 @@ import { getTestOrderSnapshot } from './snapshot';
 export const WISMO_MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'meta-llama/llama-3.1-8b-instruct':  { input: 0.02, output: 0.05 },
   'qwen/qwen-2.5-7b-instruct':         { input: 0.04, output: 0.09 },
-  'google/gemini-2.5-flash-lite':      { input: 0.10, output: 0.40 },
+  'google/gemini-2.5-flash-lite-preview-06-17': { input: 0.10, output: 0.40 },
   'mistralai/ministral-8b':            { input: 0.10, output: 0.10 },
   'google/gemini-2.5-flash':           { input: 0.30, output: 2.50 },
   'openai/gpt-4o-mini':                { input: 0.15, output: 0.60 },

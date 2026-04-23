@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { DEFAULT_WISMO_MODEL } from '@/lib/dev/wismo-models';
 import { useTestOrders } from './hooks/useTestOrders';
 import { useOrderSnapshot } from './hooks/useOrderSnapshot';
@@ -20,11 +21,27 @@ interface Props {
 type RightTab = 'activity' | 'db';
 
 export default function WismoTestClient({ operatorId: _operatorId }: Props) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_WISMO_MODEL);
+  const [selectedModel, setSelectedModel] = useState<string>(
+    searchParams.get('model') ?? DEFAULT_WISMO_MODEL,
+  );
   const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [lastResult, setLastResult] = useState<SimulateEventResult | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>('activity');
+
+  function handleModelChange(model: string) {
+    setSelectedModel(model);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('model', model);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }
+
+  useEffect(() => {
+    const m = searchParams.get('model');
+    if (m) setSelectedModel(m);
+  }, [searchParams]);
 
   const { orders, create, purge } = useTestOrders();
   const { snapshot, refresh: snapshotRefresh } = useOrderSnapshot(selectedOrderId);
@@ -38,11 +55,15 @@ export default function WismoTestClient({ operatorId: _operatorId }: Props) {
 
   async function handleStateEdit(table: string, fields: Record<string, unknown>) {
     if (!selectedOrderId) return;
-    await fetch(`/api/dev/wismo-test/test-orders/${selectedOrderId}/state`, {
+    const res = await fetch(`/api/dev/wismo-test/test-orders/${selectedOrderId}/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ table, fields }),
     });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`State edit failed (${res.status}): ${text}`);
+    }
     await snapshotRefresh();
   }
 
@@ -90,7 +111,7 @@ export default function WismoTestClient({ operatorId: _operatorId }: Props) {
         </button>
 
         <div className="ml-auto">
-          <ModelSelector value={selectedModel} onChange={setSelectedModel} />
+          <ModelSelector value={selectedModel} onChange={handleModelChange} />
         </div>
       </div>
 

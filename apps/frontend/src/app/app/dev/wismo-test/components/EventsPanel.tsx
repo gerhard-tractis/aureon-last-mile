@@ -59,21 +59,21 @@ export function EventsPanel({ orderId, onSimulate, onStateEdit, loading }: Props
         <div className="flex flex-wrap gap-2">
           <button
             disabled={disabled}
-            onClick={() => fire('early_arrival')}
+            onClick={() => fire('proactive_early_arrival')}
             className={btnCls}
           >
             Early Arrival
           </button>
           <button
             disabled={disabled}
-            onClick={() => fire('pickup')}
+            onClick={() => fire('proactive_pickup')}
             className={btnCls}
           >
             Pickup
           </button>
           <button
             disabled={disabled}
-            onClick={() => fire('delivered')}
+            onClick={() => fire('proactive_delivered')}
             className={btnCls}
           >
             Delivered
@@ -92,7 +92,7 @@ export function EventsPanel({ orderId, onSimulate, onStateEdit, loading }: Props
           />
           <button
             disabled={disabled}
-            onClick={() => fire('eta', etaTime ? { eta_time: etaTime } : undefined)}
+            onClick={() => fire('proactive_eta', etaTime ? { estimated_at: etaTime } : undefined)}
             className={btnCls}
           >
             Send ETA
@@ -114,7 +114,7 @@ export function EventsPanel({ orderId, onSimulate, onStateEdit, loading }: Props
           </select>
           <button
             disabled={disabled}
-            onClick={() => fire('failed', { reason: failedReason })}
+            onClick={() => fire('proactive_failed', { failure_reason: failedReason })}
             className={`${btnCls} bg-destructive text-destructive-foreground hover:opacity-90`}
           >
             Failed

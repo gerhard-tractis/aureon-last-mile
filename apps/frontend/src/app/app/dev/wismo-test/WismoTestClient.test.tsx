@@ -4,6 +4,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
+// ── Next.js navigation mocks ───────────────────────────────────────────────────
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => ({ get: vi.fn().mockReturnValue(null), toString: vi.fn().mockReturnValue('') }),
+}));
+
 // ── hook mocks ─────────────────────────────────────────────────────────────────
 const mockCreate = vi.fn();
 const mockPurge = vi.fn();

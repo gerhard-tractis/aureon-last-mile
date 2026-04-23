@@ -63,12 +63,12 @@ describe('EventsPanel', () => {
     render(<EventsPanel {...defaultProps} onSimulate={onSimulate} />);
 
     await user.click(screen.getByRole('button', { name: 'Early Arrival' }));
-    expect(onSimulate).toHaveBeenCalledWith('early_arrival', undefined);
+    expect(onSimulate).toHaveBeenCalledWith('proactive_early_arrival', undefined);
 
     await user.click(screen.getByRole('button', { name: 'Pickup' }));
-    expect(onSimulate).toHaveBeenCalledWith('pickup', undefined);
+    expect(onSimulate).toHaveBeenCalledWith('proactive_pickup', undefined);
 
     await user.click(screen.getByRole('button', { name: 'Delivered' }));
-    expect(onSimulate).toHaveBeenCalledWith('delivered', undefined);
+    expect(onSimulate).toHaveBeenCalledWith('proactive_delivered', undefined);
   });
 });

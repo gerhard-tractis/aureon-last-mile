@@ -61,27 +61,27 @@ export function StateEditModal({ table, onClose, onSubmit }: Props) {
         <form onSubmit={handleSubmit} className="space-y-3">
           {table === 'orders' && (
             <>
-              <Field label="Customer Name">
-                <input type="text" className={inputCls} value={fields.customer_name ?? ''} onChange={(e) => setField('customer_name', e.target.value)} />
+              <Field label="Customer Name" htmlFor="se-customer_name">
+                <input id="se-customer_name" type="text" className={inputCls} value={fields.customer_name ?? ''} onChange={(e) => setField('customer_name', e.target.value)} />
               </Field>
-              <Field label="Customer Phone">
-                <input type="text" className={inputCls} value={fields.customer_phone ?? ''} onChange={(e) => setField('customer_phone', e.target.value)} />
+              <Field label="Customer Phone" htmlFor="se-customer_phone">
+                <input id="se-customer_phone" type="text" className={inputCls} value={fields.customer_phone ?? ''} onChange={(e) => setField('customer_phone', e.target.value)} />
               </Field>
-              <Field label="Delivery Date">
-                <input type="date" className={inputCls} value={fields.delivery_date ?? ''} onChange={(e) => setField('delivery_date', e.target.value)} />
+              <Field label="Delivery Date" htmlFor="se-delivery_date">
+                <input id="se-delivery_date" type="date" className={inputCls} value={fields.delivery_date ?? ''} onChange={(e) => setField('delivery_date', e.target.value)} />
               </Field>
-              <Field label="Window Start">
-                <input type="time" className={inputCls} value={fields.delivery_window_start ?? ''} onChange={(e) => setField('delivery_window_start', e.target.value)} />
+              <Field label="Window Start" htmlFor="se-delivery_window_start">
+                <input id="se-delivery_window_start" type="time" className={inputCls} value={fields.delivery_window_start ?? ''} onChange={(e) => setField('delivery_window_start', e.target.value)} />
               </Field>
-              <Field label="Window End">
-                <input type="time" className={inputCls} value={fields.delivery_window_end ?? ''} onChange={(e) => setField('delivery_window_end', e.target.value)} />
+              <Field label="Window End" htmlFor="se-delivery_window_end">
+                <input id="se-delivery_window_end" type="time" className={inputCls} value={fields.delivery_window_end ?? ''} onChange={(e) => setField('delivery_window_end', e.target.value)} />
               </Field>
             </>
           )}
 
           {table === 'assignments' && (
-            <Field label="Status">
-              <select className={inputCls} value={fields.status ?? ''} onChange={(e) => setField('status', e.target.value)}>
+            <Field label="Status" htmlFor="se-status">
+              <select id="se-status" className={inputCls} value={fields.status ?? ''} onChange={(e) => setField('status', e.target.value)}>
                 <option value="">— select —</option>
                 {ASSIGNMENT_STATUSES.map((s) => (
                   <option key={s} value={s}>{s}</option>
@@ -92,11 +92,11 @@ export function StateEditModal({ table, onClose, onSubmit }: Props) {
 
           {table === 'dispatches' && (
             <>
-              <Field label="Estimated At">
-                <input type="datetime-local" className={inputCls} value={fields.estimated_at ?? ''} onChange={(e) => setField('estimated_at', e.target.value)} />
+              <Field label="Estimated At" htmlFor="se-estimated_at">
+                <input id="se-estimated_at" type="datetime-local" className={inputCls} value={fields.estimated_at ?? ''} onChange={(e) => setField('estimated_at', e.target.value)} />
               </Field>
-              <Field label="Status">
-                <input type="text" className={inputCls} value={fields.status ?? ''} onChange={(e) => setField('status', e.target.value)} />
+              <Field label="Status" htmlFor="se-dispatch_status">
+                <input id="se-dispatch_status" type="text" className={inputCls} value={fields.status ?? ''} onChange={(e) => setField('status', e.target.value)} />
               </Field>
             </>
           )}
@@ -125,10 +125,10 @@ export function StateEditModal({ table, onClose, onSubmit }: Props) {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, htmlFor, children }: { label: string; htmlFor: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      <label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">{label}</label>
       {children}
     </div>
   );

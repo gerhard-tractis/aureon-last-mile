@@ -171,6 +171,7 @@ export async function purgeTestOrders(
     .from('orders')
     .select('id, customer_name, customer_phone, delivery_date, status, created_at')
     .eq('operator_id', operator_id)
+    .like('external_id', 'TEST-%')
     .is('deleted_at', null);
 
   if (ordersErr) throw new Error(ordersErr.message);
