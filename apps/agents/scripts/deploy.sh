@@ -28,6 +28,13 @@ if [[ -d dist ]]; then
   cp -r dist dist.bak
 fi
 
+# Clear node_modules before install — avoids permission errors from any
+# root-owned files left by prior manual installs (renaming works even
+# when files inside are root-owned, because we own the parent directory)
+if [[ -d node_modules ]]; then
+  mv node_modules "/tmp/agents-nm-$(date +%s)" 2>/dev/null || true
+fi
+
 npm ci --no-workspaces
 npm audit --omit=dev --audit-level=moderate --no-workspaces || echo "WARN: npm audit issues found — review before next deploy"
 PATH="$PWD/node_modules/.bin:$PATH" npm run build
