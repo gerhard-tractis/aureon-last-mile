@@ -28,10 +28,10 @@ if [[ -d dist ]]; then
   cp -r dist dist.bak
 fi
 
-npm ci
-npm audit --omit=dev --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
+npm ci --no-workspaces
+npm audit --omit=dev --audit-level=moderate --no-workspaces || echo "WARN: npm audit issues found — review before next deploy"
 PATH="$PWD/node_modules/.bin:$PATH" npm run build
-npm prune --omit=dev
+npm prune --omit=dev --no-workspaces
 
 # Install systemd service on first deploy
 if ! systemctl is-enabled aureon-agents &>/dev/null; then
