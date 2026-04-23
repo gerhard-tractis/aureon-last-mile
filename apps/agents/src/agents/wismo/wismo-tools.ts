@@ -16,6 +16,7 @@ export interface WismoToolDeps {
   db: SupabaseClient;
   waPhoneNumberId: string;
   waAccessToken: string;
+  channel?: 'whatsapp' | 'mock';
 }
 
 // ── ETA utility (private, deterministic — not an LLM-callable tool) ───────────
@@ -52,7 +53,7 @@ export function roundEtaToWindow(estimated_at: string): string {
 // ── Tool factory ──────────────────────────────────────────────────────────────
 
 export function createWismoTools(deps: WismoToolDeps): AgentTool[] {
-  const { db, waPhoneNumberId, waAccessToken } = deps;
+  const { db, waPhoneNumberId, waAccessToken, channel } = deps;
 
   const createOrGetSessionTool: AgentTool = {
     name: 'create_or_get_session',
@@ -136,7 +137,7 @@ export function createWismoTools(deps: WismoToolDeps): AgentTool[] {
         type: 'text',
         to: args.customer_phone as string,
         body: args.body as string,
-      });
+      }, channel);
 
       const msg = await logSessionMessage(db, {
         operator_id: ctx.operator_id,

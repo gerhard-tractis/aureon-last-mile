@@ -2,11 +2,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { BaseAgent, type AgentContext } from '../base-agent';
 import type { LLMProvider, Message } from '../../providers/types';
+import { OpenRouterProvider } from '../../providers/openrouter';
 import { createWismoTools, roundEtaToWindow, closeSession } from './wismo-tools';
 import { createOrGetSession, logSessionMessage, getSessionHistory } from '../../tools/supabase/customer-sessions';
 import { sendWhatsAppMessage } from '../../tools/whatsapp/send-message';
 import { logAgentEvent } from '../../tools/supabase/events';
 import { wismoFallback } from './wismo-fallback';
+
+export const WISMO_DEFAULT_MODEL = 'meta-llama/llama-3.3-70b-instruct';
 
 const MAX_STEPS = 5;
 
@@ -41,19 +44,22 @@ export class WismoAgent extends BaseAgent {
   private readonly db: SupabaseClient;
   private readonly waPhoneNumberId: string;
   private readonly waAccessToken: string;
+  private readonly channel: 'whatsapp' | 'mock';
 
   constructor(
     provider: LLMProvider,
     db: SupabaseClient,
     waPhoneNumberId: string,
     waAccessToken: string,
+    channel: 'whatsapp' | 'mock' = 'whatsapp',
   ) {
     super('WISMO', provider);
     this.db = db;
     this.waPhoneNumberId = waPhoneNumberId;
     this.waAccessToken = waAccessToken;
+    this.channel = channel;
 
-    const tools = createWismoTools({ db, waPhoneNumberId, waAccessToken });
+    const tools = createWismoTools({ db, waPhoneNumberId, waAccessToken, channel });
     for (const tool of tools) this.registerTool(tool);
   }
 
@@ -77,7 +83,7 @@ export class WismoAgent extends BaseAgent {
 
     const { external_message_id } = await sendWhatsAppMessage(this.waPhoneNumberId, this.waAccessToken, {
       type: 'text', to: customer_phone, body,
-    });
+    }, this.channel);
 
     await logSessionMessage(this.db, {
       operator_id: job.operator_id, session_id: session.id,
@@ -193,5 +199,31 @@ function buildProactiveMessage(
       return { body: `✅ Tu pedido N° ${orderNumber} fue entregado exitosamente. ¡Gracias por confiar en nosotros!`, action: 'delivered_notified' };
     case 'proactive_failed':
       return { body: `Lo sentimos, no pudimos entregar tu pedido N° ${orderNumber}${job.failure_reason ? ` (${job.failure_reason})` : ''}. Te contactaremos pronto para reprogramar.`, action: 'failed_notified' };
+  }
+}
+
+// ── Standalone entry point (used by test console and worker) ──────────────────
+
+export interface ProcessWismoJobOpts {
+  payload: WismoProactiveJob | WismoClientJob;
+  supabase: SupabaseClient;
+  modelOverride?: string;
+  channel?: 'whatsapp' | 'mock';
+}
+
+export async function processWismoJob(opts: ProcessWismoJobOpts): Promise<void> {
+  const channel = opts.channel ?? 'whatsapp';
+  const apiKey = process.env.OPENROUTER_API_KEY ?? '';
+  const model = opts.modelOverride ?? WISMO_DEFAULT_MODEL;
+  const provider = new OpenRouterProvider(apiKey, model);
+  const waPhoneNumberId = process.env.WA_PHONE_NUMBER_ID ?? '';
+  const waAccessToken = process.env.WA_ACCESS_TOKEN ?? '';
+  const agent = new WismoAgent(provider, opts.supabase, waPhoneNumberId, waAccessToken, channel);
+
+  const payload = opts.payload;
+  if (payload.type === 'client_message') {
+    await agent.handleReactive(payload as WismoClientJob);
+  } else {
+    await agent.handleProactive(payload as WismoProactiveJob);
   }
 }

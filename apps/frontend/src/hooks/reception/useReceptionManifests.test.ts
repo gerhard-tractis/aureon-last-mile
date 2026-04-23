@@ -4,17 +4,22 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { useReceptionManifests } from './useReceptionManifests';
 
-const mockSelect = vi.fn();
-const mockEq = vi.fn();
-const mockIn = vi.fn();
-const mockIs = vi.fn();
-const mockOrder = vi.fn();
+const mockManifestsSelect = vi.fn();
+const mockManifestsIn = vi.fn();
+const mockManifestsIs = vi.fn();
+const mockManifestsOrder = vi.fn();
+
+const mockOrdersSelect = vi.fn();
+const mockOrdersIn = vi.fn();
+const mockOrdersNot = vi.fn();
+const mockOrdersIs = vi.fn();
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
-    from: () => ({
-      select: mockSelect,
-    }),
+    from: (table: string) => {
+      if (table === 'orders') return { select: mockOrdersSelect };
+      return { select: mockManifestsSelect };
+    },
   }),
 }));
 
@@ -29,14 +34,19 @@ function createWrapper() {
 
 describe('useReceptionManifests', () => {
   beforeEach(() => {
-    mockSelect.mockReturnValue({ in: mockIn });
-    mockIn.mockReturnValue({ is: mockIs });
-    mockIs.mockReturnValue({ order: mockOrder });
+    mockManifestsSelect.mockReturnValue({ in: mockManifestsIn });
+    mockManifestsIn.mockReturnValue({ is: mockManifestsIs });
+    mockManifestsIs.mockReturnValue({ order: mockManifestsOrder });
+
+    mockOrdersSelect.mockReturnValue({ in: mockOrdersIn });
+    mockOrdersIn.mockReturnValue({ not: mockOrdersNot });
+    mockOrdersNot.mockReturnValue({ is: mockOrdersIs });
+    mockOrdersIs.mockResolvedValue({ data: [], error: null });
   });
 
   it('does not fetch when operatorId is null', () => {
     renderHook(() => useReceptionManifests(null), { wrapper: createWrapper() });
-    expect(mockSelect).not.toHaveBeenCalled();
+    expect(mockManifestsSelect).not.toHaveBeenCalled();
   });
 
   it('fetches manifests with awaiting_reception and reception_in_progress statuses', async () => {
@@ -45,6 +55,7 @@ describe('useReceptionManifests', () => {
         id: 'manifest-1',
         external_load_id: 'CARGA-001',
         retailer_name: 'Easy',
+        pickup_location: null,
         total_packages: 25,
         completed_at: '2026-03-18T10:00:00Z',
         reception_status: 'awaiting_reception',
@@ -52,7 +63,11 @@ describe('useReceptionManifests', () => {
         hub_receptions: [],
       },
     ];
-    mockOrder.mockResolvedValue({ data: mockData, error: null });
+    mockManifestsOrder.mockResolvedValue({ data: mockData, error: null });
+    mockOrdersIs.mockResolvedValue({
+      data: [{ external_load_id: 'CARGA-001', pickup_point: { name: 'CD Easy Maipú' } }],
+      error: null,
+    });
 
     const { result } = renderHook(
       () => useReceptionManifests('op-123'),
@@ -60,17 +75,19 @@ describe('useReceptionManifests', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(mockData);
-    expect(mockSelect).toHaveBeenCalled();
-    expect(mockIn).toHaveBeenCalledWith('reception_status', [
+    expect(result.current.data).toEqual([
+      { ...mockData[0], pickup_point_name: 'CD Easy Maipú' },
+    ]);
+    expect(mockManifestsSelect).toHaveBeenCalled();
+    expect(mockManifestsIn).toHaveBeenCalledWith('reception_status', [
       'awaiting_reception',
       'reception_in_progress',
     ]);
-    expect(mockIs).toHaveBeenCalledWith('deleted_at', null);
+    expect(mockManifestsIs).toHaveBeenCalledWith('deleted_at', null);
   });
 
   it('handles errors from Supabase', async () => {
-    mockOrder.mockResolvedValue({ data: null, error: { message: 'DB error' } });
+    mockManifestsOrder.mockResolvedValue({ data: null, error: { message: 'DB error' } });
 
     const { result } = renderHook(
       () => useReceptionManifests('op-123'),
@@ -81,7 +98,7 @@ describe('useReceptionManifests', () => {
   });
 
   it('returns empty array when no manifests match', async () => {
-    mockOrder.mockResolvedValue({ data: [], error: null });
+    mockManifestsOrder.mockResolvedValue({ data: [], error: null });
 
     const { result } = renderHook(
       () => useReceptionManifests('op-123'),

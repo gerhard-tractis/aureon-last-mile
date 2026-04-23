@@ -86,4 +86,48 @@ describe('sendWhatsAppMessage', () => {
 
     expect(result.external_message_id).toBe('');
   });
+
+  describe('mock channel', () => {
+    it('returns a MOCK- prefixed id and does NOT call fetch', async () => {
+      const fetchMock = mockFetch(200, { messages: [{ id: 'wamid.never' }] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await sendWhatsAppMessage(PHONE_NUMBER_ID, ACCESS_TOKEN, {
+        type: 'text',
+        to: '+56900000004',
+        body: 'mock test',
+      }, 'mock');
+
+      expect(result.external_message_id).toMatch(/^MOCK-/);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('calls fetch normally when channel is whatsapp', async () => {
+      const fetchMock = mockFetch(200, { messages: [{ id: 'wamid.real' }] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await sendWhatsAppMessage(PHONE_NUMBER_ID, ACCESS_TOKEN, {
+        type: 'text',
+        to: '+56900000005',
+        body: 'real test',
+      }, 'whatsapp');
+
+      expect(result.external_message_id).toBe('wamid.real');
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+
+    it('calls fetch normally when channel is undefined (default behaviour)', async () => {
+      const fetchMock = mockFetch(200, { messages: [{ id: 'wamid.default' }] });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await sendWhatsAppMessage(PHONE_NUMBER_ID, ACCESS_TOKEN, {
+        type: 'text',
+        to: '+56900000006',
+        body: 'default test',
+      });
+
+      expect(result.external_message_id).toBe('wamid.default');
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
+  });
 });

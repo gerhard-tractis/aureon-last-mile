@@ -5,6 +5,7 @@ import ReceptionPage from './page';
 const mockActive = [
   {
     id: 'm1', external_load_id: 'CARGA-001', retailer_name: 'Easy',
+    pickup_location: null, pickup_point_name: 'CD Easy Maipú',
     total_packages: 20, completed_at: '2026-03-25T10:00:00Z',
     reception_status: 'awaiting_reception', assigned_to_user_id: 'u1',
     hub_receptions: [{ id: 'r1', expected_count: 20, received_count: 0, status: 'pending',
@@ -12,6 +13,7 @@ const mockActive = [
   },
   {
     id: 'm2', external_load_id: 'CARGA-002', retailer_name: 'Sodimac',
+    pickup_location: null, pickup_point_name: 'CD Sodimac Quilicura',
     total_packages: 15, completed_at: '2026-03-25T11:00:00Z',
     reception_status: 'reception_in_progress', assigned_to_user_id: 'u1',
     hub_receptions: [{ id: 'r2', expected_count: 15, received_count: 8, status: 'in_progress',
@@ -22,6 +24,7 @@ const mockActive = [
 const mockCompleted = [
   {
     id: 'm3', external_load_id: 'CARGA-000', retailer_name: 'Easy',
+    pickup_location: null, pickup_point_name: 'CD Easy Maipú',
     total_packages: 10, completed_at: new Date().toISOString(),
     reception_status: 'received', assigned_to_user_id: 'u1',
     hub_receptions: [{ id: 'r3', expected_count: 10, received_count: 10, status: 'completed',
@@ -88,6 +91,12 @@ describe('ReceptionPage', () => {
     render(<ReceptionPage />);
     expect(screen.getByText('Easy')).toBeInTheDocument();
     expect(screen.getByText('Sodimac')).toBeInTheDocument();
+  });
+
+  it('renders manifest id and pickup point on active cards', () => {
+    render(<ReceptionPage />);
+    expect(screen.getByText('CARGA-001')).toBeInTheDocument();
+    expect(screen.getByText('CD Easy Maipú')).toBeInTheDocument();
   });
 
   it('has max-w constraint and responsive padding', () => {
