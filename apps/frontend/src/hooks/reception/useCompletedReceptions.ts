@@ -10,7 +10,7 @@ export function useCompletedReceptions(operatorId: string | null) {
       const { data, error } = await supabase
         .from('manifests')
         .select(
-          `id, external_load_id, retailer_name, total_packages, completed_at,
+          `id, external_load_id, retailer_name, pickup_location, total_packages, completed_at,
            reception_status, assigned_to_user_id,
            hub_receptions(id, expected_count, received_count, status, completed_at)`
         )

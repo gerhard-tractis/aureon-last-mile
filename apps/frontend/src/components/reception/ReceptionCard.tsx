@@ -1,9 +1,11 @@
 'use client';
 
-import { Package, Clock, Truck } from 'lucide-react';
+import { Package, Clock, Truck, Hash, MapPin } from 'lucide-react';
 
 interface ReceptionCardProps {
+  manifestId?: string | null;
   retailerName: string | null;
+  pickupLocation?: string | null;
   packageCount: number;
   completedAt: string | null;
   receptionStatus: 'awaiting_reception' | 'reception_in_progress';
@@ -16,7 +18,9 @@ interface ReceptionCardProps {
 }
 
 export function ReceptionCard({
+  manifestId,
   retailerName,
+  pickupLocation,
   packageCount,
   completedAt,
   receptionStatus,
@@ -47,6 +51,18 @@ export function ReceptionCard({
           <h3 className="font-semibold text-text truncate">
             {retailerName || 'Retailer desconocido'}
           </h3>
+          {manifestId && (
+            <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 font-mono">
+              <Hash className="h-3 w-3" />
+              {manifestId}
+            </p>
+          )}
+          {pickupLocation && (
+            <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 truncate">
+              <MapPin className="h-3 w-3 shrink-0" />
+              <span className="truncate">{pickupLocation}</span>
+            </p>
+          )}
           {driverName && (
             <p className="text-xs text-text-secondary flex items-center gap-1 mt-1">
               <Truck className="h-3 w-3" />

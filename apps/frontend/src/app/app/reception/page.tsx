@@ -109,7 +109,9 @@ export default function ReceptionPage() {
               return (
                 <ReceptionCard
                   key={manifest.id}
+                  manifestId={manifest.external_load_id}
                   retailerName={manifest.retailer_name}
+                  pickupLocation={manifest.pickup_location}
                   packageCount={manifest.total_packages ?? 0}
                   completedAt={manifest.completed_at}
                   receptionStatus={isInProgress ? 'reception_in_progress' : 'awaiting_reception'}
@@ -146,7 +148,9 @@ export default function ReceptionPage() {
               return (
                 <ReceptionCard
                   key={manifest.id}
+                  manifestId={manifest.external_load_id}
                   retailerName={manifest.retailer_name}
+                  pickupLocation={manifest.pickup_location}
                   packageCount={manifest.total_packages ?? 0}
                   completedAt={
                     (completedReception as { completed_at?: string | null } | undefined)?.completed_at ??
