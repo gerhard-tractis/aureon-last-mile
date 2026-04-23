@@ -81,44 +81,48 @@ export function EventsPanel({ orderId, onSimulate, onStateEdit, loading }: Props
         </div>
 
         {/* ETA with time input */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground whitespace-nowrap">ETA time:</label>
-          <input
-            type="time"
-            aria-label="ETA time"
-            value={etaTime}
-            onChange={(e) => setEtaTime(e.target.value)}
-            className="rounded-md border border-border bg-background text-foreground text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
-          />
-          <button
-            disabled={disabled}
-            onClick={() => fire('proactive_eta', etaTime ? { estimated_at: etaTime } : undefined)}
-            className={btnCls}
-          >
-            Send ETA
-          </button>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">ETA time</label>
+          <div className="flex gap-2">
+            <input
+              type="time"
+              aria-label="ETA time"
+              value={etaTime}
+              onChange={(e) => setEtaTime(e.target.value)}
+              className="flex-1 min-w-0 rounded-md border border-border bg-background text-foreground text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              disabled={disabled}
+              onClick={() => fire('proactive_eta', etaTime ? { estimated_at: etaTime } : undefined)}
+              className={btnCls}
+            >
+              Send ETA
+            </button>
+          </div>
         </div>
 
         {/* Failed with reason dropdown */}
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-muted-foreground whitespace-nowrap">Fail reason:</label>
-          <select
-            aria-label="Fail reason"
-            value={failedReason}
-            onChange={(e) => setFailedReason(e.target.value)}
-            className="rounded-md border border-border bg-background text-foreground text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {FAILED_REASONS.map((r) => (
-              <option key={r.value} value={r.value}>{r.label}</option>
-            ))}
-          </select>
-          <button
-            disabled={disabled}
-            onClick={() => fire('proactive_failed', { failure_reason: failedReason })}
-            className={`${btnCls} bg-destructive text-destructive-foreground hover:opacity-90`}
-          >
-            Failed
-          </button>
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">Fail reason</label>
+          <div className="flex gap-2">
+            <select
+              aria-label="Fail reason"
+              value={failedReason}
+              onChange={(e) => setFailedReason(e.target.value)}
+              className="flex-1 min-w-0 rounded-md border border-border bg-background text-foreground text-sm px-2 py-1 focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {FAILED_REASONS.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
+            </select>
+            <button
+              disabled={disabled}
+              onClick={() => fire('proactive_failed', { failure_reason: failedReason })}
+              className={`${btnCls} bg-destructive text-destructive-foreground hover:opacity-90`}
+            >
+              Failed
+            </button>
+          </div>
         </div>
       </section>
 

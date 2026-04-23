@@ -118,7 +118,7 @@ export default function WismoTestClient({ operatorId: _operatorId }: Props) {
       {/* Three-column panel area */}
       <div className="grid grid-cols-[240px_1fr_320px] h-[calc(100vh-80px)] overflow-hidden">
         {/* Left: EventsPanel */}
-        <div className="border-r border-border overflow-y-auto">
+        <div className="border-r border-border overflow-y-auto overflow-x-hidden">
           <EventsPanel
             orderId={selectedOrderId}
             onSimulate={handleSimulate}
