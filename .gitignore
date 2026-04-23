@@ -30,3 +30,4 @@ build/
 
 # Turborepo
 .turbo
+docs/sprint-status.yaml
