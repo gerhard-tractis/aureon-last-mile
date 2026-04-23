@@ -4,10 +4,10 @@ import { editTestOrderState } from '../state-editor';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function makeOrderRow(external_id = 'TEST-abc-123') {
+function makeOrderRow(order_number = 'TEST-abc-123') {
   return {
     id: 'ord-uuid-1',
-    external_id,
+    order_number,
     customer_name: 'Test Customer',
     customer_phone: '+56912345678',
     delivery_date: '2026-04-25',
@@ -163,7 +163,7 @@ function makeDb(options: {
 describe('editTestOrderState — safety guard', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('throws if order is not a test order (external_id does not start with TEST-)', async () => {
+  it('throws if order is not a test order (order_number does not start with TEST-)', async () => {
     const db = makeDb({ orderExtId: 'ORD-regular-123' });
     await expect(
       editTestOrderState(db as never, 'op-1', 'ord-uuid-1', {

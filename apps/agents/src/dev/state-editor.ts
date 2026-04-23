@@ -38,7 +38,7 @@ async function verifyTestOrder(
 ): Promise<Record<string, unknown>> {
   const { data, error } = await db
     .from('orders')
-    .select('id, external_id, operator_id')
+    .select('id, order_number, operator_id')
     .eq('id', order_id)
     .eq('operator_id', operator_id)
     .single();
@@ -49,8 +49,8 @@ async function verifyTestOrder(
 
   const order = data as Record<string, unknown>;
   if (
-    typeof order.external_id !== 'string' ||
-    !order.external_id.startsWith('TEST-')
+    typeof order.order_number !== 'string' ||
+    !order.order_number.startsWith('TEST-')
   ) {
     throw new Error(`Order ${order_id} is not a test order`);
   }

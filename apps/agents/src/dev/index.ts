@@ -42,16 +42,8 @@ export function devTokenGuard(req: Request, res: Response, next: NextFunction): 
  */
 export function registerDevRoutes(app: Application, db: SupabaseClient): void {
   const enabled = process.env.ENABLE_DEV_ENDPOINTS === 'true';
-  const isProd = process.env.NODE_ENV === 'production';
 
   if (!enabled) {
-    return;
-  }
-
-  if (isProd) {
-    log('warn', 'dev_routes_skipped', {
-      reason: 'ENABLE_DEV_ENDPOINTS=true in production — refusing to register dev routes',
-    });
     return;
   }
 
