@@ -80,6 +80,16 @@ describe('ReceptionCard', () => {
     expect(screen.getByText(/Carlos López/)).toBeInTheDocument();
   });
 
+  it('shows manifest id when provided', () => {
+    render(<ReceptionCard {...defaultProps} manifestId="CARGA-001" />);
+    expect(screen.getByText('CARGA-001')).toBeInTheDocument();
+  });
+
+  it('shows pickup location when provided', () => {
+    render(<ReceptionCard {...defaultProps} pickupLocation="CD Easy Maipú" />);
+    expect(screen.getByText('CD Easy Maipú')).toBeInTheDocument();
+  });
+
   it('shows departure time when provided', () => {
     render(<ReceptionCard {...defaultProps} departedAt="2026-03-25T14:30:00Z" />);
     expect(screen.getByText(/Salió a las/)).toBeInTheDocument();

@@ -13,6 +13,7 @@ export interface ReceptionManifest {
   id: string;
   external_load_id: string;
   retailer_name: string | null;
+  pickup_location: string | null;
   total_packages: number | null;
   completed_at: string | null;
   reception_status: string | null;
@@ -33,7 +34,7 @@ export function useReceptionManifests(operatorId: string | null) {
       const { data, error } = await supabase
         .from('manifests')
         .select(
-          `id, external_load_id, retailer_name, total_packages, completed_at,
+          `id, external_load_id, retailer_name, pickup_location, total_packages, completed_at,
            reception_status, assigned_to_user_id,
            hub_receptions(id, expected_count, received_count, status,
              delivered_by_user:users!hub_receptions_delivered_by_fkey(full_name)
