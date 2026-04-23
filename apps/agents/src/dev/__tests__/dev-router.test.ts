@@ -87,7 +87,7 @@ describe('registerDevRoutes — env guard', () => {
     expect(app._routes.length).toBe(0);
   });
 
-  it('does NOT register routes when NODE_ENV is "production" even if ENABLE_DEV_ENDPOINTS=true', async () => {
+  it('DOES register routes when NODE_ENV is "production" and ENABLE_DEV_ENDPOINTS=true', async () => {
     process.env.ENABLE_DEV_ENDPOINTS = 'true';
     process.env.NODE_ENV = 'production';
     process.env.AGENTS_DEV_TOKEN = 'secret-token';
@@ -95,7 +95,8 @@ describe('registerDevRoutes — env guard', () => {
     const { registerDevRoutes } = await import('../index');
     const app = mockExpressApp();
     registerDevRoutes(app as never, {} as never);
-    expect(app._routes.length).toBe(0);
+    // NODE_ENV guard was removed — agents server always runs in production
+    expect(app._routes.length).toBeGreaterThan(0);
   });
 
   it('DOES register routes when ENABLE_DEV_ENDPOINTS=true and NODE_ENV=development', async () => {
