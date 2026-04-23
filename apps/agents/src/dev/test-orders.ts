@@ -278,7 +278,6 @@ export async function purgeTestOrders(
   db: SupabaseClient,
   operator_id: string,
 ): Promise<{ deleted_count: number }> {
-  // 1. Get all test order IDs
   const { data: orders, error: ordersErr } = await db
     .from('orders')
     .select('id, customer_name, customer_phone, delivery_date, status, created_at')
@@ -293,56 +292,30 @@ export async function purgeTestOrders(
   const orderIds = rows.map((r) => r.id as string);
   const now = new Date().toISOString();
 
-  // Helper: soft-delete rows in a related table by order_id IN (ids)
-  async function softDeleteByOrderIds(table: string): Promise<void> {
+  const softDeleteByOrder = async (table: string): Promise<void> => {
     for (const oid of orderIds) {
-      await db
-        .from(table)
-        .update({ deleted_at: now })
-        .eq('order_id', oid)
-        .eq('operator_id', operator_id);
+      await db.from(table).update({ deleted_at: now }).eq('order_id', oid).eq('operator_id', operator_id);
     }
-  }
+  };
 
-  // Fetch active session IDs to cascade to messages
-  const sessionIds: string[] = [];
+  // Cascade to session messages first
   for (const oid of orderIds) {
     const { data: sessions } = await db
-      .from('customer_sessions')
-      .select('id')
-      .eq('order_id', oid)
-      .eq('operator_id', operator_id)
-      .is('deleted_at', null);
-    if (sessions) {
-      for (const s of sessions as Array<Record<string, unknown>>) {
-        sessionIds.push(s.id as string);
-      }
+      .from('customer_sessions').select('id').eq('order_id', oid).eq('operator_id', operator_id).is('deleted_at', null);
+    for (const s of (sessions ?? []) as Array<Record<string, unknown>>) {
+      await db.from('customer_session_messages').update({ deleted_at: now }).eq('session_id', s.id as string).eq('operator_id', operator_id);
     }
   }
 
-  // Soft-delete messages for those sessions
-  for (const sid of sessionIds) {
-    await db
-      .from('customer_session_messages')
-      .update({ deleted_at: now })
-      .eq('session_id', sid)
-      .eq('operator_id', operator_id);
-  }
+  // Bottom-up soft-delete
+  await softDeleteByOrder('customer_sessions');
+  await softDeleteByOrder('order_reschedules');
+  await softDeleteByOrder('wismo_notifications');
+  await softDeleteByOrder('assignments');
+  await softDeleteByOrder('dispatches');
 
-  // Soft-delete related tables bottom-up
-  await softDeleteByOrderIds('customer_sessions');
-  await softDeleteByOrderIds('order_reschedules');
-  await softDeleteByOrderIds('wismo_notifications');
-  await softDeleteByOrderIds('assignments');
-  await softDeleteByOrderIds('dispatches');
-
-  // Finally soft-delete the orders themselves
   for (const oid of orderIds) {
-    await db
-      .from('orders')
-      .update({ deleted_at: now })
-      .eq('id', oid)
-      .eq('operator_id', operator_id);
+    await db.from('orders').update({ deleted_at: now }).eq('id', oid).eq('operator_id', operator_id);
   }
 
   return { deleted_count: orderIds.length };
