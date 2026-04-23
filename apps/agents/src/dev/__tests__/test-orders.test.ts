@@ -165,7 +165,8 @@ function makeDb(options: {
 
       if (table === 'drivers') {
         return {
-          select: vi.fn().mockReturnValue(makeChain({ singleData: driverRow })),
+          select: vi.fn().mockReturnValue(makeChain({ maybeSingleData: driverRow })),
+          upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
         };
       }
 
