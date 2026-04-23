@@ -1,6 +1,6 @@
 # Spec 18 — Distribution Page Visual Polish
 
-**Status:** backlog
+**Status:** completed
 
 _Date: 2026-03-24_
 

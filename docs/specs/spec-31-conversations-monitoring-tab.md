@@ -2,7 +2,7 @@
 
 > **Related:** [spec-24-customer-communication-agent.md](spec-24-customer-communication-agent.md) — WISMO agent that produces the conversations being monitored here.
 
-**Status:** backlog
+**Status:** completed
 
 _Date: 2026-04-09_
 

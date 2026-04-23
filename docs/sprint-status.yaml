@@ -31,7 +31,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-03
+generated: 2026-04-23
 project: Aureon_Last_Mile
 project_key: NOKEY
 tracking_system: file-system
@@ -114,7 +114,27 @@ development_status:
   5-9-configure-supabase-realtime-for-live-order-updates: backlog
   epic-5-retrospective: optional
 
-  spec-12-distribution-sectorization: in-progress  # D.0–D.6 implemented: DB migration, sectorization engine, andén UI, dashboard, batch scanning, quick-sort scanning, nav integration. 1489 tests passing.
+  spec-01-epic4a-pickup-verification: done  # PRs #107, #108, #110, #113, #114 merged 2026-03-11/12. Manifest list, scanning, discrepancy review, signature & completion.
+  spec-02-remember-me-login: done  # PRs #109, #111, #112 merged 2026-03-11. Persistent Supabase auth cookies with maxAge + server-side refresh.
+  spec-03-epic5-db-realtime-foundation: done  # PR #121 merged 2026-03-16. Epic 5 DB & Realtime foundation for Operations Control Center.
+  spec-04-epic5-desktop-operations-control: done  # PRs #122, #123, #124, #126 merged 2026-03-16. Desktop + Mobile Operations Control Center (stories 5.2–5.5).
+  spec-06-epic5-capacity-alerts-audit: done  # PR #125 merged 2026-03-16. Capacity Calendar, Alerts & Audit Log Viewer.
+  spec-07-pickup-scanning-improvements: done  # PR #118 merged 2026-03-16. Back arrow + manifest detail list.
+  spec-08-hub-reception-design: done  # PR #131 merged 2026-03-18. Hub reception & chain of custody.
+  spec-09-monorepo-tech-debt-cleanup: done  # PR #132 merged 2026-03-18. npm workspaces + Turborepo monorepo restructure.
+  spec-10a-scaffold-infrastructure: done  # PR #136 merged 2026-03-18. Bootable Node.js agent suite infrastructure.
+  spec-10b-database-migration: done  # PRs #137, #138 merged 2026-03-18. 15 tables, 17 enums, RLS, triggers.
+  spec-10c-orchestration-whatsapp: done  # PR #140 merged 2026-03-20. BullMQ orchestration + WhatsApp webhook + command bridge.
+  spec-10d-intake-agent-camera: done  # PR #145 merged 2026-03-21. Camera → GLM-OCR → customer match → orders.
+  spec-10e-ortools-sidecar: done  # PRs #143, #144 merged 2026-03-21. OR-Tools VRPTW sidecar (FastAPI + CP-SAT) with auto-deploy on VPS.
+  spec-10f-assignment-agent: backlog  # Not started. Assigns orders to drivers via OR-Tools.
+  spec-10g-coord-agent: backlog  # Not started. WhatsApp driver coordination lifecycle.
+  spec-10h-wismo-agent: superseded  # Superseded by spec-24 (customer communication agent).
+  spec-10i-settle-agent: backlog  # Not started. End-of-day reconciliation with Chilean tax compliance.
+  spec-10j-exception-agent: backlog  # Not started. Cross-cutting deviation handling.
+  spec-10k-intake-expansion: backlog  # Not started. Email (IMAP) + dashboard upload intake channels.
+  spec-11-design-system-foundation: done  # PR #141 merged 2026-03-21. 3-mode tokens, Geist, Tractis gold.
+  spec-12-distribution-sectorization: done  # PR #142 merged 2026-03-21. D.0–D.6 — DB migration, sectorization engine, andén UI, dashboard, batch + quick-sort scanning, nav integration. 1489 tests passing.
   spec-13a-design-foundation: done  # PR #146 merged 2026-03-21. 14 shadcn primitives, sidebar tokens, StatusBadge, EmptyState, PageShell, MetricCard, DataTable, useSidebarPin, SidebarNavItem/UserMenu, AppLayout icon-rail sidebar. 1576 tests passing.
   spec-13b-dashboard-redesign: done  # Dense command center: HeroSLA gold card, 4 KPI MetricCards, charts with token colors, shadcn Tabs, DataTable for client performance, PageShell layout, semantic tokens throughout. 1542 tests passing.
   spec-13c-ops-control-audit: done  # PR #149 merged 2026-03-23. Ops Control + Audit Logs redesign with design tokens, DataTable, Sheet, PageShell. 300 tests passing.
@@ -123,6 +143,30 @@ development_status:
   spec-21-reception-visual-polish: done  # PR #178 merged 2026-03-25. Reception list KPIs+tabs, QR scanner (html5-qrcode), ReceptionStepBreadcrumb, MetricCard in summary, AlertDialog confirm, Spanish accent fixes. 97 tests passing.
   spec-22-dispatch-visual-polish: done  # PR #180 merged 2026-03-26. Bug fix: show all open routes (not just today). KPI MetricCards, 3 tabs (Abiertas/En Ruta/Completadas), RouteListTile redesign with Spanish labels+progress bars+overdue warnings, RouteBuilder/RoutePanel/ScanZone/PackageRow Tailwind+shadcn polish, AlertDialog confirmations. 39 tests, 0 type errors.
   spec-23-ocr-agent-camera-intake: done  # PR #182 merged 2026-03-30. OpenRouter Gemini 2.5 Flash vision OCR; generators→pickup_points rename (DB+agents+frontend+mobile); multi-photo CameraIntake (max 10, thumbnail strip, sequential upload); processIntakeSubmission replaces class-based IntakeAgent; 178 agent tests + 1822 frontend tests passing.
-  spec-24-customer-communication-agent: in-progress  # DB migration (customer_sessions, customer_session_messages, order_reschedules, wismo_type_enum extension); OpenRouter provider; WA send-message tool; WISMO agent (proactive/reactive); wismo-worker wired into BullMQ wismo.client queue.
-  spec-25-agents-deploy-intake-trigger: in-progress  # Agents deploy pipeline, intake-listener Supabase Realtime trigger, Redis install on VPS, systemd service fix, health port 3110.
-  spec-27-ocr-test-page: in-progress  # Admin-only /ocr-test page — camera → OpenRouter OCR → results. TDD.
+  spec-13d-pickup-reception: done  # PRs #147, #150, #154 merged 2026-03-23. Pickup & Reception mobile-first redesign, dark-mode token audit.
+  spec-13e-capacity-admin-auth-cleanup: done  # PR #157 merged 2026-03-24. Capacity, admin, auth & global design cleanup.
+  spec-15-dispatch-module: done  # PR #159 merged 2026-03-24. Dispatch module with RoutePanel, RouteListTile, delete-draft-route API.
+  spec-16a-tablet-shell: done  # PR #163 merged 2026-03-24. Android tablet PWA shell.
+  spec-16b-pickup-tablet-features: done  # PR #164 merged 2026-03-24. Pickup client filter + camera intake for tablets.
+  spec-16c-pwa-polish: done  # PR #165 merged 2026-03-24. Manifest consolidation, Spanish i18n, lang=es.
+  spec-17-landing-page: done  # PRs #166, #167, #169–#173, #188, #198, #199 merged 2026-03-25/31. Aureon marketing landing with Tractis branding.
+  spec-18-distribution-visual-polish: done  # PR #172 merged 2026-03-25. KPI cards, action links, empty state.
+  spec-19-pickup-visual-polish: done  # PR #174 merged 2026-03-25. Handoff/complete pages, shadcn Button, expandable SKU rows.
+  spec-20-camera-intake-cascading-dropdowns: done  # PRs #175, #176, #177 merged 2026-03-25. Cascading client→pickup-point dropdowns in CameraIntake, useTenantClients + usePickupPointsByClient hooks.
+  spec-21-reception-visual-polish: done  # PR #178 merged 2026-03-25. Reception list KPIs+tabs, QR scanner (html5-qrcode), ReceptionStepBreadcrumb, MetricCard in summary, AlertDialog confirm, Spanish accent fixes. 97 tests passing.
+  spec-22-dispatch-visual-polish: done  # PR #180 merged 2026-03-26. KPI MetricCards, 3 tabs, RouteListTile redesign. 39 tests.
+  spec-23-ocr-agent-camera-intake: done  # PR #182 merged 2026-03-30. OpenRouter Gemini 2.5 Flash vision OCR; generators→pickup_points rename; multi-photo CameraIntake; processIntakeSubmission. 178 agent + 1822 frontend tests.
+  spec-24-customer-communication-agent: done  # PRs #183, #185, #197, #200–#204 merged 2026-03-30/Apr-02. WISMO expanded — customer sessions, reschedule tracking, ETA notifications, OpenRouter provider, WA send-message tool, BullMQ wismo.client queue.
+  spec-25-agents-deploy-intake-trigger: done  # PRs #186, #187, #189 merged 2026-03-30. Intake-listener Supabase Realtime trigger, Redis on VPS, systemd service, health port 3110.
+  spec-26a-landing-foundation: done  # PR #192 merged 2026-03-30. Display font, icons, a11y.
+  spec-26b-landing-layout-variety: done  # PR #195 merged 2026-03-31. Layout variety & visual assets.
+  spec-26c-landing-motion-texture: done  # PR #196 merged 2026-03-31. Motion & texture polish.
+  spec-27-ocr-test-page: done  # PRs #193, #205 merged 2026-03-31/Apr-06. Admin-only /ocr-test page with async intake flow replacing sync Vercel route.
+  spec-28-code-quality-cleanup: done  # PRs #206, #207, #209, #210, #212 merged 2026-04-06/08. CI fixes (supabase CLI pin, DB password, path filters), comunas integration test.
+  spec-29-ops-control-mission-deck: done  # PRs #218, #226 merged 2026-04-09. Mission Deck with light/dark mode support.
+  spec-30-dashboard-rebuild: done  # PRs #216, #228, #232 merged 2026-04-09/13. Editorial C-level dashboard with OTIF chapters, tactical cards, chapter annotations removed.
+  spec-31-conversations-monitoring-tab: done  # PRs #221, #227, #235 merged 2026-04-09/13. Conversations monitoring tab with design token cleanup.
+  spec-32-ops-control-design-alignment: done  # PRs #231, #237, #239–#244, #247, #248, #250, #251, #253 merged 2026-04-13/14. PickupPanel order-level rows, enriched manifest RPC, single-RPC snapshot, uniform OrderTable across stages.
+  spec-33-admin-maintainer: done  # PRs #241, #245, #246, #249, #252, #255 merged 2026-04-14. Unified /admin panel for users, clients, pickup points. Multi-permission user selection.
+  spec-34-delete-route-and-docks-fix: done  # PRs #258, #259 merged 2026-04-15. Docks panel shows orders not routes; DispatchTrack-created routes skipped on webhook.
+  spec-35-distribution-dock-contents: in-progress  # Spec doc merged via PR #261 on 2026-04-17. Feature implementation active on branch spec/35-distribution-dock-contents.

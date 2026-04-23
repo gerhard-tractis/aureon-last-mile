@@ -1,6 +1,6 @@
 # Spec-15: Dispatch Module
 
-**Status:** in progress
+**Status:** completed
 **Date:** 2026-03-24
 **Branch:** `feat/spec-15-dispatch-module`
 **Depends on:** spec-03 (enum foundation), spec-12 (distribution/andén model), spec-13d (pickup/reception patterns)

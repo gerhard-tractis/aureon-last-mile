@@ -1,7 +1,7 @@
 # Hub Reception & Chain of Custody — Design Spec
 
 **Date:** 2026-03-18
-**Status:** approved
+**Status:** completed
 **Epic:** Phase 1.1 — Recepción
 **PRD FRs:** FR20-FR23
 **Depends on:** Epic 4A (Pickup Verification), Epic 5 spec-03 (package_status pipeline)

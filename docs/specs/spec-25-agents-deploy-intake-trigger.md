@@ -1,6 +1,6 @@
 # Spec-25: Agents Deploy Pipeline + Intake Submission Trigger
 
-**Status:** in progress
+**Status:** completed
 **Author:** Claude (post spec-23 gap discovered)
 **Date:** 2026-03-30
 

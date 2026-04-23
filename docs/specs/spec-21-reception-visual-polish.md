@@ -1,6 +1,6 @@
 # Spec-21: Reception Visual Polish + QR Fix
 
-**Status:** in progress
+**Status:** completed
 **Author:** Claude (spec-19 follow-up)
 **Date:** 2026-03-25
 

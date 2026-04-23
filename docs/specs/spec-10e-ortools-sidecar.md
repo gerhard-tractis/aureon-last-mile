@@ -1,6 +1,6 @@
 # Spec-10e: OR-Tools Sidecar — Route Optimization (Phase 4)
 
-**Status:** in progress
+**Status:** completed
 
 > Part of the Agent Suite implementation plan: `docs/architecture/agents-implementation-plan.md`
 > Architecture: `docs/architecture/agents-api-design.md` §4

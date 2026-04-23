@@ -1,6 +1,6 @@
 # Spec 29 — Ops Control "Mission Deck" Redesign
 
-**Status:** in progress
+**Status:** completed
 
 ## Context & Problem
 
