@@ -18,29 +18,29 @@ export { getTestOrderSnapshot, type TestOrderSnapshot };
 // ── Dev driver UUID ───────────────────────────────────────────────────────────
 
 async function getDevDriverId(db: SupabaseClient, operator_id: string): Promise<string> {
-  const { data, error } = await db
+  const { data } = await db
     .from('drivers')
     .select('id')
     .eq('operator_id', operator_id)
     .eq('full_name', 'DEV Test Driver')
-    .single();
+    .is('deleted_at', null)
+    .maybeSingle();
 
-  if (error || !data) {
-    // Fallback: compute UUID client-side using md5 logic
-    const hash = crypto
-      .createHash('md5')
-      .update(`DEV_DRIVER_${operator_id}`)
-      .digest('hex');
-    // Format as UUID: 8-4-4-4-12
-    return [
-      hash.slice(0, 8),
-      hash.slice(8, 12),
-      hash.slice(12, 16),
-      hash.slice(16, 20),
-      hash.slice(20, 32),
-    ].join('-');
-  }
-  return (data as { id: string }).id;
+  if (data) return (data as { id: string }).id;
+
+  // Driver not found — upsert it with a deterministic UUID so FK constraints pass
+  const hash = crypto.createHash('md5').update(`DEV_DRIVER_${operator_id}`).digest('hex');
+  const driver_id = [hash.slice(0, 8), hash.slice(8, 12), hash.slice(12, 16), hash.slice(16, 20), hash.slice(20, 32)].join('-');
+
+  await db.from('drivers').upsert({
+    id: driver_id,
+    operator_id,
+    fleet_type: 'own',
+    full_name: 'DEV Test Driver',
+    phone: '+56900000000',
+  }, { onConflict: 'id', ignoreDuplicates: true });
+
+  return driver_id;
 }
 
 // ── POST /dev/test-orders ─────────────────────────────────────────────────────
@@ -70,9 +70,9 @@ export async function createTestOrder(
       delivery_window_end: input.delivery_window_end ?? null,
       retailer_name: 'DEV Test Retailer',
       raw_data: {},
-      imported_via: 'manual',
+      imported_via: 'MANUAL',
       imported_at: new Date().toISOString(),
-      status: 'confirmed',
+      status: 'ingresado',
       operator_id,
     })
     .select()
