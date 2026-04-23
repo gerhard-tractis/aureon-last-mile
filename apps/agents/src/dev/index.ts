@@ -141,7 +141,7 @@ export function registerDevRoutes(app: Application, db: SupabaseClient): void {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params['id'] as string;
       const snapshot = await getTestOrderSnapshot(db, operator_id, id);
       res.status(200).json(snapshot);
     } catch (err) {
@@ -182,7 +182,7 @@ export function registerDevRoutes(app: Application, db: SupabaseClient): void {
         return;
       }
 
-      const { id } = req.params;
+      const id = req.params['id'] as string;
       const { table, fields } = req.body as { table?: string; fields?: Record<string, unknown> };
 
       if (!table || fields === undefined) {

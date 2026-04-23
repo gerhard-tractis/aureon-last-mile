@@ -437,7 +437,7 @@ describe('simulateEvent — diff logic', () => {
 
     expect(result.status).toBe(200);
     expect(result.body.new_agent_events).toHaveLength(1);
-    expect(result.body.new_agent_events[0].id).toBe('evt-post-1');
+    expect((result.body.new_agent_events as Array<{ id: string }>)[0].id).toBe('evt-post-1');
   });
 
   it('new_messages only contains messages not in pre-snapshot', async () => {

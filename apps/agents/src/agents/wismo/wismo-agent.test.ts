@@ -244,11 +244,11 @@ describe('processWismoJob', () => {
 
     // Find the insert call on wismo_notifications
     const notifInsertData = notifChain.mock.calls
-      .filter(([t]: [string]) => t === 'wismo_notifications')
-      .map(([_t]: [string]) => {
+      .filter((args: unknown[]) => args[0] === 'wismo_notifications')
+      .map((_args: unknown[]) => {
         // The chain returns { insert: fn } — find the insert mock calls
         const result = notifChain.mock.results[
-          notifChain.mock.calls.findIndex(([t]: [string]) => t === 'wismo_notifications')
+          notifChain.mock.calls.findIndex((a: unknown[]) => a[0] === 'wismo_notifications')
         ];
         return (result?.value as Record<string, ReturnType<typeof vi.fn>>)?.insert?.mock?.calls?.[0]?.[0];
       });
