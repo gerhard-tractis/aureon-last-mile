@@ -2,7 +2,7 @@
 
 > **Related:** [spec-12-distribution-sectorization-design.md](spec-12-distribution-sectorization-design.md), [spec-15-dispatch-module.md](spec-15-dispatch-module.md), [spec-35-distribution-dock-contents.md](spec-35-distribution-dock-contents.md)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-04-23_
 

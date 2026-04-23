@@ -1823,3 +1823,47 @@ export const Constants = {
     },
   },
 } as const
+
+// ── Pre-Ruta domain types (spec-37) ──────────────────────────────────────────
+
+export type PreRouteOrder = {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  delivery_address: string;
+  delivery_window_start: string | null;
+  delivery_window_end: string | null;
+  package_count: number;
+  has_split_dock_zone: boolean;
+};
+
+export type PreRouteComuna = {
+  id: string;
+  name: string;
+  order_count: number;
+  package_count: number;
+  orders: PreRouteOrder[];
+};
+
+export type PreRouteAnden = {
+  id: string;
+  name: string;
+  comunas_list: string[];
+  order_count: number;
+  package_count: number;
+  comunas: PreRouteComuna[];
+  order_ids: string[];
+  has_split_dock_zone_warnings: boolean;
+};
+
+export type PreRouteSnapshot = {
+  generated_at: string;
+  totals: {
+    order_count: number;
+    package_count: number;
+    anden_count: number;
+    split_dock_zone_order_count: number;
+  };
+  andenes: PreRouteAnden[];
+  unmapped_comunas: { id: string; name: string; order_count: number; package_count: number }[];
+};
