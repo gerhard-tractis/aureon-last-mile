@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
-import type { ReceptionManifest } from './useReceptionManifests';
+import { fetchPickupPointMap, type ReceptionManifest } from './useReceptionManifests';
 
 export function useCompletedReceptions(operatorId: string | null) {
   return useQuery({
@@ -19,7 +19,15 @@ export function useCompletedReceptions(operatorId: string | null) {
         .order('completed_at', { ascending: false });
 
       if (error) throw error;
-      return data as ReceptionManifest[];
+      const manifests = (data ?? []) as unknown as ReceptionManifest[];
+      const pickupMap = await fetchPickupPointMap(
+        supabase,
+        manifests.map((m) => m.external_load_id).filter(Boolean),
+      );
+      return manifests.map((m) => ({
+        ...m,
+        pickup_point_name: pickupMap.get(m.external_load_id) ?? null,
+      }));
     },
     enabled: !!operatorId,
     staleTime: 30_000,
