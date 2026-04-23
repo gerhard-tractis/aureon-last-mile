@@ -18,11 +18,8 @@ if [[ "$DISK_USAGE" -gt 90 ]]; then
 fi
 echo "Disk usage: ${DISK_USAGE}% — OK"
 
-# Pull latest code (needed for manual runs; CI already pulls but this is safe to re-run)
 cd ~/aureon-last-mile
-git pull origin main
 
-# Build worker
 cd apps/worker
 
 # Snapshot current dist for rollback
@@ -30,17 +27,24 @@ if [[ -d dist ]]; then
   cp -r dist dist.bak
 fi
 
-npm ci
-npm audit --omit=dev --audit-level=moderate || echo "WARN: npm audit issues found — review before next deploy"
+# Clear node_modules before install — avoids permission errors from any
+# root-owned files left by prior manual installs (renaming works even
+# when files inside are root-owned, because we own the parent directory)
+if [[ -d node_modules ]]; then
+  mv node_modules "/tmp/worker-nm-$(date +%s)" 2>/dev/null || true
+fi
+
+npm ci --no-workspaces
+npm audit --omit=dev --audit-level=moderate --no-workspaces || echo "WARN: npm audit issues found — review before next deploy"
 PATH="$PWD/node_modules/.bin:$PATH" npm run build
-npm prune --omit=dev
+npm prune --omit=dev --no-workspaces
 
 # Restart worker service
 sudo systemctl restart aureon-worker
 sleep 3
 
 # Health check — activating/active = running, inactive = placeholder exited cleanly (ok for now)
-WORKER_STATE=$(sudo systemctl is-active aureon-worker 2>/dev/null || true)
+WORKER_STATE=$(systemctl is-active aureon-worker 2>/dev/null || true)
 if [[ "$WORKER_STATE" == "failed" ]]; then
   echo "ERROR: aureon-worker is in failed state"
   echo "  Debug: sudo journalctl -u aureon-worker -n 50"
