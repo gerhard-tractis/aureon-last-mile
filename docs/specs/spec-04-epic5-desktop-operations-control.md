@@ -1,7 +1,7 @@
 # Epic 5 — Desktop Operations Control Center
 
 **Date:** 2026-03-13
-**Status:** in progress
+**Status:** completed
 **Epic:** 5 — Operations Control Center
 **Stories:** 5.2, 5.3
 **Depends on:** spec-03 (DB & Realtime Foundation)

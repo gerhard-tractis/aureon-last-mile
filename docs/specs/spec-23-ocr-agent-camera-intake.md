@@ -1,6 +1,6 @@
 # Spec-23: OCR Agent + Camera Intake Multi-Photo
 
-**Status:** backlog
+**Status:** completed
 
 > Architecture: `docs/architecture/agents.md`
 > Related: spec-10d (INTAKE agent), spec-20 (cascading dropdowns)

@@ -1,6 +1,6 @@
 # Spec-16c: Android Tablet PWA — PWA Polish
 
-**Status:** backlog
+**Status:** completed
 
 _Date: 2026-03-24_
 

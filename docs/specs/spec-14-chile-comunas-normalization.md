@@ -1,7 +1,7 @@
 # Chile Comunas Normalization
 
 **Date:** 2026-03-21
-**Status:** in progress
+**Status:** completed
 **Epic:** Platform Data Quality
 **Depends on:** spec-12 (Distribution Sectorization — dock_zones, dock_zone_comunas)
 

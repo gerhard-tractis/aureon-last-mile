@@ -1,6 +1,6 @@
 # Spec 34 — Delete Route Button + Docks Panel Fix
 
-**Status:** in progress
+**Status:** completed
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 

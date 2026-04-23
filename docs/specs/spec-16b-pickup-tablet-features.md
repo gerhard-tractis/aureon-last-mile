@@ -1,6 +1,6 @@
 # Spec-16b: Android Tablet PWA — Pickup Tablet Features
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-03-24_
 

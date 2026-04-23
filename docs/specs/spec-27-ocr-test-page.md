@@ -1,6 +1,6 @@
 # Spec 27 — OCR Test Dev Page
 
-**Status:** ready-for-dev
+**Status:** completed
 **Branch:** `feat/spec-27-ocr-test-page`
 **Created:** 2026-03-30
 

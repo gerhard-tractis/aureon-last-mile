@@ -1,6 +1,6 @@
 # Spec 17 — Aureon Landing Page
 
-**Status:** backlog
+**Status:** completed
 
 ## Overview
 
