@@ -51,7 +51,6 @@ export async function createTestOrder(
   input: CreateTestOrderInput,
 ): Promise<{ order_id: string; snapshot: TestOrderSnapshot }> {
   const uuid = crypto.randomUUID();
-  const external_id = `TEST-${uuid}`;
   const order_number = `TEST-${uuid.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
 
   // Fetch dev driver (bypasses deleted_at filter)
@@ -61,7 +60,6 @@ export async function createTestOrder(
   const { data: orderData, error: orderErr } = await db
     .from('orders')
     .insert({
-      external_id,
       order_number,
       customer_name: input.customer_name,
       customer_phone: input.customer_phone,
@@ -151,7 +149,7 @@ export async function listTestOrders(
     .from('orders')
     .select('id, customer_name, customer_phone, delivery_date, status, created_at')
     .eq('operator_id', operator_id)
-    .like('external_id', 'TEST-%')
+    .like('order_number', 'TEST-%')
     .is('deleted_at', null);
 
   if (error) {
@@ -171,7 +169,7 @@ export async function purgeTestOrders(
     .from('orders')
     .select('id, customer_name, customer_phone, delivery_date, status, created_at')
     .eq('operator_id', operator_id)
-    .like('external_id', 'TEST-%')
+    .like('order_number', 'TEST-%')
     .is('deleted_at', null);
 
   if (ordersErr) throw new Error(ordersErr.message);

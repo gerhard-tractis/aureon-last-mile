@@ -45,7 +45,6 @@ function makeChain(opts: {
 function makeOrderRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'ord-uuid-1',
-    external_id: 'TEST-abc-123',
     order_number: 'TEST-12345678',
     customer_name: 'Test Customer',
     customer_phone: '+56912345678',
@@ -230,7 +229,7 @@ describe('simulateEvent — order verification', () => {
   });
 
   it('returns 403 for non-TEST- order', async () => {
-    const db = makeDb({ orderRow: makeOrderRow({ external_id: 'REAL-order-123' }) });
+    const db = makeDb({ orderRow: makeOrderRow({ order_number: 'REAL-order-123' }) });
     const result = await simulateEvent(
       { order_id: 'ord-uuid-1', event_type: 'proactive_early_arrival' },
       'op-1',

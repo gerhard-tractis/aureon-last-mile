@@ -139,7 +139,7 @@ export async function simulateEvent(
   // 3. Verify order exists and belongs to operator_id
   const { data: orderData, error: orderError } = await db
     .from('orders')
-    .select('id, external_id, customer_phone, operator_id')
+    .select('id, order_number, customer_phone, operator_id')
     .eq('id', order_id)
     .eq('operator_id', operator_id)
     .single();
@@ -151,10 +151,10 @@ export async function simulateEvent(
   const order = orderData as Record<string, string>;
 
   // 4. Ensure it's a TEST- order
-  if (typeof order.external_id !== 'string' || !order.external_id.startsWith('TEST-')) {
+  if (typeof order.order_number !== 'string' || !order.order_number.startsWith('TEST-')) {
     return {
       status: 403,
-      body: { error: `Order ${order_id} is not a test order (external_id must start with TEST-)` },
+      body: { error: `Order ${order_id} is not a test order (order_number must start with TEST-)` },
     };
   }
 

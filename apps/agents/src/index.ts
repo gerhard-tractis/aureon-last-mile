@@ -17,6 +17,7 @@ import { startBullBoard } from './orchestration/bull-board';
 import { startIntakeListener } from './orchestration/intake-listener';
 import { createIntakeHandler } from './agents/intake/intake-worker';
 import { createWismoHandler } from './agents/wismo/wismo-worker';
+import { registerDevRoutes } from './dev/index';
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -76,10 +77,13 @@ async function main(): Promise<void> {
     password: process.env.BULL_BOARD_PASSWORD ?? 'changeme',
   });
 
-  healthServer = startHealthServer(3110, {
+  const { server: hs, app: httpApp } = startHealthServer(3110, {
     openrouterApiKey: cfg.OPENROUTER_API_KEY,
     ocrApiSecret: cfg.OCR_API_SECRET,
   });
+  healthServer = hs;
+
+  registerDevRoutes(httpApp, supabase);
 
   log('info', 'agents_ready', { version: '0.4.0' });
 }

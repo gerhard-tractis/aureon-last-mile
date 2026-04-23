@@ -26,7 +26,7 @@ export async function getTestOrderSnapshot(
   if (orderErr || !order) throw new Error(`Order not found: ${order_id}`);
 
   const orderRow = order as Record<string, unknown>;
-  if (typeof orderRow.external_id !== 'string' || !orderRow.external_id.startsWith('TEST-')) {
+  if (typeof orderRow.order_number !== 'string' || !orderRow.order_number.startsWith('TEST-')) {
     throw new Error(`Order ${order_id} is not a test order`);
   }
 

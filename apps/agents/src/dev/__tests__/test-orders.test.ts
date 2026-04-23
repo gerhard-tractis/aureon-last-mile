@@ -65,7 +65,6 @@ function makeUpdateChain() {
 function makeOrderRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'ord-uuid-1',
-    external_id: 'TEST-abc-123',
     order_number: 'TEST-12345678',
     customer_name: 'Test Customer',
     customer_phone: '+56912345678',
@@ -236,7 +235,7 @@ describe('createTestOrder', () => {
     expect(result).toHaveProperty('order_id');
   });
 
-  it('generates external_id with TEST- prefix', async () => {
+  it('generates order_number with TEST- prefix', async () => {
     const db = makeDb();
     const result = await createTestOrder(db as never, 'op-1', {
       customer_name: 'Test Customer',
@@ -266,7 +265,7 @@ describe('listTestOrders', () => {
     expect(Array.isArray(result.orders)).toBe(true);
   });
 
-  it('filters by operator_id and TEST- external_id prefix', async () => {
+  it('filters by operator_id and TEST- order_number prefix', async () => {
     const db = makeDb();
     await listTestOrders(db as never, 'op-1');
     expect(db._fromCalls).toContain('orders');
@@ -276,7 +275,7 @@ describe('listTestOrders', () => {
 describe('purgeTestOrders', () => {
   it('returns deleted_count', async () => {
     const db = makeDb({
-      orderSelect: [makeOrderRow(), makeOrderRow({ id: 'ord-uuid-2', external_id: 'TEST-xyz' })],
+      orderSelect: [makeOrderRow(), makeOrderRow({ id: 'ord-uuid-2', order_number: 'TEST-xyz' })],
     });
     const result = await purgeTestOrders(db as never, 'op-1');
     expect(result).toHaveProperty('deleted_count');
@@ -323,7 +322,7 @@ describe('getTestOrderSnapshot', () => {
   });
 
   it('throws when order is not a test order', async () => {
-    const db = makeDb({ orderGet: makeOrderRow({ external_id: 'ORD-regular-not-test' }) });
+    const db = makeDb({ orderGet: makeOrderRow({ order_number: 'ORD-regular-not-test' }) });
     await expect(
       getTestOrderSnapshot(db as never, 'op-1', 'ord-uuid-1'),
     ).rejects.toThrow(/not a test order/i);

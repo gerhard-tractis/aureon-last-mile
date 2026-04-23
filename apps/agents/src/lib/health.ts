@@ -1,5 +1,6 @@
 // src/lib/health.ts — HTTP health + OCR extraction endpoint
 import http from 'http';
+import express from 'express';
 import Busboy from 'busboy';
 import { extractManifest } from '../tools/ocr/extract-manifest';
 
@@ -10,52 +11,31 @@ interface HealthServerOptions {
   ocrApiSecret?: string;
 }
 
-function sendJson(res: http.ServerResponse, status: number, data: unknown) {
-  const body = JSON.stringify(data);
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(body),
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-  });
-  res.end(body);
+export interface HealthServer {
+  server: http.Server;
+  app: express.Application;
 }
 
 export function startHealthServer(
   port: number = DEFAULT_PORT,
   options: HealthServerOptions = {},
-): http.Server {
+): HealthServer {
   const { openrouterApiKey, ocrApiSecret } = options;
 
-  const server = http.createServer((req, res) => {
-    // CORS preflight
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-      });
-      res.end();
-      return;
-    }
+  const app = express();
+  app.use(express.json());
 
-    if (req.method === 'GET' && req.url === '/health') {
-      sendJson(res, 200, { status: 'ok' });
-      return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/ocr-extract') {
-      handleOcrExtract(req, res, openrouterApiKey, ocrApiSecret);
-      return;
-    }
-
-    res.writeHead(404);
-    res.end();
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok' });
   });
 
+  app.post('/api/ocr-extract', (req, res) => {
+    handleOcrExtract(req, res, openrouterApiKey, ocrApiSecret);
+  });
+
+  const server = http.createServer(app);
   server.listen(port);
-  return server;
+  return { server, app };
 }
 
 async function handleOcrExtract(
@@ -64,21 +44,25 @@ async function handleOcrExtract(
   apiKey?: string,
   secret?: string,
 ) {
-  // Auth check
+  function sendJson(status: number, data: unknown) {
+    const body = JSON.stringify(data);
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(body);
+  }
+
   if (secret) {
-    const auth = req.headers.authorization;
+    const auth = (req as express.Request).headers.authorization;
     if (!auth || auth !== `Bearer ${secret}`) {
-      sendJson(res, 401, { error: 'Unauthorized' });
+      sendJson(401, { error: 'Unauthorized' });
       return;
     }
   }
 
   if (!apiKey) {
-    sendJson(res, 500, { error: 'OPENROUTER_API_KEY not configured' });
+    sendJson(500, { error: 'OPENROUTER_API_KEY not configured' });
     return;
   }
 
-  // Parse multipart form data
   const buffers: Buffer[] = [];
 
   try {
@@ -96,20 +80,19 @@ async function handleOcrExtract(
       req.pipe(busboy);
     });
   } catch {
-    sendJson(res, 400, { error: 'Invalid multipart data' });
+    sendJson(400, { error: 'Invalid multipart data' });
     return;
   }
 
   if (buffers.length === 0) {
-    sendJson(res, 400, { error: 'No images provided' });
+    sendJson(400, { error: 'No images provided' });
     return;
   }
 
-  // Call extractManifest
   try {
     const result = await extractManifest(apiKey, buffers);
-    sendJson(res, 200, result);
+    sendJson(200, result);
   } catch (err) {
-    sendJson(res, 502, { error: String(err instanceof Error ? err.message : err) });
+    sendJson(502, { error: String(err instanceof Error ? err.message : err) });
   }
 }

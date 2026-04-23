@@ -22,7 +22,7 @@ function url(path: string) {
 }
 
 beforeAll(() => {
-  server = startHealthServer(TEST_PORT, { openrouterApiKey: API_KEY, ocrApiSecret: SECRET });
+  ({ server } = startHealthServer(TEST_PORT, { openrouterApiKey: API_KEY, ocrApiSecret: SECRET }));
 });
 
 afterAll(() => {
