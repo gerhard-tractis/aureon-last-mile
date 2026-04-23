@@ -9,6 +9,7 @@ import {
   getTestOrderSnapshot,
 } from './test-orders';
 import { editTestOrderState } from './state-editor';
+import { simulateEvent } from './simulate-event';
 
 // ── Dev token guard ───────────────────────────────────────────────────────────
 
@@ -147,6 +148,25 @@ export function registerDevRoutes(app: Application, db: SupabaseClient): void {
       const msg = err instanceof Error ? err.message : String(err);
       const status = msg.includes('not found') || msg.includes('not a test order') ? 404 : 500;
       res.status(status).json({ error: msg });
+    }
+  });
+
+  // ── POST /dev/simulate-event ────────────────────────────────────────────────
+  app.post('/dev/simulate-event', devTokenGuard, async (req: Request, res: Response) => {
+    try {
+      const operator_id = (req as Request & { operator_id?: string }).operator_id
+        ?? (req.headers['x-operator-id'] as string | undefined)
+        ?? '';
+
+      if (!operator_id) {
+        res.status(400).json({ error: 'Missing operator_id' });
+        return;
+      }
+
+      const result = await simulateEvent(req.body, operator_id, db);
+      res.status(result.status).json(result.body);
+    } catch (err) {
+      res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
     }
   });
 
