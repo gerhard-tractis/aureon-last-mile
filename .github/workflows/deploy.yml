@@ -165,11 +165,12 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Pull latest code
+      - name: Sync repo to main
         run: |
           cd ~/aureon-last-mile
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git pull origin main
+          git fetch origin main
+          git reset --hard origin/main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -193,11 +194,12 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Pull latest code
+      - name: Sync repo to main
         run: |
           cd ~/aureon-last-mile
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git pull origin main
+          git fetch origin main
+          git reset --hard origin/main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -221,10 +223,11 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Pull latest code
+      - name: Sync repo to main
         run: |
           cd ~/sidecar
-          git pull origin main
+          git fetch origin main
+          git reset --hard origin/main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

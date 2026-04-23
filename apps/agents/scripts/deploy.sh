@@ -19,7 +19,6 @@ fi
 echo "Disk usage: ${DISK_USAGE}% — OK"
 
 cd ~/aureon-last-mile
-git pull origin main
 
 cd apps/agents
 
@@ -51,7 +50,7 @@ fi
 sudo systemctl restart aureon-agents
 sleep 3
 
-AGENTS_STATE=$(sudo systemctl is-active aureon-agents 2>/dev/null || true)
+AGENTS_STATE=$(systemctl is-active aureon-agents 2>/dev/null || true)
 if [[ "$AGENTS_STATE" == "failed" ]]; then
   echo "ERROR: aureon-agents is in failed state"
   echo "  Debug: sudo journalctl -u aureon-agents -n 50"
