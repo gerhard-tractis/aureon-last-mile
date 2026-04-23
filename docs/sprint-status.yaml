@@ -170,3 +170,4 @@ development_status:
   spec-33-admin-maintainer: done  # PRs #241, #245, #246, #249, #252, #255 merged 2026-04-14. Unified /admin panel for users, clients, pickup points. Multi-permission user selection.
   spec-34-delete-route-and-docks-fix: done  # PRs #258, #259 merged 2026-04-15. Docks panel shows orders not routes; DispatchTrack-created routes skipped on webhook.
   spec-35-distribution-dock-contents: in-progress  # Spec doc merged via PR #261 on 2026-04-17. Feature implementation active on branch spec/35-distribution-dock-contents.
+  spec-36-wismo-agent-test-console: in-progress  # Implementation active on branch spec/36-wismo-agent-test-console. 9 chunks: dev seed migration, agent parameterization (processWismoJob + channel/modelOverride), dev router + endpoints, simulate-event, Next.js proxy routes, frontend hooks, components, page shell.

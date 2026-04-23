@@ -28,7 +28,13 @@ export async function sendWhatsAppMessage(
   phoneNumberId: string,
   accessToken: string,
   payload: WaMessagePayload,
+  channel?: 'whatsapp' | 'mock',
 ): Promise<WaSendResult> {
+  if (channel === 'mock') {
+    const mockId = 'MOCK-' + crypto.randomUUID();
+    log('info', 'wa_message_mock', { to: payload.to, mockId });
+    return { external_message_id: mockId };
+  }
   const body =
     payload.type === 'text'
       ? {

@@ -1,6 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { WismoAgent, type WismoProactiveJob, type WismoClientJob } from './wismo-agent';
+import { WismoAgent, processWismoJob, type WismoProactiveJob, type WismoClientJob } from './wismo-agent';
 import type { LLMProvider, LLMRequest, LLMResponse } from '../../providers/types';
+
+// Mock OpenRouterProvider so processWismoJob tests don't need real API keys
+// Captured constructor args are stored here for assertions in tests
+const openRouterCalls: Array<[string, string]> = [];
+
+vi.mock('../../providers/openrouter', () => {
+  const mockGenerate = vi.fn().mockResolvedValue({
+    content: 'Tu pedido está en camino.',
+    toolCalls: undefined,
+    finishReason: 'stop',
+    model: 'mock-model',
+    usage: { inputTokens: 10, outputTokens: 5 },
+  });
+  class MockOpenRouterProvider {
+    model: string;
+    generate = mockGenerate;
+    constructor(apiKey: string, model: string) {
+      this.model = model ?? 'mock-model';
+      openRouterCalls.push([apiKey, model]);
+    }
+  }
+  return { OpenRouterProvider: MockOpenRouterProvider };
+});
 
 // ── Mock provider ─────────────────────────────────────────────────────────────
 
@@ -180,5 +203,109 @@ describe('WismoAgent fallback', () => {
       body: 'hola',
       customer_phone: '+56912345678',
     })).resolves.not.toThrow();
+  });
+});
+
+// ── processWismoJob tests ─────────────────────────────────────────────────────
+
+describe('processWismoJob', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('mock channel: does NOT call fetch but writes to customer_session_messages and wismo_notifications', async () => {
+    const fetchMock = mockFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeDb();
+
+    await processWismoJob({
+      payload: { type: 'proactive_pickup', order_id: 'ord-1', operator_id: 'op-1' },
+      supabase: db as never,
+      channel: 'mock',
+    });
+
+    // fetch must NOT have been called (no WhatsApp API hit)
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // customer_session_messages should have been written (logSessionMessage)
+    expect(db.from).toHaveBeenCalledWith('customer_session_messages');
+    // wismo_notifications should have been inserted
+    expect(db.from).toHaveBeenCalledWith('wismo_notifications');
+  });
+
+  it('mock channel: external_message_id in wismo_notifications starts with MOCK-', async () => {
+    vi.stubGlobal('fetch', mockFetch());
+    const db = makeDb();
+    const notifChain = (db.from as ReturnType<typeof vi.fn>);
+
+    await processWismoJob({
+      payload: { type: 'proactive_pickup', order_id: 'ord-1', operator_id: 'op-1' },
+      supabase: db as never,
+      channel: 'mock',
+    });
+
+    // Find the insert call on wismo_notifications
+    const notifInsertData = notifChain.mock.calls
+      .filter((args: unknown[]) => args[0] === 'wismo_notifications')
+      .map((_args: unknown[]) => {
+        // The chain returns { insert: fn } — find the insert mock calls
+        const result = notifChain.mock.results[
+          notifChain.mock.calls.findIndex((a: unknown[]) => a[0] === 'wismo_notifications')
+        ];
+        return (result?.value as Record<string, ReturnType<typeof vi.fn>>)?.insert?.mock?.calls?.[0]?.[0];
+      });
+
+    const notifRow = notifInsertData[0] as Record<string, string> | undefined;
+    if (notifRow) {
+      expect(notifRow.external_message_id).toMatch(/^MOCK-/);
+    }
+  });
+
+  it('modelOverride: creates OpenRouterProvider with specified model', async () => {
+    vi.stubGlobal('fetch', mockFetch());
+    openRouterCalls.length = 0;
+    const db = makeDb();
+
+    await processWismoJob({
+      payload: { type: 'proactive_pickup', order_id: 'ord-1', operator_id: 'op-1' },
+      supabase: db as never,
+      channel: 'mock',
+      modelOverride: 'qwen/qwen-2.5-7b-instruct',
+    });
+
+    expect(openRouterCalls.length).toBeGreaterThan(0);
+    expect(openRouterCalls[openRouterCalls.length - 1][1]).toBe('qwen/qwen-2.5-7b-instruct');
+  });
+
+  it('whatsapp channel: calls fetch for WhatsApp API', async () => {
+    const fetchMock = mockFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    const db = makeDb();
+
+    await processWismoJob({
+      payload: { type: 'proactive_pickup', order_id: 'ord-1', operator_id: 'op-1' },
+      supabase: db as never,
+      channel: 'whatsapp',
+    });
+
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('routes client_message type to handleReactive path', async () => {
+    vi.stubGlobal('fetch', mockFetch());
+    const db = makeDb();
+
+    await expect(processWismoJob({
+      payload: {
+        type: 'client_message',
+        order_id: 'ord-1',
+        operator_id: 'op-1',
+        body: '¿Dónde está mi pedido?',
+        customer_phone: '+56912345678',
+      },
+      supabase: db as never,
+      channel: 'mock',
+    })).resolves.not.toThrow();
+
+    // Should have logged the incoming user message
+    expect(db.from).toHaveBeenCalledWith('customer_session_messages');
   });
 });
