@@ -1587,6 +1587,22 @@ export type Database = {
         Args: { p_operator_id: string }
         Returns: Json
       }
+      get_pre_route_snapshot: {
+        Args: {
+          p_operator_id: string
+          p_delivery_date: string
+          p_window_start?: string | null
+          p_window_end?: string | null
+        }
+        Returns: Json
+      }
+      create_seeded_route: {
+        Args: {
+          p_operator_id: string
+          p_order_ids: string[]
+        }
+        Returns: Json
+      }
     }
     Enums: {
       routing_provider_enum:

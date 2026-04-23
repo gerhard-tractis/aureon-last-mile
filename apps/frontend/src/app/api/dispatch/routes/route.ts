@@ -54,8 +54,9 @@ export async function POST(req: Request) {
 
     const ACTIVE = new Set(['draft', 'planned', 'in_progress']);
     const routedIds = (dispatches ?? [])
-      .filter((d: { route?: { status?: string } }) => ACTIVE.has(d.route?.status ?? ''))
-      .map((d: { order_id: string }) => d.order_id);
+      .filter((d) => d.route != null && ACTIVE.has(d.route.status))
+      .map((d) => d.order_id)
+      .filter((id): id is string => id != null);
 
     if (routedIds.length > 0) {
       return NextResponse.json({ code: 'ORDERS_ALREADY_ROUTED', routed_ids: routedIds }, { status: 400 });
