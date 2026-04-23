@@ -7,6 +7,7 @@ import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnaps
 import { usePreRouteSelection } from '@/hooks/dispatch/pre-route/usePreRouteSelection';
 import { PreRouteFilters } from './PreRouteFilters';
 import { AndenCard } from './AndenCard';
+import { PreRouteSelectionBar } from './PreRouteSelectionBar';
 
 const WINDOW_TIME_MAP: Record<string, { start: string; end: string } | null> = {
   todas:  null,
@@ -20,8 +21,8 @@ type Props = {
 };
 
 export function PreRouteTab({ onCreateRoute }: Props) {
-  const operatorId = useOperatorId();
-  const params     = useSearchParams();
+  const { operatorId } = useOperatorId();
+  const params          = useSearchParams();
 
   const today  = new Date().toISOString().slice(0, 10);
   const date   = params.get('date') ?? today;
@@ -38,6 +39,7 @@ export function PreRouteTab({ onCreateRoute }: Props) {
   const {
     selectedAndenIds,
     toggleSelect,
+    clearSelection,
     expandedAndenIds,
     toggleAndenExpansion,
     allSelected,
@@ -99,6 +101,13 @@ export function PreRouteTab({ onCreateRoute }: Props) {
           />
         ))}
       </div>
+
+      <PreRouteSelectionBar
+        andenes={andenes}
+        selectedAndenIds={selectedAndenIds}
+        onCreateRoute={onCreateRoute}
+        onClear={clearSelection}
+      />
     </div>
   );
 }

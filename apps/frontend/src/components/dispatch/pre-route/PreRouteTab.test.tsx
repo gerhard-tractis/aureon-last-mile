@@ -16,7 +16,7 @@ vi.mock('@/hooks/dispatch/pre-route/usePreRouteSnapshot', () => ({
 }));
 
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: vi.fn(() => 'op-test'),
+  useOperatorId: vi.fn(() => ({ operatorId: 'op-test', role: 'admin', permissions: [] })),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -106,5 +106,41 @@ describe('PreRouteTab', () => {
     render(<PreRouteTab onCreateRoute={mockOnCreateRoute} />);
     // Only one checkbox: the andén card's own checkbox
     expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  });
+
+  it('shows selection bar when an andén checkbox is selected', () => {
+    mockSnapshotResult.snapshot = MOCK_SNAPSHOT;
+    render(<PreRouteTab onCreateRoute={mockOnCreateRoute} />);
+    // Selection bar hidden initially
+    expect(screen.queryByRole('button', { name: /Crear ruta con selección/i })).not.toBeInTheDocument();
+
+    // Check the andén's checkbox
+    const [checkbox] = screen.getAllByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    expect(screen.getByRole('button', { name: /Crear ruta con selección/i })).toBeInTheDocument();
+  });
+
+  it('clicking selection bar button calls onCreateRoute with all selected order ids', () => {
+    mockSnapshotResult.snapshot = MOCK_SNAPSHOT;
+    render(<PreRouteTab onCreateRoute={mockOnCreateRoute} />);
+
+    const [checkbox] = screen.getAllByRole('checkbox');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByRole('button', { name: /Crear ruta con selección/i }));
+    expect(mockOnCreateRoute).toHaveBeenCalledWith(['ord-1', 'ord-2']);
+  });
+
+  it('Limpiar button clears the selection and hides the selection bar', () => {
+    mockSnapshotResult.snapshot = MOCK_SNAPSHOT;
+    render(<PreRouteTab onCreateRoute={mockOnCreateRoute} />);
+
+    const [checkbox] = screen.getAllByRole('checkbox');
+    fireEvent.click(checkbox);
+    expect(screen.getByRole('button', { name: /Limpiar/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Limpiar/i }));
+    expect(screen.queryByRole('button', { name: /Crear ruta con selección/i })).not.toBeInTheDocument();
   });
 });
