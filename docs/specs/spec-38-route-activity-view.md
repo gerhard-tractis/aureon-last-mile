@@ -1,6 +1,6 @@
 # spec-38 — Route Activity View (En Ruta tab redesign)
 
-**Status:** ready
+**Status:** in progress
 
 ## Goal
 

@@ -45,3 +45,16 @@ export type ScanResult = {
   message: string;
   code: 'NOT_FOUND' | 'WRONG_STATUS' | 'ALREADY_IN_ROUTE';
 }
+
+// dispatches.status comes from dispatch_status_enum (DB-level). Keep these values verbatim.
+export type DispatchStatus = 'pending' | 'delivered' | 'failed' | 'partial';
+
+export interface RouteDispatchSummary {
+  dispatch_id: string;
+  order_id: string;
+  order_number: string;
+  contact_name: string | null;
+  contact_address: string | null;
+  contact_phone: string | null;
+  status: DispatchStatus;
+}
