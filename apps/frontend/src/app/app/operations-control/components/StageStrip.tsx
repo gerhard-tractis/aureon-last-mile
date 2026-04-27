@@ -41,49 +41,72 @@ export function StageStrip({ stages, activeStage, onStageChange }: StageStripPro
   const stageMap = new Map(stages.map((s) => [s.key, s]));
 
   return (
-    <div className="flex w-full rounded-md border border-border bg-surface overflow-hidden">
-      {ORDERED_KEYS.map((key, i) => {
-        const stage = stageMap.get(key) ?? { key, count: 0, delta: '—', health: 'neutral' as HealthStatus };
-        const isSelected = activeStage === key;
+    <div className="relative">
+      {/* Edge fades — only visible below md, hint at horizontal scroll */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-surface to-transparent rounded-l-md md:hidden"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-surface to-transparent rounded-r-md md:hidden"
+      />
 
-        return (
-          <button
-            key={key}
-            type="button"
-            aria-pressed={isSelected}
-            data-health={stage.health}
-            onClick={() => onStageChange(key)}
-            className={cn(
-              'flex flex-1 flex-col gap-1 border-l-[3px] p-3 text-left transition-colors min-w-0',
-              'hover:bg-surface-raised cursor-pointer',
-              isSelected
-                ? 'border-l-status-info bg-status-info-bg'
-                : HEALTH_BORDER[stage.health],
-              !isSelected && HEALTH_BG[stage.health],
-            )}
-          >
-            <div className="flex items-baseline gap-1.5">
+      <div
+        className={cn(
+          'flex w-full rounded-md border border-border bg-surface',
+          // Below md: horizontal scroll with snap. md+: fit all stages side-by-side.
+          'overflow-x-auto snap-x snap-mandatory md:overflow-hidden md:snap-none',
+          // Hide scrollbar (Webkit) — the edge fades already signal scrollability.
+          '[&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]',
+        )}
+      >
+        {ORDERED_KEYS.map((key, i) => {
+          const stage = stageMap.get(key) ?? { key, count: 0, delta: '—', health: 'neutral' as HealthStatus };
+          const isSelected = activeStage === key;
+
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={isSelected}
+              data-health={stage.health}
+              onClick={() => onStageChange(key)}
+              className={cn(
+                'flex flex-col gap-1 border-l-[3px] p-3 text-left transition-colors snap-start',
+                // Below md: fixed-width cards that scroll horizontally.
+                // md+: fill available width equally.
+                'min-w-[140px] flex-shrink-0 md:min-w-0 md:flex-1 md:flex-shrink',
+                'hover:bg-surface-raised cursor-pointer',
+                isSelected
+                  ? 'border-l-status-info bg-status-info-bg'
+                  : HEALTH_BORDER[stage.health],
+                !isSelected && HEALTH_BG[stage.health],
+              )}
+            >
+              <div className="flex items-baseline gap-1.5">
+                <span className="font-mono text-xs text-text-muted tabular-nums">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span className={cn(
+                  'text-xs truncate',
+                  isSelected ? 'text-status-info font-medium' : 'text-text-secondary',
+                )}>
+                  {STAGE_LABELS[key]}
+                </span>
+              </div>
+
+              <span className="font-mono text-xl font-semibold tabular-nums text-text leading-none">
+                {stage.count}
+              </span>
+
               <span className="font-mono text-xs text-text-muted tabular-nums">
-                {String(i + 1).padStart(2, '0')}
+                {stage.delta}
               </span>
-              <span className={cn(
-                'text-xs truncate',
-                isSelected ? 'text-status-info font-medium' : 'text-text-secondary',
-              )}>
-                {STAGE_LABELS[key]}
-              </span>
-            </div>
-
-            <span className="font-mono text-xl font-semibold tabular-nums text-text leading-none">
-              {stage.count}
-            </span>
-
-            <span className="font-mono text-xs text-text-muted tabular-nums">
-              {stage.delta}
-            </span>
-          </button>
-        );
-      })}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
