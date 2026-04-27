@@ -27,16 +27,18 @@ vi.mock('@/hooks/usePriorityCounts', () => ({
   }),
 }));
 
-vi.mock('@/hooks/useOperationsOrders', () => ({
-  useOperationsOrders: () => ({ data: [], isLoading: false }),
+vi.mock('@/hooks/ops-control/useOpsControlSnapshot', () => ({
+  useOpsControlSnapshot: () => ({
+    snapshot: { orders: [], routes: [], pickups: [], returns: [], retailerSlaConfig: [], fetchedAt: new Date() },
+    isLoading: false,
+    error: null,
+    lastSyncAt: null,
+  }),
 }));
 
 vi.mock('@/lib/stores/useOpsControlFilterStore', () => ({
   useOpsControlFilterStore: () => ({
     stageFilter: null,
-    datePreset: 'today',
-    dateRange: null,
-    statusFilter: 'all',
   }),
 }));
 
