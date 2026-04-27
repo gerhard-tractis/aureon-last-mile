@@ -70,7 +70,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const isAdminOrManager = role === 'admin' || role === 'operations_manager';
   const isTabletHome = pathname === '/app/tablet-home';
-  const isOpsControlPage = pathname === '/app/operations-control';
 
   const navItems = [
     { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
@@ -136,8 +135,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Main */}
         <div className={`flex-1 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
-          {/* Mobile hamburger — hidden on tablet and above, and on pages with their own mobile header */}
-          {!isTablet && !isOpsControlPage && (
+          {/* Mobile hamburger — hidden on tablet and above */}
+          {!isTablet && (
             <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">
               <Sheet>
                 <SheetTrigger asChild>
