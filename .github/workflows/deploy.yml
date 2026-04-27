@@ -80,7 +80,13 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
       - name: Run migrations
-        run: supabase db push
+        # --include-all is required because the repo has a backlog of migrations
+        # whose timestamps are earlier than the last migration on remote (this
+        # happens when migrations are merged out of order, e.g. PR A merges
+        # 20260409000008 while PR B already merged 20260415000001). Without
+        # --include-all, Supabase CLI 2.88.1 refuses to apply older pending
+        # migrations and exits 1, blocking every subsequent DB deploy.
+        run: supabase db push --include-all
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

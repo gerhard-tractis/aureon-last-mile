@@ -6,6 +6,9 @@
 --            for pending; manifests.pickup_location TEXT for in-transit and
 --            completed) but no RPC returns it.
 --
+-- Note: re-touched to retrigger the deploy-supabase path filter after the
+-- workflow now uses --include-all (paired with .github/workflows/deploy.yml).
+--
 -- Each RPC gets a new pickup_point TEXT column.
 --
 -- Templates (per CLAUDE.md, use the LATEST definition for each function):
