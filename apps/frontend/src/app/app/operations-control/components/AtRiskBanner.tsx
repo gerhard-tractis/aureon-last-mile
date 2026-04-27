@@ -15,13 +15,13 @@ export function AtRiskBanner({ orders, total, onViewAll }: AtRiskBannerProps) {
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-3 px-4 py-3 rounded-md border bg-status-error-bg border-status-error-border text-status-error text-sm"
+      className="flex flex-col gap-3 px-4 py-3 rounded-md border bg-status-error-bg border-status-error-border text-status-error text-sm sm:flex-row sm:items-center sm:justify-between"
     >
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
         <span className="font-mono text-lg font-bold tabular-nums">{total}</span>
         <span className="font-medium">órdenes en riesgo</span>
 
-        <span className="flex items-center gap-1.5">
+        <span className="flex flex-wrap items-center gap-1.5 min-w-0">
           {orders.map((o) => (
             <span
               key={o.id}
@@ -41,7 +41,7 @@ export function AtRiskBanner({ orders, total, onViewAll }: AtRiskBannerProps) {
         variant="outline"
         size="sm"
         onClick={onViewAll}
-        className="border-status-error text-status-error hover:bg-status-error-bg"
+        className="self-start border-status-error text-status-error hover:bg-status-error-bg sm:self-auto sm:flex-shrink-0"
       >
         Ver todas
       </Button>
