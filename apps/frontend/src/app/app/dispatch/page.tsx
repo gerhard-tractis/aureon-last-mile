@@ -11,6 +11,7 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { EmptyState } from '@/components/EmptyState';
 import { RouteListTile } from '@/components/dispatch/RouteListTile';
 import { PreRouteTab } from '@/components/dispatch/pre-route/PreRouteTab';
+import { DispatchInProgressTab } from '@/components/dispatch/DispatchInProgressTab';
 import { useDispatchKPIs } from '@/hooks/dispatch/useDispatchKPIs';
 import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -63,33 +64,6 @@ function DispatchOpenTab({
           onClick={() => onNavigate(route.id)}
           onDelete={() => onDelete(route.id)}
         />
-      ))}
-    </div>
-  );
-}
-
-function DispatchInProgressTab({
-  operatorId,
-  onNavigate,
-}: {
-  operatorId: string;
-  onNavigate: (id: string) => void;
-}) {
-  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, ['in_progress']);
-  if (isLoading) return <RouteSkeleton />;
-  if (!routes?.length) {
-    return (
-      <EmptyState
-        icon={Truck}
-        title="Sin rutas en camino"
-        description="Las rutas despachadas aparecerán aquí."
-      />
-    );
-  }
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {routes.map((route) => (
-        <RouteListTile key={route.id} route={route} onClick={() => onNavigate(route.id)} />
       ))}
     </div>
   );
@@ -240,7 +214,7 @@ function DispatchPageContent() {
         </TabsContent>
 
         <TabsContent value="in_progress" className="mt-4">
-          <DispatchInProgressTab operatorId={operatorId} onNavigate={navigateToRoute} />
+          <DispatchInProgressTab operatorId={operatorId} />
         </TabsContent>
 
         <TabsContent value="completed" className="mt-4">
