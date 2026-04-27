@@ -1,13 +1,15 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Menu, Bell } from 'lucide-react';
 import { MobileTabBar } from './MobileTabBar';
 import { MobileStatusCards } from './MobileStatusCards';
 import { MobileOrdersList } from './MobileOrdersList';
 import { usePriorityCounts } from '@/hooks/usePriorityCounts';
-import { useOperationsOrders } from '@/hooks/useOperationsOrders';
+import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import { useOpsControlFilterStore } from '@/lib/stores/useOpsControlFilterStore';
+import type { OperationsOrder } from '@/hooks/useOperationsOrders';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,13 +46,14 @@ export function MobileOCC({ operatorId }: MobileOCCProps) {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const priorityCounts = usePriorityCounts(operatorId);
-  const { stageFilter, datePreset, dateRange, statusFilter } = useOpsControlFilterStore();
-  const { data: orders = [], isLoading: ordersLoading } = useOperationsOrders(operatorId, {
-    stageFilter,
-    datePreset,
-    dateRange,
-    statusFilter,
-  });
+  const { stageFilter } = useOpsControlFilterStore();
+  const { snapshot, isLoading } = useOpsControlSnapshot(operatorId);
+
+  const orders = useMemo<OperationsOrder[]>(() => {
+    const raw = (snapshot?.orders ?? []) as unknown as OperationsOrder[];
+    if (!stageFilter) return raw;
+    return raw.filter((o) => o.status === stageFilter);
+  }, [snapshot, stageFilter]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -88,7 +91,7 @@ export function MobileOCC({ operatorId }: MobileOCCProps) {
               counts={priorityCounts}
               isLoading={priorityCounts.isLoading}
             />
-            <MobileOrdersList orders={orders} isLoading={ordersLoading} />
+            <MobileOrdersList orders={orders} isLoading={isLoading} />
           </>
         )}
 
