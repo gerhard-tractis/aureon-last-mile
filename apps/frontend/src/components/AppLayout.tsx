@@ -133,8 +133,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <SidebarInner />
         </aside>
 
-        {/* Main */}
-        <div className={`flex-1 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
+        {/* Main — min-w-0 lets wide children (tables, code blocks) scroll inside
+            their own overflow containers instead of stretching this column past
+            the viewport and revealing the body bg behind AppLayout. */}
+        <div className={`flex-1 min-w-0 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
           {/* Mobile hamburger — hidden on tablet and above */}
           {!isTablet && (
             <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">

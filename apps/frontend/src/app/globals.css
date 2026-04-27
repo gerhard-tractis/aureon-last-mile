@@ -230,6 +230,11 @@ html.dark {
     @apply bg-background text-foreground;
     font-family: var(--font-sans, system-ui, sans-serif);
     min-height: 100dvh;
+    /* Prevent any child from triggering horizontal page scroll — wide tables
+       and other content must scroll inside their own containers, not the page.
+       Without this, an overflowing child reveals the body bg (which differs
+       from AppLayout's bg-surface) when the user pans right. */
+    overflow-x: hidden;
   }
   code, kbd, pre, .font-mono {
     font-family: var(--font-mono, ui-monospace, monospace);
