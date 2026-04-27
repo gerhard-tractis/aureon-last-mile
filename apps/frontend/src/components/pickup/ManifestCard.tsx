@@ -1,10 +1,11 @@
 'use client';
 
-import { Package, ShoppingCart, Truck } from 'lucide-react';
+import { MapPin, Package, ShoppingCart, Truck } from 'lucide-react';
 
 interface ManifestCardProps {
   externalLoadId: string;
   retailerName: string | null;
+  pickupPoint?: string | null;
   orderCount: number;
   packageCount: number;
   createdAt?: string;
@@ -22,6 +23,7 @@ interface ManifestCardProps {
 export function ManifestCard({
   externalLoadId,
   retailerName,
+  pickupPoint,
   orderCount,
   packageCount,
   createdAt,
@@ -68,6 +70,12 @@ export function ManifestCard({
           </div>
         </div>
       </div>
+      {pickupPoint && (
+        <div className="flex items-center gap-1 text-xs text-text-secondary mt-1.5 min-w-0">
+          <MapPin className="h-3 w-3 shrink-0" />
+          <span className="truncate">{pickupPoint}</span>
+        </div>
+      )}
       {createdAt && (
         <p className="text-xs text-text-muted mt-2">
           Creado el {new Date(createdAt).toLocaleDateString()}
