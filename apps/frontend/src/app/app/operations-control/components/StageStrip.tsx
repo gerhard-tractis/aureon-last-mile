@@ -74,9 +74,9 @@ export function StageStrip({ stages, activeStage, onStageChange }: StageStripPro
               onClick={() => onStageChange(key)}
               className={cn(
                 'flex flex-col gap-1 border-l-[3px] p-3 text-left transition-colors snap-start',
-                // Below md: fixed-width cards that scroll horizontally.
-                // md+: fill available width equally.
-                'min-w-[140px] flex-shrink-0 md:min-w-0 md:flex-1 md:flex-shrink',
+                // Below md: fixed 144px (w-36) width — cards keep their size, parent scrolls.
+                // md+: width:auto + flex-1 distributes equally across the row.
+                'w-36 shrink-0 md:w-auto md:flex-1 md:shrink',
                 'hover:bg-surface-raised cursor-pointer',
                 isSelected
                   ? 'border-l-status-info bg-status-info-bg'
