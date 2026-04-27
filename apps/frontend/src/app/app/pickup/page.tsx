@@ -181,6 +181,7 @@ function PickupPageContent() {
                   key={m.external_load_id}
                   externalLoadId={m.external_load_id}
                   retailerName={m.retailer_name}
+                  pickupPoint={m.pickup_point}
                   orderCount={m.order_count}
                   packageCount={m.package_count}
                   createdAt={m.created_at}
@@ -211,6 +212,7 @@ function PickupPageContent() {
                   key={m.id}
                   externalLoadId={m.external_load_id}
                   retailerName={m.retailer_name}
+                  pickupPoint={m.pickup_point}
                   orderCount={m.total_orders ?? 0}
                   packageCount={m.total_packages ?? 0}
                   inTransit
@@ -239,6 +241,7 @@ function PickupPageContent() {
                   key={m.id}
                   externalLoadId={m.external_load_id}
                   retailerName={m.retailer_name}
+                  pickupPoint={m.pickup_point}
                   orderCount={m.total_orders ?? 0}
                   packageCount={m.total_packages ?? 0}
                   completedAt={m.completed_at}

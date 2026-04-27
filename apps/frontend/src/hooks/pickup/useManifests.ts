@@ -7,6 +7,7 @@ export interface PendingManifest {
   order_count: number;
   package_count: number;
   created_at: string;
+  pickup_point: string | null;
 }
 
 export interface CompletedManifest {
@@ -16,6 +17,7 @@ export interface CompletedManifest {
   total_orders: number | null;
   total_packages: number | null;
   completed_at: string;
+  pickup_point: string | null;
 }
 
 export interface InTransitManifest {
@@ -26,6 +28,7 @@ export interface InTransitManifest {
   total_packages: number | null;
   reception_status: string;
   updated_at: string;
+  pickup_point: string | null;
 }
 
 const PICKUP_QUERY_OPTIONS = {
