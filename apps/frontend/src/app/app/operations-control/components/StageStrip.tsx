@@ -43,10 +43,12 @@ export function StageStrip({ stages, activeStage, onStageChange }: StageStripPro
   return (
     <div
       className={cn(
-        'grid w-full gap-px overflow-hidden rounded-md border border-border bg-border',
-        // Mobile-first: 2 cols, then 4 at sm (640px+), 7 at md (768px+).
-        // Cards wrap into multiple rows so the whole strip fits the viewport — no horizontal scroll.
-        // bg-border on the grid + gap-px between cards creates 1px dividing lines automatically.
+        'grid w-full gap-2',
+        // Mobile-first: 2 cols, 4 at sm (640px+), 7 at md (768px+).
+        // Cards are individual tiles — when 7 doesn't divide evenly into the
+        // column count, the orphan card sits in its own cell (same size as
+        // every other card) and the empty grid cells next to it just show
+        // the page background, not a different-colored stripe.
         'grid-cols-2 sm:grid-cols-4 md:grid-cols-7',
       )}
     >
@@ -62,7 +64,7 @@ export function StageStrip({ stages, activeStage, onStageChange }: StageStripPro
             data-health={stage.health}
             onClick={() => onStageChange(key)}
             className={cn(
-              'flex min-w-0 flex-col gap-1 border-l-[3px] p-3 text-left transition-colors bg-surface',
+              'flex min-w-0 flex-col gap-1 rounded-md border border-border border-l-[3px] p-3 text-left transition-colors bg-surface',
               'hover:bg-surface-raised cursor-pointer',
               isSelected
                 ? 'border-l-status-info bg-status-info-bg'
