@@ -75,6 +75,26 @@ const serwist = new Serwist({
 // Register Serwist event listeners
 serwist.addEventListeners();
 
+// On every new SW activation, drop stale runtime caches so the PWA picks up
+// fresh bundles. Precaches are managed by Serwist via __SW_MANIFEST hashing
+// and not touched here. Without this, CacheFirst handlers (e.g. _next/static)
+// would keep serving old assets indefinitely after a deploy.
+const RUNTIME_CACHES_TO_PURGE = ['static-assets', 'api-cache', 'images'];
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((k) => RUNTIME_CACHES_TO_PURGE.includes(k))
+          .map((k) => caches.delete(k))
+      );
+      await self.clients.claim();
+    })()
+  );
+});
+
 // Background Sync event handler (Task 2.2)
 self.addEventListener('sync', (event) => {
   if (event.tag === 'pickup-scans-sync') {
