@@ -155,14 +155,14 @@ export function useReorderDockZone(operatorId: string | null) {
 
       // Read the operator's non-consolidation zones in current order — we need
       // both the moving zone and its neighbour to compute the swap.
-      // Cast through `as any` to read sort_order — the generated Supabase types
+      // Cast through `any` to read sort_order — the generated Supabase types
       // for dock_zones don't include this column yet (it's added in
       // 20260428000002_add_sort_order_to_dock_zones.sql); regenerating the
       // types is a separate task. The column is verified to exist at runtime
       // by the migration's validation block.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data: zones, error: readError } = await (supabase
-        .from('dock_zones') as any)
+      const dockZones = supabase.from('dock_zones') as any;
+      const { data: zones, error: readError } = await dockZones
         .select('id, sort_order')
         .eq('operator_id', operatorId!)
         .eq('is_consolidation', false)
@@ -183,15 +183,13 @@ export function useReorderDockZone(operatorId: string | null) {
 
       // Two writes — small race window if a concurrent edit reorders the same
       // pair, but the distribution screen has a single operator at a time.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: e1 } = await (supabase.from('dock_zones') as any)
+      const { error: e1 } = await dockZones
         .update({ sort_order: neighbour.sort_order })
         .eq('id', me.id)
         .eq('operator_id', operatorId!);
       if (e1) throw e1;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error: e2 } = await (supabase.from('dock_zones') as any)
+      const { error: e2 } = await dockZones
         .update({ sort_order: me.sort_order })
         .eq('id', neighbour.id)
         .eq('operator_id', operatorId!);
