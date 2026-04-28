@@ -2,20 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-// RF-2: Zod schemas
+// RF-2: Zod schemas. All fields optional — see /api/pickup-points/route.ts
+// for the full rationale (DB constraints relaxed in 20260428000005).
 const pickupLocationSchema = z.object({
-  name: z.string().min(1),
-  address: z.string().min(1),
+  name: z.string().optional(),
+  address: z.string().optional(),
   comuna: z.string().optional(),
   contact_name: z.string().optional(),
   contact_phone: z.string().optional(),
 });
 
 const updatePickupPointSchema = z.object({
-  name: z.string().min(1, 'Name cannot be empty').optional(),
-  code: z.string().min(1, 'Code cannot be empty').optional(),
+  name: z.string().optional(),
+  code: z.string().optional(),
   tenant_client_id: z.string().uuid().optional(),
-  pickup_locations: z.array(pickupLocationSchema).min(1).optional(),
+  pickup_locations: z.array(pickupLocationSchema).optional(),
   is_active: z.boolean().optional(),
 });
 
@@ -77,26 +78,37 @@ export async function PUT(
       );
     }
 
-    // If updating code, check uniqueness excluding current record
+    // Trim helper: empty/whitespace-only → null (so DB stores NULL and the
+    // unique (operator_id, code) constraint does not collide on empties).
+    const trimToNull = (s?: string) => {
+      const t = s?.trim();
+      return t && t.length > 0 ? t : null;
+    };
+
+    // If updating code with a non-empty value, check uniqueness excluding
+    // the current record. NULL/empty codes are allowed to coexist.
     if (validation.data.code !== undefined) {
-      const { data: existingCode } = await supabase
-        .from('pickup_points')
-        .select('id')
-        .eq('code', validation.data.code.trim())
-        .neq('id', id)
-        .is('deleted_at', null);
-      if (existingCode && existingCode.length > 0) {
-        return NextResponse.json(
-          { code: 'DUPLICATE_CODE', message: 'A pickup point with this code already exists', field: 'code', timestamp: new Date().toISOString() },
-          { status: 409 }
-        );
+      const cleanCode = trimToNull(validation.data.code);
+      if (cleanCode) {
+        const { data: existingCode } = await supabase
+          .from('pickup_points')
+          .select('id')
+          .eq('code', cleanCode)
+          .neq('id', id)
+          .is('deleted_at', null);
+        if (existingCode && existingCode.length > 0) {
+          return NextResponse.json(
+            { code: 'DUPLICATE_CODE', message: 'A pickup point with this code already exists', field: 'code', timestamp: new Date().toISOString() },
+            { status: 409 }
+          );
+        }
       }
     }
 
     const updates: Record<string, unknown> = {};
-    if (validation.data.name !== undefined) updates.name = validation.data.name.trim();
-    if (validation.data.code !== undefined) updates.code = validation.data.code.trim();
-    if (validation.data.tenant_client_id !== undefined) updates.tenant_client_id = validation.data.tenant_client_id;
+    if (validation.data.name !== undefined) updates.name = trimToNull(validation.data.name);
+    if (validation.data.code !== undefined) updates.code = trimToNull(validation.data.code);
+    if (validation.data.tenant_client_id !== undefined) updates.tenant_client_id = validation.data.tenant_client_id || null;
     if (validation.data.pickup_locations !== undefined) updates.pickup_locations = validation.data.pickup_locations;
     if (validation.data.is_active !== undefined) updates.is_active = validation.data.is_active;
 

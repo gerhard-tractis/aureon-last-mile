@@ -2,20 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 import { z } from 'zod';
 
-// RF-2: Zod schemas
+// RF-2: Zod schemas. All fields optional — operators may save partial
+// records and fill in the rest later. DB constraints were relaxed in
+// 20260428000005.
 const pickupLocationSchema = z.object({
-  name: z.string().min(1),
-  address: z.string().min(1),
+  name: z.string().optional(),
+  address: z.string().optional(),
   comuna: z.string().optional(),
   contact_name: z.string().optional(),
   contact_phone: z.string().optional(),
 });
 
 const createPickupPointSchema = z.object({
-  name: z.string().min(1, 'Pickup point name is required'),
-  code: z.string().min(1, 'Pickup point code is required'),
-  tenant_client_id: z.string().uuid('Invalid client ID'),
-  pickup_locations: z.array(pickupLocationSchema).min(1, 'At least one pickup location is required'),
+  name: z.string().optional(),
+  code: z.string().optional(),
+  tenant_client_id: z.string().uuid('Invalid client ID').optional(),
+  pickup_locations: z.array(pickupLocationSchema).optional(),
 });
 
 export async function GET() {
@@ -103,31 +105,50 @@ export async function POST(request: NextRequest) {
     const { name, code, tenant_client_id, pickup_locations } = validation.data;
     const operatorId = session.user.app_metadata?.claims?.operator_id;
 
-    // Check code uniqueness within operator
-    const { data: existingCode } = await supabase
-      .from('pickup_points')
-      .select('id')
-      .eq('code', code.trim())
-      .is('deleted_at', null);
+    // Trim to a non-empty string or undefined — empty/whitespace-only values
+    // are stored as NULL so the unique (operator_id, code) constraint does
+    // not collide on empty codes.
+    const trimmed = (s?: string) => {
+      const t = s?.trim();
+      return t && t.length > 0 ? t : undefined;
+    };
+    const cleanName = trimmed(name);
+    const cleanCode = trimmed(code);
 
-    if (existingCode && existingCode.length > 0) {
-      return NextResponse.json(
-        { code: 'DUPLICATE_CODE', message: 'A pickup point with this code already exists', field: 'code', timestamp: new Date().toISOString() },
-        { status: 409 }
-      );
+    // Only check uniqueness when a non-empty code is provided. Multiple
+    // pickup points without a code may coexist (NULL ≠ NULL in PG).
+    if (cleanCode) {
+      const { data: existingCode } = await supabase
+        .from('pickup_points')
+        .select('id')
+        .eq('code', cleanCode)
+        .is('deleted_at', null);
+
+      if (existingCode && existingCode.length > 0) {
+        return NextResponse.json(
+          { code: 'DUPLICATE_CODE', message: 'A pickup point with this code already exists', field: 'code', timestamp: new Date().toISOString() },
+          { status: 409 }
+        );
+      }
     }
 
+    // Cast insert payload through `any` — generated Supabase types still
+    // mark name/code/tenant_client_id as NOT NULL (regenerating types is a
+    // separate task), but the migration 20260428000005 has dropped those
+    // constraints at the column level.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const insertPayload: any = {
+      operator_id: operatorId,
+      name: cleanName ?? null,
+      code: cleanCode ?? null,
+      tenant_client_id: tenant_client_id ?? null,
+      intake_method: 'manual',
+      pickup_locations: pickup_locations ?? [],
+      is_active: true,
+    };
     const { data: point, error } = await supabase
       .from('pickup_points')
-      .insert({
-        operator_id: operatorId,
-        name: name.trim(),
-        code: code.trim(),
-        tenant_client_id,
-        intake_method: 'manual',
-        pickup_locations,
-        is_active: true,
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
