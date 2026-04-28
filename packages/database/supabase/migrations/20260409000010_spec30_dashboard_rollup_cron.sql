@@ -43,8 +43,10 @@ $$;
 
 -- ============================================================================
 -- Nightly cron — wrap in DO block to survive environments without pg_cron
+-- The outer DO uses $outer$ instead of $$ so the inner cron-body $$...$$
+-- delimiters do not prematurely terminate it (SQLSTATE 42601 syntax error).
 -- ============================================================================
-DO $$
+DO $outer$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     PERFORM cron.schedule(
@@ -61,7 +63,7 @@ BEGIN
   END IF;
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'Cron schedule skipped: %', SQLERRM;
-END $$;
+END $outer$;
 
 -- ============================================================================
 -- Validation
