@@ -61,4 +61,24 @@ describe('ManifestCard', () => {
     render(<ManifestCard {...defaultProps} />);
     expect(screen.getByRole('button')).toBeInTheDocument();
   });
+
+  it('shows the in-progress badge when verifiedCount > 0', () => {
+    render(<ManifestCard {...defaultProps} verifiedCount={3} packageCount={10} />);
+    const badge = screen.getByTestId('in-progress-badge');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('En progreso · 3/10');
+  });
+
+  it('hides the in-progress badge when verifiedCount is 0 or omitted', () => {
+    const { rerender } = render(<ManifestCard {...defaultProps} verifiedCount={0} />);
+    expect(screen.queryByTestId('in-progress-badge')).not.toBeInTheDocument();
+    rerender(<ManifestCard {...defaultProps} />);
+    expect(screen.queryByTestId('in-progress-badge')).not.toBeInTheDocument();
+  });
+
+  it('hides the in-progress badge on in-transit cards (Pickup confirmado wins)', () => {
+    render(<ManifestCard {...defaultProps} verifiedCount={5} inTransit />);
+    expect(screen.queryByTestId('in-progress-badge')).not.toBeInTheDocument();
+    expect(screen.getByText('Pickup confirmado')).toBeInTheDocument();
+  });
 });
