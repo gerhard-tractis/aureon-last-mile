@@ -222,20 +222,31 @@ SELECT jsonb_build_object(
     '[]'::jsonb
   ),
 
+  -- jsonb_agg cannot wrap a jsonb_build_object that itself contains COUNT/SUM
+  -- in the same SELECT (nested aggregates, SQLSTATE 42803). Hoist the GROUP BY
+  -- into a subquery so the per-comuna aggregates are computed first, then
+  -- jsonb_agg over the resulting rows.
   'unmapped_comunas', COALESCE((
     SELECT jsonb_agg(
       jsonb_build_object(
-        'id',            cc.id,
-        'name',          cc.nombre,
-        'order_count',   COUNT(*),
-        'package_count', SUM(COALESCE(pc.cnt, 0))
+        'id',            uc.id,
+        'name',          uc.name,
+        'order_count',   uc.order_count,
+        'package_count', uc.package_count
       )
-      ORDER BY cc.nombre
+      ORDER BY uc.name
     )
-    FROM   unmapped u
-    JOIN   chile_comunas cc ON cc.id = u.comuna_id
-    LEFT JOIN pkg_counts pc ON pc.order_id = u.id
-    GROUP  BY cc.id, cc.nombre
+    FROM (
+      SELECT
+        cc.id,
+        cc.nombre AS name,
+        COUNT(*) AS order_count,
+        SUM(COALESCE(pc.cnt, 0)) AS package_count
+      FROM   unmapped u
+      JOIN   chile_comunas cc ON cc.id = u.comuna_id
+      LEFT JOIN pkg_counts pc ON pc.order_id = u.id
+      GROUP  BY cc.id, cc.nombre
+    ) uc
   ), '[]'::jsonb)
 )
 $$;
