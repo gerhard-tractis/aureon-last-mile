@@ -41,7 +41,7 @@ export function useDockZones(operatorId: string | null) {
         .is('deleted_at', null)
         .order('is_consolidation', { ascending: false })
         .order('sort_order', { ascending: true })
-        .order('name');
+        .order('code');
       if (error) throw error;
       return (data as unknown as DockZoneJoinRow[]).map(z => ({
         id: z.id,
@@ -168,7 +168,7 @@ export function useReorderDockZone(operatorId: string | null) {
         .eq('is_consolidation', false)
         .is('deleted_at', null)
         .order('sort_order', { ascending: true })
-        .order('name');
+        .order('code');
       if (readError) throw readError;
 
       const list = (zones ?? []) as { id: string; sort_order: number }[];
