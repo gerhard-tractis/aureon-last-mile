@@ -8,6 +8,8 @@ export interface PendingManifest {
   package_count: number;
   created_at: string;
   pickup_point: string | null;
+  /** Count of pickup_scans with scan_result='verified' for this load. >0 = in progress. */
+  verified_count: number;
 }
 
 export interface CompletedManifest {

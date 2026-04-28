@@ -1,6 +1,6 @@
 'use client';
 
-import { MapPin, Package, ShoppingCart, Truck } from 'lucide-react';
+import { MapPin, Package, PlayCircle, ShoppingCart, Truck } from 'lucide-react';
 
 interface ManifestCardProps {
   externalLoadId: string;
@@ -8,6 +8,8 @@ interface ManifestCardProps {
   pickupPoint?: string | null;
   orderCount: number;
   packageCount: number;
+  /** Count of packages already scanned/verified for this load (Activos tab only). */
+  verifiedCount?: number;
   createdAt?: string;
   completedAt?: string;
   /**
@@ -26,6 +28,7 @@ export function ManifestCard({
   pickupPoint,
   orderCount,
   packageCount,
+  verifiedCount = 0,
   createdAt,
   completedAt,
   inTransit = false,
@@ -90,6 +93,17 @@ export function ManifestCard({
         <div className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent">
           <Truck className="h-3 w-3" />
           <span>Pickup confirmado</span>
+        </div>
+      )}
+      {!inTransit && verifiedCount > 0 && (
+        <div
+          data-testid="in-progress-badge"
+          className="mt-2 inline-flex w-fit items-center gap-1 rounded-full bg-status-warning-bg px-2 py-0.5 text-xs font-medium text-status-warning"
+        >
+          <PlayCircle className="h-3 w-3" />
+          <span>
+            En progreso · {verifiedCount}/{packageCount}
+          </span>
         </div>
       )}
     </div>

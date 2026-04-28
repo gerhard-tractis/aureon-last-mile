@@ -224,6 +224,7 @@ function PickupPageContent() {
                   pickupPoint={m.pickup_point}
                   orderCount={m.order_count}
                   packageCount={m.package_count}
+                  verifiedCount={m.verified_count}
                   createdAt={m.created_at}
                   onClick={() => handleManifestClick(
                     m.external_load_id, m.retailer_name, m.order_count, m.package_count,
