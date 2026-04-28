@@ -23,10 +23,13 @@ export function ReceptionScanner({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
 
-  // Auto-focus on mount and after each scan
+  // Auto-focus on mount and after each scan. preventScroll keeps the page
+  // from jumping back to the top when focus returns to this input — common
+  // when the user marks a package received from deeper down the list and the
+  // mutation toggles `disabled`, re-running this effect.
   useEffect(() => {
     if (!disabled) {
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
     }
   }, [disabled]);
 
@@ -35,7 +38,7 @@ export function ReceptionScanner({
       e.preventDefault();
       onScan(value.trim());
       setValue('');
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
     }
   };
 
@@ -50,7 +53,7 @@ export function ReceptionScanner({
           onKeyDown={handleKeyDown}
           onBlur={() => {
             if (!disabled) {
-              setTimeout(() => inputRef.current?.focus(), 100);
+              setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100);
             }
           }}
           placeholder="Escanear código de barras..."

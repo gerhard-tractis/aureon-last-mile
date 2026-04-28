@@ -12,10 +12,14 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
 
-  // Auto-focus on mount and after each scan
+  // Auto-focus on mount and after each scan. preventScroll keeps the page
+  // from jumping when the input regains focus — without it, marking a package
+  // verified anywhere in the list re-toggles `disabled` (mutation isPending),
+  // this effect re-runs, focus() scrolls the input into view, and the user
+  // loses their place in the list.
   useEffect(() => {
     if (!disabled) {
-      inputRef.current?.focus();
+      inputRef.current?.focus({ preventScroll: true });
     }
   }, [disabled]);
 
@@ -25,7 +29,7 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
       onScan(value.trim());
       setValue('');
       // Re-focus after scan
-      setTimeout(() => inputRef.current?.focus(), 50);
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
     }
   };
 
@@ -44,7 +48,7 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
         onBlur={() => {
           // Re-focus if not disabled (hardware scanner needs focus)
           if (!disabled) {
-            setTimeout(() => inputRef.current?.focus(), 100);
+            setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 100);
           }
         }}
         placeholder="Scan barcode..."
