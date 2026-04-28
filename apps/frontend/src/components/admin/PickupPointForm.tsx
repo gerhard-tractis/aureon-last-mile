@@ -8,13 +8,16 @@ import { usePickupPointStore } from '@/lib/stores/pickupPointStore';
 import { useClients } from '@/hooks/useClients';
 import { usePickupPoints, useCreatePickupPoint, useUpdatePickupPoint } from '@/hooks/usePickupPoints';
 
+// All fields optional — operators want to save partial records and fill in
+// the rest later. Backend (API + DB) accepts nulls/empty strings and stores
+// pickup_locations as an empty array when no location data is provided.
 const pickupPointSchema = z.object({
-  name: z.string().min(1, 'El nombre es requerido'),
-  code: z.string().min(1, 'El código es requerido'),
-  tenant_client_id: z.string().min(1, 'El cliente es requerido'),
+  name: z.string().optional(),
+  code: z.string().optional(),
+  tenant_client_id: z.string().optional(),
   is_active: z.boolean(),
-  location_name: z.string().min(1, 'El nombre de ubicación es requerido'),
-  location_address: z.string().min(1, 'La dirección es requerida'),
+  location_name: z.string().optional(),
+  location_address: z.string().optional(),
   location_comuna: z.string().optional(),
   location_contact_name: z.string().optional(),
   location_contact_phone: z.string().optional(),
@@ -56,22 +59,45 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
   const activeClients = clients?.filter((c) => c.is_active && !c.deleted_at) ?? [];
 
   const onSubmit = (values: PickupPointFormValues) => {
-    const pickup_locations = [{
-      name: values.location_name,
-      address: values.location_address,
-      ...(values.location_comuna && { comuna: values.location_comuna }),
-      ...(values.location_contact_name && { contact_name: values.location_contact_name }),
-      ...(values.location_contact_phone && { contact_phone: values.location_contact_phone }),
-    }];
+    // Build a sparse location object: include only fields the user filled in.
+    // If nothing is filled, send an empty pickup_locations array so the row
+    // can still be saved (the column is JSONB NOT NULL DEFAULT '[]'::jsonb).
+    const loc: Record<string, string> = {};
+    if (values.location_name) loc.name = values.location_name;
+    if (values.location_address) loc.address = values.location_address;
+    if (values.location_comuna) loc.comuna = values.location_comuna;
+    if (values.location_contact_name) loc.contact_name = values.location_contact_name;
+    if (values.location_contact_phone) loc.contact_phone = values.location_contact_phone;
+    const pickup_locations = Object.keys(loc).length > 0 ? [loc] : [];
+
+    // Convert empty strings to undefined so the API treats them as "not
+    // provided" rather than "blank value to save". The API in turn writes
+    // NULL into the DB so unique (operator_id, code) does not conflict on
+    // empty codes.
+    const blank = (s?: string) => (s && s.trim().length > 0 ? s : undefined);
 
     if (mode === 'create') {
       create(
-        { name: values.name, code: values.code, tenant_client_id: values.tenant_client_id, pickup_locations },
+        {
+          name: blank(values.name),
+          code: blank(values.code),
+          tenant_client_id: blank(values.tenant_client_id),
+          pickup_locations,
+        },
         { onSuccess: () => setCreateFormOpen(false) },
       );
     } else if (pointId) {
       update(
-        { id: pointId, data: { name: values.name, code: values.code, tenant_client_id: values.tenant_client_id, pickup_locations, is_active: values.is_active } },
+        {
+          id: pointId,
+          data: {
+            name: blank(values.name),
+            code: blank(values.code),
+            tenant_client_id: blank(values.tenant_client_id),
+            pickup_locations,
+            is_active: values.is_active,
+          },
+        },
         { onSuccess: () => setEditFormOpen(false) },
       );
     }
@@ -91,7 +117,9 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-6">
           <div>
-            <label htmlFor="pp-name" className="block text-sm font-medium mb-1">Nombre</label>
+            <label htmlFor="pp-name" className="block text-sm font-medium mb-1">
+              Nombre <span className="text-text-muted font-normal">(opcional)</span>
+            </label>
             <input
               id="pp-name"
               type="text"
@@ -103,7 +131,9 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
           </div>
 
           <div>
-            <label htmlFor="pp-code" className="block text-sm font-medium mb-1">Código</label>
+            <label htmlFor="pp-code" className="block text-sm font-medium mb-1">
+              Código <span className="text-text-muted font-normal">(opcional)</span>
+            </label>
             <input
               id="pp-code"
               type="text"
@@ -115,14 +145,16 @@ export const PickupPointForm = ({ mode, pointId }: PickupPointFormProps) => {
           </div>
 
           <div>
-            <label htmlFor="pp-client" className="block text-sm font-medium mb-1">Cliente</label>
+            <label htmlFor="pp-client" className="block text-sm font-medium mb-1">
+              Cliente <span className="text-text-muted font-normal">(opcional)</span>
+            </label>
             <select
               id="pp-client"
               {...register('tenant_client_id')}
               className="w-full px-3 py-2 border border-border rounded-md bg-background text-foreground"
               disabled={isPending}
             >
-              <option value="">Seleccionar cliente...</option>
+              <option value="">Sin cliente</option>
               {activeClients.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
