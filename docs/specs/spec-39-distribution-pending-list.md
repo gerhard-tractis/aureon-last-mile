@@ -1,6 +1,6 @@
 # spec-39 — Distribution pending list & binary destination scan
 
-**Status:** backlog
+**Status:** in progress
 
 ## Goal
 

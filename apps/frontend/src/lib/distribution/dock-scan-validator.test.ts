@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { validateDockScan } from './dock-scan-validator';
+import { validateDockScan, validateDockDestination } from './dock-scan-validator';
+import type { DockZone } from './sectorization-engine';
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: vi.fn(() => mockSupabase),
@@ -101,5 +102,67 @@ describe('validateDockScan', () => {
 
     expect(result.scanResult).toBe('accepted');
     expect(result.packageId).toBe('pkg-1');
+  });
+});
+
+describe('validateDockDestination', () => {
+  const consolidationZone: DockZone = {
+    id: 'zone-consol',
+    name: 'Consolidación',
+    code: 'CONS',
+    is_consolidation: true,
+    is_active: true,
+    comunas: [],
+  };
+  const andenA: DockZone = {
+    id: 'zone-a',
+    name: 'Andén A',
+    code: 'A1',
+    is_consolidation: false,
+    is_active: true,
+    comunas: [],
+  };
+  const andenB: DockZone = {
+    id: 'zone-b',
+    name: 'Andén B',
+    code: 'B1',
+    is_consolidation: false,
+    is_active: true,
+    comunas: [],
+  };
+  const zones: DockZone[] = [andenA, andenB, consolidationZone];
+
+  it('returns accepted_suggested when scanned code matches the suggested zone (case-insensitive)', () => {
+    const result = validateDockDestination('a1', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'accepted_suggested' });
+  });
+
+  it('returns accepted_consolidation with zone id when scanning the consolidación code', () => {
+    const result = validateDockDestination('CONS', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'accepted_consolidation', zoneId: 'zone-consol' });
+  });
+
+  it('returns rejected_wrong_dock with the expected code when scanning a different active dock', () => {
+    const result = validateDockDestination('B1', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'rejected_wrong_dock', expectedCode: 'A1' });
+  });
+
+  it('returns rejected_wrong_dock for an unknown / non-matching code', () => {
+    const result = validateDockDestination('ZZZ', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'rejected_wrong_dock', expectedCode: 'A1' });
+  });
+
+  it('trims whitespace before comparing', () => {
+    const result = validateDockDestination('  A1  ', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'accepted_suggested' });
+  });
+
+  it('treats inactive zones as non-matching', () => {
+    const inactiveZones: DockZone[] = [
+      { ...andenB, is_active: false },
+      consolidationZone,
+    ];
+    const result = validateDockDestination('B1', { suggestedZoneCode: 'A1', zones: inactiveZones });
+    expect(result).toEqual({ kind: 'rejected_wrong_dock', expectedCode: 'A1' });
   });
 });

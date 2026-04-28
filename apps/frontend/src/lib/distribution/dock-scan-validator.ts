@@ -1,6 +1,42 @@
 import { createSPAClient } from '@/lib/supabase/client';
+import type { DockZone } from './sectorization-engine';
 
 export type DockScanResult = 'accepted' | 'rejected';
+
+/**
+ * Outcome of validating the *destination* scan in Distribución (spec-39).
+ * Binary rule: only the suggested anden or consolidación are accepted.
+ */
+export type DestinationOutcome =
+  | { kind: 'accepted_suggested' }
+  | { kind: 'accepted_consolidation'; zoneId: string }
+  | { kind: 'rejected_wrong_dock'; expectedCode: string };
+
+export interface DestinationContext {
+  suggestedZoneCode: string;
+  zones: DockZone[];
+}
+
+export function validateDockDestination(
+  scannedCode: string,
+  ctx: DestinationContext
+): DestinationOutcome {
+  const code = scannedCode.trim().toUpperCase();
+  const expected = ctx.suggestedZoneCode.trim().toUpperCase();
+
+  if (code === expected) {
+    return { kind: 'accepted_suggested' };
+  }
+
+  const consolidation = ctx.zones.find(
+    z => z.is_consolidation && z.is_active && z.code.toUpperCase() === code
+  );
+  if (consolidation) {
+    return { kind: 'accepted_consolidation', zoneId: consolidation.id };
+  }
+
+  return { kind: 'rejected_wrong_dock', expectedCode: ctx.suggestedZoneCode };
+}
 
 export interface DockScanValidationResult {
   scanResult: DockScanResult;

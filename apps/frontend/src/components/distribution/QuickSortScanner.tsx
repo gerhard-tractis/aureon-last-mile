@@ -11,6 +11,8 @@ import {
 } from '@/lib/distribution/sectorization-engine';
 import { useCreateDockBatch, useCloseDockBatch } from '@/hooks/distribution/useDockBatches';
 import { useDockScanMutation } from '@/hooks/distribution/useDockScans';
+import { validateDockDestination } from '@/lib/distribution/dock-scan-validator';
+import { updateBatchDockZone } from '@/lib/distribution/batch-zone';
 
 interface QuickSortScannerProps {
   operatorId: string;
@@ -114,18 +116,40 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
   const handleAndenScan = async (scannedCode: string) => {
     if (!destination || !currentBatchId) return;
 
-    if (scannedCode.trim().toUpperCase() !== destination.zone_code.toUpperCase()) {
-      setError(`Andén incorrecto — se esperaba ${destination.zone_code}`);
+    const outcome = validateDockDestination(scannedCode, {
+      suggestedZoneCode: destination.zone_code,
+      zones,
+    });
+
+    if (outcome.kind === 'rejected_wrong_dock') {
+      setError(
+        `Asignación fallida: andén incorrecto. Esperado ${outcome.expectedCode} o Consolidación.`
+      );
       setAndenValue('');
+      setTimeout(() => andenInputRef.current?.focus(), 50);
       return;
     }
 
     setError(null);
 
-    // Record the scan if we have a package barcode
+    // For consolidación redirect, switch the batch's zone first so the trigger
+    // routes the package to retenido/consolidación instead of sectorizado.
+    if (outcome.kind === 'accepted_consolidation') {
+      await updateBatchDockZone({
+        batchId: currentBatchId,
+        zoneId: outcome.zoneId,
+        operatorId,
+      });
+    }
+
     if (currentPackage?.label) {
       try {
-        await scanMutation.mutateAsync(currentPackage.label);
+        await scanMutation.mutateAsync({
+          barcode: currentPackage.label,
+          ...(outcome.kind === 'accepted_consolidation'
+            ? { redirectReason: 'manual_consolidation' as const }
+            : {}),
+        });
       } catch {
         // scan mutation failure should not block the flow
       }
