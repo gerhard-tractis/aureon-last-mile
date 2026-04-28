@@ -10,6 +10,7 @@ export interface DockZoneRecord {
   comunas: { id: string; nombre: string }[];
   is_active: boolean;
   operator_id: string;
+  sort_order: number;
 }
 
 const DOCK_ZONES_QUERY_OPTIONS = {
@@ -23,6 +24,7 @@ interface DockZoneJoinRow {
   is_consolidation: boolean;
   is_active: boolean;
   operator_id: string;
+  sort_order: number;
   dock_zone_comunas: { chile_comunas: { id: string; nombre: string } | null }[];
 }
 
@@ -33,11 +35,12 @@ export function useDockZones(operatorId: string | null) {
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('dock_zones')
-        .select(`id, name, code, is_consolidation, is_active, operator_id,
+        .select(`id, name, code, is_consolidation, is_active, operator_id, sort_order,
                  dock_zone_comunas(chile_comunas(id, nombre))`)
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)
         .order('is_consolidation', { ascending: false })
+        .order('sort_order', { ascending: true })
         .order('name');
       if (error) throw error;
       return (data as unknown as DockZoneJoinRow[]).map(z => ({
@@ -47,6 +50,7 @@ export function useDockZones(operatorId: string | null) {
         is_consolidation: z.is_consolidation,
         is_active: z.is_active,
         operator_id: z.operator_id,
+        sort_order: z.sort_order,
         comunas: z.dock_zone_comunas
           .map(r => r.chile_comunas)
           .filter((c): c is { id: string; nombre: string } => c !== null),
@@ -128,6 +132,68 @@ export function useDeleteDockZone(operatorId: string | null) {
         .eq('id', zoneId)
         .eq('operator_id', operatorId!);
       if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['distribution', 'dock-zones', operatorId] });
+    },
+  });
+}
+
+/**
+ * Move a dock zone up or down in the operator's display order.
+ * Swaps sort_order with the immediate neighbour in the requested direction
+ * (only among non-consolidation, non-deleted zones — consolidation always
+ * sits at the top of the list per the page-level ORDER BY).
+ *
+ * No-op when the zone is already at the edge in the chosen direction.
+ */
+export function useReorderDockZone(operatorId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ zoneId, direction }: { zoneId: string; direction: 'up' | 'down' }) => {
+      const supabase = createSPAClient();
+
+      // Read the operator's non-consolidation zones in current order — we need
+      // both the moving zone and its neighbour to compute the swap.
+      // Cast through `any` to read sort_order — the generated Supabase types
+      // for dock_zones don't include this column yet (it's added in
+      // 20260428000002_add_sort_order_to_dock_zones.sql); regenerating the
+      // types is a separate task. The column is verified to exist at runtime
+      // by the migration's validation block.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const dockZones = supabase.from('dock_zones') as any;
+      const { data: zones, error: readError } = await dockZones
+        .select('id, sort_order')
+        .eq('operator_id', operatorId!)
+        .eq('is_consolidation', false)
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
+        .order('name');
+      if (readError) throw readError;
+
+      const list = (zones ?? []) as { id: string; sort_order: number }[];
+      const idx = list.findIndex((z) => z.id === zoneId);
+      if (idx === -1) return;
+
+      const neighbourIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (neighbourIdx < 0 || neighbourIdx >= list.length) return; // edge — nothing to swap
+
+      const me = list[idx];
+      const neighbour = list[neighbourIdx];
+
+      // Two writes — small race window if a concurrent edit reorders the same
+      // pair, but the distribution screen has a single operator at a time.
+      const { error: e1 } = await dockZones
+        .update({ sort_order: neighbour.sort_order })
+        .eq('id', me.id)
+        .eq('operator_id', operatorId!);
+      if (e1) throw e1;
+
+      const { error: e2 } = await dockZones
+        .update({ sort_order: me.sort_order })
+        .eq('id', neighbour.id)
+        .eq('operator_id', operatorId!);
+      if (e2) throw e2;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['distribution', 'dock-zones', operatorId] });

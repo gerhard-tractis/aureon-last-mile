@@ -12,12 +12,11 @@ function createChain(): Record<string, ReturnType<typeof vi.fn>> {
   chain.select = vi.fn().mockReturnValue(chain);
   chain.eq = vi.fn().mockReturnValue(chain);
   chain.is = vi.fn().mockReturnValue(chain);
-  chain.order = vi.fn().mockImplementation(() => {
-    // Return a new object that supports another .order() but also resolves
-    const inner: Record<string, ReturnType<typeof vi.fn>> = {};
-    inner.order = vi.fn().mockImplementation(() => Promise.resolve(mockQueryResult));
-    return inner;
-  });
+  // The hook chains three .order() calls (is_consolidation, sort_order, name).
+  // The chain object's .order() method always returns the same chain, then we
+  // make the chain itself thenable so the final await resolves with mockQueryResult.
+  chain.order = vi.fn().mockReturnValue(chain);
+  chain.then = (resolve: (v: unknown) => void) => resolve(mockQueryResult);
   return chain;
 }
 
