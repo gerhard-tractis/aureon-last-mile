@@ -17,6 +17,7 @@ export interface CompletedManifest {
   total_orders: number | null;
   total_packages: number | null;
   completed_at: string;
+  created_at: string;
   pickup_point: string | null;
 }
 
@@ -28,6 +29,7 @@ export interface InTransitManifest {
   total_packages: number | null;
   reception_status: string;
   updated_at: string;
+  created_at: string;
   pickup_point: string | null;
 }
 
