@@ -587,11 +587,14 @@ export type Database = {
           scanned_at: string
           created_at: string
           deleted_at: string | null
+          redirect_reason: string | null
+          manual_override: boolean
+          dock_zone_id: string | null
         }
         Insert: {
           id?: string
           operator_id: string
-          batch_id: string
+          batch_id?: string
           barcode: string
           scan_result: string
           package_id?: string | null
@@ -599,6 +602,9 @@ export type Database = {
           scanned_at?: string
           created_at?: string
           deleted_at?: string | null
+          redirect_reason?: string | null
+          manual_override?: boolean
+          dock_zone_id?: string | null
         }
         Update: {
           id?: string
@@ -611,6 +617,9 @@ export type Database = {
           scanned_at?: string
           created_at?: string
           deleted_at?: string | null
+          redirect_reason?: string | null
+          manual_override?: boolean
+          dock_zone_id?: string | null
         }
         Relationships: [
           {
@@ -628,6 +637,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      dock_verifications: {
+        Row: {
+          id: string
+          operator_id: string
+          package_id: string
+          verified_by: string
+          verified_at: string
+          source: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          package_id: string
+          verified_by: string
+          verified_at?: string
+          source: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          package_id?: string
+          verified_by?: string
+          verified_at?: string
+          source?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: []
       }
       packages: {
         Row: {

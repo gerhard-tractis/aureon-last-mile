@@ -34,15 +34,30 @@ vi.mock('@/hooks/distribution/useDockBatches', () => ({
   useCloseDockBatch: vi.fn(() => ({ mutate: vi.fn() })),
 }));
 
+const mockScanMutateAsync = vi
+  .fn()
+  .mockResolvedValue({ scanResult: 'accepted', packageId: 'pkg-1', packageLabel: 'PKG-001' });
+
 vi.mock('@/hooks/distribution/useDockScans', () => ({
   useDockScanMutation: vi.fn(() => ({
-    mutateAsync: vi.fn().mockResolvedValue({ scanResult: 'accepted', packageId: 'pkg-1', packageLabel: 'PKG-001' }),
+    mutateAsync: mockScanMutateAsync,
     isPending: false,
   })),
 }));
 
+const mockUpdateBatchZone = vi.fn().mockResolvedValue({ error: null });
+vi.mock('@/lib/distribution/batch-zone', () => ({
+  updateBatchDockZone: (...args: unknown[]) => mockUpdateBatchZone(...args),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockScanMutateAsync.mockResolvedValue({
+    scanResult: 'accepted',
+    packageId: 'pkg-1',
+    packageLabel: 'PKG-001',
+  });
+  mockUpdateBatchZone.mockResolvedValue({ error: null });
   mockFrom.mockReturnValue({ select: mockSelect });
   mockSelect.mockReturnValue({ eq: mockEq });
   mockEq.mockReturnValue({ eq: mockEq, is: mockIs });
@@ -99,6 +114,50 @@ describe('QuickSortScanner', () => {
     // Click Confirmar andén → state C: scan_anden
     fireEvent.click(screen.getByText(/confirmar andén/i));
     await screen.findByPlaceholderText(/escanear andén/i);
+  });
+
+  it('redirects to consolidación when CONSOL is scanned in state C and records redirect_reason', async () => {
+    render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
+    const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
+    fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(pkgInput, { key: 'Enter' });
+    await screen.findByText('Andén 1');
+    fireEvent.click(screen.getByText(/confirmar andén/i));
+    const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'CONSOL' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+    await waitFor(() =>
+      expect(mockScanMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          barcode: 'PKG-001',
+          redirectReason: 'manual_consolidation',
+        })
+      )
+    );
+    // Batch zone is switched to consolidation before recording the scan
+    expect(mockUpdateBatchZone).toHaveBeenCalledWith(
+      expect.objectContaining({ batchId: 'batch-1', zoneId: 'consol', operatorId: 'op-1' })
+    );
+  });
+
+  it('shows the explicit "Asignación fallida: andén incorrecto" error for a third dock', async () => {
+    const threeZones: DockZone[] = [
+      ...zones,
+      {
+        id: 'zone-2', name: 'Andén 2', code: 'DOCK-002',
+        is_consolidation: false, is_active: true, comunas: [],
+      },
+    ];
+    render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={threeZones} />);
+    const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
+    fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(pkgInput, { key: 'Enter' });
+    await screen.findByText('Andén 1');
+    fireEvent.click(screen.getByText(/confirmar andén/i));
+    const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
+    fireEvent.change(andenInput, { target: { value: 'DOCK-002' } });
+    fireEvent.keyDown(andenInput, { key: 'Enter' });
+    await screen.findByText(/asignación fallida.*andén incorrecto.*esperado.*consolidación/i);
   });
 
   it('shows wrong andén error when wrong code scanned in state C', async () => {

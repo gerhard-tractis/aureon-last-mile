@@ -31,6 +31,12 @@ export function useDockScans(batchId: string | null, operatorId: string | null) 
   });
 }
 
+export interface DockScanMutationInput {
+  barcode: string;
+  /** When set, marks the scan as a redirect away from the batch's zone (spec-39). */
+  redirectReason?: 'manual_consolidation';
+}
+
 export function useDockScanMutation(
   operatorId: string,
   batchId: string,
@@ -39,7 +45,11 @@ export function useDockScanMutation(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (barcode: string) => {
+    mutationFn: async (input: string | DockScanMutationInput) => {
+      const normalized: DockScanMutationInput =
+        typeof input === 'string' ? { barcode: input } : input;
+      const { barcode, redirectReason } = normalized;
+
       const validationResult = await validateDockScan({
         barcode,
         batchId,
@@ -57,6 +67,7 @@ export function useDockScanMutation(
         scan_result: validationResult.scanResult,
         scanned_by: userId,
         scanned_at: new Date().toISOString(),
+        ...(redirectReason ? { redirect_reason: redirectReason } : {}),
       });
       if (error) throw error;
 
