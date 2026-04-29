@@ -231,8 +231,8 @@ describe('PendingDockList', () => {
     );
     // Detallado default — SKU lines visible
     expect(screen.getByTestId('pending-row-pkg-1').textContent).toContain('Audífonos');
-    // Click compacto
-    fireEvent.click(screen.getByRole('button', { name: /compacto/i }));
+    // Click compacto (icon-only button, accessed by aria-label)
+    fireEvent.click(screen.getByRole('button', { name: /vista compacta/i }));
     // SKU lines hidden in compacto
     expect(screen.getByTestId('pending-row-pkg-1').textContent).not.toContain('Audífonos');
     // Persisted
@@ -250,5 +250,41 @@ describe('PendingDockList', () => {
       />
     );
     expect(screen.getByTestId('pending-row-pkg-1').textContent).not.toContain('Audífonos');
+  });
+
+  it('lays out rows in a 2-column grid at the lg breakpoint inside each group', () => {
+    render(
+      <PendingDockList
+        groups={[baseGroup]}
+        verifiedPackageIds={new Set()}
+        onTapVerify={() => {}}
+        activeZones={zones}
+      />
+    );
+    const list = screen.getByTestId('pending-rows-zone-a');
+    const className = list.className;
+    expect(className).toMatch(/grid-cols-1/);
+    expect(className).toMatch(/lg:grid-cols-2/);
+  });
+
+  it('uses an icon-only density toggle (no Detallado/Compacto labels visible)', () => {
+    render(
+      <PendingDockList
+        groups={[baseGroup]}
+        verifiedPackageIds={new Set()}
+        onTapVerify={() => {}}
+        activeZones={zones}
+      />
+    );
+    // No visible "Detallado" or "Compacto" text — toggle is now compact icons
+    expect(screen.queryByText(/^detallado$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^compacto$/i)).not.toBeInTheDocument();
+    // But the toggle is still reachable by accessible name
+    expect(
+      screen.getByRole('button', { name: /vista detallada/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /vista compacta/i })
+    ).toBeInTheDocument();
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Rows3, Rows } from 'lucide-react';
 import { ManualAssignMenu } from './ManualAssignMenu';
 import {
   formatRelativeDeliveryDate,
@@ -89,31 +90,35 @@ function DensityToggle({
       <div
         role="group"
         aria-label="Densidad de la lista"
-        className="inline-flex rounded-md border border-border text-xs font-manifest uppercase tracking-wider"
+        className="inline-flex rounded-md border border-border"
       >
         <button
           type="button"
           aria-pressed={!isCompact}
+          aria-label="Vista detallada"
+          title="Vista detallada"
           onClick={() => onChange('detallado')}
-          className={`px-3 py-1 transition-colors ${
+          className={`p-1 transition-colors ${
             !isCompact
               ? 'bg-foreground text-background'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          Detallado
+          <Rows3 className="h-3.5 w-3.5" />
         </button>
         <button
           type="button"
           aria-pressed={isCompact}
+          aria-label="Vista compacta"
+          title="Vista compacta"
           onClick={() => onChange('compacto')}
-          className={`px-3 py-1 transition-colors border-l border-border ${
+          className={`p-1 transition-colors border-l border-border ${
             isCompact
               ? 'bg-foreground text-background'
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          Compacto
+          <Rows className="h-3.5 w-3.5" />
         </button>
       </div>
     </div>
@@ -146,7 +151,7 @@ function PendingDockListGroup({
 
   return (
     <section data-testid={`pending-group-${group.zone.id}`}>
-      <header className="flex items-baseline gap-3 pb-2 mb-2 border-b border-border">
+      <header className="flex items-baseline gap-3 pb-1.5 mb-1.5 border-b border-border">
         <span className="font-manifest text-[11px] font-semibold tracking-[0.18em] uppercase text-foreground">
           {group.zone.name}
         </span>
@@ -157,7 +162,10 @@ function PendingDockListGroup({
           {countLabel}
         </span>
       </header>
-      <ul className="divide-y divide-border/60">
+      <ul
+        data-testid={`pending-rows-${group.zone.id}`}
+        className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-0 lg:divide-y-0 divide-y divide-border/60"
+      >
         {group.packages.map(pkg => (
           <PendingDockListRow
             key={pkg.id}
@@ -227,7 +235,7 @@ function PendingDockListRow({
           handleClick();
         }
       }}
-      className={`group relative grid grid-cols-[3px_1fr_auto] gap-3 py-2.5 pr-2 transition-colors ${
+      className={`group relative grid grid-cols-[3px_1fr_auto] gap-2 py-1.5 pr-1 transition-colors ${
         verified
           ? 'bg-status-success-bg/60 cursor-default'
           : 'hover:bg-accent/40 cursor-pointer'
@@ -239,7 +247,7 @@ function PendingDockListRow({
           verified ? 'bg-status-success' : 'bg-transparent'
         }`}
       />
-      <div className="min-w-0 space-y-1">
+      <div className="min-w-0 space-y-0.5">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-manifest text-[14px] font-semibold tabular-nums tracking-tight">
             {pkg.label}
@@ -264,7 +272,7 @@ function PendingDockListRow({
           </span>
         </div>
         {showSkus && pkg.skuItems.length > 0 && (
-          <div className="mt-1.5 pt-1.5 border-t border-dashed border-border/50 space-y-0.5">
+          <div className="mt-1 pt-1 border-t border-dashed border-border/50 space-y-0.5">
             {visibleSkus.map((item, idx) => (
               <SkuLine key={`${item.sku}-${idx}`} item={item} />
             ))}

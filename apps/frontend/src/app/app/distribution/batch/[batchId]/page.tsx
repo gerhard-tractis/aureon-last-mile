@@ -113,33 +113,35 @@ export default function BatchScanPage() {
     : undefined;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">{zone?.name ?? 'Lote'}</h1>
-          <p className="text-muted-foreground font-mono">{zone?.code}</p>
+    <div className="flex flex-col h-full">
+      <header className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-semibold leading-tight">{zone?.name ?? 'Lote'}</h1>
+            <p className="text-xs text-muted-foreground font-manifest">{zone?.code}</p>
+          </div>
+          <Button
+            onClick={() => router.push(`/app/distribution/batch/${batchId}/confirm`)}
+            disabled={acceptedCount === 0}
+            size="sm"
+          >
+            Cerrar lote
+          </Button>
         </div>
-        <Button
-          onClick={() => router.push(`/app/distribution/batch/${batchId}/confirm`)}
-          disabled={acceptedCount === 0}
-        >
-          Cerrar lote
-        </Button>
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-6">
-        <div className="space-y-4">
+        <div className="max-w-3xl">
           <BatchScanner
             onScan={handleScan}
             lastResult={lastResult}
             disabled={scanMutation.isPending || redirectMutation.isPending}
           />
           {errorMessage && (
-            <div className="bg-status-error-bg border border-status-error-border rounded p-2 text-sm text-status-error">
+            <div className="mt-2 bg-status-error-bg border border-status-error-border rounded p-2 text-sm text-status-error">
               {errorMessage}
             </div>
           )}
-          <BatchDetailList scans={scans ?? []} totalExpected={batch.package_count} />
         </div>
+      </header>
+      <div className="flex-1 px-4 py-4 grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
         <PendingDockList
           groups={groupsForThisZone}
           verifiedPackageIds={verifiedSet ?? new Set()}
@@ -150,6 +152,7 @@ export default function BatchScanPage() {
             ...(consolidationZone ? [consolidationZone] : []),
           ]}
         />
+        <BatchDetailList scans={scans ?? []} totalExpected={batch.package_count} />
       </div>
     </div>
   );
