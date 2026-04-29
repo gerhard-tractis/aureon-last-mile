@@ -372,3 +372,42 @@ All existing tests retained; total distribution suite **193 tests**, full suite 
 - Tap-to-expand SKU popover when there are >3 items (deferred — for now the operator sees the first 3 and a count).
 - Server-side filtering / search inside the list.
 - Changes to BatchScanner inside-batch pending list (it filters the same hook by zone, so it inherits the enrichment automatically).
+
+---
+
+## Addendum 2 — Spacing rework (2026-04-29)
+
+**Trigger:** the two-pane layout left a tall void below the scan input on the left while the right pane was crammed. Operators wanted better use of space.
+
+### Layout flip
+
+Both `quicksort/page.tsx` and `batch/[batchId]/page.tsx` swap their column grid for a **stacked layout**:
+
+- **Sticky top bar** (`sticky top-0 z-20 border-b`) holds the page heading + scanner (capped at `max-w-3xl`) so it stays in reach during scrolling.
+- **Pending list expands to full width below**, eliminating the empty left column.
+- Modo Lote keeps a small right rail for `BatchDetailList` (`grid-cols-[2fr_1fr]` at lg+).
+
+### List density tightening
+
+Inside `PendingDockList`:
+
+- Each group's rows now flow in a **2-column responsive grid** (`grid-cols-1 lg:grid-cols-2 gap-x-4`) — twice as many packages visible per group without scrolling, with the divider hairline kept on mobile only.
+- Row vertical padding cut from `py-2.5` → `py-1.5`; head-line gap from `space-y-1` → `space-y-0.5`; SKU block from `mt-1.5 pt-1.5` → `mt-1 pt-1`.
+- Group banner border from `pb-2 mb-2` → `pb-1.5 mb-1.5`.
+- The Detallado/Compacto toggle becomes **icon-only** (`Rows3` / `Rows`) with `aria-label="Vista detallada"` / `"Vista compacta"`. Saves ~80 px of horizontal label.
+
+### Data testids added
+
+- `pending-rows-${zoneId}` on the rows container so layout grid classes are testable.
+
+### Tests added
+
+- `PendingDockList.test.tsx` — 2-col-grid class assertion, icon-only toggle assertion (label text gone, accessible names retained).
+
+All earlier tests retained; distribution suite **195 tests pass**, full suite still clean, `tsc --noEmit` clean.
+
+### Out of scope for this addendum
+
+- Auto-scroll-to-zone when an Andén-coded scan is detected.
+- Per-group collapse/expand.
+- Group reordering by operator.
