@@ -48,10 +48,16 @@ export default function QuickSortPage() {
     : undefined;
 
   return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-2xl font-semibold">Modo Rápido</h1>
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-6">
-        <QuickSortScanner operatorId={operatorId} userId={user.id} zones={zones} />
+    <div className="flex flex-col h-full">
+      <header className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3">
+        <div className="flex items-baseline justify-between mb-3">
+          <h1 className="text-xl font-semibold">Modo Rápido</h1>
+        </div>
+        <div className="max-w-3xl">
+          <QuickSortScanner operatorId={operatorId} userId={user.id} zones={zones} />
+        </div>
+      </header>
+      <div className="flex-1 px-4 py-4">
         <PendingDockList
           groups={pendingGroups ?? []}
           verifiedPackageIds={verifiedSet ?? new Set()}
