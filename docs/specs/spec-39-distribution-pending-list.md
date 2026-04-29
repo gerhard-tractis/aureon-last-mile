@@ -291,3 +291,84 @@ Tests are written before implementation, per `architecture.md`.
 ## Open questions
 
 None — all design choices were resolved in brainstorming (binary destination decision, scan-bound assignment, manager UI fallback, consolidación as scan target in both modes, explicit "incorrect dock" message).
+
+---
+
+## Addendum — Pending row enrichment (2026-04-29)
+
+**Trigger:** Operators saw the new pending list and asked for richer per-row info — order number, SKU code, SKU name, delivery date — to verify against the physical box without opening another screen.
+
+### Aesthetic direction: "Manifest" — freight-ticket density
+
+Inspiration: cargo manifests, pharmacy script labels, library catalog cards. Mono for everything scannable; humanist sans for the prose. Hierarchy by weight and rhythm, not color.
+
+### Row anatomy (Detallado, default)
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ▎ PKG-OP82-1834                              hoy ·  Las Condes      │  head
+│   #ORD-2026-04-2841                                          [A1]   │
+│   ─────────────────────────────────────────────────────────────────  │
+│   2× Audífonos Bluetooth Pro                            SKU-44831    │  contents
+│   1× Cargador 65W USB-C                                 SKU-44219    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+| Element | Treatment | Rationale |
+|---|---|---|
+| `▎` left rail | 3 px, transparent → `--status-success` on verify | Whole-row state; no center checkmark needed |
+| Package label | Mono **600**, 14 px, `tabular-nums` | The thing they're matching on the box |
+| Relative date | Sans 12 px; `hoy` = warning tone, `ayer` and earlier = error tone | Operators care about urgency, not the calendar |
+| Comuna name | Sans 12 px muted | Address-line context |
+| Order number | Mono 11 px, `#ORD-…`, muted | Traceability — small but always present |
+| Zone chip `[A1]` | Mono uppercase 10 px, dotted outline | Stable right-anchor for left-to-right sweeps |
+| Hairline divider | 1 px dashed, 50 % opacity | Splits identity from contents |
+| SKU lines | Mono qty + sans description + mono SKU code, ≤ 3 lines + `+N más` | Density cap; tap reveals all (future) |
+| Group banner | `ANDÉN A ▸ A1 … 04 pendientes` (uppercased CSS, mono `tabular-nums`) | Printed-manifest feel |
+
+### Density toggle
+
+Top-right of the list: `[ Detallado · Compacto ]`. Compacto returns to the lean one-line view (label + chip). Persisted under `localStorage['aureon-pending-density']`. Default = Detallado.
+
+### Type system additions
+
+- New: **IBM Plex Mono** (loaded via `next/font/google`) — exposed as Tailwind utility `font-manifest`. Used wherever a code/number sits in this list.
+- Existing Geist Sans/Mono unchanged elsewhere.
+
+### Data model — `usePendingSectorization` shape change
+
+`PendingPackage` gains:
+- `orderNumber: string` (from `orders.order_number`)
+- `comunaName: string | null` (from `orders.chile_comunas.nombre` join)
+- `skuItems: SkuItem[]` (normalized from `packages.sku_items` JSON)
+
+The query becomes:
+```sql
+select id, label, order_id, sku_items,
+       orders!inner(order_number, comuna_id, delivery_date,
+                    chile_comunas(nombre))
+```
+
+Required types-file change: add the `orders.comuna_id → chile_comunas.id` FK relationship entry (the FK exists in the DB but was missing from the manually-maintained `src/lib/types.ts`).
+
+### New file: `lib/distribution/relative-date.ts`
+
+Pure util `formatRelativeDeliveryDate(deliveryISO, todayISO) → { label, tone }` returning:
+- `hoy` (urgent) for same day
+- `mañana` (soon) for +1
+- `ayer` (overdue) for −1
+- `DD mmm` Spanish abbreviated months otherwise; `overdue` tone if past, `neutral` if future
+
+### Tests added
+
+- `relative-date.test.ts` — 7 cases (today, tomorrow, yesterday, far future, far past, month boundary, neutral threshold).
+- `usePendingSectorization.test.ts` — 2 new cases (full enriched payload; null comuna and null sku_items handled gracefully).
+- `PendingDockList.test.tsx` — new banner test, head-line content, SKU cap + `+N más`, verified `data-state` attribute, density toggle and localStorage persistence.
+
+All existing tests retained; total distribution suite **193 tests**, full suite **2324 pass / 4 skipped**.
+
+### Out of scope for this addendum
+
+- Tap-to-expand SKU popover when there are >3 items (deferred — for now the operator sees the first 3 and a count).
+- Server-side filtering / search inside the list.
+- Changes to BatchScanner inside-batch pending list (it filters the same hook by zone, so it inherits the enrichment automatically).

@@ -16,6 +16,7 @@ const config: Config = {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
         display: ["var(--font-display)", "serif"],
+        manifest: ["var(--font-manifest)", "var(--font-mono)", "ui-monospace", "monospace"],
       },
       borderRadius: {
         // shadcn compatibility — components use rounded-lg, rounded-md, rounded-sm

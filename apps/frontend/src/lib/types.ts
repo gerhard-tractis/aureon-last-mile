@@ -981,6 +981,13 @@ export type Database = {
             referencedRelation: "operators"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "orders_comuna_id_fkey"
+            columns: ["comuna_id"]
+            isOneToOne: false
+            referencedRelation: "chile_comunas"
+            referencedColumns: ["id"]
+          },
         ]
       }
       todo_list: {

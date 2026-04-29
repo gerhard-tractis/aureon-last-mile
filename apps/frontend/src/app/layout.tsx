@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { Fraunces } from "next/font/google";
+import { Fraunces, IBM_Plex_Mono } from "next/font/google";
 import { Analytics } from '@vercel/analytics/next';
 import CookieConsent from "@/components/Cookies";
 import { GoogleAnalytics } from '@next/third-parties/google';
@@ -13,6 +13,13 @@ import SentryUserProvider from "@/components/SentryUserProvider";
 const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
+  display: "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-manifest",
   display: "swap",
 });
 
@@ -42,7 +49,7 @@ export default function RootLayout({
 }>) {
   const gaID = process.env.NEXT_PUBLIC_GOOGLE_TAG;
   return (
-    <html lang="es" className={`${GeistSans.variable} ${GeistMono.variable} ${fraunces.variable}`}>
+    <html lang="es" className={`${GeistSans.variable} ${GeistMono.variable} ${fraunces.variable} ${ibmPlexMono.variable}`}>
     <head>
       {/* Inline script runs before hydration to apply theme class immediately, preventing flash */}
       <script
