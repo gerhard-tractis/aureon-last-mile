@@ -4,18 +4,44 @@ import { useDockZones } from './useDockZones';
 import { determineDockZone } from '@/lib/distribution/sectorization-engine';
 import type { DockZone, ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
 
+export interface SkuItem {
+  sku: string;
+  description: string;
+  quantity: number;
+}
+
 export interface PendingPackage {
   id: string;
   label: string;
   order_id: string;
+  orderNumber: string;
   comunaId: string | null;
+  comunaName: string | null;
   delivery_date: string;
+  skuItems: SkuItem[];
 }
 
 export interface ZoneGroup {
   zone: DockZone;
   matchResult: ZoneMatchResult;
   packages: PendingPackage[];
+}
+
+interface RawSkuItem {
+  sku?: unknown;
+  description?: unknown;
+  quantity?: unknown;
+}
+
+function normalizeSkuItems(raw: unknown): SkuItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((it): it is RawSkuItem => typeof it === 'object' && it !== null)
+    .map(it => ({
+      sku: typeof it.sku === 'string' ? it.sku : '',
+      description: typeof it.description === 'string' ? it.description : '',
+      quantity: typeof it.quantity === 'number' ? it.quantity : 1,
+    }));
 }
 
 export function usePendingSectorization(operatorId: string | null) {
@@ -29,7 +55,9 @@ export function usePendingSectorization(operatorId: string | null) {
 
       const { data, error } = await supabase
         .from('packages')
-        .select('id, label, order_id, orders!inner(comuna_id, delivery_date)')
+        .select(
+          'id, label, order_id, sku_items, orders!inner(order_number, comuna_id, delivery_date, chile_comunas(nombre))'
+        )
         .eq('operator_id', operatorId!)
         .eq('status', 'en_bodega')
         .is('deleted_at', null)
@@ -41,7 +69,12 @@ export function usePendingSectorization(operatorId: string | null) {
       const groupMap = new Map<string, ZoneGroup>();
 
       for (const pkg of data) {
-        const order = pkg.orders as { comuna_id: string | null; delivery_date: string };
+        const order = pkg.orders as {
+          order_number: string;
+          comuna_id: string | null;
+          delivery_date: string;
+          chile_comunas: { nombre: string } | null;
+        };
         const matchResult = determineDockZone(
           { comunaId: order.comuna_id, delivery_date: order.delivery_date },
           zones,
@@ -52,8 +85,11 @@ export function usePendingSectorization(operatorId: string | null) {
           id: pkg.id,
           label: pkg.label,
           order_id: pkg.order_id,
+          orderNumber: order.order_number,
           comunaId: order.comuna_id,
+          comunaName: order.chile_comunas?.nombre ?? null,
           delivery_date: order.delivery_date,
+          skuItems: normalizeSkuItems(pkg.sku_items),
         };
         if (existing) {
           existing.packages.push(pendingPkg);
