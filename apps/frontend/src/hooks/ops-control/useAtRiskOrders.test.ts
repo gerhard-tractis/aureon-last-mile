@@ -144,6 +144,34 @@ describe('useAtRiskOrders', () => {
     expect(page1.current.pageCount).toBe(2);
   });
 
+  it('excludes orders with status=ingresado (pickup not confirmed)', () => {
+    // Pre-pickup orders are imported but not yet in the operator's physical
+    // custody. They cannot be "late" on delivery because the pickup hasn't
+    // happened yet. Only count orders we actually have in our power.
+    const order = makeOrder({ id: 'o1', status: 'ingresado' });
+    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot([order]), isLoading: false, error: null });
+    mockClassifyRisk.mockReturnValue({ status: 'late', minutesRemaining: -120, label: 'ATRASADO 2h 0m' });
+
+    const { result } = renderHook(() => useAtRiskOrders('op-1', NOW));
+
+    expect(result.current.orders).toHaveLength(0);
+    expect(result.current.total).toBe(0);
+  });
+
+  it('includes late orders past pickup (e.g. en_bodega, verificado)', () => {
+    const orders = [
+      makeOrder({ id: 'verif',   status: 'verificado' }),
+      makeOrder({ id: 'bodega',  status: 'en_bodega' }),
+      makeOrder({ id: 'ruta',    status: 'en_ruta' }),
+    ];
+    mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot(orders), isLoading: false, error: null });
+    mockClassifyRisk.mockReturnValue({ status: 'late', minutesRemaining: -30, label: 'ATRASADO 0h 30m' });
+
+    const { result } = renderHook(() => useAtRiskOrders('op-1', NOW));
+
+    expect(result.current.total).toBe(3);
+  });
+
   it('total reflects all matching orders, not just current page', () => {
     const orders = Array.from({ length: 40 }, (_, i) => makeOrder({ id: `o${i}` }));
     mockUseSnapshot.mockReturnValue({ snapshot: makeSnapshot(orders), isLoading: false, error: null });

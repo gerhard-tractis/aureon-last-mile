@@ -37,6 +37,9 @@ export function useAtRiskOrders(
     const atRisk: AtRiskOrder[] = [];
 
     for (const order of snapshot.orders) {
+      // Pickup not yet confirmed → not in our power, not our risk.
+      if (order['status'] === 'ingresado') continue;
+
       const risk = classifyRisk(order as unknown as Parameters<typeof classifyRisk>[0], now);
       if (risk.status !== 'late' && risk.status !== 'at_risk') continue;
 
