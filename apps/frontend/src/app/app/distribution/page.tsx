@@ -6,7 +6,7 @@ import { ConsolidationPanel } from '@/components/distribution/ConsolidationPanel
 import { UnmappedComunasBanner } from '@/components/distribution/UnmappedComunasBanner';
 import { useDistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
 import { useConsolidation, useReleaseFromConsolidation } from '@/hooks/distribution/useConsolidation';
-import { useDockZones, useReorderDockZone } from '@/hooks/distribution/useDockZones';
+import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -20,7 +20,6 @@ export default function DistributionPage() {
   const { data: zones } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
-  const reorderDockZone = useReorderDockZone(operatorId);
 
   if (!operatorId || kpisLoading) {
     return <Skeleton className="h-96 w-full" />;
@@ -92,8 +91,6 @@ export default function DistributionPage() {
         <DockZoneGrid
           zones={activeZones}
           sectorizedCounts={sectorizedCounts}
-          onReorder={(zoneId, direction) => reorderDockZone.mutate({ zoneId, direction })}
-          reorderPending={reorderDockZone.isPending}
         />
       )}
 

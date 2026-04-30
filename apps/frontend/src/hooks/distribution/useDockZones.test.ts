@@ -6,17 +6,18 @@ import React from 'react';
 import { useDockZones, useCreateDockZone, useUpdateDockZone, useDeleteDockZone, useEnsureConsolidationZone } from './useDockZones';
 
 let mockQueryResult: { data: unknown; error: unknown } = { data: [], error: null };
+let lastChain: Record<string, ReturnType<typeof vi.fn>> | null = null;
 
 function createChain(): Record<string, ReturnType<typeof vi.fn>> {
   const chain: Record<string, ReturnType<typeof vi.fn>> = {};
   chain.select = vi.fn().mockReturnValue(chain);
   chain.eq = vi.fn().mockReturnValue(chain);
   chain.is = vi.fn().mockReturnValue(chain);
-  // The hook chains three .order() calls (is_consolidation, sort_order, name).
-  // The chain object's .order() method always returns the same chain, then we
-  // make the chain itself thenable so the final await resolves with mockQueryResult.
+  // .order() is chained for each sort key; the chain is awaited at the end and
+  // resolves with mockQueryResult.
   chain.order = vi.fn().mockReturnValue(chain);
   chain.then = (resolve: (v: unknown) => void) => resolve(mockQueryResult);
+  lastChain = chain;
   return chain;
 }
 
@@ -112,6 +113,15 @@ describe('useDockZones', () => {
     expect(result.current.data).toHaveLength(2);
     expect(result.current.data![0].comunas).toEqual([{ id: 'c1', nombre: 'Las Condes' }]);
     expect(result.current.data![1].comunas).toEqual([]);
+  });
+
+  it('orders by name (alphabetical), with consolidation pinned first — sort_order is no longer used', async () => {
+    const { result } = renderHook(() => useDockZones('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(lastChain).not.toBeNull();
+    const orderCalls = lastChain!.order.mock.calls.map((args) => args[0]);
+    expect(orderCalls).toEqual(['is_consolidation', 'name']);
+    expect(orderCalls).not.toContain('sort_order');
   });
 
   it('returns zones sorted with consolidation first', async () => {
