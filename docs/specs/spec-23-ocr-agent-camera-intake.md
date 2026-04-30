@@ -1674,3 +1674,18 @@ git push origin HEAD
 gh pr create --title "feat: spec-23 OCR agent + multi-photo camera intake" --body "..."
 gh pr merge --auto --squash
 ```
+
+---
+
+## Hotfix 2026-04-30 — `manifests` storage bucket missing
+
+When the operator first uploaded a Paris manifest photo through the camera intake, the upload failed with `"Bucket not found"`. Investigation found that `useCameraIntake.ts:55` and `intake-agent.ts:50` both call `storage.from('manifests')`, but no migration ever provisioned the `manifests` bucket — only `files` and `raw-files` existed in production storage.
+
+**Fix:** `packages/database/supabase/migrations/20260430000001_create_manifests_storage_bucket.sql`
+
+- Creates a private `manifests` bucket with a 10 MiB per-file cap and `image/jpeg|png|webp|heic|heif` MIME allowlist.
+- Adds four RLS policies on `storage.objects` scoping reads/writes to `(storage.foldername(name))[1]::uuid = public.get_operator_id()` — the upload path is already shaped `<operator_id>/<pickup_point_id>/<ts>/page-N.jpg`, so the first folder segment is the natural tenant key.
+- The `service_role` key bypasses RLS, so the intake agent worker keeps full access without changes.
+
+The migration is idempotent (`ON CONFLICT` on the bucket, `DROP POLICY IF EXISTS` before each `CREATE POLICY`).
+
