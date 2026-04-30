@@ -15,12 +15,11 @@ vi.mock('@/hooks/distribution/useConsolidation', () => ({
 }));
 
 const mockZones = [
-  { id: 'z1', name: 'Andén 1', code: 'D1', is_consolidation: false, comunas: [{ id: 'c1', nombre: 'las condes' }], is_active: true, operator_id: 'op1', sort_order: 10 },
+  { id: 'z1', name: 'Andén 1', code: 'D1', is_consolidation: false, comunas: [{ id: 'c1', nombre: 'las condes' }], is_active: true, operator_id: 'op1' },
 ];
 const mockUseDockZones = vi.fn();
 vi.mock('@/hooks/distribution/useDockZones', () => ({
   useDockZones: (...args: unknown[]) => mockUseDockZones(...args),
-  useReorderDockZone: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const mockUseSectorizedByZone = vi.fn();
