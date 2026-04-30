@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Radio,
@@ -26,8 +25,6 @@ import { SidebarNavItem } from './sidebar/SidebarNavItem';
 import { SidebarUserMenu } from './sidebar/SidebarUserMenu';
 import ThemeToggle from './ThemeToggle';
 import CapacityAlertBell from './capacity/CapacityAlertBell';
-import TabletTopBar from '@/components/tablet/TabletTopBar';
-import { useViewport } from '@/hooks/useViewport';
 
 function SidebarBrand({
   logoUrl,
@@ -65,11 +62,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { logoUrl, companyName } = useBranding();
   const { pinned, togglePin } = useSidebarPin();
   const [logoError, setLogoError] = useState(false);
-  const { isTablet } = useViewport();
-  const pathname = usePathname();
 
   const isAdminOrManager = role === 'admin' || role === 'operations_manager';
-  const isTabletHome = pathname === '/app/tablet-home';
 
   const navItems = [
     { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
@@ -137,29 +131,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             their own overflow containers instead of stretching this column past
             the viewport and revealing the body bg behind AppLayout. */}
         <div className={`flex-1 min-w-0 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
-          {/* Mobile hamburger — hidden on tablet and above */}
-          {!isTablet && (
-            <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">
-              <Sheet>
-                <SheetTrigger asChild>
-                  <button className="text-sidebar-text" aria-label="Open sidebar">
-                    <Menu className="h-5 w-5" />
-                  </button>
-                </SheetTrigger>
-                <SheetContent side="left" className="w-[200px] p-0 bg-sidebar border-sidebar-border">
-                  <SidebarInner mobilePinned />
-                </SheetContent>
-              </Sheet>
-            </div>
-          )}
-
-          {/* Tablet top bar — shown on tablet, not on tablet-home */}
-          {isTablet && !isTabletHome && <TabletTopBar />}
+          {/* Mobile/tablet hamburger — sidebar accessible at every viewport <lg */}
+          <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">
+            <Sheet>
+              <SheetTrigger asChild>
+                <button className="text-sidebar-text" aria-label="Open sidebar">
+                  <Menu className="h-5 w-5" />
+                </button>
+              </SheetTrigger>
+              <SheetContent side="left" className="w-[200px] p-0 bg-sidebar border-sidebar-border">
+                <SidebarInner mobilePinned />
+              </SheetContent>
+            </Sheet>
+          </div>
 
           {/* Main content */}
           <div className="relative">
-            {/* CapacityAlertBell — desktop only */}
-            {isAdminOrManager && !isTablet && (
+            {isAdminOrManager && (
               <div className="absolute top-3 right-4 z-10">
                 <CapacityAlertBell operatorId={operatorId} />
               </div>

@@ -3,19 +3,9 @@ import { renderHook } from '@testing-library/react';
 import { useTranslation } from './useTranslation';
 
 describe('useTranslation', () => {
-  it('resolves home.pickup key', () => {
+  it('resolves a known key', () => {
     const { result } = renderHook(() => useTranslation());
-    expect(result.current.t('home.pickup')).toBe('Pickup');
-  });
-
-  it('resolves home.reception key', () => {
-    const { result } = renderHook(() => useTranslation());
-    expect(result.current.t('home.reception')).toBe('Recepción');
-  });
-
-  it('resolves home.dispatch key', () => {
-    const { result } = renderHook(() => useTranslation());
-    expect(result.current.t('home.dispatch')).toBe('Despacho');
+    expect(result.current.t('dispatch.coming_soon')).toBe('Despacho — Próximamente');
   });
 
   it('falls back to key string for unknown key', () => {

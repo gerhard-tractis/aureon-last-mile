@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
 
 const MOBILE_QUERY = '(max-width: 768px)';
-const TABLET_QUERY = '(min-width: 769px) and (max-width: 1023px)';
 const DESKTOP_QUERY = '(min-width: 1024px)';
 
 export interface ViewportState {
   isMobile: boolean;
-  isTablet: boolean;
   isDesktop: boolean;
 }
 
@@ -18,7 +16,6 @@ function queryMatches(query: string): boolean {
 export function useViewport(): ViewportState {
   const [state, setState] = useState<ViewportState>(() => ({
     isMobile: queryMatches(MOBILE_QUERY),
-    isTablet: queryMatches(TABLET_QUERY),
     isDesktop: queryMatches(DESKTOP_QUERY),
   }));
 
@@ -27,7 +24,6 @@ export function useViewport(): ViewportState {
 
     const entries = [
       { mql: window.matchMedia(MOBILE_QUERY), key: 'isMobile' as const },
-      { mql: window.matchMedia(TABLET_QUERY), key: 'isTablet' as const },
       { mql: window.matchMedia(DESKTOP_QUERY), key: 'isDesktop' as const },
     ];
 

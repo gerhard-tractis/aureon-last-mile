@@ -279,38 +279,17 @@ describe('AppLayout sidebar rail', () => {
   });
 });
 
-describe('AppLayout tablet mode', () => {
-  it('shows TabletTopBar on tablet viewport on a workflow page', () => {
-    mockIsTablet = true;
-    mockPathname = '/app/pickup';
-    render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.getByTestId('tablet-top-bar')).toBeTruthy();
-  });
-
-  it('hides TabletTopBar on /app/tablet-home', () => {
-    mockIsTablet = true;
-    mockPathname = '/app/tablet-home';
-    render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.queryByTestId('tablet-top-bar')).toBeNull();
-  });
-
-  it('hides TabletTopBar on desktop viewport', () => {
-    mockIsTablet = false;
-    mockPathname = '/app/pickup';
-    render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.queryByTestId('tablet-top-bar')).toBeNull();
-  });
-
-  it('hides hamburger menu on tablet viewport', () => {
+describe('AppLayout — unified chrome (no tablet override)', () => {
+  it('renders hamburger menu on tablet viewport (sidebar accessible to everyone)', () => {
     mockIsTablet = true;
     render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.queryByRole('button', { name: 'Open sidebar' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy();
   });
 
-  it('hides CapacityAlertBell on tablet viewport', () => {
+  it('renders CapacityAlertBell on tablet viewport for admin', () => {
     mockIsTablet = true;
     mockRole = 'admin';
     render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.queryByRole('button', { name: /alertas de capacidad/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /alertas de capacidad/i })).toBeTruthy();
   });
 });

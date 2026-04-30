@@ -29,15 +29,6 @@ describe('useViewport', () => {
     mockMatchMedia((q) => q.includes('max-width: 768px'));
     const { result } = renderHook(() => useViewport());
     expect(result.current.isMobile).toBe(true);
-    expect(result.current.isTablet).toBe(false);
-    expect(result.current.isDesktop).toBe(false);
-  });
-
-  it('returns isTablet=true at tablet viewport', () => {
-    mockMatchMedia((q) => q.includes('769px') && q.includes('1023px'));
-    const { result } = renderHook(() => useViewport());
-    expect(result.current.isMobile).toBe(false);
-    expect(result.current.isTablet).toBe(true);
     expect(result.current.isDesktop).toBe(false);
   });
 
@@ -45,7 +36,6 @@ describe('useViewport', () => {
     mockMatchMedia((q) => q.includes('1024px'));
     const { result } = renderHook(() => useViewport());
     expect(result.current.isMobile).toBe(false);
-    expect(result.current.isTablet).toBe(false);
     expect(result.current.isDesktop).toBe(true);
   });
 
@@ -54,7 +44,6 @@ describe('useViewport', () => {
     Object.defineProperty(window, 'matchMedia', { writable: true, value: undefined });
     const { result } = renderHook(() => useViewport());
     expect(result.current.isMobile).toBe(false);
-    expect(result.current.isTablet).toBe(false);
     expect(result.current.isDesktop).toBe(false);
   });
 });
