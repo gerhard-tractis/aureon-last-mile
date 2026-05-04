@@ -10,17 +10,20 @@ interface DockLabelProps {
 }
 
 export function DockLabel({ code, name, compact = false }: DockLabelProps) {
-  const svg = useMemo(
-    () =>
-      bwipjs.toSVG({
-        bcid: 'code128',
-        text: code,
-        includetext: false,
-        height: compact ? 25 : 30,
-        paddingwidth: 4,
-      }),
-    [code, compact],
-  );
+  const svg = useMemo(() => {
+    const raw = bwipjs.toSVG({
+      bcid: 'code128',
+      text: code,
+      includetext: false,
+      height: 30,
+      paddingwidth: 4,
+    });
+    if (!compact) return raw;
+    // Force fixed pixel dimensions so the modal preview is always the same size.
+    return raw
+      .replace(/(<svg[^>]*)\s+width="[^"]*"/, '$1 width="100%"')
+      .replace(/(<svg[^>]*)\s+height="[^"]*"/, '$1 height="80"');
+  }, [code, compact]);
 
   return (
     <section
@@ -69,7 +72,7 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
 
       <div style={{ marginTop: compact ? 12 : 0 }}>
         <div
-          style={{ width: '100%', height: compact ? 'auto' : 170 }}
+          style={{ width: '100%', height: compact ? 80 : 170 }}
           aria-label={`Código de barras Code128: ${code}`}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
