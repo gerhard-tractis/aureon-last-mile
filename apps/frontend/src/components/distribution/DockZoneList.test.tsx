@@ -78,15 +78,19 @@ describe('DockZoneList', () => {
       expect(screen.getByRole('heading', { name: /DOCK-001/i })).toBeInTheDocument();
     });
 
-    it('dialog contains a print link with the correct zone id', () => {
+    it('dialog Imprimir button opens the print page with the correct zone id', () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
       render(<DockZoneList zones={zones} operatorId="op-1" onEdit={() => {}} />);
       fireEvent.click(screen.getByRole('button', { name: /imprimir DOCK-001/i }));
-      const link = screen.getByRole('link', { name: /imprimir/i });
-      expect(link).toHaveAttribute(
-        'href',
+      // The dialog footer Imprimir button is the one without an aria-label
+      const buttons = screen.getAllByRole('button', { name: /^imprimir$/i });
+      fireEvent.click(buttons[buttons.length - 1]);
+      expect(openSpy).toHaveBeenCalledWith(
         '/app/distribution/settings/labels/print?zoneIds=zone-1',
+        '_blank',
+        'noopener,noreferrer',
       );
-      expect(link).toHaveAttribute('target', '_blank');
+      openSpy.mockRestore();
     });
 
     it('renders Imprimir todos button when there are printable zones', () => {
@@ -100,7 +104,8 @@ describe('DockZoneList', () => {
       expect(screen.queryByRole('button', { name: /imprimir todos/i })).not.toBeInTheDocument();
     });
 
-    it('Imprimir todos dialog contains print link with all active non-consolidation ids', () => {
+    it('Imprimir todos dialog opens print page with all active non-consolidation ids', () => {
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
       const manyZones: DockZoneRecord[] = [
         ...zones,
         { id: 'zone-2', name: 'Andén 2', code: 'DOCK-002', is_consolidation: false, comunas: [], is_active: true, operator_id: 'op-1' },
@@ -108,11 +113,14 @@ describe('DockZoneList', () => {
       ];
       render(<DockZoneList zones={manyZones} operatorId="op-1" onEdit={() => {}} onAdd={() => {}} />);
       fireEvent.click(screen.getByRole('button', { name: /imprimir todos/i }));
-      const link = screen.getByRole('link', { name: /imprimir/i });
-      expect(link).toHaveAttribute(
-        'href',
+      const buttons = screen.getAllByRole('button', { name: /^imprimir$/i });
+      fireEvent.click(buttons[buttons.length - 1]);
+      expect(openSpy).toHaveBeenCalledWith(
         '/app/distribution/settings/labels/print?zoneIds=zone-1,zone-2',
+        '_blank',
+        'noopener,noreferrer',
       );
+      openSpy.mockRestore();
     });
   });
 });
