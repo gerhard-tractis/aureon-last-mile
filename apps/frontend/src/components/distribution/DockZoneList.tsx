@@ -1,9 +1,25 @@
 'use client';
 
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
 import { useDeleteDockZone, useUpdateDockZone } from '@/hooks/distribution/useDockZones';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
+import { DockLabel } from '@/components/distribution/DockLabel';
+
+interface PrintZone {
+  id: string;
+  code: string;
+  name: string;
+}
 
 interface DockZoneListProps {
   zones: DockZoneRecord[];
@@ -15,6 +31,7 @@ interface DockZoneListProps {
 export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListProps) {
   const deleteMutation = useDeleteDockZone(operatorId);
   const updateMutation = useUpdateDockZone(operatorId);
+  const [previewZones, setPreviewZones] = useState<PrintZone[]>([]);
 
   if (zones.length === 0) {
     return (
@@ -33,95 +50,134 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
     updateMutation.mutate({ id: zone.id, is_active: !zone.is_active });
   };
 
-  const printableZoneIds = zones
+  const printableZones: PrintZone[] = zones
     .filter((z) => z.is_active && !z.is_consolidation)
-    .map((z) => z.id);
-  const printAllHref = printableZoneIds.length > 0
-    ? `/app/distribution/settings/labels/print?zoneIds=${printableZoneIds.join(',')}`
-    : null;
+    .map(({ id, code, name }) => ({ id, code, name }));
+
+  const printHref = `/app/distribution/settings/labels/print?zoneIds=${previewZones.map((z) => z.id).join(',')}`;
 
   return (
-    <div className="space-y-3">
-      {(onAdd || printAllHref) && (
-        <div className="flex justify-end gap-2">
-          {printAllHref && (
-            <a
-              href={printAllHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Imprimir todos los andenes"
-            >
-              <Button variant="outline">Imprimir todos</Button>
-            </a>
-          )}
-          {onAdd && <Button onClick={onAdd}>Agregar andén</Button>}
-        </div>
-      )}
-      {zones.map((zone) => (
-        <Card key={zone.id} className={zone.is_consolidation ? 'border-status-info-border bg-status-info-bg' : ''}>
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">{zone.name}</span>
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{zone.code}</code>
-                  {zone.is_consolidation && (
-                    <span className="text-xs bg-status-info-bg text-status-info px-1.5 py-0.5 rounded">Hub</span>
-                  )}
-                  {!zone.is_active && (
-                    <span className="text-xs bg-surface-raised text-text-muted px-1.5 py-0.5 rounded">Inactivo</span>
+    <>
+      <div className="space-y-3">
+        {(onAdd || printableZones.length > 0) && (
+          <div className="flex justify-end gap-2">
+            {printableZones.length > 0 && (
+              <Button
+                variant="outline"
+                aria-label="Imprimir todos los andenes"
+                onClick={() => setPreviewZones(printableZones)}
+              >
+                Imprimir todos
+              </Button>
+            )}
+            {onAdd && <Button onClick={onAdd}>Agregar andén</Button>}
+          </div>
+        )}
+        {zones.map((zone) => (
+          <Card key={zone.id} className={zone.is_consolidation ? 'border-status-info-border bg-status-info-bg' : ''}>
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm">{zone.name}</span>
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{zone.code}</code>
+                    {zone.is_consolidation && (
+                      <span className="text-xs bg-status-info-bg text-status-info px-1.5 py-0.5 rounded">Hub</span>
+                    )}
+                    {!zone.is_active && (
+                      <span className="text-xs bg-surface-raised text-text-muted px-1.5 py-0.5 rounded">Inactivo</span>
+                    )}
+                  </div>
+                  {zone.comunas.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {zone.comunas.map((c) => (
+                        <span key={c.id} className="text-xs bg-muted px-2 py-0.5 rounded-full">{c.nombre}</span>
+                      ))}
+                    </div>
                   )}
                 </div>
-                {zone.comunas.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {zone.comunas.map((c) => (
-                      <span key={c.id} className="text-xs bg-muted px-2 py-0.5 rounded-full">{c.nombre}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={`/app/distribution/settings/labels/print?zoneIds=${zone.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Imprimir ${zone.code}`}
-                >
-                  <Button variant="outline" size="sm">
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Imprimir ${zone.code}`}
+                    onClick={() => setPreviewZones([{ id: zone.id, code: zone.code, name: zone.name }])}
+                  >
                     Imprimir
                   </Button>
-                </a>
-                {!zone.is_consolidation && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => toggleActive(zone)}
-                    >
-                      {zone.is_active ? 'Desactivar' : 'Activar'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onEdit(zone)}
-                    >
-                      Editar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => deleteMutation.mutate(zone.id)}
-                    >
-                      Eliminar
-                    </Button>
-                  </>
-                )}
+                  {!zone.is_consolidation && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleActive(zone)}
+                      >
+                        {zone.is_active ? 'Desactivar' : 'Activar'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onEdit(zone)}
+                      >
+                        Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteMutation.mutate(zone.id)}
+                      >
+                        Eliminar
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Dialog open={previewZones.length > 0} onOpenChange={(open) => { if (!open) setPreviewZones([]); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>
+              {previewZones.length === 1
+                ? `${previewZones[0].code} · ${previewZones[0].name}`
+                : `${previewZones.length} andenes seleccionados`}
+            </DialogTitle>
+          </DialogHeader>
+
+          {previewZones.length === 1 ? (
+            <div className="rounded border overflow-hidden">
+              <DockLabel code={previewZones[0].code} name={previewZones[0].name} compact />
             </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto py-1">
+              {previewZones.map((z) => (
+                <div key={z.id} className="flex items-center gap-3 text-sm px-1">
+                  <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-xs">{z.code}</code>
+                  <span>{z.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancelar</Button>
+            </DialogClose>
+            <a
+              href={printHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setPreviewZones([])}
+            >
+              <Button>Imprimir</Button>
+            </a>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
