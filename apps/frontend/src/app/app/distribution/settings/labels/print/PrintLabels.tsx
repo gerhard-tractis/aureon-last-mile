@@ -36,9 +36,19 @@ export function PrintLabels({ zones }: PrintLabelsProps) {
       <style>{`
         @page { size: A4 landscape; margin: 0; }
         @media print {
+          /* Hide everything via visibility (ancestors stay laid out but invisible)
+             then re-show only the print root and reposition it to fill the page.
+             display: none on ancestors would cascade to hide descendants too. */
           body { background: #fff; }
-          body > * { display: none !important; }
-          body .dock-label-print-root { display: block !important; }
+          body * { visibility: hidden !important; }
+          .dock-label-print-root,
+          .dock-label-print-root * { visibility: visible !important; }
+          .dock-label-print-root {
+            position: absolute !important;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
           .dock-label { page-break-after: always; }
           .dock-label:last-child { page-break-after: auto; }
         }
