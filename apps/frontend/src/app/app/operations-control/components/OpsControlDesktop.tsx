@@ -26,7 +26,7 @@ function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, 
     case 'pickup':        return snapshot.pickups as Record<string, unknown>[];
     case 'reception':     return snapshot.orders.filter((o) => o['stage'] === 'reception') as Record<string, unknown>[];
     case 'consolidation': return snapshot.orders.filter((o) => o['stage'] === 'consolidation') as Record<string, unknown>[];
-    case 'docks':         return snapshot.routes.filter((r) => r['stage'] === 'docks') as Record<string, unknown>[];
+    case 'docks':         return snapshot.orders.filter((o) => o['stage'] === 'docks') as Record<string, unknown>[];
     case 'delivery':      return snapshot.routes.filter((r) => r['stage'] === 'delivery' || r['status'] === 'active') as Record<string, unknown>[];
     case 'returns':       return snapshot.returns as Record<string, unknown>[];
     case 'reverse':       return [];
