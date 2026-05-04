@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { AtRiskTable } from './AtRiskTable';
 
 const ORDERS = [
-  { id: 'ORD-001', customer: 'Alice', address: 'Av. Providencia 123', stage: 'delivery', retailer: 'Falabella', status: 'late' as const, label: '-2h', minutesRemaining: -120, reasonFlag: 'sla_breach' },
-  { id: 'ORD-002', customer: 'Bob', address: 'Los Leones 456', stage: 'pickup', retailer: 'Ripley', status: 'at_risk' as const, label: '45m', minutesRemaining: 45, reasonFlag: 'approaching_sla' },
+  { id: 'uuid-1', orderNumber: 'ORD-001', customer: 'Alice', address: 'Av. Providencia 123', stage: 'delivery', retailer: 'Falabella', status: 'late' as const, label: '-2h', minutesRemaining: -120, reasonFlag: 'sla_breach' },
+  { id: 'uuid-2', orderNumber: 'ORD-002', customer: 'Bob', address: 'Los Leones 456', stage: 'pickup', retailer: 'Ripley', status: 'at_risk' as const, label: '45m', minutesRemaining: 45, reasonFlag: 'approaching_sla' },
 ];
 
 describe('AtRiskTable', () => {

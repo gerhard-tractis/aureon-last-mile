@@ -23,6 +23,7 @@ const NOW = new Date('2026-04-06T12:00:00Z');
 function makeOrder(overrides: Record<string, unknown> = {}) {
   return {
     id: 'o1',
+    order_number: 'ORD-001',
     stage: 'delivery',
     retailer: 'Retailer A',
     customer_name: 'Customer A',
@@ -86,6 +87,7 @@ describe('useAtRiskOrders', () => {
     expect(result.current.orders[0].status).toBe('late');
     expect(result.current.orders[0].minutesRemaining).toBe(-30);
     expect(result.current.orders[0].id).toBe('o1');
+    expect(result.current.orders[0].orderNumber).toBe('ORD-001');
   });
 
   it('includes at_risk orders (≤ 6h remaining)', () => {
