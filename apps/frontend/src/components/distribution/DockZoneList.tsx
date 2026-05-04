@@ -149,7 +149,7 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
           </DialogHeader>
 
           {previewZones.length === 1 ? (
-            <div className="rounded border overflow-hidden">
+            <div className="rounded border overflow-y-auto max-h-[60vh]">
               <DockLabel code={previewZones[0].code} name={previewZones[0].name} compact />
             </div>
           ) : (
