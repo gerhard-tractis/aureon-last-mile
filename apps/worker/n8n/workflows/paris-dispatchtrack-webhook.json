@@ -1,0 +1,114 @@
+{
+  "_comment": "Paris DispatchTrack Webhook Receiver — n8n workflow backup (sanitized). Replace <SUPABASE_SERVICE_ROLE_KEY> and <PARIS_DT_WEBHOOK_SECRET> with actual values. Path: /paris-dispatchtrack. Receives dispatch, route, dispatch_guide, review events from Paris DispatchTrack at https://paris.dispatchtrack.com. Live workflow must be imported and activated in n8n. PARIS tenant_client_id is fetched dynamically at runtime by slug.",
+  "name": "Paris DispatchTrack Webhook Receiver",
+  "active": true,
+  "nodes": [
+    {
+      "id": "pdt-webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "paris-dispatchtrack",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {}
+    },
+    {
+      "id": "pdt-process",
+      "name": "Process Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "jsCode": "// Paris DispatchTrack Webhook Receiver — Process Payload\n// Handles: dispatch, route, dispatch_guide, review events\n// Auth: X-Webhook-Secret header validation\n// Mirrors logic from beetrack-webhook Supabase edge function (MUSAN/DT)\n\nconst SUPABASE_URL = 'https://wfwlcpnkkxxzdvhvvsxb.supabase.co';\nconst SUPABASE_KEY = '<SUPABASE_SERVICE_ROLE_KEY>';\nconst PARIS_DT_SECRET = '<PARIS_DT_WEBHOOK_SECRET>';\nconst MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';\nconst PROVIDER = 'dispatchtrack';\nconst RETAILER_NAME = 'Paris';\nconst STATUS_MAP = { 1: 'pending', 2: 'delivered', 3: 'failed', 4: 'partial' };\n\nasync function sbFetch(path, method, body, preferHeader) {\n  const url = SUPABASE_URL + '/rest/v1/' + path;\n  const headers = {\n    'apikey': SUPABASE_KEY,\n    'Authorization': 'Bearer ' + SUPABASE_KEY,\n    'Content-Type': 'application/json'\n  };\n  if (preferHeader) headers['Prefer'] = preferHeader;\n  const opts = { method, headers };\n  if (body) opts.body = JSON.stringify(body);\n  const res = await fetch(url, opts);\n  const text = await res.text();\n  try { return JSON.parse(text); } catch (e) { return {}; }\n}\n\n// Validate auth\nconst hdrs = $input.first().json.headers || {};\nconst incoming = hdrs['x-webhook-secret'] || hdrs['X-Webhook-Secret'] || '';\nif (incoming !== PARIS_DT_SECRET) {\n  throw new Error('Unauthorized: invalid X-Webhook-Secret');\n}\n\nconst body = $input.first().json.body || {};\nconst resource = body.resource;\nconst event = body.event;\nconst now = new Date();\nconst dateStr = now.toISOString().split('T')[0];\nconst filename = (resource || 'unknown') + '-' + (event || 'unknown') + '-' + now.getTime() + '.json';\n\nlet result = { resource, event, ok: true };\n\n// Fetch Paris tenant_client_id dynamically by slug\nconst tcRows = await sbFetch(\n  'tenant_clients?slug=eq.paris&operator_id=eq.' + MUSAN_OPERATOR_ID + '&select=id',\n  'GET'\n);\nconst PARIS_TENANT_CLIENT_ID = Array.isArray(tcRows) && tcRows.length > 0 ? tcRows[0].id : null;\n\nswitch (resource) {\n  case 'dispatch': {\n    const dispatchId = body.dispatch_id;\n    const routeId = body.route_id;\n    const identifier = body.identifier;\n    const statusCode = body.status;\n\n    if (!dispatchId) { result.skipped = 'no dispatch_id'; break; }\n    const status = STATUS_MAP[statusCode];\n    if (!status) { result.skipped = 'unknown status: ' + statusCode; break; }\n\n    // Upsert fleet vehicle\n    let vehicleId = null;\n    if (body.truck_identifier) {\n      const vehicles = await sbFetch(\n        'fleet_vehicles?on_conflict=operator_id,provider,external_vehicle_id',\n        'POST',\n        { operator_id: MUSAN_OPERATOR_ID, provider: PROVIDER, external_vehicle_id: body.truck_identifier, vehicle_type: body.truck_type || null, raw_data: {} },\n        'resolution=merge-duplicates,return=representation'\n      );\n      vehicleId = Array.isArray(vehicles) ? ((vehicles[0] && vehicles[0].id) || null) : null;\n    }\n\n    // Lookup Paris order by order_number\n    let orderId = null;\n    if (identifier && PARIS_TENANT_CLIENT_ID) {\n      const orders = await sbFetch(\n        'orders?order_number=eq.' + encodeURIComponent(identifier) + '&operator_id=eq.' + MUSAN_OPERATOR_ID + '&tenant_client_id=eq.' + PARIS_TENANT_CLIENT_ID + '&select=id&limit=1',\n        'GET'\n      );\n      orderId = Array.isArray(orders) ? ((orders[0] && orders[0].id) || null) : null;\n    }\n\n    const substatus = body.substatus || null;\n    const failureReason = status === 'failed' && substatus ? substatus : null;\n\n    await sbFetch(\n      'dispatches?on_conflict=operator_id,provider,external_dispatch_id',\n      'POST',\n      {\n        operator_id: MUSAN_OPERATOR_ID, provider: PROVIDER,\n        external_dispatch_id: String(dispatchId),\n        external_route_id: routeId != null ? String(routeId) : null,\n        order_id: orderId, vehicle_id: vehicleId, status, substatus,\n        substatus_code: body.substatus_code || null,\n        planned_sequence: body.position || null,\n        estimated_at: body.estimated_at || null,\n        arrived_at: body.arrived_at || null,\n        completed_at: body.time_of_management || body.arrived_at || null,\n        failure_reason: failureReason,\n        is_pickup: body.is_pickup || false,\n        latitude: body.management_latitude || null,\n        longitude: body.management_longitude || null,\n        raw_data: body\n      },\n      'resolution=merge-duplicates,return=representation'\n    );\n\n    // Update order status for terminal dispatches\n    if (orderId && (status === 'delivered' || status === 'failed' || status === 'partial')) {\n      const orderStatus = status === 'delivered' ? 'entregado' : 'cancelado';\n      const statusDetail = status === 'delivered'\n        ? 'Delivered via DispatchTrack dispatch #' + dispatchId\n        : status === 'partial'\n        ? 'Partial delivery via DispatchTrack dispatch #' + dispatchId + (substatus ? ' — ' + substatus : '')\n        : substatus || 'Failed via DispatchTrack dispatch #' + dispatchId;\n      await fetch(SUPABASE_URL + '/rest/v1/orders?id=eq.' + orderId + '&status=neq.entregado', {\n        method: 'PATCH',\n        headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },\n        body: JSON.stringify({ status: orderStatus, status_detail: statusDetail })\n      });\n    }\n\n    result = Object.assign({}, result, { dispatch_id: dispatchId, status, order_id: orderId });\n    break;\n  }\n\n  case 'route': {\n    const routeIdRaw = body.route;\n    if (!routeIdRaw) { result.skipped = 'no route id'; break; }\n    const externalRouteId = String(routeIdRaw);\n    let routeStatus = 'planned';\n    if (body.started && body.ended) routeStatus = 'completed';\n    else if (body.started) routeStatus = 'in_progress';\n\n    // Only update routes managed by this system (created via Aureon dispatch module)\n    const existingRoutes = await sbFetch(\n      'routes?operator_id=eq.' + MUSAN_OPERATOR_ID + '&provider=eq.' + PROVIDER + '&external_route_id=eq.' + externalRouteId + '&deleted_at=is.null&select=id&limit=1',\n      'GET'\n    );\n    const existingRoute = Array.isArray(existingRoutes) ? existingRoutes[0] : null;\n\n    if (!existingRoute) {\n      result.skipped = 'route not managed by this system';\n      result.route_id = externalRouteId;\n      break;\n    }\n\n    let vehicleId = null;\n    if (body.truck) {\n      const vehicles = await sbFetch(\n        'fleet_vehicles?on_conflict=operator_id,provider,external_vehicle_id',\n        'POST',\n        { operator_id: MUSAN_OPERATOR_ID, provider: PROVIDER, external_vehicle_id: body.truck, vehicle_type: body.vehicle_type || null, raw_data: {} },\n        'resolution=merge-duplicates,return=representation'\n      );\n      vehicleId = Array.isArray(vehicles) ? ((vehicles[0] && vehicles[0].id) || null) : null;\n    }\n\n    await fetch(SUPABASE_URL + '/rest/v1/routes?id=eq.' + existingRoute.id + '&operator_id=eq.' + MUSAN_OPERATOR_ID, {\n      method: 'PATCH',\n      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },\n      body: JSON.stringify({\n        driver_name: body.truck_driver || null, vehicle_id: vehicleId, status: routeStatus,\n        start_time: body.started_at || null, end_time: body.ended_at || null,\n        total_km: body.kpi_distance || null, raw_data: body\n      })\n    });\n\n    result = Object.assign({}, result, { route_id: externalRouteId, route_status: routeStatus });\n    break;\n  }\n\n  case 'dispatch_guide': {\n    // Import new Paris order from DispatchTrack guide creation event\n    const guide = body.dispatch_guide || {};\n    const identifier = guide.identifier || guide.guide;\n    if (!identifier) { result.skipped = 'no identifier in dispatch_guide'; break; }\n    if (!PARIS_TENANT_CLIENT_ID) { result.skipped = 'Paris tenant_client_id not found in DB'; break; }\n\n    await sbFetch(\n      'orders?on_conflict=operator_id,order_number',\n      'POST',\n      {\n        operator_id: MUSAN_OPERATOR_ID,\n        tenant_client_id: PARIS_TENANT_CLIENT_ID,\n        order_number: identifier,\n        delivery_address: guide.contact_address || '',\n        customer_name: guide.contact_name || '',\n        customer_phone: guide.contact_phone || '',\n        retailer_name: RETAILER_NAME,\n        imported_via: 'API',\n        delivery_date: guide.promised_date || null,\n        imported_at: now.toISOString(),\n        raw_data: body\n      },\n      'resolution=merge-duplicates,return=representation'\n    );\n\n    result = Object.assign({}, result, { order_number: identifier, tenant_client_id: PARIS_TENANT_CLIENT_ID });\n    break;\n  }\n\n  case 'review':\n  default:\n    result.skipped = 'resource received but not processed: ' + resource;\n    break;\n}\n\nreturn [{ json: Object.assign({}, result, { raw_body: body, upload_date: dateStr, upload_filename: filename }) }];"
+      }
+    },
+    {
+      "id": "pdt-upload-raw",
+      "name": "Upload Raw Payload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/storage/v1/object/raw-files/transportes-musan/paris-dispatchtrack/{{ $json.upload_date }}/{{ $json.upload_filename }}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "x-upsert", "value": "true" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify($json.raw_body) }}",
+        "options": {}
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "pdt-respond-ok",
+      "name": "Respond 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [660, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'ok', resource: $('Process Payload').first().json.resource, event: $('Process Payload').first().json.event, result: $('Process Payload').first().json }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    },
+    {
+      "id": "pdt-error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [220, 300],
+      "parameters": {}
+    },
+    {
+      "id": "pdt-respond-error",
+      "name": "Respond 200 On Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [440, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"status\": \"received\", \"note\": \"processing error logged\"}",
+        "options": {
+          "responseCode": 200
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [[{ "node": "Process Payload", "type": "main", "index": 0 }]]
+    },
+    "Process Payload": {
+      "main": [[{ "node": "Upload Raw Payload", "type": "main", "index": 0 }]]
+    },
+    "Upload Raw Payload": {
+      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Respond 200 On Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  }
+}
