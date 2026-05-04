@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { AtRiskBanner } from './AtRiskBanner';
 
 const ORDERS = [
-  { id: 'ORD-001', customer: 'A', address: '123 St', stage: 'delivery', retailer: 'R1', status: 'late' as const, label: '-2h', minutesRemaining: -120, reasonFlag: 'sla_breach' },
-  { id: 'ORD-002', customer: 'B', address: '456 St', stage: 'pickup', retailer: 'R2', status: 'at_risk' as const, label: '45m', minutesRemaining: 45, reasonFlag: 'approaching_sla' },
-  { id: 'ORD-003', customer: 'C', address: '789 St', stage: 'docks', retailer: 'R3', status: 'at_risk' as const, label: '1h', minutesRemaining: 60, reasonFlag: 'approaching_sla' },
+  { id: 'uuid-1', orderNumber: 'ORD-001', customer: 'A', address: '123 St', stage: 'delivery', retailer: 'R1', status: 'late' as const, label: '-2h', minutesRemaining: -120, reasonFlag: 'sla_breach' },
+  { id: 'uuid-2', orderNumber: 'ORD-002', customer: 'B', address: '456 St', stage: 'pickup', retailer: 'R2', status: 'at_risk' as const, label: '45m', minutesRemaining: 45, reasonFlag: 'approaching_sla' },
+  { id: 'uuid-3', orderNumber: 'ORD-003', customer: 'C', address: '789 St', stage: 'docks', retailer: 'R3', status: 'at_risk' as const, label: '1h', minutesRemaining: 60, reasonFlag: 'approaching_sla' },
 ];
 
 describe('AtRiskBanner', () => {
