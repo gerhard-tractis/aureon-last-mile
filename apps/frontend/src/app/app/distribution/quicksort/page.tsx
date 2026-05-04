@@ -1,4 +1,6 @@
 'use client';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { QuickSortScanner } from '@/components/distribution/QuickSortScanner';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -10,9 +12,11 @@ import {
   useDockVerificationMutation,
 } from '@/hooks/distribution/useDockVerifications';
 import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssignment';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function QuickSortPage() {
+  const router = useRouter();
   const { operatorId } = useOperatorId();
   const { user } = useGlobal();
   const { data: zones } = useDockZones(operatorId);
@@ -50,8 +54,18 @@ export default function QuickSortPage() {
   return (
     <div className="flex flex-col h-full">
       <header className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3">
-        <div className="flex items-baseline justify-between mb-3">
-          <h1 className="text-xl font-semibold">Modo Rápido</h1>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => router.push('/app/distribution')}
+              aria-label="Volver a Distribución"
+            >
+              <ArrowLeft className="h-5 w-5 text-text-secondary" />
+            </Button>
+            <h1 className="text-xl font-semibold">Modo Rápido</h1>
+          </div>
         </div>
         <div className="max-w-3xl">
           <QuickSortScanner operatorId={operatorId} userId={user.id} zones={zones} />
