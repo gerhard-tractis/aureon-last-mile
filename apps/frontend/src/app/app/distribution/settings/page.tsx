@@ -1,11 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useDockZones, useEnsureConsolidationZone } from '@/hooks/distribution/useDockZones';
 import { DockZoneList } from '@/components/distribution/DockZoneList';
 import { DockZoneForm } from '@/components/distribution/DockZoneForm';
 import { UnmatchedComunasPanel } from '@/components/distribution/UnmatchedComunasPanel';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -16,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 
 export default function DistributionSettingsPage() {
+  const router = useRouter();
   const { operatorId } = useOperatorId();
   const { data: zones, isLoading } = useDockZones(operatorId);
   const ensureConsolidation = useEnsureConsolidationZone(operatorId);
@@ -48,7 +52,15 @@ export default function DistributionSettingsPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.push('/app/distribution')}
+          aria-label="Volver a Distribución"
+        >
+          <ArrowLeft className="h-5 w-5 text-text-secondary" />
+        </Button>
         <h1 className="text-xl font-semibold">Configuración de Andenes</h1>
       </div>
 
