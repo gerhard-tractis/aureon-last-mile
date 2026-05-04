@@ -6,19 +6,20 @@ import bwipjs from 'bwip-js/browser';
 interface DockLabelProps {
   code: string;
   name: string;
+  compact?: boolean;
 }
 
-export function DockLabel({ code, name }: DockLabelProps) {
+export function DockLabel({ code, name, compact = false }: DockLabelProps) {
   const svg = useMemo(
     () =>
       bwipjs.toSVG({
         bcid: 'code128',
         text: code,
         includetext: false,
-        height: 30,
+        height: compact ? 18 : 30,
         paddingwidth: 4,
       }),
-    [code],
+    [code, compact],
   );
 
   return (
@@ -26,10 +27,10 @@ export function DockLabel({ code, name }: DockLabelProps) {
       className="dock-label"
       style={{
         width: '100%',
-        height: '100vh',
+        height: compact ? 'auto' : '100vh',
         display: 'flex',
         flexDirection: 'column',
-        padding: '28px 32px',
+        padding: compact ? '16px 20px' : '28px 32px',
         boxSizing: 'border-box',
         fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
         color: '#111',
@@ -48,13 +49,13 @@ export function DockLabel({ code, name }: DockLabelProps) {
         <span style={{ fontSize: 13, letterSpacing: 4, color: '#666', textTransform: 'uppercase' }}>
           Andén
         </span>
-        <span style={{ fontSize: 28, fontWeight: 700, lineHeight: 1 }}>{name}</span>
+        <span style={{ fontSize: compact ? 18 : 28, fontWeight: 700, lineHeight: 1 }}>{name}</span>
       </header>
 
-      <div style={{ textAlign: 'center', padding: '16px 0 0' }}>
+      <div style={{ textAlign: 'center', padding: '12px 0 0' }}>
         <div
           style={{
-            fontSize: 96,
+            fontSize: compact ? 52 : 96,
             fontWeight: 800,
             lineHeight: 1,
             letterSpacing: -2,
@@ -64,21 +65,21 @@ export function DockLabel({ code, name }: DockLabelProps) {
         </div>
       </div>
 
-      <div style={{ flex: '0 0 56px' }} aria-hidden="true" />
+      {!compact && <div style={{ flex: '0 0 56px' }} aria-hidden="true" />}
 
-      <div>
+      <div style={{ marginTop: compact ? 12 : 0 }}>
         <div
-          style={{ width: '100%', height: 170 }}
+          style={{ width: '100%', height: compact ? 72 : 170 }}
           aria-label={`Código de barras Code128: ${code}`}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
         <div
           style={{
             fontFamily: 'Courier New, monospace',
-            fontSize: 22,
-            letterSpacing: 12,
+            fontSize: compact ? 13 : 22,
+            letterSpacing: compact ? 6 : 12,
             textAlign: 'center',
-            marginTop: 12,
+            marginTop: 8,
             color: '#222',
           }}
         >
