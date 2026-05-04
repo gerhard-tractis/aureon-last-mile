@@ -54,7 +54,16 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
     .filter((z) => z.is_active && !z.is_consolidation)
     .map(({ id, code, name }) => ({ id, code, name }));
 
-  const printHref = `/app/distribution/settings/labels/print?zoneIds=${previewZones.map((z) => z.id).join(',')}`;
+  const openPrintWindow = () => {
+    const ids = previewZones.map((z) => z.id).join(',');
+    if (!ids) return;
+    window.open(
+      `/app/distribution/settings/labels/print?zoneIds=${ids}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+    setPreviewZones([]);
+  };
 
   return (
     <>
@@ -167,14 +176,7 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
             <DialogClose asChild>
               <Button variant="outline">Cancelar</Button>
             </DialogClose>
-            <a
-              href={printHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => setPreviewZones([])}
-            >
-              <Button>Imprimir</Button>
-            </a>
+            <Button onClick={openPrintWindow}>Imprimir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
