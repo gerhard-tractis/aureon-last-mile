@@ -18,12 +18,11 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
       height: 30,
       paddingwidth: 4,
     });
-    if (!compact) return raw;
-    // bwip-js emits <svg viewBox=...> with no width/height attrs, so the prior
-    // regex was a no-op and the SVG kept its intrinsic ratio — rendering ~186px
-    // tall in the 80px wrapper and forcing a modal scrollbar. Inject explicit
-    // sizing onto the <svg> tag itself; preserveAspectRatio="none" is safe for
-    // Code128 since uniform horizontal scaling preserves bar-width ratios.
+    // bwip-js emits <svg viewBox=...> with no width/height attrs, so the SVG
+    // would otherwise keep its intrinsic ~232×72 ratio — overflowing the
+    // wrapper in both compact (modal preview) and non-compact (print) modes.
+    // Inject explicit sizing; preserveAspectRatio="none" is safe for Code128
+    // since uniform horizontal scaling preserves bar-width ratios.
     return raw.replace(
       /<svg\b/,
       '<svg preserveAspectRatio="none" width="100%" height="100%"',
