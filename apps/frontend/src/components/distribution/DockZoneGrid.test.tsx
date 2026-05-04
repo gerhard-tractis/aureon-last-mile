@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { DockZoneGrid } from './DockZoneGrid';
 
 const zones = [
@@ -14,7 +14,6 @@ const zones = [
     ],
     is_active: true,
     operator_id: 'op-1',
-    sort_order: 10,
   },
   {
     id: 'z2',
@@ -24,7 +23,6 @@ const zones = [
     comunas: [{ id: 'c3', nombre: 'providencia' }],
     is_active: true,
     operator_id: 'op-1',
-    sort_order: 20,
   },
 ];
 
@@ -67,43 +65,8 @@ describe('DockZoneGrid', () => {
     expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('hides reorder arrows when onReorder is not provided', () => {
+  it('does not render any reorder controls (sort is alphabetical-by-name)', () => {
     render(<DockZoneGrid zones={zones} />);
-    expect(screen.queryByLabelText(/Mover Andén 1 hacia/)).toBeNull();
-  });
-
-  it('renders up/down arrows when onReorder is provided', () => {
-    const onReorder = vi.fn();
-    render(<DockZoneGrid zones={zones} onReorder={onReorder} />);
-    expect(screen.getByLabelText('Mover Andén 1 hacia arriba')).toBeInTheDocument();
-    expect(screen.getByLabelText('Mover Andén 1 hacia abajo')).toBeInTheDocument();
-    expect(screen.getByLabelText('Mover Andén 2 hacia arriba')).toBeInTheDocument();
-    expect(screen.getByLabelText('Mover Andén 2 hacia abajo')).toBeInTheDocument();
-  });
-
-  it('disables up arrow on first row and down arrow on last row', () => {
-    const onReorder = vi.fn();
-    render(<DockZoneGrid zones={zones} onReorder={onReorder} />);
-    expect(screen.getByLabelText('Mover Andén 1 hacia arriba')).toBeDisabled();
-    expect(screen.getByLabelText('Mover Andén 2 hacia abajo')).toBeDisabled();
-    // Middle ones (or last/first in opposite direction) are enabled
-    expect(screen.getByLabelText('Mover Andén 1 hacia abajo')).not.toBeDisabled();
-    expect(screen.getByLabelText('Mover Andén 2 hacia arriba')).not.toBeDisabled();
-  });
-
-  it('fires onReorder with the right direction when an arrow is clicked', () => {
-    const onReorder = vi.fn();
-    render(<DockZoneGrid zones={zones} onReorder={onReorder} />);
-    fireEvent.click(screen.getByLabelText('Mover Andén 1 hacia abajo'));
-    expect(onReorder).toHaveBeenCalledWith('z1', 'down');
-    fireEvent.click(screen.getByLabelText('Mover Andén 2 hacia arriba'));
-    expect(onReorder).toHaveBeenCalledWith('z2', 'up');
-  });
-
-  it('disables both arrows on every row when reorderPending is true', () => {
-    const onReorder = vi.fn();
-    render(<DockZoneGrid zones={zones} onReorder={onReorder} reorderPending />);
-    expect(screen.getByLabelText('Mover Andén 1 hacia abajo')).toBeDisabled();
-    expect(screen.getByLabelText('Mover Andén 2 hacia arriba')).toBeDisabled();
+    expect(screen.queryByLabelText(/Mover Andén/)).toBeNull();
   });
 });
