@@ -27,7 +27,7 @@ export function AtRiskBanner({ orders, total, onViewAll }: AtRiskBannerProps) {
               key={o.id}
               className="px-1.5 py-0.5 rounded-sm bg-status-error/10 font-mono text-xs tabular-nums"
             >
-              {o.id}
+              {o.orderNumber}
             </span>
           ))}
         </span>
