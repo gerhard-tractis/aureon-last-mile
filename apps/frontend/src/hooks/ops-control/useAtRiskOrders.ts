@@ -4,6 +4,7 @@ import { classifyRisk } from '@/app/app/operations-control/lib/sla';
 
 export type AtRiskOrder = {
   id: string;
+  orderNumber: string;
   status: 'late' | 'at_risk';
   minutesRemaining: number;
   label: string;
@@ -45,6 +46,7 @@ export function useAtRiskOrders(
 
       atRisk.push({
         id: order['id'] as string,
+        orderNumber: (order['order_number'] as string) ?? (order['id'] as string),
         status: risk.status,
         minutesRemaining: risk.minutesRemaining,
         label: risk.label,

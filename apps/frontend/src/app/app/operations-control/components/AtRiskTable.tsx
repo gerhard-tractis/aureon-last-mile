@@ -39,7 +39,7 @@ export function AtRiskTable({ orders, page, pageCount, onPageChange }: AtRiskTab
             ) : (
               orders.map((order) => (
                 <tr key={order.id} className="border-b border-border hover:bg-surface-raised transition-colors">
-                  <td className="px-3 py-2 font-mono tabular-nums text-status-info font-semibold">{order.id}</td>
+                  <td className="px-3 py-2 font-mono tabular-nums text-status-info font-semibold">{order.orderNumber}</td>
                   <td className="px-3 py-2">{order.customer}</td>
                   <td className="px-3 py-2 max-w-[200px] truncate">{order.address}</td>
                   <td className="px-3 py-2">{order.stage}</td>
