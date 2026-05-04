@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { UserRole } from '@/lib/types/auth.types';
+import { toast } from 'sonner';
 
 export interface ManualAssignmentInput {
   packageId: string;
@@ -54,6 +55,9 @@ export function useManualDockAssignment(operatorId: string, userId: string) {
       queryClient.invalidateQueries({
         queryKey: ['distribution', 'sectorized-by-zone', operatorId],
       });
+    },
+    onError: () => {
+      toast.error('Error al asignar manualmente. Intente de nuevo.');
     },
   });
 
