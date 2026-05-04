@@ -164,7 +164,7 @@ function PendingDockListGroup({
       </header>
       <ul
         data-testid={`pending-rows-${group.zone.id}`}
-        className="grid grid-cols-1 lg:grid-cols-2 gap-x-4 gap-y-0 lg:divide-y-0 divide-y divide-border/60"
+        className="grid grid-cols-1 gap-y-0 divide-y divide-border/60"
       >
         {group.packages.map(pkg => (
           <PendingDockListRow
