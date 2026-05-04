@@ -60,4 +60,48 @@ describe('DockZoneList', () => {
     fireEvent.click(screen.getByRole('button', { name: /agregar andén/i }));
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
+
+  describe('print-label links', () => {
+    it('renders an Imprimir link per row with the correct href and target', () => {
+      render(<DockZoneList zones={zones} operatorId="op-1" onEdit={() => {}} />);
+      const consolLink = screen.getByRole('link', { name: /imprimir DOCK-001|imprimir andén 1/i });
+      expect(consolLink).toHaveAttribute(
+        'href',
+        '/app/distribution/settings/labels/print?zoneIds=zone-1',
+      );
+      expect(consolLink).toHaveAttribute('target', '_blank');
+      expect(consolLink).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    });
+
+    it('also renders an Imprimir link for the consolidation zone (single-row print is allowed)', () => {
+      render(<DockZoneList zones={zones} operatorId="op-1" onEdit={() => {}} />);
+      // Two rows, two per-row links
+      const links = screen.getAllByRole('link', { name: /imprimir DOCK-001|imprimir CONSOL|imprimir andén|imprimir consolidación/i });
+      const hrefs = links.map((l) => l.getAttribute('href'));
+      expect(hrefs).toContain('/app/distribution/settings/labels/print?zoneIds=zone-1');
+      expect(hrefs).toContain('/app/distribution/settings/labels/print?zoneIds=consol');
+    });
+
+    it('renders an Imprimir todos link in the header with all active non-consolidation zone ids', () => {
+      const manyZones: DockZoneRecord[] = [
+        ...zones,
+        { id: 'zone-2', name: 'Andén 2', code: 'DOCK-002', is_consolidation: false, comunas: [], is_active: true, operator_id: 'op-1' },
+        { id: 'zone-3', name: 'Andén 3 (inactivo)', code: 'DOCK-003', is_consolidation: false, comunas: [], is_active: false, operator_id: 'op-1' },
+      ];
+      render(<DockZoneList zones={manyZones} operatorId="op-1" onEdit={() => {}} onAdd={() => {}} />);
+      const link = screen.getByRole('link', { name: /imprimir todos/i });
+      // Should include zone-1 and zone-2 (active non-consolidation), exclude consol (is_consolidation) and zone-3 (inactive)
+      expect(link).toHaveAttribute(
+        'href',
+        '/app/distribution/settings/labels/print?zoneIds=zone-1,zone-2',
+      );
+      expect(link).toHaveAttribute('target', '_blank');
+    });
+
+    it('does not render Imprimir todos when there are no printable zones', () => {
+      const onlyConsol: DockZoneRecord[] = [zones[0]]; // just the consolidation zone
+      render(<DockZoneList zones={onlyConsol} operatorId="op-1" onEdit={() => {}} onAdd={() => {}} />);
+      expect(screen.queryByRole('link', { name: /imprimir todos/i })).not.toBeInTheDocument();
+    });
+  });
 });

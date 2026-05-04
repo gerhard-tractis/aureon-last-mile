@@ -33,11 +33,28 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
     updateMutation.mutate({ id: zone.id, is_active: !zone.is_active });
   };
 
+  const printableZoneIds = zones
+    .filter((z) => z.is_active && !z.is_consolidation)
+    .map((z) => z.id);
+  const printAllHref = printableZoneIds.length > 0
+    ? `/app/distribution/settings/labels/print?zoneIds=${printableZoneIds.join(',')}`
+    : null;
+
   return (
     <div className="space-y-3">
-      {onAdd && (
-        <div className="flex justify-end">
-          <Button onClick={onAdd}>Agregar andén</Button>
+      {(onAdd || printAllHref) && (
+        <div className="flex justify-end gap-2">
+          {printAllHref && (
+            <a
+              href={printAllHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Imprimir todos los andenes"
+            >
+              <Button variant="outline">Imprimir todos</Button>
+            </a>
+          )}
+          {onAdd && <Button onClick={onAdd}>Agregar andén</Button>}
         </div>
       )}
       {zones.map((zone) => (
@@ -64,6 +81,16 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={`/app/distribution/settings/labels/print?zoneIds=${zone.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Imprimir ${zone.code}`}
+                >
+                  <Button variant="outline" size="sm">
+                    Imprimir
+                  </Button>
+                </a>
                 {!zone.is_consolidation && (
                   <>
                     <Button
