@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { PrintLabels, type PrintZone } from './PrintLabels';
 import { Skeleton } from '@/components/ui/skeleton';
 
-export default function DockLabelsPrintPage() {
+function PrintPageInner() {
   const { operatorId } = useOperatorId();
   const { data: zones, isLoading } = useDockZones(operatorId);
   const params = useSearchParams();
@@ -30,4 +30,12 @@ export default function DockLabelsPrintPage() {
   }
 
   return <PrintLabels zones={filtered} />;
+}
+
+export default function DockLabelsPrintPage() {
+  return (
+    <Suspense fallback={<Skeleton className="h-screen w-full" />}>
+      <PrintPageInner />
+    </Suspense>
+  );
 }
