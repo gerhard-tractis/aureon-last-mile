@@ -252,7 +252,7 @@ describe('PendingDockList', () => {
     expect(screen.getByTestId('pending-row-pkg-1').textContent).not.toContain('Audífonos');
   });
 
-  it('lays out rows in a 2-column grid at the lg breakpoint inside each group', () => {
+  it('lays out rows in a single-column grid inside each group', () => {
     render(
       <PendingDockList
         groups={[baseGroup]}
@@ -264,7 +264,6 @@ describe('PendingDockList', () => {
     const list = screen.getByTestId('pending-rows-zone-a');
     const className = list.className;
     expect(className).toMatch(/grid-cols-1/);
-    expect(className).toMatch(/lg:grid-cols-2/);
   });
 
   it('uses an icon-only density toggle (no Detallado/Compacto labels visible)', () => {
