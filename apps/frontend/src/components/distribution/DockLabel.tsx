@@ -16,7 +16,7 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
         bcid: 'code128',
         text: code,
         includetext: false,
-        height: compact ? 18 : 30,
+        height: compact ? 25 : 30,
         paddingwidth: 4,
       }),
     [code, compact],
@@ -69,7 +69,7 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
 
       <div style={{ marginTop: compact ? 12 : 0 }}>
         <div
-          style={{ width: '100%', height: compact ? 72 : 170 }}
+          style={{ width: '100%', height: compact ? 'auto' : 170 }}
           aria-label={`Código de barras Code128: ${code}`}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
