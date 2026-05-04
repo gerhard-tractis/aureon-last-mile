@@ -4,8 +4,9 @@ import { DockLabel } from './DockLabel';
 
 vi.mock('bwip-js/browser', () => ({
   default: {
+    // Mirror real bwip-js output: viewBox only, no width/height attributes.
     toSVG: (opts: { text: string }) =>
-      `<svg data-testid="bwipjs-svg" data-text="${opts.text}"><rect /></svg>`,
+      `<svg data-testid="bwipjs-svg" data-text="${opts.text}" viewBox="0 0 232 72" xmlns="http://www.w3.org/2000/svg"><rect /></svg>`,
   },
 }));
 
@@ -31,5 +32,17 @@ describe('DockLabel', () => {
     const svg = container.querySelector('[data-testid="bwipjs-svg"]') as SVGElement | null;
     expect(svg).not.toBeNull();
     expect(svg!.getAttribute('data-text')).toBe('DOCK-007');
+  });
+
+  it('forces the compact barcode SVG to fill its 80px wrapper', () => {
+    // Regression: bwip-js emits viewBox-only SVG; without explicit width/height
+    // and preserveAspectRatio="none" the browser kept the intrinsic ratio and
+    // the barcode overflowed the 80px container, producing a modal scrollbar.
+    const { container } = render(<DockLabel code="DOCK-012" name="Santiago Centro" compact />);
+    const svg = container.querySelector('[data-testid="bwipjs-svg"]') as SVGElement | null;
+    expect(svg).not.toBeNull();
+    expect(svg!.getAttribute('preserveAspectRatio')).toBe('none');
+    expect(svg!.getAttribute('width')).toBe('100%');
+    expect(svg!.getAttribute('height')).toBe('100%');
   });
 });
