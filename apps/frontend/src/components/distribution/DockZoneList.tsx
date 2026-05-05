@@ -57,12 +57,18 @@ export function DockZoneList({ zones, operatorId, onEdit, onAdd }: DockZoneListP
   const openPrintWindow = () => {
     const ids = previewZones.map((z) => z.id).join(',');
     if (!ids) return;
-    window.open(
-      `/app/distribution/settings/labels/print?zoneIds=${ids}`,
-      '_blank',
-      'noopener,noreferrer',
-    );
     setPreviewZones([]);
+    // Render the print page inside a hidden iframe — PrintLabels auto-fires
+    // window.print() on mount, so the system print dialog opens without
+    // navigating the user away from Configuración de Andenes.
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;left:-9999px;top:-9999px;';
+    iframe.src = `/app/distribution/settings/labels/print?zoneIds=${ids}`;
+    iframe.addEventListener('load', () => {
+      iframe.contentWindow?.addEventListener('afterprint', () => iframe.remove());
+    });
+    document.body.appendChild(iframe);
   };
 
   return (
