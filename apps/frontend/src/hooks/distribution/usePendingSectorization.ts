@@ -21,10 +21,18 @@ export interface PendingPackage {
   skuItems: SkuItem[];
 }
 
+export interface OrderGroup {
+  orderId: string;
+  orderNumber: string;
+  deliveryDate: string;
+  comunaName: string | null;
+  packages: PendingPackage[];
+}
+
 export interface ZoneGroup {
   zone: DockZone;
   matchResult: ZoneMatchResult;
-  packages: PendingPackage[];
+  orders: OrderGroup[];
 }
 
 interface RawSkuItem {
@@ -66,7 +74,8 @@ export function usePendingSectorization(operatorId: string | null) {
       if (error) throw error;
       if (!data || !zones || zones.length === 0) return [];
 
-      const groupMap = new Map<string, ZoneGroup>();
+      // Pass 1: group packages into zone buckets
+      const zoneMap = new Map<string, { zone: DockZone; matchResult: ZoneMatchResult; orderMap: Map<string, OrderGroup> }>();
 
       for (const pkg of data) {
         const order = pkg.orders as {
@@ -80,7 +89,14 @@ export function usePendingSectorization(operatorId: string | null) {
           zones,
           today
         );
-        const existing = groupMap.get(matchResult.zone_id);
+
+        let zoneBucket = zoneMap.get(matchResult.zone_id);
+        if (!zoneBucket) {
+          const zone = zones.find(z => z.id === matchResult.zone_id)!;
+          zoneBucket = { zone, matchResult, orderMap: new Map() };
+          zoneMap.set(matchResult.zone_id, zoneBucket);
+        }
+
         const pendingPkg: PendingPackage = {
           id: pkg.id,
           label: pkg.label,
@@ -91,15 +107,30 @@ export function usePendingSectorization(operatorId: string | null) {
           delivery_date: order.delivery_date,
           skuItems: normalizeSkuItems(pkg.sku_items),
         };
-        if (existing) {
-          existing.packages.push(pendingPkg);
-        } else {
-          const zone = zones.find(z => z.id === matchResult.zone_id)!;
-          groupMap.set(matchResult.zone_id, { zone, matchResult, packages: [pendingPkg] });
+
+        let orderGroup = zoneBucket.orderMap.get(pkg.order_id);
+        if (!orderGroup) {
+          orderGroup = {
+            orderId: pkg.order_id,
+            orderNumber: order.order_number,
+            deliveryDate: order.delivery_date,
+            comunaName: order.chile_comunas?.nombre ?? null,
+            packages: [],
+          };
+          zoneBucket.orderMap.set(pkg.order_id, orderGroup);
         }
+        orderGroup.packages.push(pendingPkg);
       }
 
-      return Array.from(groupMap.values());
+      // Pass 2: sort packages within each order (label ASC), sort orders by deliveryDate ASC
+      return Array.from(zoneMap.values()).map(({ zone, matchResult, orderMap }) => {
+        const orders = Array.from(orderMap.values());
+        for (const og of orders) {
+          og.packages.sort((a, b) => a.label.localeCompare(b.label));
+        }
+        orders.sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate));
+        return { zone, matchResult, orders };
+      });
     },
     enabled: !!operatorId && !!zones && zones.length > 0,
     staleTime: 15_000,
