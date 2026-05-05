@@ -43,7 +43,7 @@ export function PendingDockListOrderGroup({
   return (
     <div data-testid={`order-group-${order.orderId}`} className="border-b border-border/60 last:border-b-0">
       <div className="flex items-center gap-2 px-0 py-1.5 bg-muted/30">
-        <span className="font-manifest text-[11px] font-bold text-blue-500">
+        <span className="font-manifest text-[11px] font-bold text-status-info">
           Pedido #{order.orderNumber}
         </span>
         <span className="font-manifest text-[11px] text-muted-foreground">
