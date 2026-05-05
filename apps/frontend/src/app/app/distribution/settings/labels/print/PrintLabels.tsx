@@ -36,20 +36,22 @@ export function PrintLabels({ zones }: PrintLabelsProps) {
       <style>{`
         @page { size: A4 landscape; margin: 0; }
         @media print {
-          /* Hide everything via visibility (ancestors stay laid out but invisible)
-             then re-show only the print root and reposition it to fill the page.
-             display: none on ancestors would cascade to hide descendants too. */
-          body { background: #fff; }
-          body * { visibility: hidden !important; }
+          body { background: #fff; margin: 0; padding: 0; }
+          /* Hide all body descendants and reset positioning on them so the
+             print root's containing block falls through to <body> (which
+             equals the print page). display: none would cascade and hide
+             descendants — visibility preserves layout but suppresses paint. */
+          body * {
+            visibility: hidden !important;
+            position: static !important;
+          }
           .dock-label-print-root,
           .dock-label-print-root * { visibility: visible !important; }
           .dock-label-print-root {
             position: absolute !important;
             left: 0;
             top: 0;
-            /* 100% would be relative to the (narrower) Next.js layout
-               container; 100vw is always the print page width. */
-            width: 100vw;
+            width: 100%;
           }
           .dock-label { page-break-after: always; }
           .dock-label:last-child { page-break-after: auto; }
