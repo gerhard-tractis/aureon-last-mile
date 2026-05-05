@@ -102,12 +102,15 @@ describe('useManualDockAssignment.mutateAsync', () => {
       expect.objectContaining({
         operator_id: 'op-1',
         package_id: 'pkg-1',
+        dock_zone_id: 'zone-anden',
         manual_override: true,
         scanned_by: 'user-1',
       })
     );
     const args = mockInsert.mock.calls[0][0];
     expect(args.redirect_reason ?? null).toBeNull();
+    // batch_id must NOT be present — manual overrides have no batch
+    expect(args.batch_id).toBeUndefined();
   });
 
   it('sets redirect_reason = manual_consolidation when target is consolidación', async () => {
@@ -123,6 +126,7 @@ describe('useManualDockAssignment.mutateAsync', () => {
     });
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({
+        dock_zone_id: 'zone-cons',
         manual_override: true,
         redirect_reason: 'manual_consolidation',
       })
