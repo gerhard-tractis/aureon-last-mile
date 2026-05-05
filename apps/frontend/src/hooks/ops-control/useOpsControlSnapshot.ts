@@ -12,7 +12,7 @@ export type RetailerSlaConfigRow = Record<string, unknown>;
 function orderStage(status: unknown): string | null {
   switch (status) {
     case 'en_bodega':              return 'reception';
-    case 'asignado':              return 'consolidation';
+    case 'asignado':
     case 'en_carga':
     case 'listo_para_despacho':   return 'docks';
     case 'en_ruta':               return 'delivery';
