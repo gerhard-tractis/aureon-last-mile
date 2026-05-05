@@ -47,7 +47,9 @@ export function PrintLabels({ zones }: PrintLabelsProps) {
             position: absolute !important;
             left: 0;
             top: 0;
-            width: 100%;
+            /* 100% would be relative to the (narrower) Next.js layout
+               container; 100vw is always the print page width. */
+            width: 100vw;
           }
           .dock-label { page-break-after: always; }
           .dock-label:last-child { page-break-after: auto; }
