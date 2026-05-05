@@ -10,7 +10,7 @@ const groups: ZoneGroup[] = [
       name: 'Andén 1',
       code: 'DOCK-001',
       is_consolidation: false,
-      comunas: ['las condes'],
+      comunas: [],
       is_active: true,
     },
     matchResult: {
@@ -21,8 +21,16 @@ const groups: ZoneGroup[] = [
       reason: 'matched',
       flagged: false,
     },
-    packages: [
-      { id: 'p1', label: 'PKG-001', order_id: 'o1', comuna: 'las condes', delivery_date: '2026-03-18' },
+    orders: [
+      {
+        orderId: 'o1',
+        orderNumber: '1001',
+        deliveryDate: '2026-03-18',
+        comunaName: 'Las Condes',
+        packages: [
+          { id: 'p1', label: 'PKG-001', order_id: 'o1', orderNumber: '1001', comunaId: null, comunaName: 'Las Condes', delivery_date: '2026-03-18', skuItems: [] },
+        ],
+      },
     ],
   },
 ];
@@ -56,15 +64,23 @@ describe('BatchOverview', () => {
     expect(screen.getByText(/no hay paquetes/i)).toBeInTheDocument();
   });
 
-  it('renders multiple zone cards', () => {
+  it('renders multiple zone cards and sums packages across orders', () => {
     const multiGroups: ZoneGroup[] = [
       ...groups,
       {
-        zone: { id: 'z2', name: 'Andén 2', code: 'DOCK-002', is_consolidation: false, comunas: ['providencia'], is_active: true },
+        zone: { id: 'z2', name: 'Andén 2', code: 'DOCK-002', is_consolidation: false, comunas: [], is_active: true },
         matchResult: { zone_id: 'z2', zone_name: 'Andén 2', zone_code: 'DOCK-002', is_consolidation: false, reason: 'matched', flagged: false },
-        packages: [
-          { id: 'p2', label: 'PKG-002', order_id: 'o2', comuna: 'providencia', delivery_date: '2026-03-18' },
-          { id: 'p3', label: 'PKG-003', order_id: 'o3', comuna: 'providencia', delivery_date: '2026-03-18' },
+        orders: [
+          {
+            orderId: 'o2',
+            orderNumber: '1002',
+            deliveryDate: '2026-03-18',
+            comunaName: 'Providencia',
+            packages: [
+              { id: 'p2', label: 'PKG-002', order_id: 'o2', orderNumber: '1002', comunaId: null, comunaName: 'Providencia', delivery_date: '2026-03-18', skuItems: [] },
+              { id: 'p3', label: 'PKG-003', order_id: 'o2', orderNumber: '1002', comunaId: null, comunaName: 'Providencia', delivery_date: '2026-03-18', skuItems: [] },
+            ],
+          },
         ],
       },
     ];

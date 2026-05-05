@@ -51,6 +51,22 @@ export default function QuickSortPage() {
       }
     : undefined;
 
+  const onManualAssignAll = manualAssign.canUse
+    ? async (packageIds: string[], zoneId: string) => {
+        const target = (zones ?? []).find(z => z.id === zoneId);
+        await Promise.allSettled(
+          packageIds.map(packageId =>
+            manualAssign.mutateAsync({
+              packageId,
+              zoneId,
+              barcode: packageId,
+              isConsolidation: !!target?.is_consolidation,
+            })
+          )
+        );
+      }
+    : undefined;
+
   return (
     <div className="flex flex-col h-full">
       <header className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3">
@@ -77,6 +93,7 @@ export default function QuickSortPage() {
           verifiedPackageIds={verifiedSet ?? new Set()}
           onTapVerify={onTapVerify}
           onManualAssign={onManualAssign}
+          onManualAssignAll={onManualAssignAll}
           activeZones={activeZones}
         />
       </div>

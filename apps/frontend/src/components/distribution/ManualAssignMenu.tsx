@@ -12,14 +12,16 @@ import { Button } from '@/components/ui/button';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
 
 interface ManualAssignMenuProps {
-  packageId: string;
+  packageId?: string;
   activeZones: DockZone[];
   onSelect: (zoneId: string) => void;
+  triggerTestId?: string;
 }
 
 export function ManualAssignMenu({
   activeZones,
   onSelect,
+  triggerTestId,
 }: ManualAssignMenuProps) {
   const andens = activeZones.filter(z => z.is_active && !z.is_consolidation);
   const consolidation = activeZones.find(z => z.is_active && z.is_consolidation);
@@ -32,6 +34,7 @@ export function ManualAssignMenu({
           size="icon"
           className="h-8 w-8"
           aria-label="Asignar manualmente"
+          data-testid={triggerTestId}
         >
           <MoreHorizontal className="h-4 w-4" />
         </Button>

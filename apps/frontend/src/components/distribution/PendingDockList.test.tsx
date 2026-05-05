@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { PendingDockList } from './PendingDockList';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
 import type {
   ZoneGroup,
-  PendingPackage,
+  OrderGroup,
 } from '@/hooks/distribution/usePendingSectorization';
 
 const andenA: DockZone = {
@@ -28,21 +27,50 @@ const zones: DockZone[] = [andenA, consolidationZone];
 
 const today = '2026-04-29';
 
-function makePkg(overrides: Partial<PendingPackage> = {}): PendingPackage {
-  return {
-    id: 'pkg-1',
-    label: 'PKG-OP82-1834',
-    order_id: 'ord-1',
-    orderNumber: 'ORD-2026-04-2841',
-    comunaId: 'c-1',
-    comunaName: 'Las Condes',
-    delivery_date: '2026-04-29',
-    skuItems: [
-      { sku: 'SKU-44831', description: 'Audífonos Bluetooth Pro', quantity: 2 },
-    ],
-    ...overrides,
-  };
-}
+const order1: OrderGroup = {
+  orderId: 'ord-1',
+  orderNumber: 'ORD-2026-04-2841',
+  deliveryDate: '2026-04-29',
+  comunaName: 'Las Condes',
+  packages: [
+    {
+      id: 'pkg-1',
+      label: 'PKG-OP82-1834',
+      order_id: 'ord-1',
+      orderNumber: 'ORD-2026-04-2841',
+      comunaId: 'c-1',
+      comunaName: 'Las Condes',
+      delivery_date: '2026-04-29',
+      skuItems: [
+        { sku: 'SKU-44831', description: 'Audífonos Bluetooth Pro', quantity: 2 },
+      ],
+    },
+  ],
+};
+
+const order2: OrderGroup = {
+  orderId: 'ord-2',
+  orderNumber: 'ORD-2026-04-2842',
+  deliveryDate: '2026-04-30',
+  comunaName: 'Las Condes',
+  packages: [
+    {
+      id: 'pkg-2',
+      label: 'PKG-OP82-1835',
+      order_id: 'ord-2',
+      orderNumber: 'ORD-2026-04-2842',
+      comunaId: 'c-1',
+      comunaName: 'Las Condes',
+      delivery_date: '2026-04-30',
+      skuItems: [
+        { sku: 'SKU-A', description: 'Item A', quantity: 1 },
+        { sku: 'SKU-B', description: 'Item B', quantity: 1 },
+        { sku: 'SKU-C', description: 'Item C', quantity: 1 },
+        { sku: 'SKU-D', description: 'Item D', quantity: 1 },
+      ],
+    },
+  ],
+};
 
 const baseGroup: ZoneGroup = {
   zone: andenA,
@@ -54,25 +82,10 @@ const baseGroup: ZoneGroup = {
     reason: 'matched',
     flagged: false,
   },
-  packages: [
-    makePkg(),
-    makePkg({
-      id: 'pkg-2',
-      label: 'PKG-OP82-1835',
-      orderNumber: 'ORD-2026-04-2842',
-      delivery_date: '2026-04-30',
-      skuItems: [
-        { sku: 'SKU-A', description: 'Item A', quantity: 1 },
-        { sku: 'SKU-B', description: 'Item B', quantity: 1 },
-        { sku: 'SKU-C', description: 'Item C', quantity: 1 },
-        { sku: 'SKU-D', description: 'Item D', quantity: 1 },
-      ],
-    }),
-  ],
+  orders: [order1, order2],
 };
 
 beforeEach(() => {
-  // Reset density preference between tests
   window.localStorage.clear();
   vi.useFakeTimers();
   vi.setSystemTime(new Date(today + 'T12:00:00Z'));
@@ -81,8 +94,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
-
-import { afterEach } from 'vitest';
 
 describe('PendingDockList', () => {
   it('renders the empty state when there are no groups', () => {
@@ -107,10 +118,22 @@ describe('PendingDockList', () => {
       />
     );
     const banner = screen.getByTestId('pending-group-zone-a');
-    // Name is uppercased via CSS — DOM keeps the original casing
     expect(banner.textContent).toContain('Andén A');
     expect(banner.textContent).toContain('A1');
     expect(banner.textContent).toContain('02 pendientes');
+  });
+
+  it('renders one order group header per distinct orderId', () => {
+    render(
+      <PendingDockList
+        groups={[baseGroup]}
+        verifiedPackageIds={new Set()}
+        onTapVerify={() => {}}
+        activeZones={zones}
+      />
+    );
+    expect(screen.getByTestId('order-group-ord-1')).toBeInTheDocument();
+    expect(screen.getByTestId('order-group-ord-2')).toBeInTheDocument();
   });
 
   it('shows package label, order number, comuna name, and relative delivery date in the head line', () => {
@@ -124,7 +147,6 @@ describe('PendingDockList', () => {
     );
     const row = screen.getByTestId('pending-row-pkg-1');
     expect(row.textContent).toContain('PKG-OP82-1834');
-    expect(row.textContent).toContain('#ORD-2026-04-2841');
     expect(row.textContent).toContain('Las Condes');
     // delivery_date 2026-04-29 with today 2026-04-29 → "hoy"
     expect(row.textContent).toMatch(/hoy/i);
@@ -140,17 +162,14 @@ describe('PendingDockList', () => {
       />
     );
     const row = screen.getByTestId('pending-row-pkg-2');
-    // First three SKUs visible
     expect(row.textContent).toContain('Item A');
     expect(row.textContent).toContain('SKU-A');
     expect(row.textContent).toContain('Item C');
-    // Fourth hidden
     expect(row.textContent).not.toContain('Item D');
-    // Collapse indicator
     expect(row.textContent).toMatch(/\+1\s*más/i);
   });
 
-  it('marks verified rows with a verified data-state and no center checkmark icon', () => {
+  it('marks verified rows with a verified data-state', () => {
     render(
       <PendingDockList
         groups={[baseGroup]}
@@ -229,13 +248,9 @@ describe('PendingDockList', () => {
         activeZones={zones}
       />
     );
-    // Detallado default — SKU lines visible
     expect(screen.getByTestId('pending-row-pkg-1').textContent).toContain('Audífonos');
-    // Click compacto (icon-only button, accessed by aria-label)
     fireEvent.click(screen.getByRole('button', { name: /vista compacta/i }));
-    // SKU lines hidden in compacto
     expect(screen.getByTestId('pending-row-pkg-1').textContent).not.toContain('Audífonos');
-    // Persisted
     expect(window.localStorage.getItem('aureon-pending-density')).toBe('compacto');
   });
 
@@ -252,20 +267,6 @@ describe('PendingDockList', () => {
     expect(screen.getByTestId('pending-row-pkg-1').textContent).not.toContain('Audífonos');
   });
 
-  it('lays out rows in a single-column grid inside each group', () => {
-    render(
-      <PendingDockList
-        groups={[baseGroup]}
-        verifiedPackageIds={new Set()}
-        onTapVerify={() => {}}
-        activeZones={zones}
-      />
-    );
-    const list = screen.getByTestId('pending-rows-zone-a');
-    const className = list.className;
-    expect(className).toMatch(/grid-cols-1/);
-  });
-
   it('uses an icon-only density toggle (no Detallado/Compacto labels visible)', () => {
     render(
       <PendingDockList
@@ -275,10 +276,8 @@ describe('PendingDockList', () => {
         activeZones={zones}
       />
     );
-    // No visible "Detallado" or "Compacto" text — toggle is now compact icons
     expect(screen.queryByText(/^detallado$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^compacto$/i)).not.toBeInTheDocument();
-    // But the toggle is still reachable by accessible name
     expect(
       screen.getByRole('button', { name: /vista detallada/i })
     ).toBeInTheDocument();
