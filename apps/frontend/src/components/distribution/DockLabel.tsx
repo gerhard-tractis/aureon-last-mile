@@ -63,7 +63,7 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
       <div style={{ textAlign: 'center', padding: '12px 0 0' }}>
         <div
           style={{
-            fontSize: compact ? 52 : 96,
+            fontSize: compact ? 52 : 160,
             fontWeight: 800,
             lineHeight: 1,
             letterSpacing: -2,
@@ -73,21 +73,21 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
         </div>
       </div>
 
-      {!compact && <div style={{ flex: '0 0 56px' }} aria-hidden="true" />}
+      {!compact && <div style={{ flex: '0 0 80px' }} aria-hidden="true" />}
 
       <div style={{ marginTop: compact ? 12 : 0 }}>
         <div
-          style={{ width: '100%', height: compact ? 80 : 170 }}
+          style={{ width: '100%', height: compact ? 80 : 280 }}
           aria-label={`Código de barras Code128: ${code}`}
           dangerouslySetInnerHTML={{ __html: svg }}
         />
         <div
           style={{
             fontFamily: 'Courier New, monospace',
-            fontSize: compact ? 13 : 22,
-            letterSpacing: compact ? 6 : 12,
+            fontSize: compact ? 13 : 32,
+            letterSpacing: compact ? 6 : 16,
             textAlign: 'center',
-            marginTop: 8,
+            marginTop: compact ? 8 : 16,
             color: '#222',
           }}
         >
