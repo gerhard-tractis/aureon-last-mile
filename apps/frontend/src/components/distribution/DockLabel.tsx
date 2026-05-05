@@ -37,6 +37,7 @@ export function DockLabel({ code, name, compact = false }: DockLabelProps) {
         height: compact ? 'auto' : '100vh',
         display: 'flex',
         flexDirection: 'column',
+        justifyContent: compact ? 'flex-start' : 'center',
         padding: compact ? '16px 20px' : '28px 32px',
         boxSizing: 'border-box',
         fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif',
