@@ -77,7 +77,6 @@ export function PendingDockList({
                 <PendingDockListOrderGroup
                   key={order.orderId}
                   order={order}
-                  zoneId={group.zone.id}
                   zoneCode={group.zone.code}
                   verifiedPackageIds={verifiedPackageIds}
                   onTapVerify={onTapVerify}

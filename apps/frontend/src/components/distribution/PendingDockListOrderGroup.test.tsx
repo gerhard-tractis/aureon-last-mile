@@ -64,7 +64,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -81,7 +81,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -97,7 +97,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder({ packages: [makeOrder().packages[0]] })}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -114,7 +114,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -130,7 +130,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder({ deliveryDate: '2026-05-06' })}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -147,7 +147,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -164,7 +164,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -180,7 +180,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -200,7 +200,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}
@@ -225,7 +225,7 @@ describe('PendingDockListOrderGroup', () => {
     render(
       <PendingDockListOrderGroup
         order={makeOrder()}
-        zoneId="zone-a"
+
         zoneCode="A1"
         verifiedPackageIds={new Set()}
         onTapVerify={() => {}}

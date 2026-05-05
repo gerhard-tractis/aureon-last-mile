@@ -16,7 +16,6 @@ const SKU_VISIBLE_CAP = 3;
 
 export interface PendingDockListOrderGroupProps {
   order: OrderGroup;
-  zoneId: string;
   zoneCode: string;
   verifiedPackageIds: Set<string>;
   onTapVerify: (packageId: string) => void;
@@ -29,7 +28,6 @@ export interface PendingDockListOrderGroupProps {
 
 export function PendingDockListOrderGroup({
   order,
-  zoneId,
   zoneCode,
   verifiedPackageIds,
   onTapVerify,
@@ -83,7 +81,6 @@ export function PendingDockListOrderGroup({
             key={pkg.id}
             pkg={pkg}
             zoneCode={zoneCode}
-            zoneId={zoneId}
             verified={verifiedPackageIds.has(pkg.id)}
             onTapVerify={onTapVerify}
             onManualAssign={onManualAssign}
@@ -107,7 +104,6 @@ const TONE_CLASS: Record<DeliveryDateTone, string> = {
 interface PendingDockListRowProps {
   pkg: PendingPackage;
   zoneCode: string;
-  zoneId: string;
   verified: boolean;
   onTapVerify: (packageId: string) => void;
   onManualAssign?: (packageId: string, zoneId: string) => void;
@@ -119,7 +115,6 @@ interface PendingDockListRowProps {
 function PendingDockListRow({
   pkg,
   zoneCode,
-  zoneId,
   verified,
   onTapVerify,
   onManualAssign,
