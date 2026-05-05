@@ -34,11 +34,17 @@ describe('DockLabel', () => {
     expect(svg!.getAttribute('data-text')).toBe('DOCK-007');
   });
 
-  it('forces the compact barcode SVG to fill its 80px wrapper', () => {
+  it.each([
+    ['compact', true],
+    ['non-compact (print)', false],
+  ])('forces the barcode SVG to fill its wrapper in %s mode', (_label, compact) => {
     // Regression: bwip-js emits viewBox-only SVG; without explicit width/height
-    // and preserveAspectRatio="none" the browser kept the intrinsic ratio and
-    // the barcode overflowed the 80px container, producing a modal scrollbar.
-    const { container } = render(<DockLabel code="DOCK-012" name="Santiago Centro" compact />);
+    // and preserveAspectRatio="none" the browser keeps the intrinsic ratio and
+    // the barcode overflows its wrapper — in compact mode that broke the modal,
+    // in non-compact mode it pushed the print label onto a second page.
+    const { container } = render(
+      <DockLabel code="DOCK-012" name="Santiago Centro" compact={compact} />,
+    );
     const svg = container.querySelector('[data-testid="bwipjs-svg"]') as SVGElement | null;
     expect(svg).not.toBeNull();
     expect(svg!.getAttribute('preserveAspectRatio')).toBe('none');
