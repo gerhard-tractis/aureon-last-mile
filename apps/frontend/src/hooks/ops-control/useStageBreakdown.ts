@@ -46,7 +46,10 @@ function getItems(
     case 'consolidation':
       return snapshot.orders.filter((o) => o['stage'] === 'consolidation');
     case 'docks':
-      return snapshot.orders.filter((o) => o['stage'] === 'docks');
+      return [
+        ...snapshot.orders.filter((o) => o['stage'] === 'docks'),
+        ...snapshot.routes.filter((r) => r['stage'] === 'docks'),
+      ];
     case 'delivery':
       return snapshot.routes.filter(
         (r) => r['stage'] === 'delivery' || r['status'] === 'active'

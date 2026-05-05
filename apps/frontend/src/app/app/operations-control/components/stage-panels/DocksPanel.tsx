@@ -11,7 +11,7 @@ export function DocksPanel({ operatorId, lastSyncAt }: StagePanelProps) {
   return (
     <StagePanel
       title="Andenes"
-      subtitle="Órdenes en carga y listas para despacho"
+      subtitle="Órdenes asignadas, en carga y listas para despacho"
       deepLink="/app/dispatch"
       deepLinkLabel="Abrir Despacho"
       kpis={computeOrderKpis(rows)}
