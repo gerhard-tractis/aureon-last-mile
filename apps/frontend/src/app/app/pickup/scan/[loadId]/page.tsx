@@ -113,70 +113,76 @@ export default function ScanningPage() {
   );
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
-      <ScanResultPopup
-        visible={showNotFoundPopup}
-        onDismiss={() => setShowNotFoundPopup(false)}
-      />
+    <>
+      <div className="space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
+        <ScanResultPopup
+          visible={showNotFoundPopup}
+          onDismiss={() => setShowNotFoundPopup(false)}
+        />
 
-      <PickupStepBreadcrumb current="scan" />
-      <PickupFlowHeader loadId={loadId} scanned={verifiedCount} total={totalPackages} />
+        <PickupStepBreadcrumb current="scan" />
+        <PickupFlowHeader loadId={loadId} scanned={verifiedCount} total={totalPackages} />
 
-      {/* Back + timer row */}
-      <div className="flex items-center justify-between -mt-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.push('/app/pickup')}
-          aria-label="Volver a manifiestos"
-        >
-          <ArrowLeft className="h-5 w-5 text-text-secondary" />
-        </Button>
-        <div className="flex items-center gap-1 text-sm text-text-secondary">
-          <Clock className="h-4 w-4" />
-          {elapsed}
+        {/* Back + timer row */}
+        <div className="flex items-center justify-between -mt-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push('/app/pickup')}
+            aria-label="Volver a manifiestos"
+          >
+            <ArrowLeft className="h-5 w-5 text-text-secondary" />
+          </Button>
+          <div className="flex items-center gap-1 text-sm text-text-secondary">
+            <Clock className="h-4 w-4" />
+            {elapsed}
+          </div>
         </div>
+
+        <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
+
+        {/* Not-found counter */}
+        {notFoundCount > 0 && (
+          <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-lg">
+            <XCircle className="h-4 w-4 text-status-error" />
+            <span className="text-sm text-text">{notFoundCount} no encontrados en manifiesto</span>
+          </div>
+        )}
+
+        <div className="bg-surface border border-border rounded-lg">
+          <div className="px-3 pt-3 pb-1">
+            <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
+          </div>
+          <div className="p-3">
+            <ScanHistoryList scans={scans} />
+          </div>
+        </div>
+
+        <ManifestDetailList
+          orders={orders}
+          scans={scans}
+          onManualVerify={handleManualVerify}
+          isLoading={ordersLoading}
+          isError={ordersError}
+          onRetry={() => refetchOrders()}
+        />
       </div>
 
-      <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
-
-      {/* Not-found counter */}
-      {notFoundCount > 0 && (
-        <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-lg">
-          <XCircle className="h-4 w-4 text-status-error" />
-          <span className="text-sm text-text">{notFoundCount} no encontrados en manifiesto</span>
-        </div>
-      )}
-
-      <div className="bg-surface border border-border rounded-lg">
-        <div className="px-3 pt-3 pb-1">
-          <p className="text-xs font-medium text-text-secondary uppercase tracking-wide">Escaneos recientes</p>
-        </div>
-        <div className="p-3">
-          <ScanHistoryList scans={scans} />
+      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
+        <div className="max-w-2xl mx-auto">
+          <Button
+            onClick={() =>
+              router.push(
+                `/app/pickup/review/${encodeURIComponent(loadId)}`
+              )
+            }
+            className="w-full"
+            size="lg"
+          >
+            Continuar a revisión
+          </Button>
         </div>
       </div>
-
-      <ManifestDetailList
-        orders={orders}
-        scans={scans}
-        onManualVerify={handleManualVerify}
-        isLoading={ordersLoading}
-        isError={ordersError}
-        onRetry={() => refetchOrders()}
-      />
-
-      <Button
-        onClick={() =>
-          router.push(
-            `/app/pickup/review/${encodeURIComponent(loadId)}`
-          )
-        }
-        className="w-full"
-        size="lg"
-      >
-        Continuar a revisión
-      </Button>
-    </div>
+    </>
   );
 }

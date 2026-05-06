@@ -104,81 +104,85 @@ export default function DiscrepancyReviewPage() {
   }
 
   return (
-    <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
-      <PickupStepBreadcrumb current="review" />
+    <>
+      <div className="space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
+        <PickupStepBreadcrumb current="review" />
 
-      {/* Gold header */}
-      <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
-        <p className="text-xs opacity-80">{loadId}</p>
-        <p className="font-semibold text-base mt-0.5">Revisión</p>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-3 gap-3">
-        <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
-        <MetricCard icon={XCircle} label="Faltantes" value={missingPackages.length} />
-        <MetricCard icon={AlertTriangle} label="No en manifiesto" value={notFoundScans.length} />
-      </div>
-
-      {/* Missing Packages — notes required */}
-      {missingPackages.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-text">
-            Faltantes — notas obligatorias ({missingPackages.length})
-          </h2>
-          {missingPackages.map((pkg) => (
-            <DiscrepancyItem
-              key={pkg.id}
-              packageId={pkg.id}
-              packageLabel={pkg.label}
-              orderNumber={pkg.order_number}
-              existingNote={noteMap.get(pkg.id) ?? ''}
-              onSaveNote={handleSaveNote}
-            />
-          ))}
+        {/* Gold header */}
+        <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
+          <p className="text-xs opacity-80">{loadId}</p>
+          <p className="font-semibold text-base mt-0.5">Revisión</p>
         </div>
-      )}
 
-      {/* Not in Manifest scans — informational */}
-      {notFoundScans.length > 0 && (
-        <div className="space-y-2">
-          <h2 className="text-sm font-semibold text-text">
-            No en manifiesto ({notFoundScans.length})
-          </h2>
-          {notFoundScans.map((scan) => (
-            <div
-              key={scan.id}
-              className="flex items-center gap-2 p-2 bg-status-warning-bg border border-status-warning-border rounded-lg"
-            >
-              <AlertTriangle className="h-4 w-4 text-status-warning" />
-              <span className="font-mono text-sm text-text">{scan.barcode_scanned}</span>
-            </div>
-          ))}
+        {/* Summary */}
+        <div className="grid grid-cols-3 gap-3">
+          <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
+          <MetricCard icon={XCircle} label="Faltantes" value={missingPackages.length} />
+          <MetricCard icon={AlertTriangle} label="No en manifiesto" value={notFoundScans.length} />
         </div>
-      )}
 
-      {/* Actions */}
-      <div className="flex gap-3 pt-2">
-        <Button
-          variant="outline"
-          onClick={() =>
-            router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`)
-          }
-          className="flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Volver
-        </Button>
-        <Button
-          onClick={() =>
-            router.push(`/app/pickup/handoff/${encodeURIComponent(loadId)}`)
-          }
-          disabled={!allNotesComplete}
-          className="flex-1 disabled:opacity-50"
-        >
-          Continuar a entrega
-        </Button>
+        {/* Missing Packages — notes required */}
+        {missingPackages.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-text">
+              Faltantes — notas obligatorias ({missingPackages.length})
+            </h2>
+            {missingPackages.map((pkg) => (
+              <DiscrepancyItem
+                key={pkg.id}
+                packageId={pkg.id}
+                packageLabel={pkg.label}
+                orderNumber={pkg.order_number}
+                existingNote={noteMap.get(pkg.id) ?? ''}
+                onSaveNote={handleSaveNote}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Not in Manifest scans — informational */}
+        {notFoundScans.length > 0 && (
+          <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-text">
+              No en manifiesto ({notFoundScans.length})
+            </h2>
+            {notFoundScans.map((scan) => (
+              <div
+                key={scan.id}
+                className="flex items-center gap-2 p-2 bg-status-warning-bg border border-status-warning-border rounded-lg"
+              >
+                <AlertTriangle className="h-4 w-4 text-status-warning" />
+                <span className="font-mono text-sm text-text">{scan.barcode_scanned}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Sticky footer — always visible on tablet/mobile */}
+      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
+        <div className="max-w-2xl mx-auto flex gap-3">
+          <Button
+            variant="outline"
+            onClick={() =>
+              router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`)
+            }
+            className="flex items-center gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Volver
+          </Button>
+          <Button
+            onClick={() =>
+              router.push(`/app/pickup/handoff/${encodeURIComponent(loadId)}`)
+            }
+            disabled={!allNotesComplete}
+            className="flex-1 disabled:opacity-50"
+          >
+            Continuar a entrega
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
