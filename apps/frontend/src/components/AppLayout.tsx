@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard,
   Radio,
@@ -25,6 +25,8 @@ import { SidebarNavItem } from './sidebar/SidebarNavItem';
 import { SidebarUserMenu } from './sidebar/SidebarUserMenu';
 import ThemeToggle from './ThemeToggle';
 import CapacityAlertBell from './capacity/CapacityAlertBell';
+import { InspectorSearchPalette } from './inspector/InspectorSearchPalette';
+import { OrderInspector } from './inspector/OrderInspector';
 
 function SidebarBrand({
   logoUrl,
@@ -62,8 +64,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { logoUrl, companyName } = useBranding();
   const { pinned, togglePin } = useSidebarPin();
   const [logoError, setLogoError] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  const [inspectorOrderId, setInspectorOrderId] = useState<string | null>(null);
 
   const isAdminOrManager = role === 'admin' || role === 'operations_manager';
+
+  useEffect(() => {
+    if (!isAdminOrManager) return;
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && target.tagName !== 'INPUT' && target.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        setIsPaletteOpen(true);
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isAdminOrManager]);
 
   const navItems = [
     { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
@@ -148,13 +165,38 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Main content */}
           <div className="relative">
             {isAdminOrManager && (
-              <div className="absolute top-3 right-4 z-10">
+              <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+                <button
+                  aria-label="Buscar orden o paquete"
+                  onClick={() => setIsPaletteOpen(true)}
+                  className="hidden lg:inline-flex items-center gap-2 text-xs text-text-muted bg-surface-raised border border-border rounded-lg px-3 py-1.5 hover:bg-surface-elev transition-colors"
+                >
+                  <span>Buscar orden…</span>
+                  <kbd className="font-mono bg-surface border border-border rounded px-1 text-[10px]">/</kbd>
+                </button>
                 <CapacityAlertBell operatorId={operatorId} />
               </div>
             )}
             <main>{children}</main>
           </div>
         </div>
+
+        {isAdminOrManager && (
+          <>
+            <InspectorSearchPalette
+              isOpen={isPaletteOpen}
+              onClose={() => setIsPaletteOpen(false)}
+              onSelectOrder={(id) => {
+                setInspectorOrderId(id);
+                setIsPaletteOpen(false);
+              }}
+            />
+            <OrderInspector
+              orderId={inspectorOrderId}
+              onClose={() => setInspectorOrderId(null)}
+            />
+          </>
+        )}
       </div>
     </TooltipProvider>
   );

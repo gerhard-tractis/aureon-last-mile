@@ -40,6 +40,16 @@ vi.mock('@/components/capacity/CapacityAlertBell', () => ({
   ),
 }));
 
+vi.mock('@/components/inspector/InspectorSearchPalette', () => ({
+  InspectorSearchPalette: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="inspector-palette">Palette</div> : null,
+}));
+
+vi.mock('@/components/inspector/OrderInspector', () => ({
+  OrderInspector: ({ orderId }: { orderId: string | null }) =>
+    orderId ? <div data-testid="order-inspector">Inspector</div> : null,
+}));
+
 vi.mock('@/components/tablet/TabletTopBar', () => ({
   default: () => <nav data-testid="tablet-top-bar">TabletTopBar</nav>,
 }));
@@ -291,5 +301,33 @@ describe('AppLayout — unified chrome (no tablet override)', () => {
     mockRole = 'admin';
     render(<AppLayout><div>content</div></AppLayout>);
     expect(screen.getByRole('button', { name: /alertas de capacidad/i })).toBeTruthy();
+  });
+});
+
+describe('AppLayout — Order Inspector trigger', () => {
+  it('renders inspector trigger button for admin', () => {
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByRole('button', { name: /buscar orden/i })).toBeTruthy();
+  });
+
+  it('renders inspector trigger for operations_manager', () => {
+    mockRole = 'operations_manager';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByRole('button', { name: /buscar orden/i })).toBeTruthy();
+  });
+
+  it('does not render inspector trigger for driver role', () => {
+    mockRole = 'driver';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('button', { name: /buscar orden/i })).toBeNull();
+  });
+
+  it('opens palette when trigger is clicked', () => {
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('inspector-palette')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /buscar orden/i }));
+    expect(screen.getByTestId('inspector-palette')).toBeTruthy();
   });
 });
