@@ -11,8 +11,9 @@ vi.mock('@/lib/supabase/client', () => ({
 
 function wrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: React.ReactNode }) =>
+  const Wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: qc }, children);
+  return Wrapper;
 }
 
 const ORDER_ROW = { id: 'o-1', order_number: 'ORD-001', customer_name: 'Ana', leading_status: 'en_bodega' };
