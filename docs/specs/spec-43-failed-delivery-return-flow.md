@@ -40,7 +40,7 @@ en_ruta → retorno_hub → en_bodega → (pipeline restarts)
 en_ruta → entregado              (happy path, unchanged)
 ```
 
-`devuelto` remains a separate terminal state meaning "package permanently returned to retailer — no further action."
+`devuelto` remains a separate terminal state meaning "package permanently returned to retailer — no further action." The transition into `devuelto` is **out of scope for this spec** and is owned by **spec-44b** (`mark_returned_to_sender` writes `orders.return_to_sender_state = 'returned'` and is expected to flip the corresponding packages to `devuelto`). No code in spec-43 writes the `devuelto` value.
 
 ### New order statuses
 
@@ -73,42 +73,141 @@ Populated by the webhook handler. Shown in Reingresos and the Reception Hub Reto
 
 ### Migration 1 — Extend status enums + add return reason columns
 
+> **`orders.status` is a real enum (`order_status_enum`).** It was created by `20260313000001_epic5_enum_migration.sql` and there is no `orders_status_check` constraint to alter. Both new order values must be added to the enum, same pattern as `package_status_enum`. Likewise `orders.leading_status` is `order_status_enum` and inherits the new values automatically.
+
+> **Transaction note:** `ALTER TYPE … ADD VALUE` cannot run inside a transaction block that already references the new value. Split the enum extensions into their own migration file (this one), separate from any migration that uses `'retorno_hub'::package_status_enum`, `'en_retorno'::order_status_enum`, or `'parcialmente_entregado'::order_status_enum` in a CASE or comparison.
+
 ```sql
--- Add retorno_hub to package_status_enum
+-- Extend package_status_enum with the non-terminal "returning to hub" state
 ALTER TYPE package_status_enum ADD VALUE IF NOT EXISTS 'retorno_hub' BEFORE 'cancelado';
 
--- Add en_retorno and parcialmente_entregado to order_status_enum
--- Note: orders table uses a TEXT status column with a CHECK constraint, not a named enum.
--- Verify constraint name before altering. Pattern: CHECK (status IN (...))
--- Extend the CHECK constraint to include the two new values.
-ALTER TABLE public.orders DROP CONSTRAINT IF EXISTS orders_status_check;
-ALTER TABLE public.orders ADD CONSTRAINT orders_status_check
-  CHECK (status IN (
-    'ingresado', 'verificado', 'en_bodega', 'asignado',
-    'en_carga', 'listo', 'en_ruta', 'entregado', 'cancelado',
-    'en_retorno', 'parcialmente_entregado'
-  ));
+-- Extend order_status_enum with the two new return-flow values
+ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'en_retorno';
+ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'parcialmente_entregado';
 
 -- Add return reason columns to packages
 ALTER TABLE public.packages
   ADD COLUMN IF NOT EXISTS return_reason TEXT,
   ADD COLUMN IF NOT EXISTS return_reason_code VARCHAR(10);
 
--- Index to support fast Reingresos queries
-CREATE INDEX IF NOT EXISTS idx_orders_return_statuses
-  ON public.orders(operator_id, status)
-  WHERE status IN ('en_retorno', 'parcialmente_entregado');
-
+-- Partial index to support fast Retornos-tab queries (find packages awaiting hub receipt)
 CREATE INDEX IF NOT EXISTS idx_packages_retorno_hub
   ON public.packages(order_id, status)
   WHERE status = 'retorno_hub';
+
+-- Note: `idx_orders_operator_status` (full index on operator_id, status) already exists
+-- from epic5, so no extra orders-side index is needed for Reingresos lookups.
 ```
 
-### Migration 2 — `process_failed_delivery` RPC
+### Migration 2 — Teach the order-status trigger about returns
+
+> **Why this is required.** `recalculate_order_status` (from `20260313000003_epic5_functions_and_trigger.sql`) is an AFTER UPDATE OF status trigger on `packages` that derives both `orders.status` and `orders.leading_status` from the pipeline positions of the order's active packages. Because `pipeline_position('retorno_hub')` falls through to `ELSE 0`, the original trigger sees a status-3 webhook (all packages → `retorno_hub`) as "zero active packages" and forces the order to `cancelado`. It also defeats `complete_return_reception_scan`: the first scan moves one package back to `en_bodega`, the trigger immediately fires and sets the order to `en_bodega` while the rest of the route's packages are still returning.
+>
+> The clean fix is to make the trigger the single source of truth for the new return states and drop the manual `UPDATE orders SET status = …` blocks from both RPCs. The trigger now handles four cases:
+>
+> | Package mix | Order `status` & `leading_status` |
+> |---|---|
+> | At least one `retorno_hub`, no `entregado` | `en_retorno` |
+> | At least one `retorno_hub`, at least one `entregado` | `parcialmente_entregado` |
+> | No `retorno_hub`, no other active packages | `cancelado` *(unchanged)* |
+> | No `retorno_hub`, some active packages | MIN/MAX over `pipeline_position` *(unchanged)* |
+>
+> `pipeline_position` itself is **left unchanged** — `retorno_hub` continues to return 0. The trigger short-circuits on `retorno_hub` before falling through to the MIN/MAX path, so the legacy pipeline math is undisturbed when no packages are in `retorno_hub`.
+
+```sql
+-- The pipeline_position helper is unchanged; retorno_hub keeps returning 0 and
+-- is handled by an explicit branch in the trigger below.
+
+CREATE OR REPLACE FUNCTION recalculate_order_status()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_order_id     UUID;
+  v_active_count INT;   -- non-terminal packages excluding retorno_hub
+  v_retorno      INT;   -- count of retorno_hub packages
+  v_entregado    INT;   -- count of entregado packages
+  v_min_pos      INT;
+  v_max_pos      INT;
+  v_min_status   order_status_enum;
+  v_max_status   order_status_enum;
+BEGIN
+  v_order_id := COALESCE(NEW.order_id, OLD.order_id);
+
+  SELECT
+    COUNT(*) FILTER (WHERE pipeline_position(status::text) > 0 AND status <> 'retorno_hub'),
+    COUNT(*) FILTER (WHERE status = 'retorno_hub'),
+    COUNT(*) FILTER (WHERE status = 'entregado')
+  INTO v_active_count, v_retorno, v_entregado
+  FROM packages
+  WHERE order_id   = v_order_id
+    AND deleted_at IS NULL;
+
+  -- Return-flow branch takes precedence over the legacy MIN/MAX logic.
+  IF v_retorno > 0 THEN
+    UPDATE orders SET
+      status            = CASE WHEN v_entregado > 0
+                               THEN 'parcialmente_entregado'::order_status_enum
+                               ELSE 'en_retorno'::order_status_enum END,
+      leading_status    = CASE WHEN v_entregado > 0
+                               THEN 'parcialmente_entregado'::order_status_enum
+                               ELSE 'en_retorno'::order_status_enum END,
+      status_updated_at = NOW()
+    WHERE id = v_order_id;
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  -- No retorno_hub packages: fall through to the original logic.
+  IF v_active_count + v_entregado = 0 THEN
+    UPDATE orders SET
+      status            = 'cancelado',
+      leading_status    = 'cancelado',
+      status_updated_at = NOW()
+    WHERE id = v_order_id;
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  SELECT
+    MIN(pipeline_position(p.status::text)),
+    MAX(pipeline_position(p.status::text))
+  INTO v_min_pos, v_max_pos
+  FROM packages p
+  WHERE p.order_id   = v_order_id
+    AND p.deleted_at IS NULL
+    AND pipeline_position(p.status::text) > 0;
+
+  SELECT CASE v_min_pos
+    WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado'
+    WHEN 3 THEN 'en_bodega' WHEN 4 THEN 'asignado'
+    WHEN 5 THEN 'en_carga'  WHEN 6 THEN 'listo'
+    WHEN 7 THEN 'en_ruta'   WHEN 8 THEN 'entregado'
+  END::order_status_enum INTO v_min_status;
+
+  SELECT CASE v_max_pos
+    WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado'
+    WHEN 3 THEN 'en_bodega' WHEN 4 THEN 'asignado'
+    WHEN 5 THEN 'en_carga'  WHEN 6 THEN 'listo'
+    WHEN 7 THEN 'en_ruta'   WHEN 8 THEN 'entregado'
+  END::order_status_enum INTO v_max_status;
+
+  UPDATE orders SET
+    status            = v_min_status,
+    leading_status    = v_max_status,
+    status_updated_at = NOW()
+  WHERE id = v_order_id;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger definition is unchanged; CREATE OR REPLACE on the function is enough.
+```
+
+### Migration 3 — `process_failed_delivery` RPC
 
 Called by n8n when DT fires `status` 3 or 4.
 
-**Partial delivery note (status 4):** The DispatchTrack webhook payload does not provide package-level delivery granularity — only an order-level `status: 4` signal. Therefore for both status 3 and status 4, ALL non-terminal packages on the order are moved to `retorno_hub`. The difference between the two is only the resulting order status (`en_retorno` vs `parcialmente_entregado`). If DT later exposes per-package outcome, this RPC can be extended with a `p_delivered_barcodes TEXT[]` parameter.
+**Partial delivery note (status 4):** The DispatchTrack webhook payload does not provide package-level delivery granularity — only an order-level `status: 4` signal. Therefore for both status 3 and status 4, ALL non-terminal packages on the order are moved to `retorno_hub`. The difference between the two is only the resulting order status (`en_retorno` vs `parcialmente_entregado`), and that distinction is now derived by the `recalculate_order_status` trigger (see Migration 2) based on whether any `entregado` packages exist on the order. If DT later exposes per-package outcome, this RPC can be extended with a `p_delivered_barcodes TEXT[]` parameter.
+
+**Reason history:** `return_reason` and `return_reason_code` are overwritten on each failed attempt. The previous reason is preserved in the `audit_logs` row produced by the `audit_packages_changes` trigger, so audit history is not lost. Surfacing prior reasons in the UI is deferred.
 
 ```sql
 CREATE OR REPLACE FUNCTION process_failed_delivery(
@@ -121,67 +220,80 @@ CREATE OR REPLACE FUNCTION process_failed_delivery(
 LANGUAGE plpgsql SECURITY INVOKER
 AS $$
 DECLARE
-  v_order_id        UUID;
-  v_returning_count INT;
-  v_new_order_status TEXT;
+  v_order_id          UUID;
+  v_current_status    order_status_enum;
+  v_returning_count   INT;
 BEGIN
-  -- Resolve order
-  SELECT id INTO v_order_id
+  IF p_dt_status NOT IN (3, 4) THEN
+    RETURN jsonb_build_object('error', 'unsupported_dt_status');
+  END IF;
+
+  -- Resolve and lock the order row so concurrent webhooks serialise.
+  SELECT id, status
+    INTO v_order_id, v_current_status
   FROM orders
   WHERE order_number = p_order_number
     AND operator_id  = p_operator_id
-    AND deleted_at IS NULL;
+    AND deleted_at IS NULL
+  FOR UPDATE;
 
   IF v_order_id IS NULL THEN
     RETURN jsonb_build_object('error', 'order_not_found');
   END IF;
 
-  -- Determine new order status
-  v_new_order_status := CASE p_dt_status
-    WHEN 3 THEN 'en_retorno'
-    WHEN 4 THEN 'parcialmente_entregado'
-    ELSE NULL
-  END;
+  -- Idempotency / duplicate-webhook short-circuit.
+  -- If the order is already in a return state, do nothing — the original
+  -- webhook already moved every non-terminal package to retorno_hub and we
+  -- don't want to drag en_bodega/en_ruta packages (from a subsequent
+  -- re-dispatch cycle) back into retorno_hub on a stale replay.
+  IF v_current_status IN ('en_retorno', 'parcialmente_entregado') THEN
+    SELECT COUNT(*) INTO v_returning_count
+    FROM packages
+    WHERE order_id   = v_order_id
+      AND status     = 'retorno_hub'
+      AND deleted_at IS NULL;
 
-  IF v_new_order_status IS NULL THEN
-    RETURN jsonb_build_object('error', 'unsupported_dt_status');
+    RETURN jsonb_build_object(
+      'order_id',        v_order_id,
+      'returning_count', v_returning_count,
+      'skipped',         true
+    );
   END IF;
 
-  -- Move all non-terminal packages to retorno_hub
-  -- Idempotent: skips packages already in terminal states or already retorno_hub
+  -- Move all non-terminal packages to retorno_hub.
+  -- The recalculate_order_status trigger (Migration 2) will derive the new
+  -- orders.status (en_retorno or parcialmente_entregado) from the resulting
+  -- package mix — we do NOT update orders.status here.
   UPDATE packages
   SET status             = 'retorno_hub',
       return_reason      = p_substatus,
       return_reason_code = p_substatus_code,
       status_updated_at  = NOW(),
       updated_at         = NOW()
-  WHERE order_id = v_order_id
+  WHERE order_id   = v_order_id
     AND status NOT IN ('entregado', 'cancelado', 'devuelto', 'dañado', 'extraviado', 'retorno_hub')
     AND deleted_at IS NULL;
 
-  -- Update order status
-  UPDATE orders
-  SET status     = v_new_order_status,
-      updated_at = NOW()
-  WHERE id = v_order_id;
-
   SELECT COUNT(*) INTO v_returning_count
   FROM packages
-  WHERE order_id = v_order_id
-    AND status   = 'retorno_hub'
+  WHERE order_id   = v_order_id
+    AND status     = 'retorno_hub'
     AND deleted_at IS NULL;
 
   RETURN jsonb_build_object(
     'order_id',        v_order_id,
-    'returning_count', v_returning_count
+    'returning_count', v_returning_count,
+    'skipped',         false
   );
 END;
 $$;
 ```
 
-### Migration 3 — `return_receptions` and `return_reception_scans` tables
+### Migration 4 — `return_receptions` and `return_reception_scans` tables
 
 > **Enum reuse:** `hub_reception_status_enum` (`pending | in_progress | completed`) and `reception_scan_result_enum` (`received | not_found | duplicate`) are pre-existing types created in migration `20260318000001_create_hub_reception_tables.sql` (spec-08). They are reused here without redefinition.
+
+> **`expected_count` is populated at session creation** by `useReturnReceptionSession`, which runs `SELECT COUNT(*) FROM packages WHERE status = 'retorno_hub' AND <route join> AND operator_id = $1` at the moment the receptionist opens the route. The count is a snapshot — subsequent packages arriving in `retorno_hub` for the same route after the session opened will be visible in the live list but will not retroactively change `expected_count`.
 
 ```sql
 -- ── return_receptions ─────────────────────────────────────────────────────────
@@ -258,9 +370,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 ```
 
-### Migration 4 — `get_ops_control_snapshot` RPC update
+### Migration 5 — `get_ops_control_snapshot` RPC update
 
 Add a `returns` key alongside the existing `orders`, `routes`, `manifests`, `sla_config`. One row per order (using `DISTINCT ON`), with the most recent package reason.
+
+> **Cross-spec consistency with spec-44a.** Spec-44a introduces a separate `returns_to_sender` snapshot key that mandates exclusion from every other stage array. Orders move from spec-43's `returns` to spec-44a's `returns_to_sender` only after the operator (or auto-policy) gives up on re-delivery — i.e., the order's `return_to_sender_state` becomes non-null. While `return_to_sender_state` is null, the order belongs in `returns`. Spec-44a's snapshot query therefore needs to add `AND o.return_to_sender_state IS NULL` to the `returns` subquery in this migration to prevent dual-listing. That column does not exist yet on this branch; flag this dependency when spec-44a lands.
 
 ```sql
 'returns', COALESCE((
@@ -289,9 +403,9 @@ Add a `returns` key alongside the existing `orders`, `routes`, `manifests`, `sla
 ), '[]'::jsonb),
 ```
 
-### Migration 5 — `complete_return_reception_scan` RPC
+### Migration 6 — `complete_return_reception_scan` RPC
 
-Called once per successful barcode scan in the Retornos tab. Moves the package to `en_bodega`, records the scan, and promotes the order to `en_bodega` when all its `retorno_hub` packages have been received.
+Called once per successful barcode scan in the Retornos tab. Moves the package to `en_bodega` and records the scan. The order's `status` and `leading_status` are derived by the `recalculate_order_status` trigger (Migration 2): partway through a route the trigger keeps the order in `en_retorno` / `parcialmente_entregado`; once the last `retorno_hub` package on the order flips, the trigger naturally lands the order back on `en_bodega` (or `en_bodega` + `leading_status=entregado` if some packages had already been delivered).
 
 ```sql
 CREATE OR REPLACE FUNCTION complete_return_reception_scan(
@@ -304,65 +418,64 @@ CREATE OR REPLACE FUNCTION complete_return_reception_scan(
 LANGUAGE plpgsql SECURITY INVOKER
 AS $$
 DECLARE
-  v_order_id            UUID;
-  v_remaining_count     INT;
-  v_order_promoted      BOOLEAN := FALSE;
+  v_order_id          UUID;
+  v_remaining_count   INT;
+  v_new_order_status  order_status_enum;
 BEGIN
-  -- Validate package belongs to operator and is in retorno_hub
-  SELECT order_id INTO v_order_id
-  FROM packages
-  WHERE id          = p_package_id
-    AND operator_id = p_operator_id
-    AND status      = 'retorno_hub'
-    AND deleted_at IS NULL;
+  -- Validate package and lock its order row so concurrent scans on the same
+  -- order serialise (prevents two scans both observing remaining = 0 from a
+  -- stale read of orders.status).
+  SELECT p.order_id INTO v_order_id
+  FROM packages p
+  JOIN orders   o ON o.id = p.order_id
+  WHERE p.id          = p_package_id
+    AND p.operator_id = p_operator_id
+    AND p.status      = 'retorno_hub'
+    AND p.deleted_at IS NULL
+  FOR UPDATE OF o;
 
   IF v_order_id IS NULL THEN
     RETURN jsonb_build_object('error', 'package_not_found_or_wrong_status');
   END IF;
 
-  -- Move package back to active pipeline
+  -- Move package back to active pipeline; the trigger updates orders.status.
+  -- return_reason / return_reason_code are intentionally preserved on the
+  -- package record as audit history of why it returned.
   UPDATE packages
   SET status            = 'en_bodega',
       status_updated_at = NOW(),
       updated_at        = NOW()
   WHERE id = p_package_id;
 
-  -- Record scan
+  -- Record scan.
   INSERT INTO return_reception_scans
     (return_reception_id, package_id, operator_id, scanned_by, barcode, scan_result, scanned_at)
   VALUES
     (p_return_reception_id, p_package_id, p_operator_id, p_scanned_by, p_barcode, 'received', NOW());
 
-  -- Increment received_count on the session
+  -- Increment received_count on the session.
   UPDATE return_receptions
   SET received_count = received_count + 1,
       updated_at     = NOW()
   WHERE id = p_return_reception_id;
 
-  -- Check if this was the last retorno_hub package on the order
+  -- Re-read state derived by the trigger.
   SELECT COUNT(*) INTO v_remaining_count
   FROM packages
-  WHERE order_id  = v_order_id
-    AND status    = 'retorno_hub'
+  WHERE order_id   = v_order_id
+    AND status     = 'retorno_hub'
     AND deleted_at IS NULL;
 
-  IF v_remaining_count = 0 THEN
-    UPDATE orders
-    SET status     = 'en_bodega',
-        updated_at = NOW()
-    WHERE id = v_order_id;
-    v_order_promoted := TRUE;
-  END IF;
-
-  -- return_reason / return_reason_code are intentionally preserved on the package
-  -- record after this transition — they serve as audit history for why the package
-  -- was returned, useful for re-delivery planning and reporting.
+  SELECT status INTO v_new_order_status
+  FROM orders
+  WHERE id = v_order_id;
 
   RETURN jsonb_build_object(
-    'package_id',     p_package_id,
-    'order_id',       v_order_id,
-    'order_promoted', v_order_promoted,
-    'remaining',      v_remaining_count
+    'package_id',       p_package_id,
+    'order_id',         v_order_id,
+    'order_promoted',   v_remaining_count = 0,
+    'order_status',     v_new_order_status,
+    'remaining',        v_remaining_count
   );
 END;
 $$;
@@ -408,9 +521,11 @@ type OrderStatus =
   | 'en_carga' | 'listo' | 'en_ruta' | 'entregado' | 'cancelado'
   | 'en_retorno' | 'parcialmente_entregado';
 
-// PIPELINE_STAGES: add display entries for new order statuses
-{ status: 'en_retorno',             label: 'En Retorno',              icon: 'RotateCcw',   position: 7.5 },
-{ status: 'parcialmente_entregado', label: 'Parcialmente Entregado',  icon: 'PackageOpen', position: 7.5 },
+// PIPELINE_STAGES: add display entries for new order statuses.
+// Positions must be unique (the renderer sorts on this field), so the two
+// return states are placed between en_ruta (7) and entregado (8).
+{ status: 'parcialmente_entregado', label: 'Parcialmente Entregado',  icon: 'PackageOpen', position: 7.4 },
+{ status: 'en_retorno',             label: 'En Retorno',              icon: 'RotateCcw',   position: 7.6 },
 ```
 
 ### `apps/frontend/src/hooks/ops-control/useOpsControlSnapshot.ts`
@@ -426,6 +541,16 @@ returns: (result?.returns ?? []) as ReturnRow[],
 
 `EXCLUDED_ORDER_STATUSES` stays as `{ 'entregado', 'cancelado' }` — no change needed. Orders in `en_retorno` / `parcialmente_entregado` pass through to the snapshot and appear in Reingresos. The existing realtime subscription on the `orders` channel handles live updates automatically.
 
+### `ReturnsPanel` (Ops Control)
+
+`ReturnsPanel.tsx` already exists in `apps/frontend/src/components/ops-control/` as the host of the (currently empty) `returns` array. Update it to:
+
+- Render the new columns surfaced by the snapshot: `return_reason`, `return_reason_code`, `age_minutes`.
+- Add SLA bucketing on `age_minutes` (matches the bucketing conventions of sibling panels — `at_risk` / `late` thresholds inherited from `sla_config`).
+- Drop the "no returns yet" placeholder copy now that the array is real.
+
+No new panel component is created — `ReturnsPanel` is the home for both the existing `returns` snapshot key and these new fields.
+
 ### Reception Hub — new "Retornos" tab
 
 **Page:** `/app/reception` gains a tab switcher: `Ingresos` (existing flow) | `Retornos` (new).
@@ -434,18 +559,51 @@ returns: (result?.returns ?? []) as ReturnRow[],
 
 | Component | Responsibility |
 |---|---|
-| `ReturnRouteList` | Lists distinct `external_route_id` values from `retorno_hub` packages. Shows driver name + returning package count. Sorted oldest-first. |
+| `ReturnRouteList` | Lists distinct routes that have packages in `retorno_hub`. Shows external route id, driver name, and returning package count. Sorted oldest-first by min `status_updated_at`. |
 | `ReturnReceptionSession` | Scan session for a selected route. Mirrors `ReceptionScan`. Calls `complete_return_reception_scan` RPC on each successful scan. |
-| `useReturnRoutes` hook | Queries Supabase for packages where `status = retorno_hub`, grouped by `external_route_id`. |
-| `useReturnReceptionSession` hook | Creates/resumes a `return_receptions` row; exposes scan handler. |
+| `useReturnRoutes` hook | Reads the route list via the join described below. |
+| `useReturnReceptionSession` hook | Creates/resumes a `return_receptions` row; populates `expected_count`; exposes the scan handler. |
+
+**`external_route_id` source — explicit join path.** `packages` does not carry `external_route_id`. It lives on `routes.external_route_id`, linked through `dispatches`:
+
+```
+packages  →  orders  →  dispatches  →  routes
+              (order_id)   (route_id)
+```
+
+`useReturnRoutes` query (illustrative — adjust to live alongside existing `useOpsControlSnapshot` patterns):
+
+```sql
+-- One row per (route, order, latest dispatch) so that re-attempts don't
+-- duplicate or mis-attribute returning packages to an old route.
+SELECT DISTINCT ON (p.id)
+       r.external_route_id,
+       r.driver_name,
+       p.id   AS package_id,
+       p.order_id,
+       p.status_updated_at
+FROM packages   p
+JOIN orders     o ON o.id       = p.order_id
+JOIN dispatches d ON d.order_id = o.id   AND d.deleted_at IS NULL
+JOIN routes     r ON r.id       = d.route_id
+WHERE p.operator_id = $1
+  AND p.status      = 'retorno_hub'
+  AND p.deleted_at IS NULL
+ORDER BY p.id, d.created_at DESC;  -- pick the most-recent dispatch per package
+```
+
+Then group by `external_route_id` for the list view. If a returning package has no `dispatches` row (edge case), surface it under a synthetic "Sin ruta" bucket so it isn't dropped silently.
+
+**`expected_count` initialisation.** When `useReturnReceptionSession` opens a session for a route, it inserts the `return_receptions` row with `expected_count = COUNT(packages WHERE retorno_hub AND <belongs to this route via the join above>)`. This is a snapshot for completion-percentage display; live drift is shown by re-running the count.
 
 **On scan success (inside `useReturnReceptionSession`):**
 1. Call `complete_return_reception_scan(p_package_id, p_return_reception_id, p_scanned_by, p_barcode, p_operator_id)`.
-2. RPC moves package to `en_bodega`, records scan, optionally promotes order.
-3. Hook updates local session state (received count, remaining list).
+2. RPC moves package to `en_bodega`, records scan; trigger updates the order's `status` / `leading_status` accordingly.
+3. Hook updates local session state (received count, remaining list). RPC return now includes `order_status` so the UI can reflect the post-trigger value without a re-fetch.
 
-**On scan not_found:**  
-Insert a `return_reception_scans` row with `scan_result = 'not_found'`, show error feedback to receptionist. Package state unchanged.
+**On scan not_found:** Insert a `return_reception_scans` row with `scan_result = 'not_found'`, show error feedback to receptionist. Package state unchanged.
+
+**Wrong-route scan handling.** If the receptionist scans a barcode that maps to a `retorno_hub` package belonging to a *different* route, the RPC validates only that the package is in `retorno_hub` for the same operator — it does not enforce route membership. The frontend (`useReturnReceptionSession`) is responsible for detecting the mismatch: before invoking the RPC, check the package's resolved `external_route_id` against the active session and, if it differs, show a `route_mismatch` toast asking the user to either switch the session or skip the scan. The scan is still inserted with `scan_result = 'not_found'` to record the mistake.
 
 **Return reason display:** each package row in the session shows `return_reason` so the receptionist understands why the item came back.
 
@@ -455,11 +613,13 @@ Insert a `return_reception_scans` row with `scan_result = 'not_found'`, show err
 
 | Layer | Tests |
 |---|---|
-| `process_failed_delivery` RPC | status 3 → all packages `retorno_hub` + order `en_retorno`; status 4 → all non-terminal packages `retorno_hub` + order `parcialmente_entregado`; duplicate webhook (package already `retorno_hub`) is skipped; unknown `order_number` returns error |
-| `complete_return_reception_scan` RPC | package moves to `en_bodega`; scan row recorded; order promoted to `en_bodega` when last `retorno_hub` package received; order NOT promoted when other `retorno_hub` packages remain; package not in `retorno_hub` returns error |
-| `get_ops_control_snapshot` | `returns` array populated with one row per order (not per package); empty when no returning orders; `age_minutes` present |
+| `recalculate_order_status` trigger | all packages → `retorno_hub` ⇒ order `status` AND `leading_status` = `en_retorno`; `retorno_hub` + `entregado` mix ⇒ both fields = `parcialmente_entregado`; first `retorno_hub`→`en_bodega` scan keeps order in `en_retorno` (or `parcialmente_entregado`); last scan promotes order back to `en_bodega` with correct `leading_status` (`en_bodega` in pure-return case, `entregado` in partial case); no `retorno_hub` packages ⇒ legacy MIN/MAX behaviour unchanged (regression-test status 2 happy path and full cancellation) |
+| `pipeline_position` | unchanged — `retorno_hub` returns 0; existing entries return 1–8 |
+| `process_failed_delivery` RPC | status 3 → all non-terminal packages `retorno_hub` + order `en_retorno` *(via trigger)*; status 4 with pre-existing `entregado` packages → those stay `entregado`, others move to `retorno_hub`, order `parcialmente_entregado`; duplicate webhook on an order already in a return state returns `skipped: true` and does NOT drag re-dispatched en_bodega/en_ruta packages back to `retorno_hub`; unknown `order_number` returns `order_not_found`; unsupported `p_dt_status` returns `unsupported_dt_status`; concurrent webhooks on the same order serialise (FOR UPDATE) |
+| `complete_return_reception_scan` RPC | package moves to `en_bodega`; scan row recorded; `received_count` increments; `order_promoted: true` and `order_status: 'en_bodega'` when last `retorno_hub` package received (pure return); `order_status: 'en_bodega'` with `leading_status='entregado'` in partial-delivery case; `order_promoted: false` when other `retorno_hub` packages remain; package not in `retorno_hub` returns error; concurrent scans on the last two packages of an order serialise without producing inconsistent state |
+| `get_ops_control_snapshot` | `returns` array populated with one row per order (not per package); empty when no returning orders; `age_minutes` present; *(spec-44a follow-up)* when `return_to_sender_state` is non-null, the order is excluded from `returns` |
 | `useOpsControlSnapshot` hook | `returns` reads from RPC result (not hardcoded `[]`) |
-| `ReturnsPanel` | renders `return_reason` column; shows age and SLA |
-| `ReturnRouteList` | groups by route; shows count; empty state when no returning packages |
-| `ReturnReceptionSession` | scan success → package removed from list; scan not_found → error shown; duplicate scan handled |
-| `pipeline.ts` | `retorno_hub` present in `PackageStatus`; NOT in `TERMINAL_PACKAGE_STATUSES`; `en_retorno` and `parcialmente_entregado` present in `OrderStatus` |
+| `ReturnsPanel` | renders `return_reason` and `return_reason_code` columns; shows age and SLA bucket; no longer shows the empty-state placeholder when the array is populated |
+| `ReturnRouteList` / `useReturnRoutes` | groups by `external_route_id` via the `packages → orders → dispatches → routes` join; picks the most-recent dispatch when an order has multiple; surfaces "Sin ruta" bucket for orphan packages; empty state when no returning packages |
+| `ReturnReceptionSession` / `useReturnReceptionSession` | `expected_count` is set on session creation; scan success → package removed from list; scan not_found → error shown and scan row inserted; wrong-route scan → `route_mismatch` toast and scan row inserted with `not_found`; duplicate scan handled |
+| `pipeline.ts` | `retorno_hub` present in `PackageStatus`; NOT in `TERMINAL_PACKAGE_STATUSES`; `en_retorno` and `parcialmente_entregado` present in `OrderStatus`; `PIPELINE_STAGES` positions remain strictly increasing |
