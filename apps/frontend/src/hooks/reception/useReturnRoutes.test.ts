@@ -48,6 +48,11 @@ vi.mock('@/lib/supabase/client', () => ({
       if (table === 'routes') return makeChain(mockRoutes);
       return makeChain([]);
     },
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnValue({ unsubscribe: vi.fn() }),
+    })),
+    removeChannel: vi.fn(),
   }),
 }));
 

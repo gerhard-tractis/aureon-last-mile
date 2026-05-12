@@ -126,7 +126,7 @@ export function ReturnReceptionSession({
             )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-mono font-semibold text-text">{pkg.label}</p>
-              <p className="text-xs text-text-secondary">{pkg.order_number}</p>
+              <p className="text-xs text-text-secondary">{pkg.order_number ?? '(orden desconocida)'}</p>
               {pkg.return_reason && (
                 <p className="text-xs text-text-muted mt-0.5">{pkg.return_reason}</p>
               )}

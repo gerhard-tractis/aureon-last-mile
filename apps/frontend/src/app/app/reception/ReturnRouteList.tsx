@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Package, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,6 +15,16 @@ interface ReturnRouteListProps {
 export function ReturnRouteList({ operatorId, onSelectRoute }: ReturnRouteListProps) {
   const { data, isLoading } = useReturnRoutes(operatorId);
 
+  const sorted = useMemo(
+    () =>
+      [...data].sort(
+        (a, b) =>
+          new Date(a.oldestStatusUpdatedAt).getTime() -
+          new Date(b.oldestStatusUpdatedAt).getTime()
+      ),
+    [data]
+  );
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -23,12 +34,6 @@ export function ReturnRouteList({ operatorId, onSelectRoute }: ReturnRouteListPr
       </div>
     );
   }
-
-  const sorted = [...data].sort(
-    (a, b) =>
-      new Date(a.oldestStatusUpdatedAt).getTime() -
-      new Date(b.oldestStatusUpdatedAt).getTime()
-  );
 
   if (sorted.length === 0) {
     return (

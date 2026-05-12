@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
 
@@ -97,13 +97,20 @@ function removeRow(
   return rows.filter((r) => r['id'] !== deleted['id']);
 }
 
-/** Terminal statuses excluded by the RPC — skip realtime upserts for these */
-const EXCLUDED_ORDER_STATUSES = new Set(['entregado', 'cancelado']);
+/** Statuses excluded from snapshot.orders by the RPC — drop in realtime too */
+const EXCLUDED_ORDER_STATUSES = new Set([
+  'entregado',
+  'cancelado',
+  'en_retorno',
+  'parcialmente_entregado',
+]);
+const RETURN_ORDER_STATUSES = new Set(['en_retorno', 'parcialmente_entregado']);
 const EXCLUDED_ROUTE_STATUSES = new Set(['completed', 'cancelled']);
 
 export function useOpsControlSnapshot(
   operatorId: string | null
 ): OpsControlSnapshotResult {
+  const queryClient = useQueryClient();
   const snapshotRef = useRef<OpsSnapshot | null>(null);
   const [version, setVersion] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
@@ -141,14 +148,30 @@ export function useOpsControlSnapshot(
           if (!current) return;
 
           if (payload.eventType === 'DELETE') {
-            snapshotRef.current = { ...current, orders: removeRow(current.orders, payload.old) };
+            snapshotRef.current = {
+              ...current,
+              orders: removeRow(current.orders, payload.old),
+              returns: removeRow(current.returns, payload.old),
+            };
           } else {
             const row = enrichOrder(payload.new);
-            // If order transitioned to a terminal status, remove it from the snapshot
-            if (EXCLUDED_ORDER_STATUSES.has(row['status'] as string)) {
+            const status = row['status'] as string;
+            if (RETURN_ORDER_STATUSES.has(status)) {
+              // Order moved into a return state — drop from orders[] and
+              // refetch so returns[] picks up pickup_point_name + packages.
+              snapshotRef.current = { ...current, orders: removeRow(current.orders, row) };
+              queryClient.invalidateQueries({
+                queryKey: ['ops-control', operatorId, 'snapshot'],
+              });
+            } else if (EXCLUDED_ORDER_STATUSES.has(status)) {
               snapshotRef.current = { ...current, orders: removeRow(current.orders, row) };
             } else {
-              snapshotRef.current = { ...current, orders: upsertRow(current.orders, row) };
+              // Order moved out of a return state (e.g., en_bodega) — drop it
+              // from returns[] and upsert into orders[].
+              const next = current.returns.some((r) => r['id'] === row['id'])
+                ? { ...current, returns: removeRow(current.returns, row), orders: upsertRow(current.orders, row) }
+                : { ...current, orders: upsertRow(current.orders, row) };
+              snapshotRef.current = next;
             }
           }
           setLastSyncAt(new Date());
@@ -186,7 +209,7 @@ export function useOpsControlSnapshot(
       client.removeChannel(ordersCh);
       client.removeChannel(routesCh);
     };
-  }, [operatorId, !!data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [operatorId, !!data, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   void version; // Force re-reads of the ref
 

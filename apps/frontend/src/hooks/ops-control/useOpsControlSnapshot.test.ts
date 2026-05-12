@@ -195,6 +195,94 @@ describe('useOpsControlSnapshot', () => {
     });
   });
 
+  it('removes order from snapshot.orders when it transitions to en_retorno', async () => {
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.snapshot?.orders).toHaveLength(2);
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      capturedCallbacks[channelName!][0]({
+        eventType: 'UPDATE',
+        new: { id: 'order-1', operator_id: 'op-abc', status: 'en_retorno', deleted_at: null },
+        old: { id: 'order-1' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.snapshot?.orders).toHaveLength(1);
+    });
+  });
+
+  it('removes order from snapshot.orders when it transitions to parcialmente_entregado', async () => {
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.snapshot?.orders).toHaveLength(2);
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      capturedCallbacks[channelName!][0]({
+        eventType: 'UPDATE',
+        new: { id: 'order-2', operator_id: 'op-abc', status: 'parcialmente_entregado', deleted_at: null },
+        old: { id: 'order-2' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.snapshot?.orders.find((o) => (o as { id: string }).id === 'order-2')).toBeUndefined();
+    });
+  });
+
+  it('moves order out of snapshot.returns when it transitions back to en_bodega', async () => {
+    mockRpcResponse = {
+      data: {
+        ...mockRpcData,
+        returns: [
+          { id: 'order-3', order_number: 'ORD-003', status: 'en_retorno', return_reason: 'Nadie en casa', age_minutes: 30 },
+        ],
+      },
+      error: null,
+    };
+
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.snapshot?.returns).toHaveLength(1);
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      capturedCallbacks[channelName!][0]({
+        eventType: 'UPDATE',
+        new: { id: 'order-3', operator_id: 'op-abc', status: 'en_bodega', deleted_at: null },
+        old: { id: 'order-3' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.snapshot?.returns).toHaveLength(0);
+    });
+  });
+
   it('subscribes to Realtime channels for orders and routes', async () => {
     const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
       wrapper: makeWrapper(),

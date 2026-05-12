@@ -1791,6 +1791,13 @@ export type Database = {
         }
         Returns: Json
       }
+      find_or_create_return_reception: {
+        Args: {
+          p_operator_id: string
+          p_external_route_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       routing_provider_enum:
@@ -1859,6 +1866,7 @@ export type Database = {
         | "received"
         | "not_found"
         | "duplicate"
+        | "route_mismatch"
       reception_status_enum:
         | "awaiting_reception"
         | "reception_in_progress"
@@ -2038,6 +2046,7 @@ export const Constants = {
         "received",
         "not_found",
         "duplicate",
+        "route_mismatch",
       ],
       reception_status_enum: [
         "awaiting_reception",
