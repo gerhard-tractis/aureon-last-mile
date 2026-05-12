@@ -1,10 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
+import { resolveRoutesByOrder } from './returnRouteResolution';
 
 export interface ReturnReceptionPackage {
   id: string;
   label: string;
-  order_number: string;
+  order_number: string | null;
   return_reason: string | null;
   received: boolean;
 }
@@ -30,61 +32,20 @@ interface UseReturnReceptionSessionOptions {
   externalRouteId: string | null;
 }
 
-interface RawSession { id: string; operator_id: string; external_route_id: string; status: string; expected_count: number; received_count: number; }
+interface RawSession {
+  id: string;
+  operator_id: string;
+  external_route_id: string;
+  status: string;
+  expected_count: number;
+  received_count: number;
+}
 
-interface RawScan { id: string; package_id: string | null; scan_result: string; barcode: string; }
-
-async function countReturnPackagesForRoute(
-  operatorId: string,
-  externalRouteId: string
-): Promise<number> {
-  const supabase = createSPAClient();
-
-  const { data: pkgs } = await supabase
-    .from('packages')
-    .select('id, order_id')
-    .eq('operator_id', operatorId)
-    .eq('status', 'retorno_hub')
-    .is('deleted_at', null);
-
-  if (!pkgs || pkgs.length === 0) return 0;
-
-  const orderIds = (pkgs as { id: string; order_id: string }[]).map(p => p.order_id);
-
-  const { data: dispatches } = await supabase
-    .from('dispatches')
-    .select('order_id, route_id, created_at')
-    .eq('operator_id', operatorId)
-    .in('order_id', orderIds)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
-
-  const allDispatches = (dispatches ?? []) as { order_id: string; route_id: string; created_at: string }[];
-  const latestByOrder = new Map<string, string>();
-  for (const d of allDispatches) {
-    if (!latestByOrder.has(d.order_id)) latestByOrder.set(d.order_id, d.route_id);
-  }
-
-  const routeIds = [...new Set(allDispatches.map(d => d.route_id))];
-  if (routeIds.length === 0) return 0;
-
-  const { data: routes } = await supabase
-    .from('routes')
-    .select('id, external_route_id')
-    .eq('operator_id', operatorId)
-    .in('id', routeIds);
-
-  const routeExtMap = new Map<string, string>();
-  for (const r of (routes ?? []) as { id: string; external_route_id: string }[]) {
-    routeExtMap.set(r.id, r.external_route_id);
-  }
-
-  let count = 0;
-  for (const pkg of pkgs as { id: string; order_id: string }[]) {
-    const routeId = latestByOrder.get(pkg.order_id);
-    if (routeId && routeExtMap.get(routeId) === externalRouteId) count++;
-  }
-  return count;
+interface RawScan {
+  id: string;
+  package_id: string | null;
+  scan_result: string;
+  barcode: string;
 }
 
 async function findOrCreateSession(
@@ -92,39 +53,12 @@ async function findOrCreateSession(
   externalRouteId: string
 ): Promise<RawSession> {
   const supabase = createSPAClient();
-
-  const { data: existing } = await supabase
-    .from('return_receptions')
-    .select('id, operator_id, external_route_id, status, expected_count, received_count')
-    .eq('operator_id', operatorId)
-    .eq('external_route_id', externalRouteId)
-    .in('status', ['pending', 'in_progress'])
-    .order('created_at', { ascending: false })
-    .limit(1);
-
-  if (existing && existing.length > 0) {
-    return existing[0] as RawSession;
-  }
-
-  const [now, expectedCount] = [
-    new Date().toISOString(),
-    await countReturnPackagesForRoute(operatorId, externalRouteId),
-  ];
-  const { data: created, error } = await supabase
-    .from('return_receptions')
-    .insert({
-      operator_id: operatorId,
-      external_route_id: externalRouteId,
-      status: 'in_progress',
-      started_at: now,
-      expected_count: expectedCount,
-      received_count: 0,
-    })
-    .select()
-    .single();
-
+  const { data, error } = await supabase.rpc('find_or_create_return_reception', {
+    p_operator_id: operatorId,
+    p_external_route_id: externalRouteId,
+  });
   if (error) throw error;
-  return created as RawSession;
+  return data as unknown as RawSession;
 }
 
 async function loadPackagesForRoute(
@@ -140,40 +74,20 @@ async function loadPackagesForRoute(
     .eq('operator_id', operatorId)
     .eq('status', 'retorno_hub')
     .is('deleted_at', null);
-
   if (pkgsErr) throw pkgsErr;
   if (!pkgs || pkgs.length === 0) return [];
 
-  const orderIds = (pkgs as { order_id: string }[]).map(p => p.order_id);
+  type PkgRow = {
+    id: string;
+    order_id: string;
+    label: string;
+    return_reason: string | null;
+    orders: { order_number: string } | null;
+  };
+  const packages = pkgs as PkgRow[];
+  const orderIds = [...new Set(packages.map(p => p.order_id))];
 
-  const { data: dispatches } = await supabase
-    .from('dispatches')
-    .select('order_id, route_id, created_at')
-    .eq('operator_id', operatorId)
-    .in('order_id', orderIds)
-    .is('deleted_at', null)
-    .order('created_at', { ascending: false });
-
-  const allDispatches = (dispatches ?? []) as {
-    order_id: string; route_id: string; created_at: string;
-  }[];
-  const latestByOrder = new Map<string, string>();
-  for (const d of allDispatches) {
-    if (!latestByOrder.has(d.order_id)) latestByOrder.set(d.order_id, d.route_id);
-  }
-
-  const routeIds = [...new Set(allDispatches.map(d => d.route_id))];
-  const externalRouteByRouteId = new Map<string, string>();
-  if (routeIds.length > 0) {
-    const { data: routes } = await supabase
-      .from('routes')
-      .select('id, external_route_id')
-      .eq('operator_id', operatorId)
-      .in('id', routeIds);
-    for (const r of (routes ?? []) as { id: string; external_route_id: string }[]) {
-      externalRouteByRouteId.set(r.id, r.external_route_id);
-    }
-  }
+  const routesByOrder = await resolveRoutesByOrder(supabase, operatorId, orderIds);
 
   const { data: scans } = await supabase
     .from('return_reception_scans')
@@ -188,25 +102,54 @@ async function loadPackagesForRoute(
   );
 
   const result: ReturnReceptionPackage[] = [];
-  for (const pkg of pkgs as {
-    id: string; order_id: string; label: string;
-    return_reason: string | null;
-    orders: { order_number: string } | null;
-  }[]) {
-    const routeId = latestByOrder.get(pkg.order_id);
-    const pkgExternalRoute = routeId ? externalRouteByRouteId.get(routeId) : undefined;
+  for (const pkg of packages) {
+    const pkgExternalRoute = routesByOrder.get(pkg.order_id)?.externalRouteId ?? null;
     if (pkgExternalRoute !== externalRouteId) continue;
-
     result.push({
       id: pkg.id,
       label: pkg.label,
-      order_number: pkg.orders?.order_number ?? pkg.order_id,
+      order_number: pkg.orders?.order_number ?? null,
       return_reason: pkg.return_reason ?? null,
       received: receivedPackageIds.has(pkg.id),
     });
   }
-
   return result;
+}
+
+async function findPackageByBarcode(
+  operatorId: string,
+  barcode: string
+): Promise<{ id: string; order_id: string; label: string } | null> {
+  const supabase = createSPAClient();
+  const { data } = await supabase
+    .from('packages')
+    .select('id, order_id, label, status')
+    .eq('operator_id', operatorId)
+    .eq('label', barcode)
+    .eq('status', 'retorno_hub')
+    .is('deleted_at', null);
+  const row = (data ?? [])[0] as
+    | { id: string; order_id: string; label: string; status: string }
+    | undefined;
+  return row ? { id: row.id, order_id: row.order_id, label: row.label } : null;
+}
+
+async function recordUnmatchedScan(
+  operatorId: string,
+  sessionId: string,
+  barcode: string,
+  scanResult: 'not_found' | 'route_mismatch',
+  packageId: string | null
+): Promise<void> {
+  const supabase = createSPAClient();
+  await supabase.from('return_reception_scans').insert({
+    return_reception_id: sessionId,
+    operator_id: operatorId,
+    barcode,
+    scan_result: scanResult,
+    package_id: packageId,
+    scanned_at: new Date().toISOString(),
+  });
 }
 
 export function useReturnReceptionSession({
@@ -220,15 +163,43 @@ export function useReturnReceptionSession({
     queryKey: ['return-reception-session', operatorId, externalRouteId],
     queryFn: () => findOrCreateSession(operatorId!, externalRouteId!),
     enabled,
-    staleTime: 60_000,
+    staleTime: 10_000,
   });
 
   const { data: packages, isLoading: pkgsLoading } = useQuery({
     queryKey: ['return-reception-packages', operatorId, externalRouteId, session?.id],
     queryFn: () => loadPackagesForRoute(operatorId!, externalRouteId!, session!.id),
     enabled: enabled && !!session?.id,
-    staleTime: 10_000,
+    staleTime: 5_000,
   });
+
+  useEffect(() => {
+    if (!enabled) return;
+    const supabase = createSPAClient();
+    const channel = supabase
+      .channel(`return-session:${operatorId}:${externalRouteId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'packages',
+          filter: `operator_id=eq.${operatorId}`,
+        },
+        () => {
+          queryClient.invalidateQueries({
+            queryKey: ['return-reception-packages', operatorId, externalRouteId],
+          });
+          queryClient.invalidateQueries({
+            queryKey: ['return-reception-session', operatorId, externalRouteId],
+          });
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [enabled, operatorId, externalRouteId, queryClient]);
 
   const scan = async (barcode: string): Promise<ScanOutcome> => {
     if (!operatorId || !externalRouteId || !session) {
@@ -238,64 +209,17 @@ export function useReturnReceptionSession({
     const supabase = createSPAClient();
     const sessionId = session.id;
 
-    const { data: pkgRows } = await supabase
-      .from('packages')
-      .select('id, order_id, label, status')
-      .eq('operator_id', operatorId)
-      .eq('label', barcode)
-      .eq('status', 'retorno_hub')
-      .is('deleted_at', null);
-
-    const pkg = (pkgRows ?? [])[0] as
-      | { id: string; order_id: string; label: string; status: string }
-      | undefined;
-
+    const pkg = await findPackageByBarcode(operatorId, barcode);
     if (!pkg) {
-      await supabase.from('return_reception_scans').insert({
-        return_reception_id: sessionId,
-        operator_id: operatorId,
-        barcode,
-        scan_result: 'not_found',
-        package_id: null,
-        scanned_at: new Date().toISOString(),
-      });
+      await recordUnmatchedScan(operatorId, sessionId, barcode, 'not_found', null);
       return { result: 'not_found', barcode };
     }
 
-    const { data: dispatches } = await supabase
-      .from('dispatches')
-      .select('order_id, route_id, created_at')
-      .eq('operator_id', operatorId)
-      .eq('order_id', pkg.order_id)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false });
-
-    const latestDispatch = (dispatches ?? [])[0] as
-      | { route_id: string } | undefined;
-
-    let pkgExternalRouteId: string | null = null;
-    if (latestDispatch) {
-      const { data: routes } = await supabase
-        .from('routes')
-        .select('id, external_route_id')
-        .eq('operator_id', operatorId)
-        .in('id', [latestDispatch.route_id]);
-
-      const route = (routes ?? [])[0] as { external_route_id: string } | undefined;
-      pkgExternalRouteId = route?.external_route_id ?? null;
-    }
+    const routes = await resolveRoutesByOrder(supabase, operatorId, [pkg.order_id]);
+    const pkgExternalRouteId = routes.get(pkg.order_id)?.externalRouteId ?? null;
 
     if (pkgExternalRouteId !== externalRouteId) {
-      // route_mismatch is recorded as 'not_found' in the DB because
-      // reception_scan_result_enum predates this flow and lacks a route_mismatch value.
-      await supabase.from('return_reception_scans').insert({
-        return_reception_id: sessionId,
-        operator_id: operatorId,
-        barcode,
-        scan_result: 'not_found',
-        package_id: pkg.id,
-        scanned_at: new Date().toISOString(),
-      });
+      await recordUnmatchedScan(operatorId, sessionId, barcode, 'route_mismatch', pkg.id);
       return { result: 'route_mismatch', barcode };
     }
 
@@ -305,7 +229,6 @@ export function useReturnReceptionSession({
       .eq('return_reception_id', sessionId)
       .eq('package_id', pkg.id)
       .eq('scan_result', 'received');
-
     if (existingScans && existingScans.length > 0) {
       return { result: 'duplicate', barcode };
     }
@@ -324,9 +247,21 @@ export function useReturnReceptionSession({
       }
     );
 
-    if (rpcErr) throw rpcErr;
-
+    if (rpcErr) {
+      // The RPC re-validates the package is still in retorno_hub under a row
+      // lock. A fast double-scan from a Bluetooth scanner can pass the client
+      // duplicate check (state hasn't propagated yet) and only collide here.
+      // Surface that race as duplicate instead of a hard throw.
+      const message = (rpcErr as { message?: string }).message ?? '';
+      if (/package_not_found_or_wrong_status/i.test(message)) {
+        return { result: 'duplicate', barcode };
+      }
+      throw rpcErr;
+    }
     const rpc = rpcResult as { order_status?: string; remaining?: number } | null;
+    if (rpc && 'error' in rpc && (rpc as { error?: string }).error === 'package_not_found_or_wrong_status') {
+      return { result: 'duplicate', barcode };
+    }
 
     queryClient.invalidateQueries({
       queryKey: ['return-reception-packages', operatorId, externalRouteId, sessionId],
