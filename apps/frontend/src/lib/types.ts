@@ -1785,7 +1785,7 @@ export type Database = {
         Args: {
           p_package_id: string
           p_return_reception_id: string
-          p_scanned_by: string
+          p_scanned_by: string | null
           p_barcode: string
           p_operator_id: string
         }

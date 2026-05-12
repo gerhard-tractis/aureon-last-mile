@@ -1,6 +1,9 @@
 -- =============================================================
 -- Spec-43: Teach the order-status trigger about return-flow states.
--- Template: latest definition from 20260313000003_epic5_functions_and_trigger.sql
+-- Template: latest definition from 20260319000001_create_distribution_tables.sql
+--           (10-position pipeline_position: sectorizado=4, retenido=5, asignado=6,
+--            en_carga=7, listo=8, en_ruta=9, entregado=10; positions 4/5 are
+--            package-only and map back to en_bodega at the order level)
 --
 -- Why this is required:
 --   recalculate_order_status (from epic5) derives orders.status from the MIN/MAX
@@ -78,18 +81,33 @@ BEGIN
     AND p.deleted_at IS NULL
     AND pipeline_position(p.status::text) > 0;
 
-  SELECT CASE v_min_pos
-    WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado'
-    WHEN 3 THEN 'en_bodega' WHEN 4 THEN 'asignado'
-    WHEN 5 THEN 'en_carga'  WHEN 6 THEN 'listo'
-    WHEN 7 THEN 'en_ruta'   WHEN 8 THEN 'entregado'
+  -- Positions 4 (sectorizado) and 5 (retenido) are package-only states;
+  -- map them back to en_bodega for order-level status (same logic as
+  -- 20260319000001_create_distribution_tables.sql).
+  SELECT CASE
+    WHEN v_min_pos <= 3 THEN
+      CASE v_min_pos
+        WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado' WHEN 3 THEN 'en_bodega'
+      END
+    WHEN v_min_pos IN (4, 5) THEN 'en_bodega'
+    ELSE
+      CASE v_min_pos
+        WHEN 6 THEN 'asignado' WHEN 7 THEN 'en_carga' WHEN 8 THEN 'listo'
+        WHEN 9 THEN 'en_ruta'  WHEN 10 THEN 'entregado'
+      END
   END::order_status_enum INTO v_min_status;
 
-  SELECT CASE v_max_pos
-    WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado'
-    WHEN 3 THEN 'en_bodega' WHEN 4 THEN 'asignado'
-    WHEN 5 THEN 'en_carga'  WHEN 6 THEN 'listo'
-    WHEN 7 THEN 'en_ruta'   WHEN 8 THEN 'entregado'
+  SELECT CASE
+    WHEN v_max_pos <= 3 THEN
+      CASE v_max_pos
+        WHEN 1 THEN 'ingresado' WHEN 2 THEN 'verificado' WHEN 3 THEN 'en_bodega'
+      END
+    WHEN v_max_pos IN (4, 5) THEN 'en_bodega'
+    ELSE
+      CASE v_max_pos
+        WHEN 6 THEN 'asignado' WHEN 7 THEN 'en_carga' WHEN 8 THEN 'listo'
+        WHEN 9 THEN 'en_ruta'  WHEN 10 THEN 'entregado'
+      END
   END::order_status_enum INTO v_max_status;
 
   UPDATE orders SET

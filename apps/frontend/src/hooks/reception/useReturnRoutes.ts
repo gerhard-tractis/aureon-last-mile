@@ -47,6 +47,7 @@ async function fetchReturnRoutes(operatorId: string): Promise<ReturnRoute[]> {
   const { data: dispatches, error: dispErr } = await supabase
     .from('dispatches')
     .select('order_id, route_id, created_at')
+    .eq('operator_id', operatorId)
     .in('order_id', orderIds)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -70,6 +71,7 @@ async function fetchReturnRoutes(operatorId: string): Promise<ReturnRoute[]> {
     const { data: routes, error: routesErr } = await supabase
       .from('routes')
       .select('id, external_route_id, driver_name')
+      .eq('operator_id', operatorId)
       .in('id', routeIds);
 
     if (routesErr) throw routesErr;

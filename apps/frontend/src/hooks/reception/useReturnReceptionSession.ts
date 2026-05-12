@@ -34,6 +34,59 @@ interface RawSession { id: string; operator_id: string; external_route_id: strin
 
 interface RawScan { id: string; package_id: string | null; scan_result: string; barcode: string; }
 
+async function countReturnPackagesForRoute(
+  operatorId: string,
+  externalRouteId: string
+): Promise<number> {
+  const supabase = createSPAClient();
+
+  const { data: pkgs } = await supabase
+    .from('packages')
+    .select('id, order_id')
+    .eq('operator_id', operatorId)
+    .eq('status', 'retorno_hub')
+    .is('deleted_at', null);
+
+  if (!pkgs || pkgs.length === 0) return 0;
+
+  const orderIds = (pkgs as { id: string; order_id: string }[]).map(p => p.order_id);
+
+  const { data: dispatches } = await supabase
+    .from('dispatches')
+    .select('order_id, route_id, created_at')
+    .eq('operator_id', operatorId)
+    .in('order_id', orderIds)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+
+  const allDispatches = (dispatches ?? []) as { order_id: string; route_id: string; created_at: string }[];
+  const latestByOrder = new Map<string, string>();
+  for (const d of allDispatches) {
+    if (!latestByOrder.has(d.order_id)) latestByOrder.set(d.order_id, d.route_id);
+  }
+
+  const routeIds = [...new Set(allDispatches.map(d => d.route_id))];
+  if (routeIds.length === 0) return 0;
+
+  const { data: routes } = await supabase
+    .from('routes')
+    .select('id, external_route_id')
+    .eq('operator_id', operatorId)
+    .in('id', routeIds);
+
+  const routeExtMap = new Map<string, string>();
+  for (const r of (routes ?? []) as { id: string; external_route_id: string }[]) {
+    routeExtMap.set(r.id, r.external_route_id);
+  }
+
+  let count = 0;
+  for (const pkg of pkgs as { id: string; order_id: string }[]) {
+    const routeId = latestByOrder.get(pkg.order_id);
+    if (routeId && routeExtMap.get(routeId) === externalRouteId) count++;
+  }
+  return count;
+}
+
 async function findOrCreateSession(
   operatorId: string,
   externalRouteId: string
@@ -53,7 +106,10 @@ async function findOrCreateSession(
     return existing[0] as RawSession;
   }
 
-  const now = new Date().toISOString();
+  const [now, expectedCount] = [
+    new Date().toISOString(),
+    await countReturnPackagesForRoute(operatorId, externalRouteId),
+  ];
   const { data: created, error } = await supabase
     .from('return_receptions')
     .insert({
@@ -61,7 +117,7 @@ async function findOrCreateSession(
       external_route_id: externalRouteId,
       status: 'in_progress',
       started_at: now,
-      expected_count: 0,
+      expected_count: expectedCount,
       received_count: 0,
     })
     .select()
@@ -80,7 +136,7 @@ async function loadPackagesForRoute(
 
   const { data: pkgs, error: pkgsErr } = await supabase
     .from('packages')
-    .select('id, order_id, label, return_reason, status_updated_at')
+    .select('id, order_id, label, return_reason, status_updated_at, orders(order_number)')
     .eq('operator_id', operatorId)
     .eq('status', 'retorno_hub')
     .is('deleted_at', null);
@@ -93,6 +149,7 @@ async function loadPackagesForRoute(
   const { data: dispatches } = await supabase
     .from('dispatches')
     .select('order_id, route_id, created_at')
+    .eq('operator_id', operatorId)
     .in('order_id', orderIds)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -111,6 +168,7 @@ async function loadPackagesForRoute(
     const { data: routes } = await supabase
       .from('routes')
       .select('id, external_route_id')
+      .eq('operator_id', operatorId)
       .in('id', routeIds);
     for (const r of (routes ?? []) as { id: string; external_route_id: string }[]) {
       externalRouteByRouteId.set(r.id, r.external_route_id);
@@ -133,6 +191,7 @@ async function loadPackagesForRoute(
   for (const pkg of pkgs as {
     id: string; order_id: string; label: string;
     return_reason: string | null;
+    orders: { order_number: string } | null;
   }[]) {
     const routeId = latestByOrder.get(pkg.order_id);
     const pkgExternalRoute = routeId ? externalRouteByRouteId.get(routeId) : undefined;
@@ -141,7 +200,7 @@ async function loadPackagesForRoute(
     result.push({
       id: pkg.id,
       label: pkg.label,
-      order_number: pkg.order_id,
+      order_number: pkg.orders?.order_number ?? pkg.order_id,
       return_reason: pkg.return_reason ?? null,
       received: receivedPackageIds.has(pkg.id),
     });
@@ -206,6 +265,7 @@ export function useReturnReceptionSession({
     const { data: dispatches } = await supabase
       .from('dispatches')
       .select('order_id, route_id, created_at')
+      .eq('operator_id', operatorId)
       .eq('order_id', pkg.order_id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
@@ -218,6 +278,7 @@ export function useReturnReceptionSession({
       const { data: routes } = await supabase
         .from('routes')
         .select('id, external_route_id')
+        .eq('operator_id', operatorId)
         .in('id', [latestDispatch.route_id]);
 
       const route = (routes ?? [])[0] as { external_route_id: string } | undefined;
@@ -225,6 +286,8 @@ export function useReturnReceptionSession({
     }
 
     if (pkgExternalRouteId !== externalRouteId) {
+      // route_mismatch is recorded as 'not_found' in the DB because
+      // reception_scan_result_enum predates this flow and lacks a route_mismatch value.
       await supabase.from('return_reception_scans').insert({
         return_reception_id: sessionId,
         operator_id: operatorId,
@@ -248,7 +311,7 @@ export function useReturnReceptionSession({
     }
 
     const { data: authData } = await supabase.auth.getUser();
-    const userId = authData?.user?.id ?? 'unknown';
+    const userId = authData?.user?.id ?? null;
 
     const { data: rpcResult, error: rpcErr } = await supabase.rpc(
       'complete_return_reception_scan',
