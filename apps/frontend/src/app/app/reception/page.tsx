@@ -15,6 +15,8 @@ import { useReceptionManifests } from '@/hooks/reception/useReceptionManifests';
 import { useCompletedReceptions } from '@/hooks/reception/useCompletedReceptions';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import type { ReceptionManifest } from '@/hooks/reception/useReceptionManifests';
+import { ReturnRouteList } from './ReturnRouteList';
+import { ReturnReceptionSession } from './ReturnReceptionSession';
 
 function isToday(dateString: string | null): boolean {
   if (!dateString) return false;
@@ -33,6 +35,7 @@ export default function ReceptionPage() {
   const { data: activeManifests = [], isLoading: isLoadingActive } = useReceptionManifests(operatorId);
   const { data: completedManifests = [], isLoading: isLoadingCompleted } = useCompletedReceptions(operatorId);
   const [showScanner, setShowScanner] = useState(false);
+  const [selectedReturnRoute, setSelectedReturnRoute] = useState<string | null>(null);
 
   const awaitingCount = activeManifests.filter(
     (m) => m.reception_status === 'awaiting_reception'
@@ -81,6 +84,7 @@ export default function ReceptionPage() {
         <TabsList>
           <TabsTrigger value="active">Activos</TabsTrigger>
           <TabsTrigger value="completed">Completados</TabsTrigger>
+          <TabsTrigger value="retornos">Retornos</TabsTrigger>
         </TabsList>
 
         {/* Active tab */}
@@ -162,6 +166,22 @@ export default function ReceptionPage() {
                 />
               );
             })
+          )}
+        </TabsContent>
+
+        {/* Retornos tab */}
+        <TabsContent value="retornos" className="mt-4">
+          {selectedReturnRoute ? (
+            <ReturnReceptionSession
+              operatorId={operatorId}
+              externalRouteId={selectedReturnRoute}
+              onBack={() => setSelectedReturnRoute(null)}
+            />
+          ) : (
+            <ReturnRouteList
+              operatorId={operatorId}
+              onSelectRoute={setSelectedReturnRoute}
+            />
           )}
         </TabsContent>
       </Tabs>

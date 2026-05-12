@@ -48,9 +48,9 @@ export function PipelineOverview({
       {isLoading ? (
         <div
           data-testid="pipeline-grid"
-          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-10 gap-2"
         >
-          {Array.from({ length: 8 }).map((_, i) => (
+          {Array.from({ length: PIPELINE_STAGES.length }).map((_, i) => (
             <div
               key={i}
               data-testid="pipeline-skeleton"
@@ -61,7 +61,7 @@ export function PipelineOverview({
       ) : (
         <div
           data-testid="pipeline-grid"
-          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2"
+          className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-10 gap-2"
         >
           {stages.map((stage) => (
             <PipelineCard

@@ -73,7 +73,7 @@ async function fetchSnapshot(operatorId: string): Promise<OpsSnapshot> {
     orders: ((result?.orders ?? []) as OrderRow[]).map(enrichOrder),
     routes: ((result?.routes ?? []) as RouteRow[]).map(enrichRoute),
     pickups: (result?.manifests ?? []) as PickupRow[],
-    returns: [] as ReturnRow[], // No returns table yet
+    returns: (result?.returns ?? []) as ReturnRow[],
     retailerSlaConfig: (result?.sla_config ?? []) as RetailerSlaConfigRow[],
     fetchedAt: new Date(),
   };

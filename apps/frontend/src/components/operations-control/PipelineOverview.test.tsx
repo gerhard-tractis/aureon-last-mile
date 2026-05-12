@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe('PipelineOverview', () => {
   describe('Loading state', () => {
-    it('renders 8 skeleton boxes when loading', () => {
+    it('renders 10 skeleton boxes when loading', () => {
       mockUsePipelineCounts.mockReturnValue({
         isLoading: true,
         isError: false,
@@ -62,7 +62,7 @@ describe('PipelineOverview', () => {
       );
 
       const skeletons = screen.getAllByTestId('pipeline-skeleton');
-      expect(skeletons).toHaveLength(8);
+      expect(skeletons).toHaveLength(10);
     });
   });
 
@@ -93,7 +93,7 @@ describe('PipelineOverview', () => {
       } as ReturnType<typeof usePipelineCounts>);
     });
 
-    it('renders 8 pipeline cards (all 8 stages)', () => {
+    it('renders 10 pipeline stage cards (8 original + 2 return statuses)', () => {
       render(
         <PipelineOverview
           operatorId="op-1"
@@ -101,7 +101,7 @@ describe('PipelineOverview', () => {
       );
 
       const cards = screen.getAllByRole('button');
-      expect(cards).toHaveLength(8);
+      expect(cards).toHaveLength(10);
     });
 
     it('fills missing stages with count=0', () => {
@@ -111,9 +111,9 @@ describe('PipelineOverview', () => {
         />,
       );
 
-      // Only 3 stages were returned; the other 5 should have count 0
+      // Only 3 stages were returned; the other 7 should have count 0
       const counts = screen.getAllByTestId('stage-count');
-      expect(counts).toHaveLength(8);
+      expect(counts).toHaveLength(10);
     });
   });
 

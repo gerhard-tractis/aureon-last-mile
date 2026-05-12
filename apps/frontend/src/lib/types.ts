@@ -694,6 +694,8 @@ export type Database = {
           status: string
           status_updated_at: string | null
           dock_zone_id: string | null
+          return_reason: string | null
+          return_reason_code: string | null
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -717,6 +719,8 @@ export type Database = {
           status?: string
           status_updated_at?: string | null
           dock_zone_id?: string | null
+          return_reason?: string | null
+          return_reason_code?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -740,6 +744,8 @@ export type Database = {
           status?: string
           status_updated_at?: string | null
           dock_zone_id?: string | null
+          return_reason?: string | null
+          return_reason_code?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -1556,6 +1562,116 @@ export type Database = {
           },
         ]
       }
+      return_receptions: {
+        Row: {
+          id: string
+          operator_id: string
+          external_route_id: string
+          received_by: string | null
+          status: Database["public"]["Enums"]["hub_reception_status_enum"]
+          started_at: string | null
+          completed_at: string | null
+          expected_count: number
+          received_count: number
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          external_route_id: string
+          received_by?: string | null
+          status?: Database["public"]["Enums"]["hub_reception_status_enum"]
+          started_at?: string | null
+          completed_at?: string | null
+          expected_count?: number
+          received_count?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          external_route_id?: string
+          received_by?: string | null
+          status?: Database["public"]["Enums"]["hub_reception_status_enum"]
+          started_at?: string | null
+          completed_at?: string | null
+          expected_count?: number
+          received_count?: number
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "return_receptions_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      return_reception_scans: {
+        Row: {
+          id: string
+          return_reception_id: string
+          package_id: string | null
+          operator_id: string
+          scanned_by: string | null
+          barcode: string
+          scan_result: Database["public"]["Enums"]["reception_scan_result_enum"]
+          scanned_at: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          return_reception_id: string
+          package_id?: string | null
+          operator_id: string
+          scanned_by?: string | null
+          barcode: string
+          scan_result: Database["public"]["Enums"]["reception_scan_result_enum"]
+          scanned_at: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          return_reception_id?: string
+          package_id?: string | null
+          operator_id?: string
+          scanned_by?: string | null
+          barcode?: string
+          scan_result?: Database["public"]["Enums"]["reception_scan_result_enum"]
+          scanned_at?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "return_reception_scans_return_reception_id_fkey"
+            columns: ["return_reception_id"]
+            isOneToOne: false
+            referencedRelation: "return_receptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "return_reception_scans_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1655,6 +1771,26 @@ export type Database = {
         }
         Returns: Json
       }
+      process_failed_delivery: {
+        Args: {
+          p_order_number: string
+          p_dt_status: number
+          p_substatus: string
+          p_substatus_code: string
+          p_operator_id: string
+        }
+        Returns: Json
+      }
+      complete_return_reception_scan: {
+        Args: {
+          p_package_id: string
+          p_return_reception_id: string
+          p_scanned_by: string | null
+          p_barcode: string
+          p_operator_id: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       routing_provider_enum:
@@ -1691,6 +1827,18 @@ export type Database = {
         | "pending"
         | "in_progress"
         | "completed"
+      order_status_enum:
+        | "ingresado"
+        | "verificado"
+        | "en_bodega"
+        | "asignado"
+        | "en_carga"
+        | "listo"
+        | "en_ruta"
+        | "entregado"
+        | "cancelado"
+        | "en_retorno"
+        | "parcialmente_entregado"
       package_status_enum:
         | "ingresado"
         | "verificado"
@@ -1701,6 +1849,7 @@ export type Database = {
         | "en_carga"
         | "listo_para_despacho"
         | "en_ruta"
+        | "retorno_hub"
         | "entregado"
         | "cancelado"
         | "devuelto"
@@ -1857,6 +2006,19 @@ export const Constants = {
         "in_progress",
         "completed",
       ],
+      order_status_enum: [
+        "ingresado",
+        "verificado",
+        "en_bodega",
+        "asignado",
+        "en_carga",
+        "listo",
+        "en_ruta",
+        "entregado",
+        "cancelado",
+        "en_retorno",
+        "parcialmente_entregado",
+      ],
       package_status_enum: [
         "ingresado",
         "verificado",
@@ -1865,6 +2027,7 @@ export const Constants = {
         "en_carga",
         "listo_para_despacho",
         "en_ruta",
+        "retorno_hub",
         "entregado",
         "cancelado",
         "devuelto",

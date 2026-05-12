@@ -1,7 +1,7 @@
 # Spec-43: Failed Delivery Return Flow
 
 **Date:** 2026-05-12  
-**Status:** backlog  
+**Status:** in progress  
 **Branch:** `feat/spec-43-failed-delivery-return-flow`
 
 ---
