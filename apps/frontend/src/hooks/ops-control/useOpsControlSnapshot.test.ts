@@ -41,9 +41,11 @@ const mockRpcData = {
   sla_config: [{ id: 'sla-1', operator_id: 'op-abc' }],
 };
 
+let mockRpcResponse = { data: mockRpcData, error: null };
+
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
-    rpc: vi.fn(() => Promise.resolve({ data: mockRpcData, error: null })),
+    rpc: vi.fn(() => Promise.resolve(mockRpcResponse)),
     channel: mockChannel,
     removeChannel: mockRemoveChannel,
   }),
@@ -67,6 +69,7 @@ describe('useOpsControlSnapshot', () => {
       delete capturedCallbacks[key];
     }
     mockChannel.mockImplementation((name: string) => makeChannelMock(name));
+    mockRpcResponse = { data: mockRpcData, error: null };
   });
 
   afterEach(() => {
@@ -100,8 +103,29 @@ describe('useOpsControlSnapshot', () => {
     expect(result.current.snapshot?.orders).toHaveLength(2);
     expect(result.current.snapshot?.routes).toHaveLength(1);
     expect(result.current.snapshot?.pickups).toHaveLength(1); // mapped from manifests
-    expect(result.current.snapshot?.returns).toHaveLength(0); // hardcoded empty
+    expect(result.current.snapshot?.returns).toHaveLength(0); // no returns in mock data — defaults to []
     expect(result.current.snapshot?.retailerSlaConfig).toHaveLength(1);
+  });
+
+  it('maps returns from RPC response when present', async () => {
+    mockRpcResponse = {
+      data: {
+        ...mockRpcData,
+        returns: [{ id: 'ret-1', order_number: 'ORD-001', status: 'en_retorno', return_reason: 'Nadie en casa', age_minutes: 45 }],
+      },
+      error: null,
+    };
+
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.snapshot?.returns).toHaveLength(1);
+    expect((result.current.snapshot?.returns[0] as { id: string }).id).toBe('ret-1');
   });
 
   it('sets lastSyncAt to null initially, then to a Date after fetch', async () => {

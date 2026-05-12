@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import ReceptionPage from './page';
 
 const mockActive = [
@@ -40,6 +41,12 @@ vi.mock('@/hooks/reception/useReceptionManifests', () => ({
 }));
 vi.mock('@/hooks/reception/useCompletedReceptions', () => ({
   useCompletedReceptions: (...args: unknown[]) => mockUseCompletedReceptions(...args),
+}));
+vi.mock('./ReturnRouteList', () => ({
+  ReturnRouteList: () => <div data-testid="return-route-list" />,
+}));
+vi.mock('./ReturnReceptionSession', () => ({
+  ReturnReceptionSession: () => <div data-testid="return-reception-session" />,
 }));
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
@@ -107,5 +114,17 @@ describe('ReceptionPage', () => {
   it('renders shadcn Button for QR scan', () => {
     render(<ReceptionPage />);
     expect(screen.getByRole('button', { name: /escanear qr/i })).toBeInTheDocument();
+  });
+
+  it('renders Retornos tab trigger', () => {
+    render(<ReceptionPage />);
+    expect(screen.getByRole('tab', { name: 'Retornos' })).toBeInTheDocument();
+  });
+
+  it('shows ReturnRouteList in Retornos tab', async () => {
+    const user = userEvent.setup();
+    render(<ReceptionPage />);
+    await user.click(screen.getByRole('tab', { name: 'Retornos' }));
+    expect(screen.getByTestId('return-route-list')).toBeInTheDocument();
   });
 });
