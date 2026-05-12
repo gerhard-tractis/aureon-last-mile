@@ -65,7 +65,7 @@ async function fetchReturnRoutes(operatorId: string): Promise<ReturnRoute[]> {
 
   // 3. Fetch route details for all referenced route IDs
   const routeIds = [...new Set(allDispatches.map(d => d.route_id))];
-  let routeMap = new Map<string, RawRoute>();
+  const routeMap = new Map<string, RawRoute>();
 
   if (routeIds.length > 0) {
     const { data: routes, error: routesErr } = await supabase

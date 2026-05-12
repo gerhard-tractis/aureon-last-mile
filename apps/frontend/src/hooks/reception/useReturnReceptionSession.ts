@@ -163,7 +163,7 @@ async function loadPackagesForRoute(
   }
 
   const routeIds = [...new Set(allDispatches.map(d => d.route_id))];
-  let externalRouteByRouteId = new Map<string, string>();
+  const externalRouteByRouteId = new Map<string, string>();
   if (routeIds.length > 0) {
     const { data: routes } = await supabase
       .from('routes')
