@@ -10,8 +10,31 @@ const STATUS_MAP: Record<number, 'pending' | 'delivered' | 'failed' | 'partial'>
 };
 
 // Musan operator_id (hardcoded — single operator account)
-const MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
-const PROVIDER = 'dispatchtrack' as const;
+export const MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
+export const PROVIDER = 'dispatchtrack' as const;
+
+/**
+ * Build the row used by handleDispatch to upsert the parent route when a
+ * dispatch event arrives carrying a route_id we don't yet have a row for.
+ *
+ * Discovery via dispatch event only proves the route exists and is live —
+ * detailed status (start/end times, total_km) lands when the route-resource
+ * webhook fires next and falls into handleRoute's update path.
+ */
+export function buildRouteUpsertRow(
+  routeId: number | string,
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    operator_id: MUSAN_OPERATOR_ID,
+    provider: PROVIDER,
+    external_route_id: String(routeId),
+    status: 'in_progress',
+    route_date: new Date().toISOString().split('T')[0],
+    driver_name: (body.truck_driver as string) ?? null,
+    raw_data: { discovered_via: 'dispatch_webhook' },
+  };
+}
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -105,6 +128,31 @@ async function handleDispatch(
     orderId = order?.id ?? null;
   }
 
+  // Discover the parent route from the dispatch payload. DispatchTrack can
+  // create routes directly in its UI (truck grouping), and those never reach
+  // handleRoute's "managed by this system" branch — leaving dispatches
+  // orphaned with route_id=null and routes empty. Upsert here so the route
+  // exists for every consumer (poller, Hojas listing, agents) by the time
+  // the dispatch row lands. Idempotent on (operator_id,provider,external_route_id).
+  let parentRouteId: string | null = null;
+  if (routeId != null) {
+    const { data: routeRow, error: routeErr } = await supabase
+      .from('routes')
+      .upsert(buildRouteUpsertRow(routeId, body), {
+        onConflict: 'operator_id,provider,external_route_id',
+        ignoreDuplicates: false,
+      })
+      .select('id')
+      .single();
+    if (routeErr) {
+      // Non-fatal: surface the failure but keep going so the dispatch still
+      // lands. Next event for the same route will retry the route upsert.
+      console.warn(`beetrack-webhook: route upsert failed for ${routeId}`, routeErr);
+    } else {
+      parentRouteId = routeRow?.id ?? null;
+    }
+  }
+
   // Use substatus as failure_reason for failed dispatches
   const substatus = body.substatus as string | undefined;
   const substatusCode = body.substatus_code as string | undefined;
@@ -115,6 +163,7 @@ async function handleDispatch(
     provider: PROVIDER,
     external_dispatch_id: String(dispatchId),
     external_route_id: routeId != null ? String(routeId) : null,
+    route_id: parentRouteId,
     order_id: orderId,
     status,
     substatus: substatus ?? null,
