@@ -131,25 +131,44 @@ async function handleDispatch(
   // Discover the parent route from the dispatch payload. DispatchTrack can
   // create routes directly in its UI (truck grouping), and those never reach
   // handleRoute's "managed by this system" branch — leaving dispatches
-  // orphaned with route_id=null and routes empty. Upsert here so the route
-  // exists for every consumer (poller, Hojas listing, agents) by the time
-  // the dispatch row lands. Idempotent on (operator_id,provider,external_route_id).
+  // orphaned with route_id=null and routes empty.
+  //
+  // INSERT-IF-MISSING semantics, not update. handleRoute owns the source of
+  // truth for status / start_time / end_time / total_km / raw_data once the
+  // route-resource webhook fires. If we used onConflict-UPDATE here, every
+  // subsequent dispatch event would stomp `status` back to 'in_progress' and
+  // overwrite raw_data with our discovery marker — masking real completions
+  // (reproduced 2026-05-30/06-01 for DT routes 43883464 + 43887492, both had
+  // end_time set by handleRoute but status reset to in_progress by repeat
+  // dispatch discovery; manually healed via PATCH). `ignoreDuplicates: true`
+  // makes the upsert a no-op when the row exists; we then SELECT the id
+  // (whether just-inserted or pre-existing) in one follow-up read.
   let parentRouteId: string | null = null;
   if (routeId != null) {
-    const { data: routeRow, error: routeErr } = await supabase
+    const externalRouteId = String(routeId);
+    const { error: insertErr } = await supabase
       .from('routes')
       .upsert(buildRouteUpsertRow(routeId, body), {
         onConflict: 'operator_id,provider,external_route_id',
-        ignoreDuplicates: false,
-      })
-      .select('id')
-      .single();
-    if (routeErr) {
+        ignoreDuplicates: true,
+      });
+    if (insertErr) {
       // Non-fatal: surface the failure but keep going so the dispatch still
-      // lands. Next event for the same route will retry the route upsert.
-      console.warn(`beetrack-webhook: route upsert failed for ${routeId}`, routeErr);
+      // lands. Next event for the same route will retry discovery.
+      console.warn(`beetrack-webhook: route insert failed for ${routeId}`, insertErr);
     } else {
-      parentRouteId = routeRow?.id ?? null;
+      const { data: routeRow, error: selectErr } = await supabase
+        .from('routes')
+        .select('id')
+        .eq('operator_id', MUSAN_OPERATOR_ID)
+        .eq('provider', PROVIDER)
+        .eq('external_route_id', externalRouteId)
+        .maybeSingle();
+      if (selectErr) {
+        console.warn(`beetrack-webhook: route lookup failed for ${routeId}`, selectErr);
+      } else {
+        parentRouteId = routeRow?.id ?? null;
+      }
     }
   }
 
