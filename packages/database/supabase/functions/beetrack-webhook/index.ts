@@ -36,6 +36,35 @@ export function buildRouteUpsertRow(
   };
 }
 
+/**
+ * Build the raw_data column we'll persist for a dispatch upsert by merging
+ * the existing row's raw_data with the incoming webhook body.
+ *
+ * DispatchTrack sends the full payload (with items[]) on the dispatch CREATE
+ * event and only the changed fields on UPDATE events. Replacing raw_data on
+ * every event drops items[] the moment any update arrives — leaving every
+ * downstream consumer (Hojas de Rutas, agents, etc.) unable to show what's
+ * in the package. Shallow-merge incoming on top of existing, and explicitly
+ * preserve items[] when the incoming payload omits them or sends an empty
+ * array (DT update events use both shapes).
+ */
+export function mergeDispatchRawData(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!existing) return incoming;
+  const merged: Record<string, unknown> = { ...existing, ...incoming };
+  const incomingItems = incoming.items;
+  const existingItems = existing.items;
+  if (
+    (!Array.isArray(incomingItems) || incomingItems.length === 0) &&
+    Array.isArray(existingItems) && existingItems.length > 0
+  ) {
+    merged.items = existingItems;
+  }
+  return merged;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -172,6 +201,22 @@ async function handleDispatch(
     }
   }
 
+  // Pre-fetch existing raw_data so we can preserve items[] across update
+  // events. Same lookup shape we already use for the route id select; one
+  // extra round-trip per dispatch event in exchange for never losing the
+  // SKU breakdown to a DT update payload.
+  const { data: existingDispatch } = await supabase
+    .from('dispatches')
+    .select('raw_data')
+    .eq('operator_id', MUSAN_OPERATOR_ID)
+    .eq('provider', PROVIDER)
+    .eq('external_dispatch_id', String(dispatchId))
+    .maybeSingle();
+  const mergedRawData = mergeDispatchRawData(
+    existingDispatch?.raw_data as Record<string, unknown> | null | undefined,
+    body,
+  );
+
   // Use substatus as failure_reason for failed dispatches
   const substatus = body.substatus as string | undefined;
   const substatusCode = body.substatus_code as string | undefined;
@@ -195,7 +240,7 @@ async function handleDispatch(
     is_pickup: (body.is_pickup as boolean) ?? false,
     latitude: (body.management_latitude as number) ?? null,
     longitude: (body.management_longitude as number) ?? null,
-    raw_data: body,
+    raw_data: mergedRawData,
   };
 
   const { error } = await supabase
