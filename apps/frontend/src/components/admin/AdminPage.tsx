@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserManagement } from './UserManagement';
@@ -41,6 +42,15 @@ export const AdminPage = ({ userRole }: AdminPageProps) => {
             <TabsTrigger value="users">Usuarios</TabsTrigger>
             <TabsTrigger value="clients">Clientes</TabsTrigger>
             <TabsTrigger value="pickup-points">Puntos de Retiro</TabsTrigger>
+            {userRole === 'super_admin' && (
+              <Link
+                href="/admin/modules"
+                data-testid="modules-tab-link"
+                className="inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-sm font-medium transition-all hover:bg-background/50"
+              >
+                Módulos
+              </Link>
+            )}
           </TabsList>
 
           <TabsContent value="users" className="mt-6">

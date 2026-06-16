@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasPermission, Permission, RolePermissions, UserRole } from './auth.types';
+import { hasPermission, Permission, RolePermissions, UserRole, isValidUserRole } from './auth.types';
 
 describe('hasPermission', () => {
   it('returns true when permission is present', () => {
@@ -44,5 +44,22 @@ describe('canPerformDispatch', () => {
 
   it('returns false for warehouse_staff', () => {
     expect(RolePermissions.canPerformDispatch(UserRole.WAREHOUSE_STAFF)).toBe(false);
+  });
+});
+
+describe('super_admin role (spec-45)', () => {
+  it('is a valid UserRole', () => {
+    expect(isValidUserRole('super_admin')).toBe(true);
+    expect(UserRole.SUPER_ADMIN).toBe('super_admin');
+  });
+
+  it('isSuperAdmin returns true only for SUPER_ADMIN', () => {
+    expect(RolePermissions.isSuperAdmin(UserRole.SUPER_ADMIN)).toBe(true);
+    expect(RolePermissions.isSuperAdmin(UserRole.ADMIN)).toBe(false);
+    expect(RolePermissions.isSuperAdmin(UserRole.OPERATIONS_MANAGER)).toBe(false);
+  });
+
+  it('has a human-readable display name', () => {
+    expect(RolePermissions.getRoleDisplayName(UserRole.SUPER_ADMIN)).toBe('Super Admin');
   });
 });
