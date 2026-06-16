@@ -27,6 +27,9 @@ export enum UserRole {
 
   /** System administrator - full access, configure settings (Epic 1) */
   ADMIN = 'admin',
+
+  /** Aureon internal — cross-tenant role for module activation, support tooling. spec-45 */
+  SUPER_ADMIN = 'super_admin',
 }
 
 /**
@@ -134,7 +137,14 @@ export const RolePermissions = {
    * Check if role can access admin settings
    */
   canAccessAdminSettings(role: UserRole): boolean {
-    return role === UserRole.ADMIN;
+    return role === UserRole.ADMIN || role === UserRole.SUPER_ADMIN;
+  },
+
+  /**
+   * Check if role is super_admin (Aureon internal cross-tenant role)
+   */
+  isSuperAdmin(role: UserRole): boolean {
+    return role === UserRole.SUPER_ADMIN;
   },
 
   /**
@@ -191,6 +201,7 @@ export const RolePermissions = {
       [UserRole.LOADING_CREW]: 'Loading Crew',
       [UserRole.OPERATIONS_MANAGER]: 'Operations Manager',
       [UserRole.ADMIN]: 'Administrator',
+      [UserRole.SUPER_ADMIN]: 'Super Admin',
     };
     return roleNames[role];
   },

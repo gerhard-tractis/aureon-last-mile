@@ -13,7 +13,11 @@ export default async function AdminRoute() {
 
   const userRole = session.user.app_metadata?.claims?.role;
 
-  if (userRole !== 'admin' && userRole !== 'operations_manager') {
+  if (
+    userRole !== 'admin' &&
+    userRole !== 'operations_manager' &&
+    userRole !== 'super_admin'
+  ) {
     redirect('/?error=unauthorized');
   }
 

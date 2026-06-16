@@ -33,4 +33,14 @@ describe('AdminPage', () => {
     render(<AdminPage userRole="admin" />);
     expect(screen.getByTestId('user-mgmt')).toBeDefined();
   });
+
+  it('hides Módulos tab for non-super_admin (spec-45)', () => {
+    render(<AdminPage userRole="admin" />);
+    expect(screen.queryByTestId('modules-tab-link')).toBeNull();
+  });
+
+  it('shows Módulos tab for super_admin (spec-45)', () => {
+    render(<AdminPage userRole="super_admin" />);
+    expect(screen.getByTestId('modules-tab-link')).toBeDefined();
+  });
 });
