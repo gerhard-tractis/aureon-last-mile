@@ -37,7 +37,18 @@ BEGIN
       'system@aureon-internal.local',
       crypt(gen_random_uuid()::text, gen_salt('bf')),
       NOW(),
-      jsonb_build_object('claims', jsonb_build_object('role', 'super_admin')),
+      -- handle_new_user trigger (created by 20260216170542) reads operator_id
+      -- and role from the TOP LEVEL of raw_app_meta_data and aborts if
+      -- operator_id is missing. Keep `claims` populated too so the JWT hook
+      -- contract used by spec-45 RPCs still sees the same shape.
+      jsonb_build_object(
+        'operator_id', '00000000-0000-0000-0000-0000000000a1',
+        'role', 'super_admin',
+        'claims', jsonb_build_object(
+          'operator_id', '00000000-0000-0000-0000-0000000000a1',
+          'role', 'super_admin'
+        )
+      ),
       jsonb_build_object('full_name', 'System (spec-45)'),
       NOW(), NOW(), '', ''
     );
