@@ -4,13 +4,16 @@ import { GlobalProvider } from '@/lib/context/GlobalContext';
 import Providers from '@/components/Providers';
 import { BrandingProvider } from '@/providers/BrandingProvider';
 import { Toaster } from 'sonner';
+import { getEnabledModulesForCurrentUser } from '@/lib/modules/enabled';
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default async function Layout({ children }: { children: React.ReactNode }) {
+    const enabled = await getEnabledModulesForCurrentUser();
+    const enabledModules = Array.from(enabled);
     return (
         <GlobalProvider>
             <Providers>
                 <BrandingProvider>
-                    <AppLayout>{children}</AppLayout>
+                    <AppLayout enabledModules={enabledModules}>{children}</AppLayout>
                 </BrandingProvider>
                 <Toaster />
             </Providers>

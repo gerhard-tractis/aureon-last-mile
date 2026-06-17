@@ -66,6 +66,16 @@ vi.mock('next/navigation', () => ({
 }));
 
 import AppLayout from './AppLayout';
+import { ModuleKey } from '@/lib/modules/registry';
+
+const ALL_MODULES: ModuleKey[] = [
+  ModuleKey.OPS_CONTROL,
+  ModuleKey.PICKUP,
+  ModuleKey.RECEPTION,
+  ModuleKey.DISTRIBUTION,
+  ModuleKey.DISPATCH,
+  ModuleKey.CONVERSATIONS,
+];
 
 beforeEach(() => {
   mockRole = 'admin';
@@ -115,25 +125,31 @@ describe('AppLayout sidebar branding', () => {
 describe('AppLayout - Ops Control nav item', () => {
   it('shows Ops Control link for admin role', () => {
     mockRole = 'admin';
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
     expect(screen.getByText('Ops Control')).toBeTruthy();
   });
 
   it('shows Ops Control link for operations_manager role', () => {
     mockRole = 'operations_manager';
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
     expect(screen.getByText('Ops Control')).toBeTruthy();
   });
 
   it('hides Ops Control link for driver role', () => {
     mockRole = 'driver';
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
     expect(screen.queryByText('Ops Control')).toBeNull();
   });
 
   it('hides Ops Control link for viewer role', () => {
     mockRole = 'viewer';
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
+    expect(screen.queryByText('Ops Control')).toBeNull();
+  });
+
+  it('hides Ops Control link for admin when ops_control module is disabled', () => {
+    mockRole = 'admin';
+    render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
     expect(screen.queryByText('Ops Control')).toBeNull();
   });
 });
@@ -221,7 +237,7 @@ describe('AppLayout CapacityAlertBell', () => {
 describe('AppLayout Recepción nav permission gating', () => {
   it('shows Recepción nav item when user has reception permission', () => {
     mockPermissions = ['reception'];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.getByText('Recepción')).toBeTruthy();
     const link = screen.getByText('Recepción').closest('a');
     expect(link).toBeTruthy();
@@ -230,13 +246,13 @@ describe('AppLayout Recepción nav permission gating', () => {
 
   it('hides Recepción nav item when user lacks reception permission', () => {
     mockPermissions = [];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.queryByText('Recepción')).toBeNull();
   });
 
   it('shows both Pickup and Recepción when user has both permissions', () => {
     mockPermissions = ['pickup', 'reception'];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.getByText('Pickup')).toBeTruthy();
     expect(screen.getByText('Recepción')).toBeTruthy();
   });
@@ -245,7 +261,7 @@ describe('AppLayout Recepción nav permission gating', () => {
 describe('AppLayout Distribución nav permission gating', () => {
   it('shows Distribución link for users with distribution permission', () => {
     mockPermissions = ['distribution'];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.getByText('Distribución')).toBeTruthy();
     const link = screen.getByText('Distribución').closest('a');
     expect(link).toBeTruthy();
@@ -254,15 +270,59 @@ describe('AppLayout Distribución nav permission gating', () => {
 
   it('hides Distribución link for users without distribution permission', () => {
     mockPermissions = ['pickup'];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.queryByText('Distribución')).toBeNull();
   });
 
   it('shows Distribución alongside Recepción when user has both permissions', () => {
     mockPermissions = ['reception', 'distribution'];
-    render(<AppLayout><div>content</div></AppLayout>);
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     expect(screen.getByText('Recepción')).toBeTruthy();
     expect(screen.getByText('Distribución')).toBeTruthy();
+  });
+});
+
+describe('AppLayout module activation gating (spec-46)', () => {
+  it('hides all module nav items when enabledModules is empty (only platform items remain)', () => {
+    mockRole = 'admin';
+    mockPermissions = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'];
+    render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
+    expect(screen.queryByText('Ops Control')).toBeNull();
+    expect(screen.queryByText('Pickup')).toBeNull();
+    expect(screen.queryByText('Recepción')).toBeNull();
+    expect(screen.queryByText('Distribución')).toBeNull();
+    expect(screen.queryByText('Despacho')).toBeNull();
+    expect(screen.queryByText('Conversaciones')).toBeNull();
+    // Platform items remain
+    expect(screen.getByText('Dashboard')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
+  });
+
+  it('shows only enabled modules that user also has RBAC for (Pickup + Despacho)', () => {
+    mockRole = 'driver';
+    mockPermissions = ['pickup', 'dispatch'];
+    render(<AppLayout enabledModules={[ModuleKey.PICKUP, ModuleKey.DISPATCH]}><div>content</div></AppLayout>);
+    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.getByText('Despacho')).toBeTruthy();
+    expect(screen.queryByText('Recepción')).toBeNull();
+    expect(screen.queryByText('Distribución')).toBeNull();
+  });
+
+  it('hides a module the operator has enabled but the user lacks RBAC for', () => {
+    mockRole = 'driver';
+    mockPermissions = ['pickup'];
+    render(<AppLayout enabledModules={[ModuleKey.PICKUP, ModuleKey.RECEPTION]}><div>content</div></AppLayout>);
+    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.queryByText('Recepción')).toBeNull();
+  });
+
+  it('hides a module the user has RBAC for but the operator has not enabled', () => {
+    mockRole = 'driver';
+    mockPermissions = ['pickup', 'reception'];
+    render(<AppLayout enabledModules={[ModuleKey.PICKUP]}><div>content</div></AppLayout>);
+    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.queryByText('Recepción')).toBeNull();
   });
 });
 

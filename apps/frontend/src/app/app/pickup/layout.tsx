@@ -1,23 +1,8 @@
-'use client';
+import { requireModuleEnabled } from '@/lib/modules/require-enabled';
+import { ModuleKey } from '@/lib/modules/registry';
+import PickupClientGate from './_client-gate';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useOperatorId } from '@/hooks/useOperatorId';
-import { hasPermission } from '@/lib/types/auth.types';
-
-export default function PickupLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const { permissions } = useOperatorId();
-
-  useEffect(() => {
-    if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-      router.push('/app');
-    }
-  }, [permissions, router]);
-
-  if (permissions.length > 0 && !hasPermission(permissions, 'pickup')) {
-    return null;
-  }
-
-  return <>{children}</>;
+export default async function PickupLayout({ children }: { children: React.ReactNode }) {
+  await requireModuleEnabled(ModuleKey.PICKUP);
+  return <PickupClientGate>{children}</PickupClientGate>;
 }
