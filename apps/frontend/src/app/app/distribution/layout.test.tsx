@@ -1,46 +1,33 @@
-// apps/frontend/src/app/app/distribution/layout.test.tsx
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import DistributionLayout from './layout';
+import { describe, it, expect, vi } from 'vitest';
+import React from 'react';
 
-const mockPush = vi.fn();
+const requireModuleEnabledMock = vi.fn();
+vi.mock('@/lib/modules/require-enabled', () => ({
+  requireModuleEnabled: requireModuleEnabledMock,
+}));
+
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush }),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
-const mockUseOperatorId = vi.fn();
-vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => mockUseOperatorId(),
-}));
-
-describe('DistributionLayout', () => {
-  beforeEach(() => {
-    mockPush.mockClear();
+describe('DistributionLayout (spec-46 activation guard)', () => {
+  it('returns children subtree when distribution module enabled', async () => {
+    requireModuleEnabledMock.mockResolvedValueOnce(undefined);
+    const { default: DistributionLayout } = await import('./layout');
+    const element = (await DistributionLayout({
+      children: React.createElement('div', null, 'Distribution Children'),
+    } as { children: React.ReactNode })) as React.ReactElement;
+    expect(element).toBeTruthy();
+    expect(requireModuleEnabledMock).toHaveBeenCalledWith('distribution');
   });
 
-  it('renders children when user has distribution permission', () => {
-    mockUseOperatorId.mockReturnValue({ permissions: ['distribution'] });
-    render(<DistributionLayout><div>Distribution Content</div></DistributionLayout>);
-    expect(screen.getByText('Distribution Content')).toBeInTheDocument();
-  });
-
-  it('redirects to /app when user lacks distribution permission', () => {
-    mockUseOperatorId.mockReturnValue({ permissions: ['pickup'] });
-    render(<DistributionLayout><div>Distribution Content</div></DistributionLayout>);
-    expect(mockPush).toHaveBeenCalledWith('/app');
-    expect(screen.queryByText('Distribution Content')).not.toBeInTheDocument();
-  });
-
-  it('renders children while permissions loading (empty array)', () => {
-    mockUseOperatorId.mockReturnValue({ permissions: [] });
-    render(<DistributionLayout><div>Distribution Content</div></DistributionLayout>);
-    expect(screen.getByText('Distribution Content')).toBeInTheDocument();
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-
-  it('allows admin users with distribution permission', () => {
-    mockUseOperatorId.mockReturnValue({ permissions: ['admin', 'distribution'] });
-    render(<DistributionLayout><div>Admin Distribution</div></DistributionLayout>);
-    expect(screen.getByText('Admin Distribution')).toBeInTheDocument();
+  it('propagates notFound when distribution module disabled', async () => {
+    requireModuleEnabledMock.mockImplementationOnce(() => {
+      throw new Error('NEXT_NOT_FOUND');
+    });
+    const { default: DistributionLayout } = await import('./layout');
+    await expect(
+      DistributionLayout({ children: React.createElement('div') } as { children: React.ReactNode }),
+    ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 });

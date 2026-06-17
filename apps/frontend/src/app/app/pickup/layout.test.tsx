@@ -10,24 +10,24 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
-describe('ReceptionLayout (spec-46 activation guard)', () => {
-  it('returns children subtree when reception module enabled', async () => {
+describe('PickupLayout (spec-46 activation guard)', () => {
+  it('returns rendered children subtree when pickup module enabled', async () => {
     requireModuleEnabledMock.mockResolvedValueOnce(undefined);
-    const { default: ReceptionLayout } = await import('./layout');
-    const element = (await ReceptionLayout({
-      children: React.createElement('div', null, 'Reception Children'),
+    const { default: PickupLayout } = await import('./layout');
+    const element = (await PickupLayout({
+      children: React.createElement('div', null, 'Pickup Children'),
     } as { children: React.ReactNode })) as React.ReactElement;
     expect(element).toBeTruthy();
-    expect(requireModuleEnabledMock).toHaveBeenCalledWith('reception');
+    expect(requireModuleEnabledMock).toHaveBeenCalledWith('pickup');
   });
 
-  it('propagates notFound when reception module disabled', async () => {
+  it('propagates notFound when pickup module disabled', async () => {
     requireModuleEnabledMock.mockImplementationOnce(() => {
       throw new Error('NEXT_NOT_FOUND');
     });
-    const { default: ReceptionLayout } = await import('./layout');
+    const { default: PickupLayout } = await import('./layout');
     await expect(
-      ReceptionLayout({ children: React.createElement('div') } as { children: React.ReactNode }),
+      PickupLayout({ children: React.createElement('div') } as { children: React.ReactNode }),
     ).rejects.toThrow('NEXT_NOT_FOUND');
   });
 });
