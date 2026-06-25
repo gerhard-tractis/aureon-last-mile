@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
+import { ModuleKey } from '@/lib/modules/registry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useSidebarPin } from './sidebar/useSidebarPin';
@@ -59,7 +60,13 @@ function SidebarBrand({
   );
 }
 
-export default function AppLayout({ children }: { children: React.ReactNode }) {
+export default function AppLayout({
+  children,
+  enabledModules = [],
+}: {
+  children: React.ReactNode;
+  enabledModules?: ReadonlyArray<ModuleKey>;
+}) {
   const { role, permissions, operatorId } = useGlobal();
   const { logoUrl, companyName } = useBranding();
   const { pinned, togglePin } = useSidebarPin();
@@ -82,18 +89,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isAdminOrManager]);
 
-  const navItems = [
+  const navItems: Array<{
+    href: string;
+    label: string;
+    icon: typeof LayoutDashboard;
+    show: boolean;
+    module?: ModuleKey;
+  }> = [
     { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
-    { href: '/app/operations-control', label: 'Ops Control',  icon: Radio,           show: isAdminOrManager },
-    { href: '/app/pickup',             label: 'Pickup',       icon: CheckSquare,     show: permissions.includes('pickup') },
-    { href: '/app/reception',          label: 'Recepción',    icon: ArrowUpDown,     show: permissions.includes('reception') },
-    { href: '/app/distribution',       label: 'Distribución', icon: Layers,          show: permissions.includes('distribution') },
-    { href: '/app/dispatch',           label: 'Despacho',     icon: Truck,           show: permissions.includes('dispatch') || permissions.includes('admin') },
+    { href: '/app/operations-control', label: 'Ops Control',  icon: Radio,           show: isAdminOrManager, module: ModuleKey.OPS_CONTROL },
+    { href: '/app/pickup',             label: 'Pickup',       icon: CheckSquare,     show: permissions.includes('pickup'), module: ModuleKey.PICKUP },
+    { href: '/app/reception',          label: 'Recepción',    icon: ArrowUpDown,     show: permissions.includes('reception'), module: ModuleKey.RECEPTION },
+    { href: '/app/distribution',       label: 'Distribución', icon: Layers,          show: permissions.includes('distribution'), module: ModuleKey.DISTRIBUTION },
+    { href: '/app/dispatch',           label: 'Despacho',     icon: Truck,           show: permissions.includes('dispatch') || permissions.includes('admin'), module: ModuleKey.DISPATCH },
     { href: '/app/capacity-planning',  label: 'Capacidad',    icon: Calendar,        show: isAdminOrManager },
     { href: '/app/audit-logs',         label: 'Auditoría',    icon: FileText,        show: isAdminOrManager },
-    { href: '/app/conversations',       label: 'Conversaciones', icon: MessageSquare, show: isAdminOrManager || permissions.includes('customer_service') },
+    { href: '/app/conversations',       label: 'Conversaciones', icon: MessageSquare, show: isAdminOrManager || permissions.includes('customer_service'), module: ModuleKey.CONVERSATIONS },
     { href: '/admin',                   label: 'Admin',          icon: ShieldCheck,   show: role === 'admin' },
-  ].filter((item) => item.show);
+  ];
+  const visibleNavItems = navItems.filter(
+    (item) => item.show && (item.module === undefined || enabledModules.includes(item.module)),
+  );
 
   function SidebarInner({ mobilePinned = false }: { mobilePinned?: boolean }) {
     const ep = mobilePinned || pinned;
@@ -108,7 +124,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           />
         </div>
         <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <SidebarNavItem key={item.href} href={item.href} label={item.label} icon={item.icon} pinned={ep} />
           ))}
         </nav>
