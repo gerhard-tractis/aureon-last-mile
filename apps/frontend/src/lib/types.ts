@@ -61,86 +61,6 @@ export type Database = {
           },
         ]
       }
-      hub_receptions: {
-        Row: {
-          id: string
-          manifest_id: string
-          operator_id: string
-          received_by: string | null
-          delivered_by: string | null
-          status: string
-          started_at: string | null
-          completed_at: string | null
-          expected_count: number
-          received_count: number
-          discrepancy_notes: string | null
-          created_at: string
-          updated_at: string
-          deleted_at: string | null
-        }
-        Insert: {
-          id?: string
-          manifest_id: string
-          operator_id: string
-          received_by?: string | null
-          delivered_by?: string | null
-          status?: string
-          started_at?: string | null
-          completed_at?: string | null
-          expected_count?: number
-          received_count?: number
-          discrepancy_notes?: string | null
-          created_at?: string
-          updated_at?: string
-          deleted_at?: string | null
-        }
-        Update: {
-          id?: string
-          manifest_id?: string
-          operator_id?: string
-          received_by?: string | null
-          delivered_by?: string | null
-          status?: string
-          started_at?: string | null
-          completed_at?: string | null
-          expected_count?: number
-          received_count?: number
-          discrepancy_notes?: string | null
-          created_at?: string
-          updated_at?: string
-          deleted_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "hub_receptions_manifest_id_fkey"
-            columns: ["manifest_id"]
-            isOneToOne: false
-            referencedRelation: "manifests"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "hub_receptions_operator_id_fkey"
-            columns: ["operator_id"]
-            isOneToOne: false
-            referencedRelation: "operators"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "hub_receptions_received_by_fkey"
-            columns: ["received_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "hub_receptions_delivered_by_fkey"
-            columns: ["delivered_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       audit_trigger_failures: {
         Row: {
           error_detail: string | null
@@ -1022,7 +942,7 @@ export type Database = {
             foreignKeyName: "reception_scans_reception_id_fkey"
             columns: ["reception_id"]
             isOneToOne: false
-            referencedRelation: "hub_receptions"
+            referencedRelation: "route_receptions"
             referencedColumns: ["id"]
           },
           {
