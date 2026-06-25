@@ -173,13 +173,11 @@ export default function DiscrepancyReviewPage() {
             Volver
           </Button>
           <Button
-            onClick={() =>
-              router.push(`/app/pickup/handoff/${encodeURIComponent(loadId)}`)
-            }
+            onClick={() => router.push('/app/pickup/route/active')}
             disabled={!allNotesComplete}
             className="flex-1 disabled:opacity-50"
           >
-            Continuar a entrega
+            Continuar a ruta
           </Button>
         </div>
       </div>

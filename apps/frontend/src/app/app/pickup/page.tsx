@@ -15,10 +15,16 @@ import { EmptyState } from '@/components/EmptyState';
 import { ManifestCard } from '@/components/pickup/ManifestCard';
 import { ClientFilter } from '@/components/pickup/ClientFilter';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
+import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
+import { StartRouteButton } from '@/components/pickup/StartRouteButton';
 import { usePendingManifests, useCompletedManifests, useInTransitManifests } from '@/hooks/pickup/useManifests';
+import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
+import { useStartPickupRoute } from '@/hooks/pickup/useStartPickupRoute';
+import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n/useTranslation';
+import { toast } from 'sonner';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function isToday(dateStr: string | null | undefined): boolean {
@@ -142,12 +148,28 @@ function PickupPageContent() {
     router.push(`/app/pickup/scan/${encodeURIComponent(externalLoadId)}`);
   };
 
-  // En tránsito tab: the manifest row already exists (it was created during
-  // the original scan flow and now has reception_status set), so skip the
-  // upsert and route straight to the handoff page. The handoff page detects
-  // reception_status on load and short-circuits to the QR view.
-  const handleInTransitClick = (externalLoadId: string) => {
-    router.push(`/app/pickup/handoff/${encodeURIComponent(externalLoadId)}`);
+  // En tránsito tab: manifests here are now part of a closed pickup_route;
+  // tapping a card jumps the driver into the active-route view so they can
+  // re-show the QR. (Per spec-47 the QR is route-level, not manifest-level.)
+  const handleInTransitClick = (_externalLoadId: string) => {
+    router.push('/app/pickup/route/active');
+  };
+
+  // Active pickup route surfaced at the top of the landing.
+  const { data: activeRoute } = useActivePickupRoute(operatorId);
+  const { data: activeManifests = [] } = useRouteManifests(
+    activeRoute?.id ?? null,
+    operatorId,
+  );
+  const startMut = useStartPickupRoute(operatorId);
+  const handleStartRoute = (vehicleLabel: string | null) => {
+    startMut.mutate(
+      { vehicleLabel },
+      {
+        onSuccess: () => router.push('/app/pickup/route/active'),
+        onError: (err) => toast.error(err.message),
+      },
+    );
   };
 
   return (
@@ -160,6 +182,20 @@ function PickupPageContent() {
           {t('pickup.nuevo_manifiesto')}
         </Button>
       </div>
+
+      {/* Active route banner / start button */}
+      {activeRoute ? (
+        <ActiveRouteBanner
+          code={activeRoute.code}
+          startedAt={activeRoute.started_at}
+          manifestCount={activeManifests.length}
+        />
+      ) : (
+        <StartRouteButton
+          isSubmitting={startMut.isPending}
+          onStart={handleStartRoute}
+        />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
