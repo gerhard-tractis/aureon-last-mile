@@ -39,6 +39,20 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
+  useActivePickupRoute: () => ({ data: null, isLoading: false }),
+}));
+vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
+  useStartPickupRoute: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock('@/hooks/pickup/useRouteManifests', () => ({
+  useRouteManifests: () => ({ data: [], isLoading: false }),
+  useUnassignedManifests: () => ({ data: [], isLoading: false }),
+}));
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 vi.mock('@/lib/i18n/useTranslation', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -129,14 +143,14 @@ describe('PickupPage', () => {
       expect(screen.getByText(/pickup confirmado/i)).toBeInTheDocument();
     });
 
-    it('routes to /app/pickup/handoff/[loadId] when an in-transit card is clicked', async () => {
+    it('routes to /app/pickup/route/active when an in-transit card is clicked', async () => {
       const user = userEvent.setup();
       render(<PickupPage />);
       await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
       const card = screen.getByText('Falabella').closest('[role="button"]') as HTMLElement;
       expect(card).toBeTruthy();
       await user.click(card);
-      expect(mockPush).toHaveBeenCalledWith('/app/pickup/handoff/CARGA-INT-1');
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
     });
   });
 

@@ -14,6 +14,7 @@ import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
 import { ManifestDetailList } from '@/components/pickup/ManifestDetailList';
 import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
+import { toast } from 'sonner';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -23,6 +24,7 @@ export default function ScanningPage() {
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [totalPackages, setTotalPackages] = useState(0);
+  const [pickupRouteId, setPickupRouteId] = useState<string | null>(null);
   const [showNotFoundPopup, setShowNotFoundPopup] = useState(false);
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState('00:00');
@@ -33,7 +35,7 @@ export default function ScanningPage() {
     const supabase = createSPAClient();
     supabase
       .from('manifests')
-      .select('id, total_packages')
+      .select('id, total_packages, pickup_route_id')
       .eq('operator_id', operatorId)
       .eq('external_load_id', loadId)
       .is('deleted_at', null)
@@ -42,6 +44,9 @@ export default function ScanningPage() {
         if (data) {
           setManifestId(data.id);
           setTotalPackages(data.total_packages ?? 0);
+          setPickupRouteId(
+            (data as { pickup_route_id: string | null }).pickup_route_id ?? null
+          );
         }
       });
     supabase.auth.getUser().then(({ data }) => {
@@ -88,6 +93,15 @@ export default function ScanningPage() {
   const handleScan = useCallback(
     (barcode: string) => {
       if (!manifestId || !operatorId || !userId) return;
+      // spec-47 guard: a manifest must be linked to an in_progress pickup route
+      // before any scan is allowed. If not, the driver is sent back to the
+      // pickup landing where they can start (or join) a route.
+      if (!pickupRouteId) {
+        toast.error('Inicia una ruta de retiro primero', {
+          action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
+        });
+        return;
+      }
       scanMutation.mutate(
         { barcode, manifestId, operatorId, externalLoadId: loadId, userId },
         {
@@ -99,17 +113,23 @@ export default function ScanningPage() {
         }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation]
+    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router]
   );
 
   const handleManualVerify = useCallback(
     (packageLabel: string) => {
       if (!manifestId || !operatorId || !userId) return;
+      if (!pickupRouteId) {
+        toast.error('Inicia una ruta de retiro primero', {
+          action: { label: 'Ir', onClick: () => router.push('/app/pickup') },
+        });
+        return;
+      }
       scanMutation.mutate(
         { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation]
+    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router]
   );
 
   return (

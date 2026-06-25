@@ -297,6 +297,7 @@ export type Database = {
           id: string
           operator_id: string
           pickup_location: string | null
+          pickup_route_id: string | null
           retailer_name: string | null
           signature_client: string | null
           signature_client_name: string | null
@@ -318,6 +319,7 @@ export type Database = {
           id?: string
           operator_id: string
           pickup_location?: string | null
+          pickup_route_id?: string | null
           reception_status?: string | null
           retailer_name?: string | null
           signature_client?: string | null
@@ -339,6 +341,7 @@ export type Database = {
           id?: string
           operator_id?: string
           pickup_location?: string | null
+          pickup_route_id?: string | null
           reception_status?: string | null
           retailer_name?: string | null
           signature_client?: string | null
@@ -354,6 +357,142 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "manifests_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manifests_pickup_route_id_fkey"
+            columns: ["pickup_route_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_routes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pickup_routes: {
+        Row: {
+          cancelled_at: string | null
+          code: string
+          created_at: string
+          deleted_at: string | null
+          driver_id: string
+          id: string
+          in_transit_at: string | null
+          operator_id: string
+          received_at: string | null
+          started_at: string
+          status: string
+          updated_at: string
+          vehicle_label: string | null
+        }
+        Insert: {
+          cancelled_at?: string | null
+          code?: string
+          created_at?: string
+          deleted_at?: string | null
+          driver_id: string
+          id?: string
+          in_transit_at?: string | null
+          operator_id: string
+          received_at?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+          vehicle_label?: string | null
+        }
+        Update: {
+          cancelled_at?: string | null
+          code?: string
+          created_at?: string
+          deleted_at?: string | null
+          driver_id?: string
+          id?: string
+          in_transit_at?: string | null
+          operator_id?: string
+          received_at?: string | null
+          started_at?: string
+          status?: string
+          updated_at?: string
+          vehicle_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_routes_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_routes_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      route_receptions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          deleted_at: string | null
+          delivered_by: string
+          discrepancy_notes: string | null
+          expected_count: number
+          id: string
+          operator_id: string
+          pickup_route_id: string
+          received_by: string | null
+          received_count: number
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          delivered_by: string
+          discrepancy_notes?: string | null
+          expected_count?: number
+          id?: string
+          operator_id: string
+          pickup_route_id: string
+          received_by?: string | null
+          received_count?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          delivered_by?: string
+          discrepancy_notes?: string | null
+          expected_count?: number
+          id?: string
+          operator_id?: string
+          pickup_route_id?: string
+          received_by?: string | null
+          received_count?: number
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "route_receptions_pickup_route_id_fkey"
+            columns: ["pickup_route_id"]
+            isOneToOne: true
+            referencedRelation: "pickup_routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_receptions_operator_id_fkey"
             columns: ["operator_id"]
             isOneToOne: false
             referencedRelation: "operators"
@@ -1754,6 +1893,30 @@ export type Database = {
       get_ops_control_snapshot: {
         Args: { p_operator_id: string }
         Returns: Json
+      }
+      start_pickup_route: {
+        Args: { p_vehicle_label?: string | null }
+        Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
+      }
+      add_manifest_to_route: {
+        Args: { p_route_id: string; p_manifest_id: string }
+        Returns: Database["public"]["Tables"]["manifests"]["Row"]
+      }
+      close_pickup_route: {
+        Args: { p_route_id: string }
+        Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
+      }
+      cancel_pickup_route: {
+        Args: { p_route_id: string; p_reason: string }
+        Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
+      }
+      get_route_reception_snapshot: {
+        Args: { p_route_id: string }
+        Returns: Json
+      }
+      complete_route_reception: {
+        Args: { p_route_id: string; p_discrepancy_notes?: string | null }
+        Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
       }
       get_pre_route_snapshot: {
         Args: {

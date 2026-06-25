@@ -93,9 +93,9 @@ describe('DiscrepancyReviewPage', () => {
     expect(await screen.findByText('Revisión')).toBeInTheDocument();
   });
 
-  it('renders "Continuar a entrega" button', async () => {
+  it('renders "Continuar a ruta" button', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByRole('button', { name: /continuar a entrega/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /continuar a ruta/i })).toBeInTheDocument();
   });
 
   it('renders "Volver" back button', async () => {
