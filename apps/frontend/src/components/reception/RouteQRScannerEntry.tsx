@@ -52,15 +52,15 @@ export function RouteQRScannerEntry({
       try {
         const supabase = createSPAClient();
         const isUuid = UUID_REGEX.test(trimmed);
-        const query = supabase
+        const base = supabase
           .from('pickup_routes')
           .select('id, status')
           .eq('operator_id', operatorId)
-          .is('deleted_at', null)
-          .limit(1);
-        const { data, error } = isUuid
-          ? await query.eq('id', trimmed)
-          : await query.eq('code', trimmed.toUpperCase());
+          .is('deleted_at', null);
+        const filtered = isUuid
+          ? base.eq('id', trimmed)
+          : base.eq('code', trimmed.toUpperCase());
+        const { data, error } = await filtered.limit(1);
 
         if (error || !data || data.length === 0) {
           setLookupResult({ type: 'error', message: 'Ruta no encontrada' });

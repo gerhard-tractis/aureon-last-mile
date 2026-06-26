@@ -15,11 +15,17 @@ vi.mock('html5-qrcode', () => ({
 }));
 
 const mockLimit = vi.fn();
-const mockEq3 = vi.fn(() => ({ limit: mockLimit }));
-const queryChain = {
+type QueryChain = {
+  eq: ReturnType<typeof vi.fn>;
+  is: ReturnType<typeof vi.fn>;
+  limit: ReturnType<typeof vi.fn>;
+};
+const queryChain: QueryChain = {
   eq: vi.fn(() => queryChain),
   is: vi.fn(() => queryChain),
-  limit: vi.fn(() => ({ eq: mockEq3 })),
+  // Final `.limit()` is what the component awaits; mockLimit returns a resolved
+  // value via mockResolvedValueOnce in each test.
+  limit: vi.fn((...args) => mockLimit(...args)),
 };
 const mockSelect = vi.fn(() => queryChain);
 const mockFrom = vi.fn(() => ({ select: mockSelect }));
