@@ -6,7 +6,7 @@ Display the list of available VPS servers and connect to the selected one via SS
 
 | # | Name | IP | OS | Services |
 |---|------|----|----|----------|
-| 1 | Hostinger-aureon_LM | 187.77.48.107 | Ubuntu 24.04 | n8n (https://n8n.tractis.ai), OpenClaw |
+| 1 | Hostinger-aureon_LM | <VPS_IP> | Ubuntu 24.04 | n8n (https://n8n.tractis.ai), OpenClaw |
 
 ## Instructions
 

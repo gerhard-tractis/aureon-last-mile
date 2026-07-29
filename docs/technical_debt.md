@@ -10,7 +10,7 @@
 ### TD-001 — Containerise OpenClaw (native → Docker)
 - **Added:** 2026-02-23
 - **Status:** Open
-- **Context:** OpenClaw is natively installed at `/usr/bin/openclaw` on the Hostinger VPS (`187.77.48.107`). It runs as a bare process (`openclaw-gateway`, PID-based) with no systemd service, meaning its restart behaviour on reboot is unknown. All other services on the VPS (n8n) run in Docker.
+- **Context:** OpenClaw is natively installed at `/usr/bin/openclaw` on the Hostinger VPS (`<VPS_IP>`). It runs as a bare process (`openclaw-gateway`, PID-based) with no systemd service, meaning its restart behaviour on reboot is unknown. All other services on the VPS (n8n) run in Docker.
 - **Risk:** Medium — process won't auto-restart after a reboot; harder to update and back up.
 - **What to do:**
   1. Identify or build a Docker image for OpenClaw
