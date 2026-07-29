@@ -618,6 +618,32 @@ GRANT EXECUTE ON FUNCTION public.complete_route_reception(UUID, TEXT)  TO authen
 -- a PR-LEGACY-<seq> pickup_routes row (one per manifest). Copy any matching
 -- hub_receptions row into route_receptions (1:1) and repoint reception_scans.
 
+-- 8.0 — Drop the stale reception_scans → hub_receptions FK FIRST. The backfill
+-- below repoints reception_scans.reception_id at route_receptions(id); with the
+-- old constraint still in place that UPDATE raises 23503 and the whole migration
+-- aborts. The replacement FK is added in PART 9, once the new rows exist.
+DO $$
+DECLARE
+  v_constraint TEXT;
+BEGIN
+  SELECT tc.constraint_name INTO v_constraint
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON kcu.constraint_name = tc.constraint_name
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name
+   WHERE tc.constraint_type = 'FOREIGN KEY'
+     AND tc.table_schema = 'public'
+     AND tc.table_name = 'reception_scans'
+     AND kcu.column_name = 'reception_id'
+     AND ccu.table_name = 'hub_receptions'
+   LIMIT 1;
+
+  IF v_constraint IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE public.reception_scans DROP CONSTRAINT %I', v_constraint);
+  END IF;
+END $$;
+
 DO $$
 DECLARE
   v_has_hub_receptions BOOLEAN;
@@ -728,30 +754,9 @@ END $$;
 -- =============================================================================
 -- PART 9 — Repoint reception_scans FK and drop hub_receptions
 -- =============================================================================
--- Drop the old FK constraint (it points to hub_receptions) and create a new one
--- to route_receptions.
-
-DO $$
-DECLARE
-  v_constraint TEXT;
-BEGIN
-  SELECT tc.constraint_name INTO v_constraint
-    FROM information_schema.table_constraints tc
-    JOIN information_schema.key_column_usage kcu
-      ON kcu.constraint_name = tc.constraint_name
-    JOIN information_schema.constraint_column_usage ccu
-      ON ccu.constraint_name = tc.constraint_name
-   WHERE tc.constraint_type = 'FOREIGN KEY'
-     AND tc.table_schema = 'public'
-     AND tc.table_name = 'reception_scans'
-     AND kcu.column_name = 'reception_id'
-     AND ccu.table_name = 'hub_receptions'
-   LIMIT 1;
-
-  IF v_constraint IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE public.reception_scans DROP CONSTRAINT %I', v_constraint);
-  END IF;
-END $$;
+-- The old FK (pointing at hub_receptions) was already dropped in 8.0, before the
+-- backfill repointed the rows. Here we install the replacement, now that every
+-- reception_scans.reception_id references a live route_receptions row.
 
 ALTER TABLE public.reception_scans
   ADD CONSTRAINT reception_scans_reception_id_fkey
