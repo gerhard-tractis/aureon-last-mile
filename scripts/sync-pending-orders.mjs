@@ -10,9 +10,14 @@
  */
 
 const SUPABASE_URL = 'https://wfwlcpnkkxxzdvhvvsxb.supabase.co';
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indmd2xjcG5ra3h4emR2aHZ2c3hiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDY3NDE5MCwiZXhwIjoyMDg2MjUwMTkwfQ.FyUs3IWwbRxDVCgF9yqR-Nwv01pkdlFFJZunFQ33t5I';
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const DT_BASE = 'https://transportesmusan.dispatchtrack.com';
-const DT_API_KEY = '998d3378655743ca3b6506817274bad71714916d2bddacf9d094a2e35c805807';
+const DT_API_KEY = process.env.DISPATCHTRACK_API_KEY;
+
+if (!SUPABASE_SERVICE_KEY || !DT_API_KEY) {
+  console.error('Missing SUPABASE_SERVICE_ROLE_KEY and/or DISPATCHTRACK_API_KEY. See scripts/README.md.');
+  process.exit(1);
+}
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const MAX_API = (() => {

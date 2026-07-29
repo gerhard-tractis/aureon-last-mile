@@ -14,6 +14,9 @@ __pycache__/
 .env.local
 .env.*.local
 
+# MCP server config — contains personal access tokens (see .mcp.json.example)
+.mcp.json
+
 # IDE
 .vscode/
 .idea/

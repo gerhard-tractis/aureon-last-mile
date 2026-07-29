@@ -218,9 +218,14 @@ To version-control n8n workflows:
 
 1. In n8n UI: open workflow → Menu (⋮) → **Download**
 2. Save the `.json` file to `apps/worker/n8n/workflows/<workflow-name>.json`
-3. Commit and push
+3. **Scrub credentials before committing.** Exported JSON embeds any key typed directly into a
+   node (headers, query params). Replace each with a `__PLACEHOLDER__` token —
+   `beetrack-excel-import.json` uses `__SUPABASE_SERVICE_KEY__`. Never commit a real key;
+   the repo history is not a safe place for one.
+4. Commit and push
 
-To import a workflow on a new n8n instance:
+To import a workflow on a new n8n instance (replace every `__PLACEHOLDER__` with the real
+value from your secret store after importing, or wire the node to an n8n credential):
 
 1. n8n UI → **Workflows** → **Import from File**
 2. Select the JSON file
