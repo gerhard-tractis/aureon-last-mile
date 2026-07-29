@@ -1,7 +1,10 @@
 // Keep extraction prompt in sync with apps/agents/src/tools/ocr/extract-manifest.ts
 import { NextRequest, NextResponse } from 'next/server';
+import { createSSRClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60; // Gemini can be slow on multi-page manifests
+
+const ALLOWED_ROLES = ['admin', 'maintainer'] as const;
 
 const EXTRACTION_PROMPT = `Eres un sistema de extraccion de datos logisticos chilenos.
 
@@ -42,6 +45,28 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'google/gemini-2.5-flash';
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // middleware.ts only guards /app/**, so this route was reachable by anyone on
+  // the internet and drove unbounded Gemini spend on OPENROUTER_API_KEY. It is
+  // a dev tool: require an authenticated admin/maintainer session, matching
+  // /api/dev/wismo-test/_proxy.ts.
+  const supabase = await createSSRClient();
+  const {
+    data: { session },
+    error: authError,
+  } = await supabase.auth.getSession();
+
+  if (authError || !session) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const role: string | undefined = session.user.app_metadata?.claims?.role;
+  if (!ALLOWED_ROLES.includes(role as (typeof ALLOWED_ROLES)[number])) {
+    return NextResponse.json(
+      { error: 'Forbidden: admin or maintainer role required' },
+      { status: 403 },
+    );
+  }
+
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
