@@ -86,6 +86,34 @@ describe('POST /api/ocr-extract', () => {
     expect(mockExtract).toHaveBeenCalledWith(API_KEY, [expect.any(Buffer)]);
   });
 
+  it('fails closed with 500 when no OCR_API_SECRET is configured', async () => {
+    // Regression: an unset secret used to skip the auth check entirely,
+    // leaving this endpoint open and billing OpenRouter to the operator.
+    const unsecuredPort = TEST_PORT + 1;
+    const { server: unsecured } = startHealthServer(unsecuredPort, {
+      openrouterApiKey: API_KEY,
+      // ocrApiSecret deliberately omitted
+    });
+
+    try {
+      const res = await fetch(`http://localhost:${unsecuredPort}/api/ocr-extract`, {
+        method: 'POST',
+      });
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('OCR_API_SECRET');
+
+      // And it must not be bypassable by sending any bearer token.
+      const res2 = await fetch(`http://localhost:${unsecuredPort}/api/ocr-extract`, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer anything' },
+      });
+      expect(res2.status).toBe(500);
+    } finally {
+      unsecured.close();
+    }
+  });
+
   it('returns 502 when extractManifest throws', async () => {
     mockExtract.mockRejectedValueOnce(new Error('OpenRouter down'));
 

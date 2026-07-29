@@ -13,9 +13,39 @@ const MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
 const PROVIDER = 'dispatchtrack' as const;
 const DT_BASE_URL = 'https://transportesmusan.dispatchtrack.com';
 
+/** Constant-time string compare, so the shared secret can't be recovered by timing. */
+function timingSafeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return json({ ok: false, error: 'Method not allowed' }, 405);
+  }
+
+  // This function inherits verify_jwt = true, but that only proves the caller
+  // holds *some* valid Supabase JWT — one minted from the public anon key
+  // qualifies. Each invocation then fans out one outbound DispatchTrack call
+  // per route with a 1s sleep, so an anonymous caller could burn the tenant's
+  // third-party rate limit. Require a shared secret on top, and fail closed.
+  const pollSecret = Deno.env.get('ROUTE_POLL_SECRET');
+  if (!pollSecret) {
+    console.error('ROUTE_POLL_SECRET is not set — refusing to poll');
+    return json({ ok: false, error: 'Server misconfigured' }, 500);
+  }
+
+  const incoming = req.headers.get('X-Poll-Secret') ?? req.headers.get('x-poll-secret');
+  if (!incoming || !timingSafeEqual(incoming, pollSecret)) {
+    return json({ ok: false, error: 'Unauthorized' }, 401);
   }
 
   const apiKey = Deno.env.get('DISPATCHTRACK_API_KEY');
