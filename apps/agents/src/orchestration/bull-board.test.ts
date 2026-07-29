@@ -8,10 +8,14 @@ const mockCreateBullBoard = vi.fn();
 const mockSetBasePath = vi.fn();
 const mockGetRouter = vi.fn().mockReturnValue(vi.fn());
 const mockAppUse = vi.fn();
-const mockAppListen = vi.fn().mockImplementation((_port: number, cb?: () => void) => {
-  cb?.();
-  return { close: vi.fn() };
-});
+// listen(port, host, cb) — the dashboard binds loopback only.
+const mockAppListen = vi.fn().mockImplementation(
+  (_port: number, _host?: string | (() => void), cb?: () => void) => {
+    const callback = typeof _host === 'function' ? _host : cb;
+    callback?.();
+    return { close: vi.fn() };
+  },
+);
 const mockExpress = vi.fn().mockReturnValue({
   use: mockAppUse,
   listen: mockAppListen,
@@ -53,10 +57,13 @@ describe('startBullBoard', () => {
     capturedAdapters.length = 0;
     vi.clearAllMocks();
     // Re-setup mocks cleared by clearAllMocks
-    mockAppListen.mockImplementation((_port: number, cb?: () => void) => {
-      cb?.();
-      return { close: vi.fn() };
-    });
+    mockAppListen.mockImplementation(
+      (_port: number, _host?: string | (() => void), cb?: () => void) => {
+        const callback = typeof _host === 'function' ? _host : cb;
+        callback?.();
+        return { close: vi.fn() };
+      },
+    );
     mockExpress.mockReturnValue({ use: mockAppUse, listen: mockAppListen });
     mockGetRouter.mockReturnValue(vi.fn());
     vi.resetModules();
@@ -81,10 +88,12 @@ describe('startBullBoard', () => {
     expect(mockSetBasePath).toHaveBeenCalledWith('/bull-board');
   });
 
-  it('listens on port 3101', async () => {
+  it('listens on port 3101, bound to loopback only', async () => {
     const { startBullBoard } = await import('./bull-board');
     startBullBoard(makeQueues(), { user: 'admin', password: 'secret' });
-    expect(mockAppListen).toHaveBeenCalledWith(3101, expect.any(Function));
+    // Host matters: this dashboard can replay and delete jobs containing
+    // customer PII, so it must not be reachable from outside the VPS.
+    expect(mockAppListen).toHaveBeenCalledWith(3101, '127.0.0.1', expect.any(Function));
   });
 });
 

@@ -8,6 +8,8 @@ const REQUIRED_VARS = [
   'OPENROUTER_API_KEY',
   'ENCRYPTION_KEY',
   'SENTRY_DSN',
+  'BULL_BOARD_USER',
+  'BULL_BOARD_PASSWORD',
 ];
 
 const OPTIONAL_VARS = [
@@ -26,6 +28,8 @@ const FULL_ENV: Record<string, string> = {
   OPENROUTER_API_KEY: 'test-openrouter-key',
   ENCRYPTION_KEY: 'a'.repeat(64),
   SENTRY_DSN: 'https://sentry.io/test',
+  BULL_BOARD_USER: 'test-board-user',
+  BULL_BOARD_PASSWORD: 'test-board-password',
 };
 
 describe('loadConfig', () => {
@@ -93,6 +97,16 @@ describe('loadConfig', () => {
     expect(config.WA_ACCESS_TOKEN).toBe('wa-token');
     expect(config.WA_VERIFY_TOKEN).toBe('wa-verify');
     expect(config.WA_APP_SECRET).toBe('wa-secret');
+  });
+
+  it('rejects a short BULL_BOARD_PASSWORD', async () => {
+    // Bull Board can read, replay and delete every job, including payloads
+    // with customer PII. It previously defaulted to admin/changeme whenever
+    // these vars were unset, so weak values must not load.
+    Object.assign(process.env, { ...FULL_ENV, BULL_BOARD_PASSWORD: 'changeme' });
+
+    const { loadConfig } = await import('./config');
+    expect(() => loadConfig()).toThrow(/BULL_BOARD_PASSWORD/);
   });
 
   it('error message is descriptive (includes "missing" or "required" context)', async () => {
