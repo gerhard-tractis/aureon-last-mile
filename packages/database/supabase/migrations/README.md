@@ -1,94 +1,68 @@
 # Supabase Migrations
 
-## How to Apply Migrations
+Schema history for the Aureon Last Mile database. **The Supabase CLI is the only
+supported way to apply these.** Do not paste SQL into the dashboard SQL Editor —
+that is how `operators` and `audit_logs` ended up existing in production with no
+migration that creates them (fixed by `20260209000004_bootstrap_operators_audit_logs.sql`).
 
-### Option 1: Via Supabase Dashboard (Recommended for now)
+## Applying migrations
 
-1. Go to your Supabase project dashboard:
-   https://supabase.com/dashboard/project/wfwlcpnkkxxzdvhvvsxb
-
-2. Navigate to **SQL Editor** (left sidebar)
-
-3. Open the migration file: `20260209_multi_tenant_rls.sql`
-
-4. Copy the entire SQL content
-
-5. Paste into the SQL Editor
-
-6. Click **Run** button
-
-7. Verify success:
-   - Check that tables were created
-   - Verify RLS is enabled on all tables
-   - Confirm seed data was inserted
-
-### Option 2: Using Supabase CLI (For Production)
+Production is deployed automatically. `.github/workflows/deploy.yml` runs
 
 ```bash
-# Install Supabase CLI (Windows)
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-scoop install supabase
-
-# Link to your project
-supabase link --project-ref wfwlcpnkkxxzdvhvvsxb
-
-# Apply migrations
-supabase db push
-
-# Or apply specific migration
-supabase migration up
+supabase db push --include-all
 ```
 
-## Migration Files
+on every green push to `main` that touches `migrations/**`, `seed.sql`, or
+`config.toml`. You should not need to run this by hand.
 
-### 20260209_multi_tenant_rls.sql
-**Purpose:** Multi-tenant RLS setup with operator-level isolation
+`--include-all` is required: the repo has migrations whose timestamps are older
+than the last one applied remotely (PRs merge out of order), and without it the
+CLI refuses to apply them.
 
-**Creates:**
-- `operators` table (tenants)
-- `orders` table with `operator_id`
-- `manifests` table with `operator_id`
-- `barcode_scans` table with `operator_id`
-- `audit_logs` table with `operator_id`
+## Local development
 
-**Security:**
-- Enables RLS on all tables
-- Creates tenant isolation policies
-- Adds performance indexes
-- Implements JWT claim extraction (`auth.operator_id()`)
-
-**Seed Data:**
-- Demo operator: `demo-chile` (id: `00000000-0000-0000-0000-000000000001`)
-
-## Verification Steps
-
-After applying migration, verify RLS is working:
-
-```sql
--- Check RLS is enabled
-SELECT tablename, rowsecurity
-FROM pg_tables
-WHERE schemaname = 'public'
-AND tablename IN ('operators', 'orders', 'manifests', 'barcode_scans', 'audit_logs');
-
--- Should show rowsecurity = true for all
-
--- Check policies exist
-SELECT tablename, policyname
-FROM pg_policies
-WHERE schemaname = 'public';
-
--- Should show tenant_isolation policies for each table
+```bash
+supabase start          # boot the local stack
+supabase db reset       # drop, replay every migration, then run ../seed.sql
 ```
 
-## Security Critical
+`db reset` is the check that matters — if it fails, the repo can no longer
+rebuild its own schema, and staging/DR are blocked. Run it before opening a PR
+that adds a migration.
 
-⚠️ **NEVER disable RLS on these tables!**
-⚠️ **NEVER use service_role key in client-side code!**
-⚠️ **ALWAYS test cross-tenant access is blocked!**
+## Writing a migration
 
-## Next Steps After Migration
+Naming: `YYYYMMDDHHMMSS_snake_case_description.sql`. Two conventions are in use
+(real clock timestamps and date + 6-digit sequence); prefer the sequence form
+for new work and never reuse a timestamp.
 
-1. Configure JWT to include `operator_id` claim (see Task 3.3)
-2. Test RLS isolation with multiple operators (see Task 3.4)
-3. Apply migration to production when ready
+House rules (`docs/architecture.md`):
+
+- Every tenant table gets `operator_id UUID NOT NULL`, `created_at`,
+  `updated_at`, and `deleted_at`. Soft deletes only — no `DELETE`.
+- RLS enabled with a tenant-scoped policy on every table.
+- `SECURITY DEFINER` functions must derive the tenant internally via
+  `public.get_operator_id()` — never trust a caller-supplied `p_operator_id` —
+  and must pin `SET search_path`.
+- When rewriting a function with `CREATE OR REPLACE`, use the **latest**
+  migration's definition as the template, never the original, and cite it:
+  `-- Template: latest definition from <file>`.
+- End destructive migrations with a `DO $$ ... RAISE EXCEPTION` block that
+  asserts **row counts**, not just that objects exist. See
+  `20260625000001_spec47_pickup_routes_consolidated_reception.sql` for the shape.
+
+## Tests
+
+`../tests/` holds pgTAP-style SQL tests covering RLS and migration invariants.
+They are not yet wired into CI — see `REMEDIATION.md` (H2).
+
+## Notes on history
+
+- `20260209_multi_tenant_rls.sql.bak` is kept for provenance only. It is
+  disabled on purpose; its still-needed DDL now lives in
+  `20260209000004_bootstrap_operators_audit_logs.sql`.
+- Several tenant-specific data migrations (Musan, Paris, Easy connector config)
+  are baked into schema history. That was a mistake we are not unwinding —
+  going forward, tenant configuration belongs behind an admin RPC, not in a
+  migration.
