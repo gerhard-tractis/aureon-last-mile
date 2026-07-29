@@ -2,6 +2,7 @@
 import type { Application, Request, Response, NextFunction } from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { log } from '../lib/logger';
+import { timingSafeCompare } from '../lib/timing-safe';
 import {
   createTestOrder,
   listTestOrders,
@@ -21,7 +22,13 @@ export function devTokenGuard(req: Request, res: Response, next: NextFunction): 
   const expectedToken = process.env.AGENTS_DEV_TOKEN;
   const providedToken = req.headers['x-dev-token'];
 
-  if (!expectedToken || providedToken !== expectedToken) {
+  // 404 rather than 401 so the routes are indistinguishable from absent ones.
+  if (!expectedToken || typeof providedToken !== 'string') {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+
+  if (!timingSafeCompare(providedToken, expectedToken)) {
     res.status(404).json({ error: 'Not found' });
     return;
   }
@@ -34,11 +41,21 @@ export function devTokenGuard(req: Request, res: Response, next: NextFunction): 
 /**
  * Registers /dev/* routes on the provided Express app.
  *
- * Guards (ALL must pass):
- * 1. ENABLE_DEV_ENDPOINTS === 'true'
- * 2. NODE_ENV !== 'production'
+ * Guard: ENABLE_DEV_ENDPOINTS === 'true'. That is the only registration check.
  *
- * If ENABLE_DEV_ENDPOINTS=true AND NODE_ENV=production → logs warning, refuses to register.
+ * There is deliberately NO NODE_ENV check. The agents service runs with
+ * NODE_ENV=production on the VPS, and the frontend's wismo-test UI reaches
+ * these routes in that environment via /api/dev/wismo-test/* — which itself
+ * requires an admin or maintainer session. A NODE_ENV guard here would break
+ * that tool, not secure it.
+ *
+ * What actually protects these routes at request time is devTokenGuard: every
+ * handler requires a matching X-Dev-Token, and a missing AGENTS_DEV_TOKEN
+ * returns 404 for everyone. Treat AGENTS_DEV_TOKEN as a production credential —
+ * these endpoints can purge orders in bulk and edit state directly.
+ *
+ * (This docstring previously promised a NODE_ENV guard that the code never
+ * implemented. Documented behaviour and real behaviour now match.)
  */
 export function registerDevRoutes(app: Application, db: SupabaseClient): void {
   const enabled = process.env.ENABLE_DEV_ENDPOINTS === 'true';

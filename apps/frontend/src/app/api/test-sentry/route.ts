@@ -25,8 +25,16 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const key = searchParams.get('key');
 
-  // Security: Require secret key to prevent abuse
-  const expectedKey = process.env.SENTRY_TEST_KEY || 'test-sentry-monitoring';
+  // Security: require a secret key. The former 'test-sentry-monitoring'
+  // fallback was published in this repo, so an unset env var left the endpoint
+  // effectively open. Fail closed instead.
+  const expectedKey = process.env.SENTRY_TEST_KEY;
+  if (!expectedKey) {
+    return NextResponse.json(
+      { error: 'SENTRY_TEST_KEY not configured' },
+      { status: 500 }
+    );
+  }
   if (key !== expectedKey) {
     return NextResponse.json(
       { error: 'Invalid or missing test key' },

@@ -6,8 +6,14 @@ import { ExpressAdapter } from '@bull-board/express';
 import type { Queue } from 'bullmq';
 import type { Server } from 'http';
 import { log } from '../lib/logger';
+import { timingSafeCompare } from '../lib/timing-safe';
 
 const BULL_BOARD_PORT = 3101;
+// Loopback only. This dashboard can read, replay and delete every job —
+// including payloads with customer PII — so it must not be reachable from the
+// internet. Reach it through an SSH tunnel:
+//   ssh -L 3101:127.0.0.1:3101 <vps>
+const BULL_BOARD_HOST = '127.0.0.1';
 const BULL_BOARD_BASE_PATH = '/bull-board';
 
 export interface BullBoardCredentials {
@@ -25,8 +31,14 @@ export function basicAuthMiddleware(user: string, password: string) {
       return;
     }
     const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
-    const [reqUser, reqPass] = decoded.split(':');
-    if (reqUser !== user || reqPass !== password) {
+    const sep = decoded.indexOf(':');
+    const reqUser = sep === -1 ? decoded : decoded.slice(0, sep);
+    const reqPass = sep === -1 ? '' : decoded.slice(sep + 1);
+    // Constant-time compare, and evaluate both halves so the timing of a
+    // wrong username doesn't differ from a wrong password.
+    const userOk = timingSafeCompare(reqUser, user);
+    const passOk = timingSafeCompare(reqPass, password);
+    if (!userOk || !passOk) {
       res.statusCode = 401;
       res.setHeader('WWW-Authenticate', 'Basic realm="Bull Board"');
       res.end('Unauthorized');
@@ -52,8 +64,12 @@ export function startBullBoard(
   app.use(BULL_BOARD_BASE_PATH, basicAuthMiddleware(credentials.user, credentials.password));
   app.use(BULL_BOARD_BASE_PATH, serverAdapter.getRouter());
 
-  const server = app.listen(BULL_BOARD_PORT, () => {
-    log('info', 'bull_board_started', { port: BULL_BOARD_PORT, path: BULL_BOARD_BASE_PATH });
+  const server = app.listen(BULL_BOARD_PORT, BULL_BOARD_HOST, () => {
+    log('info', 'bull_board_started', {
+      host: BULL_BOARD_HOST,
+      port: BULL_BOARD_PORT,
+      path: BULL_BOARD_BASE_PATH,
+    });
   });
 
   return server;

@@ -3,6 +3,7 @@ import http from 'http';
 import express from 'express';
 import Busboy from 'busboy';
 import { extractManifest } from '../tools/ocr/extract-manifest';
+import { timingSafeCompare } from './timing-safe';
 
 const DEFAULT_PORT = 3110;
 
@@ -50,12 +51,19 @@ async function handleOcrExtract(
     res.end(body);
   }
 
-  if (secret) {
-    const auth = (req as express.Request).headers.authorization;
-    if (!auth || auth !== `Bearer ${secret}`) {
-      sendJson(401, { error: 'Unauthorized' });
-      return;
-    }
+  // Fail closed. An unset OCR_API_SECRET previously skipped the check entirely,
+  // leaving this endpoint open on the VPS and letting anyone upload images to
+  // OpenRouter on the operator's paid API key.
+  if (!secret) {
+    sendJson(500, { error: 'OCR_API_SECRET not configured' });
+    return;
+  }
+
+  const auth = (req as express.Request).headers.authorization;
+  const expected = `Bearer ${secret}`;
+  if (!auth || !timingSafeCompare(auth, expected)) {
+    sendJson(401, { error: 'Unauthorized' });
+    return;
   }
 
   if (!apiKey) {
