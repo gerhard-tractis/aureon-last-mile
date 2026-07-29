@@ -2163,7 +2163,7 @@ test.describe('Dispatch Module E2E', () => {
     // Login
     await page.goto('/login');
     await page.fill('[name=email]', 'gerhard@tractis.ai');
-    await page.fill('[name=password]', 'Tractis01');
+    await page.fill('[name=password]', process.env.E2E_TEST_PASSWORD);
     await page.click('button[type=submit]');
     await page.waitForURL('**/app/**');
   });
