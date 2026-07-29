@@ -6,6 +6,30 @@
 
 ---
 
+## Progress
+
+| Item | Status |
+|---|---|
+| C1 — scrub committed credentials | ✅ merged (#353) — **rotation still outstanding, see below** |
+| C2 — gate deploys on CI | ✅ merged (#354) — Vercel Git integration must still be disabled |
+| C3 — make the database reproducible | ✅ merged (#356) |
+| C4 — cross-tenant SECURITY DEFINER RPCs | ✅ merged (#355) |
+| C5 — fail-closed endpoint auth | ✅ merged (#357) — set the env vars listed in that PR |
+| C6 — tenant resolution | ⬜ open — needs a spec, blocks operator #2 |
+| H1–H9, M, L | ⬜ open |
+
+### Still needs a human
+
+These cannot be done from the repo:
+
+1. **Rotate every credential in C1** — Supabase `service_role` key, both `sbp_` management tokens, the n8n API key, the DispatchTrack API key, and the `gerhard@tractis.ai` password. They remain in git history; deleting the lines did not undo the exposure.
+2. **Decide repo visibility** — make it private, or purge history with `git filter-repo`. Rotation comes first either way.
+3. **Disable Vercel's Git integration for `main`** (Vercel → Project → Settings → Git). Until then it deploys every push outside GitHub Actions, and C2's ordering guarantee does not hold.
+4. **Set the env vars C5 now requires** — `BEETRACK_WEBHOOK_SECRET`, `ROUTE_POLL_SECRET` (new), `BULL_BOARD_USER`/`BULL_BOARD_PASSWORD` (agents will not start without them), `OCR_API_SECRET`, `SENTRY_TEST_KEY`.
+5. **Run `supabase db reset` once locally** to confirm C3 end-to-end. It could not be verified here — ports 54321-54323 were held by another Supabase stack.
+
+---
+
 ## ⚠️ Tier mismatch detected
 
 The repo has **platform-grade architecture rules** (operator_id everywhere, RLS on 55/55 tables) but **single-tenant reality bolted on top**: `MUSAN_OPERATOR_ID` is hardcoded in both DispatchTrack edge functions and all four n8n workflow JSONs, and `whatsapp-webhook` assigns every inbound message to whichever operator row Postgres returns first. Onboarding a second operator today would silently write their data into Musan's tenant. The tenant-resolution upgrade path is item C6 below and must land before any second-operator go-live.
@@ -14,7 +38,7 @@ The repo has **platform-grade architecture rules** (operator_id everywhere, RLS 
 
 ## 🔴 Critical
 
-### C1. Live production credentials committed to a PUBLIC repo — rotate everything first
+### C1. Live production credentials committed to a PUBLIC repo — rotate everything first ✅ (#353)
 **What's wrong:** `gh repo view` shows `gerhard-tractis/aureon-last-mile` is **public**. Tracked files contain, in cleartext and in git history:
 - Supabase `service_role` JWT (project `wfwlcpnkkxxzdvhvvsxb`, exp 2036): `scripts/backfill-dispatches.mjs:13`, `scripts/backfill-dispatches-by-order.mjs:13`, `scripts/sync-pending-orders.mjs:13`, `scripts/backfill-paris-packages.mjs:9` (fallback default), and 14 occurrences inside `apps/worker/n8n/workflows/beetrack-excel-import.json`
 - Supabase Management token `sbp_42e2…` in **9 files** under `apps/frontend/scripts/` (`check-auth-hook.js:4`, `execute-via-mgmt-api.js:11`, `validate-rbac.js:9`, etc.)
@@ -35,7 +59,7 @@ The repo has **platform-grade architecture rules** (operator_id everywhere, RLS 
 - [ ] Remove the VPS IP + security posture from `CLAUDE.md` and tracked docs (keep in a private runbook).
 - [ ] Verify: `git grep -IE 'sbp_[a-f0-9]{40}|eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9|998d3378|Tractis01|187\.77\.48\.107'` returns nothing.
 
-### C2. Production deploys are not gated on CI, and migration failure doesn't stop the frontend
+### C2. Production deploys are not gated on CI, and migration failure doesn't stop the frontend ✅ (#354)
 **What's wrong:** `.github/workflows/deploy.yml:3-5` triggers on `push: [main]` and runs **in parallel** with `ci.yml` — a red build still deploys. Separately, Vercel's Git integration deploys every main commit **outside** Actions (acknowledged at `deploy.yml:129-134`), so when `deploy-supabase` fails, the new frontend still ships against the old schema; the auto-rollback at `deploy.yml:154-158` never fires for that path.
 **Why it matters:** failing tests deploy to production; a failed migration produces live code/schema skew with no rollback.
 **Steps:**
@@ -44,7 +68,7 @@ The repo has **platform-grade architecture rules** (operator_id everywhere, RLS 
 - [ ] Tighten branch protection: enable `enforce_admins`, require 1 PR review, keep `strict` status checks. (`docs/ci-cd-architecture.md:166-169` already claims this — make it true.)
 - [ ] Verify: push a branch with a failing test → merge attempt blocked; check a main deploy run shows `deploy-vercel` executed after `deploy-supabase` on a frontend-only change.
 
-### C3. The database is not reproducible from the repo
+### C3. The database is not reproducible from the repo ✅ (#356)
 **What's wrong:** the foundational migration is disabled — `packages/database/supabase/migrations/20260209_multi_tenant_rls.sql.bak` is the **only** place `public.operators` and `public.audit_logs` are created (18 later migrations FK-reference `operators`). `config.toml:45-50` enables seeding from `./seed.sql`, which **does not exist**. `supabase db reset` / any fresh environment fails at the first FK migration.
 **Why it matters:** no local dev reset, no staging environment possible (a stated project goal), and disaster recovery depends on the production instance never being lost.
 **Steps:**
@@ -53,7 +77,7 @@ The repo has **platform-grade architecture rules** (operator_id everywhere, RLS 
 - [ ] Delete `packages/database/supabase/migrations_for_old/`; rewrite `migrations/README.md` (currently instructs hand-pasting one file and is ~115 migrations stale).
 - [ ] Verify: `supabase db reset` completes cleanly on a fresh local stack.
 
-### C4. Cross-tenant data leak: SECURITY DEFINER RPC trusts caller-supplied operator_id
+### C4. Cross-tenant data leak: SECURITY DEFINER RPC trusts caller-supplied operator_id ✅ (#355)
 **What's wrong:** `get_active_routes_with_dispatches(p_operator_id, p_route_date)` (`packages/database/supabase/migrations/20260310000004_get_active_routes_with_dispatches.sql:7-62`) is `SECURITY DEFINER`, granted to `authenticated`, and filters only on the UUID **the caller passes**. Same pattern in `get_unmatched_comunas` (`20260321000001_chile_comunas_normalization.sql:487-499`).
 **Why it matters:** any logged-in user of any tenant can read another tenant's routes, dispatches, customer coordinates, and driver names by passing a different UUID.
 **Steps:**
@@ -61,7 +85,7 @@ The repo has **platform-grade architecture rules** (operator_id everywhere, RLS 
 - [ ] Add a pgTAP test in `packages/database/supabase/tests/` asserting a user of operator A calling with operator B's UUID gets an exception/empty set.
 - [ ] Verify: run the SQL test suite; manually call the RPC with a foreign UUID as an authenticated test user.
 
-### C5. Webhook/service endpoints that fail open or ship default credentials
+### C5. Webhook/service endpoints that fail open or ship default credentials ✅ (#357)
 **What's wrong:**
 - `packages/database/supabase/functions/beetrack-webhook/index.ts:74-80` — if `BEETRACK_WEBHOOK_SECRET` is unset, **all auth is skipped** on a `verify_jwt=false` public endpoint that can set any order to `entregado`/`cancelado`.
 - `apps/agents/src/lib/health.ts:53-59` — same fail-open shape for `POST /api/ocr-extract` (burns the OpenRouter key).
