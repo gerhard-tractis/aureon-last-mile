@@ -16,7 +16,29 @@
 | C4 — cross-tenant SECURITY DEFINER RPCs | ✅ merged (#355) |
 | C5 — fail-closed endpoint auth | ✅ merged (#357) — set the env vars listed in that PR |
 | C6 — tenant resolution | ⬜ open — needs a spec, blocks operator #2 |
+| Worker VPS deploy broken | ✅ merged (#359) — found while executing C1 |
+| Agents VPS deploy broken | ✅ merged (#360) — found while executing C5 |
 | H1–H9, M, L | ⬜ open |
+
+### Found while executing: both VPS deploys were broken
+
+Neither `apps/worker` nor `apps/agents` had a `package-lock.json`, but both
+deploy scripts run `npm ci --no-workspaces`, which requires one in that
+directory. npm walked up to the root workspace lockfile, which does not match
+either app's `package.json`, and exited `EUSAGE`. The worker's lockfile was
+deleted by the monorepo refactor (#132); the agents one never existed.
+
+Nobody noticed because the `apps/worker/**` and `apps/agents/**` path filters
+only fire when those directories change. The C1 and C5 merges each touched one,
+and each deploy failed immediately. Both are fixed and verified — a real
+`Deploy Worker to VPS` and `Deploy Agents to VPS` run have now gone green.
+
+This is the third instance of the same failure mode, after the PG17 migration
+bug already documented in `deploy.yml`: **a path-filtered deploy job is only
+exercised when its paths change, so a regression sits latent for months and
+surfaces as a production deploy failure rather than a CI failure.** Worth
+treating as a structural issue (M1) — a periodic no-op deploy, or a smoke job
+that runs each deploy path on a schedule, would catch the next one.
 
 ### Still needs a human
 
