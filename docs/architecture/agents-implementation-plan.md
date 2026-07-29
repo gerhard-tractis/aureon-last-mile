@@ -88,7 +88,7 @@ Phase 10 (INTAKE expansion)
 ## Prerequisites
 
 - **Spec-09 completed:** `packages/database/`, shared types, Turborepo, npm workspaces
-- **VPS:** Redis 7 installed and running on 187.77.48.107
+- **VPS:** Redis 7 installed and running on <VPS_IP>
 - **Supabase:** Project accessible with service role key
 
 ## Out of Scope

@@ -1,0 +1,26 @@
+{
+  "_comment": "Copy to .mcp.json and fill in your own tokens. .mcp.json is gitignored — never commit real credentials.",
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--access-token",
+        "sbp_your_supabase_personal_access_token_here"
+      ]
+    },
+    "n8n-mcp": {
+      "command": "n8n-mcp",
+      "args": [],
+      "env": {
+        "N8N_API_URL": "https://n8n.example.com",
+        "N8N_API_KEY": "your_n8n_public_api_jwt_here"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headless"]
+    }
+  }
+}

@@ -6,7 +6,11 @@
 
 const https = require('https');
 
-const ACCESS_TOKEN = 'sbp_42e24919c87af44a2626b52dbc6dfd55eff3b692';
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+if (!ACCESS_TOKEN) {
+  console.error('Missing SUPABASE_ACCESS_TOKEN (Supabase personal access token). Export it before running this script.');
+  process.exit(1);
+}
 const PROJECT_REF = 'wfwlcpnkkxxzdvhvvsxb';
 
 function query(sql) {
