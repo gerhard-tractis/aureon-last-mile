@@ -88,7 +88,7 @@ On service start, `intake-listener` queries `intake_submissions WHERE status='re
 
 The agents service has not yet been started on the VPS. Once `OPENROUTER_API_KEY` is set:
 
-- [ ] Run first deploy: `ssh root@187.77.48.107 "sudo -u aureon bash ~/aureon-last-mile/apps/agents/scripts/deploy.sh"`
+- [ ] Run first deploy: `ssh root@<VPS_IP> "sudo -u aureon bash ~/aureon-last-mile/apps/agents/scripts/deploy.sh"`
 - [ ] Verify service is active: `systemctl is-active aureon-agents`
 - [ ] Confirm logs look healthy: `journalctl -u aureon-agents -n 50`
 - [ ] End-to-end test: submit a manifest photo from the mobile app, confirm orders appear in the DB

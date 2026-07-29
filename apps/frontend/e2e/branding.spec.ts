@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 
-const TEST_EMAIL = 'gerhard@tractis.ai';
-const TEST_PASSWORD = 'Tractis01';
+const TEST_EMAIL = process.env.E2E_TEST_EMAIL;
+const TEST_PASSWORD = process.env.E2E_TEST_PASSWORD;
+
+if (!TEST_EMAIL || !TEST_PASSWORD) {
+  throw new Error(
+    'E2E_TEST_EMAIL and E2E_TEST_PASSWORD must be set. Use a dedicated, non-privileged test account.'
+  );
+}
 
 test.describe('Customer Branding (Story 3A.4)', () => {
 
