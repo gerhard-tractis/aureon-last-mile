@@ -1,145 +1,96 @@
 # GitHub Actions Workflows
 
-## test.yml - Continuous Integration (CI)
+Two workflows, chained: **CI must pass before anything deploys.**
 
-**Trigger:** Every push and pull request to `main` or `develop`
-
-**What it does:**
-1. ✅ Type-check (TypeScript validation)
-2. ✅ Lint (ESLint - naming conventions, code quality)
-3. ✅ Test with coverage (Vitest - must maintain ≥70%)
-4. ✅ Build verification (ensures production build succeeds)
-5. ✅ Matrix testing (Node 20.x and 22.x)
-
-**Cost:** FREE (runs in GitHub Actions)
-
-**Result:**
-- 🟢 Green check = Code is safe to merge
-- 🔴 Red X = Fix issues before merge
-
----
-
-## Deployment Strategy: Manual (Cost Control)
-
-**CI runs automatically** (free, catches bugs)
-**Deployment is MANUAL** (you control costs)
-
-### How to Deploy Manually
-
-#### Option 1: Vercel Dashboard (Easiest)
-1. Go to https://vercel.com/gerhard-tractis/aureon-last-mile
-2. Click **"Deploy"** button
-3. Select branch: `main`
-4. Click **"Deploy"**
-5. Wait ~2-3 minutes for deployment
-
-#### Option 2: Vercel CLI
-```bash
-cd apps/frontend
-npx vercel --prod
 ```
-
-#### Option 3: GitHub Integration (One-Time Deploy)
-1. Go to Vercel project settings
-2. Deployments → Redeploy
-3. Select commit/branch → Deploy
-
----
-
-## Disabling Vercel Auto-Deployments
-
-**To prevent automatic deployments on every push:**
-
-### Method 1: Vercel Dashboard (Recommended)
-1. Go to https://vercel.com/gerhard-tractis/aureon-last-mile/settings/git
-2. Under **"Git"** section:
-   - Uncheck "Production Branch" (or set to `production` instead of `main`)
-   - Set "Ignored Build Step" command: `exit 1`
-3. Save changes
-
-### Method 2: vercel.json Configuration
-Create `apps/frontend/vercel.json`:
-```json
-{
-  "git": {
-    "deploymentEnabled": {
-      "main": false
-    }
-  }
-}
-```
-
-### Method 3: Ignored Build Step
-In Vercel project settings → Git:
-- **Ignored Build Step:** `git diff HEAD^ HEAD --quiet .`
-- This makes Vercel skip auto-deploys
-
----
-
-## Recommended Workflow
-
-### Daily Development
-```bash
-# 1. Make changes
-git add .
-git commit -m "feat: add new feature"
-git push origin main
-
-# 2. CI runs automatically (free)
-# - Tests pass ✅
-# - Lint passes ✅
-# - Build passes ✅
-
-# 3. No automatic deployment (saves money)
-```
-
-### When Ready to Deploy
-```bash
-# Option A: Vercel Dashboard
-# → Go to Vercel → Click "Deploy"
-
-# Option B: CLI
-cd apps/frontend
-npx vercel --prod
-
-# Option C: Git tag (for versioning)
-git tag v1.0.5
-git push origin v1.0.5
-# → Then deploy via dashboard/CLI
+push / PR ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
 ```
 
 ---
 
-## Cost Impact
+## `ci.yml` — Lint, Type-Check, Test, Build
 
-**Before (Auto-deploy):**
-- 20 commits/week × 4 weeks = 80 deploys/month 💸💸💸
+**Trigger:** every push and every pull request, on all branches.
 
-**After (Manual deploy):**
-- Deploy when ready: ~8 deploys/month ✅
-- **Savings: ~90% deployment costs**
+One job named `Lint, Type-Check, Test, Build` runs, in order:
 
----
+1. `npx turbo run lint`
+2. `npx turbo run type-check`
+3. `npx turbo run test:run`
+4. `npx turbo run build`
 
-## Future: Upgrade to Tag-Based Deployment
+Coverage per app is only as good as each package's scripts. Some are still
+stubs — see `REMEDIATION.md` item H2 for exactly which apps report green
+without running anything.
 
-When ready for automated releases:
-
-```yaml
-# .github/workflows/deploy-on-tag.yml
-on:
-  push:
-    tags:
-      - 'v*.*.*'
-```
-
-Then: `git tag v1.1.0 && git push --tags` → Auto-deploys
+This job name is the required status check on `main`, so the string must stay
+in sync with branch protection.
 
 ---
 
-## Questions?
+## `deploy.yml` — Deploy Production
 
-- **"How do I know if CI passed?"** → Check PR status (green ✅ or red ❌)
-- **"Can I deploy specific commit?"** → Yes, use Vercel dashboard redeploy
-- **"What if CI fails?"** → Fix issues, push again, CI re-runs
-- **"Preview deployments on PRs?"** → Disable in Vercel settings to save costs
+**Trigger:** `workflow_run` — fires when **CI completes**, and only deploys when
+that run both **succeeded** and was a **push to `main`** (a PR's CI run never
+deploys).
+
+Because the trigger is `workflow_run`, `github.sha` points at main's tip rather
+than the commit CI tested. Every checkout and every VPS sync pins
+`github.event.workflow_run.head_sha`. **Do not remove those refs** — without
+them a deploy can ship a different commit than the one that passed.
+
+### Jobs
+
+| Job | Runs when | Target |
+|---|---|---|
+| `changes` | always (after green CI) | computes the diff vs the previous main commit |
+| `deploy-supabase` | migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
+| `deploy-edge-functions` | `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
+| `deploy-vercel` | **every** green push | `vercel --prod`, with rollback on failure |
+| `deploy-worker` | `apps/worker/**` changed | VPS via `apps/worker/scripts/deploy.sh` |
+| `deploy-agents` | `apps/agents/**` changed | VPS via `apps/agents/scripts/deploy.sh` |
+| `deploy-solver` | `sidecar/or-tools/**` changed | VPS venv + `systemctl restart aureon-solver` |
+
+App deploys depend on the migration jobs, so a failed migration stops
+everything downstream. `concurrency: production-deploy` with
+`cancel-in-progress: false` means two merges queue rather than race — never
+cancel a half-applied migration.
+
+Change detection is a plain `git diff` against `HEAD^` (main is squash-merge
+only) over a full-depth checkout. It replaced a `dorny/paths-filter` +
+`fetch-depth: 2` setup that could silently resolve an empty diff on
+multi-commit pushes and skip the migration job.
+
+### ⚠️ Vercel Git integration must stay disabled
+
+`deploy-vercel` is the only thing that should deploy the frontend. If Vercel's
+own Git integration is enabled for `main`, it deploys every push *outside*
+GitHub Actions — in parallel with this workflow and ungated. A failed migration
+would then be followed by a frontend deploy against the old schema, with no
+rollback.
+
+Disable it at **Vercel → Project → Settings → Git** (unset the production
+branch, or set Ignored Build Step to `exit 1`).
+
+---
+
+## Branch protection on `main`
+
+- Required status check: `Lint, Type-Check, Test, Build` (strict — branch must
+  be up to date before merging)
+- Force pushes and deletions: blocked
+- Admin enforcement: on
+
+Required PR reviews are **not** enabled — with a single maintainer, GitHub
+would block every merge, since you cannot approve your own PR. Turn this on
+when a second reviewer exists (`REMEDIATION.md`, C2).
+
+---
+
+## Rollback
+
+- Frontend: automatic in-job on deploy failure; manual via Vercel dashboard.
+- Worker / agents: `deploy.sh` snapshots `dist` and restores it if systemd
+  reports `failed`.
+- Database: **no automatic rollback.** `supabase db push` is forward-only —
+  see `docs/runbooks/rollback-production.md`.

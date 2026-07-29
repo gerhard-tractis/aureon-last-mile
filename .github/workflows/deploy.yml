@@ -1,7 +1,17 @@
 name: Deploy Production
 
+# Gated on CI. This workflow only starts after the "CI" workflow finishes for a
+# push to main, and every job is conditioned on that run having SUCCEEDED — so a
+# red build can never reach production. (Previously this triggered directly on
+# push and raced CI, meaning failing tests still deployed.)
+#
+# Because the trigger is workflow_run, `github.sha` points at main's tip rather
+# than the commit that was tested. Every checkout and VPS sync below pins
+# `github.event.workflow_run.head_sha` explicitly. Do not remove those refs.
 on:
-  push:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
     branches: [main]
 
 # All deploy jobs run sequentially within their dependency chain — a failed
@@ -11,10 +21,18 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+env:
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+
 jobs:
   # ─── 0. Detect what changed ──────────────────────────────────────────────────
   changes:
     name: Detect changed paths
+    # Only deploy a green build of an actual push to main. workflow_run also
+    # fires for pull_request CI runs, which must never deploy.
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     runs-on: ubuntu-latest
     outputs:
       database: ${{ steps.filter.outputs.database }}
@@ -26,25 +44,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Full history: the diff below needs the parent commit. A shallow
+          # clone silently produced an empty diff for multi-commit pushes,
+          # which skipped the migration job on pushes that did contain
+          # migrations.
+          fetch-depth: 0
 
       - name: Filter paths
         id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          filters: |
-            database:
-              - 'packages/database/supabase/migrations/**'
-              - 'packages/database/supabase/seed.sql'
-              - 'packages/database/supabase/config.toml'
-            edge_functions:
-              - 'packages/database/supabase/functions/**'
-            worker:
-              - 'apps/worker/**'
-            agents:
-              - 'apps/agents/**'
-            solver:
-              - 'sidecar/or-tools/**'
+        run: |
+          set -euo pipefail
+          # main is squash-merge only, so HEAD^ is the previous main tip.
+          BASE=$(git rev-parse "${DEPLOY_SHA}^")
+          echo "Diffing ${BASE}..${DEPLOY_SHA}"
+          CHANGED=$(git diff --name-only "${BASE}" "${DEPLOY_SHA}")
+          echo "$CHANGED"
+
+          matches() { echo "$CHANGED" | grep -qE "$1" && echo true || echo false; }
+
+          {
+            echo "database=$(matches '^packages/database/supabase/(migrations/|seed\.sql|config\.toml)')"
+            echo "edge_functions=$(matches '^packages/database/supabase/functions/')"
+            echo "worker=$(matches '^apps/worker/')"
+            echo "agents=$(matches '^apps/agents/')"
+            echo "solver=$(matches '^sidecar/or-tools/')"
+          } >> "$GITHUB_OUTPUT"
 
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
   deploy-supabase:
@@ -59,6 +84,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -107,18 +134,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          # Must be a version that recognises Postgres 17 in config.toml's
-          # db.major_version. The earlier 2.20.x pin rejected major_version=17
-          # with "Failed reading config: Invalid db.major_version: 17", which
-          # silently broke production migration deploys for every PR that
-          # touched packages/database/supabase/migrations/** (the path filter
-          # only triggers this job on actual migration changes, so the bug
-          # went undetected until PR #214 — the first migration since the
-          # PG17 bump — failed in 16s at the link step).
+          # See the version note in deploy-supabase above.
           version: 2.88.1
 
       - name: Deploy Edge Functions
@@ -127,23 +149,27 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
   # ─── 3. Frontend (Vercel) ────────────────────────────────────────────────────
-  # NOTE: Vercel's Git integration deploys automatically on push to main and
-  # runs in parallel with this workflow. This job exists to (a) enforce the
-  # "migrations before app code" ordering and (b) provide rollback-on-failure.
-  # It only runs when DB or edge function migrations actually shipped — for
-  # pure frontend pushes, the Vercel Git integration is the source of truth.
+  # This job is the ONLY thing that should deploy the frontend to production.
+  # It runs on every green push to main and is ordered after migrations, so app
+  # code never reaches users ahead of the schema it depends on.
+  #
+  # REQUIRED: Vercel's Git integration must have production auto-deploy DISABLED
+  # for `main` (Vercel → Project → Settings → Git → Ignored Build Step, or
+  # `git.deploymentEnabled`). While it is enabled, Vercel ships every push
+  # outside GitHub Actions and this ordering guarantee is void — a failed
+  # migration would still be followed by a frontend deploy against the old
+  # schema, with no rollback.
   deploy-vercel:
     name: Deploy to Vercel
     needs: [changes, deploy-supabase, deploy-edge-functions]
-    if: |
-      always() &&
-      !failure() && !cancelled() &&
-      (needs.changes.outputs.database == 'true' || needs.changes.outputs.edge_functions == 'true')
+    if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Deploy to Vercel
         run: npx vercel@latest --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
@@ -171,12 +197,15 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Sync repo to main
+      - name: Sync repo to the tested commit
         run: |
+          set -euo pipefail
           cd ~/aureon-last-mile
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           git fetch origin main
-          git reset --hard origin/main
+          git reset --hard "${DEPLOY_SHA}"
+          # Don't leave the token sitting in .git/config on the VPS.
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -200,12 +229,14 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Sync repo to main
+      - name: Sync repo to the tested commit
         run: |
+          set -euo pipefail
           cd ~/aureon-last-mile
           git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
           git fetch origin main
-          git reset --hard origin/main
+          git reset --hard "${DEPLOY_SHA}"
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -229,16 +260,16 @@ jobs:
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
     steps:
-      - name: Sync repo to main
+      - name: Sync repo to the tested commit
         run: |
+          set -euo pipefail
           cd ~/sidecar
           git fetch origin main
-          git reset --hard origin/main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          git reset --hard "${DEPLOY_SHA}"
 
       - name: Install dependencies and restart
         run: |
+          set -euo pipefail
           cd ~/sidecar/sidecar/or-tools
           source ~/.venv/bin/activate
           pip install --no-cache-dir -r requirements.txt
