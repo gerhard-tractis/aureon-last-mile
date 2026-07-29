@@ -1,6 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { NextRequest } from 'next/server';
+
+// This route is a dev tool that spends money on OpenRouter. It is not covered
+// by middleware.ts (which only guards /app/**), so it enforces an admin or
+// maintainer session itself. Every test below therefore needs a session.
+const mockGetSession = vi.fn();
+vi.mock('@/lib/supabase/server', () => ({
+  createSSRClient: vi.fn(async () => ({
+    auth: { getSession: mockGetSession },
+  })),
+}));
+
 import { POST } from './route';
+
+function sessionAs(role: string | undefined) {
+  return {
+    data: { session: { user: { app_metadata: { claims: role ? { role } : {} } } } },
+    error: null,
+  };
+}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function makeReq(images: File[] = []): NextRequest {
@@ -19,6 +37,8 @@ describe('POST /api/ocr-test', () => {
 
   beforeEach(() => {
     process.env.OPENROUTER_API_KEY = 'test-key-123';
+    mockGetSession.mockReset();
+    mockGetSession.mockResolvedValue(sessionAs('admin'));
   });
 
   afterEach(() => {
@@ -126,5 +146,24 @@ describe('POST /api/ocr-test', () => {
     };
     const imageItems = sentBody.messages[0].content.filter((c) => c.type === 'image_url');
     expect(imageItems).toHaveLength(2);
+  });
+
+  it('returns 401 when there is no session', async () => {
+    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
+    const res = await POST(makeReq([fakeJpeg()]));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for a signed-in user without admin or maintainer role', async () => {
+    mockGetSession.mockResolvedValue(sessionAs('driver'));
+    const res = await POST(makeReq([fakeJpeg()]));
+    expect(res.status).toBe(403);
+  });
+
+  it('allows a maintainer', async () => {
+    // Auth passes, so it proceeds far enough to reject the empty image list.
+    mockGetSession.mockResolvedValue(sessionAs('maintainer'));
+    const res = await POST(makeReq([]));
+    expect(res.status).toBe(400);
   });
 });

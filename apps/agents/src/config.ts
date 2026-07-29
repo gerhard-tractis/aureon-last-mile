@@ -10,6 +10,14 @@ const configSchema = z.object({
   ENCRYPTION_KEY: z.string().min(1),
   SENTRY_DSN: z.string().min(1),
 
+  // Bull Board gives full read/write/replay/delete over every queue, including
+  // job payloads containing customer PII, and the service listens on the VPS.
+  // These were previously read straight from process.env with 'admin'/'changeme'
+  // fallbacks and no validation, so a forgotten env var silently shipped a
+  // default-credential admin UI. Required, and the password has a length floor.
+  BULL_BOARD_USER: z.string().min(1),
+  BULL_BOARD_PASSWORD: z.string().min(12),
+
   // Optional vars
   OCR_API_SECRET: z.string().min(1).optional(),
   BETTERSTACK_HEARTBEAT_URL: z.string().optional(),
@@ -45,12 +53,20 @@ export function getConfig(): Config {
 
 // Export as `config` alias for convenience; callers import { config } and
 // rely on the module being initialised with env vars already set.
+//
+// Under test the environment is intentionally absent, so this stays null and
+// tests call loadConfig() directly. In every other context a missing env var
+// must surface as the actual "Missing required environment variables: X" error
+// at first use — previously this swallowed the failure and handed back
+// `null as unknown as Config`, so a misconfigured production process died later
+// with "Cannot read properties of null" at an unrelated call site.
 export const config: Config = (() => {
   try {
     return loadConfig();
-  } catch {
-    // During test runs modules are reset and env may not be set.
-    // Tests call loadConfig() directly; don't crash at import time.
-    return null as unknown as Config;
+  } catch (err) {
+    if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+      return null as unknown as Config;
+    }
+    throw err;
   }
 })();

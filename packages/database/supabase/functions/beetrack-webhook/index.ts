@@ -10,8 +10,24 @@ const STATUS_MAP: Record<number, 'pending' | 'delivered' | 'failed' | 'partial'>
 };
 
 // Musan operator_id (hardcoded — single operator account)
+// TODO(C6): derive the tenant from the request instead. Onboarding a second
+// operator while this is a constant lands their data in Musan's tenant.
 export const MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
 export const PROVIDER = 'dispatchtrack' as const;
+
+/** Constant-time string compare, so a shared secret can't be recovered by timing. */
+export function timingSafeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  if (aBytes.length !== bBytes.length) return false;
+
+  let diff = 0;
+  for (let i = 0; i < aBytes.length; i++) {
+    diff |= aBytes[i] ^ bBytes[i];
+  }
+  return diff === 0;
+}
 
 /**
  * Build the row used by handleDispatch to upsert the parent route when a
@@ -70,13 +86,20 @@ Deno.serve(async (req: Request) => {
     return new Response('Method not allowed', { status: 405 });
   }
 
-  // Validate shared secret
+  // Validate shared secret. This function runs with verify_jwt = false and
+  // writes to dispatches, routes, fleet_vehicles and orders.status — so a
+  // missing secret must fail CLOSED, not skip the check. Previously an unset
+  // or misspelled env var turned this into a public write endpoint that could
+  // mark any order delivered or cancelled.
   const secret = Deno.env.get('BEETRACK_WEBHOOK_SECRET');
-  if (secret) {
-    const incoming = req.headers.get('X-Webhook-Secret') ?? req.headers.get('x-webhook-secret');
-    if (incoming !== secret) {
-      return new Response('Unauthorized', { status: 401 });
-    }
+  if (!secret) {
+    console.error('BEETRACK_WEBHOOK_SECRET is not set — refusing to process webhook');
+    return new Response('Server misconfigured', { status: 500 });
+  }
+
+  const incoming = req.headers.get('X-Webhook-Secret') ?? req.headers.get('x-webhook-secret');
+  if (!incoming || !timingSafeEqual(incoming, secret)) {
+    return new Response('Unauthorized', { status: 401 });
   }
 
   let body: Record<string, unknown>;
