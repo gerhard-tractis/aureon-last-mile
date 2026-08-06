@@ -4,6 +4,14 @@
 --          RLS enforcement via get_operator_id() applies; explicit p_operator_id
 --          parameter provides additional defence-in-depth filtering.
 
+-- spec-48 fresh-rebuild fix: these LANGUAGE sql bodies reference
+-- public.dashboard_monthly_rollup, which is created by 20260409000007 — a
+-- LATER filename. Production applied them in merge order (deploy.yml uses
+-- `supabase db push --include-all`), so it never hit this; a fresh replay in
+-- filename order does. Defer body validation to first execution, like
+-- pg_dump/Supabase dumps do. No behavior change once the table exists.
+SET check_function_bodies = off;
+
 -- ============================================================================
 -- RPC 1: get_dashboard_north_stars
 -- Returns current month + prior month + prior year rows for north-star KPIs.

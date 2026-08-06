@@ -204,28 +204,36 @@ COMMENT ON TRIGGER users_audit_trigger ON public.users IS 'Story 1.6: Auto-log a
 -- TASK 2.3-2.4: Attach Triggers to orders and manifests Tables
 -- ============================================================================
 
--- Note: orders and manifests tables already exist from Story 1.2
--- Triggers will automatically log all changes to these tables
+-- Note: on PRODUCTION orders and manifests already existed (dashboard-created
+-- in the pre-migration era), so these triggers attached here. On a FRESH
+-- replay those tables are only created by later migrations (20260217000003
+-- creates orders, 20260310100000 creates manifests) which attach their own
+-- audit triggers (audit_orders_changes / audit_manifests_changes) — so skip
+-- when the tables do not exist yet. (spec-48 fresh-rebuild fix; no-op on prod.)
+DO $$
+BEGIN
+  IF to_regclass('public.orders') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS orders_audit_trigger ON public.orders;
+    CREATE TRIGGER orders_audit_trigger
+      AFTER INSERT OR UPDATE OR DELETE ON public.orders
+      FOR EACH ROW
+      EXECUTE FUNCTION public.audit_trigger_func();
+    COMMENT ON TRIGGER orders_audit_trigger ON public.orders IS 'Story 1.6: Auto-log all order changes (create, update, delete)';
+  ELSE
+    RAISE NOTICE 'public.orders not present (fresh replay) — later migration attaches its own audit trigger';
+  END IF;
 
--- Drop existing triggers if exist (idempotent)
-DROP TRIGGER IF EXISTS orders_audit_trigger ON public.orders;
-DROP TRIGGER IF EXISTS manifests_audit_trigger ON public.manifests;
-
--- Create trigger for orders table
-CREATE TRIGGER orders_audit_trigger
-  AFTER INSERT OR UPDATE OR DELETE ON public.orders
-  FOR EACH ROW
-  EXECUTE FUNCTION public.audit_trigger_func();
-
-COMMENT ON TRIGGER orders_audit_trigger ON public.orders IS 'Story 1.6: Auto-log all order changes (create, update, delete)';
-
--- Create trigger for manifests table
-CREATE TRIGGER manifests_audit_trigger
-  AFTER INSERT OR UPDATE OR DELETE ON public.manifests
-  FOR EACH ROW
-  EXECUTE FUNCTION public.audit_trigger_func();
-
-COMMENT ON TRIGGER manifests_audit_trigger ON public.manifests IS 'Story 1.6: Auto-log all manifest changes (create, update, delete)';
+  IF to_regclass('public.manifests') IS NOT NULL THEN
+    DROP TRIGGER IF EXISTS manifests_audit_trigger ON public.manifests;
+    CREATE TRIGGER manifests_audit_trigger
+      AFTER INSERT OR UPDATE OR DELETE ON public.manifests
+      FOR EACH ROW
+      EXECUTE FUNCTION public.audit_trigger_func();
+    COMMENT ON TRIGGER manifests_audit_trigger ON public.manifests IS 'Story 1.6: Auto-log all manifest changes (create, update, delete)';
+  ELSE
+    RAISE NOTICE 'public.manifests not present (fresh replay) — later migration attaches its own audit trigger';
+  END IF;
+END $$;
 
 -- ============================================================================
 -- TASK 3: Configure 7-Year Retention Policy (Partitioning)

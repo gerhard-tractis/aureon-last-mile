@@ -4,6 +4,26 @@
 -- Ensures every user has operator_id in their JWT token
 
 -- ============================================================================
+-- PART 0: Ensure public.operators exists (fresh-rebuild ordering fix, spec-48)
+-- ============================================================================
+-- This file FK-references public.operators, but the migration that bootstraps
+-- that table (20260209000004_bootstrap_operators_audit_logs.sql, added by C3)
+-- sorts AFTER this one — so a fresh replay (supabase db reset, QA
+-- apply-migrations.sh) failed here. On production the table has always
+-- existed, so this guarded CREATE is a no-op there. Column DDL is an exact
+-- copy of 20260209000004, which still owns the indexes/RLS/comments.
+CREATE TABLE IF NOT EXISTS public.operators (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  country_code VARCHAR(2) DEFAULT 'CL',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  is_active BOOLEAN DEFAULT TRUE,
+  settings JSONB DEFAULT '{}'::jsonb
+);
+
+-- ============================================================================
 -- PART 1: Add operator_id to user profiles
 -- ============================================================================
 
@@ -126,8 +146,13 @@ BEGIN
   -- Get demo operator
   SELECT id INTO demo_operator_id FROM public.operators WHERE slug = 'demo-chile';
 
-  -- Check if test user already exists
-  IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = test_user_1_id) THEN
+  -- spec-48 fresh-rebuild fix: the demo operator only exists when seed.sql has
+  -- run (it has not, during migration replay), and the original INSERT used a
+  -- nonexistent column name (raw_app_metadata) — so this block could never
+  -- replay on a fresh database. Skip when the operator is absent and use the
+  -- real GoTrue column name (raw_app_meta_data). No-op on production.
+  IF demo_operator_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM auth.users WHERE id = test_user_1_id) THEN
     -- Insert test user (this would normally happen via Supabase Auth signup)
     INSERT INTO auth.users (
       id,
@@ -137,7 +162,7 @@ BEGIN
       email,
       encrypted_password,
       email_confirmed_at,
-      raw_app_metadata,
+      raw_app_meta_data,
       raw_user_meta_data,
       created_at,
       updated_at,
