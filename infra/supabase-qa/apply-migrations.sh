@@ -23,7 +23,16 @@
 #
 # SAFETY: this script refuses to run against anything that is not
 # localhost:5433 / 127.0.0.1:5433. The check parses the --db-url string itself,
-# so it cannot be bypassed via PGHOST/PGPORT or other env tricks.
+# so it cannot be bypassed via PGHOST/PGPORT or other env tricks. It also
+# rejects libpq multi-host failover lists (comma in the host part) and any URL
+# query parameters other than sslmode, because libpq honors ?host=/?port=
+# overrides that would silently redirect the connection.
+#
+# Crash-consistency note: each migration is applied and then recorded in
+# schema_migrations as two separate transactions. If this script dies between
+# the apply and the tracking INSERT, the next run will attempt to re-apply
+# that migration (which may fail on non-idempotent DDL) — inspect and insert
+# the tracking row manually in that rare case.
 #
 # Usage:
 #   ./apply-migrations.sh --db-url postgresql://postgres:PASS@localhost:5433/postgres
@@ -75,10 +84,42 @@ fi
 # contact. Deliberately independent of PGHOST/PGPORT/PGSERVICE env vars: only
 # the literal URL text matters.
 # ---------------------------------------------------------------------------
+# Reject libpq connection parameters in the query string. libpq honors
+# ?host=/?port=/?hostaddr= overrides, which would redirect the connection
+# while the URL's authority still reads localhost:5433. Allow only sslmode.
+if [ "${DB_URL#*\?}" != "$DB_URL" ]; then
+  query="${DB_URL#*\?}"
+  IFS='&' read -r -a qparams <<< "$query"
+  for qp in "${qparams[@]}"; do
+    pname="${qp%%=*}"
+    if [ "$pname" != "sslmode" ]; then
+      echo "==================================================================" >&2
+      echo "REFUSING TO RUN: URL query parameter '${pname}' is not allowed." >&2
+      echo "libpq honors ?host=/?port= overrides that can redirect the" >&2
+      echo "connection away from the QA database. Only 'sslmode' is permitted." >&2
+      echo "==================================================================" >&2
+      exit 1
+    fi
+  done
+fi
+
 authority="${DB_URL#*://}"      # strip scheme
 authority="${authority%%/*}"    # strip /dbname...
 authority="${authority%%\?*}"   # strip ?params (if no dbname)
 hostport="${authority##*@}"     # strip user:pass@
+
+# Reject libpq multi-host failover lists (host1:port1,host2:port2,...):
+# our parser would only inspect the first entry while psql may connect to any.
+case "$hostport" in
+  *,*)
+    echo "==================================================================" >&2
+    echo "REFUSING TO RUN: multi-host failover list detected in '${hostport}'." >&2
+    echo "Only a single host (localhost:5433 or 127.0.0.1:5433) is allowed." >&2
+    echo "==================================================================" >&2
+    exit 1
+    ;;
+esac
+
 case "$hostport" in
   \[*\]*) # bracketed IPv6 literal — never our QA target
     url_host="${hostport%%]*}"; url_host="${url_host#[}"
@@ -185,6 +226,11 @@ for f in "${files[@]}"; do
   if grep -Eqi '^[[:space:]]*BEGIN[[:space:]]*;' "$path"; then
     txn_flag=()
     echo "note: $f contains its own BEGIN/COMMIT — applying without --single-transaction"
+    if ! grep -Eqi '^[[:space:]]*COMMIT[[:space:]]*;' "$path"; then
+      echo "WARNING: $f has a top-level BEGIN; but no matching top-level COMMIT;" >&2
+      echo "         — its final transaction may be left open/rolled back by psql." >&2
+      echo "         Review the file before trusting this migration." >&2
+    fi
   fi
 
   echo "applying:    $f"
