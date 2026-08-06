@@ -15,6 +15,7 @@ A complete, isolated QA environment on the VPS (187.77.48.107) that mirrors prod
 - **Access:** SSH tunnel by default; no UFW changes (user opens ports later if teammates need direct access).
 - **Process model:** systemd units, mirroring how prod services run on the VPS (`aureon-agents.service` pattern).
 - **No Supabase CLI on the VPS:** migrations are applied with a plain sorted `psql -f` loop + inserts into `supabase_migrations.schema_migrations`, so no prod-capable tooling is added to the box.
+- **CI/CD keeps QA identical to prod (added after initial review):** every green merge to `main` also deploys to the QA environment via a new `deploy-qa` job in `deploy.yml`, running on the existing self-hosted VPS runner. QA drift is the #1 cause of "works in QA, fails in prod" — so QA migration deploys are deliberately **not path-filtered**: `apply-migrations.sh` is idempotent and cheap, and the prod path filter has already masked DB deploy failures once (see deploy.yml history). App rebuilds are path-filtered (heavy).
 
 ## Port Map
 
@@ -63,6 +64,8 @@ Browser (SSH tunnel :3200, :8100)
 | `infra/supabase-qa/systemd/aureon-agents-qa.service` | QA agents unit |
 | `infra/supabase-qa/systemd/aureon-worker-qa.service` | QA worker unit |
 | `infra/supabase-qa/setup-qa.sh` | VPS-side orchestrator (assumes repo already cloned; does NOT clone) |
+| `infra/supabase-qa/deploy-qa.sh` | CI-invoked incremental QA deploy: migrations always; rebuild/restart only what changed |
+| `.github/workflows/deploy.yml` (modify) | New `deploy-qa` job + `frontend` path-filter output |
 | `packages/database/supabase/seed-qa.sql` | Dummy business data (operator, drivers, hub, routes, orders) |
 | `docs/qa-environment.md` | Runbook: setup, tunnel commands, reset procedure, smoke-test checklist |
 
@@ -83,7 +86,8 @@ Plus one code change: `apps/agents` health + bull-board ports become env-configu
 3. Login via QA frontend with seeded QA user (each role).
 4. Create an order/delivery in the UI → row appears in QA Postgres with correct `operator_id`.
 5. Agents: bull-board on 3211 shows QA queue activity; worker: journal shows cron runs against `localhost:5433`.
-6. Isolation proof: for each QA unit, inspect the live process env (`systemctl show -p Environment` is empty for `EnvironmentFile=` units): `cat /proc/$(systemctl show -p MainPID --value aureon-agents-qa)/environ | tr '\0' '\n' | grep -c supabase.co` must be 0 (same for worker/frontend), plus `grep -c supabase.co /home/aureon/.env.qa` = 0.
+6. Continuous sync: the `deploy-qa` job in the production deploy workflow runs on every green main merge; after any post-setup merge, QA's applied-migration count equals the repo count without manual action.
+7. Isolation proof: for each QA unit, inspect the live process env (`systemctl show -p Environment` is empty for `EnvironmentFile=` units): `cat /proc/$(systemctl show -p MainPID --value aureon-agents-qa)/environ | tr '\0' '\n' | grep -c supabase.co` must be 0 (same for worker/frontend), plus `grep -c supabase.co /home/aureon/.env.qa` = 0.
 
 ---
 
@@ -114,6 +118,7 @@ Plus one code change: `apps/agents` health + bull-board ports become env-configu
 - [ ] Download the official compose from `github.com/supabase/supabase/tree/master/docker`, pinned to the latest release tag at implementation time (record tag in a header comment).
 - [ ] Remove `analytics` (Logflare), `vector`, and `supavisor` services **and strip every `depends_on: analytics` condition and Logflare env var from the remaining services** — deleting only the service blocks leaves a stack that never starts.
 - [ ] Ports come from env: Kong `${KONG_HTTP_PORT}:8000` (8100), Studio `${STUDIO_PORT}:3000` (8101), Postgres `${POSTGRES_PORT}:5432` (5433). `restart: unless-stopped` everywhere; compose project name `supabase-qa`.
+- [ ] Point the edge-runtime (`functions`) service's volume at the repo checkout: `/home/aureon/aureon-qa/packages/database/supabase/functions` (so CI QA sync only needs a container restart to pick up new edge functions).
 - [ ] Build `env.qa.example` from the official `.env.example` plus every var the apps need, ALL pointing at QA endpoints:
   - Frontend: `NEXT_PUBLIC_SUPABASE_URL=http://localhost:8100`, `NEXT_PUBLIC_SUPABASE_ANON_KEY=`, `SUPABASE_SERVICE_KEY=`
   - Agents (check `apps/agents/.env.example` + `src/config.ts` for the full required list): `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (note: NOT `SUPABASE_SERVICE_KEY` — agents require the `_ROLE_` name), `REDIS_URL=redis://localhost:6379/1`, `HEALTH_PORT=3210`, `BULL_BOARD_PORT=3211`, `BULL_BOARD_USER/PASSWORD`, `ENCRYPTION_KEY`, `SENTRY_DSN` (may be empty/QA project), `OPENROUTER_API_KEY`
@@ -162,27 +167,46 @@ Plus one code change: `apps/agents` health + bull-board ports become env-configu
 - [ ] Test: `bash -n` (and shellcheck if available) on all scripts.
 - [ ] Commit: `feat(qa): VPS setup orchestrator and systemd units`
 
-### Task 7: Runbook
+### Task 7: CI/CD QA sync
+
+**Files:** Create `infra/supabase-qa/deploy-qa.sh`; Modify `.github/workflows/deploy.yml`
+
+- [ ] `deploy-qa.sh` (runs on the VPS via the self-hosted runner, receives `DEPLOY_SHA` + changed-flags as env/args):
+  1. Guard: if `/home/aureon/aureon-qa` or `/home/aureon/.env.qa` is missing, print "QA environment not provisioned — skipping" and exit 0 (lets the job merge before Chunk 2 has run).
+  2. Sync `/home/aureon/aureon-qa` to `DEPLOY_SHA` (same token-scrubbing git pattern as the existing worker/agents jobs).
+  3. **Always:** run `apply-migrations.sh` against QA Postgres (idempotent — no path filter, by design).
+  4. If `edge_functions` changed: restart the QA edge-runtime container (compose mounts the repo functions dir — Task 2 must mount `/home/aureon/aureon-qa/packages/database/supabase/functions` into it).
+  5. If `frontend` changed: rebuild frontend (`set -a; source /home/aureon/.env.qa; set +a; npm run build`) and `systemctl restart aureon-frontend-qa`.
+  6. If `worker`/`agents` changed: rebuild that app and restart its `-qa` unit.
+  7. Health check: QA Kong `/auth/v1/health`, frontend :3200, agents :3210 respond; exit non-zero otherwise.
+- [ ] `deploy.yml` changes:
+  - Add `frontend: $(matches '^apps/frontend/')` to the `changes` job outputs.
+  - New job `deploy-qa`: `runs-on: [self-hosted, vps]`, `needs: [changes]`, same green-CI/push gating as other jobs, runs `deploy-qa.sh` with the flags. **No prod job depends on it** — a QA failure must never block a prod deploy (it reports `::error::` so drift is visible in the run).
+- [ ] Test: `bash -n deploy-qa.sh`; `actionlint` on deploy.yml if available (else YAML-parse check).
+- [ ] Commit: `feat(qa): CI deploy job keeps QA env in sync with every main merge`
+
+### Task 8: Runbook
 
 **Files:** Create `docs/qa-environment.md`
 
 - [ ] Document: purpose, full port map (incl. occupied prod ports), first-time setup order (clone → generate secrets → fill OPENROUTER key → setup-qa.sh), SSH tunnel one-liner (`ssh -L 3200:localhost:3200 -L 8100:localhost:8100 aureon@<VPS-IP>`), DB reset procedure (`docker compose down -v` → re-run setup), smoke-test checklist, and the hard rule: QA services must never contain a `supabase.co` URL.
 - [ ] Commit: `docs(qa): QA environment runbook`
 
-### Task 8: PR
+### Task 9: PR
 
-- [ ] Push branch `feat/spec-48-qa-environment`; `gh pr create`; `gh pr merge --auto --squash` (mandatory). Wait for CI + merge (`gh pr checks`, `gh pr view --json state,mergedAt`) before Chunk 2.
+- [ ] Push branch `feat/spec-48-qa-environment`; `gh pr create`; `gh pr merge --auto --squash` (mandatory). Wait for CI + merge (`gh pr checks`, `gh pr view --json state,mergedAt`) before Chunk 2. (The new `deploy-qa` job will run on this very merge and skip cleanly because QA isn't provisioned yet — that skip message is itself a test of the guard.)
 
 ## Chunk 2: VPS execution
 
-### Task 9: Prepare and deploy
+### Task 10: Prepare and deploy
 
 - [ ] SSH to VPS (`connect-to-vps` skill). First time: `git clone <repo> /home/aureon/aureon-qa`; afterwards `git -C /home/aureon/aureon-qa pull`.
 - [ ] `cp .../env.qa.example /home/aureon/.env.qa`; run `generate-qa-secrets.sh`; copy `OPENROUTER_API_KEY` from `/home/aureon/.env` (external service — acceptable to share; never copy SUPABASE_* values from that file).
 - [ ] Run `setup-qa.sh`; capture full output. If preflight fails (RAM/missing tools), stop and report to the user with options.
 - [ ] Verify: containers healthy; migration count matches repo count; `curl` login against `http://localhost:8100/auth/v1/token?grant_type=password` with a QA user succeeds.
 
-### Task 10: E2E smoke test
+### Task 11: E2E smoke test + CI sync proof
 
 - [ ] Run the smoke-test checklist from the spec (tunnel, login per role, create delivery, bull-board 3211 activity, worker journal, effective-env isolation proof).
+- [ ] CI sync proof: after the next merge to main (any PR), confirm the `deploy-qa` job ran and QA's applied-migration count still equals the repo's migration count.
 - [ ] Report results with evidence. Update `docs/sprint-status.yaml`; spec status `in progress` → user confirms → `completed`.
