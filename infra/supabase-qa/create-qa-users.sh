@@ -103,7 +103,10 @@ FAILED=()
 
 create_user() {
   local role="$1" operator_id="$2" email="$3"
-  local body http_code response
+  local body http_code response resp_file
+  resp_file=$(mktemp) || { FAILED+=("$email (mktemp failed)"); return 1; }
+  # shellcheck disable=SC2064  # expand resp_file now, not at trap time
+  trap "rm -f '$resp_file'" RETURN
   body=$(cat <<JSON
 {
   "email": "$email",
@@ -118,7 +121,7 @@ create_user() {
 }
 JSON
 )
-  response=$(curl -sS -o /tmp/qa-user-resp.$$ -w '%{http_code}' \
+  response=$(curl -sS -o "$resp_file" -w '%{http_code}' \
     -X POST "$QA_URL/auth/v1/admin/users" \
     -H "apikey: $SERVICE_ROLE_KEY" \
     -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
@@ -130,23 +133,27 @@ JSON
     200|201)
       CREATED+=("$email")
       ;;
-    409|422)
-      SKIPPED+=("$email (already exists, HTTP $http_code)")
+    409)
+      SKIPPED+=("$email (already exists, HTTP 409)")
       ;;
-    400)
-      if grep -qi "already" /tmp/qa-user-resp.$$; then
-        SKIPPED+=("$email (already exists)")
+    400|422)
+      # GoTrue signals duplicates as 422 (or 400 on older versions) with a
+      # message like "... has already been registered" — but the same status
+      # codes also cover genuine validation errors, so check the body.
+      if grep -qi "already" "$resp_file"; then
+        SKIPPED+=("$email (already exists, HTTP $http_code)")
       else
-        echo "ERROR creating $email (HTTP 400): $(cat /tmp/qa-user-resp.$$)" >&2
-        FAILED+=("$email (HTTP 400)")
+        echo "ERROR creating $email (HTTP $http_code): $(cat "$resp_file")" >&2
+        FAILED+=("$email (HTTP $http_code)")
+        return 1
       fi
       ;;
     *)
-      echo "ERROR creating $email (HTTP $http_code): $(cat /tmp/qa-user-resp.$$)" >&2
+      echo "ERROR creating $email (HTTP $http_code): $(cat "$resp_file")" >&2
       FAILED+=("$email (HTTP $http_code)")
+      return 1
       ;;
   esac
-  rm -f /tmp/qa-user-resp.$$
   return 0
 }
 
@@ -154,11 +161,18 @@ enforce_permissions() {
   # handle_new_user inserts permissions='{}'; enforce the role mapping from
   # 20260310100001 + 20260324000003. Idempotent (plain UPDATE to a constant).
   local role="$1" email="$2" perms="$3"
-  local pg_array="{$perms}"
-  psql_qa -c "UPDATE public.users
-                 SET permissions = '$pg_array'::text[]
-               WHERE email = '$email' AND role = '$role' AND deleted_at IS NULL;" \
+  local pg_array="{$perms}" updated
+  updated=$(psql_qa -c "UPDATE public.users
+                           SET permissions = '$pg_array'::text[]
+                         WHERE email = '$email' AND role = '$role' AND deleted_at IS NULL
+                     RETURNING id;") \
     || { FAILED+=("$email (permissions update failed)"); return 1; }
+  if [ -z "$updated" ]; then
+    echo "ERROR: permissions update matched no public.users row for $email ($role)" >&2
+    echo "       (handle_new_user trigger did not create the row?)" >&2
+    FAILED+=("$email (no public.users row to update)")
+    return 1
+  fi
   return 0
 }
 

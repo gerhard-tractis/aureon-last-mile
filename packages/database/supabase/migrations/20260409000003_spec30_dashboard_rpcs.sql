@@ -10,7 +10,11 @@
 -- `supabase db push --include-all`), so it never hit this; a fresh replay in
 -- filename order does. Defer body validation to first execution, like
 -- pg_dump/Supabase dumps do. No behavior change once the table exists.
-SET check_function_bodies = off;
+-- SET LOCAL so the GUC cannot leak into later files on a single-connection
+-- replay: both the Supabase CLI and infra/supabase-qa/apply-migrations.sh run
+-- each migration file inside its own transaction (this file has no top-level
+-- BEGIN/COMMIT of its own), and SET LOCAL dies with that transaction.
+SET LOCAL check_function_bodies = off;
 
 -- ============================================================================
 -- RPC 1: get_dashboard_north_stars
