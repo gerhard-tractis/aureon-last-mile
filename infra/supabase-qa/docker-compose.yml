@@ -82,6 +82,8 @@ services:
     volumes:
       - ./volumes/snippets:/app/snippets:z
       - /home/aureon/aureon-qa/packages/database/supabase/functions:/app/edge-functions:ro,z
+      # Keep Studio's view consistent with the functions runtime (nested bind)
+      - ./volumes/functions/main:/app/edge-functions/main:ro,z
 
   kong:
     container_name: supabase-qa-kong
@@ -357,6 +359,11 @@ services:
     volumes:
       # QA checkout of the repo's edge functions (replaces ./volumes/functions)
       - /home/aureon/aureon-qa/packages/database/supabase/functions:/home/deno/functions:z
+      # The repo checkout has no `main` service (only the individual
+      # functions), but edge-runtime's --main-service requires one. Nested
+      # bind: the more specific path wins, overlaying the vendored upstream
+      # router (which dispatches to sibling dirs under /home/deno/functions).
+      - ./volumes/functions/main:/home/deno/functions/main:ro,z
       - deno-cache:/root/.cache/deno
     depends_on:
       kong:
