@@ -2,3 +2,5 @@
 volumes/db/data/
 volumes/storage/*
 !volumes/storage/.gitkeep
+volumes/snippets/*
+!volumes/snippets/.gitkeep
