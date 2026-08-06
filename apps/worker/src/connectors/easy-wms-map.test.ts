@@ -125,7 +125,6 @@ function mapDespachos(payload: EasyWmsPayload, ctx: { now?: string }): Record<st
   }
 
   const ordersMap = new Map<string, Record<string, unknown>>();
-  const rawByEntrega = new Map<string, EasyDespacho>();
   const packages: Record<string, unknown>[] = [];
   const warnings: string[] = [];
 
@@ -146,6 +145,10 @@ function mapDespachos(payload: EasyWmsPayload, ctx: { now?: string }): Record<st
 
     const customerPhone = cleanPhone(despacho.cliente_telefono);
 
+    if (!despacho.url_guia) {
+      warnings.push('Despacho ' + entrega + ' has no url_guia — dispatch_guide_url will be null');
+    }
+
     if (!ordersMap.has(entrega)) {
       ordersMap.set(entrega, {
         operator_id: OPERATOR_ID,
@@ -163,9 +166,8 @@ function mapDespachos(payload: EasyWmsPayload, ctx: { now?: string }): Record<st
         dispatch_guide_url: despacho.url_guia || null,
         raw_data: despacho,
       });
-      rawByEntrega.set(entrega, despacho);
     } else {
-      const firstDespacho = rawByEntrega.get(entrega)!;
+      const firstDespacho = (ordersMap.get(entrega)!.raw_data) as EasyDespacho;
       if (despacho.url_guia !== firstDespacho.url_guia) {
         warnings.push(
           'Duplicate entrega ' + entrega + ' has a different url_guia; keeping first: ' + (firstDespacho.url_guia || '(none)')
@@ -325,6 +327,17 @@ describe('parseEasyWmsBody', () => {
     expect(payload.despachos![0].url_guia).toBe(despacho.url_guia);
   });
 
+  it('branch 2: parsedBody is already an object with a despachos array → used as-is', () => {
+    const despacho = buildDespacho();
+    const parsedBody = { evento: 'impresion por numero de carga', despachos: [despacho] };
+
+    const { payload, reconstructed } = parseEasyWmsBody(undefined, parsedBody);
+
+    expect(reconstructed).toBe(false);
+    expect(payload).toBe(parsedBody as unknown as EasyWmsPayload);
+    expect(payload.despachos![0].url_guia).toBe(despacho.url_guia);
+  });
+
   it('(d) prefers rawBody over parsedBody even when parsedBody is the mangled shape', () => {
     const despacho = buildDespacho();
     const jsonString = JSON.stringify({ evento: 'impresion por numero de carga', despachos: [despacho] });
@@ -353,7 +366,20 @@ describe('mapDespachos — dispatch_guide_url mapping (spec-49)', () => {
     expect(orders[0].dispatch_guide_url).toBe(url);
   });
 
-  it('(e) missing url_guia → order still imported, dispatch_guide_url null, warning about no items is unaffected', () => {
+  it('end-to-end on the reconstruction path: mangled body → parseEasyWmsBody → mapDespachos → byte-identical URL', () => {
+    const despacho = buildDespacho();
+    const jsonString = JSON.stringify({ evento: 'impresion por numero de carga', despachos: [despacho] });
+    const mangled = mangleFormBody(jsonString);
+
+    const { payload, reconstructed } = parseEasyWmsBody(undefined, mangled);
+    expect(reconstructed).toBe(true);
+
+    const { orders } = mapDespachos(payload, { now: NOW }) as { orders: Record<string, unknown>[] };
+
+    expect(orders[0].dispatch_guide_url).toBe(despacho.url_guia);
+  });
+
+  it('(e) missing url_guia → order still imported, dispatch_guide_url null, and a warning is appended', () => {
     const despacho = buildDespacho({ url_guia: undefined });
 
     const result = mapDespachos({ despachos: [despacho] }, { now: NOW }) as {
@@ -363,6 +389,7 @@ describe('mapDespachos — dispatch_guide_url mapping (spec-49)', () => {
 
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0].dispatch_guide_url).toBeNull();
+    expect(result.warnings.some((w) => w.includes('no url_guia'))).toBe(true);
   });
 
   it('(f) empty-string url_guia is coerced to null', () => {
