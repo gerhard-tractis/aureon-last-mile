@@ -1,0 +1,3 @@
+# Vendored Supabase files must keep LF — kong-entrypoint.sh runs via /bin/sh
+# inside the container and SQL init scripts are read by postgres on Linux.
+* text eol=lf
