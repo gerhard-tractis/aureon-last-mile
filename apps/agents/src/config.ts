@@ -1,6 +1,18 @@
 // src/config.ts — Env var validation using Zod. Exports typed Config singleton.
 import { z } from 'zod';
 
+// Ports are env-overridable so a QA instance can run beside prod on the same
+// VPS. Prod does not set these vars, so the defaults must stay 3110/3101.
+// Invalid or absent values fall back to the default rather than failing boot.
+const portWithDefault = (defaultPort: number) =>
+  z
+    .string()
+    .optional()
+    .transform((v) => {
+      const n = v === undefined ? NaN : Number.parseInt(v, 10);
+      return Number.isInteger(n) && n >= 1 && n <= 65535 ? n : defaultPort;
+    });
+
 const configSchema = z.object({
   // Required vars
   SUPABASE_URL: z.string().min(1),
@@ -17,6 +29,10 @@ const configSchema = z.object({
   // default-credential admin UI. Required, and the password has a length floor.
   BULL_BOARD_USER: z.string().min(1),
   BULL_BOARD_PASSWORD: z.string().min(12),
+
+  // Optional ports (default = prod values)
+  HEALTH_PORT: portWithDefault(3110),
+  BULL_BOARD_PORT: portWithDefault(3101),
 
   // Optional vars
   OCR_API_SECRET: z.string().min(1).optional(),

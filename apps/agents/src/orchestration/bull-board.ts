@@ -1,4 +1,4 @@
-// src/orchestration/bull-board.ts — Bull Board HTTP dashboard on port 3101 with basic auth
+// src/orchestration/bull-board.ts — Bull Board HTTP dashboard (default port 3101) with basic auth
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
@@ -8,7 +8,9 @@ import type { Server } from 'http';
 import { log } from '../lib/logger';
 import { timingSafeCompare } from '../lib/timing-safe';
 
-const BULL_BOARD_PORT = 3101;
+// Default port; QA instances override it via BULL_BOARD_PORT (see config.ts),
+// wired through the `port` parameter of startBullBoard.
+const DEFAULT_BULL_BOARD_PORT = 3101;
 // Loopback only. This dashboard can read, replay and delete every job —
 // including payloads with customer PII — so it must not be reachable from the
 // internet. Reach it through an SSH tunnel:
@@ -51,6 +53,7 @@ export function basicAuthMiddleware(user: string, password: string) {
 export function startBullBoard(
   queues: Record<string, Queue>,
   credentials: BullBoardCredentials,
+  port: number = DEFAULT_BULL_BOARD_PORT,
 ): Server {
   const serverAdapter = new ExpressAdapter();
   serverAdapter.setBasePath(BULL_BOARD_BASE_PATH);
@@ -64,10 +67,10 @@ export function startBullBoard(
   app.use(BULL_BOARD_BASE_PATH, basicAuthMiddleware(credentials.user, credentials.password));
   app.use(BULL_BOARD_BASE_PATH, serverAdapter.getRouter());
 
-  const server = app.listen(BULL_BOARD_PORT, BULL_BOARD_HOST, () => {
+  const server = app.listen(port, BULL_BOARD_HOST, () => {
     log('info', 'bull_board_started', {
       host: BULL_BOARD_HOST,
-      port: BULL_BOARD_PORT,
+      port,
       path: BULL_BOARD_BASE_PATH,
     });
   });

@@ -73,12 +73,16 @@ async function main(): Promise<void> {
   stopIntakeListener = startIntakeListener(supabase, queues['intake.ingest']);
 
   // Credentials are required and validated in config.ts — no defaults here.
-  bullBoardServer = startBullBoard(queues, {
-    user: cfg.BULL_BOARD_USER,
-    password: cfg.BULL_BOARD_PASSWORD,
-  });
+  bullBoardServer = startBullBoard(
+    queues,
+    {
+      user: cfg.BULL_BOARD_USER,
+      password: cfg.BULL_BOARD_PASSWORD,
+    },
+    cfg.BULL_BOARD_PORT,
+  );
 
-  const { server: hs, app: httpApp } = startHealthServer(3110, {
+  const { server: hs, app: httpApp } = startHealthServer(cfg.HEALTH_PORT, {
     openrouterApiKey: cfg.OPENROUTER_API_KEY,
     ocrApiSecret: cfg.OCR_API_SECRET,
   });
