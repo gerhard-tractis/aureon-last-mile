@@ -1,0 +1,22 @@
+# aureon-worker-qa.service — automation worker, QA instance (spec-48).
+# Modeled on apps/agents/deploy/aureon-agents.service (prod).
+# Connects straight to the QA Postgres (localhost:5433) via /home/aureon/.env.qa.
+
+[Unit]
+Description=Aureon Automation Worker (QA)
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/aureon-qa/apps/worker
+EnvironmentFile=/home/aureon/.env.qa
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aureon-worker-qa
+
+[Install]
+WantedBy=multi-user.target
