@@ -29,8 +29,15 @@ function parseArgs(argv) {
     if (a === '--payload') args.payload = argv[++i];
     else if (a === '--webhook') args.webhook = argv[++i];
     else if (a === '--skip-post') args.skipPost = true;
-    else if (a === '--wait') args.wait = parseFloat(argv[++i]);
-    else if (a === '--allow-prod') args.allowProd = true;
+    else if (a === '--wait') {
+      const raw = argv[++i];
+      const parsed = raw === undefined ? NaN : parseFloat(raw);
+      if (Number.isNaN(parsed)) {
+        console.error(`Invalid --wait value: ${JSON.stringify(raw)} (expected a number of seconds)`);
+        process.exit(1);
+      }
+      args.wait = parsed;
+    } else if (a === '--allow-prod') args.allowProd = true;
   }
   return args;
 }
@@ -39,22 +46,49 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Mirrors parseEasyWmsBody from apps/worker/src/connectors/easy-wms-map.test.ts —
-// keep the reconstruction logic (path 3) in sync with that file (and the n8n Code node).
-function parseEasyWmsBody(rawBody) {
+// Reads the raw payload file and recovers the despachos list for the assertion phase.
+// The file may be stored as either clean Easy JSON, or the mangled single/multi-key
+// form object shape (as it would be captured from n8n's form parser). Returns the raw
+// file bytes as a Buffer (posted untouched) plus the recovered payload used only for
+// building the expectation oracle.
+function loadPayloadFile(path) {
+  const rawBuf = readFileSync(path); // Buffer — no encoding applied, bytes untouched
+  const raw = rawBuf.toString('utf8'); // decode only for parsing/assertion, never for POST body
+
+  // Try clean JSON first (covers both {evento, despachos} and a bare mangled object
+  // serialized as JSON, e.g. {"key": "value", ...}).
+  let asJson;
   try {
-    const parsed = JSON.parse(rawBody);
-    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.despachos)) {
-      return { payload: parsed, reconstructed: false };
-    }
+    asJson = JSON.parse(raw);
   } catch {
-    // fall through to form-mangled reconstruction below
+    // Raw file is not JSON at all — treat the whole content as a raw form-encoded string
+    // and reconstruct it exactly like parseEasyWmsBody's path 3 in easy-wms-map.test.ts.
+    const { payload, reconstructed } = reconstructFormString(raw);
+    return { rawBytes: rawBuf, payload, reconstructed };
   }
 
-  // Attempt the same mangled-form-parse reconstruction n8n would produce for a
-  // JSON body posted with the wrong Content-Type, then reverse it.
+  if (asJson && typeof asJson === 'object' && !Array.isArray(asJson)) {
+    if (Array.isArray(asJson.despachos)) {
+      return { rawBytes: rawBuf, payload: asJson, reconstructed: false };
+    }
+    // Mangled form object stored as JSON (e.g. {"{\"evento\":...": ""}).
+    const keys = Object.keys(asJson);
+    if (keys.length > 0 && keys[0].startsWith('{')) {
+      const reconstructedStr = Object.entries(asJson)
+        .map(([k, v]) => (v === '' ? k : k + '=' + v))
+        .join('&');
+      return { rawBytes: rawBuf, payload: JSON.parse(reconstructedStr), reconstructed: true };
+    }
+  }
+
+  throw new Error('Payload file is neither clean Easy JSON nor the mangled form-parse shape');
+}
+
+// Mirrors parseEasyWmsBody's path 3 reconstruction from apps/worker/src/connectors/easy-wms-map.test.ts —
+// keep this in sync with that file (and the n8n Code node) if the reconstruction logic changes.
+function reconstructFormString(rawFormBody) {
   const obj = {};
-  for (const segment of rawBody.split('&')) {
+  for (const segment of rawFormBody.split('&')) {
     const eqIdx = segment.indexOf('=');
     if (eqIdx === -1) obj[segment] = '';
     else obj[segment.slice(0, eqIdx)] = segment.slice(eqIdx + 1);
@@ -70,49 +104,41 @@ function parseEasyWmsBody(rawBody) {
   throw new Error('Unable to parse payload file: neither clean JSON nor the mangled form-parse shape');
 }
 
-// Reads the raw payload file and recovers the despachos list for the assertion phase.
-// The file may be stored as either clean Easy JSON, or the mangled single/multi-key
-// form object shape (as it would be captured from n8n's form parser).
-function loadPayloadFile(path) {
-  const raw = readFileSync(path, 'utf8');
-
-  // Try clean JSON first (covers both {evento, despachos} and a bare mangled object
-  // serialized as JSON, e.g. {"key": "value", ...}).
-  let asJson;
-  try {
-    asJson = JSON.parse(raw);
-  } catch {
-    // Raw file is not JSON at all — treat the whole content as a raw form-encoded string.
-    const { payload, reconstructed } = parseEasyWmsBody(raw);
-    return { rawBytes: raw, payload, reconstructed };
-  }
-
-  if (asJson && typeof asJson === 'object' && !Array.isArray(asJson)) {
-    if (Array.isArray(asJson.despachos)) {
-      return { rawBytes: raw, payload: asJson, reconstructed: false };
-    }
-    // Mangled form object stored as JSON (e.g. {"{\"evento\":...": ""}).
-    const keys = Object.keys(asJson);
-    if (keys.length > 0 && keys[0].startsWith('{')) {
-      const reconstructedStr = Object.entries(asJson)
-        .map(([k, v]) => (v === '' ? k : k + '=' + v))
-        .join('&');
-      return { rawBytes: raw, payload: JSON.parse(reconstructedStr), reconstructed: true };
-    }
-  }
-
-  throw new Error('Payload file is neither clean Easy JSON nor the mangled form-parse shape');
+// Mirrors parseDeliveryDate from apps/worker/src/connectors/easy-wms-map.test.ts — a despacho
+// with neither a valid fecha_compromiso nor fecha_carga is skipped by mapDespachos, so it must
+// not seed an expectation here either. Keep this regex in sync with that file.
+function hasValidDeliveryDate(despacho) {
+  const fc = (despacho.fecha_compromiso || '').trim();
+  if (fc && /^\d{4}-\d{2}-\d{2}$/.test(fc)) return true;
+  const fca = (despacho.fecha_carga || '').trim();
+  if (fca && /^\d{4}-\d{2}-\d{2}$/.test(fca)) return true;
+  return false;
 }
 
-// First despacho per entrega wins, matching mapDespachos (spec-49 Design §2/Error handling).
+// First VALID despacho per entrega wins (mapDespachos skips despachos with no valid delivery
+// date entirely before the first-wins map.set), matching mapDespachos (spec-49 Design
+// §2/Error handling). An entrega whose despachos ALL fail the delivery-date check yields
+// `expectAbsent: true` — mapDespachos never creates an order for it, so a missing order in
+// the DB is the correct outcome (PASS), not a mismatch.
 function expectedUrlsByEntrega(payload) {
-  const map = new Map();
+  const byEntrega = new Map(); // entrega -> despacho[] in payload order
   for (const despacho of payload.despachos || []) {
     const entrega = (despacho.entrega || '').trim();
-    if (!entrega || map.has(entrega)) continue;
-    map.set(entrega, despacho.url_guia || null);
+    if (!entrega) continue;
+    if (!byEntrega.has(entrega)) byEntrega.set(entrega, []);
+    byEntrega.get(entrega).push(despacho);
   }
-  return map;
+
+  const expected = new Map();
+  for (const [entrega, despachos] of byEntrega.entries()) {
+    const firstValid = despachos.find(hasValidDeliveryDate);
+    if (firstValid) {
+      expected.set(entrega, { url: firstValid.url_guia || null, expectAbsent: false });
+    } else {
+      expected.set(entrega, { url: null, expectAbsent: true });
+    }
+  }
+  return expected;
 }
 
 function checkNotProd(webhookUrl, allowProd) {
@@ -139,11 +165,11 @@ async function postPayload(webhookUrl, rawBytes, token) {
   const bodyText = await res.text();
   console.log(`POST ${webhookUrl} -> ${res.status}`);
   console.log(`Response body: ${bodyText}`);
-  return res;
+  return { ok: res.ok, status: res.status, bodyText };
 }
 
 async function fetchOrder(supabaseUrl, serviceKey, entrega) {
-  const qs = `order_number=eq.${encodeURIComponent(entrega)}&operator_id=eq.${MUSAN_OPERATOR_ID}&select=order_number,dispatch_guide_url`;
+  const qs = `order_number=eq.${encodeURIComponent(entrega)}&operator_id=eq.${MUSAN_OPERATOR_ID}&deleted_at=is.null&select=order_number,dispatch_guide_url`;
   const res = await fetch(`${supabaseUrl}/rest/v1/orders?${qs}`, {
     headers: {
       apikey: serviceKey,
@@ -160,24 +186,27 @@ async function runAssertions(supabaseUrl, serviceKey, expected) {
   const rows = [];
   let allPass = true;
 
-  for (const [entrega, expectedUrl] of expected.entries()) {
+  for (const [entrega, exp] of expected.entries()) {
+    const expectedDisplay = exp.expectAbsent ? '(expected absent — no valid delivery date)' : exp.url;
     let status;
     let actualUrl = null;
     try {
       const orders = await fetchOrder(supabaseUrl, serviceKey, entrega);
       if (orders.length === 0) {
-        status = 'FAIL';
         actualUrl = '(missing order)';
+        // No valid despacho for this entrega means mapDespachos never creates an order —
+        // a missing row is the expected, correct outcome, not a failure.
+        status = exp.expectAbsent ? 'PASS' : 'FAIL';
       } else {
         actualUrl = orders[0].dispatch_guide_url;
-        status = actualUrl === expectedUrl ? 'PASS' : 'FAIL';
+        status = exp.expectAbsent ? 'FAIL' : actualUrl === exp.url ? 'PASS' : 'FAIL';
       }
     } catch (err) {
       status = 'FAIL';
       actualUrl = `(error: ${err.message})`;
     }
     if (status === 'FAIL') allPass = false;
-    rows.push({ entrega, expectedUrl, actualUrl, status });
+    rows.push({ entrega, expectedUrl: expectedDisplay, actualUrl, status });
   }
 
   console.log('\nentrega               | status | expected -> actual');
@@ -224,7 +253,12 @@ async function main() {
       process.exit(1);
     }
     checkNotProd(args.webhook, args.allowProd);
-    await postPayload(args.webhook, rawBytes, token);
+    const postResult = await postPayload(args.webhook, rawBytes, token);
+    if (!postResult.ok) {
+      console.error(`Webhook rejected the post: HTTP ${postResult.status}. Aborting before assertion phase.`);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`Waiting ${args.wait}s before assertion phase...`);
     await sleep(args.wait * 1000);
   } else {
