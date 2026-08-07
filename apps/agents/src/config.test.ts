@@ -21,6 +21,9 @@ const OPTIONAL_VARS = [
   'WA_APP_SECRET',
 ];
 
+// Ports have defaults, so they are neither required nor undefined-when-unset.
+const PORT_VARS = ['HEALTH_PORT', 'BULL_BOARD_PORT'];
+
 const FULL_ENV: Record<string, string> = {
   SUPABASE_URL: 'https://test.supabase.co',
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
@@ -38,7 +41,7 @@ describe('loadConfig', () => {
   beforeEach(() => {
     originalEnv = { ...process.env };
     // Clear all relevant vars
-    for (const k of [...REQUIRED_VARS, ...OPTIONAL_VARS]) {
+    for (const k of [...REQUIRED_VARS, ...OPTIONAL_VARS, ...PORT_VARS]) {
       delete process.env[k];
     }
     vi.resetModules();
@@ -46,7 +49,7 @@ describe('loadConfig', () => {
 
   afterEach(() => {
     // Restore original env
-    for (const k of [...REQUIRED_VARS, ...OPTIONAL_VARS]) {
+    for (const k of [...REQUIRED_VARS, ...OPTIONAL_VARS, ...PORT_VARS]) {
       delete process.env[k];
     }
     Object.assign(process.env, originalEnv);
@@ -107,6 +110,55 @@ describe('loadConfig', () => {
 
     const { loadConfig } = await import('./config');
     expect(() => loadConfig()).toThrow(/BULL_BOARD_PASSWORD/);
+  });
+
+  describe('port configuration (HEALTH_PORT / BULL_BOARD_PORT)', () => {
+    // A second QA instance of this app runs on the same VPS as prod, so the
+    // hardcoded ports must be overridable per-instance. Prod does not set
+    // these vars and must keep the historical defaults.
+    it('defaults HEALTH_PORT to 3110 and BULL_BOARD_PORT to 3101 when absent', async () => {
+      Object.assign(process.env, FULL_ENV);
+      delete process.env.HEALTH_PORT;
+      delete process.env.BULL_BOARD_PORT;
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.HEALTH_PORT).toBe(3110);
+      expect(config.BULL_BOARD_PORT).toBe(3101);
+    });
+
+    it('uses the env values when set', async () => {
+      Object.assign(process.env, FULL_ENV);
+      process.env.HEALTH_PORT = '4110';
+      process.env.BULL_BOARD_PORT = '4101';
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.HEALTH_PORT).toBe(4110);
+      expect(config.BULL_BOARD_PORT).toBe(4101);
+    });
+
+    it('falls back to defaults on non-numeric values', async () => {
+      Object.assign(process.env, FULL_ENV);
+      process.env.HEALTH_PORT = 'not-a-port';
+      process.env.BULL_BOARD_PORT = '';
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.HEALTH_PORT).toBe(3110);
+      expect(config.BULL_BOARD_PORT).toBe(3101);
+    });
+
+    it('falls back to defaults on out-of-range values', async () => {
+      Object.assign(process.env, FULL_ENV);
+      process.env.HEALTH_PORT = '0';
+      process.env.BULL_BOARD_PORT = '70000';
+
+      const { loadConfig } = await import('./config');
+      const config = loadConfig();
+      expect(config.HEALTH_PORT).toBe(3110);
+      expect(config.BULL_BOARD_PORT).toBe(3101);
+    });
   });
 
   it('error message is descriptive (includes "missing" or "required" context)', async () => {

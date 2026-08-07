@@ -216,29 +216,42 @@ DECLARE
   demo_admin_user_id UUID := '00000000-0000-0000-0000-000000000010';
   demo_pickup_user_id UUID := '00000000-0000-0000-0000-000000000011';
 BEGIN
-  -- Admin user
-  INSERT INTO public.users (id, operator_id, role, email, full_name)
-  VALUES (
-    demo_admin_user_id,
-    demo_operator_id,
-    'admin',
-    'admin@demo-chile.com',
-    'Demo Admin User'
-  )
-  ON CONFLICT (operator_id, email) DO NOTHING;
+  -- spec-48 fresh-rebuild fix: public.users FKs both auth.users(id) and
+  -- operators(id). On a fresh replay neither the demo operator (created by
+  -- seed.sql AFTER migrations) nor these auth.users rows exist, so the
+  -- original unguarded INSERTs violated their FKs and aborted the migration.
+  -- Guard on both FK targets; on production the guards change nothing.
+  IF EXISTS (SELECT 1 FROM public.operators WHERE id = demo_operator_id) THEN
+    -- Admin user
+    IF EXISTS (SELECT 1 FROM auth.users WHERE id = demo_admin_user_id) THEN
+      INSERT INTO public.users (id, operator_id, role, email, full_name)
+      VALUES (
+        demo_admin_user_id,
+        demo_operator_id,
+        'admin',
+        'admin@demo-chile.com',
+        'Demo Admin User'
+      )
+      ON CONFLICT (operator_id, email) DO NOTHING;
+    END IF;
 
-  -- Pickup crew user
-  INSERT INTO public.users (id, operator_id, role, email, full_name)
-  VALUES (
-    demo_pickup_user_id,
-    demo_operator_id,
-    'pickup_crew',
-    'pickup@demo-chile.com',
-    'Demo Pickup Driver'
-  )
-  ON CONFLICT (operator_id, email) DO NOTHING;
+    -- Pickup crew user
+    IF EXISTS (SELECT 1 FROM auth.users WHERE id = demo_pickup_user_id) THEN
+      INSERT INTO public.users (id, operator_id, role, email, full_name)
+      VALUES (
+        demo_pickup_user_id,
+        demo_operator_id,
+        'pickup_crew',
+        'pickup@demo-chile.com',
+        'Demo Pickup Driver'
+      )
+      ON CONFLICT (operator_id, email) DO NOTHING;
+    END IF;
 
-  RAISE NOTICE 'Demo users seeded for operator %', demo_operator_id;
+    RAISE NOTICE 'Demo users seeded for operator %', demo_operator_id;
+  ELSE
+    RAISE NOTICE 'Demo operator % not present (fresh replay) — skipping demo users', demo_operator_id;
+  END IF;
 END $$;
 
 -- ============================================================================

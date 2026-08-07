@@ -26,11 +26,16 @@ CREATE INDEX IF NOT EXISTS idx_user_profiles_operator_id ON public.user_profiles
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 
 -- Users can read their own profile
+-- spec-48 fresh-rebuild fix: 20260209000002 already creates these two
+-- policies; drop-and-recreate so replaying both files works. This file is the
+-- "fixed" successor, so its definitions win. No-op change on production.
+DROP POLICY IF EXISTS "users_own_profile_read" ON public.user_profiles;
 CREATE POLICY "users_own_profile_read" ON public.user_profiles
   FOR SELECT
   USING (id = auth.uid());
 
 -- Users can update their own profile (but not operator_id!)
+DROP POLICY IF EXISTS "users_own_profile_update" ON public.user_profiles;
 CREATE POLICY "users_own_profile_update" ON public.user_profiles
   FOR UPDATE
   USING (id = auth.uid())

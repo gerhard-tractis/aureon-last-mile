@@ -1,0 +1,6 @@
+# Runtime data created by the QA stack — never commit
+volumes/db/data/
+volumes/storage/*
+!volumes/storage/.gitkeep
+volumes/snippets/*
+!volumes/snippets/.gitkeep

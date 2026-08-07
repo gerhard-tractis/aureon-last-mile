@@ -1,0 +1,24 @@
+# aureon-agents-qa.service — Agent Suite, QA instance (spec-48).
+# Modeled on apps/agents/deploy/aureon-agents.service (prod).
+# QA ports come from /home/aureon/.env.qa: HEALTH_PORT=3210, BULL_BOARD_PORT=3211.
+# Shares the prod redis-server instance (QA isolates into db 1 via REDIS_URL).
+
+[Unit]
+Description=Aureon Agent Suite (QA)
+After=network.target redis-server.service docker.service
+Wants=redis-server.service
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/aureon-qa/apps/agents
+EnvironmentFile=/home/aureon/.env.qa
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aureon-agents-qa
+
+[Install]
+WantedBy=multi-user.target
