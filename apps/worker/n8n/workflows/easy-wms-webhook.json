@@ -1,5 +1,5 @@
 {
-  "_comment": "Easy WMS Webhook Receiver — n8n workflow backup (sanitized). Replace <SUPABASE_SERVICE_ROLE_KEY> and <EASY_WMS_WEBHOOK_TOKEN> with actual values. Live workflow ID: nhYC230w1ncOTo6e. EASY_CLIENT_UUID = acf3d096-1ff6-4157-9b69-cab6e6a5789f (consolidated 'easy' tenant_client). PRIMARY integration source — CSV email is fallback only.",
+  "_comment": "Easy WMS Webhook Receiver — n8n workflow backup (sanitized). Replace <SUPABASE_SERVICE_ROLE_KEY> and <EASY_WMS_WEBHOOK_TOKEN> with actual values. Live workflow ID: nhYC230w1ncOTo6e. EASY_CLIENT_UUID = acf3d096-1ff6-4157-9b69-cab6e6a5789f (consolidated 'easy' tenant_client). PRIMARY integration source — CSV email is fallback only. spec-49: Webhook Trigger now requires options.rawBody=true so Map & Validate can read the raw request body via this.helpers.getBinaryDataBuffer(0, 'data') and map url_guia -> orders.dispatch_guide_url byte-identically. Map & Validate logic is kept in sync with apps/worker/src/connectors/easy-wms-map.test.ts (see header comments in both files). PENDING before this JSON is applied to the live workflow nhYC230w1ncOTo6e: verify on the actual n8n instance (a) which binary-data mode it runs (default in-memory base64 vs filesystem) and (b) whether json.body is still populated alongside the raw body for this webhook node version — see spec-49 Design §3.2. This file is a sanitized repo backup only; it does not touch the live instance.",
   "name": "Easy WMS Webhook Receiver",
   "active": true,
   "nodes": [
@@ -8,13 +8,18 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "parameters": {
         "httpMethod": "POST",
         "path": "easy-wms",
         "authentication": "none",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {
+          "rawBody": true
+        }
       },
       "credentials": {}
     },
@@ -23,9 +28,12 @@
       "name": "Map & Validate",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [220, 0],
+      "position": [
+        220,
+        0
+      ],
       "parameters": {
-        "jsCode": "// Easy WMS Webhook — Map & Validate\n// Manual token auth + iterate despachos[], builds orders[] and packages[]\n\nconst VALID_TOKEN = '<EASY_WMS_WEBHOOK_TOKEN>';\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7'; // Musan\nconst TENANT_CLIENT_ID = 'acf3d096-1ff6-4157-9b69-cab6e6a5789f'; // Easy (Cencosud) — consolidated tenant_client\nconst RETAILER_NAME = 'Easy';\nconst IMPORTED_VIA = 'API';\n\n// Validate token\nconst token = $input.first().json.headers?.token || $input.first().json.headers?.Token || '';\nif (token !== VALID_TOKEN) {\n  throw new Error('Unauthorized: invalid or missing Token header');\n}\n\nconst body = $input.first().json.body;\nconst evento = body.evento || '';\nconst despachos = body.despachos || [];\n\nif (despachos.length === 0) {\n  console.warn('[Easy WMS] Empty despachos array. evento:', evento);\n  return [{ json: {\n    orders: [],\n    packages: [],\n    despachos_count: 0,\n    orders_count: 0,\n    packages_count: 0,\n    warnings: ['Empty despachos array'],\n    evento,\n    operator_id: OPERATOR_ID,\n    tenant_client_id: TENANT_CLIENT_ID\n  }}];\n}\n\nfunction cleanPhone(phone) {\n  if (!phone) return '';\n  let cleaned = phone.replace(/[\\s\\-\\.\\(\\)]/g, '');\n  if (/^9\\d{8}$/.test(cleaned)) cleaned = '+56' + cleaned;\n  if (/^569\\d{8}$/.test(cleaned)) cleaned = '+' + cleaned;\n  return cleaned;\n}\n\nfunction parseDeliveryDate(despacho) {\n  const fc = (despacho.fecha_compromiso || '').trim();\n  if (fc && /^\\d{4}-\\d{2}-\\d{2}$/.test(fc)) return fc;\n  const fca = (despacho.fecha_carga || '').trim();\n  if (fca && /^\\d{4}-\\d{2}-\\d{2}$/.test(fca)) return fca;\n  throw new Error('Missing valid delivery date for entrega ' + despacho.entrega + '. fecha_compromiso=' + fc + ', fecha_carga=' + fca);\n}\n\nconst ordersMap = new Map(); // entrega -> order object\nconst packages = [];\nconst warnings = [];\nconst now = new Date().toISOString();\n\nfor (const despacho of despachos) {\n  const entrega = (despacho.entrega || '').trim();\n  if (!entrega) {\n    warnings.push('Skipped despacho with missing entrega: ' + JSON.stringify(despacho).substring(0, 100));\n    continue;\n  }\n\n  let deliveryDate;\n  try {\n    deliveryDate = parseDeliveryDate(despacho);\n  } catch (e) {\n    warnings.push(e.message);\n    continue;\n  }\n\n  const customerPhone = cleanPhone(despacho.cliente_telefono || '');\n\n  if (!ordersMap.has(entrega)) {\n    ordersMap.set(entrega, {\n      operator_id: OPERATOR_ID,\n      order_number: entrega,\n      external_load_id: despacho.id_carga || null,\n      delivery_date: deliveryDate,\n      delivery_address: despacho.direccion || '',\n      comuna: despacho.comuna || '',\n      customer_name: despacho.cliente_nombre || '',\n      customer_phone: customerPhone,\n      retailer_name: RETAILER_NAME,\n      imported_via: IMPORTED_VIA,\n      tenant_client_id: TENANT_CLIENT_ID,\n      imported_at: now,\n      raw_data: despacho\n    });\n  }\n\n  const items = despacho.items || [];\n  if (items.length === 0) {\n    warnings.push('Despacho ' + entrega + ' has no items — order will be upserted but no packages');\n  }\n\n  for (const item of items) {\n    const carton = (item.carton || '').trim();\n    if (!carton) {\n      warnings.push('Skipped item with missing carton in despacho ' + entrega);\n      continue;\n    }\n    const bultos = Math.round(parseFloat(item.bultos) || 1) || 1;\n    packages.push({\n      operator_id: OPERATOR_ID,\n      order_number: entrega, // used to link to order_id after upsert\n      label: carton,\n      declared_box_count: bultos,\n      sku_items: [{\n        sku: item.sku || '',\n        description: item.descripcion || '',\n        quantity: parseInt(item.cantidad, 10) || 1,\n        codigo_barra: item.codigo_barra || '',\n        mt3: item.mt3 || ''\n      }],\n      raw_data: item\n    });\n  }\n}\n\nconst orders = Array.from(ordersMap.values());\n\nif (orders.length === 0) {\n  throw new Error('No valid orders extracted from ' + despachos.length + ' despachos. Warnings: ' + warnings.join('; '));\n}\n\nreturn [{ json: {\n  orders,\n  packages,\n  despachos_count: despachos.length,\n  orders_count: orders.length,\n  packages_count: packages.length,\n  warnings,\n  evento,\n  id_carga: despachos[0].id_carga || 'unknown',\n  fecha_carga: despachos[0].fecha_carga || new Date().toISOString().split('T')[0],\n  operator_id: OPERATOR_ID,\n  tenant_client_id: TENANT_CLIENT_ID,\n  raw_body: body\n}}];"
+        "jsCode": "// Easy WMS Webhook — Map & Validate\n// SYNC WARNING: this parsing/mapping logic is duplicated (TypeScript re-implementation) in\n// apps/worker/src/connectors/easy-wms-map.test.ts. If you change this Code node, update that\n// test file to match, and vice versa. See spec-49 Design §2.\n\nconst VALID_TOKEN = '<EASY_WMS_WEBHOOK_TOKEN>';\nconst OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7'; // Musan\nconst TENANT_CLIENT_ID = 'acf3d096-1ff6-4157-9b69-cab6e6a5789f'; // Easy (Cencosud) — consolidated tenant_client\nconst RETAILER_NAME = 'Easy';\nconst IMPORTED_VIA = 'API';\n\n// Validate token\nconst token = $input.first().json.headers?.token || $input.first().json.headers?.Token || '';\nif (token !== VALID_TOKEN) {\n  throw new Error('Unauthorized: invalid or missing Token header');\n}\n\n// Read the raw body. This helper works in both n8n binary-data modes (default in-memory\n// base64 and filesystem) — reading binary.data.data directly breaks under\n// N8N_DEFAULT_BINARY_DATA_MODE=filesystem. See spec-49 Design §3.2.\nlet rawBodyString;\ntry {\n  const buf = await this.helpers.getBinaryDataBuffer(0, 'data');\n  rawBodyString = buf.toString('utf8');\n} catch (e) {\n  rawBodyString = undefined;\n}\n\n// --- pasted from apps/worker/src/connectors/easy-wms-map.test.ts (type annotations stripped) ---\n\nfunction parseEasyWmsBody(rawBody, parsedBody) {\n  if (rawBody) {\n    return { payload: JSON.parse(rawBody), reconstructed: false };\n  }\n\n  if (parsedBody && typeof parsedBody === 'object' && !Array.isArray(parsedBody)) {\n    const obj = parsedBody;\n    if (Array.isArray(obj.despachos)) {\n      return { payload: obj, reconstructed: false };\n    }\n\n    const keys = Object.keys(obj);\n    if (keys.length > 0 && keys[0].startsWith('{')) {\n      const reconstructed = Object.entries(obj)\n        .map(([k, v]) => (v === '' ? k : k + '=' + v))\n        .join('&');\n      return { payload: JSON.parse(reconstructed), reconstructed: true };\n    }\n  }\n\n  throw new Error(\n    'Unable to parse Easy WMS payload: no raw body, no despachos array, and body is not the mangled form-parse shape'\n  );\n}\n\nfunction cleanPhone(phone) {\n  if (!phone) return '';\n  let cleaned = phone.replace(/[\\s\\-.()]/g, '');\n  if (/^9\\d{8}$/.test(cleaned)) cleaned = '+56' + cleaned;\n  if (/^569\\d{8}$/.test(cleaned)) cleaned = '+' + cleaned;\n  return cleaned;\n}\n\nfunction parseDeliveryDate(despacho) {\n  const fc = (despacho.fecha_compromiso || '').trim();\n  if (fc && /^\\d{4}-\\d{2}-\\d{2}$/.test(fc)) return fc;\n  const fca = (despacho.fecha_carga || '').trim();\n  if (fca && /^\\d{4}-\\d{2}-\\d{2}$/.test(fca)) return fca;\n  throw new Error(\n    'Missing valid delivery date for entrega ' + despacho.entrega + '. fecha_compromiso=' + fc + ', fecha_carga=' + fca\n  );\n}\n\nfunction mapDespachos(payload, ctx) {\n  const evento = payload.evento || '';\n  const despachos = payload.despachos || [];\n  const now = ctx.now || new Date().toISOString();\n\n  if (despachos.length === 0) {\n    return {\n      orders: [],\n      packages: [],\n      despachos_count: 0,\n      orders_count: 0,\n      packages_count: 0,\n      warnings: ['Empty despachos array'],\n      evento,\n      operator_id: OPERATOR_ID,\n      tenant_client_id: TENANT_CLIENT_ID,\n    };\n  }\n\n  const ordersMap = new Map();\n  const packages = [];\n  const warnings = [];\n\n  for (const despacho of despachos) {\n    const entrega = (despacho.entrega || '').trim();\n    if (!entrega) {\n      warnings.push('Skipped despacho with missing entrega: ' + JSON.stringify(despacho).substring(0, 100));\n      continue;\n    }\n\n    let deliveryDate;\n    try {\n      deliveryDate = parseDeliveryDate(despacho);\n    } catch (e) {\n      warnings.push(e.message);\n      continue;\n    }\n\n    const customerPhone = cleanPhone(despacho.cliente_telefono);\n\n    if (!despacho.url_guia) {\n      warnings.push('Despacho ' + entrega + ' has no url_guia — dispatch_guide_url will be null');\n    }\n\n    if (!ordersMap.has(entrega)) {\n      ordersMap.set(entrega, {\n        operator_id: OPERATOR_ID,\n        order_number: entrega,\n        external_load_id: despacho.id_carga || null,\n        delivery_date: deliveryDate,\n        delivery_address: despacho.direccion || '',\n        comuna: despacho.comuna || '',\n        customer_name: despacho.cliente_nombre || '',\n        customer_phone: customerPhone,\n        retailer_name: RETAILER_NAME,\n        imported_via: IMPORTED_VIA,\n        tenant_client_id: TENANT_CLIENT_ID,\n        imported_at: now,\n        dispatch_guide_url: despacho.url_guia || null,\n        raw_data: despacho,\n      });\n    } else {\n      const firstDespacho = ordersMap.get(entrega).raw_data;\n      if (despacho.url_guia !== firstDespacho.url_guia) {\n        warnings.push(\n          'Duplicate entrega ' + entrega + ' has a different url_guia; keeping first: ' + (firstDespacho.url_guia || '(none)')\n        );\n      }\n    }\n\n    const items = despacho.items || [];\n    if (items.length === 0) {\n      warnings.push('Despacho ' + entrega + ' has no items — order will be upserted but no packages');\n    }\n\n    for (const item of items) {\n      const carton = (item.carton || '').trim();\n      if (!carton) {\n        warnings.push('Skipped item with missing carton in despacho ' + entrega);\n        continue;\n      }\n      const bultos = Math.round(parseFloat(item.bultos || '') || 1) || 1;\n      packages.push({\n        operator_id: OPERATOR_ID,\n        order_number: entrega,\n        label: carton,\n        declared_box_count: bultos,\n        sku_items: [\n          {\n            sku: item.sku || '',\n            description: item.descripcion || '',\n            quantity: parseInt(item.cantidad || '', 10) || 1,\n            codigo_barra: item.codigo_barra || '',\n            mt3: item.mt3 || '',\n          },\n        ],\n        raw_data: item,\n      });\n    }\n  }\n\n  const orders = Array.from(ordersMap.values());\n\n  if (orders.length === 0) {\n    throw new Error('No valid orders extracted from ' + despachos.length + ' despachos. Warnings: ' + warnings.join('; '));\n  }\n\n  return {\n    orders,\n    packages,\n    despachos_count: despachos.length,\n    orders_count: orders.length,\n    packages_count: packages.length,\n    warnings,\n    evento,\n    operator_id: OPERATOR_ID,\n    tenant_client_id: TENANT_CLIENT_ID,\n  };\n}\n\n// --- end pasted logic ---\n\nconst { payload, reconstructed } = parseEasyWmsBody(rawBodyString, $input.first().json.body);\nconst mapped = mapDespachos(payload, { now: new Date().toISOString() });\n\nconst firstDespachoForFilename = (payload.despachos && payload.despachos[0]) || {};\n\nreturn [{ json: {\n  ...mapped,\n  id_carga: firstDespachoForFilename.id_carga || 'unknown',\n  fecha_carga: firstDespachoForFilename.fecha_carga || new Date().toISOString().split('T')[0],\n  raw_body_string: rawBodyString !== undefined ? rawBodyString : JSON.stringify(payload),\n  reconstructed\n}}];"
       }
     },
     {
@@ -33,7 +41,10 @@
       "name": "Create Job Record",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [440, 0],
+      "position": [
+        440,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs",
@@ -41,9 +52,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "return=representation" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -57,7 +77,10 @@
       "name": "UPSERT Orders",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [660, 0],
+      "position": [
+        660,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/orders?on_conflict=operator_id,order_number",
@@ -65,9 +88,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -81,7 +113,10 @@
       "name": "Link Packages",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [880, 0],
+      "position": [
+        880,
+        0
+      ],
       "parameters": {
         "jsCode": "// Map order_number -> order_id from UPSERT Orders response\nconst orderItems = $input.all();\nconst orders = orderItems.map(item => item.json);\nconst packages = $('Map & Validate').first().json.packages;\n\nconst orderIds = {};\nfor (const o of orders) {\n  if (o.order_number && o.id) {\n    orderIds[o.order_number] = o.id;\n  }\n}\n\nconst packageBodies = packages\n  .filter(p => {\n    if (!orderIds[p.order_number]) {\n      console.warn('[Easy WMS] No order_id found for package label=' + p.label + ' order_number=' + p.order_number);\n      return false;\n    }\n    return true;\n  })\n  .map(p => ({\n    operator_id: p.operator_id,\n    order_id: orderIds[p.order_number],\n    label: p.label,\n    sku_items: p.sku_items,\n    declared_box_count: p.declared_box_count,\n    raw_data: p.raw_data\n  }));\n\nreturn [{ json: {\n  packages: packageBodies,\n  orders_upserted: orders.length,\n  packages_count: packageBodies.length\n}}];"
       }
@@ -91,7 +126,10 @@
       "name": "UPSERT Packages",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1100, 0],
+      "position": [
+        1100,
+        0
+      ],
       "parameters": {
         "method": "POST",
         "url": "https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/packages?on_conflict=operator_id,label",
@@ -99,9 +137,18 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Prefer", "value": "resolution=merge-duplicates,return=representation" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
           ]
         },
         "sendBody": true,
@@ -116,7 +163,10 @@
       "name": "Upload Raw Payload",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1320, 0],
+      "position": [
+        1320,
+        0
+      ],
       "parameters": {
         "method": "PUT",
         "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/storage/v1/object/raw-files/transportes-musan/easy-webhook/{{ $('Map & Validate').first().json.fecha_carga }}/carga-{{ $('Map & Validate').first().json.id_carga }}-{{ $now.toMillis() }}.json",
@@ -124,15 +174,27 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "x-upsert", "value": "true" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
           ]
         },
         "sendBody": true,
         "specifyBody": "string",
-        "body": "={{ JSON.stringify($('Map & Validate').first().json.raw_body) }}",
+        "body": "={{ $('Map & Validate').first().json.raw_body_string }}",
         "options": {}
       },
       "continueOnFail": true
@@ -142,9 +204,12 @@
       "name": "Prepare Summary",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1540, 0],
+      "position": [
+        1540,
+        0
+      ],
       "parameters": {
-        "jsCode": "// Prepare job completion data\nconst mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\n// Check if package upsert had errors (continueOnFail=true may return error object)\nlet packagesError = null;\ntry {\n  const pkgResp = $('UPSERT Packages').first();\n  if (pkgResp && pkgResp.json && pkgResp.json.error) {\n    packagesError = pkgResp.json.error;\n  }\n} catch(e) {\n  packagesError = e.message;\n}\n\n// Check storage upload error\nlet storageError = null;\ntry {\n  const storageResp = $('Upload Raw Payload').first();\n  if (storageResp && storageResp.json && storageResp.json.error) {\n    storageError = storageResp.json.error;\n  }\n} catch(e) {\n  storageError = e.message;\n}\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      evento: mapData.evento,\n      id_carga: mapData.id_carga,\n      despachos_count: mapData.despachos_count,\n      orders_upserted: linkData.orders_upserted,\n      packages_upserted: linkData.packages_count,\n      warnings: mapData.warnings || [],\n      packages_error: packagesError,\n      storage_error: storageError\n    }\n  }\n}}];"
+        "jsCode": "// Prepare job completion data\nconst mapData = $('Map & Validate').first().json;\nconst linkData = $('Link Packages').first().json;\nconst jobId = $('Create Job Record').first().json.id;\n\n// Check if package upsert had errors (continueOnFail=true may return error object)\nlet packagesError = null;\ntry {\n  const pkgResp = $('UPSERT Packages').first();\n  if (pkgResp && pkgResp.json && pkgResp.json.error) {\n    packagesError = pkgResp.json.error;\n  }\n} catch(e) {\n  packagesError = e.message;\n}\n\n// Check storage upload error\nlet storageError = null;\ntry {\n  const storageResp = $('Upload Raw Payload').first();\n  if (storageResp && storageResp.json && storageResp.json.error) {\n    storageError = storageResp.json.error;\n  }\n} catch(e) {\n  storageError = e.message;\n}\n\nreturn [{ json: {\n  job_id: jobId,\n  patch_body: {\n    status: 'completed',\n    completed_at: new Date().toISOString(),\n    result: {\n      evento: mapData.evento,\n      id_carga: mapData.id_carga,\n      despachos_count: mapData.despachos_count,\n      orders_upserted: linkData.orders_upserted,\n      packages_upserted: linkData.packages_count,\n      warnings: mapData.warnings || [],\n      packages_error: packagesError,\n      storage_error: storageError,\n      raw_body_reconstructed: mapData.reconstructed || false\n    }\n  }\n}}];"
       }
     },
     {
@@ -152,7 +217,10 @@
       "name": "Complete Job",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1760, 0],
+      "position": [
+        1760,
+        0
+      ],
       "parameters": {
         "method": "PATCH",
         "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
@@ -160,8 +228,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            }
           ]
         },
         "sendBody": true,
@@ -175,7 +249,10 @@
       "name": "Respond 200 OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1980, 0],
+      "position": [
+        1980,
+        0
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ status: 'ok', orders_upserted: $('Link Packages').first().json.orders_upserted, packages_upserted: $('Link Packages').first().json.packages_count }) }}",
@@ -189,7 +266,10 @@
       "name": "Error Trigger",
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
-      "position": [440, 400],
+      "position": [
+        440,
+        400
+      ],
       "parameters": {}
     },
     {
@@ -197,7 +277,10 @@
       "name": "Prepare Error",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 400],
+      "position": [
+        660,
+        400
+      ],
       "parameters": {
         "jsCode": "// Extract error info and job_id for failure handler\nconst error = $input.first().json;\nlet jobId = null;\ntry {\n  const jobResp = $('Create Job Record').first();\n  if (jobResp && jobResp.json) {\n    jobId = jobResp.json.id || null;\n  }\n} catch(e) {\n  // Create Job Record may not have run yet\n}\n\nconst errorMessage = String(error.message || error.description || JSON.stringify(error)).substring(0, 1000);\n\nreturn [{ json: {\n  job_id: jobId || 'null',\n  patch_body: {\n    status: 'failed',\n    completed_at: new Date().toISOString(),\n    error_message: errorMessage\n  }\n}}];"
       }
@@ -207,7 +290,10 @@
       "name": "Mark Job Failed",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 400],
+      "position": [
+        880,
+        400
+      ],
       "parameters": {
         "method": "PATCH",
         "url": "=https://wfwlcpnkkxxzdvhvvsxb.supabase.co/rest/v1/jobs?id=eq.{{ $json.job_id }}",
@@ -215,8 +301,14 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "apikey", "value": "<SUPABASE_SERVICE_ROLE_KEY>" },
-            { "name": "Authorization", "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>" }
+            {
+              "name": "apikey",
+              "value": "<SUPABASE_SERVICE_ROLE_KEY>"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer <SUPABASE_SERVICE_ROLE_KEY>"
+            }
           ]
         },
         "sendBody": true,
@@ -230,7 +322,10 @@
       "name": "Respond 200 On Error",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1100, 400],
+      "position": [
+        1100,
+        400
+      ],
       "parameters": {
         "respondWith": "json",
         "responseBody": "={\"status\": \"received\", \"note\": \"processing error logged\"}",
@@ -242,40 +337,136 @@
   ],
   "connections": {
     "Webhook Trigger": {
-      "main": [[{ "node": "Map & Validate", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Map & Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Map & Validate": {
-      "main": [[{ "node": "Create Job Record", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Create Job Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Create Job Record": {
-      "main": [[{ "node": "UPSERT Orders", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "UPSERT Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "UPSERT Orders": {
-      "main": [[{ "node": "Link Packages", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Link Packages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Link Packages": {
-      "main": [[{ "node": "UPSERT Packages", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "UPSERT Packages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "UPSERT Packages": {
-      "main": [[{ "node": "Upload Raw Payload", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Upload Raw Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Upload Raw Payload": {
-      "main": [[{ "node": "Prepare Summary", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Summary": {
-      "main": [[{ "node": "Complete Job", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Complete Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Complete Job": {
-      "main": [[{ "node": "Respond 200 OK", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Error Trigger": {
-      "main": [[{ "node": "Prepare Error", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Error": {
-      "main": [[{ "node": "Mark Job Failed", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Mark Job Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Mark Job Failed": {
-      "main": [[{ "node": "Respond 200 On Error", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Respond 200 On Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
