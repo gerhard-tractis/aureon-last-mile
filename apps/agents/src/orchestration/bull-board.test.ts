@@ -95,6 +95,13 @@ describe('startBullBoard', () => {
     // customer PII, so it must not be reachable from outside the VPS.
     expect(mockAppListen).toHaveBeenCalledWith(3101, '127.0.0.1', expect.any(Function));
   });
+
+  it('listens on the given port when one is passed (QA runs beside prod)', async () => {
+    const { startBullBoard } = await import('./bull-board');
+    startBullBoard(makeQueues(), { user: 'admin', password: 'secret' }, 4101);
+    // Still loopback-only regardless of port override.
+    expect(mockAppListen).toHaveBeenCalledWith(4101, '127.0.0.1', expect.any(Function));
+  });
 });
 
 describe('basicAuthMiddleware', () => {

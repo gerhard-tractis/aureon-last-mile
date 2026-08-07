@@ -40,6 +40,7 @@ jobs:
       worker: ${{ steps.filter.outputs.worker }}
       agents: ${{ steps.filter.outputs.agents }}
       solver: ${{ steps.filter.outputs.solver }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,6 +70,7 @@ jobs:
             echo "worker=$(matches '^apps/worker/')"
             echo "agents=$(matches '^apps/agents/')"
             echo "solver=$(matches '^sidecar/or-tools/')"
+            echo "frontend=$(matches '^apps/frontend/')"
           } >> "$GITHUB_OUTPUT"
 
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
@@ -284,3 +286,45 @@ jobs:
         run: |
           echo "::error::OR-Tools solver deployment failed."
           echo "To debug: sudo journalctl -u aureon-solver -n 50"
+
+  # ─── 7. QA Environment (VPS) ─────────────────────────────────────────────────
+  # Keeps the self-hosted QA env (spec-48) in sync with every green main merge.
+  #
+  # Deliberately NOT path-filtered on migrations: the QA script replays the
+  # full migration ledger on every run (idempotent), so QA can never silently
+  # drift behind the prod schema. A path filter here previously masked DB
+  # failures in prod (green checks while the DB job was skipped) — QA is the
+  # backstop, so it always runs. App rebuilds ARE filtered via CHANGED_* flags.
+  #
+  # No prod job depends on this one — a QA sync failure is surfaced with
+  # ::error:: but never blocks production deploys.
+  deploy-qa:
+    name: Sync QA Environment
+    needs: [changes]
+    if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 15
+    steps:
+      # The QA checkout self-syncs inside the script, but the script FILE must
+      # come from the tested commit — so check out DEPLOY_SHA into the runner
+      # workspace and run it from there.
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Sync QA environment
+        run: bash infra/supabase-qa/deploy-qa.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
+          CHANGED_WORKER: ${{ needs.changes.outputs.worker }}
+          CHANGED_AGENTS: ${{ needs.changes.outputs.agents }}
+          CHANGED_EDGE_FUNCTIONS: ${{ needs.changes.outputs.edge_functions }}
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::QA environment sync failed — QA is now drifted from main."
+          echo "To debug: run infra/supabase-qa/deploy-qa.sh on the VPS, or check"
+          echo "journalctl -u aureon-frontend-qa/-agents-qa/-worker-qa -n 50."
