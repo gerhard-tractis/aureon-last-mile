@@ -134,7 +134,24 @@ compose_status() { # prints one "service state health" line per service
     });'
 }
 
+# The compose file mounts /home/aureon/supabase-qa-functions into the edge
+# runtime and Studio: repo functions merged with the vendored `main` router
+# (edge-runtime requires a main service; the repo has none, and a nested bind
+# inside a ro bind fails at container start with mkdir-on-read-only-fs).
+FUNCTIONS_MERGE_DIR="${QA_FUNCTIONS_MERGE_DIR:-/home/aureon/supabase-qa-functions}"
+
+merge_functions_dir() {
+  local repo_root
+  repo_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  log "assembling merged edge-functions dir at ${FUNCTIONS_MERGE_DIR}"
+  mkdir -p "$FUNCTIONS_MERGE_DIR"
+  rm -rf "${FUNCTIONS_MERGE_DIR:?}"/*
+  cp -a "${repo_root}/packages/database/supabase/functions/." "$FUNCTIONS_MERGE_DIR/"
+  cp -a "${SCRIPT_DIR}/volumes/functions/main" "$FUNCTIONS_MERGE_DIR/"
+}
+
 start_stack() {
+  merge_functions_dir
   log "starting supabase-qa docker stack"
   "${COMPOSE[@]}" up -d
   local deadline=$(( $(date +%s) + STACK_TIMEOUT )) status total bad svc

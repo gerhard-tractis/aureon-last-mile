@@ -81,9 +81,10 @@ services:
       EDGE_FUNCTIONS_MANAGEMENT_FOLDER: /app/edge-functions
     volumes:
       - ./volumes/snippets:/app/snippets:z
-      - /home/aureon/aureon-qa/packages/database/supabase/functions:/app/edge-functions:ro,z
-      # Keep Studio's view consistent with the functions runtime (nested bind)
-      - ./volumes/functions/main:/app/edge-functions/main:ro,z
+      # Merged dir assembled by setup-qa.sh/deploy-qa.sh (repo functions +
+      # vendored main router). Nested binds inside a ro bind fail at container
+      # start (mkdir on read-only fs), so the merge happens host-side.
+      - /home/aureon/supabase-qa-functions:/app/edge-functions:ro,z
 
   kong:
     container_name: supabase-qa-kong
@@ -357,13 +358,12 @@ services:
     image: supabase/edge-runtime:v1.74.0
     restart: unless-stopped
     volumes:
-      # QA checkout of the repo's edge functions (replaces ./volumes/functions)
-      - /home/aureon/aureon-qa/packages/database/supabase/functions:/home/deno/functions:z
-      # The repo checkout has no `main` service (only the individual
-      # functions), but edge-runtime's --main-service requires one. Nested
-      # bind: the more specific path wins, overlaying the vendored upstream
-      # router (which dispatches to sibling dirs under /home/deno/functions).
-      - ./volumes/functions/main:/home/deno/functions/main:ro,z
+      # Merged dir assembled by setup-qa.sh/deploy-qa.sh: repo functions
+      # (which have no `main` service) + the vendored upstream router that
+      # edge-runtime's --main-service requires. A nested bind of main inside
+      # a ro bind of the repo dir fails at container start (mkdir on
+      # read-only fs), so the merge happens host-side instead.
+      - /home/aureon/supabase-qa-functions:/home/deno/functions:ro,z
       - deno-cache:/root/.cache/deno
     depends_on:
       kong:
