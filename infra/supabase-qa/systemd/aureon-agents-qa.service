@@ -5,7 +5,7 @@
 
 [Unit]
 Description=Aureon Agent Suite (QA)
-After=network.target redis-server.service
+After=network.target redis-server.service docker.service
 Wants=redis-server.service
 
 [Service]

@@ -4,7 +4,7 @@
 
 [Unit]
 Description=Aureon Automation Worker (QA)
-After=network.target
+After=network.target docker.service
 
 [Service]
 Type=simple
