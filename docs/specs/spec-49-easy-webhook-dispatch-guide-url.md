@@ -1,6 +1,6 @@
 # Spec 49 — Easy WMS Webhook: Store `url_guia` (Dispatch Guide URL) Verbatim
 
-**Status:** backlog
+**Status:** in progress
 
 ## Problem
 

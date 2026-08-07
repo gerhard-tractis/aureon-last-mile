@@ -120,6 +120,9 @@ function hasValidDeliveryDate(despacho) {
 // §2/Error handling). An entrega whose despachos ALL fail the delivery-date check yields
 // `expectAbsent: true` — mapDespachos never creates an order for it, so a missing order in
 // the DB is the correct outcome (PASS), not a mismatch.
+// Caveat: run against a fresh/QA DB. Replaying over pre-existing data yields false FAILs —
+// an order created by an earlier import trips expectAbsent, and the null-overwrite trigger
+// preserves an older stored URL when the replayed payload carries no url_guia.
 function expectedUrlsByEntrega(payload) {
   const byEntrega = new Map(); // entrega -> despacho[] in payload order
   for (const despacho of payload.despachos || []) {
