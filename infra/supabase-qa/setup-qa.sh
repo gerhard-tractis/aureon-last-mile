@@ -104,7 +104,8 @@ preflight() {
     local ph
     ph="$( { grep -oE '^[A-Za-z0-9_]+=CHANGE_ME[A-Za-z0-9_]*' "$ENV_FILE" || true; } | cut -d= -f1 | paste -sd ',' - )"
     [ -z "$ph" ] || fail "env file still contains CHANGE_ME placeholders: $ph (note: OPENROUTER_API_KEY is required — agents refuse to boot without it)"
-    if grep -q 'supabase\.co' "$ENV_FILE"; then
+    # Scan values only — comment lines legitimately mention supabase.co (the template's own warning).
+    if grep -qE '^[^#]*supabase\.co' "$ENV_FILE"; then
       fail "env file mentions supabase.co — QA must NEVER point at the production cloud project. ABORTING."
     fi
   fi
