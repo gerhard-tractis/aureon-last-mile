@@ -98,8 +98,17 @@ npm_ci_once() {
 }
 
 restart_functions() {
+  # Rebuild the merged host dir the compose file mounts (repo functions +
+  # vendored main router — see setup-qa.sh merge_functions_dir), then restart.
+  local merge_dir="${QA_FUNCTIONS_MERGE_DIR:-/home/aureon/supabase-qa-functions}"
+  local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
+  log "refreshing merged edge-functions dir at ${merge_dir}"
+  mkdir -p "$merge_dir"
+  rm -rf "${merge_dir:?}"/*
+  cp -a "${QA_CHECKOUT_DIR}/packages/database/supabase/functions/." "$merge_dir/"
+  cp -a "${infra_dir}/volumes/functions/main" "$merge_dir/"
   log "restarting edge functions container"
-  docker compose -f "${QA_CHECKOUT_DIR}/infra/supabase-qa/docker-compose.yml" \
+  docker compose -f "${infra_dir}/docker-compose.yml" \
     --env-file "$QA_ENV_FILE" restart functions
 }
 
