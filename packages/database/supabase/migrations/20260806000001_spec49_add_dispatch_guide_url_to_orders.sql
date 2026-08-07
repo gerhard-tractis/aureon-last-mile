@@ -25,8 +25,8 @@ COMMENT ON COLUMN public.orders.dispatch_guide_url IS
 CREATE OR REPLACE FUNCTION public.preserve_dispatch_guide_url()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
+SECURITY INVOKER
+SET search_path = ''
 AS $$
 BEGIN
   NEW.dispatch_guide_url := COALESCE(NEW.dispatch_guide_url, OLD.dispatch_guide_url);
