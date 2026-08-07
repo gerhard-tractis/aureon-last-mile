@@ -1,0 +1,28 @@
+# aureon-frontend-qa.service — Next.js frontend, QA instance (spec-48).
+# Modeled on apps/agents/deploy/aureon-agents.service.
+#
+# ExecStart runs the workspace `next` binary via node. npm hoists dependencies
+# to the monorepo root, so the binary lives at
+# /home/aureon/aureon-qa/node_modules/.bin/next (a symlink into next/dist/bin)
+# after `npm ci` at the repo root — NOT under apps/frontend/node_modules.
+# This mirrors `npm run start` in apps/frontend/package.json (`next start`)
+# plus the QA port flag (-p 3200).
+
+[Unit]
+Description=Aureon Frontend (QA)
+After=network.target
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/aureon-qa/apps/frontend
+EnvironmentFile=/home/aureon/.env.qa
+ExecStart=/usr/bin/node /home/aureon/aureon-qa/node_modules/.bin/next start -p 3200
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aureon-frontend-qa
+
+[Install]
+WantedBy=multi-user.target
