@@ -44,7 +44,8 @@ guard_provisioned() { # exit 0 (skip) when QA is not set up on this host
 }
 
 guard_env_file() { # QA must never point at the production cloud project
-  if grep -q 'supabase\.co' "$QA_ENV_FILE"; then
+  # Scan values only — comment lines legitimately mention supabase.co (the template's own warning).
+  if grep -qE '^[^#]*supabase\.co' "$QA_ENV_FILE"; then
     err "env file $QA_ENV_FILE mentions supabase.co — QA must NEVER point at the production cloud project. ABORTING."
     exit 1
   fi
