@@ -2,12 +2,15 @@
 # create-qa-users.sh — create one QA login user per app role (spec-48).
 #
 # Runs on the QA VPS after setup-qa.sh has applied migrations + seed-qa.sql.
-# For every role in the user_role enum it POSTs to the GoTrue admin API
-# (${QA_URL}/auth/v1/admin/users) with app_metadata {operator_id, role} at the
-# TOP LEVEL — exactly what the handle_new_user trigger
-# (20260216170542_create_users_table_with_rbac.sql) reads to auto-create the
-# matching public.users row. A `claims` copy is included too, mirroring the
-# shape used by 20260616000002_spec45_internal_operator_seed.sql.
+# Users are created via DIRECT SQL against the QA Postgres (localhost:5433),
+# NOT the GoTrue admin API: GoTrue v2.189.0 INSERTs the auth.users row BEFORE
+# applying app_metadata, so the handle_new_user trigger
+# (20260216170542_create_users_table_with_rbac.sql) fires with no operator_id
+# and aborts with "operator_id required in signup metadata". Inserting the row
+# ourselves with raw_app_meta_data already populated (same shape migration
+# 20260616000002_spec45_internal_operator_seed.sql uses) lets the trigger
+# create the matching public.users row, and a companion auth.identities row
+# (provider 'email') makes password login work on GoTrue v2.
 #
 # Roles (derived from the user_role enum: 20260216170542 + super_admin added
 # by 20260616000001_spec45_user_role_super_admin.sql):
@@ -19,19 +22,20 @@
 #        20260616000002 (00000000-0000-0000-0000-0000000000a1), per spec-45:
 #        "Super-admin humans ... with operator_id = the internal operator".
 #
-# After each user exists, permissions are enforced via psql (localhost:5433)
+# After each user exists, permissions are enforced via UPDATE ... RETURNING
 # because handle_new_user leaves permissions = '{}'; the mapping matches the
 # backfills in 20260310100001_add_permissions_to_users.sql and
 # 20260324000003_add_dispatch_permission.sql.
 #
-# Idempotent: an existing email (GoTrue 422/409, or "already registered" body)
-# is skipped cleanly; the permissions UPDATE is a no-op when already correct.
+# Idempotent: an email already present in auth.users is skipped cleanly; the
+# permissions UPDATE is a no-op when already correct.
 #
 # Usage:
 #   ./create-qa-users.sh [/path/to/.env.qa]     # default /home/aureon/.env.qa
 #
-# SAFETY: refuses to run if the derived API URL mentions supabase.co — QA user
-# creation must never hit the production cloud project.
+# SAFETY: refuses to run if any non-comment value in the env file mentions
+# supabase.co — QA user creation must never touch the production cloud
+# project. The DB connection itself is pinned to localhost.
 
 set -euo pipefail
 
@@ -39,6 +43,7 @@ ENV_FILE="${1:-/home/aureon/.env.qa}"
 QA_PASSWORD='QaTest123!'
 QA_OPERATOR_ID='00000000-0000-4000-8000-000000000001'   # seed-qa.sql
 INTERNAL_OPERATOR_ID='00000000-0000-0000-0000-0000000000a1'  # 20260616000002
+GOTRUE_INSTANCE_ID='00000000-0000-0000-0000-000000000000'
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "ERROR: env file not found: $ENV_FILE" >&2
@@ -53,108 +58,123 @@ env_get() {
   { grep -E "^${1}=" "$ENV_FILE" || true; } | tail -n 1 | cut -d= -f2- | tr -d '\r'
 }
 
-SERVICE_ROLE_KEY="$(env_get SERVICE_ROLE_KEY)"
-SUPABASE_URL="$(env_get SUPABASE_URL)"
-[ -n "$SUPABASE_URL" ] || SUPABASE_URL="$(env_get SUPABASE_PUBLIC_URL)"
 DB_PASSWORD="$(env_get SUPABASE_DB_PASSWORD)"
 [ -n "$DB_PASSWORD" ] || DB_PASSWORD="$(env_get POSTGRES_PASSWORD)"
 DB_PORT="$(env_get SUPABASE_DB_PORT)"
 [ -n "$DB_PORT" ] || DB_PORT=5433
 
-if [ -z "$SERVICE_ROLE_KEY" ] || [[ "$SERVICE_ROLE_KEY" == CHANGE_ME* ]]; then
-  echo "ERROR: SERVICE_ROLE_KEY missing or placeholder in $ENV_FILE" >&2
-  exit 1
-fi
-if [ -z "$SUPABASE_URL" ]; then
-  echo "ERROR: SUPABASE_URL / SUPABASE_PUBLIC_URL missing in $ENV_FILE" >&2
-  exit 1
-fi
 if [ -z "$DB_PASSWORD" ] || [[ "$DB_PASSWORD" == CHANGE_ME* ]]; then
   echo "ERROR: SUPABASE_DB_PASSWORD / POSTGRES_PASSWORD missing or placeholder in $ENV_FILE" >&2
   exit 1
 fi
 
 # --- Production guard --------------------------------------------------------
-case "$SUPABASE_URL" in
-  *supabase.co*)
-    echo "REFUSING to run: $SUPABASE_URL points at supabase.co (production cloud)." >&2
-    echo "QA user creation only targets the self-hosted QA stack (localhost Kong)." >&2
-    exit 1
-    ;;
-esac
-QA_URL="${SUPABASE_URL%/}"
+# Value-only scan: any non-comment line mentioning supabase.co means this env
+# file points at the production cloud project — refuse outright.
+if grep -Eq '^[^#]*supabase\.co' "$ENV_FILE"; then
+  echo "REFUSING to run: $ENV_FILE references supabase.co (production cloud)." >&2
+  echo "QA user creation only targets the self-hosted QA stack (localhost)." >&2
+  exit 1
+fi
 
 psql_qa() {
   PGPASSWORD="$DB_PASSWORD" psql -h localhost -p "$DB_PORT" -U postgres -d postgres \
     -v ON_ERROR_STOP=1 -qAt "$@"
 }
 
+# --- Locate pgcrypto (crypt/gen_salt) — schema varies by image --------------
+PGCRYPTO_SCHEMA=$(psql_qa -c "SELECT n.nspname FROM pg_extension e
+                              JOIN pg_namespace n ON n.oid = e.extnamespace
+                              WHERE e.extname = 'pgcrypto';") || {
+  echo "ERROR: cannot query QA Postgres on localhost:$DB_PORT" >&2
+  exit 1
+}
+if [ -z "$PGCRYPTO_SCHEMA" ]; then
+  echo "ERROR: pgcrypto extension not installed in the QA database" >&2
+  exit 1
+fi
+
 # --- Role table: role|operator_id|permissions (comma-separated) --------------
-ROLE_ROWS="pickup_crew|$QA_OPERATOR_ID|pickup
-warehouse_staff|$QA_OPERATOR_ID|warehouse
-loading_crew|$QA_OPERATOR_ID|loading,dispatch
-operations_manager|$QA_OPERATOR_ID|operations,dispatch
-admin|$QA_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch
-super_admin|$INTERNAL_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch"
+# Fixed UUIDs so re-runs and QA scripts can reference the users directly.
+ROLE_ROWS="pickup_crew|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000201
+warehouse_staff|$QA_OPERATOR_ID|warehouse|00000000-0000-4000-8000-000000000202
+loading_crew|$QA_OPERATOR_ID|loading,dispatch|00000000-0000-4000-8000-000000000203
+operations_manager|$QA_OPERATOR_ID|operations,dispatch|00000000-0000-4000-8000-000000000204
+admin|$QA_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch|00000000-0000-4000-8000-000000000205
+super_admin|$INTERNAL_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch|00000000-0000-4000-8000-000000000206"
 
 CREATED=()
 SKIPPED=()
 FAILED=()
 
-create_user() {
-  local role="$1" operator_id="$2" email="$3"
-  local body http_code response resp_file
-  resp_file=$(mktemp) || { FAILED+=("$email (mktemp failed)"); return 1; }
-  # shellcheck disable=SC2064  # expand resp_file now, not at trap time
-  trap "rm -f '$resp_file'" RETURN
-  body=$(cat <<JSON
-{
-  "email": "$email",
-  "password": "$QA_PASSWORD",
-  "email_confirm": true,
-  "app_metadata": {
-    "operator_id": "$operator_id",
-    "role": "$role",
-    "claims": { "operator_id": "$operator_id", "role": "$role" }
-  },
-  "user_metadata": { "full_name": "QA ${role} user" }
+user_exists() { # $1 = email; prints 't' when present
+  psql_qa -v email="$1" -f - <<'SQL'
+SELECT EXISTS (SELECT 1 FROM auth.users WHERE email = :'email');
+SQL
 }
-JSON
-)
-  response=$(curl -sS -o "$resp_file" -w '%{http_code}' \
-    -X POST "$QA_URL/auth/v1/admin/users" \
-    -H "apikey: $SERVICE_ROLE_KEY" \
-    -H "Authorization: Bearer $SERVICE_ROLE_KEY" \
-    -H "Content-Type: application/json" \
-    -d "$body") || { FAILED+=("$email (curl error)"); return 1; }
-  http_code="$response"
 
-  case "$http_code" in
-    200|201)
-      CREATED+=("$email")
-      ;;
-    409)
-      SKIPPED+=("$email (already exists, HTTP 409)")
-      ;;
-    400|422)
-      # GoTrue signals duplicates as 422 (or 400 on older versions) with a
-      # message like "... has already been registered" — but the same status
-      # codes also cover genuine validation errors, so check the body.
-      if grep -qi "already" "$resp_file"; then
-        SKIPPED+=("$email (already exists, HTTP $http_code)")
-      else
-        echo "ERROR creating $email (HTTP $http_code): $(cat "$resp_file")" >&2
-        FAILED+=("$email (HTTP $http_code)")
-        return 1
-      fi
-      ;;
-    *)
-      echo "ERROR creating $email (HTTP $http_code): $(cat "$resp_file")" >&2
-      FAILED+=("$email (HTTP $http_code)")
-      return 1
-      ;;
-  esac
-  return 0
+create_user() {
+  local role="$1" operator_id="$2" email="$3" uid="$4"
+  local exists
+  exists=$(user_exists "$email") || { FAILED+=("$email (existence check failed)"); return 1; }
+  if [ "$exists" = "t" ]; then
+    SKIPPED+=("$email (already exists)")
+    return 0
+  fi
+
+  # One transaction (-1): auth.users insert (fires handle_new_user, which
+  # creates public.users) + auth.identities row for GoTrue v2 email login.
+  # NOTE: psql :'var' interpolation only works via stdin/-f, not -c.
+  # Empty-string (not NULL) token columns avoid GoTrue's NULL-scan errors.
+  if psql_qa -1 \
+      -v uid="$uid" -v email="$email" -v urole="$role" \
+      -v operator_id="$operator_id" -v pw="$QA_PASSWORD" \
+      -v instance_id="$GOTRUE_INSTANCE_ID" \
+      -v cryptschema="$PGCRYPTO_SCHEMA" \
+      -f - <<'SQL'
+INSERT INTO auth.users (
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+  confirmation_token, recovery_token,
+  email_change, email_change_token_new, email_change_token_current
+) VALUES (
+  :'uid', :'instance_id', 'authenticated', 'authenticated', :'email',
+  :"cryptschema".crypt(:'pw', :"cryptschema".gen_salt('bf', 10)),
+  now(),
+  jsonb_build_object(
+    'provider', 'email',
+    'providers', jsonb_build_array('email'),
+    'operator_id', :'operator_id',
+    'role', :'urole',
+    'claims', jsonb_build_object('operator_id', :'operator_id', 'role', :'urole')
+  ),
+  jsonb_build_object('full_name', 'QA ' || :'urole' || ' user'),
+  now(), now(), '', '', '', '', ''
+);
+
+INSERT INTO auth.identities (
+  id, user_id, identity_data, provider, provider_id,
+  last_sign_in_at, created_at, updated_at
+) VALUES (
+  gen_random_uuid(), :'uid',
+  jsonb_build_object(
+    'sub', :'uid'::text,
+    'email', :'email',
+    'email_verified', true,
+    'phone_verified', false
+  ),
+  'email', :'uid'::text,
+  now(), now(), now()
+);
+SQL
+  then
+    CREATED+=("$email")
+    return 0
+  else
+    echo "ERROR: SQL insert failed for $email ($role)" >&2
+    FAILED+=("$email (SQL insert failed)")
+    return 1
+  fi
 }
 
 enforce_permissions() {
@@ -162,11 +182,13 @@ enforce_permissions() {
   # 20260310100001 + 20260324000003. Idempotent (plain UPDATE to a constant).
   local role="$1" email="$2" perms="$3"
   local pg_array="{$perms}" updated
-  updated=$(psql_qa -c "UPDATE public.users
-                           SET permissions = '$pg_array'::text[]
-                         WHERE email = '$email' AND role = '$role' AND deleted_at IS NULL
-                     RETURNING id;") \
-    || { FAILED+=("$email (permissions update failed)"); return 1; }
+  updated=$(psql_qa -v email="$email" -v urole="$role" -v perms="$pg_array" -f - <<'SQL'
+UPDATE public.users
+   SET permissions = :'perms'::text[]
+ WHERE email = :'email' AND role = :'urole'::user_role AND deleted_at IS NULL
+RETURNING id;
+SQL
+  ) || { FAILED+=("$email (permissions update failed)"); return 1; }
   if [ -z "$updated" ]; then
     echo "ERROR: permissions update matched no public.users row for $email ($role)" >&2
     echo "       (handle_new_user trigger did not create the row?)" >&2
@@ -176,15 +198,17 @@ enforce_permissions() {
   return 0
 }
 
-echo "QA user creation against $QA_URL (env: $ENV_FILE)"
+echo "QA user creation via direct SQL on localhost:$DB_PORT (env: $ENV_FILE)"
+echo "pgcrypto schema: $PGCRYPTO_SCHEMA"
 echo
 
-while IFS='|' read -r role operator_id perms; do
+while IFS='|' read -r role operator_id perms uid; do
   [ -n "$role" ] || continue
   email="qa-${role//_/-}@qa.test"
   echo "-- $role -> $email (operator $operator_id)"
-  create_user "$role" "$operator_id" "$email" || true
-  enforce_permissions "$role" "$email" "$perms" || true
+  if create_user "$role" "$operator_id" "$email" "$uid"; then
+    enforce_permissions "$role" "$email" "$perms" || true
+  fi
 done <<< "$ROLE_ROWS"
 
 echo
