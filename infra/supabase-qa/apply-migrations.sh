@@ -245,10 +245,9 @@ for f in "${files[@]}"; do
     exit 1
   fi
 
-  "${psql_base[@]}" \
-    -v v="$version" -v n="$name" \
-    -c "INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
-        VALUES (:'v', :'n', '{}')" >/dev/null
+  # psql only interpolates :'var' from stdin/-f input, never inside -c.
+  printf "INSERT INTO supabase_migrations.schema_migrations (version, name, statements)\n        VALUES (:'v', :'n', '{}');\n" \
+    | "${psql_base[@]}" -v v="$version" -v n="$name" -f - >/dev/null
   applied=$((applied + 1))
 done
 
