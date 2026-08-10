@@ -17,6 +17,7 @@ import { AssertionCollector } from './lib/assert';
 import { GENERATED_LIKE_PATTERN } from './lib/ids';
 import { seedOutcomes } from './scenarios/outcomes';
 import { seedTenancy } from './scenarios/tenancy';
+import { seedPickup } from './scenarios/pickup';
 
 /**
  * Tables cleared by --reset, child-first so foreign keys stay satisfied.
@@ -53,12 +54,12 @@ async function runScenarios(
   for (const scenario of options.scenarios) {
     process.stdout.write(`  ${scenario.padEnd(12)} `);
 
-    const created =
-      scenario === 'outcomes'
-        ? await seedOutcomes(db, collector)
-        : await seedTenancy(db, collector);
+    let created: number;
+    if (scenario === 'outcomes') created = await seedOutcomes(db, collector);
+    else if (scenario === 'tenancy') created = await seedTenancy(db, collector);
+    else created = await seedPickup(db, collector);
 
-    console.log(`${created} order(s)`);
+    console.log(`${created} row(s)`);
   }
 }
 
