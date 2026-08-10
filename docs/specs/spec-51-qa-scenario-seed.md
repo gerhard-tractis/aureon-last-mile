@@ -225,6 +225,14 @@ running the generator and confirming assertions pass.
   `packages/database/supabase/functions/beetrack-webhook/index.ts:14` and in the
   Easy WMS n8n workflow JSON. Webhook-driven ingestion in QA lands in the wrong
   tenant; PR 4 adds an operator override to `scripts/replay-easy-webhook.mjs`.
+- **spec-46 guards cover 6 of 9 modules.** `ops_control`, `pickup`, `reception`,
+  `distribution`, `dispatch`, and `conversations` have layout guards calling
+  `requireModuleEnabled`. `pre_route` and `returns` are toggleable in the admin
+  UI but gate nothing — `PreRouteTab` renders unconditionally inside
+  `dispatch/page.tsx` and `ReturnsPanel` inside `operations-control`, each gated
+  only by its parent module. `late_order_alerts` has no implementation yet
+  (expected — still backlog in the rollout map). `ModuleMeta.navHref` is dead
+  metadata, read nowhere. Belongs in a spec-46 follow-up, not here.
 - **Stale spec statuses** — spec-47 still says `backlog` after 4 merged PRs.
 - **Doc drift** — `.github/workflows/README.md` omits `deploy-qa`;
   `apps/frontend/docs/deployment-runbook.md` (v1.1) predates spec-48.
