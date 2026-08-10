@@ -1,0 +1,13 @@
+# Shell scripts must keep LF regardless of contributor platform. They run on
+# Ubuntu CI runners and on the VPS; a CRLF blob fails at the shebang with
+# "\r: command not found" or a syntax error at the first line continuation.
+# infra/supabase-qa/.gitattributes already enforces this for the vendored
+# Supabase files — this covers the rest of the repo.
+*.sh text eol=lf
+
+# SQL is read by postgres on Linux (migrations, seeds, pgTAP-style tests).
+*.sql text eol=lf
+
+# Workflow definitions are parsed on Linux runners.
+*.yml text eol=lf
+*.yaml text eol=lf

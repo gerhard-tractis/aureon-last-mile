@@ -45,11 +45,13 @@ them a deploy can ship a different commit than the one that passed.
 |---|---|---|
 | `changes` | always (after green CI) | computes the diff vs the previous main commit |
 | `deploy-supabase` | migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
+| `verify-prod-migrations` | **every** green push (never path-filtered) | fails if prod's migration ledger diverges from the repo |
 | `deploy-edge-functions` | `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
 | `deploy-vercel` | **every** green push | `vercel --prod`, with rollback on failure |
 | `deploy-worker` | `apps/worker/**` changed | VPS via `apps/worker/scripts/deploy.sh` |
 | `deploy-agents` | `apps/agents/**` changed | VPS via `apps/agents/scripts/deploy.sh` |
 | `deploy-solver` | `sidecar/or-tools/**` changed | VPS venv + `systemctl restart aureon-solver` |
+| `deploy-qa` | **every** green push | syncs the spec-48 QA stack on the VPS; migrations always replayed, app rebuilds path-filtered. Never blocks prod (see `docs/qa-environment.md`) |
 
 App deploys depend on the migration jobs, so a failed migration stops
 everything downstream. `concurrency: production-deploy` with
