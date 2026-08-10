@@ -6,8 +6,10 @@ import {Database} from "@/lib/types";
 import {assertSafeSupabaseTarget} from "@/lib/supabase/environment-guard";
 
 export async function createSSRClient(): Promise<SupabaseClient<Database>> {
-    // A preview deployment must never reach the production project (spec-51).
-    assertSafeSupabaseTarget();
+    // Anon key, so RLS still applies. Reports rather than throws when a preview
+    // is aimed at production: this runs during prerender of /app/operations-control
+    // via requireModuleEnabled, and throwing fails the whole deployment (spec-51).
+    assertSafeSupabaseTarget('anon');
 
     const cookieStore = await cookies()
 
