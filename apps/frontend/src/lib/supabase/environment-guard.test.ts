@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   assertNotProductionFromPreview,
   assertSafeSupabaseTarget,
+  resetPreviewWarning,
   ProductionAccessFromPreviewError,
   DEFAULT_PRODUCTION_PROJECT_REF,
 } from './environment-guard';
@@ -85,19 +86,60 @@ describe('assertNotProductionFromPreview', () => {
 });
 
 describe('assertSafeSupabaseTarget', () => {
-  it('reads VERCEL_ENV and the Supabase URL from the environment', () => {
-    expect(() =>
-      assertSafeSupabaseTarget({ VERCEL_ENV: 'preview', NEXT_PUBLIC_SUPABASE_URL: PROD_URL }),
-    ).toThrow(ProductionAccessFromPreviewError);
+  beforeEach(() => {
+    resetPreviewWarning();
+    vi.restoreAllMocks();
   });
 
-  it('passes for a correctly configured preview', () => {
+  const previewOnProd = { VERCEL_ENV: 'preview', NEXT_PUBLIC_SUPABASE_URL: PROD_URL };
+
+  // service-role bypasses RLS — a preview holding it could read or write any
+  // tenant's production data. Never allowed.
+  it('refuses service-role access to production from a preview', () => {
+    expect(() => assertSafeSupabaseTarget('service-role', previewOnProd)).toThrow(
+      ProductionAccessFromPreviewError,
+    );
+  });
+
+  // anon is bounded by RLS. Throwing here would fail the build during prerender
+  // of /app/operations-control and block every PR, which fixes nothing.
+  it('reports but does not throw for anon access', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => assertSafeSupabaseTarget('anon', previewOnProd)).not.toThrow();
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0][0]).toContain('PREVIEW');
+  });
+
+  it('warns only once per process', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    assertSafeSupabaseTarget('anon', previewOnProd);
+    assertSafeSupabaseTarget('anon', previewOnProd);
+    assertSafeSupabaseTarget('anon', previewOnProd);
+    expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('stays silent for a correctly configured preview', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() =>
-      assertSafeSupabaseTarget({ VERCEL_ENV: 'preview', NEXT_PUBLIC_SUPABASE_URL: OTHER_URL }),
+      assertSafeSupabaseTarget('anon', {
+        VERCEL_ENV: 'preview',
+        NEXT_PUBLIC_SUPABASE_URL: OTHER_URL,
+      }),
+    ).not.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('allows service-role in production', () => {
+    expect(() =>
+      assertSafeSupabaseTarget('service-role', {
+        VERCEL_ENV: 'production',
+        NEXT_PUBLIC_SUPABASE_URL: PROD_URL,
+      }),
     ).not.toThrow();
   });
 
   it('passes for an empty environment', () => {
-    expect(() => assertSafeSupabaseTarget({})).not.toThrow();
+    expect(() => assertSafeSupabaseTarget('service-role', {})).not.toThrow();
+    expect(() => assertSafeSupabaseTarget('anon', {})).not.toThrow();
   });
 });
