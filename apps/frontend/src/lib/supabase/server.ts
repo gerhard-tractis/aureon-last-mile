@@ -3,8 +3,12 @@ import {SupabaseClient} from '@supabase/supabase-js'
 import {cookies} from 'next/headers'
 import {ClientType, SassClient} from "@/lib/supabase/unified";
 import {Database} from "@/lib/types";
+import {assertSafeSupabaseTarget} from "@/lib/supabase/environment-guard";
 
 export async function createSSRClient(): Promise<SupabaseClient<Database>> {
+    // A preview deployment must never reach the production project (spec-51).
+    assertSafeSupabaseTarget();
+
     const cookieStore = await cookies()
 
     // Cast needed: same @supabase/ssr version mismatch as client.ts — see comment there.
