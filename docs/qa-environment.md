@@ -130,7 +130,8 @@ migrations, re-applies `seed-qa.sql`, and recreates the QA users (all idempotent
 
 ## Smoke-test checklist
 
-Run after first setup and after any reset:
+Run after first setup and after any reset. This verifies the **environment**;
+the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
 
 1. **Containers healthy**: `docker compose -f infra/supabase-qa/docker-compose.yml --env-file /home/aureon/.env.qa ps` — every service `running`, health `healthy` where defined.
 2. **Migration count matches the repo**:
@@ -143,7 +144,10 @@ Run after first setup and after any reset:
 5. **Bull Board activity**: http://localhost:3211 shows queues/jobs.
 6. **Worker talks to QA DB**: `journalctl -u aureon-worker-qa -n 50` mentions
    `localhost:5433`, never `supabase.co`.
-7. **Isolation proof** (per QA unit):
+7. **Scenario seed applied** (spec-51): `npm run seed:qa -- --verify` reports all
+   assertions passing, including the `pg_enum` drift check. Re-seed with
+   `npm run seed:qa -- --scenarios=all` after a DB reset.
+8. **Isolation proof** (per QA unit):
    `sudo grep -c 'supabase.co' /proc/$(systemctl show -p MainPID --value aureon-worker-qa)/environ`
    must return `0` (repeat for `aureon-agents-qa`, `aureon-frontend-qa`).
 
