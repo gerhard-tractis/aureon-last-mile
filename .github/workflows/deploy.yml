@@ -120,6 +120,55 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
+  # ─── 1b. Production migration drift gate ─────────────────────────────────────
+  verify-prod-migrations:
+    name: Verify Production Migrations
+    needs: [changes, deploy-supabase]
+    # DELIBERATELY NOT PATH-FILTERED — the path filter is the bug this catches.
+    #
+    # deploy-supabase only runs when migrations/** changes, so a broken migration
+    # deploy stays latent until the next migration lands (see the CLI-pin comment
+    # above, and REMEDIATION.md M1). QA (spec-48) replays the full ledger every
+    # merge and so is always correct; production had no equivalent check. This
+    # runs on every green push regardless of what changed.
+    #
+    # Runs even when deploy-supabase failed: the ledger comparison tells us what
+    # production's schema actually is, which is the useful thing to know then.
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: packages/database
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          # Keep in lockstep with deploy-supabase above.
+          version: 2.88.1
+
+      - name: Link Supabase project
+        run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
+      - name: Compare production ledger against the repo
+        # Parsing lives in a script so it is unit-testable without credentials —
+        # see scripts/verify-prod-migrations.test.sh
+        run: |
+          set -euo pipefail
+          supabase migration list --linked \
+            | bash "$GITHUB_WORKSPACE/scripts/verify-prod-migrations.sh"
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+
   # ─── 2. Edge Functions ───────────────────────────────────────────────────────
   deploy-edge-functions:
     name: Deploy Supabase Edge Functions
