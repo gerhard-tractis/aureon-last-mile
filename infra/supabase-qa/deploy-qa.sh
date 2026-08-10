@@ -112,6 +112,41 @@ restart_functions() {
     --env-file "$QA_ENV_FILE" restart functions
 }
 
+# Restarting the QA units needs passwordless sudo. The prod units have a
+# sudoers rule (apps/worker/scripts/deploy.sh relies on the same thing); the QA
+# units were never added to it, so the job used to build for five minutes and
+# then die on "sudo: a password is required" with no indication of the fix.
+#
+# Check up front, once, for every unit this run will actually restart.
+guard_sudo() {
+  local missing=()
+  local unit
+
+  # Already root (some runner configurations): nothing to check.
+  if [ "$(id -u)" -eq 0 ]; then return 0; fi
+
+  for unit in "$@"; do
+    # `sudo -l <command>` asks whether this exact command is permitted, without
+    # running it. Testing anything else would be wrong: a sudoers rule scoped to
+    # `systemctl restart <unit>` does not permit `systemctl is-active <unit>`,
+    # so probing with a different verb reports a failure that isn't real.
+    if ! sudo -n -l systemctl restart "$unit" >/dev/null 2>&1; then
+      missing+=("$unit")
+    fi
+  done
+
+  if [ ${#missing[@]} -gt 0 ]; then
+    echo "::error::QA deploy cannot restart the QA systemd units — passwordless sudo is unavailable for: ${missing[*]}"
+    echo "Fix on the VPS (see docs/qa-environment.md):" >&2
+    echo "  sudo visudo -f /etc/sudoers.d/aureon-qa" >&2
+    echo "  aureon ALL=(root) NOPASSWD: /bin/systemctl restart aureon-frontend-qa, \\" >&2
+    echo "                              /bin/systemctl restart aureon-agents-qa, \\" >&2
+    echo "                              /bin/systemctl restart aureon-worker-qa" >&2
+    echo "Confirm the runner user and 'which systemctl' first, and match the existing prod rule." >&2
+    return 1
+  fi
+}
+
 deploy_frontend() {
   npm_ci_once
   # NEXT_PUBLIC_* vars are baked in at build time -> env sourced in a subshell
@@ -198,6 +233,20 @@ main() {
   guard_env_file
   guard_inputs
   sync_checkout
+
+  # Fail before the expensive builds if we cannot restart what we are about to
+  # rebuild. Migrations still run below either way — schema parity is the
+  # drift backstop and needs no sudo.
+  # Plain `cond && arr+=(x)` would abort the script under `set -e` whenever the
+  # flag is false, so each of these stays an explicit if.
+  units_to_restart=()
+  if is_true "${CHANGED_FRONTEND:-}"; then units_to_restart+=(aureon-frontend-qa); fi
+  if is_true "${CHANGED_AGENTS:-}";   then units_to_restart+=(aureon-agents-qa);   fi
+  if is_true "${CHANGED_WORKER:-}";   then units_to_restart+=(aureon-worker-qa);   fi
+  if [ ${#units_to_restart[@]} -gt 0 ]; then
+    guard_sudo "${units_to_restart[@]}"
+  fi
+
   apply_migrations
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi

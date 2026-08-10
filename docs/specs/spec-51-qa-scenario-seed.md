@@ -103,9 +103,25 @@ Fixed in `20260810000001_spec51_fix_listo_para_despacho_pipeline_position.sql`,
 both functions rewritten from their latest definitions per the `CLAUDE.md` rule.
 Regression test: `supabase/tests/spec51_listo_para_despacho_pipeline_position.sql`.
 
-**Existing rows are not repaired by that migration** — an order already flipped
-to `cancelado` stays so until a package row changes and re-fires the trigger.
-Assess the blast radius before deciding on a backfill:
+**Existing rows are repaired** by
+`20260810000002_spec51_repair_wrongly_cancelled_orders.sql`.
+
+The repair is deliberately narrow. "Cancelled with active packages" is *not* a
+bug signature on its own: the `beetrack-webhook` edge function writes
+`orders.status = 'cancelado'` directly for failed and partial DispatchTrack
+dispatches, bypassing the trigger and leaving packages at `en_ruta`. Repairing
+on that predicate would silently resurrect genuinely failed deliveries.
+
+The bug's actual signature is that **every** live package sits at
+`listo_para_despacho` — an order in that state never dispatched, so the webhook
+cannot have cancelled it. The repair re-fires the trigger rather than writing
+`orders.status`, so the canonical derivation decides the outcome and the
+migration cannot invent a status the trigger would not produce. It is idempotent
+and reports counts via `RAISE NOTICE`.
+`supabase/tests/spec51_repair_wrongly_cancelled_orders.sql` covers all four
+cases, including the two that must be left alone.
+
+To size the affected population independently:
 
 ```sql
 SELECT o.operator_id, count(*) AS affected_orders
@@ -291,15 +307,33 @@ running the generator and confirming assertions pass.
   fails at the restart step on any push touching `apps/frontend/**`,
   `apps/agents/**`, or `apps/worker/**` — first observed on the merge of PR #372.
   QA's schema stays current (migrations need no sudo) but its application code
-  silently stops tracking main. Remediation is a sudoers entry on the VPS,
-  documented in `docs/qa-environment.md`; it must be applied by the user, since
-  this repo never edits host privilege configuration.
+  silently stops tracking main. `deploy-qa.sh` now checks this up front via
+  `guard_sudo()` — using `sudo -n -l systemctl restart <unit>`, which asks
+  whether that exact command is permitted without running it — so the job fails
+  in seconds with the remediation instead of after a five-minute build. Tested
+  in `infra/supabase-qa/deploy-qa.guard-sudo.test.sh` against a stubbed `sudo`.
+
+  The sudoers entry itself is still outstanding and is the only remaining item
+  that genuinely requires host access; the command is in
+  `docs/qa-environment.md`.
 - **Stale spec statuses** — spec-47 still says `backlog` after 4 merged PRs.
 - **Doc drift** — `.github/workflows/README.md` omits `deploy-qa`;
   `apps/frontend/docs/deployment-runbook.md` (v1.1) predates spec-48.
 - **Worker tests disabled in CI** — `test:run` is an `echo`.
-- **Vercel Preview environment** — confirm its `NEXT_PUBLIC_SUPABASE_URL` /
-  `SUPABASE_SERVICE_KEY` do not point at prod `wfwlcpnkkxxzdvhvvsxb.supabase.co`.
+- **Vercel Preview environment** — *enforced in code.*
+  `apps/frontend/src/lib/supabase/environment-guard.ts` throws when
+  `VERCEL_ENV === 'preview'` and the Supabase URL references the production
+  project ref, and is called by `createSSRClient()` and
+  `createServerAdminClient()` — the latter holds the service-role key, so RLS
+  would not apply. Auditing the dashboard is a point-in-time check that anyone
+  can silently undo; this makes the combination impossible instead. Production
+  is unaffected (`VERCEL_ENV === 'production'`), as are local, QA and CI, where
+  `VERCEL_ENV` is undefined.
+
+  If preview deployments were pointed at production, they will now fail loudly
+  on first request. That is the intended outcome — set the Preview environment's
+  `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
+  `SUPABASE_SERVICE_KEY` to a non-production project.
 
 ## Verification
 
