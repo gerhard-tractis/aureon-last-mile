@@ -1923,7 +1923,7 @@ export type Database = {
         | "en_bodega"
         | "asignado"
         | "en_carga"
-        | "listo"
+        | "listo_para_despacho"
         | "en_ruta"
         | "entregado"
         | "cancelado"
@@ -2103,7 +2103,7 @@ export const Constants = {
         "en_bodega",
         "asignado",
         "en_carga",
-        "listo",
+        "listo_para_despacho",
         "en_ruta",
         "entregado",
         "cancelado",
@@ -2114,6 +2114,8 @@ export const Constants = {
         "ingresado",
         "verificado",
         "en_bodega",
+        "sectorizado",
+        "retenido",
         "asignado",
         "en_carga",
         "listo_para_despacho",

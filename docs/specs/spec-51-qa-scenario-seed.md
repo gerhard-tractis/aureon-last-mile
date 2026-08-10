@@ -79,6 +79,58 @@ regardless of how the order-enum question resolves.
 is consistent with the generated types. It is not necessarily wrong; correctness
 depends on the answer above.
 
+## Production bug found via the enum work — closing a route cancels its orders
+
+The `listo` → `listo_para_despacho` rename (`20260324000001`) updated the enums
+but not the two functions comparing against that value **as TEXT**:
+
+- `pipeline_position(TEXT)` (latest def `20260319000001`) matches only `'listo'`,
+  so `pipeline_position('listo_para_despacho')` falls to `ELSE 0` — "terminal,
+  not in the active pipeline".
+- `recalculate_order_status()` (latest def `20260513000005`) maps position 8 back
+  to `'listo'`, which is no longer a valid `order_status_enum` label. That branch
+  is currently unreachable and would raise on cast if it ever were.
+
+**The failure path:** `POST /api/dispatch/routes/[id]/close` sets every
+`en_carga` package on the route to `listo_para_despacho`. That fires
+`trg_recalculate_order_status`. Inside it, `v_active_count` counts packages with
+`pipeline_position(status) > 0` — now zero for every package just staged. For an
+order whose packages are all on the closed route,
+`v_active_count + v_entregado = 0`, so the function takes the "no packages left"
+branch and sets the order to **`cancelado`**.
+
+Fixed in `20260810000001_spec51_fix_listo_para_despacho_pipeline_position.sql`,
+both functions rewritten from their latest definitions per the `CLAUDE.md` rule.
+Regression test: `supabase/tests/spec51_listo_para_despacho_pipeline_position.sql`.
+
+**Existing rows are not repaired by that migration** — an order already flipped
+to `cancelado` stays so until a package row changes and re-fires the trigger.
+Assess the blast radius before deciding on a backfill:
+
+```sql
+SELECT o.operator_id, count(*) AS affected_orders
+FROM orders o
+WHERE o.status = 'cancelado'
+  AND o.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM packages p
+    WHERE p.order_id = o.id
+      AND p.deleted_at IS NULL
+      AND p.status = 'listo_para_despacho'
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM packages p
+    WHERE p.order_id = o.id
+      AND p.deleted_at IS NULL
+      AND p.status = 'retorno_hub'
+  )
+GROUP BY o.operator_id;
+```
+
+A backfill would re-derive status for exactly those orders. It is deliberately
+not automated here: distinguishing these from genuinely cancelled orders needs a
+look at real data first.
+
 ## Deliverable 3 (PR 1) — Prod migration drift gate
 
 New job `verify-prod-migrations` in `.github/workflows/deploy.yml`, running after

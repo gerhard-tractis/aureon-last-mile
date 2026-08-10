@@ -62,6 +62,47 @@ describe('pipeline types and constants', () => {
     expect(er?.position).toBe(7.6);
   });
 
+  // ── spec-51: enum drift with the database ──────────────────────────────────
+  // Migration 20260324000001_dispatch_module.sql renamed 'listo' to
+  // 'listo_para_despacho' in BOTH order_status_enum and package_status_enum.
+  // The prod drift gate (verify-prod-migrations) confirms that migration is
+  // applied, so the database never emits 'listo'. Components look stages up by
+  // exact string match — OrderLifecycleRibbon does
+  // PIPELINE_STAGES.find(s => s.status === leadingStatus) — so a stale literal
+  // silently renders no stage at all rather than failing loudly.
+
+  it('PIPELINE_STAGES uses the current DB literal listo_para_despacho', () => {
+    const statuses = PIPELINE_STAGES.map((s) => s.status);
+    expect(statuses).toContain('listo_para_despacho');
+  });
+
+  it('PIPELINE_STAGES no longer carries the pre-rename literal listo', () => {
+    const statuses = PIPELINE_STAGES.map((s) => s.status as string);
+    expect(statuses).not.toContain('listo');
+  });
+
+  it('listo_para_despacho keeps position 6 in the pipeline', () => {
+    const stage = PIPELINE_STAGES.find((s) => s.status === 'listo_para_despacho');
+    expect(stage?.position).toBe(6);
+  });
+
+  it('listo_para_despacho is a valid OrderStatus and PackageStatus', () => {
+    // Compile-time check — these assignments fail type-check if the union is stale
+    const o: OrderStatus = 'listo_para_despacho';
+    const p: PackageStatus = 'listo_para_despacho';
+    expect(o).toBe('listo_para_despacho');
+    expect(p).toBe('listo_para_despacho');
+  });
+
+  it('sectorizado and retenido are valid PackageStatus values', () => {
+    // Both are in package_status_enum (20260319000001) and are produced by
+    // trg_dock_scan_advance_package_status, but were missing from the union.
+    const s1: PackageStatus = 'sectorizado';
+    const s2: PackageStatus = 'retenido';
+    expect(s1).toBe('sectorizado');
+    expect(s2).toBe('retenido');
+  });
+
   it('PRIORITY_CONFIG covers all four priority levels', () => {
     const keys = Object.keys(PRIORITY_CONFIG) as OrderPriority[];
     expect(keys).toHaveLength(4);

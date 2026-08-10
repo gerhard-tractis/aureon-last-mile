@@ -18,7 +18,8 @@ interface ValidateReceptionScanInput {
 
 /** Statuses that mean the package has already been received or gone further */
 const ALREADY_RECEIVED_STATUSES = [
-  'en_bodega', 'sectorizado', 'retenido', 'asignado', 'en_carga', 'listo',
+  'en_bodega', 'sectorizado', 'retenido', 'asignado', 'en_carga',
+  'listo_para_despacho',
   'en_ruta', 'entregado', 'cancelado', 'devuelto',
   'dañado', 'extraviado',
 ];

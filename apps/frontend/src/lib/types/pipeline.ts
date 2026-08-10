@@ -1,7 +1,8 @@
 // Package status (active pipeline + terminal)
 export type PackageStatus =
-  | 'ingresado' | 'verificado' | 'en_bodega' | 'asignado'
-  | 'en_carga' | 'listo' | 'en_ruta' | 'retorno_hub' | 'entregado'
+  | 'ingresado' | 'verificado' | 'en_bodega' | 'sectorizado' | 'retenido'
+  | 'asignado' | 'en_carga' | 'listo_para_despacho' | 'en_ruta'
+  | 'retorno_hub' | 'entregado'
   | 'cancelado' | 'devuelto' | 'dañado' | 'extraviado';
 
 export const TERMINAL_PACKAGE_STATUSES: PackageStatus[] = [
@@ -11,7 +12,7 @@ export const TERMINAL_PACKAGE_STATUSES: PackageStatus[] = [
 // Order status (active pipeline + cancelado)
 export type OrderStatus =
   | 'ingresado' | 'verificado' | 'en_bodega' | 'asignado'
-  | 'en_carga' | 'listo' | 'en_ruta' | 'entregado'
+  | 'en_carga' | 'listo_para_despacho' | 'en_ruta' | 'entregado'
   | 'cancelado' | 'en_retorno' | 'parcialmente_entregado';
 
 export type OrderPriority = 'urgent' | 'alert' | 'ok' | 'late';
@@ -28,7 +29,7 @@ export const PIPELINE_STAGES: {
   { status: 'en_bodega', label: 'En Bodega', icon: 'Warehouse', position: 3 },
   { status: 'asignado', label: 'Asignado', icon: 'UserCheck', position: 4 },
   { status: 'en_carga', label: 'En Carga', icon: 'Truck', position: 5 },
-  { status: 'listo', label: 'Listo', icon: 'CheckCircle', position: 6 },
+  { status: 'listo_para_despacho', label: 'Listo', icon: 'CheckCircle', position: 6 },
   { status: 'en_ruta', label: 'En Ruta', icon: 'Navigation', position: 7 },
   { status: 'parcialmente_entregado', label: 'Parcialmente Entregado', icon: 'PackageOpen', position: 7.4 },
   { status: 'en_retorno', label: 'En Retorno', icon: 'RotateCcw', position: 7.6 },
