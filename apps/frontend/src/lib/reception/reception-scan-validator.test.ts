@@ -131,4 +131,29 @@ describe('validateReceptionScan', () => {
     expect(result.scanResult).toBe('not_found');
     expect(result.message).toBe('Paquete ya fue recibido en bodega');
   });
+
+  // ── spec-51: enum drift with the database ────────────────────────────────
+  // ALREADY_RECEIVED_STATUSES carried the pre-rename literal 'listo'.
+  // Migration 20260324000001 renamed it to 'listo_para_despacho' in
+  // package_status_enum, so the DB never emits 'listo' and this guard silently
+  // stopped covering that status — a package staged for dispatch would be
+  // treated as receivable instead of already-received.
+  it('returns "not_found" for a package already at listo_para_despacho', async () => {
+    queryResponses = {
+      reception_scans: [],
+      packages: [
+        { id: 'pkg-5', label: 'CTN005', status: 'listo_para_despacho', order_id: 'order-1' },
+      ],
+    };
+
+    const result = await validateReceptionScan({
+      barcode: 'CTN005',
+      receptionId: 'rec-1',
+      manifestId: 'manifest-1',
+      operatorId: 'op-1',
+    });
+
+    expect(result.scanResult).toBe('not_found');
+    expect(result.message).toBe('Paquete ya fue recibido en bodega');
+  });
 });

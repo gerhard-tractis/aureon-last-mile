@@ -1,22 +1,33 @@
-// Shared status and role constants — single source of truth
-// These must match the DB enum values exactly.
+// Shared status and role constants.
+// These must match the DB enum values exactly — see
+// packages/database/supabase/migrations/ for the authoritative definitions.
 
+// order_status_enum: 20260313000001, renamed by 20260324000001
+// ('listo' -> 'listo_para_despacho'), extended by 20260512000001
+// ('en_retorno', 'parcialmente_entregado').
 export const ORDER_STATUSES = [
   'ingresado',
   'verificado',
   'en_bodega',
-  'despachado',
+  'asignado',
+  'en_carga',
+  'listo_para_despacho',
   'en_ruta',
   'entregado',
-  'no_entregado',
+  'cancelado',
+  'en_retorno',
+  'parcialmente_entregado',
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+// user_role: 20260216170542, plus 'super_admin' from 20260616000001 (spec-45).
 export const USER_ROLES = [
-  'admin',
+  'pickup_crew',
+  'warehouse_staff',
+  'loading_crew',
   'operations_manager',
-  'warehouse_operator',
-  'driver',
+  'admin',
+  'super_admin',
 ] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
