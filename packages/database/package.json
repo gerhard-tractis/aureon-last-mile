@@ -7,10 +7,19 @@
   "scripts": {
     "generate-types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_REF > src/database.types.ts",
     "build": "tsc --noEmit",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "seed:qa": "tsx seed-qa/index.ts"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@types/pg": "^8.11.10",
     "supabase": "^2.76.6",
-    "typescript": "^5"
+    "tsx": "^4.19.2",
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }
