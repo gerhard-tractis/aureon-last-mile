@@ -320,20 +320,33 @@ running the generator and confirming assertions pass.
 - **Doc drift** — `.github/workflows/README.md` omits `deploy-qa`;
   `apps/frontend/docs/deployment-runbook.md` (v1.1) predates spec-48.
 - **Worker tests disabled in CI** — `test:run` is an `echo`.
-- **Vercel Preview environment** — *enforced in code.*
-  `apps/frontend/src/lib/supabase/environment-guard.ts` throws when
-  `VERCEL_ENV === 'preview'` and the Supabase URL references the production
-  project ref, and is called by `createSSRClient()` and
-  `createServerAdminClient()` — the latter holds the service-role key, so RLS
-  would not apply. Auditing the dashboard is a point-in-time check that anyone
-  can silently undo; this makes the combination impossible instead. Production
-  is unaffected (`VERCEL_ENV === 'production'`), as are local, QA and CI, where
-  `VERCEL_ENV` is undefined.
+- **Vercel Preview points at PRODUCTION — confirmed, not yet fixed at source.**
 
-  If preview deployments were pointed at production, they will now fail loudly
-  on first request. That is the intended outcome — set the Preview environment's
+  `apps/frontend/src/lib/supabase/environment-guard.ts` is a no-op unless
+  `VERCEL_ENV === 'preview'` **and** the Supabase URL contains the production
+  project ref. When it first shipped, the Vercel preview build for that very PR
+  failed, while the preceding PR had built cleanly. The only delta was the
+  guard, so both conditions must hold: **PR preview deployments have been
+  running against the production database.** `/app/operations-control` was being
+  prerendered against production at build time.
+
+  **The real fix is in the Vercel dashboard** — set the Preview environment's
   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
-  `SUPABASE_SERVICE_KEY` to a non-production project.
+  `SUPABASE_SERVICE_KEY` to a non-production project. Until that happens the
+  guard limits the damage:
+
+  | Client | Access | Behaviour on preview→production |
+  |---|---|---|
+  | `createServerAdminClient()` | service-role, bypasses RLS | **throws** |
+  | `createSSRClient()` | anon, bounded by RLS | logs once, continues |
+
+  The asymmetry is deliberate. Service-role from a preview is unrestricted
+  read/write over every tenant's production data and is never acceptable.
+  Anon access is wrong but RLS-bounded, and refusing it fails the prerender of
+  `/app/operations-control` (reached through `requireModuleEnabled`), which
+  fails the whole deployment and blocks every PR without fixing the cause.
+  Production, local, QA and CI are unaffected — `VERCEL_ENV` is either
+  `production` or undefined.
 
 ## Verification
 
