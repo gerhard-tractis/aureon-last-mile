@@ -285,6 +285,15 @@ running the generator and confirming assertions pass.
   only by its parent module. `late_order_alerts` has no implementation yet
   (expected — still backlog in the rollout map). `ModuleMeta.navHref` is dead
   metadata, read nowhere. Belongs in a spec-46 follow-up, not here.
+- **CI cannot restart the QA app services.** `deploy-qa.sh` runs
+  `sudo systemctl restart aureon-*-qa`, but the passwordless sudoers rule that
+  makes this work for the prod units does not cover the `-qa` ones. The job
+  fails at the restart step on any push touching `apps/frontend/**`,
+  `apps/agents/**`, or `apps/worker/**` — first observed on the merge of PR #372.
+  QA's schema stays current (migrations need no sudo) but its application code
+  silently stops tracking main. Remediation is a sudoers entry on the VPS,
+  documented in `docs/qa-environment.md`; it must be applied by the user, since
+  this repo never edits host privilege configuration.
 - **Stale spec statuses** — spec-47 still says `backlog` after 4 merged PRs.
 - **Doc drift** — `.github/workflows/README.md` omits `deploy-qa`;
   `apps/frontend/docs/deployment-runbook.md` (v1.1) predates spec-48.

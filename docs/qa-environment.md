@@ -173,4 +173,38 @@ the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
 | Migrations only (preview first) | `apply-migrations.sh --dry-run`, then `SUPABASE_DB_PASSWORD=<pw> bash infra/supabase-qa/apply-migrations.sh` — hard-refuses any target other than localhost:5433 |
 | Re-seed / re-create users only | `PGPASSWORD=<pw> psql -h localhost -p 5433 -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f packages/database/supabase/seed-qa.sql`, then `bash infra/supabase-qa/create-qa-users.sh` |
 | Regenerate all secrets | `bash infra/supabase-qa/generate-qa-secrets.sh --force` (then `setup-qa.sh` to rebuild with the new values) |
+| `deploy-qa` fails with `sudo: a password is required` | The CI runner cannot restart the QA systemd units — see below |
 | Anything else | Re-run `bash infra/supabase-qa/setup-qa.sh` — every step is idempotent |
+
+## Known gap — CI cannot restart the QA app services
+
+`deploy-qa.sh` restarts the QA units with `sudo systemctl restart aureon-*-qa`.
+The production deploy scripts use the same pattern and work, so a passwordless
+sudoers rule exists for the prod units — but it does not cover the `-qa` ones.
+The job therefore fails at the restart step on any push that changes
+`apps/frontend/**`, `apps/agents/**`, or `apps/worker/**`:
+
+```
+[...] restarting aureon-frontend-qa
+sudo: a terminal is required to read the password
+sudo: a password is required
+```
+
+**Consequence:** QA's *schema* stays current (migrations run through docker and
+psql, which need no sudo), but QA's *application code* silently stops tracking
+main. Do not trust a QA app behaviour test until this is fixed — you may be
+testing a stale build.
+
+**Fix** (must be done by the user on the VPS — this repo never edits host
+privilege configuration). Extend the existing sudoers rule to cover the QA
+units, e.g. via `visudo -f /etc/sudoers.d/aureon-qa`:
+
+```
+aureon ALL=(root) NOPASSWD: /bin/systemctl restart aureon-frontend-qa, \
+                            /bin/systemctl restart aureon-agents-qa, \
+                            /bin/systemctl restart aureon-worker-qa
+```
+
+Confirm the runner's user and the real `systemctl` path first (`which systemctl`
+— it is `/usr/bin/systemctl` on some images), and match however the existing
+prod rule is written.

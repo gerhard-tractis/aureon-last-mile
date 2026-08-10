@@ -1,0 +1,132 @@
+/**
+ * spec-51 — row factories shared by scenarios.
+ *
+ * Rule 1 of the seed: never write orders.status. It defaults to 'ingresado'
+ * (20260313000001) and is thereafter owned by trg_recalculate_order_status.
+ * Scenarios insert packages and let the trigger settle, then assert.
+ */
+
+import type { SeedClient } from './db';
+import { qaId, type ScenarioGroup } from './ids';
+
+export interface OrderSpec {
+  group: ScenarioGroup;
+  sequence: number;
+  operatorId: string;
+  orderNumber: string;
+  /** Package statuses to create. The order's status is derived from these. */
+  packageStatuses: string[];
+  customerName?: string;
+  comuna?: string;
+  deliveryDate?: string;
+  importedVia?: string;
+  dispatchGuideUrl?: string | null;
+}
+
+export interface CreatedOrder {
+  orderId: string;
+  orderNumber: string;
+  packageIds: string[];
+}
+
+/**
+ * Insert an operator. Idempotent on the primary key so a re-run is a no-op.
+ */
+export async function createOperator(
+  db: SeedClient,
+  args: { id: string; name: string; slug: string; countryCode?: string },
+): Promise<string> {
+  await db.query(
+    `INSERT INTO public.operators (id, name, slug, country_code, is_active, settings)
+     VALUES ($1, $2, $3, $4, TRUE, $5::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      args.id,
+      args.name,
+      args.slug,
+      args.countryCode ?? 'CL',
+      JSON.stringify({ branding: { company_name: args.name } }),
+    ],
+  );
+  return args.id;
+}
+
+/**
+ * Insert an order plus its packages, letting the status trigger derive
+ * orders.status. Package ids are allocated from the order's sequence so they
+ * stay stable across runs.
+ */
+export async function createOrderWithPackages(
+  db: SeedClient,
+  spec: OrderSpec,
+): Promise<CreatedOrder> {
+  const orderId = qaId(spec.group, spec.sequence);
+
+  await db.query(
+    `INSERT INTO public.orders (
+       id, operator_id, order_number, customer_name, customer_phone,
+       delivery_address, comuna, delivery_date, retailer_name,
+       raw_data, imported_via, imported_at, dispatch_guide_url
+     ) VALUES (
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12
+     )
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      orderId,
+      spec.operatorId,
+      spec.orderNumber,
+      spec.customerName ?? `Cliente ${spec.orderNumber}`,
+      '+56900000000',
+      `Calle QA ${spec.sequence}`,
+      spec.comuna ?? 'Maipú',
+      spec.deliveryDate ?? new Date().toISOString().slice(0, 10),
+      'QA Retail',
+      JSON.stringify({ source: 'seed-qa-generator' }),
+      spec.importedVia ?? 'MANUAL',
+      spec.dispatchGuideUrl ?? null,
+    ],
+  );
+
+  const packageIds: string[] = [];
+
+  for (let i = 0; i < spec.packageStatuses.length; i++) {
+    // Package sequence is derived from the order's so ids stay deterministic
+    // and cannot collide with another order in the same group.
+    const packageId = qaId(spec.group, spec.sequence * 100 + i + 1);
+    packageIds.push(packageId);
+
+    await db.query(
+      `INSERT INTO public.packages (
+         id, operator_id, order_id, label, status, sku_items, raw_data
+       ) VALUES ($1, $2, $3, $4, $5::package_status_enum, $6::jsonb, $7::jsonb)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        packageId,
+        spec.operatorId,
+        orderId,
+        `${spec.orderNumber}-CTN-${i + 1}`,
+        spec.packageStatuses[i],
+        JSON.stringify([{ sku: `QA-SKU-${i + 1}`, description: 'Caja QA', quantity: 1 }]),
+        JSON.stringify({ source: 'seed-qa-generator' }),
+      ],
+    );
+  }
+
+  return { orderId, orderNumber: spec.orderNumber, packageIds };
+}
+
+/**
+ * Force the trigger to re-derive an order's status.
+ *
+ * Needed when packages were inserted by an earlier run (ON CONFLICT DO NOTHING
+ * means no trigger fires the second time) but we still want to assert the
+ * derived state. Touching status with its current value is enough — the
+ * trigger fires on UPDATE OF status regardless of whether the value changed.
+ */
+export async function resettleOrderStatus(db: SeedClient, orderId: string): Promise<void> {
+  await db.query(
+    `UPDATE public.packages SET status = status
+      WHERE order_id = $1 AND deleted_at IS NULL`,
+    [orderId],
+  );
+}
