@@ -66,6 +66,16 @@ export function findEnumDrift(actual: Record<string, string[]>): EnumDrift[] {
   for (const [enumName, expected] of Object.entries(EXPECTED_ENUMS)) {
     const actualValues = actual[enumName];
 
+    // A driver that returns Postgres arrays as raw strings would otherwise fail
+    // here with a cryptic "filter is not a function". Say what actually broke.
+    if (actualValues !== undefined && !Array.isArray(actualValues)) {
+      throw new TypeError(
+        `Enum "${enumName}" came back as ${typeof actualValues}, not an array: ` +
+          `${JSON.stringify(actualValues)}. The driver did not parse the Postgres ` +
+          `array — check that ENUM_QUERY still casts enumlabel to text.`,
+      );
+    }
+
     if (!actualValues) {
       drift.push({
         enumName,
@@ -114,10 +124,19 @@ export function formatEnumDrift(drift: EnumDrift[]): string {
   return lines.join('\n');
 }
 
-/** SQL to read every enum and its values. */
+/**
+ * SQL to read every enum and its values.
+ *
+ * The `::text` cast is load-bearing. `pg_enum.enumlabel` is of type `name`, so
+ * `array_agg(e.enumlabel)` yields `name[]` (OID 1003) — and node-pg ships no
+ * parser for that OID, handing back the raw literal `{open,closed}` as a string
+ * instead of an array. Casting to text produces `text[]` (OID 1009), which
+ * node-pg parses into a JS array. Without it, findEnumDrift() fails with
+ * "actualValues.filter is not a function".
+ */
 export const ENUM_QUERY = `
   SELECT t.typname AS enum_name,
-         array_agg(e.enumlabel ORDER BY e.enumsortorder) AS values
+         array_agg(e.enumlabel::text ORDER BY e.enumsortorder) AS values
   FROM pg_type t
   JOIN pg_enum e ON e.enumtypid = t.oid
   JOIN pg_namespace n ON n.oid = t.typnamespace
