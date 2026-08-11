@@ -88,27 +88,49 @@ case "${1:-}" in
     "$0" apply
     ;;
   sync)
-    # Use a repo-relative source path: docker cp on Windows/Git-Bash mangles an
-    # absolute "C:/..." source, and MSYS_NO_PATHCONV only protects the container
-    # side of the argument.
+    # Two traps here, both previously silent:
+    #  1. docker cp on Windows/Git-Bash mangles an absolute "C:/..." SOURCE, and
+    #     MSYS_NO_PATHCONV only protects the container side. Use a relative path.
+    #  2. `docker cp src container:/supabase` copies INTO /supabase when that
+    #     directory already exists, producing /supabase/supabase/... — so a
+    #     second sync silently leaves stale files at the path everything reads.
+    #     Always remove the destination first.
+    dex rm -rf /supabase
     ( cd "$ROOT" && docker cp packages/database/supabase "$C:/supabase" >/dev/null ) \
       || { echo "sync FAILED" >&2; exit 1; }
-    echo "synced migrations+tests into $C"
+    if dex test -d /supabase/supabase; then
+      echo "sync FAILED: nested /supabase/supabase" >&2; exit 1
+    fi
+    dex test -d /supabase/migrations || { echo "sync FAILED: no migrations dir" >&2; exit 1; }
+    echo "synced $(dex bash -c 'ls /supabase/migrations/*.sql | wc -l' | tr -d '\r') migrations, $(dex bash -c 'ls /supabase/tests/*.sql | wc -l' | tr -d '\r') tests into $C"
     ;;
   apply)
+    # Ledger-based, mirroring the Supabase CLI and infra/supabase-qa/apply-migrations.sh.
+    # Re-running every migration on each invocation is NOT idempotent: an early
+    # migration recreates an object a later one dropped, and the database drifts
+    # (observed: hub_receptions resurrected, 12 spurious failures). Apply each
+    # version exactly once and record it.
+    psq -q -c "CREATE SCHEMA IF NOT EXISTS supabase_migrations;
+               CREATE TABLE IF NOT EXISTS supabase_migrations.schema_migrations (
+                 version text PRIMARY KEY, name text, statements text[]);" >/dev/null
     dex bash -c '
-      ok=0; fail=0
+      applied=0; skipped=0; fail=0
       for f in $(ls /supabase/migrations/*.sql | sort); do
+        base=$(basename "$f"); ver="${base%%_*}"
+        n=$(psql -U postgres -d postgres -tAc "select count(*) from supabase_migrations.schema_migrations where version = '"'"'$ver'"'"'")
+        if [ "$n" != "0" ]; then skipped=$((skipped+1)); continue; fi
         if psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f "$f" >/tmp/o.log 2>&1; then
-          ok=$((ok+1))
+          psql -U postgres -d postgres -q -c "insert into supabase_migrations.schema_migrations(version,name) values ('"'"'$ver'"'"','"'"'$base'"'"') on conflict do nothing"
+          applied=$((applied+1))
         else
-          # already-applied objects are expected on re-runs; only report novel errors
-          if ! grep -qE "already exists|is already member" /tmp/o.log; then
-            fail=$((fail+1)); echo "FAIL $(basename $f)"; grep -m1 "ERROR:" /tmp/o.log | sed "s/^/     /"
-          fi
+          fail=$((fail+1)); echo "FAIL $base"; grep -m1 "ERROR:" /tmp/o.log | sed "s/^/     /"
         fi
       done
-      echo "migrations: applied_or_skipped=$ok novel_failures=$fail"'
+      echo "migrations: applied=$applied skipped=$skipped failed=$fail"'
+    # A later migration recreates on_auth_user_created, silently undoing the
+    # disable that bootstrap applied. Re-assert it after every apply, or the
+    # spec47_* fixtures start failing again with "operator_id required".
+    psq -q -c "ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;" 2>/dev/null
     ;;
   run)
     shift
