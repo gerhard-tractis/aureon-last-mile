@@ -3,7 +3,7 @@
  * Pure, so it is unit-testable without a database.
  */
 
-export const SCENARIO_GROUPS = ['outcomes', 'tenancy'] as const;
+export const SCENARIO_GROUPS = ['outcomes', 'tenancy', 'pickup'] as const;
 export type ScenarioName = (typeof SCENARIO_GROUPS)[number];
 
 export interface CliOptions {

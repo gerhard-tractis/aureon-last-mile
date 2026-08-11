@@ -69,6 +69,17 @@ describe('findEnumDrift', () => {
     expect(drift[0].missingInDb.length).toBeGreaterThan(0);
   });
 
+  // Regression: the first run against QA failed with "actualValues.filter is
+  // not a function". array_agg(enumlabel) yields name[], for which node-pg has
+  // no parser, so it returned the raw literal "{open,closed}" as a string.
+  it('explains itself when a driver returns an unparsed Postgres array', () => {
+    const db = matchingDb() as unknown as Record<string, string[]>;
+    (db as unknown as Record<string, string>).batch_status_enum = '{open,closed}';
+
+    expect(() => findEnumDrift(db)).toThrow(/did not parse the Postgres array/);
+    expect(() => findEnumDrift(db)).toThrow(/batch_status_enum/);
+  });
+
   it('reports every drifting enum, not just the first', () => {
     const db = matchingDb();
     db.batch_status_enum = ['open'];
