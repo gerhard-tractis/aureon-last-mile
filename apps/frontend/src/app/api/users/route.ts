@@ -1,6 +1,7 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { VALID_PERMISSIONS } from '@/lib/permissions';
 
 // Simple in-memory rate limiter for user creation
 // Production: Replace with Redis-based rate limiting
@@ -29,7 +30,6 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
   return { allowed: true };
 }
 
-const VALID_PERMISSIONS = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
 
 // Validation schema for creating users (operator_id is derived from JWT, not the request body)
 const createUserSchema = z.object({
