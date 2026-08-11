@@ -19,8 +19,44 @@
 
 import type { SeedClient } from '../lib/db';
 import { AssertionCollector, assertCount } from '../lib/assert';
-import { createOperator, createOrderWithPackages, resettleOrderStatus } from '../lib/factories';
+import {
+  createLoginUser,
+  createOperator,
+  createOrderWithPackages,
+  resettleOrderStatus,
+} from '../lib/factories';
 import { ScenarioGroup, qaId } from '../lib/ids';
+
+/**
+ * Logins for Musan. Permissions mirror the role mapping in
+ * create-qa-users.sh (from migrations 20260310100001 + 20260324000003) —
+ * handle_new_user creates the public.users row with an empty array.
+ *
+ * Password is the shared QA one: QaTest123!
+ */
+const MUSAN_LOGINS = [
+  {
+    seq: 20,
+    email: 'admin@musan.com',
+    role: 'admin',
+    fullName: 'Musan Admin',
+    permissions: ['pickup', 'warehouse', 'loading', 'operations', 'admin', 'dispatch'],
+  },
+  {
+    seq: 21,
+    email: 'operaciones@musan.com',
+    role: 'operations_manager',
+    fullName: 'Musan Operaciones',
+    permissions: ['operations', 'dispatch'],
+  },
+  {
+    seq: 22,
+    email: 'bodega@musan.com',
+    role: 'warehouse_staff',
+    fullName: 'Musan Bodega',
+    permissions: ['warehouse'],
+  },
+] as const;
 
 export const MUSAN_QA = {
   operatorId: qaId(ScenarioGroup.MUSAN, 1),
@@ -172,6 +208,19 @@ export async function seedMusan(
     comuna: 'Quilicura',
   });
 
+  // Logins, created here rather than in create-qa-users.sh because that script
+  // runs before this operator exists.
+  for (const login of MUSAN_LOGINS) {
+    await createLoginUser(db, {
+      id: qaId(ScenarioGroup.MUSAN, login.seq),
+      operatorId,
+      email: login.email,
+      role: login.role,
+      fullName: login.fullName,
+      permissions: [...login.permissions],
+    });
+  }
+
   let orderSequence = 100;
   let orderCount = 0;
 
@@ -248,6 +297,26 @@ export async function seedMusan(
       expected: carga.orders.length,
     });
   }
+
+  await assertCount(db, collector, {
+    scenario: 'musan/logins',
+    detail: 'Musan logins able to sign in',
+    sql: `SELECT count(*) AS count FROM public.users
+           WHERE operator_id = $1 AND deleted_at IS NULL`,
+    params: [operatorId],
+    expected: MUSAN_LOGINS.length,
+  });
+
+  await assertCount(db, collector, {
+    scenario: 'musan/admin-permissions',
+    detail: 'admin@musan.com carries the admin permission',
+    sql: `SELECT count(*) AS count FROM public.users
+           WHERE email = 'admin@musan.com'
+             AND role = 'admin'::user_role
+             AND 'admin' = ANY(permissions)
+             AND deleted_at IS NULL`,
+    expected: 1,
+  });
 
   await assertCount(db, collector, {
     scenario: 'musan/isolation',
