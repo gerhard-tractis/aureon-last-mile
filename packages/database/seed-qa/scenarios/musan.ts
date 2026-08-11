@@ -29,9 +29,17 @@ import {
 import { ScenarioGroup, qaId } from '../lib/ids';
 
 /**
- * Logins for Musan. Permissions mirror the role mapping in
- * create-qa-users.sh (from migrations 20260310100001 + 20260324000003) —
- * handle_new_user creates the public.users row with an empty array.
+ * Logins for Musan.
+ *
+ * Permissions use the vocabulary the APP actually checks — VALID_PERMISSIONS in
+ * api/users/route.ts and the sidebar in AppLayout.tsx:
+ *   pickup, reception, distribution, dispatch, customer_service (+ admin)
+ *
+ * NOT the one the role-mapping migration grants (20260310100001), which hands
+ * out warehouse / loading / operations. Those three are checked nowhere, while
+ * reception and distribution are granted nowhere — so a user created from that
+ * mapping can never see Recepción or Distribución in the sidebar, whatever
+ * their role. Seeding the migration's vocabulary reproduced that gap here.
  *
  * Password is the shared QA one: QaTest123!
  */
@@ -41,21 +49,21 @@ const MUSAN_LOGINS = [
     email: 'admin@musan.com',
     role: 'admin',
     fullName: 'Musan Admin',
-    permissions: ['pickup', 'warehouse', 'loading', 'operations', 'admin', 'dispatch'],
+    permissions: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service', 'admin'],
   },
   {
     seq: 21,
     email: 'operaciones@musan.com',
     role: 'operations_manager',
     fullName: 'Musan Operaciones',
-    permissions: ['operations', 'dispatch'],
+    permissions: ['pickup', 'reception', 'distribution', 'dispatch'],
   },
   {
     seq: 22,
     email: 'bodega@musan.com',
     role: 'warehouse_staff',
     fullName: 'Musan Bodega',
-    permissions: ['warehouse'],
+    permissions: ['reception', 'distribution'],
   },
 ] as const;
 
@@ -111,8 +119,20 @@ interface Carga {
 }
 
 /**
- * Cargas span the pickup lifecycle so every stage has something to look at:
- * one waiting to be collected, one mid-pickup, one already received at the hub.
+ * Every carga starts at the beginning: all packages 'ingresado', no manifest
+ * row, so all four sit on Pickup > Pendientes waiting to be collected.
+ *
+ * This tenant is the MANUAL WALKTHROUGH fixture — you drive these forward
+ * yourself through the real screens, which is the only way the transitions get
+ * exercised. Pre-positioning them across stages makes every screen look
+ * populated but leaves nothing to actually do.
+ *
+ * The automated fixtures live on QA Test Operator instead (matrix, journeys,
+ * outcomes, pickup), so they cover every resting state and transition without
+ * cluttering Musan.
+ *
+ * Both clients appear on the pending tab so client grouping and filtering have
+ * something to distinguish.
  */
 const CARGAS: Carga[] = [
   {
@@ -120,7 +140,6 @@ const CARGAS: Carga[] = [
     clientSlug: 'easy',
     clientName: 'Easy',
     pickupPointId: MUSAN_QA.easyPickupPointId,
-    // Awaiting collection — no manifest row at all.
     stage: 'pending',
     orders: [['ingresado'], ['ingresado', 'ingresado'], ['ingresado']],
   },
@@ -129,27 +148,24 @@ const CARGAS: Carga[] = [
     clientSlug: 'easy',
     clientName: 'Easy',
     pickupPointId: MUSAN_QA.easyPickupPointId,
-    // Scan flow opened: manifest exists, reception_status still NULL, so it
-    // stays on the pending tab with a partial verified count.
-    stage: 'scanning',
-    orders: [['verificado'], ['verificado', 'ingresado']],
+    stage: 'pending',
+    orders: [['ingresado'], ['ingresado', 'ingresado']],
   },
   {
     loadId: 'CARGA-PARIS-001',
     clientSlug: 'paris',
     clientName: 'Paris',
     pickupPointId: MUSAN_QA.parisPickupPointId,
-    stage: 'completed',
-    orders: [['en_bodega'], ['en_bodega', 'en_bodega'], ['en_bodega'], ['en_bodega']],
+    stage: 'pending',
+    orders: [['ingresado'], ['ingresado'], ['ingresado', 'ingresado']],
   },
   {
     loadId: 'CARGA-PARIS-002',
     clientSlug: 'paris',
     clientName: 'Paris',
     pickupPointId: MUSAN_QA.parisPickupPointId,
-    // Collected and on its way to the hub.
-    stage: 'in_transit',
-    orders: [['verificado', 'verificado']],
+    stage: 'pending',
+    orders: [['ingresado', 'ingresado'], ['ingresado']],
   },
 ];
 
@@ -386,7 +402,7 @@ export async function seedMusan(
                   AND (m.status = 'completed' OR m.reception_status IS NOT NULL)
              )`,
     params: [operatorId],
-    expected: 2,
+    expected: CARGAS.length,
   });
 
   await assertCount(db, collector, {
@@ -396,7 +412,8 @@ export async function seedMusan(
            WHERE m.operator_id = $1 AND m.deleted_at IS NULL
              AND m.reception_status IS NOT NULL AND m.status <> 'completed'`,
     params: [operatorId],
-    expected: 1,
+    // Nothing has been collected yet — you create these by doing the pickup.
+    expected: 0,
   });
 
   await assertCount(db, collector, {
@@ -405,7 +422,7 @@ export async function seedMusan(
     sql: `SELECT count(*) AS count FROM manifests m
            WHERE m.operator_id = $1 AND m.deleted_at IS NULL AND m.status = 'completed'`,
     params: [operatorId],
-    expected: 1,
+    expected: 0,
   });
 
   await assertCount(db, collector, {

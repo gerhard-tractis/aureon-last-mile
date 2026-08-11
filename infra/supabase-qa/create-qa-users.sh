@@ -96,12 +96,22 @@ fi
 
 # --- Role table: role|operator_id|permissions (comma-separated) --------------
 # Fixed UUIDs so re-runs and QA scripts can reference the users directly.
+#
+# Permissions use the vocabulary the APP checks — VALID_PERMISSIONS in
+# apps/frontend/src/app/api/users/route.ts and the sidebar in AppLayout.tsx:
+#   pickup, reception, distribution, dispatch, customer_service (+ admin)
+#
+# NOT the one the role-mapping migration grants (20260310000001), which hands
+# out warehouse / loading / operations. Those are checked nowhere, while
+# reception and distribution are granted nowhere — so a user carrying the
+# migration's set never sees Recepción or Distribución in the sidebar, whatever
+# their role. Granting that set here reproduced the gap for every QA login.
 ROLE_ROWS="pickup_crew|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000201
-warehouse_staff|$QA_OPERATOR_ID|warehouse|00000000-0000-4000-8000-000000000202
-loading_crew|$QA_OPERATOR_ID|loading,dispatch|00000000-0000-4000-8000-000000000203
-operations_manager|$QA_OPERATOR_ID|operations,dispatch|00000000-0000-4000-8000-000000000204
-admin|$QA_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch|00000000-0000-4000-8000-000000000205
-super_admin|$INTERNAL_OPERATOR_ID|pickup,warehouse,loading,operations,admin,dispatch|00000000-0000-4000-8000-000000000206"
+warehouse_staff|$QA_OPERATOR_ID|reception,distribution|00000000-0000-4000-8000-000000000202
+loading_crew|$QA_OPERATOR_ID|distribution,dispatch|00000000-0000-4000-8000-000000000203
+operations_manager|$QA_OPERATOR_ID|pickup,reception,distribution,dispatch,customer_service|00000000-0000-4000-8000-000000000204
+admin|$QA_OPERATOR_ID|pickup,reception,distribution,dispatch,customer_service,admin|00000000-0000-4000-8000-000000000205
+super_admin|$INTERNAL_OPERATOR_ID|pickup,reception,distribution,dispatch,customer_service,admin|00000000-0000-4000-8000-000000000206"
 
 CREATED=()
 SKIPPED=()
