@@ -13,7 +13,8 @@ All artifacts referenced here live in `infra/supabase-qa/` and
 
 ## Port map
 
-QA ports (all localhost-only, reached via SSH tunnel):
+QA ports. All bind to localhost; nginx publishes only the frontend and Kong to
+the internet (see Access below). Everything else is tunnel-only.
 
 | Port | Service |
 |------|---------|
@@ -75,16 +76,46 @@ bash infra/supabase-qa/setup-qa.sh
 preflight aborts (among other things) if the env file still contains `CHANGE_ME`
 placeholders or mentions `supabase.co` anywhere.
 
-## Access (SSH tunnel — no ports are ever opened in the firewall)
+## Access
+
+### Public URL (spec-51) — the normal way in
+
+**https://qa.aureon.tractis.ai** — no tunnel needed. Log in with any QA user
+below.
+
+Served by nginx, which already owned 80/443 for the other `tractis.ai`
+subdomains, so **no firewall port was opened**. Config lives in
+`infra/supabase-qa/nginx/aureon-qa.conf`; TLS blocks are appended in place by
+`certbot --nginx`.
+
+Two hostnames, both proxied to localhost by nginx:
+
+| Hostname | → | Why |
+|---|---|---|
+| `qa.aureon.tractis.ai` | `:3200` frontend | the page you open |
+| `qa-api.aureon.tractis.ai` | `:8100` Kong | `NEXT_PUBLIC_SUPABASE_URL` is compiled into the browser bundle, so the API must be reachable from the visitor's browser too |
+
+Because that URL is baked at build time, changing it means **rebuilding the
+frontend**, not just restarting it. `SUPABASE_URL` deliberately stays
+`http://localhost:8100` so agents and worker talk to Kong internally instead of
+looping out through the internet and back.
+
+### SSH tunnel — still required for the admin surfaces
+
+Studio and Bull Board are **deliberately not exposed**: they are admin surfaces
+and Studio has no per-user auth.
 
 ```bash
-ssh -L 3200:localhost:3200 -L 8100:localhost:8100 -L 8101:localhost:8101 \
-    -L 3211:localhost:3211 aureon@<VPS_IP>
+ssh -L 8101:localhost:8101 -L 3211:localhost:3211 aureon@<VPS_IP>
 ```
 
-Then browse **http://localhost:3200** (frontend). Studio: http://localhost:8101
-(basic-auth: `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` from `/home/aureon/.env.qa`).
-Bull Board: http://localhost:3211 (`BULL_BOARD_USER` / `BULL_BOARD_PASSWORD`).
+- Studio: http://localhost:8101 (`DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`)
+- Bull Board: http://localhost:3211**/bull-board** (`BULL_BOARD_USER` /
+  `BULL_BOARD_PASSWORD`) — note the path; the root returns 404, and an
+  unauthenticated request correctly gets 401.
+
+The frontend is still reachable at http://localhost:3200 through a tunnel if you
+prefer it.
 
 QA login users (created by `create-qa-users.sh`, password `QaTest123!` for all):
 
@@ -115,18 +146,68 @@ after **every green CI run of a push to main**:
   **never blocks the prod deploy**. To recover, run `infra/supabase-qa/deploy-qa.sh`
   manually on the VPS or just re-run `setup-qa.sh`.
 
-## DB reset
+## DB reset — full clean rebuild
 
-Blow the QA database away and rebuild it from the repo:
+> **`docker compose down -v` does NOT wipe the database.** The Postgres data
+> directory is a **bind mount** (`./volumes/db/data:/var/lib/postgresql/data`),
+> not a named volume, so `-v` only removes `db-config` and `deno-cache`. An
+> earlier version of this runbook claimed otherwise — following it gives you a
+> database that still holds every previous row while you believe it is clean.
+> The directory is `dhcpcd`-owned, mode 700, so removing it requires **root**.
+
+Run these in order, as `aureon` except where marked:
 
 ```bash
 cd /home/aureon/aureon-qa
-docker compose -f infra/supabase-qa/docker-compose.yml --env-file /home/aureon/.env.qa down -v
-bash infra/supabase-qa/setup-qa.sh
+
+# 1. Stop the stack (removes the two named volumes)
+docker compose -f infra/supabase-qa/docker-compose.yml \
+  --env-file /home/aureon/.env.qa down -v
+
+# 2. ROOT: delete the Postgres data directory — this is the actual wipe
+sudo rm -rf infra/supabase-qa/volumes/db/data
+
+# 3. Start fresh; Postgres re-initialises via initdb + the init scripts
+docker compose -f infra/supabase-qa/docker-compose.yml \
+  --env-file /home/aureon/.env.qa up -d
+
+# 4. Wait for the database, then confirm it really is empty (expect 0)
+set -a; . /home/aureon/.env.qa; set +a
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -qAtX -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+
+# 5. Replay every migration from the repo
+SUPABASE_DB_PASSWORD=$POSTGRES_PASSWORD bash infra/supabase-qa/apply-migrations.sh
+
+# 6. Baseline business data, then the QA logins (auth.users was wiped too)
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -v ON_ERROR_STOP=1 -q -f packages/database/supabase/seed-qa.sql
+bash infra/supabase-qa/create-qa-users.sh
+
+# 7. Scenario data for the workflow tests
+npm run seed:qa --workspace=@aureon/database -- --scenarios=all
+
+# 8. Restart the apps — they held connections to the database you destroyed
+for u in aureon-frontend-qa aureon-agents-qa aureon-worker-qa; do
+  sudo -n systemctl restart "$u"
+done
 ```
 
-`down -v` deletes the Postgres volume; `setup-qa.sh` recreates the stack, replays all
-migrations, re-applies `seed-qa.sql`, and recreates the QA users (all idempotent).
+**Verify** (expect `200`, `200`, `120`):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3200/
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  "http://localhost:8100/auth/v1/token?grant_type=password" \
+  -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+  -d '{"email":"qa-admin@qa.test","password":"QaTest123!"}'
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -qAtX -c "SELECT count(*) FROM supabase_migrations.schema_migrations"
+```
+
+`setup-qa.sh` is **not** a substitute for steps 2–8: it never removes the data
+directory, and its `install_units` step needs root (see the provisioning section
+above).
 
 ## Smoke-test checklist
 
@@ -141,7 +222,8 @@ the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
    six `qa-*@qa.test` users.
 4. **Create an order** as a QA user → row appears in `public.orders` with
    `operator_id = 00000000-0000-4000-8000-000000000001`.
-5. **Bull Board activity**: http://localhost:3211 shows queues/jobs.
+5. **Bull Board activity**: http://localhost:3211/bull-board shows queues/jobs
+   (the root path 404s; without credentials it 401s).
 6. **Worker talks to QA DB**: `journalctl -u aureon-worker-qa -n 50` mentions
    `localhost:5433`, never `supabase.co`.
 7. **Scenario seed applied** (spec-51): `npm run seed:qa -- --verify` reports all
@@ -156,8 +238,11 @@ the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
 > - **Never** put a `*.supabase.co` URL in `/home/aureon/.env.qa`. QA must never contact
 >   the production cloud project — `setup-qa.sh`, `deploy-qa.sh`, and `create-qa-users.sh`
 >   all refuse to run if one is present.
-> - **Never** open UFW/firewall ports for QA. Access is SSH-tunnel only. If a port must
->   ever be opened, the user does it themselves.
+> - **Never** touch UFW/firewall rules on this host (see `CLAUDE.md` — SSH
+>   hardening once caused a lockout). Public access was added in spec-51 without
+>   any firewall change: nginx already owned 80/443. If a port genuinely must be
+>   opened, the user does it themselves.
+> - **Never** expose Studio (8101) or Bull Board (3211). They stay tunnel-only.
 > - **Never** copy prod secrets into the QA env — the single exception is
 >   `OPENROUTER_API_KEY`. Everything else is generated by `generate-qa-secrets.sh`.
 > - QA is **destroyable at will**: it holds only repo-derived schema and dummy data.
