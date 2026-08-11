@@ -150,6 +150,38 @@ export async function createOrderWithPackages(
 }
 
 /**
+ * Put an order's packages back to a known starting state.
+ *
+ * Journeys mutate what they touch, so unlike the other scenarios they are not
+ * idempotent by construction: a second run would begin wherever the first one
+ * finished. Re-running a failed-delivery journey without this finds its order
+ * already at retorno_hub and asserts the wrong starting state.
+ *
+ * Statuses are applied in label order so package N always gets statuses[N].
+ */
+export async function resetOrderPackages(
+  db: SeedClient,
+  orderId: string,
+  statuses: string[],
+): Promise<void> {
+  const packages = await db.query<{ id: string }>(
+    `SELECT id FROM public.packages
+      WHERE order_id = $1 AND deleted_at IS NULL
+      ORDER BY label`,
+    [orderId],
+  );
+
+  for (let i = 0; i < packages.length && i < statuses.length; i++) {
+    await db.query(
+      `UPDATE public.packages
+          SET status = $2::package_status_enum
+        WHERE id = $1`,
+      [packages[i].id, statuses[i]],
+    );
+  }
+}
+
+/**
  * Force the trigger to re-derive an order's status.
  *
  * Needed when packages were inserted by an earlier run (ON CONFLICT DO NOTHING

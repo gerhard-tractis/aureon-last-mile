@@ -40,6 +40,10 @@ export enum ScenarioGroup {
   COMMS = 0x0080,
   TENANCY = 0x0090,
   DATA_QUALITY = 0x00a0,
+  /** Exhaustive package-status combination matrix. */
+  MATRIX = 0x00b0,
+  /** Orders driven through real RPC transitions. */
+  JOURNEYS = 0x00c0,
 }
 
 const MAX_SEQUENCE = 0xffffffff;

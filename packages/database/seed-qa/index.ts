@@ -18,6 +18,8 @@ import { GENERATED_LIKE_PATTERN } from './lib/ids';
 import { seedOutcomes } from './scenarios/outcomes';
 import { seedTenancy } from './scenarios/tenancy';
 import { seedPickup } from './scenarios/pickup';
+import { seedMatrix } from './scenarios/matrix';
+import { seedJourneys } from './scenarios/journeys';
 
 /**
  * Tables cleared by --reset, child-first so foreign keys stay satisfied.
@@ -55,7 +57,9 @@ async function runScenarios(
     process.stdout.write(`  ${scenario.padEnd(12)} `);
 
     let created: number;
-    if (scenario === 'outcomes') created = await seedOutcomes(db, collector);
+    if (scenario === 'matrix') created = await seedMatrix(db, collector);
+    else if (scenario === 'journeys') created = await seedJourneys(db, collector);
+    else if (scenario === 'outcomes') created = await seedOutcomes(db, collector);
     else if (scenario === 'tenancy') created = await seedTenancy(db, collector);
     else created = await seedPickup(db, collector);
 
