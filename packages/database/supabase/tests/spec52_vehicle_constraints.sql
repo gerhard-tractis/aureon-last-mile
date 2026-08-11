@@ -9,8 +9,10 @@
 --    routes silently gets the newest one with no error. The index is the only
 --    thing that makes that impossible.
 -- 4. cancel_pickup_route persists p_reason into cancellation_reason.
--- 5. The old start_pickup_route(TEXT) overload is gone (Postgres would otherwise
---    keep both, and a NULL-label call would be ambiguous).
+-- 5. both start_pickup_route overloads exist during the expand phase — the
+--    TEXT one is the deprecated wrapper the deployed frontend still calls.
+--    Its behaviour is covered in spec52_start_route_text_wrapper.sql, split
+--    out to keep both files under the 300-line limit.
 --
 -- Run inside transaction; ROLLBACK at end.
 
@@ -68,7 +70,10 @@ VALUES
   ('55555555-0000-4000-5000-000000000852','bbbbbbbb-0000-4000-b000-000000000852','VEH-OTHER-OP','camion', true,  NULL)
 ON CONFLICT DO NOTHING;
 
--- ─── 5. the TEXT overload is gone, the UUID one exists ─────────────────────
+-- ─── 5. BOTH overloads exist during the expand phase ───────────────────────
+-- The TEXT one is the deprecated wrapper. It must survive this migration:
+-- useStartPickupRoute.ts still passes p_vehicle_label, merging auto-deploys,
+-- and .rpc() args are not type-checked — dropping it breaks production.
 DO $$
 DECLARE n_text INT; n_uuid INT;
 BEGIN
@@ -78,8 +83,8 @@ BEGIN
     JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
      AND p.pronargs = 1 AND p.proargtypes[0] = 'text'::regtype;
-  IF n_text <> 0 THEN
-    RAISE EXCEPTION 'start_pickup_route(TEXT) overload still exists — a label-only call would still be accepted';
+  IF n_text <> 1 THEN
+    RAISE EXCEPTION 'expected exactly one start_pickup_route(TEXT) compatibility wrapper, found %', n_text;
   END IF;
 
   SELECT COUNT(*) INTO n_uuid FROM pg_proc p

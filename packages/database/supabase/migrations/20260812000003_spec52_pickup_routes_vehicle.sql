@@ -99,12 +99,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_pickup_routes_one_active_per_vehicle
 -- Template: 20260625000001_spec47_pickup_routes_consolidated_reception.sql:298
 -- (the latest definition — no later migration redefines it).
 --
--- DROP the old TEXT overload rather than leaving it: Postgres keeps overloads
--- side by side, so start_pickup_route(NULL) would become ambiguous and any
--- caller still passing a label would keep silently creating label-only routes.
--- Dropping the function drops its COMMENT with it.
-DROP FUNCTION IF EXISTS public.start_pickup_route(TEXT);
-
+-- The old TEXT overload is deliberately NOT dropped here. Merging this repo's
+-- database chunk auto-deploys, and the frontend still calls
+-- start_pickup_route(p_vehicle_label) at useStartPickupRoute.ts:18 — dropping
+-- the signature now would break driver route creation in production, and
+-- TypeScript would not catch it (.rpc() args are not checked against the
+-- generated types). Expand/contract: PART 6 below replaces it with a thin
+-- compatibility wrapper, and spec-52 Task 8 drops it once the frontend passes
+-- p_vehicle_id.
 CREATE OR REPLACE FUNCTION public.start_pickup_route(
   p_vehicle_id UUID
 ) RETURNS public.pickup_routes
@@ -197,7 +199,95 @@ COMMENT ON FUNCTION public.start_pickup_route(UUID)
 GRANT EXECUTE ON FUNCTION public.start_pickup_route(UUID) TO authenticated;
 
 -- =============================================================================
--- PART 6 — cancel_pickup_route persists p_reason
+-- PART 6 — start_pickup_route(TEXT): DEPRECATED compatibility wrapper
+-- =============================================================================
+-- Exists only so this database chunk can deploy ahead of the frontend, which
+-- still calls start_pickup_route(p_vehicle_label). It resolves the label to a
+-- real vehicle and delegates; it holds no route logic of its own.
+--
+-- The find-or-create is not throwaway scaffolding — it is exactly what the
+-- frontend's inline "registrar patente" flow will do, so behaviour is
+-- identical before and after the frontend chunk lands.
+-- DEFAULT NULL is carried over from the spec-47 signature on purpose:
+-- CREATE OR REPLACE cannot remove an existing parameter default ("cannot
+-- remove parameter defaults of existing function"), and dropping the function
+-- to change that is the one thing this expand phase must not do. A zero-arg
+-- call therefore still resolves here and lands on the empty-plate error below.
+CREATE OR REPLACE FUNCTION public.start_pickup_route(
+  p_vehicle_label TEXT DEFAULT NULL
+) RETURNS public.pickup_routes
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+DECLARE
+  v_operator   UUID;
+  v_plate      TEXT;
+  v_vehicle_id UUID;
+BEGIN
+  v_operator := public.get_operator_id();
+  IF v_operator IS NULL THEN
+    RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
+  END IF;
+
+  v_plate := upper(btrim(COALESCE(p_vehicle_label, '')));
+  IF v_plate = '' THEN
+    RAISE EXCEPTION 'Debe indicar la patente del vehículo para iniciar la ruta'
+      USING ERRCODE = '22023';
+  END IF;
+
+  -- Reserved plate guard, and it must come FIRST. 'SIN-REGISTRO' is the
+  -- backfill placeholder: for an operator that has one it is active = false, so
+  -- the inactive branch below would catch it — but for an operator that has
+  -- none (no pre-spec-52 routes) the find-or-create would happily create an
+  -- ACTIVE row named SIN-REGISTRO and hand the placeholder name real routes.
+  -- Where a placeholder does exist, the insert would instead escape as a raw
+  -- 23505 from uniq_vehicles_operator_plate. Both are unacceptable.
+  IF v_plate = 'SIN-REGISTRO' THEN
+    RAISE EXCEPTION 'SIN-REGISTRO es un marcador interno del sistema y no puede usarse como patente'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT id INTO v_vehicle_id
+    FROM public.vehicles
+   WHERE operator_id = v_operator
+     AND plate = v_plate
+     AND active
+     AND deleted_at IS NULL
+   ORDER BY created_at
+   LIMIT 1;
+
+  IF v_vehicle_id IS NULL THEN
+    -- uniq_vehicles_operator_plate covers (operator_id, plate) WHERE
+    -- deleted_at IS NULL and does NOT consider `active`, so a retired truck
+    -- with this plate would turn the insert into a raw unique violation.
+    -- Report it as what it is instead.
+    IF EXISTS (
+      SELECT 1 FROM public.vehicles
+       WHERE operator_id = v_operator
+         AND plate = v_plate
+         AND deleted_at IS NULL
+         AND NOT active
+    ) THEN
+      RAISE EXCEPTION 'El vehículo % está inactivo y no puede iniciar una ruta', v_plate
+        USING ERRCODE = '22023';
+    END IF;
+
+    INSERT INTO public.vehicles (operator_id, plate, active)
+    VALUES (v_operator, v_plate, true)
+    RETURNING id INTO v_vehicle_id;
+  END IF;
+
+  RETURN public.start_pickup_route(v_vehicle_id);
+END $$;
+
+COMMENT ON FUNCTION public.start_pickup_route(TEXT)
+  IS 'DEPRECATED (spec-52). Compatibility wrapper over start_pickup_route(UUID): normalizes the plate, finds-or-creates the vehicle, delegates. Exists only so the spec-52 database chunk can deploy ahead of the frontend, which still calls this signature at useStartPickupRoute.ts. spec-52 Task 8 drops it once the frontend passes p_vehicle_id.';
+
+GRANT EXECUTE ON FUNCTION public.start_pickup_route(TEXT) TO authenticated;
+
+-- =============================================================================
+-- PART 7 — cancel_pickup_route persists p_reason
 -- =============================================================================
 -- Template: 20260625000001_spec47_pickup_routes_consolidated_reception.sql:453.
 -- Only change: p_reason lands in the new cancellation_reason column instead of
@@ -242,16 +332,25 @@ COMMENT ON FUNCTION public.cancel_pickup_route(UUID, TEXT)
   IS 'Cancel a draft/in_progress pickup route, recording p_reason in cancellation_reason; trigger detaches its manifests (spec-47, spec-52).';
 
 -- =============================================================================
--- PART 7 — Validation
+-- PART 8 — Validation
 -- =============================================================================
 DO $$
 BEGIN
-  IF EXISTS (
+  -- Both overloads must be present during the expand phase: UUID is the real
+  -- one, TEXT is the wrapper the current frontend still calls.
+  IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
      WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
        AND p.pronargs = 1 AND p.proargtypes[0] = 'text'::regtype
   ) THEN
-    RAISE EXCEPTION 'start_pickup_route(TEXT) overload survived the drop';
+    RAISE EXCEPTION 'start_pickup_route(TEXT) compatibility wrapper missing — the frontend would break on deploy';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
+       AND p.pronargs = 1 AND p.proargtypes[0] = 'uuid'::regtype
+  ) THEN
+    RAISE EXCEPTION 'start_pickup_route(UUID) missing';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes
