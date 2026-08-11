@@ -15,11 +15,11 @@ Spec-47 shipped the route-level pickup model and it is live in production — bu
 
 1. **The route is anchored to a vehicle.** A pickup route is created when the truck **leaves the hub**, and carries a real FK to the vehicle that performed it.
 2. **The driver never closes the route.** The receptionist scanning the QR on arrival is what opens the reception batch and ends the trip — giving a machine-observed arrival time instead of a driver-remembered one.
-3. **The pickup scan moves state.** A single missing trigger has left the entire package/order status pipeline inert since it was built.
+3. **The pickup scan moves state on the server, under a guard.** Today it is moved by an *unguarded client-side write*, which can resurrect cancelled and lost packages.
 
 ### Production evidence motivating this spec
 
-Measured against project `wfwlcpnkkxxzdvhvvsxb` on 2026-08-10:
+Measured against project `wfwlcpnkkxxzdvhvvsxb`, **re-measured and corrected 2026-08-11**:
 
 | Observation | Value |
 |---|---|
@@ -28,26 +28,41 @@ Measured against project `wfwlcpnkkxxzdvhvvsxb` on 2026-08-10:
 | `PR-2026-0001` status | still `in_progress` **11 days later** — driver never closed it |
 | `vehicle_label` populated | **0 / 8** |
 | Manifests at `status='completed'` | **0 / 15** — all frozen at `in_progress` |
-| `packages` not at `ingresado` | **0 / 1000** — every package in prod is at the initial state |
-| `pickup_scans` / `reception_scans` recorded | 171 / 143 |
+| `pickup_scans` recorded | 171 (160 `verified`, 9 `not_found`, 2 `duplicate`) |
+| `reception_scans` recorded | 143 |
 
-Because the DB enforces one active route per driver, `PR-2026-0001` has also blocked its driver from starting any route since 2026-07-30.
+> ### ⚠️ Correction — the original version of this spec was wrong about the pipeline
+>
+> The first draft claimed **"0 / 1000 packages have left `ingresado`; 314 scans moved nothing; the pipeline has been deadlocked since it was built."** That was a **measurement error**: the Supabase REST API caps responses at 1000 rows (`max_rows = 1000`, `packages/database/supabase/config.toml`), and a single page was mistaken for the whole table.
+>
+> Actual figures: **59,334 packages** — 59,174 `ingresado`, **17 `verificado`**, **142 `en_bodega`**, 1 `sectorizado`. Orders: 45,230 `entregado`. The ~159 packages past `ingresado` correspond closely to the 160 `verified` pickup scans.
+>
+> **The status pipeline works and has been working.** All three links function:
+>
+> | Link | Reality |
+> |---|---|
+> | pickup scan → `verificado` | **exists in the CLIENT** — `apps/frontend/src/hooks/pickup/usePickupScans.ts:86-96`, shipped `65b39e0` on 2026-03-18. `packageIds` is populated for single-package matches too (`scan-validator.ts:72`), so it fires on every verified scan. |
+> | reception scan → `en_bodega` | exists — `trg_reception_scan_advance_package_status`, `20260318000001:263-288` |
+> | packages → `orders.status` roll-up | exists — `trg_recalculate_order_status`, `20260313000003:89` |
+>
+> The claim that reception scans were all stored as `not_found` (via the `PRE_VERIFICADO_STATUSES` gate at `reception-scan-validator.ts:71-78`) was also wrong — 142 packages reached `en_bodega`, so those scans were stored as `received` and the trigger fired.
 
-### Root cause of the frozen pipeline — read this before designing anything
+### The real problem with link one
 
-It is tempting to conclude from "314 scans, 0 packages moved" that nothing consumes scan data. **That is wrong.** Two of the three links already exist and work:
+The pickup→`verificado` write is **client-side and unguarded**:
 
-| Link | Status | Evidence |
-|---|---|---|
-| pickup scan → `packages.status = 'verificado'` | **MISSING** | no trigger on `pickup_scans` anywhere |
-| reception scan → `packages.status = 'en_bodega'` | **EXISTS** | `trg_reception_scan_advance_package_status` / trigger `trg_reception_scan_advance_status`, `20260318000001_create_hub_reception_tables.sql:263-288` |
-| packages → `orders.status` roll-up | **EXISTS** | `trg_recalculate_order_status` on `packages`, `20260313000003_epic5_functions_and_trigger.sql:89`; function's latest definition `20260810000001_spec51_fix_listo_para_despacho_pipeline_position.sql:61-149` |
+```ts
+// usePickupScans.ts:86-96
+if (result.scanResult === 'verified' && result.packageIds.length > 0) {
+  await supabase.from('packages')
+    .update({ status: 'verificado', status_updated_at: ... })
+    .in('id', result.packageIds);
+}
+```
 
-The pipeline is frozen because of a **gate in the client-side validator**, not a missing consumer:
+It has no forward-only check, so scanning a `cancelado`, `extraviado`, `devuelto`, `dañado` or `retorno_hub` package at pickup **silently resurrects it to `verificado`**. It is also unscoped by `operator_id` beyond RLS, and it writes package state from the browser rather than from the scan record.
 
-`apps/frontend/src/lib/reception/reception-scan-validator.ts:71-78` rejects any package whose status is in `PRE_VERIFICADO_STATUSES`, returning `scan_result: 'not_found'` with `"Paquete no verificado en retiro"`. Since nothing has ever set `verificado`, **every package is `ingresado`, so every reception scan is stored as `not_found`**, so the existing `en_bodega` trigger correctly never fires, so the order roll-up never has an input.
-
-**One missing trigger at link one deadlocks the whole chain.** This spec adds that trigger; the two existing links then work as designed. This is why the state-engine scope below is far smaller than the symptom suggests.
+This spec replaces it with a `SECURITY DEFINER` trigger on `pickup_scans` carrying the forward-only guard (see The State Engine). **The client write MUST be deleted in the same release** — otherwise the trigger blocks the resurrection and the client performs it one statement later, and the guard buys nothing.
 
 ## Non-Goals
 
@@ -203,13 +218,17 @@ Called by the receptionist on QR scan. In one transaction:
 
 ## The State Engine
 
-Scope is deliberately minimal — see the root-cause table above. **One new trigger, one modified trigger, zero changes to the order roll-up.**
+Scope is deliberately minimal. **One new trigger, one modified trigger, one client-side write deleted, zero changes to the order roll-up.**
 
 ### New: `trg_pickup_scan_advance_package_status`
 
 `AFTER INSERT ON public.pickup_scans` — when `NEW.scan_result = 'verified'` and `NEW.package_id IS NOT NULL`, advance the package to `verificado` and set `status_updated_at = NOW()`, subject to the forward-only guard below. Modelled directly on the existing `trg_reception_scan_advance_package_status` for consistency.
 
-This is the link that unblocks the chain.
+This does not *add* a missing link — it **moves an existing client-side link onto the server and puts a guard on it**. See the correction box above.
+
+### Deleted: the client-side write in `usePickupScans.ts:86-96`
+
+Must land in the same release as the trigger. If the trigger ships alone, the guard is inert: it refuses to promote a `cancelado` package, and the client's `.update()` promotes it on the very next statement. If the client write ships removed without the trigger, packages stop advancing at pickup entirely. **They are one change.**
 
 ### Modified: `trg_reception_scan_advance_package_status`
 
@@ -640,7 +659,7 @@ Copy the `updated_at` trigger pattern from a neighbouring migration.
 
 ### Task 2: forward-only guard + the missing pickup trigger
 
-**This is the highest-value task in the spec.** It closes the deadlocked pipeline.
+**Moves the pickup→`verificado` write from the client onto the server, under a forward-only guard.** Pairs with Task 2b, which deletes the client write — see the correction box near the top of this spec. The pipeline is not deadlocked; the write is simply unguarded and in the wrong place.
 
 **Files:**
 - Create: `20260812000002_spec52_package_state_engine.sql`
@@ -697,6 +716,22 @@ Then `CREATE OR REPLACE` the **existing** `trg_reception_scan_advance_package_st
 
 - [ ] **Step 4: Re-run — all five pass**
 - [ ] **Step 5: Commit** — `feat(spec-52): add pickup scan state trigger and forward-only guard`
+
+### Task 2b: delete the client-side `verificado` write
+
+**Must land in the same PR as Task 2.** The guard is inert while this code exists — the trigger refuses to promote a `cancelado` package and the client promotes it one statement later.
+
+**Files:**
+- Modify: `apps/frontend/src/hooks/pickup/usePickupScans.ts:86-96` — delete the `.from('packages').update({ status: 'verificado' })` block entirely
+- Modify: `apps/frontend/src/hooks/pickup/usePickupScans.test.ts` — any test asserting the client performs that update must be replaced
+
+- [ ] **Step 1: Update the test first** — assert the hook inserts the `pickup_scans` row and does **not** issue a `packages` update. It should fail against current code.
+- [ ] **Step 2: Run it, confirm it fails**
+- [ ] **Step 3: Delete the block.** Keep the `pickup_scans` insert and `playFeedback` untouched.
+- [ ] **Step 4: `npx turbo run lint type-check test:run build` green**
+- [ ] **Step 5: Commit** — `fix(spec-52)!: move verificado write server-side under the forward-only guard`
+
+**Behavioural note for the release:** after this pair lands, a package's advance to `verificado` is driven by the `pickup_scans` row rather than a separate client call. Any package at a terminal status (`cancelado`, `devuelto`, `dañado`, `extraviado`, `retorno_hub`) will **stop** being silently promoted — that is the intended fix, and it will look like a behaviour change to anyone who relied on re-scanning to revive a cancelled parcel. There is no evidence anyone does, but it is worth saying in the release note.
 
 ---
 
