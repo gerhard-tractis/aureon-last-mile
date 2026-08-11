@@ -63,16 +63,6 @@ ALTER TABLE auth.users
   ADD COLUMN IF NOT EXISTS deleted_at         timestamptz,
   ADD COLUMN IF NOT EXISTS is_anonymous       boolean NOT NULL DEFAULT false;
 SQL
-
-  # ── KNOWN DEFECT, see spec-52 Task 3 ──────────────────────────────────────
-  # public.handle_new_user() (trigger on_auth_user_created on auth.users)
-  # raises unless raw_user_meta_data carries operator_id. Every spec47_*.sql
-  # fixture inserts '{}'::jsonb, so with the trigger ENABLED all seven fail.
-  # That is a defect in those fixtures — they cannot ever have been executed
-  # (pgTAP is not in CI). Task 3 rewrites all seven files and must fix the
-  # fixtures. Until then the harness disables the trigger so the rest of the
-  # suite is runnable. REMOVE THIS LINE once the fixtures are corrected.
-  psq -q -c "ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;"
 }
 
 case "${1:-}" in
@@ -127,10 +117,6 @@ case "${1:-}" in
         fi
       done
       echo "migrations: applied=$applied skipped=$skipped failed=$fail"'
-    # A later migration recreates on_auth_user_created, silently undoing the
-    # disable that bootstrap applied. Re-assert it after every apply, or the
-    # spec47_* fixtures start failing again with "operator_id required".
-    psq -q -c "ALTER TABLE auth.users DISABLE TRIGGER on_auth_user_created;" 2>/dev/null
     ;;
   run)
     shift

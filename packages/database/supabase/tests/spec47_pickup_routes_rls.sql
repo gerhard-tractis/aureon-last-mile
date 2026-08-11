@@ -36,6 +36,9 @@ VALUES
   ('bbbbbbbb-0000-4000-b000-000000000047','Spec47 Op B','spec47-op-b')
 ON CONFLICT (slug) DO NOTHING;
 
+-- operator_id MUST live in raw_app_meta_data: public.handle_new_user()
+-- (trigger on_auth_user_created) reads NEW.raw_app_meta_data->>'operator_id'
+-- and raises 'operator_id required in signup metadata' without it.
 INSERT INTO auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
@@ -44,33 +47,51 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000147',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-a@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', ''),
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000047"}'::jsonb,
+   '{"full_name":"Driver A"}'::jsonb, NOW(), NOW(), '', ''),
   ('bbbbbbbb-0000-4000-b000-000000000147',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-b@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"bbbbbbbb-0000-4000-b000-000000000047"}'::jsonb,
+   '{"full_name":"Driver B"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows, and
+-- DO NOTHING would silently discard `permissions`.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000147','aaaaaaaa-0000-4000-a000-000000000047','driver-a@spec47.test','Driver A',ARRAY['pickup']),
   ('bbbbbbbb-0000-4000-b000-000000000147','bbbbbbbb-0000-4000-b000-000000000047','driver-b@spec47.test','Driver B',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
 
--- Insert one pickup_route per operator via service-role context (no RLS)
+-- Insert one vehicle + one pickup_route per operator via service-role context
+-- (no RLS). pickup_routes.vehicle_id is NOT NULL as of spec-52.
 SELECT set_config('request.jwt.claims', '{}', true);
-INSERT INTO public.pickup_routes (operator_id, code, driver_id, status)
+INSERT INTO public.vehicles (id, operator_id, plate, active)
 VALUES
-  ('aaaaaaaa-0000-4000-a000-000000000047','PR-TEST-A','aaaaaaaa-0000-4000-a000-000000000147','in_progress'),
-  ('bbbbbbbb-0000-4000-b000-000000000047','PR-TEST-B','bbbbbbbb-0000-4000-b000-000000000147','in_progress')
+  ('99999999-0000-4000-9000-000000000047','aaaaaaaa-0000-4000-a000-000000000047','VEH-RLS-A', true),
+  ('88888888-0000-4000-8000-000000000047','bbbbbbbb-0000-4000-b000-000000000047','VEH-RLS-B', true)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.pickup_routes (operator_id, code, driver_id, vehicle_id, status)
+VALUES
+  ('aaaaaaaa-0000-4000-a000-000000000047','PR-TEST-A','aaaaaaaa-0000-4000-a000-000000000147','99999999-0000-4000-9000-000000000047','in_progress'),
+  ('bbbbbbbb-0000-4000-b000-000000000047','PR-TEST-B','bbbbbbbb-0000-4000-b000-000000000147','88888888-0000-4000-8000-000000000047','in_progress')
 ON CONFLICT DO NOTHING;
 
 -- ─── Operator A's JWT can see only their own ───────────────────────────────
 DO $$
 DECLARE c_own INT; c_other INT;
 BEGIN
+  -- `sub` is mandatory, not decoration: public.get_operator_id() is
+  -- SELECT operator_id FROM public.users WHERE id = auth.uid(). Without `sub`
+  -- auth.uid() is NULL, get_operator_id() is NULL, and RLS fails closed —
+  -- the operator sees zero of its OWN rows and this test fails.
   PERFORM set_config('request.jwt.claims',
-    '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000047","role":"authenticated"}', true);
+    '{"sub":"aaaaaaaa-0000-4000-a000-000000000147","operator_id":"aaaaaaaa-0000-4000-a000-000000000047","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 
   SELECT COUNT(*) INTO c_own FROM public.pickup_routes

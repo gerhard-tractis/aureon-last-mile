@@ -28,16 +28,23 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000552',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver@spec52state.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,
+   -- operator_id belongs in raw_APP_meta_data: public.handle_new_user() reads
+   -- NEW.raw_app_meta_data->>'operator_id' and ignores raw_user_meta_data
+   -- except for full_name.
    '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000552"}'::jsonb,
+   '{"full_name":"Driver 52"}'::jsonb,
    NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created this row.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES ('aaaaaaaa-0000-4000-a000-000000000552',
         'aaaaaaaa-0000-4000-a000-000000000552',
         'driver@spec52state.test','Driver 52',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
 
 -- Order A holds the unit-test packages; order B is the integration case.
 INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
@@ -166,9 +173,13 @@ END $$;
 -- reception scan -> en_bodega -> the pre-existing trg_recalculate_order_status
 -- rolls orders.status up. Proves the chain is unblocked end to end.
 -- ---------------------------------------------------------------------------
-INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('99999999-0000-4000-9000-000000000552','aaaaaaaa-0000-4000-a000-000000000552','VEH-52-1', true)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES ('33333333-0000-4000-3000-000000000552','aaaaaaaa-0000-4000-a000-000000000552','PR-52-1',
-        'aaaaaaaa-0000-4000-a000-000000000552','in_progress');
+        'aaaaaaaa-0000-4000-a000-000000000552','99999999-0000-4000-9000-000000000552','in_progress');
 
 INSERT INTO public.manifests (id, operator_id, external_load_id, status, pickup_route_id)
 VALUES ('eeeeeeee-0000-4000-e000-00000000055b','aaaaaaaa-0000-4000-a000-000000000552','CARGA-52-B','completed',

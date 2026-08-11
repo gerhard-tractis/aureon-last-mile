@@ -76,13 +76,23 @@ INSERT INTO auth.users (
   ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'super@aureon.test', crypt('x', gen_salt('bf')), NOW(),
-   jsonb_build_object('claims', jsonb_build_object('role','super_admin')),
-   '{}'::jsonb, NOW(), NOW(), '', ''),
+   -- operator_id/role must ALSO sit at the top level of raw_app_meta_data:
+   -- public.handle_new_user() (trigger on_auth_user_created) reads
+   -- NEW.raw_app_meta_data->>'operator_id' and raises without it. It does not
+   -- look inside the nested 'claims' object, which stays as the RPCs expect it.
+   -- The super admin belongs to the internal operator seeded by
+   -- 20260616000002_spec45_internal_operator_seed.sql.
+   jsonb_build_object('claims', jsonb_build_object('role','super_admin'),
+                      'operator_id','00000000-0000-0000-0000-0000000000a1',
+                      'role','super_admin'),
+   '{"full_name":"Super Admin"}'::jsonb, NOW(), NOW(), '', ''),
   ('ffffffff-ffff-ffff-ffff-ffffffffffff',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'admin-c@tenant.test', crypt('x', gen_salt('bf')), NOW(),
-   jsonb_build_object('claims', jsonb_build_object('role','admin','operator_id','cccccccc-cccc-cccc-cccc-cccccccccccc')),
-   '{}'::jsonb, NOW(), NOW(), '', '')
+   jsonb_build_object('claims', jsonb_build_object('role','admin','operator_id','cccccccc-cccc-cccc-cccc-cccccccccccc'),
+                      'operator_id','cccccccc-cccc-cccc-cccc-cccccccccccc',
+                      'role','admin'),
+   '{"full_name":"Admin C"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
 -- ─── enable_module_for_operator: rejects non-super-admin ────────────────────

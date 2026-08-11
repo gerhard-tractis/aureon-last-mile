@@ -35,22 +35,30 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000152',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'user-a@spec52.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', ''),
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000052"}'::jsonb,
+   '{"full_name":"User A"}'::jsonb, NOW(), NOW(), '', ''),
   ('bbbbbbbb-0000-4000-b000-000000000152',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'user-b@spec52.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"bbbbbbbb-0000-4000-b000-000000000052"}'::jsonb,
+   '{"full_name":"User B"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
--- NOTE: unlike spec47_pickup_routes_rls.sql, we set `sub` to a real
--- public.users.id below — public.get_operator_id() resolves via
--- auth.uid() -> public.users, so a claims object without `sub` never
--- resolves to an operator and every RLS check silently fails-closed.
+-- NOTE: we set `sub` to a real public.users.id below —
+-- public.get_operator_id() resolves via auth.uid() -> public.users, so a claims
+-- object without `sub` never resolves to an operator and every RLS check
+-- silently fails-closed.
+--
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows from
+-- raw_app_meta_data.operator_id, and DO NOTHING would discard `permissions`.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000152','aaaaaaaa-0000-4000-a000-000000000052','user-a@spec52.test','User A',ARRAY['admin']),
   ('bbbbbbbb-0000-4000-b000-000000000152','bbbbbbbb-0000-4000-b000-000000000052','user-b@spec52.test','User B',ARRAY['admin'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
 
 -- Insert one vehicle per operator via service-role context (no RLS)
 SELECT set_config('request.jwt.claims', '{}', true);
