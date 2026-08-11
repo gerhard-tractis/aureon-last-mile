@@ -209,26 +209,30 @@ Each phase re-uses the same playbook: confirm Ops Control + already-enabled modu
 
 ## Spec Map (Authoritative)
 
-Canonical breakdown of this strategy into specs. Each spec gets its own brainstorming → writing-plans → worktree → TDD → review → merge cycle. Plan lives inside the same spec file per `docs/specs/CLAUDE.md`. **Keep this table up to date as specs progress.**
+Canonical breakdown of **this strategy** into specs. This map covers the phased-rollout track only — it is not a repo-wide spec index. `docs/specs/` is the authoritative list of all specs. Each spec gets its own brainstorming → writing-plans → worktree → TDD → review → merge cycle. Plan lives inside the same spec file per `docs/specs/CLAUDE.md`. **Keep this table up to date as specs progress.**
+
+> ⚠️ **Renumbered 2026-08-11.** This table previously assigned the three Ops-Control items below to spec-47/48/49. Those numbers had already been taken on disk by unrelated, *merged* work (Pickup Route & Consolidated Reception, VPS QA Environment, Easy WMS webhook `url_guia`). The table had not been touched since its only commit, `ef822f6` on 2026-06-16, while the specs directory kept moving. **The files on disk win**; the Ops-Control items move to 53/54/55, which are free. Verified: no `presets/` directory, no `get_ops_control_visibility_snapshot` RPC, and no late-order-alerts agent exist anywhere in the repo, so nothing was built under the old numbering.
 
 | Spec | Scope | Status | Depends on |
 |---|---|---|---|
-| **spec-45** | Activation primitive: `operator_enabled_modules` + `operator_module_audit` tables, `SECURITY DEFINER` RPCs, `super_admin` role, internal `aureon-internal` operator, helper API (`getEnabledModulesForCurrentUser`, `isModuleEnabled`, `requireModuleEnabled`, `withModule`), Admin UI tab (operator picker, module grid, toggle dialog with mandatory reason, audit drawer), seed existing tenant with `ops_control` + `late_order_alerts` only | backlog | — |
-| **spec-46** | Wire activation guards into every existing module layout (`pickup/layout.tsx`, `reception/layout.tsx`, `distribution/layout.tsx`, `dispatch/layout.tsx`, `conversations/layout.tsx`, `operations-control/layout.tsx`) + filter the sidebar nav by the enabled set. `returns` route does not yet exist — its guard ships with spec-44b. `pre_route` and `late_order_alerts` have no module routes so no guard is needed. | in progress | spec-45 |
-| **spec-47** | Ops Control preset architecture: preset selector at `lib/ops-control/select-preset.ts`, refactor existing dashboard into the "Full Operations preset" shell; introduces `presets/` directory structure | backlog | spec-45, spec-46 |
-| **spec-48** | Visibility preset: KPI row (in-hand, late, at-risk), 3 breakdown tables (Transport Tenant, Region, Comuna) acting as filter chips, filterable order detail table, `get_ops_control_visibility_snapshot` RPC | backlog | spec-47 |
-| **spec-49** | Late-order alerts agent: SLA-deadline sourcing from `clients` / commercial-agreement tables, agent that fires WhatsApp/email when at-risk or breached | backlog | spec-45 |
-| **spec-50** | DispatchTrack reconciliation job: nightly cross-check against DT API to ensure "in-hand" set stays correct; alerts ops team on drift | backlog | — |
+| **spec-45** | Activation primitive: `operator_enabled_modules` + `operator_module_audit` tables, `SECURITY DEFINER` RPCs, `super_admin` role, internal `aureon-internal` operator, helper API (`getEnabledModulesForCurrentUser`, `isModuleEnabled`, `requireModuleEnabled`, `withModule`), Admin UI tab (operator picker, module grid, toggle dialog with mandatory reason, audit drawer), seed existing tenant with `ops_control` + `late_order_alerts` only | merged (`f1fa4fd`, #342) | — |
+| **spec-46** | Wire activation guards into every existing module layout (`pickup/layout.tsx`, `reception/layout.tsx`, `distribution/layout.tsx`, `dispatch/layout.tsx`, `conversations/layout.tsx`, `operations-control/layout.tsx`) + filter the sidebar nav by the enabled set. `returns` route does not yet exist — its guard ships with spec-44b. `pre_route` and `late_order_alerts` have no module routes so no guard is needed. | merged (`ef822f6`, #344) | spec-45 |
+| **spec-53** *(was 47)* | Ops Control preset architecture: preset selector at `lib/ops-control/select-preset.ts`, refactor existing dashboard into the "Full Operations preset" shell; introduces `presets/` directory structure | backlog — not started | spec-45, spec-46 |
+| **spec-54** *(was 48)* | Visibility preset: KPI row (in-hand, late, at-risk), 3 breakdown tables (Transport Tenant, Region, Comuna) acting as filter chips, filterable order detail table, `get_ops_control_visibility_snapshot` RPC | backlog — not started | spec-53 |
+| **spec-55** *(was 49)* | Late-order alerts agent: SLA-deadline sourcing from `clients` / commercial-agreement tables, agent that fires WhatsApp/email when at-risk or breached | backlog — not started | spec-45 |
+| **spec-50** | DispatchTrack reconciliation job: nightly cross-check against DT API to ensure "in-hand" set stays correct; alerts ops team on drift | backlog — reserved, no file yet | — |
 
-**Not a code spec:** Phase 2 (Pickup activation across all warehouses). Once specs 45–46 are merged, Phase 2 is a config flip (super-admin enables `pickup` for the tenant) + a training runbook doc + dual-key paper period. No code change required.
+**Numbers taken elsewhere, listed here only so they are not reused:** spec-47 (Pickup Route & Consolidated Reception), spec-48 (VPS QA Environment), spec-49 (Easy WMS webhook `url_guia`), spec-51 (QA Scenario Seed & Prod Drift Gate), spec-52 (Pickup Route Vehicle & Package State Engine). None belong to the phased-rollout track.
+
+**Not a code spec:** Phase 2 (Pickup activation across all warehouses). Specs 45–46 are now merged, so Phase 2 is a config flip (super-admin enables `pickup` for the tenant) + a training runbook doc + dual-key paper period. No code change required.
 
 ### Sequencing
 
-1. spec-45 ships first, alone.
-2. After spec-45 merges, three tracks can run in parallel worktrees: spec-46 (guard wiring), spec-49 (alerts), spec-50 (reconciliation).
-3. spec-47 waits on spec-46.
-4. spec-48 waits on spec-47.
-5. Phase 1 is "live" for the tenant once specs 45 + 46 + 47 + 48 + 49 are merged.
+1. ~~spec-45 ships first, alone.~~ **Done** (#342).
+2. ~~spec-46 guard wiring.~~ **Done** (#344). Remaining tracks can run in parallel worktrees: spec-55 (alerts), spec-50 (reconciliation).
+3. spec-53 waits on spec-46 — unblocked, ready to start.
+4. spec-54 waits on spec-53.
+5. Phase 1 is "live" for the tenant once specs 45 + 46 + 53 + 54 + 55 are merged. **45 and 46 are in; 53/54/55 are not started.**
 6. Phase 2 starts when the tenant is ready (per Phase 1 exit criterion above).
 
 ---
