@@ -8,7 +8,9 @@
 -- UNIQUE(operator_id, provider, external_vehicle_id)): vehicles is
 -- hand-managed by the operator and is never synced.
 
-CREATE TABLE public.vehicles (
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.vehicles (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   operator_id  UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
   plate        TEXT NOT NULL,
@@ -19,11 +21,14 @@ CREATE TABLE public.vehicles (
   deleted_at   TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX uniq_vehicles_operator_plate
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_vehicles_operator_plate
   ON public.vehicles (operator_id, plate) WHERE deleted_at IS NULL;
 
-CREATE INDEX idx_vehicles_operator_active
-  ON public.vehicles (operator_id) WHERE active AND deleted_at IS NULL;
+-- Leads on plate (not just operator_id) so it covers the operator's active
+-- vehicle list query, which filters on operator_id + active and sorts by
+-- plate: WHERE operator_id=$1 AND active AND deleted_at IS NULL ORDER BY plate.
+CREATE INDEX IF NOT EXISTS idx_vehicles_operator_active
+  ON public.vehicles (operator_id, plate) WHERE active AND deleted_at IS NULL;
 
 ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
 
@@ -51,3 +56,11 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 COMMENT ON TABLE public.vehicles IS
   'Operator-owned pickup fleet (spec-52). Distinct from fleet_vehicles, which mirrors DispatchTrack delivery vehicles and carries no plate data.';
+
+COMMENT ON COLUMN public.vehicles.plate IS
+  'Free-text plate/registration string. Deliberately not named plate_number like fleet_vehicles.plate_number (that column is always NULL — a DispatchTrack sync artifact); normalization rules are decided at the RPC boundary, not here.';
+
+COMMENT ON COLUMN public.vehicles.active IS
+  'Independent of deleted_at: a soft-deleted row (deleted_at IS NOT NULL) can still carry active = true. Consumers must check both columns, not active alone.';
+
+COMMIT;
