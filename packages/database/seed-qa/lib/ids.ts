@@ -40,6 +40,12 @@ export enum ScenarioGroup {
   COMMS = 0x0080,
   TENANCY = 0x0090,
   DATA_QUALITY = 0x00a0,
+  /** Exhaustive package-status combination matrix. */
+  MATRIX = 0x00b0,
+  /** Orders driven through real RPC transitions. */
+  JOURNEYS = 0x00c0,
+  /** Musan tenant: clients, pickup points and cargas. */
+  MUSAN = 0x00d0,
 }
 
 const MAX_SEQUENCE = 0xffffffff;
@@ -60,6 +66,18 @@ export function qaId(group: ScenarioGroup, sequence: number): string {
   const groupHex = group.toString(16).padStart(4, '0');
   const seqHex = sequence.toString(16).padStart(8, '0');
   return `${GENERATED_PREFIX}${groupHex}${seqHex}`;
+}
+
+/**
+ * SQL LIKE pattern matching only the rows a single scenario group created.
+ *
+ * `GENERATED_LIKE_PATTERN` matches everything this generator made, which is
+ * right for --reset but wrong for a per-scenario assertion: once a second group
+ * writes to the same table, a count filtered only by the generator prefix picks
+ * up the other group's rows too.
+ */
+export function groupLikePattern(group: ScenarioGroup): string {
+  return `${GENERATED_PREFIX}${group.toString(16).padStart(4, '0')}%`;
 }
 
 /** True if the id was produced by this generator (i.e. --reset should remove it). */

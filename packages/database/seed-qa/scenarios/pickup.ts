@@ -10,7 +10,7 @@
 import type { SeedClient } from '../lib/db';
 import { AssertionCollector, assertCount } from '../lib/assert';
 import { QA_USERS, resolveUserId } from '../lib/factories';
-import { ScenarioGroup, FIXED_IDS, qaId } from '../lib/ids';
+import { ScenarioGroup, FIXED_IDS, qaId, groupLikePattern } from '../lib/ids';
 
 /** scan_result_enum: verified | not_found | duplicate */
 const SCAN_RESULTS = ['verified', 'not_found', 'duplicate'] as const;
@@ -120,8 +120,8 @@ export async function seedPickup(
   await assertCount(db, collector, {
     scenario: 'pickup/manifests',
     detail: 'manifests seeded for the baseline operator',
-    sql: `SELECT count(*) AS count FROM public.manifests
-           WHERE id::text LIKE '00000000-0000-4000-9000-%'`,
+    sql: `SELECT count(*) AS count FROM public.manifests WHERE id::text LIKE $1`,
+    params: [groupLikePattern(ScenarioGroup.PICKUP)],
     expected: manifests.length,
   });
 
@@ -129,15 +129,16 @@ export async function seedPickup(
     scenario: 'pickup/scans',
     detail: 'pickup scans covering every scan_result_enum value',
     sql: `SELECT count(DISTINCT scan_result) AS count FROM public.pickup_scans
-           WHERE id::text LIKE '00000000-0000-4000-9000-%'`,
+           WHERE id::text LIKE $1`,
+    params: [groupLikePattern(ScenarioGroup.PICKUP)],
     expected: SCAN_RESULTS.length,
   });
 
   await assertCount(db, collector, {
     scenario: 'pickup/routes',
     detail: 'pickup routes seeded',
-    sql: `SELECT count(*) AS count FROM public.pickup_routes
-           WHERE id::text LIKE '00000000-0000-4000-9000-%'`,
+    sql: `SELECT count(*) AS count FROM public.pickup_routes WHERE id::text LIKE $1`,
+    params: [groupLikePattern(ScenarioGroup.PICKUP)],
     expected: routes.length,
   });
 
