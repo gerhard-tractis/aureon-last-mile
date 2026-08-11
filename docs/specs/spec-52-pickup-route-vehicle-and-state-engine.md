@@ -543,8 +543,8 @@ Depart hub with vehicle → 2 clients / 3 cargas → scan packages → arrive �
 
 - **Signed QR tokens** — replace the raw-UUID payload and the sequential `PR-YYYY-NNNN` code with a possession proof.
 - **`drivers` ↔ `users` reconciliation** — two disjoint driver identities.
-- **Spec-number drift** — `docs/architecture/phased-rollout-strategy.md:219-221` assigns spec-48/49/50 to Ops Control visibility, late-order alerts and DispatchTrack reconciliation, but `docs/specs/` has spec-48 as the VPS QA environment and spec-49 as the Easy webhook guide URL. The same table also double-claims **spec-47** as "Ops Control preset architecture" while `docs/specs/spec-47` is Pickup Route & Consolidated Reception. Four numbers claimed by two different things; spec-50 is reserved but unwritten. Needs reconciling before anyone builds off that table.
-- **`docs/specs/spec-47` status line** — still says `backlog` despite being merged and live in production.
+- ~~**Spec-number drift**~~ — **resolved 2026-08-11.** The rollout map's three unbuilt Ops-Control items moved to spec-53/54/55; the merged on-disk specs keep 47/48/49; spec-50 stays reserved.
+- ~~**`docs/specs/spec-47` status line**~~ — **resolved 2026-08-11**, corrected to `in progress` (awaiting user confirmation for `completed`).
 - **Dispatcher pre-planning UI** on top of the existing schema support.
 
 ---
@@ -956,13 +956,13 @@ The largest frontend task. Contains the regression fix.
 - Create: `components/pickup/PickupManifestTabs.tsx` + `.test.tsx`
 - Modify: `app/app/pickup/page.tsx` (356 lines — over the 300-line rule in `CLAUDE.md`)
 - Modify: `docs/qa-test-scope.md` — row **2.6** (line 63) is written around `close_pickup_route`, and row **2.5** (line 62) is also stale (`start_pickup_route` → `draft`: both the status and the RPC signature change)
-- Sprint status: **`docs/sprint-status.yaml` no longer exists** — `git ls-files` has no such path; it was removed after `45d9d1d` and survives only in stale worktree copies. `CLAUDE.md`'s feature workflow still names it. **Ask the user where sprint status lives now; do not recreate the file blindly.**
+- **No sprint tracker to update.** `docs/sprint-status.yaml` was deliberately removed in `45d9d1d` and is gitignored (`.gitignore:36`) — parallel branches editing it caused constant merge conflicts. Status lives in this file's `**Status:**` line. Do not recreate it.
 - Modify: `docs/specs/spec-52-…md` — flip `**Status:**` to `in progress` on the first implementation commit
 
 - [ ] **Step 1: Failing test** for `PickupManifestTabs` (tab switching, client filter)
 - [ ] **Step 2: Run, confirm fail**
 - [ ] **Step 3: Extract** the tab/filter logic. Scoped to the file already being edited — not a refactor sweep. Verify `page.tsx` is now under 300 lines.
-- [ ] **Step 4: Update `qa-test-scope.md` rows 2.5 and 2.6** for the receptionist-triggered flow, and update `docs/sprint-status.yaml`. **Coordinate with the spec-51 QA work** — it has several live branches touching that file.
+- [ ] **Step 4: Update `qa-test-scope.md` rows 2.5 and 2.6** for the receptionist-triggered flow. **Coordinate with the spec-51 QA work** — it has several live branches touching that file.
 - [ ] **Step 5: Full CI green**
 - [ ] **Step 6: Commit** — `refactor(spec-52): extract PickupManifestTabs; update QA scope`
 
