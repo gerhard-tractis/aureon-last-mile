@@ -115,18 +115,68 @@ after **every green CI run of a push to main**:
   **never blocks the prod deploy**. To recover, run `infra/supabase-qa/deploy-qa.sh`
   manually on the VPS or just re-run `setup-qa.sh`.
 
-## DB reset
+## DB reset — full clean rebuild
 
-Blow the QA database away and rebuild it from the repo:
+> **`docker compose down -v` does NOT wipe the database.** The Postgres data
+> directory is a **bind mount** (`./volumes/db/data:/var/lib/postgresql/data`),
+> not a named volume, so `-v` only removes `db-config` and `deno-cache`. An
+> earlier version of this runbook claimed otherwise — following it gives you a
+> database that still holds every previous row while you believe it is clean.
+> The directory is `dhcpcd`-owned, mode 700, so removing it requires **root**.
+
+Run these in order, as `aureon` except where marked:
 
 ```bash
 cd /home/aureon/aureon-qa
-docker compose -f infra/supabase-qa/docker-compose.yml --env-file /home/aureon/.env.qa down -v
-bash infra/supabase-qa/setup-qa.sh
+
+# 1. Stop the stack (removes the two named volumes)
+docker compose -f infra/supabase-qa/docker-compose.yml \
+  --env-file /home/aureon/.env.qa down -v
+
+# 2. ROOT: delete the Postgres data directory — this is the actual wipe
+sudo rm -rf infra/supabase-qa/volumes/db/data
+
+# 3. Start fresh; Postgres re-initialises via initdb + the init scripts
+docker compose -f infra/supabase-qa/docker-compose.yml \
+  --env-file /home/aureon/.env.qa up -d
+
+# 4. Wait for the database, then confirm it really is empty (expect 0)
+set -a; . /home/aureon/.env.qa; set +a
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -qAtX -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"
+
+# 5. Replay every migration from the repo
+SUPABASE_DB_PASSWORD=$POSTGRES_PASSWORD bash infra/supabase-qa/apply-migrations.sh
+
+# 6. Baseline business data, then the QA logins (auth.users was wiped too)
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -v ON_ERROR_STOP=1 -q -f packages/database/supabase/seed-qa.sql
+bash infra/supabase-qa/create-qa-users.sh
+
+# 7. Scenario data for the workflow tests
+npm run seed:qa --workspace=@aureon/database -- --scenarios=all
+
+# 8. Restart the apps — they held connections to the database you destroyed
+for u in aureon-frontend-qa aureon-agents-qa aureon-worker-qa; do
+  sudo -n systemctl restart "$u"
+done
 ```
 
-`down -v` deletes the Postgres volume; `setup-qa.sh` recreates the stack, replays all
-migrations, re-applies `seed-qa.sql`, and recreates the QA users (all idempotent).
+**Verify** (expect `200`, `200`, `120`):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:3200/
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  "http://localhost:8100/auth/v1/token?grant_type=password" \
+  -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+  -d '{"email":"qa-admin@qa.test","password":"QaTest123!"}'
+PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -p 5433 -U postgres -d postgres \
+  -qAtX -c "SELECT count(*) FROM supabase_migrations.schema_migrations"
+```
+
+`setup-qa.sh` is **not** a substitute for steps 2–8: it never removes the data
+directory, and its `install_units` step needs root (see the provisioning section
+above).
 
 ## Smoke-test checklist
 
