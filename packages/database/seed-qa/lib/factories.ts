@@ -21,6 +21,13 @@ export interface OrderSpec {
   deliveryDate?: string;
   importedVia?: string;
   dispatchGuideUrl?: string | null;
+  /** The CARGA this order belongs to — matches manifests.external_load_id. */
+  externalLoadId?: string | null;
+  /** Which client of the operator the order belongs to (Easy, Paris, …). */
+  tenantClientId?: string | null;
+  /** Where the order is collected from. */
+  pickupPointId?: string | null;
+  retailerName?: string;
 }
 
 export interface CreatedOrder {
@@ -100,9 +107,11 @@ export async function createOrderWithPackages(
     `INSERT INTO public.orders (
        id, operator_id, order_number, customer_name, customer_phone,
        delivery_address, comuna, delivery_date, retailer_name,
-       raw_data, imported_via, imported_at, dispatch_guide_url
+       raw_data, imported_via, imported_at, dispatch_guide_url,
+       external_load_id, tenant_client_id, pickup_point_id
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12,
+       $13, $14, $15
      )
      ON CONFLICT (id) DO NOTHING`,
     [
@@ -114,10 +123,13 @@ export async function createOrderWithPackages(
       `Calle QA ${spec.sequence}`,
       spec.comuna ?? 'Maipú',
       spec.deliveryDate ?? new Date().toISOString().slice(0, 10),
-      'QA Retail',
+      spec.retailerName ?? 'QA Retail',
       JSON.stringify({ source: 'seed-qa-generator' }),
       spec.importedVia ?? 'MANUAL',
       spec.dispatchGuideUrl ?? null,
+      spec.externalLoadId ?? null,
+      spec.tenantClientId ?? null,
+      spec.pickupPointId ?? null,
     ],
   );
 

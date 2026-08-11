@@ -20,6 +20,7 @@ import { seedTenancy } from './scenarios/tenancy';
 import { seedPickup } from './scenarios/pickup';
 import { seedMatrix } from './scenarios/matrix';
 import { seedJourneys } from './scenarios/journeys';
+import { seedMusan } from './scenarios/musan';
 
 /**
  * Tables cleared by --reset, child-first so foreign keys stay satisfied.
@@ -59,6 +60,7 @@ async function runScenarios(
     let created: number;
     if (scenario === 'matrix') created = await seedMatrix(db, collector);
     else if (scenario === 'journeys') created = await seedJourneys(db, collector);
+    else if (scenario === 'musan') created = await seedMusan(db, collector);
     else if (scenario === 'outcomes') created = await seedOutcomes(db, collector);
     else if (scenario === 'tenancy') created = await seedTenancy(db, collector);
     else created = await seedPickup(db, collector);
