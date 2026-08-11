@@ -23,6 +23,24 @@ BEGIN;
 -- =============================================================================
 -- One row per operator that owns at least one pickup_routes row. Idempotent:
 -- re-running finds the existing live SIN-REGISTRO row and inserts nothing.
+--
+-- Fail loudly on an ACTIVE SIN-REGISTRO row rather than adopting it as the
+-- placeholder: the whole design rests on the placeholder being active = false,
+-- and silently inheriting someone's hand-inserted active row would make every
+-- backfilled route point at a selectable vehicle. Nothing writes this plate
+-- today (public.vehicles was created empty in Task 1), so this cannot fire in
+-- production — it exists to keep that true.
+DO $$
+DECLARE v_bad INT;
+BEGIN
+  SELECT COUNT(*) INTO v_bad FROM public.vehicles
+   WHERE plate = 'SIN-REGISTRO' AND active AND deleted_at IS NULL;
+  IF v_bad <> 0 THEN
+    RAISE EXCEPTION
+      '% active SIN-REGISTRO vehicle row(s) exist; the backfill placeholder must be inactive. Deactivate or rename them, then re-run.', v_bad;
+  END IF;
+END $$;
+
 INSERT INTO public.vehicles (operator_id, plate, vehicle_type, active)
 SELECT DISTINCT pr.operator_id, 'SIN-REGISTRO', NULL, false
   FROM public.pickup_routes pr
@@ -31,6 +49,7 @@ SELECT DISTINCT pr.operator_id, 'SIN-REGISTRO', NULL, false
     WHERE v.operator_id = pr.operator_id
       AND v.plate = 'SIN-REGISTRO'
       AND v.deleted_at IS NULL
+      AND v.active = false
  );
 
 -- =============================================================================
@@ -73,13 +92,15 @@ CREATE INDEX IF NOT EXISTS idx_pickup_routes_vehicle
   ON public.pickup_routes(operator_id, vehicle_id);
 
 -- =============================================================================
--- PART 4 — Active-route uniqueness: BOTH invariants
+-- PART 4 — Active-route uniqueness: the per-DRIVER invariant only
 -- =============================================================================
 -- Predicate narrows from status IN ('draft','in_progress') to 'in_progress':
 -- start_pickup_route() creates routes directly as in_progress and nothing in
--- the codebase ever writes 'draft'.
+-- the codebase ever writes 'draft'. The rebuild is safe on live data because
+-- the new predicate is a strict subset of the old one — any row set that
+-- satisfied the old index still satisfies this one.
 --
--- Keeping the per-DRIVER index alongside the new per-VEHICLE one is deliberate.
+-- The per-DRIVER index matters because
 -- apps/frontend/src/hooks/useActivePickupRoute.ts orders by started_at DESC and
 -- takes .limit(1) — with two active routes a driver silently gets the newest and
 -- sees no error at all. Only the index turns that into a visible failure.
@@ -89,9 +110,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_pickup_routes_one_active_per_driver
   ON public.pickup_routes(operator_id, driver_id)
   WHERE status = 'in_progress' AND deleted_at IS NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uniq_pickup_routes_one_active_per_vehicle
-  ON public.pickup_routes(operator_id, vehicle_id)
-  WHERE status = 'in_progress' AND deleted_at IS NULL;
+-- DELIBERATELY NOT CREATED HERE: uniq_pickup_routes_one_active_per_vehicle
+-- on (operator_id, vehicle_id) with the same predicate. That is a CONTRACT-phase
+-- constraint and this is the expand phase. Until the VehicleSelect UI exists,
+-- routes legitimately SHARE a vehicle row: every blank-label route resolves to
+-- the operator's single SIN-REGISTRO placeholder, and two drivers who both type
+-- "camion 1" resolve to one find-or-create'd row. Enforcing one-active-route-
+-- per-vehicle now would block the second driver in both cases — a regression,
+-- since today both routes start fine. spec-52 Task 8 adds the index together
+-- with the UI that lets a driver pick a distinct truck. The non-unique
+-- idx_pickup_routes_vehicle created in PART 3 covers lookups meanwhile.
 
 -- =============================================================================
 -- PART 5 — start_pickup_route(UUID)
@@ -149,8 +177,18 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
   IF NOT v_vehicle.active THEN
-    RAISE EXCEPTION 'El vehículo % está inactivo y no puede iniciar una ruta', v_vehicle.plate
-      USING ERRCODE = '22023';
+    -- EXPAND-PHASE EXEMPTION: the operator's SIN-REGISTRO placeholder is the
+    -- one inactive vehicle a route may bind to. start_pickup_route(TEXT) sends
+    -- blank labels there, and the frontend field is still optional
+    -- (StartRouteButton.tsx:61 says "Vehículo (opcional)"), so refusing it
+    -- would hard-error every driver who taps Iniciar without typing a plate.
+    -- This grants no capability the blank-label path does not already grant.
+    -- Every other inactive vehicle — a retired truck — is still refused.
+    -- spec-52 Task 8 removes this exemption when the field becomes required.
+    IF v_vehicle.plate <> 'SIN-REGISTRO' THEN
+      RAISE EXCEPTION 'El vehículo % está inactivo y no puede iniciar una ruta', v_vehicle.plate
+        USING ERRCODE = '22023';
+    END IF;
   END IF;
 
   -- Build code; uniqueness enforced by partial unique index per operator.
@@ -158,15 +196,25 @@ BEGIN
   FOR i IN 1..3 LOOP
     v_code := 'PR-' || v_year || '-' || lpad(nextval('pickup_routes_code_seq')::TEXT, 4, '0');
     BEGIN
-      INSERT INTO public.pickup_routes (operator_id, code, driver_id, vehicle_id, status)
-      VALUES (v_operator, v_code, v_driver, p_vehicle_id, 'in_progress')
+      -- vehicle_label is deprecated but still READ by the warehouse UI
+      -- (reception/route/[routeId]/page.tsx:124, IncomingRoutesList.tsx:40,
+      -- pickup/route/active/page.tsx:85). Writing the plate keeps it truthful
+      -- through the expand phase; without it those screens would show no truck
+      -- identifier at all for every new route until the frontend chunk lands.
+      -- The placeholder has no real plate, so it stays NULL — exactly what a
+      -- blank-label route recorded before spec-52.
+      INSERT INTO public.pickup_routes (operator_id, code, driver_id, vehicle_id, vehicle_label, status)
+      VALUES (v_operator, v_code, v_driver, p_vehicle_id,
+              NULLIF(v_vehicle.plate, 'SIN-REGISTRO'), 'in_progress')
       RETURNING * INTO v_row;
       RETURN v_row;
     EXCEPTION
       WHEN unique_violation THEN
-        -- Both single-active-route partial indexes also live here; surface a
-        -- cleaner error in those cases by re-checking. Predicates match the
-        -- indexes above: 'in_progress' only.
+        -- The single-active-route-per-driver partial index also lives here;
+        -- surface a cleaner error by re-checking. Predicate matches the index
+        -- above: 'in_progress' only. There is deliberately no per-vehicle
+        -- re-check — that index is deferred to Task 8 (see PART 4), and during
+        -- the expand phase routes legitimately share a vehicle row.
         IF EXISTS (
           SELECT 1 FROM public.pickup_routes
            WHERE operator_id = v_operator
@@ -175,16 +223,6 @@ BEGIN
              AND deleted_at IS NULL
         ) THEN
           RAISE EXCEPTION 'El conductor ya tiene una ruta de retiro activa'
-            USING ERRCODE = '23505';
-        END IF;
-        IF EXISTS (
-          SELECT 1 FROM public.pickup_routes
-           WHERE operator_id = v_operator
-             AND vehicle_id = p_vehicle_id
-             AND status = 'in_progress'
-             AND deleted_at IS NULL
-        ) THEN
-          RAISE EXCEPTION 'El vehículo % ya está en una ruta de retiro activa', v_vehicle.plate
             USING ERRCODE = '23505';
         END IF;
         -- otherwise it was a code collision: retry
@@ -197,6 +235,67 @@ COMMENT ON FUNCTION public.start_pickup_route(UUID)
   IS 'Create a new in_progress pickup_routes row for the caller (driver) on an active, operator-owned vehicle (spec-52).';
 
 GRANT EXECUTE ON FUNCTION public.start_pickup_route(UUID) TO authenticated;
+
+-- =============================================================================
+-- PART 5b — placeholder resolver (internal)
+-- =============================================================================
+-- Resolves the operator's inactive SIN-REGISTRO row, creating it if this
+-- operator had no pre-spec-52 routes and so got no placeholder in PART 1.
+-- Internal to the expand phase; removed with the wrapper in Task 8.
+CREATE OR REPLACE FUNCTION public._get_or_create_unregistered_vehicle(
+  p_operator UUID
+) RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE v_id UUID;
+BEGIN
+  SELECT id INTO v_id FROM public.vehicles
+   WHERE operator_id = p_operator
+     AND plate = 'SIN-REGISTRO'
+     AND active = false
+     AND deleted_at IS NULL
+   ORDER BY created_at
+   LIMIT 1;
+  IF v_id IS NOT NULL THEN
+    RETURN v_id;
+  END IF;
+
+  -- Race-safe, same reasoning as the plate path below.
+  INSERT INTO public.vehicles (operator_id, plate, active)
+  VALUES (p_operator, 'SIN-REGISTRO', false)
+  ON CONFLICT (operator_id, plate) WHERE deleted_at IS NULL DO NOTHING
+  RETURNING id INTO v_id;
+
+  IF v_id IS NULL THEN
+    -- Lost the race, or an ACTIVE SIN-REGISTRO row was planted by hand. Only
+    -- an inactive row is acceptable — binding routes to an active one would
+    -- make the placeholder selectable through the plate path.
+    SELECT id INTO v_id FROM public.vehicles
+     WHERE operator_id = p_operator
+       AND plate = 'SIN-REGISTRO'
+       AND active = false
+       AND deleted_at IS NULL
+     ORDER BY created_at
+     LIMIT 1;
+  END IF;
+
+  IF v_id IS NULL THEN
+    RAISE EXCEPTION
+      'No se pudo resolver el vehículo SIN-REGISTRO del operador % (¿existe una fila activa con esa patente?)', p_operator
+      USING ERRCODE = '22023';
+  END IF;
+  RETURN v_id;
+END $$;
+
+COMMENT ON FUNCTION public._get_or_create_unregistered_vehicle(UUID)
+  IS 'INTERNAL (spec-52 expand phase). Resolves an operator''s inactive SIN-REGISTRO placeholder for blank-label routes started via the deprecated start_pickup_route(TEXT). Removed by spec-52 Task 8.';
+
+-- Internal: reachable only from the SECURITY DEFINER wrapper, never over the
+-- REST surface. Postgres grants EXECUTE to PUBLIC by default — take it back.
+REVOKE ALL ON FUNCTION public._get_or_create_unregistered_vehicle(UUID) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public._get_or_create_unregistered_vehicle(UUID) FROM anon, authenticated;
 
 -- =============================================================================
 -- PART 6 — start_pickup_route(TEXT): DEPRECATED compatibility wrapper
@@ -231,9 +330,18 @@ BEGIN
   END IF;
 
   v_plate := upper(btrim(COALESCE(p_vehicle_label, '')));
+
+  -- BLANK LABEL IS LEGAL and must stay that way: StartRouteButton.tsx:61
+  -- labels the field "Vehículo (opcional)" and :32 sends
+  -- `label.trim() || null`, so useStartPickupRoute.ts passes
+  -- p_vehicle_label: null on every route started without typing a plate.
+  -- Raising here would hard-error those drivers the moment this deploys.
+  -- Route them to the operator's inactive SIN-REGISTRO placeholder: the row
+  -- is unselectable through the plate path, and the resulting route is
+  -- exactly as unregistered as it was before spec-52, when it simply carried
+  -- vehicle_label = NULL.
   IF v_plate = '' THEN
-    RAISE EXCEPTION 'Debe indicar la patente del vehículo para iniciar la ruta'
-      USING ERRCODE = '22023';
+    RETURN public.start_pickup_route(public._get_or_create_unregistered_vehicle(v_operator));
   END IF;
 
   -- Reserved plate guard, and it must come FIRST. 'SIN-REGISTRO' is the
@@ -273,9 +381,19 @@ BEGIN
         USING ERRCODE = '22023';
     END IF;
 
+    -- Race-safe: two drivers registering the same new plate at once must not
+    -- leave the loser holding a raw 23505 — the very leak the guards above
+    -- exist to prevent. ON CONFLICT DO NOTHING returns no row for the loser,
+    -- who then re-reads the winner's row.
     INSERT INTO public.vehicles (operator_id, plate, active)
     VALUES (v_operator, v_plate, true)
+    ON CONFLICT (operator_id, plate) WHERE deleted_at IS NULL DO NOTHING
     RETURNING id INTO v_vehicle_id;
+
+    IF v_vehicle_id IS NULL THEN
+      SELECT id INTO v_vehicle_id FROM public.vehicles
+       WHERE operator_id = v_operator AND plate = v_plate AND deleted_at IS NULL;
+    END IF;
   END IF;
 
   RETURN public.start_pickup_route(v_vehicle_id);
@@ -352,11 +470,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'start_pickup_route(UUID) missing';
   END IF;
-  IF NOT EXISTS (
+  -- uniq_pickup_routes_one_active_per_vehicle is deliberately absent — see
+  -- PART 4. Assert that, so a well-meaning re-add during the expand phase
+  -- fails loudly here instead of blocking a second driver in production.
+  IF EXISTS (
     SELECT 1 FROM pg_indexes
      WHERE schemaname = 'public' AND indexname = 'uniq_pickup_routes_one_active_per_vehicle'
   ) THEN
-    RAISE EXCEPTION 'uniq_pickup_routes_one_active_per_vehicle missing';
+    RAISE EXCEPTION 'uniq_pickup_routes_one_active_per_vehicle exists, but the per-vehicle invariant belongs to spec-52 Task 8 (contract phase) — during expand, routes legitimately share a vehicle';
   END IF;
   IF NOT EXISTS (
     SELECT 1 FROM pg_indexes

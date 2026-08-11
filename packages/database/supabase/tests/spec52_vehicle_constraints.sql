@@ -1,8 +1,9 @@
 -- spec-52 Task 3 — pickup_routes.vehicle_id constraints
 --
 -- 1. start_pickup_route(UUID) rejects an inactive / soft-deleted / foreign vehicle.
--- 2. uniq_pickup_routes_one_active_per_vehicle blocks a second active route on
---    the same truck (even with a different driver).
+-- 2. two drivers CAN share a truck during the expand phase —
+--    uniq_pickup_routes_one_active_per_vehicle is deferred to spec-52 Task 8,
+--    which adds it together with the UI that lets a driver pick a distinct one.
 -- 3. uniq_pickup_routes_one_active_per_driver still blocks a second active route
 --    for the same driver (even in a different truck) — useActivePickupRoute.ts
 --    does `.order('started_at', desc).limit(1)`, so a driver with two active
@@ -164,27 +165,50 @@ BEGIN
   IF v_row.code !~ '^PR-[0-9]{4}-[0-9]{4}$' THEN
     RAISE EXCEPTION 'route code should match PR-YYYY-NNNN, got %', v_row.code;
   END IF;
+  -- vehicle_label is deprecated but still read by the warehouse screens
+  -- (reception/route/[routeId]/page.tsx:124, IncomingRoutesList.tsx:40,
+  -- pickup/route/active/page.tsx:85). Until the frontend chunk lands it must
+  -- keep carrying the plate, or those screens show no truck at all.
+  IF v_row.vehicle_label IS DISTINCT FROM 'VEH-OK-1' THEN
+    RAISE EXCEPTION 'vehicle_label should mirror the vehicle plate, got %',
+      COALESCE(v_row.vehicle_label, '<NULL>');
+  END IF;
 END $$;
 
--- ─── 2. same vehicle, DIFFERENT driver → per-vehicle index must reject ─────
+-- ─── 2. same vehicle, DIFFERENT driver → ALLOWED during the expand phase ───
+-- uniq_pickup_routes_one_active_per_vehicle is a contract-phase constraint and
+-- is deliberately NOT created by this migration. Until the VehicleSelect UI
+-- exists, routes legitimately share a vehicle row: every blank-label route
+-- lands on the operator's single SIN-REGISTRO placeholder, and two drivers who
+-- both type "camion 1" resolve to one find-or-create'd row. Enforcing the
+-- invariant now would block the second driver — a regression against today's
+-- behaviour, where both routes start fine. spec-52 Task 8 adds the index
+-- alongside the UI, and asserts this case rejects.
 DO $$
-DECLARE con TEXT := ''; rejected BOOLEAN := FALSE;
+DECLARE n_active INT;
 BEGIN
-  BEGIN
-    INSERT INTO public.pickup_routes (operator_id, code, driver_id, vehicle_id, status)
-    VALUES ('aaaaaaaa-0000-4000-a000-000000000852','PR-VEH-DUP',
-            'aaaaaaaa-0000-4000-a000-000000000854',
-            '11111111-0000-4000-1000-000000000852','in_progress');
-  EXCEPTION WHEN unique_violation THEN
-    rejected := TRUE;
-    GET STACKED DIAGNOSTICS con = CONSTRAINT_NAME;
-  END;
-  IF NOT rejected THEN
-    RAISE EXCEPTION 'a second active route on the same vehicle was accepted (one truck, two trips)';
+  IF EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND indexname = 'uniq_pickup_routes_one_active_per_vehicle'
+  ) THEN
+    RAISE EXCEPTION 'uniq_pickup_routes_one_active_per_vehicle exists — it belongs to Task 8; during expand it blocks the second concurrent driver';
   END IF;
-  IF con <> 'uniq_pickup_routes_one_active_per_vehicle' THEN
-    RAISE EXCEPTION 'expected uniq_pickup_routes_one_active_per_vehicle to reject it, got %', con;
+
+  INSERT INTO public.pickup_routes (operator_id, code, driver_id, vehicle_id, status)
+  VALUES ('aaaaaaaa-0000-4000-a000-000000000852','PR-VEH-DUP',
+          'aaaaaaaa-0000-4000-a000-000000000854',
+          '11111111-0000-4000-1000-000000000852','in_progress');
+
+  SELECT COUNT(*) INTO n_active FROM public.pickup_routes
+   WHERE operator_id = 'aaaaaaaa-0000-4000-a000-000000000852'
+     AND vehicle_id = '11111111-0000-4000-1000-000000000852'
+     AND status = 'in_progress' AND deleted_at IS NULL;
+  IF n_active <> 2 THEN
+    RAISE EXCEPTION 'two drivers should be able to share a vehicle during expand, found % active routes', n_active;
   END IF;
+
+  -- Leave the fixture as the rest of the file expects it.
+  DELETE FROM public.pickup_routes WHERE code = 'PR-VEH-DUP';
 END $$;
 
 -- ─── 3. same driver, DIFFERENT vehicle → per-driver index must still reject ─
