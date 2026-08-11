@@ -176,13 +176,69 @@ the workflow test plan it enables lives in `docs/qa-test-scope.md` (spec-51).
 | `deploy-qa` fails with `sudo: a password is required` | The CI runner cannot restart the QA systemd units — see below |
 | Anything else | Re-run `bash infra/supabase-qa/setup-qa.sh` — every step is idempotent |
 
-## Known gap — CI cannot restart the QA app services
+## First-time provisioning needs root — `setup-qa.sh` alone is not enough
 
-`deploy-qa.sh` restarts the QA units with `sudo systemctl restart aureon-*-qa`.
-The production deploy scripts use the same pattern and work, so a passwordless
-sudoers rule exists for the prod units — but it does not cover the `-qa` ones.
-The job therefore fails at the restart step on any push that changes
-`apps/frontend/**`, `apps/agents/**`, or `apps/worker/**`:
+**This bit the environment once already.** Until 2026-08-10 the QA app tier had
+never run: `systemctl list-unit-files` showed only the production units, all
+three `aureon-*-qa` services were inactive, and ports 3200/3211 were dead.
+`setup-qa.sh` had been run but its `install_units` step could not have
+succeeded, because that step needs root and the comment above it wrongly assumed
+`aureon` already had blanket passwordless sudo for `systemctl`. The real sudoers
+files (`/etc/sudoers.d/aureon-worker`, `/etc/sudoers.d/aureon-agents`) are
+narrow and command-scoped — they never covered the QA units, and they certainly
+never covered `cp` into `/etc/systemd/system`.
+
+Two things are therefore required **once, as root**, on a fresh box:
+
+```bash
+# 1. Install and start the QA units (needs root: writes to /etc/systemd/system)
+cd /home/aureon/aureon-qa
+cp infra/supabase-qa/systemd/aureon-frontend-qa.service \
+   infra/supabase-qa/systemd/aureon-agents-qa.service \
+   infra/supabase-qa/systemd/aureon-worker-qa.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now aureon-frontend-qa aureon-agents-qa aureon-worker-qa
+```
+
+Build the apps first (`npm ci` at the repo root, then `npm run build` for
+`@aureon/frontend`, `@aureon/agents`, `@aureon/worker`) — the units run
+`dist/index.js` and `.next`, and will crash-loop without them.
+
+```bash
+# 2. Let the CI job restart those units later, without a password.
+#    Validate BEFORE installing — a malformed sudoers file locks out sudo.
+visudo -c -f /path/to/candidate && \
+  install -m 0440 -o root -g root /path/to/candidate /etc/sudoers.d/aureon-qa
+```
+
+The installed rule (mirroring the prod files' narrow style):
+
+```
+aureon ALL=(root) NOPASSWD: /usr/bin/systemctl restart aureon-frontend-qa, \
+  /usr/bin/systemctl restart aureon-agents-qa, \
+  /usr/bin/systemctl restart aureon-worker-qa, \
+  /usr/bin/systemctl is-active aureon-frontend-qa, \
+  /usr/bin/systemctl is-active aureon-agents-qa, \
+  /usr/bin/systemctl is-active aureon-worker-qa, \
+  /usr/bin/journalctl -u aureon-frontend-qa *, \
+  /usr/bin/journalctl -u aureon-agents-qa *, \
+  /usr/bin/journalctl -u aureon-worker-qa *
+```
+
+Both are done on the current VPS. Verify with
+`sudo -n -l /usr/bin/systemctl restart aureon-frontend-qa` as `aureon` — the
+same probe `deploy-qa.sh`'s `guard_sudo()` uses.
+
+Also note: `create-qa-users.sh` had not been run either, so only the migration's
+system user existed and **nobody could log in**. If `SELECT count(*) FROM
+public.users` returns 1, run it.
+
+## Resolved — CI can now restart the QA app services
+
+Historical note, kept because the symptom is distinctive. `deploy-qa.sh`
+restarts the QA units with `sudo systemctl restart aureon-*-qa`. Before
+`/etc/sudoers.d/aureon-qa` existed, the job failed on any push touching
+`apps/frontend/**`, `apps/agents/**` or `apps/worker/**` with:
 
 ```
 [...] restarting aureon-frontend-qa
@@ -190,21 +246,13 @@ sudo: a terminal is required to read the password
 sudo: a password is required
 ```
 
-**Consequence:** QA's *schema* stays current (migrations run through docker and
-psql, which need no sudo), but QA's *application code* silently stops tracking
-main. Do not trust a QA app behaviour test until this is fixed — you may be
-testing a stale build.
+QA's *schema* kept up to date regardless (migrations run through docker and
+psql, needing no privilege), but QA's *application code* silently stopped
+tracking main — so a QA app-behaviour test could be running against a stale
+build without saying so.
 
-**Fix** (must be done by the user on the VPS — this repo never edits host
-privilege configuration). Extend the existing sudoers rule to cover the QA
-units, e.g. via `visudo -f /etc/sudoers.d/aureon-qa`:
-
-```
-aureon ALL=(root) NOPASSWD: /bin/systemctl restart aureon-frontend-qa, \
-                            /bin/systemctl restart aureon-agents-qa, \
-                            /bin/systemctl restart aureon-worker-qa
-```
-
-Confirm the runner's user and the real `systemctl` path first (`which systemctl`
-— it is `/usr/bin/systemctl` on some images), and match however the existing
-prod rule is written.
+`deploy-qa.sh` now checks this up front in `guard_sudo()` before the expensive
+builds, using `sudo -n -l systemctl restart <unit>` — which asks whether that
+exact command is permitted without running it. Probing with a different verb
+(`is-active`) would report a failure that is not real once a command-scoped
+rule exists.
