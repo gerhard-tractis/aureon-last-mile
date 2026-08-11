@@ -565,6 +565,16 @@ Depart hub with vehicle → 2 clients / 3 cargas → scan packages → arrive �
 - ~~**Spec-number drift**~~ — **resolved 2026-08-11.** The rollout map's three unbuilt Ops-Control items moved to spec-53/54/55; the merged on-disk specs keep 47/48/49; spec-50 stays reserved.
 - ~~**`docs/specs/spec-47` status line**~~ — **resolved 2026-08-11**, corrected to `in progress` (awaiting user confirmation for `completed`).
 - **Dispatcher pre-planning UI** on top of the existing schema support.
+- **The forward-only guard is not globally authoritative — and must not be described as if it were.** `spec52_may_advance_status` protects exactly two paths: the `pickup_scans` and `reception_scans` triggers. Seven other code paths write `packages.status` directly and bypass it entirely:
+  - `hooks/distribution/useRedirectBatchScan.ts` (`retenido`)
+  - `hooks/distribution/useConsolidation.ts`
+  - `app/api/dispatch/routes/[id]/scan/route.ts`
+  - `app/api/dispatch/routes/[id]/route.ts`
+  - `app/api/dispatch/routes/[id]/packages/[pkgId]/route.ts`
+  - `app/api/dispatch/routes/[id]/dispatch/route.ts`
+  - `app/api/dispatch/routes/[id]/close/route.ts`
+
+  These are deliberate later-stage transitions (dispatch/distribution), not scan-driven, so they are out of spec-52's scope and are **not** known to be buggy. But nothing stops one of them regressing a package, and a reader who sees "forward-only guard" in the migration could reasonably assume the invariant holds table-wide. It does not. Making it table-wide would mean a `BEFORE UPDATE` trigger on `packages` — a much larger blast radius that deserves its own spec and its own audit of all seven call sites.
 
 ---
 ---
