@@ -4,12 +4,19 @@
 
 ## Numbering note
 
-`spec-48` and `spec-49` are each used for two different features:
-`docs/architecture/phased-rollout-strategy.md` reserves them for "Visibility
-preset" and "Late-order alerts", while PRs #363 and #364 shipped the VPS QA
-environment and the Easy WMS dispatch-guide URL under those numbers. `spec-50`
-remains reserved for DispatchTrack reconciliation. This spec takes **51** to
-avoid deepening the collision. Correcting the rollout map is separate work.
+**Resolved 2026-08-11 — this note is kept for history.**
+
+`spec-47`, `spec-48` and `spec-49` were each used for two different features.
+`docs/architecture/phased-rollout-strategy.md` reserved them for "Ops Control
+preset architecture", "Visibility preset" and "Late-order alerts", while PRs
+#347, #363 and #364 shipped Pickup Route & Consolidated Reception, the VPS QA
+environment, and the Easy WMS dispatch-guide URL under those numbers. (This
+note originally listed only 48 and 49 — the spec-47 collision was missed.)
+
+The rollout map has since been corrected: the three unbuilt Ops-Control items
+moved to **spec-53/54/55**, and the merged on-disk specs keep 47/48/49.
+`spec-50` remains reserved for DispatchTrack reconciliation. This spec keeps
+**51**.
 
 ## Context
 
