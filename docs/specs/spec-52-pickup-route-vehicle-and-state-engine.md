@@ -383,7 +383,7 @@ Row 7 replaces today's blanket `"Paquete no verificado en retiro"` rejection. Ro
 Row 7 counts toward `received_count` while `expected_count` was frozen at arrival, so **`received_count > expected_count` is expected behaviour**, not an anomaly. Today nothing handles this: `complete_route_reception` requires notes only when `received < expected` (`20260625000001:589-593`), and `FinalizeReceptionButton` mirrors that.
 
 Required:
-- `route_receptions` gains **`unexpected_count INT NOT NULL DEFAULT 0`**, incremented by the existing `trg_reception_scans_route_count` trigger (`20260625000001:289`, body at `:267-283`) via `CREATE OR REPLACE`.
+- `route_receptions` gains **`unexpected_count INT NOT NULL DEFAULT 0`**, incremented by the existing counting trigger via `CREATE OR REPLACE` of its **function**, `public.trg_reception_scans_route_received_count()` (`20260625000001:267-283`) — not the trigger `trg_reception_scans_route_count` (`:289`), which is only the binding.
 
 **How the trigger identifies a row-7 scan.** It cannot read one off the row: `reception_scans` has no unexpected flag, and rows 6 and 7 both write `scan_result = 'received'`. The trigger therefore **re-derives it server-side**:
 
@@ -463,7 +463,9 @@ TDD per `CLAUDE.md` — tests first, at every layer.
 |---|---|
 | `tests/spec47_close_route_zero_packages_fails.sql:38` | calls dropped `close_pickup_route` — **rewrite** against `open_route_reception` |
 | `tests/spec47_single_active_route_per_driver.sql:26,34,45,51` | inserts without `vehicle_id`; tests the old index predicate |
-| `tests/spec47_close_route_creates_route_reception.sql:44` | calls dropped RPC — rewrite for `open_route_reception` |
+| `tests/spec47_close_route_creates_route_reception.sql:44` | inserts without `vehicle_id`; and creates the batch via a **raw `status` flip**, not the RPC — so removing the trigger branch breaks it too. Rewrite for `open_route_reception`. |
+| `tests/spec47_complete_route_cascades_manifest_status.sql:55` | same raw-status-flip dependency — `route_receptions` row will not exist |
+| `tests/spec47_reception_scan_increments_count.sql:54` | same; raises `'route_receptions row missing after route close'` |
 | `tests/spec47_cancel_route_detaches_manifests.sql` | inserts without `vehicle_id` |
 | `tests/spec47_complete_route_cascades_manifest_status.sql` | inserts without `vehicle_id` |
 | `tests/spec47_reception_scan_increments_count.sql` | inserts without `vehicle_id` |
@@ -544,3 +546,447 @@ Depart hub with vehicle → 2 clients / 3 cargas → scan packages → arrive �
 - **Spec-number drift** — `docs/architecture/phased-rollout-strategy.md:219-221` assigns spec-48/49/50 to Ops Control visibility, late-order alerts and DispatchTrack reconciliation, but `docs/specs/` has spec-48 as the VPS QA environment and spec-49 as the Easy webhook guide URL. The same table also double-claims **spec-47** as "Ops Control preset architecture" while `docs/specs/spec-47` is Pickup Route & Consolidated Reception. Four numbers claimed by two different things; spec-50 is reserved but unwritten. Needs reconciling before anyone builds off that table.
 - **`docs/specs/spec-47` status line** — still says `backlog` despite being merged and live in production.
 - **Dispatcher pre-planning UI** on top of the existing schema support.
+
+---
+---
+
+# Implementation Plan
+
+> **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` (if subagents available) or `superpowers:executing-plans` to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Anchor pickup routes to a vehicle, move the end-of-trip trigger from the driver to the receptionist, and add the one missing trigger that unblocks the package/order status pipeline.
+
+**Architecture:** Seven database migrations applied bottom-up (additive first, breaking changes atomic with their test fixups) across Tasks 1-6 and 11, then seven frontend tasks (7-13). Each task ends green — a task that breaks an existing test fixes it in the same commit.
+
+**Tech Stack:** Postgres/Supabase (migrations + pgTAP), Next.js App Router, React Query, Vitest, Tailwind/shadcn.
+
+## Conventions for every task
+
+| Thing | Value |
+|---|---|
+| Migrations dir | `packages/database/supabase/migrations/` |
+| Migration naming | `YYYYMMDDHHMMSS_spec52_<slug>.sql` — this plan reserves `20260812000001`–`20260812000007` (latest existing is `20260810000002`, so ordering is monotonic) |
+| pgTAP dir | `packages/database/supabase/tests/` |
+| Frontend tests | colocated `*.test.ts(x)`, Vitest |
+| Run one frontend test | `npx vitest run <path> --reporter=verbose` (from `apps/frontend`) |
+| Run full CI locally | `npx turbo run lint type-check test:run build` |
+| Run a pgTAP file | `psql "$DATABASE_URL" -f packages/database/supabase/tests/<file>.sql` |
+
+**Important — pgTAP is not run by CI.** `.github/workflows/ci.yml` runs only lint, type-check, `test:run`, build. pgTAP files must be run manually against a local/branch database. **Never assume a green PR means the SQL is correct** — and per `deploy.yml`, the migration job is path-filtered, so also confirm the "Verify Production Migrations" drift job actually ran.
+
+**Two generated type files** must both be refreshed when an RPC signature changes: `packages/database/src/database.types.ts` and `apps/frontend/src/lib/types.ts` (`:1818,1825` declare the RPCs this spec changes).
+
+> ⚠️ **Do NOT run `npm run generate-types` while implementing this spec.** It is `supabase gen types typescript --project-id $SUPABASE_PROJECT_REF` — i.e. it generates against **production**, which will not contain any spec-52 migration until after deploy. Running it would overwrite both files with stale types and silently revert your work. Generate against a local `supabase db reset` or a branch database instead, and hand-apply the diff.
+
+**Rule for every commit:** `npx turbo run lint type-check test:run build` passes before you commit. A task that deletes a hook deletes its test in the same commit.
+
+---
+
+## Chunk 1: Database
+
+### Task 1: `vehicles` table
+
+Purely additive. Nothing references it yet.
+
+**Files:**
+- Create: `packages/database/supabase/migrations/20260812000001_spec52_vehicles_table.sql`
+- Create: `packages/database/supabase/tests/spec52_vehicles_rls.sql`
+
+- [ ] **Step 1: Write the failing pgTAP test**
+
+`spec52_vehicles_rls.sql` — model it on the existing `spec47_pickup_routes_rls.sql`. Assert: (a) the table exists, (b) operator A cannot select operator B's vehicle, (c) the partial unique index rejects a duplicate plate for the same operator but allows the same plate after soft-delete.
+
+- [ ] **Step 2: Run it, confirm it fails**
+
+`psql "$DATABASE_URL" -f packages/database/supabase/tests/spec52_vehicles_rls.sql`
+Expected: fails — relation `public.vehicles` does not exist.
+
+- [ ] **Step 3: Write the migration**
+
+```sql
+CREATE TABLE public.vehicles (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  operator_id  UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
+  plate        TEXT NOT NULL,
+  vehicle_type TEXT,
+  active       BOOLEAN NOT NULL DEFAULT true,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at   TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX uniq_vehicles_operator_plate
+  ON public.vehicles (operator_id, plate) WHERE deleted_at IS NULL;
+
+CREATE INDEX idx_vehicles_operator_active
+  ON public.vehicles (operator_id) WHERE active AND deleted_at IS NULL;
+
+ALTER TABLE public.vehicles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY vehicles_operator_isolation ON public.vehicles
+  FOR ALL USING (operator_id = public.get_operator_id())
+  WITH CHECK (operator_id = public.get_operator_id());
+
+COMMENT ON TABLE public.vehicles IS
+  'Operator-owned pickup fleet (spec-52). Distinct from fleet_vehicles, which mirrors DispatchTrack delivery vehicles and carries no plate data.';
+```
+
+Copy the `updated_at` trigger pattern from a neighbouring migration.
+
+- [ ] **Step 4: Re-run the test — expect PASS**
+- [ ] **Step 5: Commit** — `feat(spec-52): add operator-owned vehicles table`
+
+---
+
+### Task 2: forward-only guard + the missing pickup trigger
+
+**This is the highest-value task in the spec.** It closes the deadlocked pipeline.
+
+**Files:**
+- Create: `20260812000002_spec52_package_state_engine.sql`
+- Create: `packages/database/supabase/tests/spec52_state_engine.sql`
+
+- [ ] **Step 1: Write the failing tests** — five cases:
+  1. `verified` pickup scan moves a package `ingresado → verificado` and sets `status_updated_at`
+  2. a package at `en_ruta` re-scanned stays `en_ruta` (rank guard)
+  3. a package at `cancelado` scanned stays `cancelado` (**the rank-0 trap** — `pipeline_position` returns 0 for it, so a naive `>` comparison would promote it)
+  4. same for `extraviado`, `devuelto`, `dañado`, `retorno_hub`
+  5. **integration:** pickup scan → `verificado` → reception scan → `en_bodega` → `orders.status` rolls up via the *existing* `trg_recalculate_order_status`
+
+- [ ] **Step 2: Run, confirm cases 1 and 5 fail** (2–4 vacuously pass today because nothing moves at all — note this in the test comments so a later reader doesn't mistake them for coverage)
+
+- [ ] **Step 3: Write the migration**
+
+```sql
+-- Shared guard. Returns true when p_new may overwrite p_current.
+CREATE OR REPLACE FUNCTION public.spec52_may_advance_status(
+  p_current TEXT, p_new TEXT
+) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE
+    WHEN p_current IN ('cancelado','devuelto','dañado','extraviado','retorno_hub')
+      THEN false                                    -- terminal/exception: never overwrite
+    ELSE pipeline_position(p_new) > pipeline_position(p_current)
+  END;
+$$;
+
+COMMENT ON FUNCTION public.spec52_may_advance_status IS
+  'Forward-only guard (spec-52). The terminal check MUST precede the rank comparison: pipeline_position returns 0 for cancelado/devuelto/dañado/extraviado/retorno_hub, so a bare > would resurrect them.';
+
+CREATE OR REPLACE FUNCTION public.trg_pickup_scan_advance_package_status()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.scan_result = 'verified' AND NEW.package_id IS NOT NULL THEN
+    UPDATE public.packages
+       SET status = 'verificado', status_updated_at = NOW()
+     WHERE id = NEW.package_id
+       AND public.spec52_may_advance_status(status::text, 'verificado');
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_pickup_scan_advance_status
+  AFTER INSERT ON public.pickup_scans
+  FOR EACH ROW EXECUTE FUNCTION public.trg_pickup_scan_advance_package_status();
+```
+
+Then `CREATE OR REPLACE` the **existing** `trg_reception_scan_advance_package_status`, using its definition at `20260318000001:263-288` as the template (per the `CLAUDE.md` rule), adding `AND public.spec52_may_advance_status(status::text, 'en_bodega')` to its `WHERE`. Keep its `status_updated_at` write.
+
+**Do not touch `recalculate_order_status`.** It already handles the roll-up.
+
+- [ ] **Step 4: Re-run — all five pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): add pickup scan state trigger and forward-only guard`
+
+---
+
+### Task 3: vehicle FK, cancellation reason, indexes — and every test that breaks
+
+**Atomic.** `vehicle_id NOT NULL` breaks **seven** pgTAP files; they are fixed in this commit or the suite is red.
+
+**Files:**
+- Create: `20260812000003_spec52_pickup_routes_vehicle.sql`
+- Modify (**all seven** insert `pickup_routes` directly and break under `NOT NULL`): `tests/spec47_pickup_routes_rls.sql:62`, `spec47_single_active_route_per_driver.sql:26,34,45,51`, `spec47_cancel_route_detaches_manifests.sql`, `spec47_complete_route_cascades_manifest_status.sql`, `spec47_reception_scan_increments_count.sql`, `spec47_close_route_creates_route_reception.sql:44`, `spec47_close_route_zero_packages_fails.sql:25`
+- Create: `tests/spec52_vehicle_constraints.sql`
+
+> `spec47_close_route_zero_packages_fails.sql` is rewritten later in Task 5, but it must still be made to compile **here** — Task 3's "whole suite green" claim is otherwise false at this commit.
+
+- [ ] **Step 1: Write the failing test** (`spec52_vehicle_constraints.sql`): `start_pickup_route` rejects an inactive vehicle, a soft-deleted vehicle, and another operator's vehicle; both unique indexes raise on a second active route.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Migration** — backfill first, then constrain:
+  1. insert a per-operator placeholder `('SIN-REGISTRO', active=false)` for every operator that owns a `pickup_routes` row
+  2. `ALTER TABLE public.pickup_routes ADD COLUMN vehicle_id UUID REFERENCES public.vehicles(id)`, `ADD COLUMN cancellation_reason TEXT`
+  3. `UPDATE` all existing routes to the placeholder
+  4. `ALTER COLUMN vehicle_id SET NOT NULL`
+  5. drop `uniq_pickup_routes_one_active_per_driver`; recreate it with predicate `WHERE status = 'in_progress' AND deleted_at IS NULL` (drops `draft`); add `uniq_pickup_routes_one_active_per_vehicle` with the same predicate
+  6. `CREATE OR REPLACE start_pickup_route(p_vehicle_id UUID)` — validates the vehicle belongs to `get_operator_id()`, is `active`, and `deleted_at IS NULL`; keeps the existing `PR-YYYY-NNNN` allocation and 3-retry collision logic. **Narrow its internal active-route re-check** from `status IN ('draft','in_progress')` (`20260625000001:337`) to `'in_progress'`, or it reports "driver already has an active route" for a case the new index no longer covers. **`DROP FUNCTION` the old `(p_vehicle_label TEXT)` signature** — Postgres would otherwise keep both as overloads — and drop its now-dangling `COMMENT ON FUNCTION public.start_pickup_route(TEXT)` (`:350`).
+  7. `CREATE OR REPLACE cancel_pickup_route` writing `p_reason` into `cancellation_reason`
+- [ ] **Step 4: Fix all seven existing pgTAP files** — add `vehicle_id` to every direct `INSERT INTO public.pickup_routes`, creating a vehicle fixture per file. Update `spec47_single_active_route_per_driver.sql` for the narrowed predicate.
+- [ ] **Step 5: Run the whole pgTAP suite — all green**
+- [ ] **Step 6: Commit** — `feat(spec-52): anchor pickup routes to a vehicle FK`
+
+---
+
+### Task 4: production route reconciliation
+
+Separate migration so it can be reasoned about and rolled back independently of the schema change.
+
+**Files:**
+- Create: `packages/database/supabase/migrations/20260812000004_spec52_reconcile_open_routes.sql`
+- Create: `packages/database/supabase/tests/spec52_migration_reconciliation.sql`
+
+- [ ] **Step 1: Write the assertion test** — it must **seed its own fixtures matching the migration's predicates**, not the production rows. On a clean database `PR-2026-0001` and `PR-LEGACY-*` do not exist, so prod-keyed assertions would pass vacuously and prove nothing. Seed: one route `in_progress` with `started_at < '2026-08-01'` (expect cancelled + reason + manifest detached), one `in_progress` with a recent `started_at` (expect untouched), one `in_transit` (expect untouched).
+
+> The prod-row outcomes (`PR-LEGACY-00000[67]` still `in_transit`, `PR-2026-0001` cancelled) are a **manual post-deploy verification**, not a pgTAP assertion.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Migration** — idempotent and **keyed on data, not on hardcoded UUIDs** (the prod IDs are not present in a fresh local DB, so guard every statement with `WHERE EXISTS`):
+  - leave `in_transit` legacy routes alone (a receptionist can still finish them)
+  - cancel any route still `in_progress` with `started_at < '2026-08-01'`, set `cancellation_reason = 'ruta abandonada — migración spec-52'`, detach its manifests (`pickup_route_id = NULL`)
+- [ ] **Step 4: Re-run — PASS**
+- [ ] **Step 5: Commit** — `fix(spec-52): reconcile abandoned production pickup routes`
+
+**Do not backfill package statuses.** Reconstructing transition timestamps from scan history would fabricate data. The engine starts clean; the forward-only guard makes the first real scan safe.
+
+---
+
+### Task 5: receptionist trigger — `open_route_reception`, route lock, reopen
+
+**Atomic with the frontend removal of `CloseRouteButton`**, which is listed in this task's own Files block and Step 4 — dropping the RPC breaks the page build, so the SQL and the deletion land in **one** commit.
+
+**Files:**
+- Create: `20260812000005_spec52_receptionist_trigger.sql`
+- Create: `tests/spec52_open_route_reception.sql`, `tests/spec52_route_lock.sql`, `tests/spec52_reopen_route.sql`
+- **Rewrite (not delete — keep the coverage), all four:** `tests/spec47_close_route_zero_packages_fails.sql`, `tests/spec47_close_route_creates_route_reception.sql`, `tests/spec47_complete_route_cascades_manifest_status.sql:55`, `tests/spec47_reception_scan_increments_count.sql:54`
+
+> The last two are easy to miss. They never call `close_pickup_route` — they flip `pickup_routes.status` to `in_transit` **raw** and then read the `route_receptions` row that the trigger branch created. Once that branch is removed, the row does not exist: `spec47_reception_scan_increments_count.sql` raises `'route_receptions row missing after route close'` and the cascade assertions get a NULL id. Both must call `open_route_reception` instead of updating status directly.
+- Delete: `apps/frontend/src/components/pickup/CloseRouteButton.tsx` + `.test.tsx`, `hooks/pickup/useClosePickupRoute.ts` + `.test.ts`
+- Modify: `app/app/pickup/route/active/page.tsx` (lines 14, 17, 33, 67-77, 128-136)
+
+- [ ] **Step 1: Write the failing tests**
+  - `open_route_reception` creates the batch, stamps `in_transit_at`, sets `status='in_transit'`, sets manifests to `awaiting_reception`, freezes `expected_count` from `verified` pickup scans, sets `received_by = auth.uid()` and `delivered_by = route.driver_id`
+  - **idempotency:** a second call returns the same `route_receptions.id` and does **not** re-stamp `in_transit_at`
+  - rejects a `received` or `cancelled` route
+  - **route lock:** inserting a `pickup_scans` row for an `in_transit` route raises `55000`
+  - `reopen_pickup_route` reverts an empty batch; **raises** once any `reception_scans` exist; raises a **named** error (not a bare `23505`) when the driver or vehicle already has a replacement active route
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Migration**
+  - `CREATE OR REPLACE trg_pickup_routes_status_sync` — **remove the `→ in_transit` branch entirely** (`20260625000001:177-196`). It did two things: set manifests to `awaiting_reception` **and** create the batch. `open_route_reception` must now do **both**; omitting the manifest update is a silent failure that only surfaces at reception time.
+  - `open_route_reception(p_route_id UUID)` per the contract above, `SECURITY DEFINER`, granted to `authenticated`
+  - `reopen_pickup_route(p_route_id UUID)` with guards in order: (1) no `reception_scans`, (2) pre-check both active-route indexes, raising a named Spanish error. **Soft-delete the batch** (`UPDATE route_receptions SET deleted_at = NOW()`) — `CLAUDE.md` is soft-deletes-only, and the partial unique index at `20260625000001:196` is already `WHERE deleted_at IS NULL` so this works cleanly. **Consequently `open_route_reception`'s idempotency lookup must filter `deleted_at IS NULL`**, or a reopen-then-rescan returns the dead batch.
+  - `BEFORE INSERT` trigger on `pickup_scans` joining `manifests.pickup_route_id → pickup_routes.status`, raising `ERRCODE '55000'` when a route exists and its status ≠ `in_progress`.
+
+> **Do not write `IF v_status IS DISTINCT FROM 'in_progress'`.** Most manifests are scanned *before* being attached to a route, so `pickup_route_id` is `NULL` on the common path — that predicate would block every ordinary pickup scan and break several spec47 fixtures. The rule is: **`NULL` route → allow**; route present and not `in_progress` → raise. Add a pgTAP case for the unattached-manifest path.
+  - `DROP FUNCTION public.close_pickup_route(UUID)`
+- [ ] **Step 4: Frontend** — delete the two components/hooks and their tests; strip the close wiring from `route/active/page.tsx`; fix `page.test.tsx:19,48-49` (mocks the deleted hook and asserts `vehicle_label`)
+- [ ] **Step 5: Update both type files by hand** (or from a local DB — see the Conventions warning; never regenerate against prod here). Remove `close_pickup_route`, update `start_pickup_route`, add `open_route_reception` and `reopen_pickup_route`.
+- [ ] **Step 6: Run pgTAP + `npx turbo run lint type-check test:run build`**
+- [ ] **Step 7: Commit** — `feat(spec-52)!: receptionist QR scan opens reception; remove driver close step`
+
+---
+
+### Task 6: unexpected count + the notes rule
+
+**Files:**
+- Create: `20260812000006_spec52_unexpected_count.sql`
+- Create: `tests/spec52_unexpected_count.sql`
+
+- [ ] **Step 1: Write the failing tests** — four cases:
+  1. a scan **with** a `verified` pickup scan on the route does *not* increment `unexpected_count`
+  2. a scan **without** one does
+  3. `complete_route_reception` demands notes on under-count and on over-count
+  4. **the offsetting case:** 10 expected · 10 received · 1 unexpected still demands notes. *This is the regression the rule exists to prevent — a naive `received <> expected` check passes it silently.*
+  5. accepts without notes **only** when `matched_count = expected_count AND unexpected_count = 0`
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Migration**
+  - `ALTER TABLE public.route_receptions ADD COLUMN unexpected_count INT NOT NULL DEFAULT 0`
+  - `CREATE OR REPLACE FUNCTION public.trg_reception_scans_route_received_count()` (template: `20260625000001:267-283`) — on a `received` scan, also increment `unexpected_count` when:
+
+> **Name the function, not the trigger.** `trg_reception_scans_route_count` is the **trigger** (`:289`); the **function** is `trg_reception_scans_route_received_count` (`:267`). Replacing the trigger name creates a brand-new function that nothing ever invokes — `unexpected_count` would stay 0 forever and the failure would look like a mysterious test failure rather than a typo.
+
+```sql
+NOT EXISTS (
+  SELECT 1 FROM public.pickup_scans ps
+  JOIN public.manifests m ON m.id = ps.manifest_id
+  WHERE ps.package_id = NEW.package_id
+    AND m.pickup_route_id = v_route_id      -- from route_receptions.pickup_route_id
+    AND ps.scan_result = 'verified'
+)
+```
+
+  The trigger reaches `v_route_id` through `NEW.reception_id → route_receptions.pickup_route_id`. This uses `pickup_scans.manifest_id` directly and so does **not** duplicate the validator's `external_load_id` join — the two ask different questions.
+  - `CREATE OR REPLACE complete_route_reception` — replace the `received < expected` check (`20260625000001:589-593`) with:
+
+```sql
+v_matched := v_reception.received_count - v_reception.unexpected_count;
+IF (v_matched <> v_reception.expected_count OR v_reception.unexpected_count > 0)
+   AND (p_discrepancy_notes IS NULL OR btrim(p_discrepancy_notes) = '') THEN
+  RAISE EXCEPTION 'Se requieren notas de discrepancia';
+END IF;
+```
+
+  - **Manifest closure — currently unimplemented.** `trg_route_receptions_status_sync`'s `completed` branch (`20260625000001:242-249`) sets **only** `reception_status = 'received'`. `CREATE OR REPLACE` it to set `status = 'completed'`, `completed_at = NOW()` and `reception_status = 'received'` in the **same** `UPDATE` — one statement keeps `trg_manifest_reception_status` (`20260318000001:295-319`) benign, since it is guarded by `IF NEW.reception_status IS NULL`. Add the pgTAP case asserting both `status` and `completed_at`.
+
+- [ ] **Step 4: Re-run — all pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): track unexpected packages, close manifests, fix offsetting discrepancies`
+
+---
+
+## Chunk 2: Frontend
+
+### Task 7: reception scan validator — the 7-row discriminator
+
+Do this **before** the UI tasks: the reception screens depend on its result shape.
+
+**Files:**
+- Modify: `apps/frontend/src/lib/reception/reception-scan-validator.ts`
+- Modify: `apps/frontend/src/hooks/reception/useReceptionScan.ts` (pass `routeId`)
+- Modify: `apps/frontend/src/components/reception/ReceptionScanner.tsx:129-163` — `ScanFeedbackBanner` handles `'received'` (132) and `'duplicate'` (143); `route_mismatch` must be split out of the `not_found` fallback at ~155-163, or it shows no "camión equivocado" message. `scanResult` is typed `string`, so this is **not** caught by type-check.
+- Test: `apps/frontend/src/lib/reception/reception-scan-validator.test.ts`, `components/reception/ReceptionScanner.test.tsx`
+
+- [ ] **Step 1: Write one failing test per discriminator row** (7 rows), plus the NULL-`external_load_id` fall-through. Name each test after its row number so the mapping stays obvious.
+- [ ] **Step 2: `npx vitest run src/lib/reception/reception-scan-validator.test.ts` — confirm fail**
+- [ ] **Step 3: Implement**
+  - add `'route_mismatch'` to the `ReceptionScanResult` union (line 3)
+  - accept `routeId` in the input
+  - resolve membership with the join below — **there is no FK from `orders` to `manifests`**, so this is a string match and the `operator_id` predicate is **required** (`external_load_id` alone is not unique):
+
+```
+packages.order_id → orders
+orders.external_load_id = manifests.external_load_id
+  AND orders.operator_id = manifests.operator_id
+manifests.pickup_route_id = :routeId
+```
+
+  - `orders.external_load_id` is **nullable** → row 3: `not_found`, `"Paquete sin carga asociada"`
+  - **keep** the `ALREADY_RECEIVED_STATUSES` guard (lines 20-25, 80-87) as row 4. It is a **12-value list including `cancelado`/`devuelto`/`dañado`/`extraviado`** — rank 0, *not* "beyond `en_bodega`". Reference the constant; do not re-derive it from `pipeline_position`.
+  - **remove** the blanket `PRE_VERIFICADO_STATUSES` rejection (lines 71-78) — replaced by row 7 (`received`, flagged unexpected). **Delete the now-orphaned `PRE_VERIFICADO_STATUSES` constant at line 28** or `@typescript-eslint/no-unused-vars` fails `npx turbo run lint`.
+  - **Rows 1-2 keep today's evaluation order.** The existing code checks `duplicate` (line 46) *before* `not_found` (line 59). The discriminator table reads 1→7, but reordering those two to match would change duplicate-detection for unknown barcodes. Preserve the current order; the table is a rule list, not an execution sequence for rows 1-2.
+- [ ] **Step 4: Tests pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): route-scoped reception scan discriminator`
+
+---
+
+### Task 8: `VehicleSelect` and the start-route sheet
+
+**Files:**
+- Create: `components/pickup/VehicleSelect.tsx` + `.test.tsx`
+- Create: `hooks/pickup/useVehicles.ts` + `.test.ts`
+- Modify: `components/pickup/StartRouteButton.tsx`, `hooks/pickup/useStartPickupRoute.ts`
+- Modify: `hooks/pickup/useStartPickupRoute.test.ts:40` — currently asserts `{ p_vehicle_label: 'AAA-111' }`
+- Modify: `hooks/pickup/useActivePickupRoute.ts:32` — `.in('status', ['draft','in_progress'])` → `.eq('status','in_progress')`
+
+- [ ] **Step 1: Failing tests** — `VehicleSelect` lists only `active && !deleted_at` vehicles; inline plate creation inserts and selects the new vehicle; the sheet cannot be submitted without a vehicle; `useStartPickupRoute` sends `p_vehicle_id`.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Implement.** Combobox over `useVehicles()`, plus a "registrar patente" affordance that writes to `vehicles` and selects the result — this is what lets a paper-and-Excel tenant start on day one without a fleet-registry project.
+- [ ] **Step 4: Tests pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): require a vehicle when starting a pickup route`
+
+---
+
+### Task 9: persistent QR access
+
+**Files:**
+- Modify: `components/pickup/ActiveRouteBanner.tsx` + `.test.tsx`
+- Modify: `app/app/pickup/page.tsx:188` + `page.test.tsx` — the banner's props are `{ code, startedAt, manifestCount }` (`ActiveRouteBanner.tsx:6-10`) with **no `routeId`**, so adding the QR link forces a prop change that breaks the caller at type-check time.
+
+- [ ] **Step 1: Failing test** — the banner exposes a QR affordance whenever a route is `in_progress`, linking to `/app/pickup/route/[routeId]/qr`.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Implement.** The QR page itself is unchanged; only its reachability changes — it must be one tap away for the whole trip, because the receptionist may need it the moment the truck reaches the dock.
+- [ ] **Step 4: Tests pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): expose route QR for the whole trip`
+
+---
+
+### Task 10: reception tabs, preview page, receive-without-QR
+
+The largest frontend task. Contains the regression fix.
+
+**Files:**
+- Modify: `hooks/reception/useIncomingRoutes.ts` (+ `.test.ts:40,73`)
+- Modify: `app/app/reception/page.tsx:19-26,54-58` (+ `page.test.tsx:8,13`)
+- Modify: `components/reception/RouteQRScannerEntry.tsx` (+ test)
+- Modify: `components/reception/IncomingRoutesList.tsx` (+ `.test.tsx:12`)
+- Create: `app/app/reception/route/[routeId]/preview/page.tsx`
+- Create: `components/reception/RoutePreviewCard.tsx` + `.test.tsx`
+- Create: `components/reception/ReceiveWithoutQRButton.tsx` + `.test.tsx`
+- Create: `hooks/reception/useOpenRouteReception.ts` + `.test.ts`
+- Create: `hooks/reception/useReopenRouteReception.ts` + `.test.ts`
+- Create: `components/reception/ReopenRouteButton.tsx` + `.test.tsx`
+- Modify: `app/app/reception/route/[routeId]/page.tsx` — mount `ReopenRouteButton`
+
+- [ ] **Step 1: Failing tests**
+  - `useIncomingRoutes` accepts `'in_progress' | 'in_transit' | 'received'` — the union at line 33 is currently closed to two values
+  - "Rutas entrantes" lists `in_progress`; a new "En descarga" tab lists `in_transit`; "Completadas" and "Retornos" unchanged (four tabs total)
+  - `IncomingRoutesList`: an `in_progress` row navigates to `/preview` and fires **no** RPC; an `in_transit` row goes to the session
+  - `RouteQRScannerEntry` accepts `in_progress`, rejects `received`/`cancelled`
+  - `ReceiveWithoutQRButton` calls nothing until the confirmation dialog is accepted
+  - `ReopenRouteButton` — visible only while `received_count = 0`, calls `reopen_pickup_route`, surfaces the named "ya tiene una ruta activa" error legibly. **Without this the recovery path the design calls essential ships unreachable**: Task 5 creates the RPC, and nothing would ever call it.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Implement**
+  - **Why the tab split is mandatory:** a route now reaches `in_transit` only *after* the receptionist scans it, so leaving "Rutas entrantes" on `in_transit` would hide every truck still on the road and silently redefine the tab as "being unloaded."
+  - `RouteQRScannerEntry` stops reading `pickup_routes` directly and calls `open_route_reception`.
+  - **`in_progress` rows are read-only.** Do **not** call `open_route_reception` on mount: these are trucks still out collecting, and one stray tap would stamp a false arrival, freeze `expected_count` mid-trip, and lock the driver out of scanning with no recovery. Opening requires the QR or the confirmed `ReceiveWithoutQRButton`. **The trip must never end by accident.**
+- [ ] **Step 4: Tests pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): split reception tabs and add read-only route preview`
+
+---
+
+### Task 11: plate everywhere, unexpected count in the header
+
+**Files:**
+- Modify: `hooks/reception/useRouteReceptionSnapshot.ts:9` (+ `.test.ts:32`) — add `unexpected_count` and the plate to the typed interface. **The RPC needs no change**: `get_route_reception_snapshot` returns `to_jsonb(rr.*)` (`20260625000001:520-522`), so the new column flows through automatically.
+- Modify: `hooks/reception/useIncomingRoutes.ts:9,19,44,62`, `components/reception/IncomingRoutesList.tsx:40`, `app/app/reception/route/[routeId]/page.tsx:124` (+ `page.test.tsx:37`, which asserts `vehicle_label`), `app/app/pickup/route/active/page.tsx:85`
+- Modify: `components/reception/RouteReceptionHeader.tsx`, `components/reception/FinalizeReceptionButton.tsx` (+ tests)
+- Create: `packages/database/supabase/migrations/20260812000007_spec52_snapshot_vehicle_plate.sql` — `CREATE OR REPLACE get_route_reception_snapshot` joining `vehicles` and returning `plate`
+- Create: `packages/database/supabase/tests/spec52_snapshot_plate.sql`
+
+> **This is a 7th migration and it lands in the frontend PR.** Either move it into the database PR, or verify the `deploy.yml` path filter actually triggers the migration job for that PR — the plan warns about exactly this failure mode elsewhere.
+
+- [ ] **Step 1: Failing tests** — nothing renders `vehicle_label`; the header shows `8/10 esperados · 1 inesperado`; `FinalizeReceptionButton` demands notes on under-count, over-count, **and the offsetting case**.
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Implement.** All five read sites switch to the plate. The header must **not** show a single fraction — `expected_count` and `received_count` now count different populations, so `matched/expected` plus a separate unexpected callout is the only honest display.
+- [ ] **Step 4: Tests pass**
+- [ ] **Step 5: Commit** — `feat(spec-52): show vehicle plate and unexpected package count`
+
+---
+
+### Task 12: file-size compliance + QA scope
+
+**Files:**
+- Create: `components/pickup/PickupManifestTabs.tsx` + `.test.tsx`
+- Modify: `app/app/pickup/page.tsx` (356 lines — over the 300-line rule in `CLAUDE.md`)
+- Modify: `docs/qa-test-scope.md` — row **2.6** (line 63) is written around `close_pickup_route`, and row **2.5** (line 62) is also stale (`start_pickup_route` → `draft`: both the status and the RPC signature change)
+- Sprint status: **`docs/sprint-status.yaml` no longer exists** — `git ls-files` has no such path; it was removed after `45d9d1d` and survives only in stale worktree copies. `CLAUDE.md`'s feature workflow still names it. **Ask the user where sprint status lives now; do not recreate the file blindly.**
+- Modify: `docs/specs/spec-52-…md` — flip `**Status:**` to `in progress` on the first implementation commit
+
+- [ ] **Step 1: Failing test** for `PickupManifestTabs` (tab switching, client filter)
+- [ ] **Step 2: Run, confirm fail**
+- [ ] **Step 3: Extract** the tab/filter logic. Scoped to the file already being edited — not a refactor sweep. Verify `page.tsx` is now under 300 lines.
+- [ ] **Step 4: Update `qa-test-scope.md` rows 2.5 and 2.6** for the receptionist-triggered flow, and update `docs/sprint-status.yaml`. **Coordinate with the spec-51 QA work** — it has several live branches touching that file.
+- [ ] **Step 5: Full CI green**
+- [ ] **Step 6: Commit** — `refactor(spec-52): extract PickupManifestTabs; update QA scope`
+
+---
+
+### Task 13: end-to-end
+
+**Files:** Create the E2E under the existing test setup.
+
+- [ ] **Step 1: Write the E2E**
+
+Depart hub with a vehicle → visit 2 clients, add 3 cargas → scan packages → arrive → receptionist scans QR → scan packages **flat and deliberately out of carga order** → finalize.
+
+Assert: packages `en_bodega`; orders rolled up by the existing trigger; manifests `completed` with `completed_at`; route `received`; `in_transit_at` ≈ QR scan time; `received_at` ≈ finalize time.
+
+- [ ] **Step 2: Run it — expect green if Tasks 1-12 are correct**
+- [ ] **Step 3: Commit** — `test(spec-52): end-to-end pickup route and consolidated reception`
+
+---
+
+## Execution notes
+
+**Suggested PR split** — Tasks 1-6 (database) and Tasks 7-13 (frontend) as two PRs. Task 5 is the one hard coupling: its SQL and the `CloseRouteButton` deletion must land together, so it anchors the boundary.
+
+**Serialise, do not parallelise.** An earlier draft claimed Tasks 8, 9 and 12 touch disjoint files. They do not — **all three edit `app/app/pickup/page.tsx`**: Task 8 the `StartRouteButton` (line 194), Task 9 the `ActiveRouteBanner` (line 188), Task 12 the tabs/filter extraction (lines 209, 234-334). Run them in order, with Task 12 last so the extraction absorbs the other two's edits. Tasks 10 and 11 likewise share `useIncomingRoutes` and `IncomingRoutesList`.
+
+**Verify before claiming done** (per `CLAUDE.md`): `gh pr checks <N>` green **and** `gh pr view <N> --json state,mergedAt` merged. Remember pgTAP does not run in CI — run it manually and say so explicitly in the PR body, and confirm the "Verify Production Migrations" drift job actually executed rather than being skipped by the path filter.
