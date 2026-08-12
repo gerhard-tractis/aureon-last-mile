@@ -4,16 +4,29 @@
 -- has NO verified pickup scan on this route. spec-52 accepts it as 'received'
 -- and flags it UNEXPECTED, so received_count > expected_count is normal.
 --
+-- SCOPE — READ BEFORE EDITING CASES 4 AND 5. The migration adds and populates
+-- unexpected_count but DOES NOT yet enforce it: complete_route_reception keeps
+-- its spec-47 guard (notes required only when received_count < expected_count).
+-- That deferral is deliberate and argued in full at 20260812000006 PART 3 — in
+-- short, the shipped FinalizeReceptionButton opens its notes modal on
+-- `received < expected` alone and cannot see unexpected_count, so tightening
+-- the server guard now makes the offsetting reception UNFINISHABLE. Cases 4
+-- and 5 therefore assert TODAY's behaviour, marked `TASK 8:` with what must
+-- replace them when the contract phase lands the guard and the UI together.
+-- They are kept, not deleted, so those scenarios stay visible.
+--
 -- This file pins:
 --   1. a reception scan for a package WITH a verified pickup scan on this route
 --      does NOT bump unexpected_count
 --   2. a reception scan for a package WITHOUT one DOES
 --   3. complete_route_reception demands notes on an under-count
---   4. ...and on an over-count
---   5. ...and on the OFFSETTING case (10 expected / 10 received / 1 unexpected),
---      where a naive `received_count <> expected_count` rule would wave the
---      discrepancy through. THIS IS THE REGRESSION THE RULE EXISTS TO PREVENT.
---   6. it accepts without notes ONLY when matched = expected AND unexpected = 0
+--   4. TODAY: an over-count finalizes WITHOUT notes  (TASK 8: must demand them)
+--   5. TODAY: the OFFSETTING case (10 expected / 10 received / 1 unexpected)
+--      finalizes WITHOUT notes, because received_count = expected_count.
+--      TASK 8: must demand them — matched = received - unexpected = 9 <> 10:
+--      one expected package never arrived AND one from another truck did.
+--      THIS IS THE SCENARIO THE EVENTUAL RULE EXISTS TO CATCH.
+--   6. a clean batch finalizes without notes and invents none
 --   7. received_count still increments in every case (spec-47 behaviour intact)
 --   8. completing the batch closes the manifests (status + completed_at)
 --
@@ -144,10 +157,7 @@ END $$;
 -- CASE 1/2 + 7 — the counting trigger, scanned step by step on route 1
 -- ---------------------------------------------------------------------------
 DO $$
-DECLARE
-  v_rr   UUID;
-  v_recv INT;
-  v_unex INT;
+DECLARE v_rr UUID; v_recv INT; v_unex INT;
 BEGIN
   SELECT id INTO v_rr FROM public.route_receptions
    WHERE pickup_route_id = '11111111-0000-4000-1000-000000000001';
@@ -164,12 +174,8 @@ BEGIN
 
   SELECT received_count, unexpected_count INTO v_recv, v_unex
     FROM public.route_receptions WHERE id = v_rr;
-  IF v_recv <> 1 THEN
-    RAISE EXCEPTION 'received_count should be 1 after the first scan, got %', v_recv;
-  END IF;
-  IF v_unex <> 0 THEN
-    RAISE EXCEPTION 'a package with a verified pickup scan on this route must NOT be unexpected, got unexpected_count=%', v_unex;
-  END IF;
+  IF v_recv <> 1 THEN RAISE EXCEPTION 'received_count should be 1 after the first scan, got %', v_recv; END IF;
+  IF v_unex <> 0 THEN RAISE EXCEPTION 'a package WITH a verified pickup scan must not be unexpected, got %', v_unex; END IF;
 
   -- CASE 2 — package WITHOUT a verified pickup scan on this route.
   INSERT INTO public.reception_scans (reception_id, package_id, operator_id, barcode, scan_result, scanned_at)
@@ -178,12 +184,8 @@ BEGIN
 
   SELECT received_count, unexpected_count INTO v_recv, v_unex
     FROM public.route_receptions WHERE id = v_rr;
-  IF v_recv <> 2 THEN
-    RAISE EXCEPTION 'received_count must still increment for an unexpected package, got %', v_recv;
-  END IF;
-  IF v_unex <> 1 THEN
-    RAISE EXCEPTION 'a package with no verified pickup scan on this route must count as unexpected, got unexpected_count=%', v_unex;
-  END IF;
+  IF v_recv <> 2 THEN RAISE EXCEPTION 'received_count must still increment for an unexpected package, got %', v_recv; END IF;
+  IF v_unex <> 1 THEN RAISE EXCEPTION 'a package with NO verified pickup scan must count as unexpected, got %', v_unex; END IF;
 END $$;
 
 -- CASE 7 — received_count / unexpected_count / expected_count across all routes
@@ -217,70 +219,79 @@ SELECT set_config('request.jwt.claims',
   true);
 
 -- ---------------------------------------------------------------------------
--- CASE 3/4/5 — complete_route_reception demands discrepancy notes
+-- CASE 3 — an under-count still demands discrepancy notes (spec-47 guard)
 -- ---------------------------------------------------------------------------
 DO $$
-DECLARE
-  c        RECORD;
-  rejected BOOLEAN;
+DECLARE rejected BOOLEAN := FALSE;
+BEGIN
+  BEGIN PERFORM public.complete_route_reception('11111111-0000-4000-1000-000000000002'::uuid);
+  EXCEPTION WHEN OTHERS THEN rejected := TRUE;
+  END;
+  IF NOT rejected THEN RAISE EXCEPTION 'notes must be demanded on an under-count (2 expected, 1 received)'; END IF;
+
+  -- ...and must succeed once the receptionist explains it.
+  PERFORM public.complete_route_reception('11111111-0000-4000-1000-000000000002'::uuid, 'Discrepancia registrada');
+  IF (SELECT status FROM public.route_receptions
+       WHERE pickup_route_id = '11111111-0000-4000-1000-000000000002') <> 'completed' THEN
+    RAISE EXCEPTION 'complete_route_reception with notes must complete the under-count batch';
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- CASE 4/5 — over-count and the OFFSETTING case: TODAY they finalize WITHOUT
+-- notes, because the spec-47 guard only fires on received_count < expected.
+--
+-- TASK 8 (contract phase, with the FinalizeReceptionButton change): both must
+-- FAIL without notes once complete_route_reception enforces
+--     matched := received_count - unexpected_count
+--     notes required when matched <> expected_count OR unexpected_count > 0
+-- Then replace this loop body with the CASE 3 shape — bare call raises, call
+-- with notes completes. Fixtures are already built for it: route 3 is 1/2/1
+-- (matched 1, unexpected > 0), route 4 the offsetting 10/10/1 (matched 9 <>
+-- 10). Do not delete these routes. Route 4 is the scenario the eventual rule
+-- exists to catch AND the reason it cannot ship yet: the shipped UI compares
+-- received to expected, sees 10 = 10, never opens the notes modal, and would
+-- call this RPC with NULL notes forever.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE c RECORD; v_rr public.route_receptions;
 BEGIN
   FOR c IN
     SELECT * FROM (VALUES
-      ('11111111-0000-4000-1000-000000000002'::uuid, 'under-count (2 expected, 1 received)'),
       ('11111111-0000-4000-1000-000000000003'::uuid, 'over-count (1 expected, 2 received, 1 unexpected)'),
-      -- CASE 5 — THE OFFSETTING CASE. 10 expected, 10 received, 1 unexpected:
-      -- received_count = expected_count, so a naive `received <> expected`
-      -- guard passes it silently — yet one expected package never arrived AND
-      -- one package that belongs on another truck did. matched_count
-      -- (= received - unexpected) is 9, not 10. Notes are MANDATORY.
-      ('11111111-0000-4000-1000-000000000004'::uuid, 'OFFSETTING: 10 expected, 10 received, 1 unexpected')
+      ('11111111-0000-4000-1000-000000000004'::uuid, 'OFFSETTING (10 expected, 10 received, 1 unexpected)')
     ) AS t(route, label)
   LOOP
-    rejected := FALSE;
-    BEGIN
-      PERFORM public.complete_route_reception(c.route);
-    EXCEPTION WHEN OTHERS THEN rejected := TRUE;
-    END;
-    IF NOT rejected THEN
-      RAISE EXCEPTION 'complete_route_reception must demand discrepancy_notes — %', c.label;
+    v_rr := public.complete_route_reception(c.route);
+    IF v_rr.status <> 'completed' THEN
+      RAISE EXCEPTION 'TODAY the spec-47 guard must let this through without notes — % (got status %)', c.label, v_rr.status;
     END IF;
-
-    -- ...and must succeed once the receptionist explains it.
-    PERFORM public.complete_route_reception(c.route, 'Discrepancia registrada');
-    IF (SELECT status FROM public.route_receptions WHERE pickup_route_id = c.route) <> 'completed' THEN
-      RAISE EXCEPTION 'complete_route_reception with notes must complete the batch — %', c.label;
+    IF v_rr.discrepancy_notes IS NOT NULL THEN
+      RAISE EXCEPTION 'no notes were passed, none should have been invented — % (got %)', c.label, v_rr.discrepancy_notes;
+    END IF;
+    -- The tally IS enforced now even though the guard is not.
+    IF v_rr.unexpected_count <> 1 THEN
+      RAISE EXCEPTION 'unexpected_count must be 1 — % (got %)', c.label, v_rr.unexpected_count;
     END IF;
   END LOOP;
 END $$;
 
 -- ---------------------------------------------------------------------------
--- CASE 6 — accepted without notes ONLY when matched = expected AND unexpected = 0
+-- CASE 6 — a clean batch (matched = expected, unexpected = 0) needs no notes
 -- CASE 8 — completing the batch closes the manifests
 -- ---------------------------------------------------------------------------
 DO $$
-DECLARE
-  v_rr  public.route_receptions;
-  v_man public.manifests;
+DECLARE v_rr public.route_receptions; v_man public.manifests;
 BEGIN
   v_rr := public.complete_route_reception('11111111-0000-4000-1000-000000000005'::uuid);
-  IF v_rr.status <> 'completed' THEN
-    RAISE EXCEPTION 'a clean reception must complete without notes, got status %', v_rr.status;
-  END IF;
-  IF v_rr.discrepancy_notes IS NOT NULL THEN
-    RAISE EXCEPTION 'a clean reception must not invent notes, got %', v_rr.discrepancy_notes;
-  END IF;
+  IF v_rr.status <> 'completed' THEN RAISE EXCEPTION 'a clean reception must complete without notes, got %', v_rr.status; END IF;
+  IF v_rr.discrepancy_notes IS NOT NULL THEN RAISE EXCEPTION 'a clean reception must not invent notes: %', v_rr.discrepancy_notes; END IF;
 
   SELECT * INTO v_man FROM public.manifests
    WHERE id = 'eeeeeeee-0000-4000-e000-000000000005';
-  IF v_man.reception_status IS DISTINCT FROM 'received' THEN
-    RAISE EXCEPTION 'manifest reception_status should be received, got %', v_man.reception_status;
-  END IF;
-  IF v_man.status::text <> 'completed' THEN
-    RAISE EXCEPTION 'manifest status should be completed after reception, got %', v_man.status;
-  END IF;
-  IF v_man.completed_at IS NULL THEN
-    RAISE EXCEPTION 'manifest completed_at should be stamped after reception';
-  END IF;
+  IF v_man.reception_status IS DISTINCT FROM 'received' THEN RAISE EXCEPTION 'manifest reception_status should be received, got %', v_man.reception_status; END IF;
+  IF v_man.status::text <> 'completed' THEN RAISE EXCEPTION 'manifest status should be completed, got %', v_man.status; END IF;
+  IF v_man.completed_at IS NULL THEN RAISE EXCEPTION 'manifest completed_at not stamped'; END IF;
 END $$;
 
 SELECT set_config('request.jwt.claims', '{}', true);

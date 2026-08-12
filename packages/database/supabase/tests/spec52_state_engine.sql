@@ -136,9 +136,7 @@ BEGIN
       FROM public.packages WHERE id = r.pkg_id
        AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
 
-    IF v_status IS DISTINCT FROM r.expected THEN
-      RAISE EXCEPTION 'guard: package at % was moved to % by a pickup scan', r.expected, v_status;
-    END IF;
+    IF v_status IS DISTINCT FROM r.expected THEN RAISE EXCEPTION 'guard: package at % moved to %', r.expected, v_status; END IF;
   END LOOP;
 END $$;
 
@@ -163,9 +161,7 @@ BEGIN
    WHERE operator_id = 'aaaaaaaa-0000-4000-a000-000000000552'
      AND id IN ('dddddddd-0000-4000-d000-000000000008','dddddddd-0000-4000-d000-000000000009');
 
-  IF v_status IS DISTINCT FROM 'ingresado,ingresado' THEN
-    RAISE EXCEPTION 'case 5: duplicate/not_found scans changed status, got %', v_status;
-  END IF;
+  IF v_status IS DISTINCT FROM 'ingresado,ingresado' THEN RAISE EXCEPTION 'case 5: duplicate/not_found changed status: %', v_status; END IF;
 END $$;
 
 -- ---------------------------------------------------------------------------
@@ -196,9 +192,7 @@ BEGIN
   SELECT status::text INTO v_order FROM public.orders
    WHERE id = 'cccccccc-0000-4000-c000-00000000055b'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF v_order = 'en_bodega' THEN
-    RAISE EXCEPTION 'case 6: order was already en_bodega before the scans ran';
-  END IF;
+  IF v_order = 'en_bodega' THEN RAISE EXCEPTION 'case 6: order already en_bodega'; END IF;
 
   -- Link 1: pickup scan -> verificado
   INSERT INTO public.pickup_scans (operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at)
@@ -208,16 +202,12 @@ BEGIN
   SELECT status::text INTO v_pkg FROM public.packages
    WHERE id = 'dddddddd-0000-4000-d000-00000000000b'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF v_pkg IS DISTINCT FROM 'verificado' THEN
-    RAISE EXCEPTION 'case 6 link 1: package is % not verificado', v_pkg;
-  END IF;
+  IF v_pkg IS DISTINCT FROM 'verificado' THEN RAISE EXCEPTION 'case 6 link 1: package is % not verificado', v_pkg; END IF;
 
   SELECT status::text INTO v_order FROM public.orders
    WHERE id = 'cccccccc-0000-4000-c000-00000000055b'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF v_order IS DISTINCT FROM 'verificado' THEN
-    RAISE EXCEPTION 'case 6 link 1: order rolled up to % not verificado', v_order;
-  END IF;
+  IF v_order IS DISTINCT FROM 'verificado' THEN RAISE EXCEPTION 'case 6 link 1: order is % not verificado', v_order; END IF;
 
   -- Close the route so route_receptions exists (spec-47 behaviour).
   UPDATE public.pickup_routes SET status = 'in_transit', in_transit_at = NOW()
@@ -227,9 +217,7 @@ BEGIN
   SELECT id INTO rr_id FROM public.route_receptions
    WHERE pickup_route_id = '33333333-0000-4000-3000-000000000552'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF rr_id IS NULL THEN
-    RAISE EXCEPTION 'case 6: route_receptions row missing after route close';
-  END IF;
+  IF rr_id IS NULL THEN RAISE EXCEPTION 'case 6: route_receptions row missing'; END IF;
 
   -- Link 2: reception scan -> en_bodega (pre-existing trigger, now reachable)
   INSERT INTO public.reception_scans (reception_id, package_id, operator_id, barcode, scan_result, scanned_at)
@@ -239,16 +227,72 @@ BEGIN
   SELECT status::text INTO v_pkg FROM public.packages
    WHERE id = 'dddddddd-0000-4000-d000-00000000000b'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF v_pkg IS DISTINCT FROM 'en_bodega' THEN
-    RAISE EXCEPTION 'case 6 link 2: package is % not en_bodega', v_pkg;
-  END IF;
+  IF v_pkg IS DISTINCT FROM 'en_bodega' THEN RAISE EXCEPTION 'case 6 link 2: package is % not en_bodega', v_pkg; END IF;
 
   -- Link 3: order roll-up (untouched by this task — asserted, not rebuilt)
   SELECT status::text INTO v_order FROM public.orders
    WHERE id = 'cccccccc-0000-4000-c000-00000000055b'
      AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
-  IF v_order IS DISTINCT FROM 'en_bodega' THEN
-    RAISE EXCEPTION 'case 6 link 3: order is % not en_bodega — roll-up did not fire', v_order;
+  IF v_order IS DISTINCT FROM 'en_bodega' THEN RAISE EXCEPTION 'case 6 link 3: order is % — roll-up did not fire', v_order; END IF;
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- Case 7 — TENANT ISOLATION. Both advance triggers are SECURITY DEFINER and so
+-- run past RLS, while pickup_scans/reception_scans RLS only checks the INSERTED
+-- ROW's own operator_id and never validates package_id against it. Without
+-- `AND operator_id = NEW.operator_id` on the packages UPDATE, a user of
+-- operator A inserts a scan carrying A's operator_id and B's package_id and
+-- drives B's package through the pipeline. A is the file's …552 tenant; B is
+-- new and owns one package, which must not move.
+-- ---------------------------------------------------------------------------
+INSERT INTO public.operators (id, name, slug)
+VALUES ('aaaaaaaa-0000-4000-a000-00000000055f','Spec52 Otro','spec52-state-b')
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+                           delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
+VALUES ('cccccccc-0000-4000-c000-00000000055f','aaaaaaaa-0000-4000-a000-00000000055f',
+        'ORD-52-OTRO','Cust B','+56911111111','Addr B','Santiago', CURRENT_DATE, '{}'::jsonb,'MANUAL', NOW())
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data, status)
+VALUES ('dddddddd-0000-4000-d000-00000000000f','aaaaaaaa-0000-4000-a000-00000000055f',
+        'cccccccc-0000-4000-c000-00000000055f','PKG-52-OTRO','[]'::jsonb,'{}'::jsonb,'ingresado')
+ON CONFLICT DO NOTHING;
+
+DO $$
+DECLARE
+  v_status TEXT;
+  rr_id    UUID;
+BEGIN
+  -- 7a — pickup scan under operator A pointing at operator B's package.
+  -- Manifest …552 has no pickup_route_id, so the route lock allows the insert;
+  -- the insert MUST succeed or this proves nothing about the trigger.
+  INSERT INTO public.pickup_scans (operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at)
+  VALUES ('aaaaaaaa-0000-4000-a000-000000000552','eeeeeeee-0000-4000-e000-000000000552',
+          'dddddddd-0000-4000-d000-00000000000f','PKG-52-OTRO','verified', NOW());
+
+  SELECT status::text INTO v_status FROM public.packages
+   WHERE id = 'dddddddd-0000-4000-d000-00000000000f';
+  IF v_status IS DISTINCT FROM 'ingresado' THEN
+    RAISE EXCEPTION
+      'case 7a: CROSS-TENANT WRITE — a pickup scan under operator A moved operator B''s package to %', v_status;
+  END IF;
+
+  -- 7b — same hole on the reception side. Reuse the batch case 6 created.
+  SELECT id INTO rr_id FROM public.route_receptions
+   WHERE pickup_route_id = '33333333-0000-4000-3000-000000000552'
+     AND operator_id = 'aaaaaaaa-0000-4000-a000-000000000552';
+  IF rr_id IS NULL THEN RAISE EXCEPTION 'case 7b: no batch — case 6 fixtures changed'; END IF;
+  INSERT INTO public.reception_scans (reception_id, package_id, operator_id, barcode, scan_result, scanned_at)
+  VALUES (rr_id, 'dddddddd-0000-4000-d000-00000000000f',
+          'aaaaaaaa-0000-4000-a000-000000000552','PKG-52-OTRO','received', NOW());
+
+  SELECT status::text INTO v_status FROM public.packages
+   WHERE id = 'dddddddd-0000-4000-d000-00000000000f';
+  IF v_status IS DISTINCT FROM 'ingresado' THEN
+    RAISE EXCEPTION
+      'case 7b: CROSS-TENANT WRITE — a reception scan under operator A moved operator B''s package to %', v_status;
   END IF;
 END $$;
 

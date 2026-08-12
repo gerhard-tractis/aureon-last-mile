@@ -89,11 +89,19 @@ BEGIN
 END $$;
 
 COMMENT ON FUNCTION public.reconcile_abandoned_pickup_routes(TIMESTAMPTZ, UUID)
-  IS 'Cancel pickup routes left in_progress since before p_cutoff (optionally for one operator), recording the spec-52 migration reason. Manifests detach via trg_pickup_routes_status_sync. Idempotent. Called once by migration 20260812000004; retained so the sweep is testable and re-runnable per operator.';
+  IS 'Cancel pickup routes left in_progress since before p_cutoff (optionally for one operator), recording the spec-52 migration reason. Manifests detach via trg_pickup_routes_status_sync. Idempotent. Called once by migration 20260812000004; retained so the sweep is testable and re-runnable per operator. EXECUTE is revoked from PUBLIC/anon/authenticated and granted to nobody: owner (postgres) or superuser only.';
 
 -- Maintenance surface, not an API. Postgres grants EXECUTE to PUBLIC by
--- default and this function bypasses RLS — take it back. Only a service-role
--- or superuser connection may run it.
+-- default and this function bypasses RLS — take it back.
+--
+-- NO GRANT FOLLOWS, AND THAT IS THE WHOLE POINT. After these revokes the only
+-- principals that can execute it are the function's OWNER (postgres, which is
+-- what the migration runner and the pgTAP harness connect as) and a superuser.
+-- service_role is deliberately NOT granted: it is the key the application's
+-- server-side code carries, and a tenant-wide route-cancellation sweep is not
+-- something an application bug should be able to reach. Re-running the sweep
+-- is a DBA action over psql. If you ever need it from a service-role
+-- connection, add an explicit GRANT here — do not assume one exists.
 REVOKE ALL ON FUNCTION public.reconcile_abandoned_pickup_routes(TIMESTAMPTZ, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.reconcile_abandoned_pickup_routes(TIMESTAMPTZ, UUID) FROM anon, authenticated;
 

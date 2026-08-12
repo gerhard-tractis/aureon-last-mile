@@ -11,7 +11,8 @@
 -- This migration:
 --   1. adds route_receptions.unexpected_count
 --   2. re-derives "unexpected" server-side inside the existing counting trigger
---   3. fixes the discrepancy-notes guard so offsetting errors cannot cancel out
+--   3. does NOT tighten the discrepancy-notes guard — deferred to the contract
+--      phase, see PART 3 below for why that is deliberate
 --   4. closes the manifests when the reception batch completes
 -- =============================================================================
 
@@ -94,66 +95,59 @@ COMMENT ON FUNCTION public.trg_reception_scans_route_received_count
   IS 'On received reception_scan, bump route_receptions.received_count, tally unexpected_count for packages with no verified pickup scan on this route (spec-52), and promote pending→in_progress (spec-47).';
 
 -- =============================================================================
--- PART 3 — complete_route_reception: offsetting errors must not cancel out
+-- PART 3 — complete_route_reception: DELIBERATELY NOT TOUCHED HERE
 -- =============================================================================
--- Latest definition: 20260625000001:566 (no later migration redefines it).
--- ONLY the discrepancy guard changes; everything else is verbatim.
+-- THE NOTES RULE IS NOT TIGHTENED IN THIS MIGRATION. Do not "finish the job"
+-- by adding it back — read this first.
 --
--- The old guard fired on received_count < expected_count. A naive widening to
--- received_count <> expected_count is ALSO wrong, because an unexpected package
--- increments BOTH counters, so two errors offset:
+-- The rule spec-52 wants is:
+--     matched := received_count - unexpected_count
+--     notes required when matched <> expected_count OR unexpected_count > 0
+--
+-- and it is correct. A naive widening of the spec-47 guard to
+-- received_count <> expected_count would NOT be, because an unexpected package
+-- increments BOTH counters and two errors offset:
 --
 --   10 expected · 10 received, of which 1 unexpected  ->  received = expected
 --   -> no notes demanded — yet one expected package never arrived AND one
 --      package belonging on another truck did. That is the most likely
 --      real-world shape and exactly what the discrepancy report exists to catch.
 --
--- Correct rule:
---   matched_count := received_count - unexpected_count   (expected AND arrived)
---   notes required when matched_count <> expected_count OR unexpected_count > 0
-CREATE OR REPLACE FUNCTION public.complete_route_reception(
-  p_route_id            UUID,
-  p_discrepancy_notes   TEXT DEFAULT NULL
-) RETURNS public.route_receptions
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, auth
-AS $$
-DECLARE
-  v_operator UUID;
-  v_rr       public.route_receptions;
-  v_matched  INT;
-BEGIN
-  v_operator := public.get_operator_id();
-  IF v_operator IS NULL THEN
-    RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
-  END IF;
-
-  SELECT * INTO v_rr FROM public.route_receptions
-   WHERE pickup_route_id = p_route_id AND operator_id = v_operator AND deleted_at IS NULL;
-  IF v_rr.id IS NULL THEN
-    RAISE EXCEPTION 'route_reception for route % not found', p_route_id;
-  END IF;
-
-  v_matched := v_rr.received_count - v_rr.unexpected_count;
-
-  IF (v_matched <> v_rr.expected_count OR v_rr.unexpected_count > 0)
-     AND (p_discrepancy_notes IS NULL OR length(trim(p_discrepancy_notes)) = 0) THEN
-    RAISE EXCEPTION 'discrepancy_notes required: matched (%) vs expected (%), unexpected (%)',
-      v_matched, v_rr.expected_count, v_rr.unexpected_count;
-  END IF;
-
-  UPDATE public.route_receptions
-     SET status = 'completed',
-         completed_at = NOW(),
-         discrepancy_notes = COALESCE(p_discrepancy_notes, discrepancy_notes)
-   WHERE id = v_rr.id
-  RETURNING * INTO v_rr;
-  RETURN v_rr;
-END $$;
-
-COMMENT ON FUNCTION public.complete_route_reception(UUID, TEXT)
-  IS 'Finalize a route reception; demands discrepancy_notes whenever matched (received - unexpected) <> expected or anything unexpected arrived (spec-52). Trigger cascades manifest + pickup_route status (spec-47).';
+-- WHY IT IS DEFERRED. This migration is the EXPAND half of an expand/contract
+-- pair and the database ships AHEAD of the frontend. The SHIPPED
+-- FinalizeReceptionButton (apps/frontend/src/components/reception/
+-- FinalizeReceptionButton.tsx:38) decides whether to even open the notes modal
+-- with `const hasMissing = receivedCount < expectedCount`, and
+-- unexpected_count is not carried by RouteReceptionSnapshot, so the UI cannot
+-- see it. Tighten the guard now and the offsetting case becomes UNFINISHABLE
+-- in production: 10 expected / 10 received / 1 unexpected reads as equal
+-- counts, no modal opens, onFinalize(null) hits this function, the server
+-- raises, and the receptionist gets an error toast with no way to supply the
+-- notes the server is demanding. The batch could never be closed. Under the
+-- spec-47 guard both shapes finalize fine — so tightening here is a REGRESSION
+-- introduced by the very migration that makes the failing case reachable.
+--
+-- Tightening a guard the shipped UI cannot satisfy is a CONTRACT-phase change.
+-- Migration 20260812000005 PART 5 already fails the deploy if anything
+-- contract-phase lands early; this is the same principle applied to a guard
+-- rather than to a dropped function.
+--
+-- WHERE IT LANDS INSTEAD. The spec-52 contract-phase task — the one migration
+-- 20260812000005 refers to throughout as "Task 8" — together with the
+-- FinalizeReceptionButton change that reads unexpected_count and mirrors the
+-- server rule exactly:
+--
+--     const needsNotes =
+--       receivedCount - unexpectedCount !== expectedCount || unexpectedCount > 0;
+--
+-- SQL and TSX must land in ONE commit; either alone is a broken reception
+-- screen. See docs/specs/spec-52-…md, Task 11 (the FinalizeReceptionButton /
+-- unexpected_count task), which now carries this migration in its Files block.
+--
+-- complete_route_reception therefore keeps its spec-47 definition
+-- (20260625000001:566, guard: received_count < expected_count) untouched.
+-- PARTS 1, 2 and 4 below are unaffected: unexpected_count is populated and
+-- correct from this migration on, it is simply not yet ENFORCED.
 
 -- =============================================================================
 -- PART 4 — completing the batch closes the manifests

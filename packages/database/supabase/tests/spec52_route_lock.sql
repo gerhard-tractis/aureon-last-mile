@@ -30,12 +30,23 @@ INSERT INTO auth.users (
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver@spec52lock.test', crypt('x', gen_salt('bf')), NOW(),
    '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000531"}'::jsonb,
-   '{"full_name":"Driver Lock"}'::jsonb, NOW(), NOW(), '', '')
+   '{"full_name":"Driver Lock"}'::jsonb, NOW(), NOW(), '', ''),
+  -- open_route_reception is reception/operations/admin only (separation of
+  -- duties: received_by is an audit signature). This file's actor is a driver,
+  -- so CASE 3 needs a receptionist to arm the lock.
+  ('bbbbbbbb-0000-4000-b000-000000000531',
+   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'recepcion@spec52lock.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000531"}'::jsonb,
+   '{"full_name":"Recepcionista Lock"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
-VALUES ('aaaaaaaa-0000-4000-a000-000000000531','aaaaaaaa-0000-4000-a000-000000000531',
-        'driver@spec52lock.test','Driver Lock',ARRAY['pickup'])
+VALUES
+  ('aaaaaaaa-0000-4000-a000-000000000531','aaaaaaaa-0000-4000-a000-000000000531',
+   'driver@spec52lock.test','Driver Lock',ARRAY['pickup']),
+  ('bbbbbbbb-0000-4000-b000-000000000531','aaaaaaaa-0000-4000-a000-000000000531',
+   'recepcion@spec52lock.test','Recepcionista Lock',ARRAY['reception'])
 ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id,
       full_name   = EXCLUDED.full_name,
@@ -110,7 +121,16 @@ END $$;
 -- ---------------------------------------------------------------------------
 -- CASE 3 — rejected with 55000 once the route is in_transit
 -- ---------------------------------------------------------------------------
+-- The receptionist arms the lock; the driver cannot open his own reception.
+SELECT set_config('request.jwt.claims',
+  '{"sub":"bbbbbbbb-0000-4000-b000-000000000531","operator_id":"aaaaaaaa-0000-4000-a000-000000000531","role":"authenticated"}',
+  true);
+
 SELECT public.open_route_reception('11111111-0000-4000-1000-000000000531'::UUID);
+
+SELECT set_config('request.jwt.claims',
+  '{"sub":"aaaaaaaa-0000-4000-a000-000000000531","operator_id":"aaaaaaaa-0000-4000-a000-000000000531","role":"authenticated"}',
+  true);
 
 DO $$
 DECLARE v_state TEXT := NULL;
