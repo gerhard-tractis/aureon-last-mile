@@ -195,7 +195,10 @@ else
 fi
 
 is_applied() { # $1 = version
-  printf '%s\n' "$applied_versions" | grep -qx -- "$1"
+  # No pipe here: `grep -q` exits on first match and closes the pipe, and under
+  # pipefail the writer's EPIPE then fails the whole pipeline — intermittently
+  # misreporting applied versions as pending (seen as duplicate-key aborts).
+  grep -qx -- "$1" <<< "$applied_versions"
 }
 
 # ---------------------------------------------------------------------------
@@ -246,7 +249,9 @@ for f in "${files[@]}"; do
   fi
 
   # psql only interpolates :'var' from stdin/-f input, never inside -c.
-  printf "INSERT INTO supabase_migrations.schema_migrations (version, name, statements)\n        VALUES (:'v', :'n', '{}');\n" \
+  # ON CONFLICT: belt-and-braces against a concurrent applier (CI deploy-qa vs
+  # a manual run) or a stale in-memory applied list — re-recording is a no-op.
+  printf "INSERT INTO supabase_migrations.schema_migrations (version, name, statements)\n        VALUES (:'v', :'n', '{}') ON CONFLICT (version) DO NOTHING;\n" \
     | "${psql_base[@]}" -v v="$version" -v n="$name" -f - >/dev/null
   applied=$((applied + 1))
 done
