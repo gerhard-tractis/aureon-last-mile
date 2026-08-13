@@ -3,13 +3,11 @@
 import { revalidatePath } from 'next/cache';
 import { createSSRClient } from '@/lib/supabase/server';
 import { isValidModuleKey } from '@/lib/modules/registry';
+import { callRpc } from '@/lib/supabase/rpc';
 
-// spec-45 — these RPCs are new in this PR; until DB types are regenerated we
-// cast through `unknown` to bypass the generated function-name union.
-type RpcCall = <T>(
-  fn: string,
-  args?: Record<string, unknown>,
-) => Promise<{ data: T | null; error: { message: string } | null }>;
+// spec-45 — these RPC names are not in the generated Functions union. callRpc
+// handles that without detaching supabase.rpc from its client; see
+// lib/supabase/rpc.ts for why the previous cast broke at runtime.
 
 export interface OperatorWithModuleState {
   operator_id: string;
@@ -52,8 +50,7 @@ export async function enableModule(
   assertReason(reason);
   if (!isValidModuleKey(moduleKey)) throw new Error(`invalid module: ${moduleKey}`);
 
-  const rpc = supabase.rpc as unknown as RpcCall;
-  const { error } = await rpc('enable_module_for_operator', {
+  const { error } = await callRpc(supabase, 'enable_module_for_operator', {
     p_operator_id: operatorId,
     p_module_key: moduleKey,
     p_reason: reason,
@@ -71,8 +68,7 @@ export async function disableModule(
   assertReason(reason);
   if (!isValidModuleKey(moduleKey)) throw new Error(`invalid module: ${moduleKey}`);
 
-  const rpc = supabase.rpc as unknown as RpcCall;
-  const { error } = await rpc('disable_module_for_operator', {
+  const { error } = await callRpc(supabase, 'disable_module_for_operator', {
     p_operator_id: operatorId,
     p_module_key: moduleKey,
     p_reason: reason,
@@ -83,8 +79,8 @@ export async function disableModule(
 
 export async function fetchOperatorsWithState(): Promise<OperatorWithModuleState[]> {
   const supabase = await assertSuperAdmin();
-  const rpc = supabase.rpc as unknown as RpcCall;
-  const { data, error } = await rpc<OperatorWithModuleState[]>(
+  const { data, error } = await callRpc<OperatorWithModuleState[]>(
+    supabase,
     'list_operators_with_module_state',
   );
   if (error) throw new Error(error.message);
@@ -93,8 +89,8 @@ export async function fetchOperatorsWithState(): Promise<OperatorWithModuleState
 
 export async function fetchAudit(operatorId: string): Promise<ModuleAuditEntry[]> {
   const supabase = await assertSuperAdmin();
-  const rpc = supabase.rpc as unknown as RpcCall;
-  const { data, error } = await rpc<ModuleAuditEntry[]>(
+  const { data, error } = await callRpc<ModuleAuditEntry[]>(
+    supabase,
     'get_module_audit_for_operator',
     { p_operator_id: operatorId },
   );
