@@ -3,7 +3,7 @@
 > **Builds on:** [spec-47-pickup-route-and-consolidated-reception.md](spec-47-pickup-route-and-consolidated-reception.md)
 > **Related:** [spec-01-epic4a-pickup-verification.md](spec-01-epic4a-pickup-verification.md), [spec-21-reception-visual-polish.md](spec-21-reception-visual-polish.md)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-10_
 
