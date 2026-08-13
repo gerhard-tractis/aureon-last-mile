@@ -29,24 +29,30 @@ BEGIN
 END $$;
 
 -- ── The real path: stage every package for dispatch, order must not cancel ──
+-- customer_phone / raw_data / imported_via / imported_at are NOT NULL with no
+-- default; the fixture omitted them, so this INSERT aborted the transaction and
+-- nothing below it ever ran.
 INSERT INTO public.orders (
-  id, operator_id, order_number, customer_name,
-  delivery_address, comuna, delivery_date, status, leading_status
+  id, operator_id, order_number, customer_name, customer_phone,
+  delivery_address, comuna, delivery_date, status, leading_status,
+  raw_data, imported_via, imported_at
 ) VALUES (
   'aaaaaaaa-0000-4000-a000-000000000252',
   'aaaaaaaa-0000-4000-a000-000000000251',
-  'SPEC51-ORD-1', 'Cliente Spec51',
-  'Calle Spec51 123', 'Maipú', CURRENT_DATE, 'en_carga', 'en_carga'
+  'SPEC51-ORD-1', 'Cliente Spec51', '+56900000251',
+  'Calle Spec51 123', 'Maipú', CURRENT_DATE, 'en_carga', 'en_carga',
+  '{}'::jsonb, 'MANUAL', NOW()
 );
 
-INSERT INTO public.packages (id, operator_id, order_id, label, status)
+-- packages.raw_data is likewise NOT NULL with no default.
+INSERT INTO public.packages (id, operator_id, order_id, label, status, raw_data)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000253',
    'aaaaaaaa-0000-4000-a000-000000000251',
-   'aaaaaaaa-0000-4000-a000-000000000252', 'SPEC51-CTN-1', 'en_carga'),
+   'aaaaaaaa-0000-4000-a000-000000000252', 'SPEC51-CTN-1', 'en_carga', '{}'::jsonb),
   ('aaaaaaaa-0000-4000-a000-000000000254',
    'aaaaaaaa-0000-4000-a000-000000000251',
-   'aaaaaaaa-0000-4000-a000-000000000252', 'SPEC51-CTN-2', 'en_carga');
+   'aaaaaaaa-0000-4000-a000-000000000252', 'SPEC51-CTN-2', 'en_carga', '{}'::jsonb);
 
 -- Exactly what POST /api/dispatch/routes/[id]/close does.
 UPDATE public.packages
