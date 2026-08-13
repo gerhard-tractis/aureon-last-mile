@@ -1055,6 +1055,20 @@ The largest frontend task. Contains the regression fix.
 - **No sprint tracker to update.** `docs/sprint-status.yaml` was deliberately removed in `45d9d1d` and is gitignored (`.gitignore:36`) — parallel branches editing it caused constant merge conflicts. Status lives in this file's `**Status:**` line. Do not recreate it.
 - Modify: `docs/specs/spec-52-…md` — flip `**Status:**` to `in progress` on the first implementation commit
 
+> **Unplanned, landed with this task: `route.driver_name` was dead in production.**
+> `RouteReceptionHeader.tsx` has rendered `snapshot.route.driver_name` since
+> spec-47, but `pickup_routes` has no such column and
+> `get_route_reception_snapshot` built its `route` node from a bare
+> `to_jsonb(pr.*)`. The key was never emitted, and the header's
+> `{driverName && ...}` guard hid the driver line silently. Fixed the same way
+> Task 11 added the plate — `20260813000005_spec52_snapshot_driver_name.sql`,
+> `CREATE OR REPLACE` templated on 20260813000004 (the latest), `LEFT JOIN
+> public.users ON pickup_routes.driver_id` merging `full_name` as
+> `driver_name`. **Third defect in this one RPC**, all with the same cause: the
+> contract test's presence list for `route` did not name a field the component
+> reads. `driver_name` is now in that list, plus a value assertion — presence
+> alone cannot see a join wired to the wrong column.
+
 - [ ] **Step 1: Failing test** for `PickupManifestTabs` (tab switching, client filter)
 - [ ] **Step 2: Run, confirm fail**
 - [ ] **Step 3: Extract** the tab/filter logic. Scoped to the file already being edited — not a refactor sweep. Verify `page.tsx` is now under 300 lines.
