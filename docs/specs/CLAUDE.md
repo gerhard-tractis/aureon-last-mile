@@ -8,6 +8,8 @@ spec-XX-description-of-the-spec.md
 
 Scan for highest existing number, add one. Zero-padded (01, 02, ...). Never skip or reuse.
 
+**A number is only reserved by a file in this directory.** Do not pre-assign numbers to future work in any other document — a planning table, a roadmap, an issue. Those reservations are invisible to the scan above, so two people working in parallel will pick the same number. This has already happened twice: `docs/architecture/phased-rollout-strategy.md` claimed 47/48/49, which were taken on disk; it was corrected to 53/54/55, and spec-53 was taken on disk two days later. Describe planned work by name and assign the number when you create the file.
+
 **One file per spec only.** The spec and implementation plan live in the same file. Never create a separate `...Plan.md` or any companion file for a spec.
 
 ## Spec States
