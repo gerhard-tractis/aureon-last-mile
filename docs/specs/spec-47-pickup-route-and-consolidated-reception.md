@@ -34,7 +34,7 @@
 > output. Nothing anywhere asserted the RPC's key set. spec-52 did not cause this; it
 > merely became the first work to exercise the page with a real route.
 >
-> **Fix:** migration `20260813000001_fix_route_reception_snapshot_contract.sql`
+> **Fix:** migration `20260813000003_fix_route_reception_snapshot_contract.sql` (renumbered from `20260813000001`, which collided with spec-53's migration of the same version and blocked every production deploy)
 > realigns the RPC with the interface (the interface is the contract — it has several
 > component consumers and the richer shape) and adds `discrepancies`, always `[]` and
 > never `null`. `discrepancies` holds only `not_found` and `route_mismatch` scans,
