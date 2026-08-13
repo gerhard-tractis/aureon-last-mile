@@ -1,8 +1,8 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { VALID_PERMISSIONS } from '@/lib/permissions';
 
-const VALID_PERMISSIONS = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'] as const;
 
 // Validation schema for updating users
 const updateUserSchema = z.object({

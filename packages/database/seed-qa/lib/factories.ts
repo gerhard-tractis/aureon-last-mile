@@ -21,6 +21,13 @@ export interface OrderSpec {
   deliveryDate?: string;
   importedVia?: string;
   dispatchGuideUrl?: string | null;
+  /** The CARGA this order belongs to — matches manifests.external_load_id. */
+  externalLoadId?: string | null;
+  /** Which client of the operator the order belongs to (Easy, Paris, …). */
+  tenantClientId?: string | null;
+  /** Where the order is collected from. */
+  pickupPointId?: string | null;
+  retailerName?: string;
 }
 
 export interface CreatedOrder {
@@ -64,6 +71,173 @@ export const QA_USERS = {
 } as const;
 
 /**
+ * Bring an existing login back to a working state: make sure it has the
+ * auth.identities row GoTrue needs for password login, and that public.users
+ * carries the role's permissions (handle_new_user inserts an empty array).
+ * Both steps are idempotent.
+ */
+async function repairLoginUser(
+  db: SeedClient,
+  args: { email: string; permissions: string[] },
+): Promise<void> {
+  const rows = await db.query<{ id: string; has_identity: boolean }>(
+    `SELECT u.id,
+            EXISTS (SELECT 1 FROM auth.identities i WHERE i.user_id = u.id) AS has_identity
+       FROM auth.users u WHERE u.email = $1`,
+    [args.email],
+  );
+  const user = rows[0];
+  if (!user) return;
+
+  if (!user.has_identity) {
+    await db.query(
+      `INSERT INTO auth.identities (
+         id, user_id, identity_data, provider, provider_id,
+         last_sign_in_at, created_at, updated_at
+       ) VALUES (
+         gen_random_uuid(), $1::uuid, $2::jsonb, 'email', $3::text, now(), now(), now()
+       )`,
+      [
+        user.id,
+        JSON.stringify({
+          sub: user.id,
+          email: args.email,
+          email_verified: true,
+          phone_verified: false,
+        }),
+        user.id,
+      ],
+    );
+  }
+
+  await db.query(
+    `UPDATE public.users SET permissions = $2::text[]
+      WHERE email = $1 AND deleted_at IS NULL`,
+    [args.email, args.permissions],
+  );
+}
+
+/** Same password as every other QA login (infra/supabase-qa/create-qa-users.sh). */
+export const QA_PASSWORD = 'QaTest123!';
+
+const GOTRUE_INSTANCE_ID = '00000000-0000-0000-0000-000000000000';
+
+/**
+ * Create a login for a tenant that this seed created.
+ *
+ * create-qa-users.sh owns the six baseline logins, but it runs BEFORE the
+ * scenario seed and derives every address as qa-<role>@qa.test. A user for an
+ * operator the seed itself creates has to be made here, after that operator
+ * exists, or the foreign key fails.
+ *
+ * Mirrors that script's SQL deliberately: a row in auth.users (whose
+ * handle_new_user trigger creates public.users from raw_app_meta_data), plus
+ * the auth.identities row GoTrue v2 needs for password login, plus the role's
+ * permissions — handle_new_user inserts an empty array.
+ *
+ * Empty strings rather than NULL on the token columns; GoTrue errors scanning
+ * NULLs there.
+ */
+export async function createLoginUser(
+  db: SeedClient,
+  args: {
+    id: string;
+    operatorId: string;
+    email: string;
+    role: string;
+    fullName: string;
+    permissions: string[];
+    password?: string;
+  },
+): Promise<'created' | 'exists'> {
+  const existing = await db.query<{ exists: boolean }>(
+    'SELECT EXISTS (SELECT 1 FROM auth.users WHERE email = $1) AS exists',
+    [args.email],
+  );
+
+  // A half-created user is worse than none: if an earlier run inserted
+  // auth.users and then failed before auth.identities, the account exists but
+  // cannot log in. Returning early on "exists" would leave it broken forever,
+  // so repair instead of skipping.
+  if (existing[0]?.exists) {
+    await repairLoginUser(db, args);
+    return 'exists';
+  }
+
+  // pgcrypto's schema varies by install; ask rather than assume.
+  const ext = await db.query<{ nspname: string }>(
+    `SELECT n.nspname FROM pg_extension e
+       JOIN pg_namespace n ON n.oid = e.extnamespace
+      WHERE e.extname = 'pgcrypto'`,
+  );
+  const cryptSchema = ext[0]?.nspname ?? 'public';
+
+  const claims = {
+    provider: 'email',
+    providers: ['email'],
+    operator_id: args.operatorId,
+    role: args.role,
+    claims: { operator_id: args.operatorId, role: args.role },
+  };
+
+  // Atomic: an auth.users row without its identity is an account that
+  // exists but cannot log in.
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO auth.users (
+         id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+         raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+         confirmation_token, recovery_token,
+         email_change, email_change_token_new, email_change_token_current
+       ) VALUES (
+         $1, $2, 'authenticated', 'authenticated', $3,
+         ${cryptSchema}.crypt($4, ${cryptSchema}.gen_salt('bf', 10)),
+         now(), $5::jsonb, $6::jsonb, now(), now(), '', '', '', '', ''
+       )`,
+      [
+        args.id,
+        GOTRUE_INSTANCE_ID,
+        args.email,
+        args.password ?? QA_PASSWORD,
+        JSON.stringify(claims),
+        JSON.stringify({ full_name: args.fullName }),
+      ],
+    );
+
+    await tx.query(
+      // provider_id is text and user_id is uuid; reusing one placeholder for both
+      // makes Postgres fail with "inconsistent types deduced for parameter $1".
+      `INSERT INTO auth.identities (
+         id, user_id, identity_data, provider, provider_id,
+         last_sign_in_at, created_at, updated_at
+       ) VALUES (
+         gen_random_uuid(), $1::uuid, $2::jsonb, 'email', $3::text, now(), now(), now()
+       )`,
+      [
+        args.id,
+        JSON.stringify({
+          sub: args.id,
+          email: args.email,
+          email_verified: true,
+          phone_verified: false,
+        }),
+        args.id,
+      ],
+    );
+
+    // handle_new_user inserts permissions='{}' — apply the role mapping.
+    await tx.query(
+      `UPDATE public.users SET permissions = $2::text[]
+        WHERE email = $1 AND deleted_at IS NULL`,
+      [args.email, args.permissions],
+    );
+
+  });
+
+  return 'created';
+}
+
+/**
  * Insert an operator. Idempotent on the primary key so a re-run is a no-op.
  */
 export async function createOperator(
@@ -100,9 +274,11 @@ export async function createOrderWithPackages(
     `INSERT INTO public.orders (
        id, operator_id, order_number, customer_name, customer_phone,
        delivery_address, comuna, delivery_date, retailer_name,
-       raw_data, imported_via, imported_at, dispatch_guide_url
+       raw_data, imported_via, imported_at, dispatch_guide_url,
+       external_load_id, tenant_client_id, pickup_point_id
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12,
+       $13, $14, $15
      )
      ON CONFLICT (id) DO NOTHING`,
     [
@@ -114,10 +290,13 @@ export async function createOrderWithPackages(
       `Calle QA ${spec.sequence}`,
       spec.comuna ?? 'Maipú',
       spec.deliveryDate ?? new Date().toISOString().slice(0, 10),
-      'QA Retail',
+      spec.retailerName ?? 'QA Retail',
       JSON.stringify({ source: 'seed-qa-generator' }),
       spec.importedVia ?? 'MANUAL',
       spec.dispatchGuideUrl ?? null,
+      spec.externalLoadId ?? null,
+      spec.tenantClientId ?? null,
+      spec.pickupPointId ?? null,
     ],
   );
 
@@ -147,6 +326,38 @@ export async function createOrderWithPackages(
   }
 
   return { orderId, orderNumber: spec.orderNumber, packageIds };
+}
+
+/**
+ * Put an order's packages back to a known starting state.
+ *
+ * Journeys mutate what they touch, so unlike the other scenarios they are not
+ * idempotent by construction: a second run would begin wherever the first one
+ * finished. Re-running a failed-delivery journey without this finds its order
+ * already at retorno_hub and asserts the wrong starting state.
+ *
+ * Statuses are applied in label order so package N always gets statuses[N].
+ */
+export async function resetOrderPackages(
+  db: SeedClient,
+  orderId: string,
+  statuses: string[],
+): Promise<void> {
+  const packages = await db.query<{ id: string }>(
+    `SELECT id FROM public.packages
+      WHERE order_id = $1 AND deleted_at IS NULL
+      ORDER BY label`,
+    [orderId],
+  );
+
+  for (let i = 0; i < packages.length && i < statuses.length; i++) {
+    await db.query(
+      `UPDATE public.packages
+          SET status = $2::package_status_enum
+        WHERE id = $1`,
+      [packages[i].id, statuses[i]],
+    );
+  }
 }
 
 /**

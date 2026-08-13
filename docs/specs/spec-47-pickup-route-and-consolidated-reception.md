@@ -3,9 +3,11 @@
 > **Supersedes parts of:** [spec-08-hub-reception-design.md](spec-08-hub-reception-design.md), [spec-13d-pickup-reception.md](spec-13d-pickup-reception.md)
 > **Related:** [spec-01-epic4a-pickup-verification.md](spec-01-epic4a-pickup-verification.md), [spec-21-reception-visual-polish.md](spec-21-reception-visual-polish.md)
 
-**Status:** in progress
+**Status:** completed
 
-> Status corrected 2026-08-11. This said `backlog` while the work was merged and running in production: migration `20260625000001_spec47_pickup_routes_consolidated_reception.sql` (#347, 2026-06-25), plus the frontend routes, components, RLS tests and e2e spec. Left at `in progress` rather than `completed` because `docs/specs/CLAUDE.md` requires explicit user confirmation to close a spec — **this one looks finished and is awaiting that confirmation.** See [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md), which builds on it.
+> Status corrected 2026-08-13, user-confirmed. This said `backlog` for seven weeks while the work was merged and running in production — migration `20260625000001_spec47_pickup_routes_consolidated_reception.sql` (#347, 2026-06-25), plus the frontend routes, components, RLS tests and e2e spec. That stale line is why the spec-52 investigation began from the false premise that pickup routes did not exist.
+>
+> [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) builds on this and changes some of it: the vehicle becomes a real FK, the receptionist rather than the driver ends the trip, and `close_pickup_route` is deprecated. Read spec-52's expand/contract section before relying on the flow described below.
 
 _Date: 2026-06-25_
 

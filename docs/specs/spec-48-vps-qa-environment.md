@@ -1,8 +1,8 @@
 # Spec 48 — VPS QA Environment (Self-Hosted Supabase + Full QA Stack)
 
-**Status:** in progress
+**Status:** completed
 
-> Status corrected 2026-08-11. Shipped via PR #363 with hotfixes #365–#369; `spec-51` lines 20-24 record the QA stack as working on the VPS. Awaiting user confirmation to move to `completed`.
+> Status corrected 2026-08-13, user-confirmed. Shipped via PR #363 with hotfixes #365–#369; `spec-51` lines 20-24 record the QA stack as working on the VPS.
 
 ## Goal
 
