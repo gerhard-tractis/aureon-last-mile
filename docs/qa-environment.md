@@ -88,6 +88,11 @@ subdomains, so **no firewall port was opened**. Config lives in
 `infra/supabase-qa/nginx/aureon-qa.conf`; TLS blocks are appended in place by
 `certbot --nginx`.
 
+> Both proxy blocks need `proxy_buffer_size 32k` (present in the template):
+> responses carrying Supabase's chunked auth cookies exceed nginx's 4k default
+> and every logged-in page load 502s with "upstream sent too big header".
+> A cookie-less curl returns 200, so a naive health check won't catch it.
+
 Two hostnames, both proxied to localhost by nginx:
 
 | Hostname | → | Why |
