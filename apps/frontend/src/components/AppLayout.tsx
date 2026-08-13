@@ -1,21 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import {
-  LayoutDashboard,
-  Radio,
-  CheckSquare,
-  ArrowUpDown,
-  Calendar,
-  FileText,
-  Menu,
-  PanelLeftClose,
-  PanelLeft,
-  Layers,
-  Truck,
-  MessageSquare,
-  ShieldCheck,
-} from 'lucide-react';
+import { Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
 import { ModuleKey } from '@/lib/modules/registry';
@@ -23,42 +9,28 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useSidebarPin } from './sidebar/useSidebarPin';
 import { SidebarNavItem } from './sidebar/SidebarNavItem';
+import { SidebarBrand } from './sidebar/SidebarBrand';
 import { SidebarUserMenu } from './sidebar/SidebarUserMenu';
-import ThemeToggle from './ThemeToggle';
-import CapacityAlertBell from './capacity/CapacityAlertBell';
+import { buildNavSections } from './sidebar/navigation';
+import { useNavCounts, navCountTone } from '@/hooks/useNavCounts';
+import TopBar from './TopBar';
 import { InspectorSearchPalette } from './inspector/InspectorSearchPalette';
 import { OrderInspector } from './inspector/OrderInspector';
 
-function SidebarBrand({
-  logoUrl,
-  companyName,
-  pinned,
-  onLogoError,
-}: {
-  logoUrl: string | null;
-  companyName: string | null;
-  pinned: boolean;
-  onLogoError: () => void;
-}) {
-  if (logoUrl) {
-    return (
-      <img
-        src={logoUrl}
-        alt={companyName || 'Logo'}
-        className={`max-h-10 object-contain transition-all ${pinned ? 'max-w-[140px]' : 'max-w-8'}`}
-        onError={onLogoError}
-      />
-    );
-  }
-  return (
-    <>
-      <div className={pinned ? 'hidden' : 'h-5 w-5 rounded bg-sidebar-active'} />
-      <span className={pinned ? 'text-sm font-semibold text-sidebar-active' : 'sr-only'}>
-        {companyName || 'Aureon'}
-      </span>
-    </>
-  );
-}
+/**
+ * spec-54 phase 2 — the application shell.
+ *
+ * Two changes from the previous flat layout:
+ *   1. The 10-item nav list is grouped into OPERACIÓN / GESTIÓN, and the
+ *      operation items carry queue counters, so the sidebar answers "where is
+ *      the work" and not only "where can I go".
+ *   2. Global controls move out of a floating overlay into a real 56px topbar,
+ *      present at every breakpoint. That is what makes the theme toggle
+ *      reachable on mobile.
+ *
+ * Visibility rules (role, permission, spec-45 module activation) are unchanged
+ * and now live in ./sidebar/navigation.ts.
+ */
 
 export default function AppLayout({
   children,
@@ -76,6 +48,9 @@ export default function AppLayout({
 
   const isAdminOrManager = role === 'admin' || role === 'operations_manager';
 
+  const sections = buildNavSections({ role, permissions, enabledModules });
+  const counts = useNavCounts(operatorId);
+
   useEffect(() => {
     if (!isAdminOrManager) return;
     function onKeyDown(e: KeyboardEvent) {
@@ -89,33 +64,11 @@ export default function AppLayout({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [isAdminOrManager]);
 
-  const navItems: Array<{
-    href: string;
-    label: string;
-    icon: typeof LayoutDashboard;
-    show: boolean;
-    module?: ModuleKey;
-  }> = [
-    { href: '/app/dashboard',          label: 'Dashboard',    icon: LayoutDashboard, show: true },
-    { href: '/app/operations-control', label: 'Ops Control',  icon: Radio,           show: isAdminOrManager, module: ModuleKey.OPS_CONTROL },
-    { href: '/app/pickup',             label: 'Pickup',       icon: CheckSquare,     show: permissions.includes('pickup'), module: ModuleKey.PICKUP },
-    { href: '/app/reception',          label: 'Recepción',    icon: ArrowUpDown,     show: permissions.includes('reception'), module: ModuleKey.RECEPTION },
-    { href: '/app/distribution',       label: 'Distribución', icon: Layers,          show: permissions.includes('distribution'), module: ModuleKey.DISTRIBUTION },
-    { href: '/app/dispatch',           label: 'Despacho',     icon: Truck,           show: permissions.includes('dispatch') || permissions.includes('admin'), module: ModuleKey.DISPATCH },
-    { href: '/app/capacity-planning',  label: 'Capacidad',    icon: Calendar,        show: isAdminOrManager },
-    { href: '/app/audit-logs',         label: 'Auditoría',    icon: FileText,        show: isAdminOrManager },
-    { href: '/app/conversations',       label: 'Conversaciones', icon: MessageSquare, show: isAdminOrManager || permissions.includes('customer_service'), module: ModuleKey.CONVERSATIONS },
-    { href: '/admin',                   label: 'Admin',          icon: ShieldCheck,   show: role === 'admin' },
-  ];
-  const visibleNavItems = navItems.filter(
-    (item) => item.show && (item.module === undefined || enabledModules.includes(item.module)),
-  );
-
   function SidebarInner({ mobilePinned = false }: { mobilePinned?: boolean }) {
     const ep = mobilePinned || pinned;
     return (
       <div className="flex flex-col h-full bg-sidebar">
-        <div className="h-14 flex items-center px-3 border-b border-sidebar-border overflow-hidden">
+        <div className="h-14 flex items-center gap-2.5 px-4 border-b border-sidebar-border overflow-hidden">
           <SidebarBrand
             logoUrl={logoError ? null : logoUrl}
             companyName={companyName}
@@ -123,26 +76,51 @@ export default function AppLayout({
             onLogoError={() => setLogoError(true)}
           />
         </div>
-        <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-          {visibleNavItems.map((item) => (
-            <SidebarNavItem key={item.href} href={item.href} label={item.label} icon={item.icon} pinned={ep} />
+
+        <nav className="flex-1 overflow-y-auto px-2 py-3.5">
+          {sections.map((section) => (
+            <div key={section.title} className="mb-1 last:mb-0">
+              {/* The heading is dropped in the icon rail — a tracked-out label
+                  in a 56px column would wrap into noise. */}
+              {ep && (
+                <div className="px-2.5 pb-2 pt-3 font-mono text-[9.5px] font-medium uppercase leading-none tracking-[.13em] text-sidebar-section first:pt-1.5">
+                  {section.title}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const count = item.countKey ? counts[item.countKey] : undefined;
+                  return (
+                    <SidebarNavItem
+                      key={item.href}
+                      href={item.href}
+                      label={item.label}
+                      icon={item.icon}
+                      pinned={ep}
+                      count={count}
+                      countTone={item.countKey ? navCountTone(item.countKey, count ?? null) : 'neutral'}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </nav>
+
         <div className="px-2 py-2 border-t border-sidebar-border space-y-1">
           <SidebarUserMenu pinned={ep} />
-          <div className={`flex items-center ${ep ? 'justify-between' : 'justify-center'} px-1`}>
-            <ThemeToggle compact={!ep} />
-            {!mobilePinned && (
+          {!mobilePinned && (
+            <div className={`flex items-center ${ep ? 'justify-end' : 'justify-center'} px-1`}>
               <button
                 data-pin-toggle
                 onClick={togglePin}
                 className="p-2 rounded-md text-sidebar-text hover:bg-sidebar-hover transition-colors"
-                aria-label={pinned ? 'Unpin sidebar' : 'Pin sidebar'}
+                aria-label={pinned ? 'Contraer barra lateral' : 'Fijar barra lateral'}
               >
                 {pinned ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -155,7 +133,7 @@ export default function AppLayout({
         <aside
           data-sidebar
           data-pinned={pinned}
-          className={`hidden lg:flex flex-col fixed inset-y-0 left-0 transition-all duration-200 z-30 border-r border-sidebar-border ${pinned ? 'w-[200px]' : 'w-14'}`}
+          className={`hidden lg:flex flex-col fixed inset-y-0 left-0 transition-all duration-200 z-30 border-r border-sidebar-border ${pinned ? 'w-[216px]' : 'w-14'}`}
         >
           <SidebarInner />
         </aside>
@@ -163,38 +141,31 @@ export default function AppLayout({
         {/* Main — min-w-0 lets wide children (tables, code blocks) scroll inside
             their own overflow containers instead of stretching this column past
             the viewport and revealing the body bg behind AppLayout. */}
-        <div className={`flex-1 min-w-0 transition-all duration-200 ${pinned ? 'lg:ml-[200px]' : 'lg:ml-14'}`}>
-          {/* Mobile/tablet hamburger — sidebar accessible at every viewport <lg */}
-          <div className="flex lg:hidden items-center h-12 px-4 bg-sidebar border-b border-sidebar-border">
-            <Sheet>
-              <SheetTrigger asChild>
-                <button className="text-sidebar-text" aria-label="Open sidebar">
-                  <Menu className="h-5 w-5" />
-                </button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-[200px] p-0 bg-sidebar border-sidebar-border">
-                <SidebarInner mobilePinned />
-              </SheetContent>
-            </Sheet>
-          </div>
-
-          {/* Main content */}
-          <div className="relative">
-            {isAdminOrManager && (
-              <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
-                <button
-                  aria-label="Buscar orden o paquete"
-                  onClick={() => setIsPaletteOpen(true)}
-                  className="hidden lg:inline-flex items-center gap-2 text-xs text-text-muted bg-surface-raised border border-border rounded-lg px-3 py-1.5 hover:bg-surface-elev transition-colors"
-                >
-                  <span>Buscar orden…</span>
-                  <kbd className="font-mono bg-surface border border-border rounded px-1 text-[10px]">/</kbd>
-                </button>
-                <CapacityAlertBell operatorId={operatorId} />
+        <div className={`flex-1 min-w-0 transition-all duration-200 ${pinned ? 'lg:ml-[216px]' : 'lg:ml-14'}`}>
+          <TopBar
+            showOpsTools={isAdminOrManager}
+            operatorId={operatorId}
+            onOpenSearch={() => setIsPaletteOpen(true)}
+            menuSlot={
+              <div className="flex lg:hidden">
+                <Sheet>
+                  <SheetTrigger asChild>
+                    <button
+                      className="-ml-1 p-1 text-text-secondary"
+                      aria-label="Abrir barra lateral"
+                    >
+                      <Menu className="h-5 w-5" />
+                    </button>
+                  </SheetTrigger>
+                  <SheetContent side="left" className="w-[216px] p-0 bg-sidebar border-sidebar-border">
+                    <SidebarInner mobilePinned />
+                  </SheetContent>
+                </Sheet>
               </div>
-            )}
-            <main>{children}</main>
-          </div>
+            }
+          />
+
+          <main>{children}</main>
         </div>
 
         {isAdminOrManager && (
