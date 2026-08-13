@@ -214,6 +214,7 @@ function PickupPageContent() {
           code={activeRoute.code}
           startedAt={activeRoute.started_at}
           manifestCount={activeManifests.length}
+          routeId={activeRoute.id}
         />
       ) : (
         <StartRouteButton
