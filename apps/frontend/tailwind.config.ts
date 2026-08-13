@@ -15,6 +15,10 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        // App display face (Archivo) — headings, card titles, dock codes.
+        heading: ["var(--font-heading)", "var(--font-sans)", "system-ui", "sans-serif"],
+        // Landing display face (Fraunces). Deliberately separate from
+        // `heading`: the marketing site keeps its own voice.
         display: ["var(--font-display)", "serif"],
         manifest: ["var(--font-manifest)", "var(--font-mono)", "ui-monospace", "monospace"],
       },
@@ -35,27 +39,37 @@ const config: Config = {
         },
         border:       "var(--color-border)",
         "border-subtle": "var(--color-border-subtle)",
+        "border-strong": "var(--color-border-strong)",
+        map: {
+          surface: "var(--color-map-surface)",
+          line:    "var(--color-map-line)",
+        },
         accent: {
           DEFAULT:    "var(--color-accent)",
           light:      "var(--color-accent-light)",
           muted:      "var(--color-accent-muted)",
           foreground: "var(--color-accent-foreground)",
+          "light-foreground": "var(--color-accent-light-foreground)",
         },
         text: {
           DEFAULT:    "var(--color-text)",
           secondary:  "var(--color-text-secondary)",
           muted:      "var(--color-text-muted)",
+          body:       "var(--color-text-body)",
         },
         status: {
           success:          "var(--color-status-success)",
           "success-bg":     "var(--color-status-success-bg)",
           "success-border": "var(--color-status-success-border)",
+          "success-text":   "var(--color-status-success-text)",
           warning:          "var(--color-status-warning)",
           "warning-bg":     "var(--color-status-warning-bg)",
           "warning-border": "var(--color-status-warning-border)",
+          "warning-text":   "var(--color-status-warning-text)",
           error:            "var(--color-status-error)",
           "error-bg":       "var(--color-status-error-bg)",
           "error-border":   "var(--color-status-error-border)",
+          "error-text":     "var(--color-status-error-text)",
           info:             "var(--color-status-info)",
           "info-bg":        "var(--color-status-info-bg)",
           "info-border":    "var(--color-status-info-border)",
@@ -69,6 +83,7 @@ const config: Config = {
           hover:      "var(--color-sidebar-hover)",
           section:    "var(--color-sidebar-section)",
           border:     "var(--color-sidebar-border)",
+          raised:     "var(--color-sidebar-raised)",
         },
 
         /* ---- shadcn/ui compatibility — do not remove ---- */
