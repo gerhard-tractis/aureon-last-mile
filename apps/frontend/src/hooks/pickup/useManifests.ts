@@ -2,6 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 
 export interface PendingManifest {
+  /** NULL until a manifests row exists for the load (spec-53) — the operator
+   * has not opened the scan flow yet, so there is nothing to print labels for. */
+  id: string | null;
   external_load_id: string;
   retailer_name: string | null;
   order_count: number;
@@ -10,6 +13,9 @@ export interface PendingManifest {
   pickup_point: string | null;
   /** Count of pickup_scans with scan_result='verified' for this load. >0 = in progress. */
   verified_count: number;
+  /** spec-53 — set once a label print job has been dispatched for this manifest. */
+  labels_printed_at: string | null;
+  labels_printed_by_name: string | null;
 }
 
 export interface CompletedManifest {
@@ -21,6 +27,8 @@ export interface CompletedManifest {
   completed_at: string;
   created_at: string;
   pickup_point: string | null;
+  labels_printed_at: string | null;
+  labels_printed_by_name: string | null;
 }
 
 export interface InTransitManifest {
@@ -33,6 +41,8 @@ export interface InTransitManifest {
   updated_at: string;
   created_at: string;
   pickup_point: string | null;
+  labels_printed_at: string | null;
+  labels_printed_by_name: string | null;
 }
 
 const PICKUP_QUERY_OPTIONS = {

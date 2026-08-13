@@ -18,6 +18,8 @@ import { useOrderDetail } from '@/hooks/useOrderDetail';
 interface Props {
   orderId: string | null;
   onClose: () => void;
+  /** spec-53 — PACKAGE_LABELS module gate, threaded down to the per-package reprint icon. */
+  packageLabelsEnabled?: boolean;
 }
 
 function formatDeliveryWindow(start: string | null, end: string | null): string | null {
@@ -30,7 +32,7 @@ function formatDeliveryWindow(start: string | null, end: string | null): string 
   return null;
 }
 
-export function OrderInspector({ orderId, onClose }: Props) {
+export function OrderInspector({ orderId, onClose, packageLabelsEnabled = false }: Props) {
   const { data, isLoading, isError } = useOrderDetail(orderId);
   const [tab, setTab] = useState<'lifecycle' | 'packages' | 'historial'>('lifecycle');
 
@@ -115,7 +117,11 @@ export function OrderInspector({ orderId, onClose }: Props) {
               </TabsContent>
 
               <TabsContent forceMount value="packages" className="px-6 py-4 data-[state=inactive]:hidden">
-                <PackageStatusBreakdown packages={data.packages} />
+                <PackageStatusBreakdown
+                  packages={data.packages}
+                  manifestId={data.manifestId}
+                  labelsEnabled={packageLabelsEnabled}
+                />
               </TabsContent>
 
               <TabsContent forceMount value="historial" className="px-6 py-4 data-[state=inactive]:hidden">

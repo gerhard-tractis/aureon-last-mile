@@ -14,6 +14,7 @@ export enum ModuleKey {
   DISPATCH = 'dispatch',
   RETURNS = 'returns',
   CONVERSATIONS = 'conversations',
+  PACKAGE_LABELS = 'package_labels',
 }
 
 export interface ModuleMeta {
@@ -69,6 +70,12 @@ export const MODULES: Record<ModuleKey, ModuleMeta> = {
     label: 'Conversations',
     description: 'WhatsApp/SMS agent conversation monitoring.',
     navHref: '/conversations',
+  },
+  [ModuleKey.PACKAGE_LABELS]: {
+    label: 'Package Labels',
+    description:
+      'Print Aureon-quality 10x10cm package labels at the hub before pickup crew departs (spec-53). Decorates Pickup — no nav entry of its own.',
+    navHref: null,
   },
 };
 
