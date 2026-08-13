@@ -874,7 +874,7 @@ NOT EXISTS (
 ```
 
   The trigger reaches `v_route_id` through `NEW.reception_id → route_receptions.pickup_route_id`. This uses `pickup_scans.manifest_id` directly and so does **not** duplicate the validator's `external_load_id` join — the two ask different questions.
-  - `CREATE OR REPLACE complete_route_reception` — replace the `received < expected` check (`20260625000001:589-593`) with:
+  - **`complete_route_reception` — DEFERRED to Task 11, do NOT tighten it here.** The rule below is correct and still wanted:
 
 ```sql
 v_matched := v_reception.received_count - v_reception.unexpected_count;
@@ -883,6 +883,8 @@ IF (v_matched <> v_reception.expected_count OR v_reception.unexpected_count > 0)
   RAISE EXCEPTION 'Se requieren notas de discrepancia';
 END IF;
 ```
+
+> **Why it cannot ship in the database PR.** This is the expand phase; the database ships ahead of the frontend. The *shipped* `FinalizeReceptionButton.tsx:38` decides whether to open the notes modal with `const hasMissing = receivedCount < expectedCount`, and `unexpected_count` is not on `RouteReceptionSnapshot`, so the UI cannot see it. Tighten the server guard alone and the offsetting reception (10 expected · 10 received · 1 unexpected) becomes **unfinishable**: counts read equal, no modal opens, `onFinalize(null)` hits the RPC, the server raises, and the receptionist has no way to supply the notes being demanded. Under the spec-47 guard both shapes finalize fine, so tightening early is a *regression* introduced by the migration that first makes the failing case reachable — the same contract-phase-lands-early failure that `20260812000005` PART 5 exists to block. `20260812000006` PART 3 carries the full argument in place of the code.
 
   - **Manifest closure — currently unimplemented.** `trg_route_receptions_status_sync`'s `completed` branch (`20260625000001:242-249`) sets **only** `reception_status = 'received'`. `CREATE OR REPLACE` it to set `status = 'completed'`, `completed_at = NOW()` and `reception_status = 'received'` in the **same** `UPDATE` — one statement keeps `trg_manifest_reception_status` (`20260318000001:295-319`) benign, since it is guarded by `IF NEW.reception_status IS NULL`. Add the pgTAP case asserting both `status` and `completed_at`.
 
@@ -1031,10 +1033,12 @@ The largest frontend task. Contains the regression fix.
 - Modify: `components/reception/RouteReceptionHeader.tsx`, `components/reception/FinalizeReceptionButton.tsx` (+ tests)
 - Create: `packages/database/supabase/migrations/20260812000007_spec52_snapshot_vehicle_plate.sql` — `CREATE OR REPLACE get_route_reception_snapshot` joining `vehicles` and returning `plate`
 - Create: `packages/database/supabase/tests/spec52_snapshot_plate.sql`
+- **Create: `packages/database/supabase/migrations/20260812000008_spec52_notes_rule.sql` — the notes-rule tightening deferred out of Task 6** (contract phase). `CREATE OR REPLACE complete_route_reception` with the `matched := received_count - unexpected_count` guard exactly as written in Task 6. **This SQL and the `FinalizeReceptionButton` change below must land in the SAME commit** — the server rule and the modal trigger are one rule expressed twice, and either half alone is a reception screen that cannot be finalized.
+- Modify: `packages/database/supabase/tests/spec52_unexpected_count.sql` — cases 4 and 5 are marked `TASK 8:` and currently assert *today's* behaviour (over-count and the offsetting case finalize without notes). Flip them to the CASE 3 shape: bare call raises, call with notes completes. The fixtures (route 3 = 1/2/1, route 4 = 10/10/1) are already built for it.
 
 > **This is a 7th migration and it lands in the frontend PR.** Either move it into the database PR, or verify the `deploy.yml` path filter actually triggers the migration job for that PR — the plan warns about exactly this failure mode elsewhere.
 
-- [ ] **Step 1: Failing tests** — nothing renders `vehicle_label`; the header shows `8/10 esperados · 1 inesperado`; `FinalizeReceptionButton` demands notes on under-count, over-count, **and the offsetting case**.
+- [ ] **Step 1: Failing tests** — nothing renders `vehicle_label`; the header shows `8/10 esperados · 1 inesperado`; `FinalizeReceptionButton` demands notes on under-count, over-count, **and the offsetting case**. The button must mirror the server rule exactly — `const needsNotes = receivedCount - unexpectedCount !== expectedCount || unexpectedCount > 0` — replacing today's `receivedCount < expectedCount` at `FinalizeReceptionButton.tsx:38`, which is the reason the guard could not be tightened in Task 6.
 - [ ] **Step 2: Run, confirm fail**
 - [ ] **Step 3: Implement.** All five read sites switch to the plate. The header must **not** show a single fraction — `expected_count` and `received_count` now count different populations, so `matched/expected` plus a separate unexpected callout is the only honest display.
 - [ ] **Step 4: Tests pass**

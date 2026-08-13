@@ -15,13 +15,22 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000647',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-comp@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000647"}'::jsonb,
+   '{"full_name":"Driver Comp"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created this row.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000647','aaaaaaaa-0000-4000-a000-000000000647','driver-comp@spec47.test','Driver Comp',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
+
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('99999999-0000-4000-9000-000000000647','aaaaaaaa-0000-4000-a000-000000000647','VEH-COMP-1', true)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
                            delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
@@ -41,9 +50,9 @@ VALUES
   ('ffffffff-0000-4000-f000-000000000647','aaaaaaaa-0000-4000-a000-000000000647','CARGA-COMP-B','completed')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES ('44444444-0000-4000-4000-000000000647','aaaaaaaa-0000-4000-a000-000000000647','PR-COMP-1',
-        'aaaaaaaa-0000-4000-a000-000000000647','in_progress');
+        'aaaaaaaa-0000-4000-a000-000000000647','99999999-0000-4000-9000-000000000647','in_progress');
 
 UPDATE public.manifests SET pickup_route_id = '44444444-0000-4000-4000-000000000647'
  WHERE id IN ('eeeeeeee-0000-4000-e000-000000000647','ffffffff-0000-4000-f000-000000000647');

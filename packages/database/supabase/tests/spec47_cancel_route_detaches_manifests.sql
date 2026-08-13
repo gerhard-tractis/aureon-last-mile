@@ -15,13 +15,22 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000747',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-cancel@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000747"}'::jsonb,
+   '{"full_name":"Driver Cancel"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created this row.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000747','aaaaaaaa-0000-4000-a000-000000000747','driver-cancel@spec47.test','Driver Cancel',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
+
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('99999999-0000-4000-9000-000000000747','aaaaaaaa-0000-4000-a000-000000000747','VEH-CANCEL-1', true)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO public.manifests (id, operator_id, external_load_id, status)
 VALUES
@@ -29,9 +38,9 @@ VALUES
   ('ffffffff-0000-4000-f000-000000000747','aaaaaaaa-0000-4000-a000-000000000747','CARGA-CANCEL-B','in_progress')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES ('55555555-0000-4000-5000-000000000747','aaaaaaaa-0000-4000-a000-000000000747','PR-CANCEL-1',
-        'aaaaaaaa-0000-4000-a000-000000000747','in_progress');
+        'aaaaaaaa-0000-4000-a000-000000000747','99999999-0000-4000-9000-000000000747','in_progress');
 
 UPDATE public.manifests SET pickup_route_id = '55555555-0000-4000-5000-000000000747'
  WHERE id IN ('eeeeeeee-0000-4000-e000-000000000747','ffffffff-0000-4000-f000-000000000747');

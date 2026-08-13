@@ -7,28 +7,22 @@ import { useScanMutation } from './usePickupScans';
 // ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockInsert = vi.fn().mockResolvedValue({ error: null });
-const mockUpdate = vi.fn();
-const mockEq = vi.fn();
-const mockIn = vi.fn();
 
-// Chain: .update().eq().in() or .update().eq().eq()
-function createUpdateChain() {
-  const chain = {
-    eq: vi.fn().mockReturnThis(),
-    in: vi.fn().mockResolvedValue({ error: null }),
-  };
-  mockUpdate.mockReturnValue(chain);
-  return chain;
-}
+// spec-52 Task 2b: the client no longer writes packages.status directly. The
+// SECURITY DEFINER trigger `trg_pickup_scan_advance_status` (Task 2, commit
+// 5ec592b) advances a package to 'verificado' off the pickup_scans insert
+// below, gated by the forward-only guard spec52_may_advance_status(). Track
+// every table the mocked client is asked for so we can assert 'packages' is
+// never touched from here — otherwise the guard is inert: it refuses the
+// promotion, then the client would perform it one statement later.
+const fromCalls: string[] = [];
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
     from: (table: string) => {
+      fromCalls.push(table);
       if (table === 'pickup_scans') {
         return { insert: mockInsert };
-      }
-      if (table === 'packages') {
-        return { update: mockUpdate };
       }
       return {};
     },
@@ -65,11 +59,11 @@ const baseInput = {
 describe('useScanMutation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fromCalls.length = 0;
     mockInsert.mockResolvedValue({ error: null });
   });
 
-  it('updates package status to verificado on single verified scan', async () => {
-    const updateChain = createUpdateChain();
+  it('inserts a pickup_scans row on single verified scan and never touches packages', async () => {
     mockValidateScan.mockResolvedValue({
       scanResult: 'verified',
       packageId: 'pkg-1',
@@ -82,17 +76,18 @@ describe('useScanMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    // Should have called update on packages table
-    expect(mockUpdate).toHaveBeenCalledWith({
-      status: 'verificado',
-      status_updated_at: expect.any(String),
-    });
-    // Should filter by the package IDs
-    expect(updateChain.in).toHaveBeenCalledWith('id', ['pkg-1']);
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        package_id: 'pkg-1',
+        scan_result: 'verified',
+      })
+    );
+    // The DB trigger trg_pickup_scan_advance_status owns the status
+    // advancement now — the client must never issue a packages write.
+    expect(fromCalls).not.toContain('packages');
   });
 
-  it('updates multiple packages to verificado on order-number scan', async () => {
-    const updateChain = createUpdateChain();
+  it('inserts a pickup_scans row per package on order-number scan and never touches packages', async () => {
     mockValidateScan.mockResolvedValue({
       scanResult: 'verified',
       packageId: 'pkg-1',
@@ -105,15 +100,15 @@ describe('useScanMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockUpdate).toHaveBeenCalledWith({
-      status: 'verificado',
-      status_updated_at: expect.any(String),
-    });
-    expect(updateChain.in).toHaveBeenCalledWith('id', ['pkg-1', 'pkg-2', 'pkg-3']);
+    expect(mockInsert).toHaveBeenCalledWith([
+      expect.objectContaining({ package_id: 'pkg-1', scan_result: 'verified' }),
+      expect.objectContaining({ package_id: 'pkg-2', scan_result: 'verified' }),
+      expect.objectContaining({ package_id: 'pkg-3', scan_result: 'verified' }),
+    ]);
+    expect(fromCalls).not.toContain('packages');
   });
 
-  it('does NOT update package status on duplicate scan', async () => {
-    createUpdateChain();
+  it('does NOT touch packages on duplicate scan', async () => {
     mockValidateScan.mockResolvedValue({
       scanResult: 'duplicate',
       packageId: 'pkg-1',
@@ -126,11 +121,10 @@ describe('useScanMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(fromCalls).not.toContain('packages');
   });
 
-  it('does NOT update package status on not_found scan', async () => {
-    createUpdateChain();
+  it('does NOT touch packages on not_found scan', async () => {
     mockValidateScan.mockResolvedValue({
       scanResult: 'not_found',
       packageId: null,
@@ -143,6 +137,6 @@ describe('useScanMutation', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(fromCalls).not.toContain('packages');
   });
 });

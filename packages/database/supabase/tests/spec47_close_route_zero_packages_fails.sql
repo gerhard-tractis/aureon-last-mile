@@ -14,17 +14,26 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000447',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-zero@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000447"}'::jsonb,
+   '{"full_name":"Driver Zero"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created this row.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000447','aaaaaaaa-0000-4000-a000-000000000447','driver-zero@spec47.test','Driver Zero',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
 
-INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('99999999-0000-4000-9000-000000000447','aaaaaaaa-0000-4000-a000-000000000447','VEH-ZERO-1', true)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES ('22222222-0000-4000-2000-000000000447','aaaaaaaa-0000-4000-a000-000000000447','PR-ZERO-1',
-        'aaaaaaaa-0000-4000-a000-000000000447','in_progress');
+        'aaaaaaaa-0000-4000-a000-000000000447','99999999-0000-4000-9000-000000000447','in_progress');
 
 -- Simulate the driver's JWT
 SELECT set_config('request.jwt.claims',

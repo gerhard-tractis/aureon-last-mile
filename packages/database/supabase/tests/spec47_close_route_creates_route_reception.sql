@@ -16,13 +16,22 @@ INSERT INTO auth.users (
   ('aaaaaaaa-0000-4000-a000-000000000347',
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'driver-close@spec47.test', crypt('x', gen_salt('bf')), NOW(),
-   '{}'::jsonb,'{}'::jsonb, NOW(), NOW(), '', '')
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000347"}'::jsonb,
+   '{"full_name":"Driver Close"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
+-- DO UPDATE, not DO NOTHING: handle_new_user() already created this row.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000347','aaaaaaaa-0000-4000-a000-000000000347','driver-close@spec47.test','Driver Close',ARRAY['pickup'])
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions;
+
+INSERT INTO public.vehicles (id, operator_id, plate, active)
+VALUES ('99999999-0000-4000-9000-000000000347','aaaaaaaa-0000-4000-a000-000000000347','VEH-CLOSE-1', true)
+ON CONFLICT DO NOTHING;
 
 INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
                            delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
@@ -41,9 +50,9 @@ INSERT INTO public.manifests (id, operator_id, external_load_id, status)
 VALUES ('eeeeeeee-0000-4000-e000-000000000347','aaaaaaaa-0000-4000-a000-000000000347','CARGA-CLOSE-1','in_progress')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES ('11111111-0000-4000-1000-000000000347','aaaaaaaa-0000-4000-a000-000000000347','PR-CLOSE-1',
-        'aaaaaaaa-0000-4000-a000-000000000347','in_progress');
+        'aaaaaaaa-0000-4000-a000-000000000347','99999999-0000-4000-9000-000000000347','in_progress');
 
 UPDATE public.manifests SET pickup_route_id = '11111111-0000-4000-1000-000000000347'
  WHERE id = 'eeeeeeee-0000-4000-e000-000000000347';
