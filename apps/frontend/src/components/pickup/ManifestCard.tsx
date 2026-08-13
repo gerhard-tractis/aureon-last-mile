@@ -1,6 +1,27 @@
 'use client';
 
-import { MapPin, Package, PlayCircle, ShoppingCart, Truck } from 'lucide-react';
+import { MapPin, Package, PlayCircle, Printer, ShoppingCart, Truck } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
+function formatPrintedAt(iso: string): string {
+  return new Date(iso).toLocaleString('es-CL', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 interface ManifestCardProps {
   externalLoadId: string;
@@ -20,6 +41,13 @@ interface ManifestCardProps {
   inTransit?: boolean;
   interactive?: boolean;
   onClick: () => void;
+  /** spec-53 — PACKAGE_LABELS module gate. Button is absent entirely when false. */
+  labelsEnabled?: boolean;
+  /** NULL when no manifests row exists yet for this load — nothing to print. */
+  manifestId?: string | null;
+  labelsPrintedAt?: string | null;
+  labelsPrintedByName?: string | null;
+  onPrintLabels?: () => void;
 }
 
 export function ManifestCard({
@@ -34,6 +62,11 @@ export function ManifestCard({
   inTransit = false,
   interactive = true,
   onClick,
+  labelsEnabled = false,
+  manifestId = null,
+  labelsPrintedAt = null,
+  labelsPrintedByName = null,
+  onPrintLabels,
 }: ManifestCardProps) {
   const interactiveProps = interactive
     ? {
@@ -88,6 +121,59 @@ export function ManifestCard({
         <p className="text-xs text-text-muted mt-2">
           Completado el {new Date(completedAt).toLocaleDateString()}
         </p>
+      )}
+      {labelsEnabled && manifestId && (
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {labelsPrintedAt ? (
+            <p className="text-xs text-text-muted">
+              Etiquetas impresas — {formatPrintedAt(labelsPrintedAt)}
+              {labelsPrintedByName ? `, por ${labelsPrintedByName}` : ''}
+            </p>
+          ) : (
+            <span />
+          )}
+          {labelsPrintedAt ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline shrink-0"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Reimprimir etiquetas
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Reimprimir etiquetas?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Última impresión: {formatPrintedAt(labelsPrintedAt)}
+                    {labelsPrintedByName ? `, por ${labelsPrintedByName}` : ''}.
+                    Se abrirá una nueva pestaña con la hoja de impresión completa.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={(e) => { e.stopPropagation(); onPrintLabels?.(); }}
+                  >
+                    Reimprimir
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onPrintLabels?.(); }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline shrink-0"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Imprimir etiquetas
+            </button>
+          )}
+        </div>
       )}
       {inTransit && (
         <div className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-accent">

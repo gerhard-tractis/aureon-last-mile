@@ -215,6 +215,8 @@ export type Database = {
           deleted_at: string | null
           external_load_id: string
           id: string
+          labels_printed_at: string | null
+          labels_printed_by: string | null
           operator_id: string
           pickup_location: string | null
           retailer_name: string | null
@@ -235,6 +237,8 @@ export type Database = {
           deleted_at?: string | null
           external_load_id: string
           id?: string
+          labels_printed_at?: string | null
+          labels_printed_by?: string | null
           operator_id: string
           pickup_location?: string | null
           retailer_name?: string | null
@@ -255,6 +259,8 @@ export type Database = {
           deleted_at?: string | null
           external_load_id?: string
           id?: string
+          labels_printed_at?: string | null
+          labels_printed_by?: string | null
           operator_id?: string
           pickup_location?: string | null
           retailer_name?: string | null
@@ -930,6 +936,27 @@ export type Database = {
       }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
       get_operator_id: { Args: never; Returns: string }
+      mark_manifest_labels_printed: {
+        Args: { p_manifest_id: string }
+        Returns: undefined
+      }
+      get_manifest_label_data: {
+        Args: { p_manifest_id: string; p_package_id?: string | null }
+        Returns: {
+          package_id: string
+          package_label: string
+          package_number: string | null
+          declared_box_count: number | null
+          sku_items: Json
+          order_number: string
+          customer_name: string
+          delivery_address: string
+          comuna: string
+          customer_phone: string
+          external_load_id: string
+          retailer_name: string | null
+        }[]
+      }
       log_audit_event: {
         Args: {
           p_action: string

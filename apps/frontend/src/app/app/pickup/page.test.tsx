@@ -39,6 +39,10 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+vi.mock('@/hooks/modules/useEnabledModules', () => ({
+  useModuleEnabled: () => false,
+}));
+
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
   useActivePickupRoute: () => ({ data: null, isLoading: false }),
 }));

@@ -31,10 +31,15 @@ export type OrderDetailData = {
   leading_status: string;
   packages: PackageDetail[];
   auditLogs: AuditEntry[];
+  /** spec-53 — the manifest this order's packages belong to, resolved via
+   * external_load_id (orders and manifests are not FK-linked). NULL when the
+   * order has no external_load_id, or no manifests row exists for it yet. */
+  manifestId: string | null;
 };
 
-type OrderRow = Omit<OrderDetailData, 'auditLogs'> & {
+type OrderRow = Omit<OrderDetailData, 'auditLogs' | 'manifestId'> & {
   packages: PackageDetail[];
+  external_load_id: string | null;
 };
 
 export function useOrderDetail(orderId: string | null) {
@@ -47,7 +52,7 @@ export function useOrderDetail(orderId: string | null) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: orderData, error: orderError } = await (client.from('orders') as any)
         .select(
-          'id, order_number, retailer_name, customer_name, customer_phone, delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end, status, leading_status, packages(id, label, package_number, status, status_updated_at)',
+          'id, order_number, retailer_name, customer_name, customer_phone, delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end, status, leading_status, external_load_id, packages(id, label, package_number, status, status_updated_at)',
         )
         .eq('id', orderId!)
         .single();
@@ -59,6 +64,19 @@ export function useOrderDetail(orderId: string | null) {
       // manually-defined packages[] that diverges from the generated schema shape.
       const order = orderData as unknown as OrderRow;
 
+      // 1b. Resolve the manifest for this order's external_load_id (spec-53).
+      // orders and manifests are not FK-linked — they share external_load_id.
+      let manifestId: string | null = null;
+      if (order.external_load_id) {
+        const { data: manifestData } = await client
+          .from('manifests')
+          .select('id')
+          .eq('external_load_id', order.external_load_id)
+          .is('deleted_at', null)
+          .maybeSingle();
+        manifestId = (manifestData as { id: string } | null)?.id ?? null;
+      }
+
       // 2. Fetch audit logs
       const { data: auditData, error: auditError } = await client
         .from('audit_logs')
@@ -69,9 +87,11 @@ export function useOrderDetail(orderId: string | null) {
 
       if (auditError) throw auditError;
 
+      const { external_load_id: _externalLoadId, ...orderFields } = order;
       return {
-        ...order,
+        ...orderFields,
         auditLogs: (auditData as AuditEntry[] | null) ?? [],
+        manifestId,
       };
     },
     enabled: !!orderId,

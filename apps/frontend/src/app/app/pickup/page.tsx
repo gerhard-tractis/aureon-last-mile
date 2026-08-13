@@ -22,6 +22,8 @@ import { useActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 import { useStartPickupRoute } from '@/hooks/pickup/useStartPickupRoute';
 import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
+import { ModuleKey } from '@/lib/modules/registry';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
@@ -43,6 +45,7 @@ function PickupPageContent() {
   const searchParams = useSearchParams();
   const { t } = useTranslation();
   const { operatorId } = useOperatorId();
+  const labelsEnabled = useModuleEnabled(operatorId, ModuleKey.PACKAGE_LABELS);
   const [activeTab, setActiveTab] = useState<'active' | 'in_transit' | 'completed'>('active');
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -155,6 +158,12 @@ function PickupPageContent() {
     router.push('/app/pickup/route/active');
   };
 
+  // spec-53 — opens the label print route in a new tab so the executive keeps
+  // the pickup screen open while the browser print dialog runs in the other.
+  const handlePrintLabels = (manifestId: string) => {
+    window.open(`/app/pickup/manifests/${manifestId}/labels/print`, '_blank');
+  };
+
   // Active pickup route surfaced at the top of the landing.
   const { data: activeRoute } = useActivePickupRoute(operatorId);
   const { data: activeManifests = [] } = useRouteManifests(
@@ -262,6 +271,11 @@ function PickupPageContent() {
                   packageCount={m.package_count}
                   verifiedCount={m.verified_count}
                   createdAt={m.created_at}
+                  labelsEnabled={labelsEnabled}
+                  manifestId={m.id}
+                  labelsPrintedAt={m.labels_printed_at}
+                  labelsPrintedByName={m.labels_printed_by_name}
+                  onPrintLabels={() => m.id && handlePrintLabels(m.id)}
                   onClick={() => handleManifestClick(
                     m.external_load_id, m.retailer_name, m.order_count, m.package_count,
                   )}
@@ -294,6 +308,11 @@ function PickupPageContent() {
                   packageCount={m.total_packages ?? 0}
                   createdAt={m.created_at}
                   inTransit
+                  labelsEnabled={labelsEnabled}
+                  manifestId={m.id}
+                  labelsPrintedAt={m.labels_printed_at}
+                  labelsPrintedByName={m.labels_printed_by_name}
+                  onPrintLabels={() => handlePrintLabels(m.id)}
                   onClick={() => handleInTransitClick(m.external_load_id)}
                 />
               ))
@@ -325,6 +344,11 @@ function PickupPageContent() {
                   createdAt={m.created_at}
                   completedAt={m.completed_at}
                   interactive={false}
+                  labelsEnabled={labelsEnabled}
+                  manifestId={m.id}
+                  labelsPrintedAt={m.labels_printed_at}
+                  labelsPrintedByName={m.labels_printed_by_name}
+                  onPrintLabels={() => handlePrintLabels(m.id)}
                   onClick={() => {}}
                 />
               ))

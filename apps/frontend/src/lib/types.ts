@@ -215,6 +215,8 @@ export type Database = {
           deleted_at: string | null
           external_load_id: string
           id: string
+          labels_printed_at: string | null
+          labels_printed_by: string | null
           operator_id: string
           pickup_location: string | null
           pickup_route_id: string | null
@@ -237,6 +239,8 @@ export type Database = {
           deleted_at?: string | null
           external_load_id: string
           id?: string
+          labels_printed_at?: string | null
+          labels_printed_by?: string | null
           operator_id: string
           pickup_location?: string | null
           pickup_route_id?: string | null
@@ -259,6 +263,8 @@ export type Database = {
           deleted_at?: string | null
           external_load_id?: string
           id?: string
+          labels_printed_at?: string | null
+          labels_printed_by?: string | null
           operator_id?: string
           pickup_location?: string | null
           pickup_route_id?: string | null
@@ -287,6 +293,13 @@ export type Database = {
             columns: ["pickup_route_id"]
             isOneToOne: false
             referencedRelation: "pickup_routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "manifests_labels_printed_by_fkey"
+            columns: ["labels_printed_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1813,6 +1826,27 @@ export type Database = {
       get_ops_control_snapshot: {
         Args: { p_operator_id: string }
         Returns: Json
+      }
+      mark_manifest_labels_printed: {
+        Args: { p_manifest_id: string }
+        Returns: undefined
+      }
+      get_manifest_label_data: {
+        Args: { p_manifest_id: string; p_package_id?: string | null }
+        Returns: {
+          package_id: string
+          package_label: string
+          package_number: string | null
+          declared_box_count: number | null
+          sku_items: Json
+          order_number: string
+          customer_name: string
+          delivery_address: string
+          comuna: string
+          customer_phone: string
+          external_load_id: string
+          retailer_name: string | null
+        }[]
       }
       start_pickup_route: {
         Args: { p_vehicle_label?: string | null }
