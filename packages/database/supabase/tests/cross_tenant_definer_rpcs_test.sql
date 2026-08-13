@@ -23,14 +23,36 @@ INSERT INTO operators (id, name, slug)
 VALUES ('bbbbbbbb-0000-4000-b000-00000000c401'::uuid, 'Guard Test Operator B', 'guard-test-b')
 ON CONFLICT (slug) DO NOTHING;
 
-INSERT INTO public.users (id, operator_id, email, role)
-VALUES (
+-- public.users.id is FK -> auth.users(id), so the row has to originate there.
+-- The on_auth_user_created trigger runs handle_new_user(), which reads BOTH
+-- operator_id and role from raw_app_meta_data (raw_user_meta_data supplies only
+-- full_name) and raises if operator_id is absent — inserting straight into
+-- public.users, as this file used to, violates users_id_fkey and aborts the
+-- whole transaction before a single assertion runs.
+INSERT INTO auth.users (
+  id, instance_id, aud, role, email, encrypted_password,
+  email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+  created_at, updated_at, confirmation_token, recovery_token
+) VALUES (
   'cccccccc-0000-4000-c000-00000000c401'::uuid,
-  'aaaaaaaa-0000-4000-a000-00000000c401'::uuid,
-  'guard-test-user-a@example.com',
-  'admin'
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated','authenticated','guard-test-user-a@example.com',
+  crypt('x', gen_salt('bf')), NOW(),
+  '{"operator_id":"aaaaaaaa-0000-4000-a000-00000000c401","role":"admin"}'::jsonb,
+  '{"full_name":"Guard Test User A"}'::jsonb,
+  NOW(), NOW(), '', ''
 )
 ON CONFLICT (id) DO NOTHING;
+
+DO $$
+DECLARE op UUID;
+BEGIN
+  SELECT operator_id INTO op FROM public.users
+   WHERE id = 'cccccccc-0000-4000-c000-00000000c401';
+  IF op IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-00000000c401'::uuid THEN
+    RAISE EXCEPTION 'fixture broken: public.users row for the test user has operator_id %', op;
+  END IF;
+END $$;
 
 -- Act as that user for the rest of the test.
 SELECT set_config(

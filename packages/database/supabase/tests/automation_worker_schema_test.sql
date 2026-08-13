@@ -5,6 +5,15 @@
 --          correct structure, RLS, indexes, constraints, FKs, triggers, and seed data.
 -- Review fixes: Added tests for constraints (M3), updated_at triggers (H1), jobs.updated_at (M2),
 --               raw_files.created_at (M1), raw_files.file_size_bytes BIGINT (M4), order_status_enum (H3)
+--
+-- 2026-08-13: wrapped in BEGIN/ROLLBACK (it had neither) and TEST 20's seed
+-- expectations corrected — see the note on TEST 20. The old summary block also
+-- printed "ALL 20 TESTS PASSED" unconditionally: with no transaction and no
+-- ON_ERROR_STOP, psql carried on past the TEST 20 failure and printed the
+-- success banner anyway. Anyone eyeballing this file's output was told it
+-- passed while it did not.
+
+BEGIN;
 
 -- =============================================================================
 -- TEST 1-3: ENUM types exist (including order_status_enum from H3 fix)
@@ -306,6 +315,18 @@ END $$;
 -- =============================================================================
 -- TEST 20: Seed data — Transportes Musan + Easy + Paris
 -- =============================================================================
+-- The original expectations here (easy = csv_email, paris = browser) were the
+-- Story 2.4 seed values. Both were changed on purpose by later migrations, and
+-- this test was never updated — it is why the file failed:
+--
+--   20260409000006_easy_webhook_primary_connector.sql    easy:  csv_email -> api
+--   20260504000001_paris_webhook_primary_connector.sql   paris: browser   -> api
+--
+-- Both say the webhook is now the primary integration. So the assertions are
+-- re-pointed at 'api', not relaxed: each client must still have exactly the
+-- connector_type its migration set, and the enum must still carry the legacy
+-- labels (csv_email, browser) because historical rows and the connector code
+-- still reference them.
 
 DO $$
 DECLARE
@@ -327,40 +348,55 @@ BEGIN
     RAISE EXCEPTION 'TEST 20 FAILED: Expected 2 Musan tenant_clients, found %', v_count;
   END IF;
 
-  -- Verify connector types
+  -- Verify connector types (post-webhook-migration state)
   IF NOT EXISTS (
     SELECT 1 FROM public.tenant_clients tc
     JOIN public.operators o ON o.id = tc.operator_id
-    WHERE o.slug = 'transportes-musan' AND tc.slug = 'easy' AND tc.connector_type = 'csv_email'
+    WHERE o.slug = 'transportes-musan' AND tc.slug = 'easy' AND tc.connector_type = 'api'
   ) THEN
-    RAISE EXCEPTION 'TEST 20 FAILED: Easy connector_type should be csv_email';
+    RAISE EXCEPTION 'TEST 20 FAILED: Easy connector_type should be api (set by 20260409000006), got %',
+      (SELECT tc.connector_type FROM public.tenant_clients tc
+       JOIN public.operators o ON o.id = tc.operator_id
+       WHERE o.slug = 'transportes-musan' AND tc.slug = 'easy');
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM public.tenant_clients tc
     JOIN public.operators o ON o.id = tc.operator_id
-    WHERE o.slug = 'transportes-musan' AND tc.slug = 'paris' AND tc.connector_type = 'browser'
+    WHERE o.slug = 'transportes-musan' AND tc.slug = 'paris' AND tc.connector_type = 'api'
   ) THEN
-    RAISE EXCEPTION 'TEST 20 FAILED: Paris connector_type should be browser';
+    RAISE EXCEPTION 'TEST 20 FAILED: Paris connector_type should be api (set by 20260504000001), got %',
+      (SELECT tc.connector_type FROM public.tenant_clients tc
+       JOIN public.operators o ON o.id = tc.operator_id
+       WHERE o.slug = 'transportes-musan' AND tc.slug = 'paris');
   END IF;
 
-  RAISE NOTICE 'TEST 20 PASSED: Seed data OK — Musan operator + Easy (csv_email) + Paris (browser)';
+  -- The legacy labels must survive in the enum: connector code and historical
+  -- rows still reference them, so an enum "cleanup" would be a breaking change.
+  SELECT COUNT(*) INTO v_count
+  FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+  WHERE t.typname = 'connector_type_enum'
+    AND e.enumlabel IN ('csv_email','api','browser');
+  IF v_count <> 3 THEN
+    RAISE EXCEPTION 'TEST 20 FAILED: connector_type_enum should still carry csv_email, api and browser; found % of 3', v_count;
+  END IF;
+
+  RAISE NOTICE 'TEST 20 PASSED: Seed data OK — Musan operator + Easy (api) + Paris (api), legacy enum labels intact';
 END $$;
 
 -- =============================================================================
 -- SUMMARY
 -- =============================================================================
 
+-- Reaching this line at all is the result: every assertion above raises, which
+-- aborts the transaction. Do NOT restore a banner that announces its own
+-- verdict — the previous one printed "ALL 20 TESTS PASSED" after TEST 20 had
+-- already failed.
 DO $$
 BEGIN
   RAISE NOTICE '==========================================================';
-  RAISE NOTICE 'Story 2.4 Test Suite: ALL 20 TESTS PASSED';
-  RAISE NOTICE '  ENUMs: connector_type, job_status, order_status (3)';
-  RAISE NOTICE '  tenant_clients: columns, RLS, indexes, UNIQUE constraint (4)';
-  RAISE NOTICE '  jobs: columns, RLS, partial index, FK to tenant_clients (4)';
-  RAISE NOTICE '  raw_files: columns, RLS, FK to jobs, BIGINT file_size (4)';
-  RAISE NOTICE '  orders: 9 new columns, FK to tenant_clients (2)';
-  RAISE NOTICE '  triggers: set_updated_at function + 2 triggers (2)';
-  RAISE NOTICE '  seed data: Musan + Easy + Paris (1)';
+  RAISE NOTICE 'Story 2.4 schema suite: reached the end without an abort';
   RAISE NOTICE '==========================================================';
 END $$;
+
+ROLLBACK;

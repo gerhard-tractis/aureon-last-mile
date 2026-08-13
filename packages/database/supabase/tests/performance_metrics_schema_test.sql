@@ -1,264 +1,50 @@
--- Performance Metrics Schema Test Suite
--- Story: 3.1 - Create Performance Metrics Tables and Calculation Logic
--- Date: 2026-02-24
--- Purpose: Verify delivery_attempts, performance_metrics tables, ENUMs, indexes,
---          RLS, FKs, triggers, functions, and cron job exist with correct structure.
--- Target: 28 assertion blocks
+-- Performance metrics schema test suite
+-- Story: 3.1 — Performance Metrics Tables and Calculation Logic
+--
+-- REWRITTEN 2026-08-13. The first half of this file (old TESTS 1-14 and 21)
+-- asserted the existence of the `delivery_attempts` table, the
+-- `delivery_attempt_status_enum` type, their indexes, FKs, RLS and audit
+-- trigger. All of those objects were deliberately removed on 2026-03-06 by
+-- 20260306000001_add_routes_dispatches_fleet_tables.sql, which backfilled the
+-- rows into public.dispatches and then ran:
+--
+--     DROP TABLE IF EXISTS public.delivery_attempts CASCADE;   -- step 10d
+--     DROP TYPE  IF EXISTS delivery_attempt_status_enum;       -- step 10e
+--
+-- The test was never updated, so it asserted a schema that had not existed for
+-- five months. Those assertions are gone; TEST 0 below replaces them with the
+-- inverse invariant, which is the one that still has value: the old objects
+-- must stay dead, and the replacement must be present.
+--
+-- The file also had no BEGIN/ROLLBACK. It is read-only (catalog inspection),
+-- but it is now wrapped anyway so the whole directory has one shape.
+
+BEGIN;
 
 -- =============================================================================
--- TEST 1: delivery_attempt_status_enum exists
+-- TEST 0: the delivery_attempts era is over and stays over
 -- =============================================================================
+-- Guards against an old migration being re-applied out of order and
+-- resurrecting the dropped objects — the exact drift scripts/pgtap-local.sh
+-- documents in its `apply` ledger.
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'delivery_attempt_status_enum') THEN
-    RAISE EXCEPTION 'TEST 1 FAILED: ENUM delivery_attempt_status_enum not found';
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'delivery_attempts') THEN
+    RAISE EXCEPTION 'TEST 0 FAILED: public.delivery_attempts is back — it was dropped by 20260306000001 in favour of public.dispatches';
   END IF;
-  RAISE NOTICE 'TEST 1 PASSED: delivery_attempt_status_enum ENUM exists';
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'delivery_attempt_status_enum') THEN
+    RAISE EXCEPTION 'TEST 0 FAILED: delivery_attempt_status_enum is back — dispatch_status_enum replaces it';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'dispatches') THEN
+    RAISE EXCEPTION 'TEST 0 FAILED: public.dispatches, the replacement for delivery_attempts, is missing';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'dispatch_status_enum') THEN
+    RAISE EXCEPTION 'TEST 0 FAILED: dispatch_status_enum is missing';
+  END IF;
+  RAISE NOTICE 'TEST 0 PASSED: delivery_attempts/delivery_attempt_status_enum stay dropped; dispatches/dispatch_status_enum present';
 END $$;
 
--- =============================================================================
--- TEST 2: delivery_attempt_status_enum has exactly 3 values
--- =============================================================================
-
-DO $$
-DECLARE
-  v_count INT;
-  v_values TEXT[];
-BEGIN
-  SELECT array_agg(e.enumlabel ORDER BY e.enumsortorder)
-  INTO v_values
-  FROM pg_enum e
-  JOIN pg_type t ON t.oid = e.enumtypid
-  WHERE t.typname = 'delivery_attempt_status_enum';
-
-  IF v_values IS NULL OR array_length(v_values, 1) != 3 THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: Expected 3 enum values, got %', array_length(v_values, 1);
-  END IF;
-  IF v_values != ARRAY['success', 'failed', 'returned'] THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: Expected {success,failed,returned}, got %', v_values;
-  END IF;
-  RAISE NOTICE 'TEST 2 PASSED: delivery_attempt_status_enum has correct values (success, failed, returned)';
-END $$;
-
--- =============================================================================
--- TEST 3: delivery_attempts table exists with all columns and correct types
--- =============================================================================
-
-DO $$
-DECLARE
-  v_col RECORD;
-  required_cols TEXT[] := ARRAY[
-    'id', 'operator_id', 'order_id', 'attempt_number', 'status',
-    'failure_reason', 'attempted_at', 'driver_id', 'created_at', 'deleted_at'
-  ];
-  col TEXT;
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = 'delivery_attempts') THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: Table delivery_attempts not found';
-  END IF;
-
-  FOREACH col IN ARRAY required_cols LOOP
-    IF NOT EXISTS (
-      SELECT 1 FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'delivery_attempts' AND column_name = col
-    ) THEN
-      RAISE EXCEPTION 'TEST 3 FAILED: delivery_attempts.% column not found', col;
-    END IF;
-  END LOOP;
-
-  -- Check specific column types
-  SELECT data_type INTO v_col FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'id';
-  IF v_col.data_type != 'uuid' THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: delivery_attempts.id expected uuid, got %', v_col.data_type;
-  END IF;
-
-  SELECT data_type INTO v_col FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'attempt_number';
-  IF v_col.data_type != 'integer' THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: delivery_attempts.attempt_number expected integer, got %', v_col.data_type;
-  END IF;
-
-  SELECT data_type INTO v_col FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'status';
-  IF v_col.data_type != 'USER-DEFINED' THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: delivery_attempts.status expected USER-DEFINED (enum), got %', v_col.data_type;
-  END IF;
-
-  SELECT data_type INTO v_col FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'failure_reason';
-  IF v_col.data_type != 'character varying' THEN
-    RAISE EXCEPTION 'TEST 3 FAILED: delivery_attempts.failure_reason expected varchar, got %', v_col.data_type;
-  END IF;
-
-  RAISE NOTICE 'TEST 3 PASSED: delivery_attempts table exists with all columns and correct types';
-END $$;
-
--- =============================================================================
--- TEST 4: delivery_attempts.operator_id is NOT NULL
--- =============================================================================
-
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'operator_id';
-  IF v_nullable != 'NO' THEN
-    RAISE EXCEPTION 'TEST 4 FAILED: delivery_attempts.operator_id should be NOT NULL';
-  END IF;
-  RAISE NOTICE 'TEST 4 PASSED: delivery_attempts.operator_id is NOT NULL';
-END $$;
-
--- =============================================================================
--- TEST 5: delivery_attempts.order_id is NOT NULL
--- =============================================================================
-
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'order_id';
-  IF v_nullable != 'NO' THEN
-    RAISE EXCEPTION 'TEST 5 FAILED: delivery_attempts.order_id should be NOT NULL';
-  END IF;
-  RAISE NOTICE 'TEST 5 PASSED: delivery_attempts.order_id is NOT NULL';
-END $$;
-
--- =============================================================================
--- TEST 6: delivery_attempts.attempted_at is NOT NULL
--- =============================================================================
-
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'attempted_at';
-  IF v_nullable != 'NO' THEN
-    RAISE EXCEPTION 'TEST 6 FAILED: delivery_attempts.attempted_at should be NOT NULL';
-  END IF;
-  RAISE NOTICE 'TEST 6 PASSED: delivery_attempts.attempted_at is NOT NULL';
-END $$;
-
--- =============================================================================
--- TEST 7: delivery_attempts.failure_reason is nullable
--- =============================================================================
-
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'failure_reason';
-  IF v_nullable != 'YES' THEN
-    RAISE EXCEPTION 'TEST 7 FAILED: delivery_attempts.failure_reason should be nullable';
-  END IF;
-  RAISE NOTICE 'TEST 7 PASSED: delivery_attempts.failure_reason is nullable';
-END $$;
-
--- =============================================================================
--- TEST 8: delivery_attempts.deleted_at is nullable (soft delete)
--- =============================================================================
-
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable FROM information_schema.columns
-  WHERE table_name = 'delivery_attempts' AND column_name = 'deleted_at';
-  IF v_nullable != 'YES' THEN
-    RAISE EXCEPTION 'TEST 8 FAILED: delivery_attempts.deleted_at should be nullable';
-  END IF;
-  RAISE NOTICE 'TEST 8 PASSED: delivery_attempts.deleted_at is nullable (soft delete)';
-END $$;
-
--- =============================================================================
--- TEST 9: RLS enabled on delivery_attempts
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname = 'public' AND c.relname = 'delivery_attempts' AND c.relrowsecurity = true
-  ) THEN
-    RAISE EXCEPTION 'TEST 9 FAILED: RLS not enabled on delivery_attempts';
-  END IF;
-  RAISE NOTICE 'TEST 9 PASSED: RLS enabled on delivery_attempts';
-END $$;
-
--- =============================================================================
--- TEST 10: FK delivery_attempts → orders(id) exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'delivery_attempts' AND constraint_type = 'FOREIGN KEY'
-      AND constraint_name LIKE '%order_id%'
-  ) THEN
-    RAISE EXCEPTION 'TEST 10 FAILED: FK to orders(id) not found on delivery_attempts';
-  END IF;
-  RAISE NOTICE 'TEST 10 PASSED: FK delivery_attempts → orders(id) exists';
-END $$;
-
--- =============================================================================
--- TEST 11: FK delivery_attempts → operators(id) exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.table_constraints
-    WHERE table_name = 'delivery_attempts' AND constraint_type = 'FOREIGN KEY'
-      AND constraint_name LIKE '%operator_id%'
-  ) THEN
-    RAISE EXCEPTION 'TEST 11 FAILED: FK to operators(id) not found on delivery_attempts';
-  END IF;
-  RAISE NOTICE 'TEST 11 PASSED: FK delivery_attempts → operators(id) exists';
-END $$;
-
--- =============================================================================
--- TEST 12: Index idx_delivery_attempts_operator_id exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_delivery_attempts_operator_id') THEN
-    RAISE EXCEPTION 'TEST 12 FAILED: idx_delivery_attempts_operator_id not found';
-  END IF;
-  RAISE NOTICE 'TEST 12 PASSED: idx_delivery_attempts_operator_id exists';
-END $$;
-
--- =============================================================================
--- TEST 13: Index idx_delivery_attempts_order_id exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_delivery_attempts_order_id') THEN
-    RAISE EXCEPTION 'TEST 13 FAILED: idx_delivery_attempts_order_id not found';
-  END IF;
-  RAISE NOTICE 'TEST 13 PASSED: idx_delivery_attempts_order_id exists';
-END $$;
-
--- =============================================================================
--- TEST 14: Index idx_delivery_attempts_attempted_at exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_delivery_attempts_attempted_at') THEN
-    RAISE EXCEPTION 'TEST 14 FAILED: idx_delivery_attempts_attempted_at not found';
-  END IF;
-  RAISE NOTICE 'TEST 14 PASSED: idx_delivery_attempts_attempted_at exists';
-END $$;
-
--- =============================================================================
 -- TEST 15: performance_metrics table exists with all required columns
 -- =============================================================================
 
@@ -367,18 +153,6 @@ BEGIN
 END $$;
 
 -- =============================================================================
--- TEST 21: audit_delivery_attempts_changes trigger exists
--- =============================================================================
-
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_delivery_attempts_changes') THEN
-    RAISE EXCEPTION 'TEST 21 FAILED: audit_delivery_attempts_changes trigger not found';
-  END IF;
-  RAISE NOTICE 'TEST 21 PASSED: audit_delivery_attempts_changes trigger exists';
-END $$;
-
--- =============================================================================
 -- TEST 22: audit_performance_metrics_changes trigger exists
 -- =============================================================================
 
@@ -435,25 +209,22 @@ BEGIN
 END $$;
 
 -- =============================================================================
--- TEST 25: get_failure_reasons function exists and returns jsonb
+-- TEST 25: get_failure_reasons is GONE (spec-30 cleanup)
 -- =============================================================================
+-- This slot used to assert get_failure_reasons(UUID,DATE,DATE) exists. It was
+-- dropped on 2026-04-09 by 20260409000012_spec30_drop_legacy_dashboard_rpcs.sql
+-- along with nine other legacy dashboard RPCs, superseded by the spec-30 RPCs.
+-- Asserting its absence keeps the slot honest and catches a resurrection.
 
 DO $$
-DECLARE
-  v_ret TEXT;
 BEGIN
-  SELECT pg_catalog.format_type(p.prorettype, NULL) INTO v_ret
-  FROM pg_proc p
-  JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public' AND p.proname = 'get_failure_reasons';
-
-  IF v_ret IS NULL THEN
-    RAISE EXCEPTION 'TEST 25 FAILED: function get_failure_reasons not found';
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_failure_reasons'
+  ) THEN
+    RAISE EXCEPTION 'TEST 25 FAILED: get_failure_reasons is back — 20260409000012 dropped it as a legacy dashboard RPC';
   END IF;
-  IF v_ret != 'jsonb' THEN
-    RAISE EXCEPTION 'TEST 25 FAILED: get_failure_reasons expected return jsonb, got %', v_ret;
-  END IF;
-  RAISE NOTICE 'TEST 25 PASSED: get_failure_reasons function exists and returns jsonb';
+  RAISE NOTICE 'TEST 25 PASSED: legacy get_failure_reasons stays dropped';
 END $$;
 
 -- =============================================================================
@@ -500,3 +271,5 @@ BEGIN
   END IF;
   RAISE NOTICE 'TEST 28 PASSED: cron job nightly-metrics is scheduled';
 END $$;
+
+ROLLBACK;

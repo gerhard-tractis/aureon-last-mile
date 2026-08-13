@@ -197,24 +197,24 @@ BEGIN
 
   -- Draft route
   INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, raw_data, status)
-  VALUES ('rrrr0001-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+  VALUES ('11110001-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
     'dispatchtrack', 'DRAFT_T37_001', CURRENT_DATE, '{}'::jsonb, 'draft');
 
   -- Completed route
   INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, raw_data, status)
-  VALUES ('rrrr0002-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+  VALUES ('11110002-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
     'dispatchtrack', 'DONE_T37_001', CURRENT_DATE, '{}'::jsonb, 'completed');
 
   -- Attach order 003A to the draft route
   INSERT INTO public.dispatches (id, operator_id, order_id, route_id, provider, raw_data, status)
-  VALUES ('disp0001-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0005-0000-0000-0000-000000000037', 'rrrr0001-0000-0000-0000-000000000037',
+  VALUES ('22220001-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'eeee0005-0000-0000-0000-000000000037', '11110001-0000-0000-0000-000000000037',
     'dispatchtrack', '{}'::jsonb, 'pending');
 
   -- Attach order 003B to the completed route
   INSERT INTO public.dispatches (id, operator_id, order_id, route_id, provider, raw_data, status)
-  VALUES ('disp0002-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0006-0000-0000-0000-000000000037', 'rrrr0002-0000-0000-0000-000000000037',
+  VALUES ('22220002-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'eeee0006-0000-0000-0000-000000000037', '11110002-0000-0000-0000-000000000037',
     'dispatchtrack', '{}'::jsonb, 'delivered');
 
   SELECT public.get_pre_route_snapshot(
@@ -529,14 +529,14 @@ BEGIN
 
   -- First package → Andén Norte (earlier created_at)
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id, created_at)
-  VALUES ('ffff0015a-000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+  VALUES ('ffff0015-a000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
     'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010A', '{}'::jsonb, 'en_bodega',
     'dddd0001-0000-0000-0000-000000000037',
     now() - interval '1 hour');
 
   -- Second package → Andén Sur (later created_at — invariant violation)
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id, created_at)
-  VALUES ('ffff0015b-000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+  VALUES ('ffff0015-b000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
     'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010B', '{}'::jsonb, 'en_bodega',
     'dddd0002-0000-0000-0000-000000000037',
     now());
@@ -575,8 +575,12 @@ ROLLBACK TO test_10;
 -- =============================================================================
 -- Summary
 -- =============================================================================
-RAISE NOTICE '========================================';
-RAISE NOTICE 'All get_pre_route_snapshot tests passed!';
-RAISE NOTICE '========================================';
+-- RAISE is PL/pgSQL, not SQL: these three lines used to sit at statement level
+-- and were a plain syntax error.
+DO $$ BEGIN
+  RAISE NOTICE '========================================';
+  RAISE NOTICE 'All get_pre_route_snapshot tests passed!';
+  RAISE NOTICE '========================================';
+END $$;
 
 ROLLBACK;
