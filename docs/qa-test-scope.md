@@ -59,8 +59,8 @@ Record failures against the spec listed in the right-hand column.
 | 2.2 | Scan load `/app/pickup/scan/[loadId]` | pickup_crew | Valid label → `verified`; unknown → `not_found`; rescan → `duplicate`. Packages advance `ingresado → verificado` |
 | 2.3 | Review + discrepancies | pickup_crew | Missing packages recorded in `discrepancy_notes` |
 | 2.4 | Complete load with signature | pickup_crew | Signature stored in the `manifests` bucket; manifest `completed` |
-| 2.5 | Start pickup route | pickup_crew | `start_pickup_route` → `draft`; second concurrent route for the same driver **rejected** (unique partial index) |
-| 2.6 | Add manifests, close route | pickup_crew | `close_pickup_route` rejects a route with zero verified scans; otherwise → `in_transit` |
+| 2.5 | Start pickup route | pickup_crew | `start_pickup_route(p_vehicle_id)` requires a vehicle from `vehicles` and creates the route **`in_progress`** (spec-52 — there is no longer a `draft` state); second concurrent route for the same driver **rejected** (unique partial index) |
+| 2.6 | Add manifests, hand off at the hub | pickup_crew + warehouse_staff | Driver adds manifests and shows the route QR; the **receptionist's scan** opens the batch via `open_route_reception`, which moves the route to `in_transit` and creates the `route_receptions` row. `close_pickup_route` still exists but is deprecated — the driver no longer closes their own route |
 | 2.7 | Route QR `/app/pickup/route/[routeId]/qr` | pickup_crew | QR renders and resolves to the route |
 | 2.8 | Cancel route | operations_manager | `cancel_pickup_route` → `cancelled`; manifests released |
 
