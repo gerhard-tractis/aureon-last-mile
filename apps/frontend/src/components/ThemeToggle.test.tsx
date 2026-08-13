@@ -35,14 +35,14 @@ describe('ThemeToggle', () => {
     mockSetMode.mockClear();
   });
 
-  it('renders light and dark buttons when no custom branding', () => {
+  it('renders Claro and Oscuro segments when no custom branding', () => {
     render(<ThemeToggle />);
-    expect(screen.getByRole('button', { name: 'Light mode' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dark mode' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Brand mode' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tema oscuro' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tema de marca' })).not.toBeInTheDocument();
   });
 
-  it('renders brand mode button when hasBranding is true', () => {
+  it('renders the brand segment when hasBranding is true', () => {
     vi.mocked(useBranding).mockReturnValue({
       hasBranding: true,
       palette: { brand_primary: '#ff0000', brand_background: '#ffffff', brand_text: '#000000' },
@@ -52,7 +52,7 @@ describe('ThemeToggle', () => {
       isLoading: false,
     });
     render(<ThemeToggle />);
-    expect(screen.getByRole('button', { name: 'Brand mode' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tema de marca' })).toBeInTheDocument();
   });
 
   it('marks the active mode button as pressed', () => {
@@ -64,13 +64,13 @@ describe('ThemeToggle', () => {
       isCustom: false,
     });
     render(<ThemeToggle />);
-    expect(screen.getByRole('button', { name: 'Dark mode' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Light mode' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Tema oscuro' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Tema claro' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('calls setMode with correct value when a button is clicked', () => {
     render(<ThemeToggle />);
-    fireEvent.click(screen.getByRole('button', { name: 'Dark mode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tema oscuro' }));
     expect(mockSetMode).toHaveBeenCalledWith('dark');
   });
 
@@ -84,12 +84,47 @@ describe('ThemeToggle', () => {
       isLoading: false,
     });
     render(<ThemeToggle />);
-    fireEvent.click(screen.getByRole('button', { name: 'Brand mode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Tema de marca' }));
     expect(mockSetMode).toHaveBeenCalledWith('custom');
   });
 
-  it('renders the group container with correct aria-label', () => {
+  it('labels the segmented group', () => {
     render(<ThemeToggle />);
-    expect(screen.getByRole('group', { name: 'Theme mode' })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Tema' })).toBeInTheDocument();
+  });
+});
+
+describe('ThemeToggle — segmented control (spec-54)', () => {
+  beforeEach(() => {
+    vi.mocked(useTheme).mockReturnValue({
+      mode: 'light',
+      setMode: mockSetMode,
+      toggle: vi.fn(),
+      isDark: false,
+      isCustom: false,
+    });
+    vi.mocked(useBranding).mockReturnValue({
+      hasBranding: false,
+      palette: null,
+      logoUrl: null,
+      faviconUrl: null,
+      companyName: null,
+      isLoading: false,
+    });
+  });
+
+  it('shows both choices at once rather than a single cycling button', () => {
+    // The operator has to see which theme is active without clicking to find out.
+    render(<ThemeToggle />);
+    expect(screen.getAllByRole('button')).toHaveLength(2);
+    expect(screen.getByText('Claro')).toBeInTheDocument();
+    expect(screen.getByText('Oscuro')).toBeInTheDocument();
+  });
+
+  it('drops the text labels in compact mode but keeps both buttons reachable', () => {
+    render(<ThemeToggle compact />);
+    expect(screen.queryByText('Claro')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tema claro' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tema oscuro' })).toBeInTheDocument();
   });
 });
