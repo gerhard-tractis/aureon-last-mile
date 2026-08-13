@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import RouteReceptionPage from './page';
+import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
 
 const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -31,29 +32,12 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const baseSnapshot = {
-  route: {
-    id: 'r1', code: 'PR-2026-0001', driver_id: 'd1', driver_name: 'Ana Ruiz',
-    vehicle_label: 'AAA-111', status: 'in_transit', in_transit_at: null,
-  },
-  route_reception: {
-    id: 'rr1', status: 'in_progress', expected_count: 3, received_count: 1,
-    started_at: null, completed_at: null, discrepancy_notes: null,
-  },
-  manifests: [
-    { id: 'm1', external_load_id: 'CARGA-001', retailer_name: 'Easy' },
-    { id: 'm2', external_load_id: 'CARGA-002', retailer_name: 'Sodimac' },
-  ],
-  expected_packages: [
-    { id: 'pkg-1', label: 'PKG-A', order_id: 'o1', order_number: '101', manifest_id: 'm1', status: 'verificado' },
-    { id: 'pkg-2', label: 'PKG-B', order_id: 'o1', order_number: '101', manifest_id: 'm1', status: 'verificado' },
-    { id: 'pkg-3', label: 'PKG-C', order_id: 'o2', order_number: '202', manifest_id: 'm2', status: 'verificado' },
-  ],
-  scans: [
-    { id: 's1', barcode: 'PKG-A', scan_result: 'received', package_id: 'pkg-1', scanned_at: '2026-06-25T10:00:00Z' },
-  ],
-  discrepancies: [],
-};
+// NOT a hand-written literal any more. The previous inline `baseSnapshot` was
+// untyped, so it silently used keys the RPC did not return — these tests were
+// green for six months while the page threw TypeError on render in production.
+// The shared fixture is `satisfies RouteReceptionSnapshot`, so it can no longer
+// drift from the interface without type-check failing. See the fixture header.
+const baseSnapshot = routeReceptionSnapshotFixture;
 
 describe('RouteReceptionPage', () => {
   beforeEach(() => {
@@ -70,6 +54,27 @@ describe('RouteReceptionPage', () => {
     render(<RouteReceptionPage />);
     expect(screen.getByText('Pedido #101')).toBeInTheDocument();
     expect(screen.getByText('Pedido #202')).toBeInTheDocument();
+  });
+
+  // Regression guards for the spec-47 contract defect. Both of these read
+  // fields the RPC was not returning: `route_reception.*` (read in JSX, so it
+  // threw on render) and `expected_packages[].id` (emitted as `package_id`, so
+  // no package could ever tick received).
+  it('renders the reception progress from route_reception counts', () => {
+    render(<RouteReceptionPage />);
+    const bar = screen.getByRole('progressbar');
+    expect(bar).toHaveAttribute('aria-valuenow', '1');
+    expect(bar).toHaveAttribute('aria-valuemax', '3');
+  });
+
+  it('marks a package received by matching expected_packages[].id to scans[].package_id', () => {
+    const { container } = render(<RouteReceptionPage />);
+    const scanned = container.querySelector('[data-package-id="pkg-1"]');
+    expect(scanned).toHaveAttribute('data-received', 'true');
+    expect(container.querySelector('[data-package-id="pkg-2"]')).toHaveAttribute(
+      'data-received',
+      'false',
+    );
   });
 
   it('renders the scanner input', () => {

@@ -9,6 +9,10 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 import { useRouteReceptionSnapshot } from './useRouteReceptionSnapshot';
+import {
+  routeReceptionSnapshotFixture,
+  routeReceptionSnapshotWithDiscrepancyFixture,
+} from '@/test/fixtures/routeReceptionSnapshot';
 
 function wrapperFactory() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -26,18 +30,13 @@ describe('useRouteReceptionSnapshot', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 
+  // The payload comes from the shared `satisfies RouteReceptionSnapshot`
+  // fixture, not an inline literal. The old inline literal was untyped and used
+  // keys `get_route_reception_snapshot` did not actually return, so this test
+  // proved nothing about the real RPC. The RPC side is pinned by
+  // packages/database/supabase/tests/route_reception_snapshot_contract.sql.
   it('calls get_route_reception_snapshot RPC with route id', async () => {
-    mockRpc.mockResolvedValue({
-      data: {
-        route: { id: 'r1', code: 'PR-2026-0001', driver_id: 'd1', driver_name: 'Ana', vehicle_label: null, status: 'in_transit', in_transit_at: null },
-        route_reception: { id: 'rr1', status: 'pending', expected_count: 5, received_count: 0, started_at: null, completed_at: null, discrepancy_notes: null },
-        manifests: [],
-        expected_packages: [],
-        scans: [],
-        discrepancies: [],
-      },
-      error: null,
-    });
+    mockRpc.mockResolvedValue({ data: routeReceptionSnapshotFixture, error: null });
 
     const { result } = renderHook(() => useRouteReceptionSnapshot('r1'), {
       wrapper: wrapperFactory(),
@@ -46,6 +45,40 @@ describe('useRouteReceptionSnapshot', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockRpc).toHaveBeenCalledWith('get_route_reception_snapshot', { p_route_id: 'r1' });
     expect(result.current.data?.route.code).toBe('PR-2026-0001');
+  });
+
+  it('exposes every key the RouteReceptionSnapshot contract declares', async () => {
+    mockRpc.mockResolvedValue({ data: routeReceptionSnapshotFixture, error: null });
+
+    const { result } = renderHook(() => useRouteReceptionSnapshot('r1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(Object.keys(result.current.data!).sort()).toEqual([
+      'discrepancies',
+      'expected_packages',
+      'manifests',
+      'route',
+      'route_reception',
+      'scans',
+    ]);
+  });
+
+  it('passes discrepancies through as an array', async () => {
+    mockRpc.mockResolvedValue({
+      data: routeReceptionSnapshotWithDiscrepancyFixture,
+      error: null,
+    });
+
+    const { result } = renderHook(() => useRouteReceptionSnapshot('r1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.discrepancies).toEqual([
+      { barcode: 'BOGUS-404', scanned_at: '2026-06-25T10:01:00Z' },
+    ]);
   });
 
   it('surfaces RPC error', async () => {
