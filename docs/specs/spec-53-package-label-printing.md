@@ -2,7 +2,7 @@
 
 > **Related:** [spec-40](spec-40-dock-zone-barcode-labels.md) (print pattern this reuses), [spec-45](spec-45-module-activation-layer.md) (module activation), [spec-42](spec-42-order-inspector.md) (single-package reprint entry point), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (pickup routes and manifests)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-13_
 

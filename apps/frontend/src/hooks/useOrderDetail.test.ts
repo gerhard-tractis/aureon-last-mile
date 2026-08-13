@@ -190,4 +190,63 @@ describe('useOrderDetail', () => {
     expect(mockFrom).toHaveBeenCalledWith('orders');
     expect(mockFrom).toHaveBeenCalledWith('audit_logs');
   });
+
+  it('resolves manifestId (spec-53) when the order has an external_load_id', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: { ...MOCK_ORDER_ROW, external_load_id: 'CARGA-001' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'manifests') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          maybeSingle: vi.fn().mockResolvedValue({ data: { id: 'manifest-1' }, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDetail('order-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.manifestId).toBe('manifest-1');
+  });
+
+  it('returns manifestId null when the order has no external_load_id', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDetail('order-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.manifestId).toBeNull();
+  });
 });

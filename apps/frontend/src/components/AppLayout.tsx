@@ -210,6 +210,7 @@ export default function AppLayout({
             <OrderInspector
               orderId={inspectorOrderId}
               onClose={() => setInspectorOrderId(null)}
+              packageLabelsEnabled={enabledModules.includes(ModuleKey.PACKAGE_LABELS)}
             />
           </>
         )}

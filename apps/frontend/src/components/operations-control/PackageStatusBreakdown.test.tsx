@@ -86,6 +86,30 @@ describe('PackageStatusBreakdown', () => {
     });
   });
 
+  describe('spec-53 reprint icon', () => {
+    it('hides the reprint icon when labelsEnabled is false', () => {
+      render(<PackageStatusBreakdown packages={[makePackage()]} manifestId="m-1" labelsEnabled={false} />);
+      expect(screen.queryByLabelText(/reimprimir etiqueta/i)).not.toBeInTheDocument();
+    });
+
+    it('hides the reprint icon when manifestId is null', () => {
+      render(<PackageStatusBreakdown packages={[makePackage()]} manifestId={null} labelsEnabled />);
+      expect(screen.queryByLabelText(/reimprimir etiqueta/i)).not.toBeInTheDocument();
+    });
+
+    it('shows a reprint link to the print route with ?packageId= when enabled', () => {
+      render(
+        <PackageStatusBreakdown
+          packages={[makePackage({ id: 'pkg-1', label: 'ABC123' })]}
+          manifestId="m-1"
+          labelsEnabled
+        />,
+      );
+      const link = screen.getByLabelText('Reimprimir etiqueta de ABC123');
+      expect(link).toHaveAttribute('href', '/app/pickup/manifests/m-1/labels/print?packageId=pkg-1');
+    });
+  });
+
   describe('Multiple packages', () => {
     it('renders all packages', () => {
       const packages = [

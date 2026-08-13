@@ -81,4 +81,70 @@ describe('ManifestCard', () => {
     expect(screen.queryByTestId('in-progress-badge')).not.toBeInTheDocument();
     expect(screen.getByText('Pickup confirmado')).toBeInTheDocument();
   });
+
+  describe('spec-53 label printing', () => {
+    it('hides the print button when the module is disabled', () => {
+      render(<ManifestCard {...defaultProps} labelsEnabled={false} manifestId="m-1" />);
+      expect(screen.queryByText(/imprimir etiquetas/i)).not.toBeInTheDocument();
+    });
+
+    it('hides the print button when no manifest row exists yet', () => {
+      render(<ManifestCard {...defaultProps} labelsEnabled manifestId={null} />);
+      expect(screen.queryByText(/imprimir etiquetas/i)).not.toBeInTheDocument();
+    });
+
+    it('reads "Imprimir etiquetas" when labelsPrintedAt is null', () => {
+      render(<ManifestCard {...defaultProps} labelsEnabled manifestId="m-1" labelsPrintedAt={null} />);
+      expect(screen.getByText('Imprimir etiquetas')).toBeInTheDocument();
+    });
+
+    it('calls onPrintLabels directly (no confirm) on first print', () => {
+      const onPrintLabels = vi.fn();
+      render(
+        <ManifestCard
+          {...defaultProps}
+          labelsEnabled
+          manifestId="m-1"
+          labelsPrintedAt={null}
+          onPrintLabels={onPrintLabels}
+        />,
+      );
+      fireEvent.click(screen.getByText('Imprimir etiquetas'));
+      expect(onPrintLabels).toHaveBeenCalledTimes(1);
+    });
+
+    it('reads "Reimprimir etiquetas" and opens a confirm dialog showing the previous print date and user', () => {
+      render(
+        <ManifestCard
+          {...defaultProps}
+          labelsEnabled
+          manifestId="m-1"
+          labelsPrintedAt="2026-08-13T08:41:00Z"
+          labelsPrintedByName="Gerhard"
+        />,
+      );
+      expect(screen.getByText('Reimprimir etiquetas')).toBeInTheDocument();
+      fireEvent.click(screen.getByText('Reimprimir etiquetas'));
+      const description = screen.getByText(/Última impresión/);
+      expect(description).toHaveTextContent('Gerhard');
+    });
+
+    it('calls onPrintLabels only after confirming the reprint dialog', () => {
+      const onPrintLabels = vi.fn();
+      render(
+        <ManifestCard
+          {...defaultProps}
+          labelsEnabled
+          manifestId="m-1"
+          labelsPrintedAt="2026-08-13T08:41:00Z"
+          labelsPrintedByName="Gerhard"
+          onPrintLabels={onPrintLabels}
+        />,
+      );
+      fireEvent.click(screen.getByText('Reimprimir etiquetas'));
+      expect(onPrintLabels).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText('Reimprimir'));
+      expect(onPrintLabels).toHaveBeenCalledTimes(1);
+    });
+  });
 });
