@@ -49,6 +49,17 @@ export async function seedTenancy(
 ): Promise<number> {
   let created = 0;
 
+  // The baseline operator ships with NO modules enabled, so every qa-*@qa.test
+  // user sees a sidebar containing only the ungated pages (Capacidad,
+  // Auditoría, Admin) and none of the operational modules. Enable all nine so
+  // the six QA logins can actually reach the workflows under test.
+  //
+  // Together with the two operators below this forms the activation matrix:
+  //   baseline  -> all nine       (everything visible)
+  //   second    -> three          (partial)
+  //   blank     -> none           (Phase 0 exit criterion)
+  await enableModules(db, FIXED_IDS.BASELINE_OPERATOR, ALL_MODULE_KEYS);
+
   // ── Second operator: real data, so isolation checks have something to find ─
   await createOperator(db, {
     id: FIXED_IDS.SECOND_OPERATOR,
@@ -93,6 +104,15 @@ export async function seedTenancy(
            WHERE operator_id = $1 AND disabled_at IS NULL`,
     params: [FIXED_IDS.SECOND_OPERATOR],
     expected: SECOND_OPERATOR_MODULES.length,
+  });
+
+  await assertCount(db, collector, {
+    scenario: 'tenancy/baseline-modules',
+    detail: 'modules enabled for the baseline operator (drives the sidebar)',
+    sql: `SELECT count(*) AS count FROM public.operator_enabled_modules
+           WHERE operator_id = $1 AND disabled_at IS NULL`,
+    params: [FIXED_IDS.BASELINE_OPERATOR],
+    expected: ALL_MODULE_KEYS.length,
   });
 
   await assertCount(db, collector, {
