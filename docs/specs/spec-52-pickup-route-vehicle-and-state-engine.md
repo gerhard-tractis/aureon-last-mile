@@ -796,7 +796,22 @@ Separate migration so it can be reasoned about and rolled back independently of 
 
 ### Task 5: receptionist trigger — `open_route_reception`, route lock, reopen
 
-**Atomic with the frontend removal of `CloseRouteButton`**, which is listed in this task's own Files block and Step 4 — dropping the RPC breaks the page build, so the SQL and the deletion land in **one** commit.
+> ## ⚠️ RE-SCOPED DURING IMPLEMENTATION — this task is now EXPAND-ONLY
+>
+> The text below (drop `close_pickup_route`, remove the trigger's `→ in_transit` branch, delete `CloseRouteButton`, rewrite four spec47 tests) describes the **original** plan. It was not implemented that way, and it must not be.
+>
+> **Why:** the database chunk ships ahead of the frontend. Dropping close in this task would *deadlock* production, not merely degrade it — drivers would lose the close button, `close_pickup_route` would be gone, but the reception UI still gates on `status='in_transit'`, which today only happens via close. Routes could never reach reception at all.
+>
+> **What actually shipped** (migration `20260812000005`, commit `a901eab`):
+> - `open_route_reception`, `reopen_pickup_route`, and the `pickup_scans` route-lock trigger — all added
+> - `close_pickup_route` **kept and working**
+> - the trigger's `→ in_transit` branch **kept** — it is what makes close still work
+> - **no frontend file touched**
+> - deploy-time post-conditions that abort the migration if either has already been removed, as a tripwire against the contract phase landing out of order
+>
+> Both paths coexist safely: a driver-closed route gets its batch from the trigger, and `open_route_reception` detects it and returns the same row rather than inserting a second (which `uniq_route_receptions_pickup_route` would reject).
+>
+> **The removals move to the contract phase, Task 8.** See "Expand/contract release plan" below.
 
 **Files:**
 - Create: `20260812000005_spec52_receptionist_trigger.sql`
@@ -873,6 +888,38 @@ END IF;
 
 - [ ] **Step 4: Re-run — all pass**
 - [ ] **Step 5: Commit** — `feat(spec-52): track unexpected packages, close manifests, fix offsetting discrepancies`
+
+---
+
+## Expand/contract release plan (added during implementation)
+
+The database chunk deploys **before** the frontend chunk, and merge to `main` auto-deploys. Anything the current frontend calls must keep working until the frontend switches. So spec-52 ships in two phases.
+
+### Expand — the database chunk (Tasks 1-6). Additive only.
+
+| Kept working | Why |
+|---|---|
+| `start_pickup_route(TEXT)` | UI field is `"Vehículo (opcional)"` and sends `null` (`StartRouteButton.tsx:32,61`). Now a compat wrapper: normalizes the plate, find-or-creates the vehicle, and routes a **blank** label to the operator's inactive `SIN-REGISTRO` placeholder. |
+| `close_pickup_route` + the `→ in_transit` trigger branch | The reception UI still gates on `in_transit`, reachable only via close. Removing it would deadlock reception. |
+| `pickup_routes.vehicle_label` | Five components still read it. `start_pickup_route(UUID)` now writes the plate into it so it stays truthful. |
+| `uniq_pickup_routes_one_active_per_vehicle` | **Deferred, not shipped.** During expand, blank labels and free-text labels ("Camión 1", "Ana") legitimately resolve to a shared vehicle row. Enforcing one-active-route-per-vehicle before `VehicleSelect` exists would block a second driver. `uniq_pickup_routes_one_active_per_driver` **is** enforced. |
+
+### Contract — folded into Task 8 of the frontend chunk
+
+1. `DROP FUNCTION start_pickup_route(TEXT)` and its internal `_get_or_create_unregistered_vehicle` helper
+2. remove the `SIN-REGISTRO` exemption from `start_pickup_route(UUID)` — during expand it accepts that one inactive vehicle so the blank-label path can delegate
+3. `DROP FUNCTION close_pickup_route` and remove the trigger's `→ in_transit` branch, once the reception UI calls `open_route_reception`
+4. delete `CloseRouteButton` + `useClosePickupRoute` and rewrite the four spec47 tests that reach `in_transit` via a raw status flip
+5. **add `uniq_pickup_routes_one_active_per_vehicle`** — and run this pre-flight against production first, because after backfill an operator's routes may share the placeholder vehicle:
+```sql
+SELECT operator_id, COUNT(*) FROM public.pickup_routes
+ WHERE status = 'in_progress' AND deleted_at IS NULL
+ GROUP BY operator_id HAVING COUNT(*) > 1;
+```
+   Any row means the index build aborts the deploy. Reconcile first.
+6. stop writing `vehicle_label`; drop the column once nothing reads it
+
+Migration `20260812000005` carries deploy-time post-conditions that abort if steps 3 land out of order.
 
 ---
 
