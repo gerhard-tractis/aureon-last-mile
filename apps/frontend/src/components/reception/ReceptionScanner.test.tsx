@@ -165,4 +165,53 @@ describe('ReceptionScanner', () => {
     expect(onScan).toHaveBeenCalledTimes(1);
     expect(onScan).toHaveBeenCalledWith('CTN12345');
   });
+
+  describe('ScanFeedbackBanner', () => {
+    it('shows the received banner', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'received' }} />
+      );
+      expect(screen.getByText('Paquete recibido')).toBeInTheDocument();
+    });
+
+    it('shows the duplicate banner', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'duplicate' }} />
+      );
+      expect(screen.getByText('Paquete ya escaneado')).toBeInTheDocument();
+    });
+
+    it('shows a wrong-truck banner for route_mismatch, not the generic not_found text', () => {
+      render(
+        <ReceptionScanner
+          {...defaultProps}
+          lastScanResult={{ scanResult: 'route_mismatch' }}
+        />
+      );
+      expect(screen.getByText('Paquete de otro camión')).toBeInTheDocument();
+      expect(screen.queryByText('Paquete no encontrado')).not.toBeInTheDocument();
+    });
+
+    it('prefers the validator message for route_mismatch when present', () => {
+      render(
+        <ReceptionScanner
+          {...defaultProps}
+          lastScanResult={{
+            scanResult: 'route_mismatch',
+            message: 'Paquete no pertenece a este camión',
+          }}
+        />
+      );
+      expect(
+        screen.getByText('Paquete no pertenece a este camión')
+      ).toBeInTheDocument();
+    });
+
+    it('falls back to the not_found banner for any other result', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'not_found' }} />
+      );
+      expect(screen.getByText('Paquete no encontrado')).toBeInTheDocument();
+    });
+  });
 });
