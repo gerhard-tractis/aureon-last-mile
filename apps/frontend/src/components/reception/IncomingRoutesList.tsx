@@ -4,17 +4,43 @@ import { useRouter } from 'next/navigation';
 import { Truck, Package, Layers, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/EmptyState';
-import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
+import type {
+  IncomingRoute,
+  IncomingRouteStatus,
+} from '@/hooks/reception/useIncomingRoutes';
 
 interface IncomingRoutesListProps {
   routes: IncomingRoute[];
+  /** Lifecycle status of the rows — decides where a tap goes. */
+  status?: IncomingRouteStatus;
 }
 
-export function IncomingRoutesList({ routes }: IncomingRoutesListProps) {
+/**
+ * Navigation is status-dependent, and that is the whole safety story.
+ *
+ * `in_progress` rows are trucks still out collecting: they go to the read-only
+ * preview, which has no side effect. Only the QR scan or the confirmed
+ * "Recibir sin QR" on that page may open a reception — a row tap must never
+ * stamp an arrival or lock the driver out mid-route.
+ *
+ * `in_transit` (and `received`) rows already have a batch, so they go straight
+ * into the reception session.
+ */
+export function IncomingRoutesList({
+  routes,
+  status = 'in_transit',
+}: IncomingRoutesListProps) {
   const router = useRouter();
+  const isOnTheRoad = status === 'in_progress';
 
   if (routes.length === 0) {
-    return (
+    return isOnTheRoad ? (
+      <EmptyState
+        icon={Truck}
+        title="Sin rutas en camino"
+        description="Las rutas que los choferes tengan en retiro aparecerán aquí."
+      />
+    ) : (
       <EmptyState
         icon={Truck}
         title="Sin rutas entrantes"
@@ -47,10 +73,13 @@ export function IncomingRoutesList({ routes }: IncomingRoutesListProps) {
               <Package className="h-3 w-3" />
               {route.expected_packages} paquetes
             </p>
-            {route.in_transit_at && (
+            {(isOnTheRoad ? route.started_at : route.in_transit_at) && (
               <p className="text-xs text-text-muted flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                Salió {new Date(route.in_transit_at).toLocaleString('es-CL', {
+                {isOnTheRoad ? 'Inició' : 'Salió'}{' '}
+                {new Date(
+                  (isOnTheRoad ? route.started_at : route.in_transit_at)!,
+                ).toLocaleString('es-CL', {
                   day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
                 })}
               </p>
@@ -58,9 +87,16 @@ export function IncomingRoutesList({ routes }: IncomingRoutesListProps) {
           </div>
           <Button
             size="sm"
-            onClick={() => router.push(`/app/reception/route/${route.id}`)}
+            variant={isOnTheRoad ? 'outline' : 'default'}
+            onClick={() =>
+              router.push(
+                isOnTheRoad
+                  ? `/app/reception/route/${route.id}/preview`
+                  : `/app/reception/route/${route.id}`,
+              )
+            }
           >
-            Iniciar recepción
+            {isOnTheRoad ? 'Ver detalle' : 'Iniciar recepción'}
           </Button>
         </div>
       ))}
