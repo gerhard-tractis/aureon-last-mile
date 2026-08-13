@@ -12,7 +12,11 @@ _Date: 2026-08-13_
 
 Print Aureon-quality 10 × 10 cm package labels at the hub **before the pickup crew departs**, so that every scan from hub reception onward reads a clean Code128 instead of the retailer's degraded barcode.
 
-Secondary — and arguably the larger win: packages carrying **generated sub-labels** (`CTN001-1`, `CTN001-2`, `CTN001-3`, minted at ingest when a retailer declares `declared_box_count > 1` but supplies a single barcode, see `packages.is_generated_label`) have **no physical barcode at all** today. This spec is the first time those boxes become individually scannable.
+**One label per `packages` row.** That is the unit this spec prints, and it is worth being precise about what that does and does not cover.
+
+`packages.declared_box_count` records how many physical boxes a manifest line represents, and the schema anticipates splitting those into sub-labels (`CTN001-1/-2/-3` via `is_generated_label` + `parent_label`). **That splitting is not implemented.** `intake-agent.ts:131-141` inserts exactly one `packages` row per manifest line and passes `declared_box_count` through untouched; no production code has ever created a sub-label row. So a manifest line declaring three boxes is one row, one label, three physical boxes — and this spec prints one label for it.
+
+Multi-box expansion is therefore a real, separate gap, deferred to the follow-up described at the end of this spec. Spec-53 stands on its own regardless: it fixes barcode *quality* for the single-box case, which is the overwhelming majority of volume.
 
 ## Background
 
@@ -54,7 +58,7 @@ Two consequences follow, and both are load-bearing:
 1. **The client's tracking number must be the visually dominant element on the label.** It is the matching key, and a misread here puts the wrong label on the wrong box, corrupting every downstream scan silently. This is why layout "match-first" was chosen over a comuna-dominant layout.
 2. **The manifest ID must be unmistakable.** The stack is grouped by manifest; a crew working the wrong pile at a retailer is the worst realistic failure mode. Hence the large top band.
 
-For generated sub-labels the match is deliberately loose: three identical boxes under `CTN001` receive `CTN001-1/-2/-3` in any order. The boxes are interchangeable, so any assignment is correct.
+Should sub-label rows ever exist (the schema supports them; nothing creates them today), the match is deliberately loose: three identical boxes under `CTN001` would receive `CTN001-1/-2/-3` in any order, since the boxes are interchangeable and any assignment is correct.
 
 ### Barcode payload
 
@@ -198,6 +202,7 @@ Server component. `requireModuleEnabled(ModuleKey.PACKAGE_LABELS)` → `notFound
 | `sku_items` empty array | Contents block renders its caption and nothing else; no crash, no empty bullet. |
 | Very long `delivery_address` | Clamped to 2 lines with CSS `line-clamp`; the address is a courier aid, and the authoritative copy is in the app. |
 | Large manifest (300+ packages) | `bwip-js` renders synchronously per label, so a large manifest is one long commit. Measure during implementation; if it stalls the tab, paginate the print job with an explicit "imprimiendo 1–200 de 430" banner. **Never silently truncate.** |
+| `declared_box_count > 1` | **Known limitation.** One label prints for the row. The crew applies it to one box; the other boxes travel without an Aureon barcode, exactly as they do today. The label still shows "Bulto 1 de 3", so the gap is visible to the crew rather than silent. Resolved by the follow-up below — not worked around here. |
 | Reprint | Overwrites `labels_printed_at` / `labels_printed_by`. No versioning, no history table. |
 | Module disabled mid-session | Route returns 404 via `requireModuleEnabled`; the button is absent from `ManifestCard`. |
 
@@ -209,7 +214,7 @@ Server component. `requireModuleEnabled(ModuleKey.PACKAGE_LABELS)` → `notFound
 - Renders every field from a full row.
 - Renders the Code128 SVG with `packages.label` as payload.
 - Truncates `sku_items` to 2 lines and shows `+N ítems más`.
-- Sub-label case (`CTN001-2`, `is_generated_label`) renders identically to a native label.
+- A row with `is_generated_label: true` and a `parent_label` renders identically to a native label (schema-supported today, unused until the follow-up ships).
 - Null `package_number` falls back to `1 de N`.
 
 **`PrintPackageLabels.test.tsx`**
@@ -241,3 +246,32 @@ Server component. `requireModuleEnabled(ModuleKey.PACKAGE_LABELS)` → `notFound
 2. `ModuleKey.PACKAGE_LABELS`, default OFF everywhere.
 3. Component, print route, entry points.
 4. Enable for the pilot tenant after a print test on the physical Zebra with real stock — the one step no test can cover, because label sizing depends on the printer driver's paper configuration.
+
+---
+
+## Follow-up (deferred): box expansion and field label generation
+
+Deliberately out of scope here, recorded so it is not lost. **Deferred at the user's request on 2026-08-13**, pending a mobile-printer decision.
+
+### The gap
+
+A `packages` row can represent several physical boxes, and nothing splits it into individually labelled units. That gap has two triggers:
+
+| Trigger | Where | Source of truth |
+|---|---|---|
+| **Declared** | Hub, before departure | `declared_box_count > 1` from ingest |
+| **Observed** | Retailer, during pickup | The crew counts more boxes than the manifest declares — common when a retailer under-reports box counts on multi-SKU orders |
+
+Both need the same mechanism: expand one `packages` row into N rows following the existing `parent_label` / `is_generated_label` convention, and print a label per resulting box. The observed case subsumes the declared one, because reality at the retailer overrides the manifest either way.
+
+### Why it can't be designed yet
+
+The observed case requires printing at the retailer, and the print path from a phone to a Bluetooth label printer is **not** the hub's browser-print mechanism. The realistic options — Web Bluetooth sending raw ZPL from Chrome on Android, a share-sheet handoff to Zebra Print Connect, or a native wrapper — differ in feasibility by printer brand and model, and no printer has been selected. Designing around an unchosen device would be guesswork.
+
+### What the follow-up spec must settle
+
+1. **Hardware first.** Which printer, confirmed by a spike that actually prints a Code128 from the crew's device before any application design is committed.
+2. **Code minting.** Sub-label format (`{parent_label}-{n}` per the column comment), uniqueness under `unique_label_per_operator`, and what happens to the parent row once expanded — does it remain scannable, or is it superseded by its children?
+3. **Who may expand.** Field expansion mutates package counts after ingest; it needs a role check and an audit trail, since it changes what the tenant is billed for and what the manifest reconciles against.
+4. **Discrepancy interaction.** Pickup already has a discrepancy flow (`DiscrepancyItem.tsx`). Expansion must feed that flow rather than compete with it — an undeclared box is a discrepancy first and a label second.
+5. **Whether the hub case ships first.** Expanding on `declared_box_count` at the hub needs no new hardware and could ship independently, ahead of the field path.
