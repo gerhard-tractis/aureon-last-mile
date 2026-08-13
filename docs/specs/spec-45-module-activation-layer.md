@@ -1,6 +1,6 @@
 # Spec 45 — Per-Tenant Module Activation Layer
 
-**Status:** in progress
+**Status:** completed
 
 ## Context
 
