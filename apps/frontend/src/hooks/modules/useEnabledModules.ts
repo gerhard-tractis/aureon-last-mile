@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 import { ModuleKey, isValidModuleKey } from '@/lib/modules/registry';
 
 /**
@@ -15,13 +16,11 @@ export function useEnabledModules(operatorId: string | null) {
     queryKey: ['modules', 'enabled', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      // Cast needed: get_enabled_modules_for_operator predates the generated
-      // Functions type (same gap as get_pending_manifests et al. — see
-      // hooks/pickup/useManifests.ts).
-      const { data, error } = await (supabase.rpc as unknown as (
-        fn: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: string[] | null; error: { message: string } | null }>)(
+      // callRpc, not a cast on supabase.rpc itself: casting the method detaches
+      // it from the client and supabase-js then throws on `this.rest`. See
+      // lib/supabase/rpc.ts.
+      const { data, error } = await callRpc<string[]>(
+        supabase,
         'get_enabled_modules_for_operator',
         { p_operator_id: operatorId! },
       );

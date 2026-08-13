@@ -1,6 +1,7 @@
 import { cache } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import { createSSRClient } from '@/lib/supabase/server';
+import { callRpc } from '@/lib/supabase/rpc';
 import { ALL_MODULE_KEYS, ModuleKey, isValidModuleKey } from './registry';
 
 export type EnabledModulesSet = ReadonlySet<ModuleKey>;
@@ -16,10 +17,8 @@ export const getEnabledModulesForCurrentUser = cache(
       return new Set();
     }
 
-    const { data, error } = await (supabase.rpc as unknown as (
-      fn: string,
-      args: Record<string, unknown>,
-    ) => Promise<{ data: string[] | null; error: { message: string } | null }>)(
+    const { data, error } = await callRpc<string[]>(
+      supabase,
       'get_enabled_modules_for_operator',
       { p_operator_id: operatorId },
     );
