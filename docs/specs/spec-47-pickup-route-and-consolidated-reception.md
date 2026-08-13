@@ -9,6 +9,49 @@
 >
 > [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) builds on this and changes some of it: the vehicle becomes a real FK, the receptionist rather than the driver ends the trip, and `close_pickup_route` is deprecated. Read spec-52's expand/contract section before relying on the flow described below.
 
+> ### Defect fixed 2026-08-13 — the reception page never rendered in production
+>
+> `get_route_reception_snapshot()` as shipped on 2026-06-25 returned top-level keys
+> `route, reception, manifests, packages, scans`. Its only consumer,
+> `RouteReceptionSnapshot` in `apps/frontend/src/hooks/reception/useRouteReceptionSnapshot.ts`,
+> reads `route, route_reception, manifests, expected_packages, scans, discrepancies`.
+> Three keys disagreed and `discrepancies` was absent from the RPC entirely.
+>
+> `apps/frontend/src/app/app/reception/route/[routeId]/page.tsx` dereferences
+> `snapshot.route_reception.expected_count` **in JSX**, so the consolidated hub
+> reception page threw `TypeError: Cannot read properties of undefined` **on render,
+> for every route, from the day it shipped**. Two further mismatches sat behind it:
+> the RPC emitted each expected package's id as `package_id` while
+> `ConsolidatedScanList` keys rows on `pkg.id` and matches them against
+> `reception_scans.package_id` (so no package could ever tick received), and the
+> interface's `status` field was never returned at all.
+>
+> **Why it stayed invisible for six months.** Only one real pickup route was ever
+> started in production and it was never closed, so reception was never reached with
+> a real route. Unit tests stayed green because `page.test.tsx` mocked the hook with
+> a hand-written, untyped `mockSnapshot` literal that happened to use the *correct*
+> keys — the component was validated against a fiction, never against the RPC's real
+> output. Nothing anywhere asserted the RPC's key set. spec-52 did not cause this; it
+> merely became the first work to exercise the page with a real route.
+>
+> **Fix:** migration `20260813000001_fix_route_reception_snapshot_contract.sql`
+> realigns the RPC with the interface (the interface is the contract — it has several
+> component consumers and the richer shape) and adds `discrepancies`, always `[]` and
+> never `null`. `discrepancies` holds only `not_found` and `route_mismatch` scans,
+> deliberately mirroring `ConsolidatedScanList.tsx:74`: `duplicate` is excluded
+> because a double-tap is an operator input artefact, not a discrepancy in the goods,
+> and counting it would inflate the total and push receptionists into writing
+> `discrepancy_notes` for a non-event. No other behaviour of the function changed.
+>
+> **Guards added so it cannot recur:**
+> - `packages/database/supabase/tests/route_reception_snapshot_contract.sql` builds a
+>   real route through the real RPCs and asserts the RPC's **exact** top-level key set
+>   (missing *and* extra keys both fail) plus the inner shape of each array. Verified
+>   by mutation: renaming the key back to `reception` makes it fail.
+> - `apps/frontend/src/test/fixtures/routeReceptionSnapshot.ts` replaces both
+>   hand-written mocks with one fixture declared `satisfies RouteReceptionSnapshot`,
+>   so the fixture can no longer drift from the interface without type-check failing.
+
 _Date: 2026-06-25_
 
 ---
