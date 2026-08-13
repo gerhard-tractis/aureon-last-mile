@@ -187,9 +187,9 @@ function PickupPageContent() {
     operatorId,
   );
   const startMut = useStartPickupRoute(operatorId);
-  const handleStartRoute = (vehicleLabel: string | null) => {
+  const handleStartRoute = (vehicleId: string) => {
     startMut.mutate(
-      { vehicleLabel },
+      { vehicleId },
       {
         onSuccess: () => router.push('/app/pickup/route/active'),
         onError: (err) => toast.error(err.message),
@@ -217,6 +217,7 @@ function PickupPageContent() {
         />
       ) : (
         <StartRouteButton
+          operatorId={operatorId}
           isSubmitting={startMut.isPending}
           onStart={handleStartRoute}
         />

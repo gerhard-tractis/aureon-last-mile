@@ -29,7 +29,9 @@ export function useActivePickupRoute(operatorId: string | null) {
         .select('*')
         .eq('operator_id', operatorId!)
         .eq('driver_id', driverId)
-        .in('status', ['draft', 'in_progress'])
+        // `draft` is dead: start_pickup_route creates routes directly as
+        // in_progress, and the DB's active-route indexes now cover only that.
+        .eq('status', 'in_progress')
         .is('deleted_at', null)
         .order('started_at', { ascending: false })
         .limit(1);
