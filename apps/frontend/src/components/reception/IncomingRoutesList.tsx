@@ -63,7 +63,7 @@ export function IncomingRoutesList({
               <p className="text-xs text-text-secondary flex items-center gap-1">
                 <Truck className="h-3 w-3" />
                 {route.driver_name}
-                {route.vehicle_label ? ` · ${route.vehicle_label}` : ''}
+                {route.plate ? ` · ${route.plate}` : ''}
               </p>
             )}
             <p className="text-xs text-text-secondary flex items-center gap-1">

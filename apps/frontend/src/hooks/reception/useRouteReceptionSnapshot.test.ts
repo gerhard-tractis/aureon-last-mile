@@ -65,6 +65,36 @@ describe('useRouteReceptionSnapshot', () => {
     ]);
   });
 
+  // spec-52: `pickup_routes.vehicle_label` is no longer the source of truth —
+  // routes carry `vehicle_id` and the plate lives on `vehicles.plate`. The RPC
+  // joins it in (migration 20260813000002); the interface must expose `plate`
+  // and must NOT keep steering consumers at the deprecated mirror column.
+  it('exposes the vehicle plate on the route header, not the legacy vehicle_label', async () => {
+    mockRpc.mockResolvedValue({ data: routeReceptionSnapshotFixture, error: null });
+
+    const { result } = renderHook(() => useRouteReceptionSnapshot('r1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.route.plate).toBe('AAA-111');
+    expect(result.current.data?.route).not.toHaveProperty('vehicle_label');
+  });
+
+  // spec-52: over-count is a normal outcome, so the batch carries how many of
+  // received_count arrived with no verified pickup scan on this route. It
+  // reaches the client for free through `to_jsonb(rr.*)`.
+  it('exposes unexpected_count on route_reception', async () => {
+    mockRpc.mockResolvedValue({ data: routeReceptionSnapshotFixture, error: null });
+
+    const { result } = renderHook(() => useRouteReceptionSnapshot('r1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.route_reception.unexpected_count).toBe(0);
+  });
+
   it('passes discrepancies through as an array', async () => {
     mockRpc.mockResolvedValue({
       data: routeReceptionSnapshotWithDiscrepancyFixture,

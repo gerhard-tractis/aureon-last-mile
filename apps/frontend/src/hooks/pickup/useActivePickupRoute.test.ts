@@ -84,6 +84,41 @@ describe('useActivePickupRoute', () => {
     expect(JSON.stringify(eq.mock.calls)).not.toContain('draft');
   });
 
+  // spec-52: the active-route header shows the truck's plate. `vehicle_label`
+  // on pickup_routes is a deprecated mirror kept alive only for the expand
+  // phase — the plate must come from the joined `vehicles` row.
+  it('joins vehicles for the plate instead of relying on vehicle_label', async () => {
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const select = lastChain!.select as ReturnType<typeof vi.fn>;
+    expect(select.mock.calls[0][0]).toMatch(/vehicle:vehicles\s*\(\s*plate\s*\)/);
+  });
+
+  it('surfaces the joined plate on the returned route', async () => {
+    mockQueryResult = {
+      data: [
+        {
+          id: 'route-1',
+          operator_id: 'op-1',
+          driver_id: 'driver-1',
+          code: 'PR-2026-0001',
+          status: 'in_progress',
+          vehicle: { plate: 'AAA-111' },
+        },
+      ],
+      error: null,
+    };
+
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.vehicle?.plate).toBe('AAA-111');
+  });
+
   it('does not fetch when operatorId is null', () => {
     renderHook(() => useActivePickupRoute(null), { wrapper: wrapperFactory() });
     expect(mockFrom).not.toHaveBeenCalled();

@@ -5,18 +5,18 @@ import ReceptionPage from './page';
 
 const onTheRoad = [
   { id: 'r0', code: 'PR-2026-0002', driver_id: 'd0', driver_name: 'Luis Soto',
-    vehicle_label: null, in_transit_at: null, started_at: '2026-06-25T06:00:00Z',
+    plate: null, in_transit_at: null, started_at: '2026-06-25T06:00:00Z',
     manifest_count: 3, expected_packages: 21 },
 ];
 const unloading = [
   { id: 'r1', code: 'PR-2026-0001', driver_id: 'd1', driver_name: 'Ana Ruiz',
-    vehicle_label: 'AAA-111', in_transit_at: '2026-06-25T08:00:00Z',
+    plate: 'AAA-111', in_transit_at: '2026-06-25T08:00:00Z',
     started_at: '2026-06-25T05:00:00Z',
     manifest_count: 2, expected_packages: 15 },
 ];
 const completed = [
   { id: 'r2', code: 'PR-2026-0000', driver_id: 'd2', driver_name: 'Pedro Lopez',
-    vehicle_label: null, in_transit_at: '2026-06-24T08:00:00Z',
+    plate: null, in_transit_at: '2026-06-24T08:00:00Z',
     started_at: '2026-06-24T05:00:00Z',
     manifest_count: 1, expected_packages: 10 },
 ];

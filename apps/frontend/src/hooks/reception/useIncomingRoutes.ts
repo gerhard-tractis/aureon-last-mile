@@ -8,7 +8,12 @@ export interface IncomingRoute {
   code: string;
   driver_id: string;
   driver_name: string | null;
-  vehicle_label: string | null;
+  /**
+   * The truck's registered plate, from the joined `vehicles` row — not
+   * `pickup_routes.vehicle_label`, which since spec-52 is only an
+   * expand-phase mirror kept alive until the contract phase drops it.
+   */
+  plate: string | null;
   in_transit_at: string | null;
   started_at: string | null;
   manifest_count: number;
@@ -19,10 +24,10 @@ interface PickupRouteWithRelations {
   id: string;
   code: string;
   driver_id: string;
-  vehicle_label: string | null;
   in_transit_at: string | null;
   started_at: string | null;
   driver: { full_name: string | null } | null;
+  vehicle: { plate: string } | null;
   manifests: { id: string; total_packages: number | null }[];
   route_receptions: { expected_count: number }[];
 }
@@ -57,8 +62,9 @@ export function useIncomingRoutes(
       const { data, error } = await supabase
         .from('pickup_routes')
         .select(`
-          id, code, driver_id, vehicle_label, in_transit_at, started_at,
+          id, code, driver_id, in_transit_at, started_at,
           driver:users!pickup_routes_driver_id_fkey(full_name),
+          vehicle:vehicles(plate),
           manifests(id, total_packages),
           route_receptions(expected_count)
         `)
@@ -75,7 +81,7 @@ export function useIncomingRoutes(
         code: r.code,
         driver_id: r.driver_id,
         driver_name: r.driver?.full_name ?? null,
-        vehicle_label: r.vehicle_label,
+        plate: r.vehicle?.plate ?? null,
         in_transit_at: r.in_transit_at,
         started_at: r.started_at ?? null,
         manifest_count: r.manifests?.length ?? 0,

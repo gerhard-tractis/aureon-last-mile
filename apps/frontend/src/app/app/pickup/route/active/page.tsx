@@ -82,7 +82,7 @@ export default function ActiveRoutePage() {
         <p className="font-mono text-sm font-semibold text-text">{route.code}</p>
         <p className="text-xs text-text-secondary mt-1">
           Iniciada {new Date(route.started_at).toLocaleString()}
-          {route.vehicle_label ? ` · ${route.vehicle_label}` : ''}
+          {route.vehicle?.plate ? ` · ${route.vehicle.plate}` : ''}
         </p>
         <p className="text-xs text-text-secondary mt-1">
           {routeManifests.length} manifiestos · {totalVerified} paquetes verificados

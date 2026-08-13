@@ -15,7 +15,7 @@ import { IncomingRoutesList } from './IncomingRoutesList';
 
 const baseRoute = {
   id: 'r1', code: 'PR-2026-0001', driver_id: 'd1',
-  driver_name: 'Ana Ruiz', vehicle_label: 'AAA-111',
+  driver_name: 'Ana Ruiz', plate: 'AAA-111',
   in_transit_at: '2026-06-25T08:00:00Z',
   started_at: '2026-06-25T06:00:00Z',
   manifest_count: 2, expected_packages: 15,
