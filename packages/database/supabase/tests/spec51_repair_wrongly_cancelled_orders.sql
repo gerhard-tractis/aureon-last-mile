@@ -17,19 +17,25 @@ CREATE OR REPLACE FUNCTION pg_temp.mk_order(
 ) RETURNS VOID AS $fn$
 DECLARE s TEXT; i INT := 0;
 BEGIN
+  -- customer_phone / raw_data / imported_via / imported_at are NOT NULL with no
+  -- default; the fixture omitted them, so the first mk_order() call aborted the
+  -- transaction and nothing below it ever ran.
   INSERT INTO public.orders (
-    id, operator_id, order_number, customer_name,
-    delivery_address, comuna, delivery_date
+    id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date,
+    raw_data, imported_via, imported_at
   ) VALUES (
     p_id, 'aaaaaaaa-0000-4000-a000-000000000261', p_number, 'Cliente Repair',
-    'Calle Repair 1', 'Maipú', CURRENT_DATE
+    '+56900000261', 'Calle Repair 1', 'Maipú', CURRENT_DATE,
+    '{}'::jsonb, 'MANUAL', NOW()
   );
 
   FOREACH s IN ARRAY p_pkg_statuses LOOP
     i := i + 1;
-    INSERT INTO public.packages (operator_id, order_id, label, status)
+    -- packages.raw_data is likewise NOT NULL with no default.
+    INSERT INTO public.packages (operator_id, order_id, label, status, raw_data)
     VALUES ('aaaaaaaa-0000-4000-a000-000000000261', p_id,
-            p_number || '-CTN-' || i, s::package_status_enum);
+            p_number || '-CTN-' || i, s::package_status_enum, '{}'::jsonb);
   END LOOP;
 END;
 $fn$ LANGUAGE plpgsql;
