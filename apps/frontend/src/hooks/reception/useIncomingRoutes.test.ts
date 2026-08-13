@@ -65,6 +65,44 @@ describe('useIncomingRoutes', () => {
     ]);
   });
 
+  it('accepts in_progress and orders those by started_at', async () => {
+    mockOrder.mockResolvedValue({
+      data: [
+        {
+          id: 'r3', code: 'PR-2026-0003', driver_id: 'd3',
+          vehicle_label: null, in_transit_at: null,
+          started_at: '2026-06-25T06:00:00Z',
+          driver: { full_name: 'Luis Soto' },
+          manifests: [{ id: 'm9', total_packages: 4 }],
+          route_receptions: [],
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(() => useIncomingRoutes('op-1', 'in_progress'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockEq2).toHaveBeenCalledWith('status', 'in_progress');
+    expect(mockOrder).toHaveBeenCalledWith('started_at', { ascending: false });
+    expect(result.current.data?.[0]).toEqual(
+      expect.objectContaining({ started_at: '2026-06-25T06:00:00Z', expected_packages: 4 }),
+    );
+  });
+
+  it('orders in_transit routes by in_transit_at', async () => {
+    mockOrder.mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useIncomingRoutes('op-1', 'in_transit'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockOrder).toHaveBeenCalledWith('in_transit_at', { ascending: false });
+  });
+
   it('falls back to summing total_packages when route_reception is missing', async () => {
     mockOrder.mockResolvedValue({
       data: [

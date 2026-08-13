@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 
+export type IncomingRouteStatus = 'in_progress' | 'in_transit' | 'received';
+
 export interface IncomingRoute {
   id: string;
   code: string;
@@ -8,6 +10,7 @@ export interface IncomingRoute {
   driver_name: string | null;
   vehicle_label: string | null;
   in_transit_at: string | null;
+  started_at: string | null;
   manifest_count: number;
   expected_packages: number;
 }
@@ -18,19 +21,32 @@ interface PickupRouteWithRelations {
   driver_id: string;
   vehicle_label: string | null;
   in_transit_at: string | null;
+  started_at: string | null;
   driver: { full_name: string | null } | null;
   manifests: { id: string; total_packages: number | null }[];
   route_receptions: { expected_count: number }[];
 }
 
 /**
- * Pickup routes in status='in_transit' for the current operator — the list
- * the hub sees in the "Rutas entrantes" tab. We pull driver name plus a
- * lightweight count of linked manifests and the expected_count from the
- * already-created route_reception row (the close-route trigger inserts it
- * with the count baked in). Returns the newest first.
+ * Pickup routes in one lifecycle status for the current operator — the lists
+ * behind the hub's reception tabs. We pull driver name plus a lightweight
+ * count of linked manifests and the expected_count from the route_reception
+ * row when one exists.
+ *
+ * The status union deliberately includes `in_progress`: under spec-52 a route
+ * only reaches `in_transit` *after* the receptionist has scanned its QR, so
+ * "Rutas entrantes" — trucks still out collecting — is an `in_progress` list.
+ * Narrowing this back to `in_transit` would silently redefine that tab as
+ * "being unloaded" and cost the hub all forward visibility.
+ *
+ * Ordering follows the status: `in_progress` routes have no `in_transit_at`
+ * yet, so they sort by `started_at`. Newest first either way.
  */
-export function useIncomingRoutes(operatorId: string | null, status: 'in_transit' | 'received' = 'in_transit') {
+export function useIncomingRoutes(
+  operatorId: string | null,
+  status: IncomingRouteStatus = 'in_transit',
+) {
+  const orderColumn = status === 'in_progress' ? 'started_at' : 'in_transit_at';
   return useQuery<IncomingRoute[]>({
     queryKey: ['reception', 'incoming-routes', operatorId, status],
     enabled: !!operatorId,
@@ -41,7 +57,7 @@ export function useIncomingRoutes(operatorId: string | null, status: 'in_transit
       const { data, error } = await supabase
         .from('pickup_routes')
         .select(`
-          id, code, driver_id, vehicle_label, in_transit_at,
+          id, code, driver_id, vehicle_label, in_transit_at, started_at,
           driver:users!pickup_routes_driver_id_fkey(full_name),
           manifests(id, total_packages),
           route_receptions(expected_count)
@@ -49,7 +65,7 @@ export function useIncomingRoutes(operatorId: string | null, status: 'in_transit
         .eq('operator_id', operatorId!)
         .eq('status', status)
         .is('deleted_at', null)
-        .order('in_transit_at', { ascending: false });
+        .order(orderColumn, { ascending: false });
 
       if (error) throw error;
 
@@ -61,6 +77,7 @@ export function useIncomingRoutes(operatorId: string | null, status: 'in_transit
         driver_name: r.driver?.full_name ?? null,
         vehicle_label: r.vehicle_label,
         in_transit_at: r.in_transit_at,
+        started_at: r.started_at ?? null,
         manifest_count: r.manifests?.length ?? 0,
         expected_packages:
           r.route_receptions?.[0]?.expected_count ??

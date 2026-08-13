@@ -1928,6 +1928,16 @@ export type Database = {
         Args: { p_route_id: string; p_discrepancy_notes?: string | null }
         Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
       }
+      // spec-52 Task 5 (20260812000005). Hand-added like the rest of this file —
+      // `generate-types` runs against production and must never be used here.
+      open_route_reception: {
+        Args: { p_route_id: string }
+        Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
+      }
+      reopen_pickup_route: {
+        Args: { p_route_id: string }
+        Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
+      }
       get_pre_route_snapshot: {
         Args: {
           p_operator_id: string
