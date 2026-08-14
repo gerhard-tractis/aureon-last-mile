@@ -20,6 +20,8 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 const mockBranding = {
+  hasBranding: false,
+  palette: null as { brand_primary: string } | null,
   logoUrl: null as string | null,
   companyName: null as string | null,
   primaryColor: null,
@@ -64,6 +66,22 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname,
   useRouter: () => ({ push: vi.fn() }),
 }));
+
+// Counters come from a TanStack Query hook; the layout tests have no
+// QueryClientProvider and no Supabase, so the mapped result is stubbed here.
+// The mapping itself is covered in useNavCounts.test.ts.
+const mockNavCounts = {
+  pickup: 12 as number | null,
+  reception: 4 as number | null,
+  distribution: 318 as number | null,
+  dispatch: 27 as number | null,
+};
+vi.mock('@/hooks/useNavCounts', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useNavCounts')>(
+    '@/hooks/useNavCounts',
+  );
+  return { ...actual, useNavCounts: () => mockNavCounts };
+});
 
 import AppLayout from './AppLayout';
 import { ModuleKey } from '@/lib/modules/registry';
@@ -126,31 +144,31 @@ describe('AppLayout - Ops Control nav item', () => {
   it('shows Ops Control link for admin role', () => {
     mockRole = 'admin';
     render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
-    expect(screen.getByText('Ops Control')).toBeTruthy();
+    expect(screen.getByText('Torre de control')).toBeTruthy();
   });
 
   it('shows Ops Control link for operations_manager role', () => {
     mockRole = 'operations_manager';
     render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
-    expect(screen.getByText('Ops Control')).toBeTruthy();
+    expect(screen.getByText('Torre de control')).toBeTruthy();
   });
 
   it('hides Ops Control link for driver role', () => {
     mockRole = 'driver';
     render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
-    expect(screen.queryByText('Ops Control')).toBeNull();
+    expect(screen.queryByText('Torre de control')).toBeNull();
   });
 
   it('hides Ops Control link for viewer role', () => {
     mockRole = 'viewer';
     render(<AppLayout enabledModules={[ModuleKey.OPS_CONTROL]}><div>content</div></AppLayout>);
-    expect(screen.queryByText('Ops Control')).toBeNull();
+    expect(screen.queryByText('Torre de control')).toBeNull();
   });
 
   it('hides Ops Control link for admin when ops_control module is disabled', () => {
     mockRole = 'admin';
     render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
-    expect(screen.queryByText('Ops Control')).toBeNull();
+    expect(screen.queryByText('Torre de control')).toBeNull();
   });
 });
 
@@ -250,10 +268,10 @@ describe('AppLayout Recepción nav permission gating', () => {
     expect(screen.queryByText('Recepción')).toBeNull();
   });
 
-  it('shows both Pickup and Recepción when user has both permissions', () => {
+  it('shows both Recogida and Recepción when user has both permissions', () => {
     mockPermissions = ['pickup', 'reception'];
     render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
-    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.getByText('Recogida')).toBeTruthy();
     expect(screen.getByText('Recepción')).toBeTruthy();
   });
 });
@@ -287,23 +305,23 @@ describe('AppLayout module activation gating (spec-46)', () => {
     mockRole = 'admin';
     mockPermissions = ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'];
     render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
-    expect(screen.queryByText('Ops Control')).toBeNull();
-    expect(screen.queryByText('Pickup')).toBeNull();
+    expect(screen.queryByText('Torre de control')).toBeNull();
+    expect(screen.queryByText('Recogida')).toBeNull();
     expect(screen.queryByText('Recepción')).toBeNull();
     expect(screen.queryByText('Distribución')).toBeNull();
     expect(screen.queryByText('Despacho')).toBeNull();
     expect(screen.queryByText('Conversaciones')).toBeNull();
     // Platform items remain
-    expect(screen.getByText('Dashboard')).toBeTruthy();
+    expect(screen.getByText('Dashboard ejecutivo')).toBeTruthy();
     expect(screen.getByRole('link', { name: /capacidad/i })).toBeTruthy();
     expect(screen.getByRole('link', { name: /auditor[ií]a/i })).toBeTruthy();
   });
 
-  it('shows only enabled modules that user also has RBAC for (Pickup + Despacho)', () => {
+  it('shows only enabled modules that user also has RBAC for (Recogida + Despacho)', () => {
     mockRole = 'driver';
     mockPermissions = ['pickup', 'dispatch'];
     render(<AppLayout enabledModules={[ModuleKey.PICKUP, ModuleKey.DISPATCH]}><div>content</div></AppLayout>);
-    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.getByText('Recogida')).toBeTruthy();
     expect(screen.getByText('Despacho')).toBeTruthy();
     expect(screen.queryByText('Recepción')).toBeNull();
     expect(screen.queryByText('Distribución')).toBeNull();
@@ -313,7 +331,7 @@ describe('AppLayout module activation gating (spec-46)', () => {
     mockRole = 'driver';
     mockPermissions = ['pickup'];
     render(<AppLayout enabledModules={[ModuleKey.PICKUP, ModuleKey.RECEPTION]}><div>content</div></AppLayout>);
-    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.getByText('Recogida')).toBeTruthy();
     expect(screen.queryByText('Recepción')).toBeNull();
   });
 
@@ -321,7 +339,7 @@ describe('AppLayout module activation gating (spec-46)', () => {
     mockRole = 'driver';
     mockPermissions = ['pickup', 'reception'];
     render(<AppLayout enabledModules={[ModuleKey.PICKUP]}><div>content</div></AppLayout>);
-    expect(screen.getByText('Pickup')).toBeTruthy();
+    expect(screen.getByText('Recogida')).toBeTruthy();
     expect(screen.queryByText('Recepción')).toBeNull();
   });
 });
@@ -345,7 +363,7 @@ describe('AppLayout sidebar rail', () => {
   it('renders mobile hamburger button on desktop', () => {
     mockIsTablet = false;
     render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
   });
 });
 
@@ -353,7 +371,7 @@ describe('AppLayout — unified chrome (no tablet override)', () => {
   it('renders hamburger menu on tablet viewport (sidebar accessible to everyone)', () => {
     mockIsTablet = true;
     render(<AppLayout><div>content</div></AppLayout>);
-    expect(screen.getByRole('button', { name: 'Open sidebar' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
   });
 
   it('renders CapacityAlertBell on tablet viewport for admin', () => {
@@ -388,6 +406,107 @@ describe('AppLayout — Order Inspector trigger', () => {
     render(<AppLayout><div>content</div></AppLayout>);
     expect(screen.queryByTestId('inspector-palette')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /buscar orden/i }));
+    expect(screen.getByTestId('inspector-palette')).toBeTruthy();
+  });
+});
+
+describe('AppLayout — grouped navigation (spec-54)', () => {
+  it('renders both section headings when the sidebar is pinned', () => {
+    localStorage.setItem('aureon-sidebar-pinned', 'true');
+    mockRole = 'admin';
+    mockPermissions = ['pickup'];
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.getByText('OPERACIÓN')).toBeTruthy();
+    expect(screen.getByText('GESTIÓN')).toBeTruthy();
+    localStorage.clear();
+  });
+
+  it('hides section headings in the collapsed icon rail', () => {
+    // A tracked-out label has nowhere to go in a 56px column.
+    localStorage.clear();
+    mockRole = 'admin';
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.queryByText('OPERACIÓN')).toBeNull();
+  });
+
+  it('drops a section whose items are all hidden', () => {
+    localStorage.setItem('aureon-sidebar-pinned', 'true');
+    mockRole = 'driver';
+    mockPermissions = [];
+    render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
+    expect(screen.queryByText('OPERACIÓN')).toBeNull();
+    expect(screen.getByText('GESTIÓN')).toBeTruthy();
+    localStorage.clear();
+  });
+});
+
+describe('AppLayout — queue counters (spec-54)', () => {
+  beforeEach(() => {
+    localStorage.setItem('aureon-sidebar-pinned', 'true');
+    mockRole = 'admin';
+    mockPermissions = ['pickup', 'reception', 'distribution', 'dispatch'];
+    mockNavCounts.pickup = 12;
+    mockNavCounts.distribution = 318;
+  });
+
+  it('renders a counter on each operation item', () => {
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.getByTestId('nav-count-/app/pickup').textContent).toBe('12');
+    expect(screen.getByTestId('nav-count-/app/distribution').textContent).toBe('318');
+  });
+
+  it('gives the tower no counter — it is the overview, not a queue', () => {
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('nav-count-/app/operations-control')).toBeNull();
+  });
+
+  it('turns a counter warning once it crosses the module threshold', () => {
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    // 318 >= 250 for distribution, 12 < 50 for pickup.
+    expect(screen.getByTestId('nav-count-/app/distribution').className).toContain(
+      'bg-status-warning-bg',
+    );
+    expect(screen.getByTestId('nav-count-/app/pickup').className).toContain('bg-sidebar-raised');
+  });
+
+  it('renders no counter while the count is still unknown', () => {
+    mockNavCounts.pickup = null;
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('nav-count-/app/pickup')).toBeNull();
+  });
+});
+
+describe('AppLayout — topbar (spec-54)', () => {
+  it('renders the breadcrumb for the current route', () => {
+    mockPathname = '/app/operations-control';
+    mockRole = 'admin';
+    render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    const crumb = screen.getByRole('navigation', { name: 'Ruta' });
+    expect(crumb.textContent).toContain('Operación');
+    expect(crumb.textContent).toContain('Torre de control');
+  });
+
+  it('exposes the theme toggle at every viewport, including for a driver', () => {
+    // Decision on this spec: mobile operators pick their own theme — a
+    // warehouse and a sunlit street happen on the same shift.
+    mockRole = 'driver';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.getByRole('group', { name: 'Tema' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Tema oscuro' })).toBeTruthy();
+  });
+
+  it('does not expose search or alerts to a driver', () => {
+    mockRole = 'driver';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('button', { name: /buscar orden/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /alertas de capacidad/i })).toBeNull();
+  });
+
+  it('opens the palette from the / shortcut', () => {
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByTestId('inspector-palette')).toBeNull();
+    fireEvent.keyDown(document, { key: '/' });
     expect(screen.getByTestId('inspector-palette')).toBeTruthy();
   });
 });

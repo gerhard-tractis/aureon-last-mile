@@ -164,7 +164,8 @@ Barra de 56px que reemplaza los botones flotantes `absolute top-3 right-4` del l
 
 - Fondo `--color-surface`, borde inferior `--color-border`.
 - Izquierda: breadcrumb `Sección / Página`, 12px, derivado de la ruta (`usePathname`) contra el mismo `navigation.ts`, de modo que la nav y el breadcrumb no puedan divergir.
-- Derecha, en orden: buscador (270px, "Buscar orden, paquete o RUT…", `kbd` con `/`), toggle de tema, chip de sync, `CapacityAlertBell`.
+- Derecha, en orden: buscador (270px, "Buscar orden, paquete o RUT…", `kbd` con `/`), toggle de tema, `CapacityAlertBell`.
+- **El chip de sync se difiere a la fase 4 (Recepción).** El handoff lo pide aquí, pero implementarlo obliga a desmontar `ConnectionStatusBanner` — que hoy es `fixed top-0` de ancho completo, vive en el layout raíz (cubre también auth y landing) y tiene sus propios tests e i18n. Ese cambio es de comportamiento offline, no de shell, y va junto con la cola de sincronización de `1e`, donde se rescribe la redacción ("se guardan en el dispositivo y se envían solos…"). Meterlo en el PR del shell es exactamente lo que el plan por fases existe para evitar.
 - El buscador abre `InspectorSearchPalette`, que ya existe; el atajo `/` se mantiene.
 - En viewports `<lg` el topbar sustituye a la barra de hamburguesa actual: hamburguesa + breadcrumb + toggle de tema + campana. El buscador se colapsa a icono. Así el toggle de tema **es alcanzable en móvil**, que es la decisión (1).
 
