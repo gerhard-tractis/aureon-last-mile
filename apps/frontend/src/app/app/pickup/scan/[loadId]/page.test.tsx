@@ -19,6 +19,13 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+// spec-53 — the real hook goes through react-query, which needs a provider
+// this suite does not mount. Default OFF so existing assertions are unaffected.
+const mockUseModuleEnabled = vi.fn(() => false);
+vi.mock('@/hooks/modules/useEnabledModules', () => ({
+  useModuleEnabled: (...args: unknown[]) => mockUseModuleEnabled(...(args as [])),
+}));
+
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
     from: () => ({
@@ -102,5 +109,33 @@ describe('ScanningPage', () => {
     const { container } = render(<ScanningPage />);
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain('sm:p-6');
+  });
+
+  describe('spec-53 print labels button', () => {
+    it('is absent when the PACKAGE_LABELS module is disabled', () => {
+      mockUseModuleEnabled.mockReturnValue(false);
+      render(<ScanningPage />);
+      expect(screen.queryByTestId('print-labels-scan')).not.toBeInTheDocument();
+    });
+
+    it('is shown once the module is enabled and the manifest has loaded', async () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      render(<ScanningPage />);
+      expect(await screen.findByTestId('print-labels-scan')).toBeInTheDocument();
+      expect(screen.getByText(/imprimir etiquetas/i)).toBeInTheDocument();
+    });
+
+    it('opens the print route for the loaded manifest in a new tab', async () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+      render(<ScanningPage />);
+      (await screen.findByTestId('print-labels-scan')).click();
+      expect(openSpy).toHaveBeenCalledWith(
+        '/app/pickup/manifests/m1/labels/print',
+        '_blank',
+        'noopener',
+      );
+      openSpy.mockRestore();
+    });
   });
 });

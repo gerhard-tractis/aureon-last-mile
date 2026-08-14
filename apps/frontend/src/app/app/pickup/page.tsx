@@ -131,12 +131,15 @@ function PickupPageContent() {
   ) => {
     const supabase = createSPAClient();
     const { data: existing } = await supabase
-      .from('manifests').select('id')
+      .from('manifests').select('id, status')
       .eq('operator_id', operatorId!)
       .eq('external_load_id', externalLoadId)
       .is('deleted_at', null).limit(1);
 
     if (!existing || existing.length === 0) {
+      // Fallback only. Since 20260814000001 every CARGA gets a 'pending'
+      // manifests row at ingest, so this branch should not fire in practice —
+      // it covers rows created before that migration's backfill ran.
       const { error } = await supabase.from('manifests').insert({
         operator_id: operatorId!,
         external_load_id: externalLoadId,
@@ -147,6 +150,19 @@ function PickupPageContent() {
         started_at: new Date().toISOString(),
       });
       if (error) { console.error('Failed to create manifest:', error); return; }
+    } else if (existing[0].status === 'pending') {
+      // The row now pre-exists as 'pending'; opening the scan flow is what
+      // makes it 'in_progress'. Without this the status would never advance
+      // and the in-progress badge / verified-first sorting would go dead.
+      const { error } = await supabase.from('manifests')
+        .update({
+          status: 'in_progress',
+          started_at: new Date().toISOString(),
+          total_orders: orderCount,
+          total_packages: packageCount,
+        })
+        .eq('id', existing[0].id);
+      if (error) { console.error('Failed to start manifest:', error); return; }
     }
     router.push(`/app/pickup/scan/${encodeURIComponent(externalLoadId)}`);
   };
