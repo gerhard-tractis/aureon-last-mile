@@ -26,6 +26,8 @@ interface ScanFieldProps {
   size?: keyof typeof SIZES;
   helperText?: string;
   placeholder?: string;
+  /** Accessible name. Set it when a screen has more than one scan field. */
+  ariaLabel?: string;
   disabled?: boolean;
   className?: string;
 }
@@ -43,6 +45,7 @@ export function ScanField({
   size = 'lg',
   helperText,
   placeholder,
+  ariaLabel = 'Código de barras',
   disabled = false,
   className,
 }: ScanFieldProps) {
@@ -83,7 +86,7 @@ export function ScanField({
       <input
         ref={inputRef}
         type="text"
-        aria-label="Código de barras"
+        aria-label={ariaLabel}
         autoComplete="off"
         spellCheck={false}
         disabled={disabled}

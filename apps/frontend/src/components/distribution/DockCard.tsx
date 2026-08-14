@@ -18,7 +18,8 @@ interface DockCardProps {
   comunas?: string[];
   packageCount: number;
   routeCount?: number;
-  /** 0–100. Values outside the range are clamped. */
+  /** 0–100, clamped. Omit to hide the bar — dock zones carry no capacity
+   *  field, so an always-0% track would read as a rendering fault. */
   occupancyPct?: number;
   /** Destination of the most recent scan. */
   active?: boolean;
@@ -41,7 +42,7 @@ export function DockCard({
   className,
 }: DockCardProps) {
   const warning = tone === 'warning';
-  const pct = Math.max(0, Math.min(100, occupancyPct ?? 0));
+  const pct = occupancyPct == null ? null : Math.max(0, Math.min(100, occupancyPct));
 
   const body = (
     <>
@@ -102,21 +103,23 @@ export function DockCard({
         )}
       </div>
 
-      <div
-        className={cn(
-          'h-1.5 overflow-hidden rounded',
-          warning ? 'bg-status-warning-bg' : 'bg-surface-raised',
-        )}
-      >
-        <span
-          data-testid="dock-occupancy"
+      {pct !== null && (
+        <div
           className={cn(
-            'block h-full rounded',
-            active ? 'bg-accent' : warning ? 'bg-status-warning' : 'bg-map-line',
+            'h-1.5 overflow-hidden rounded',
+            warning ? 'bg-status-warning-bg' : 'bg-surface-raised',
           )}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
+        >
+          <span
+            data-testid="dock-occupancy"
+            className={cn(
+              'block h-full rounded',
+              active ? 'bg-accent' : warning ? 'bg-status-warning' : 'bg-map-line',
+            )}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
     </>
   );
 

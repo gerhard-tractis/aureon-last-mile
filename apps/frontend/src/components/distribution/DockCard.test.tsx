@@ -50,9 +50,11 @@ describe('DockCard', () => {
     expect(screen.getByTestId('dock-occupancy').style.width).toBe('100%');
   });
 
-  it('treats a missing occupancy as zero rather than NaN', () => {
+  it('hides the bar entirely when there is no occupancy to show', () => {
+    // Dock zones carry no capacity field, so a permanently-0% track would
+    // read as a rendering fault rather than as "no data".
     render(<DockCard {...BASE} occupancyPct={undefined} />);
-    expect(screen.getByTestId('dock-occupancy').style.width).toBe('0%');
+    expect(screen.queryByTestId('dock-occupancy')).toBeNull();
   });
 
   it('is only a button when it can be clicked', () => {

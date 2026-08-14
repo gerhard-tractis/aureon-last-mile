@@ -69,7 +69,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 | **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
 | **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
 | **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
-| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución → Recepción → móvil. | en curso |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recepción → móvil. | en curso |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -259,3 +259,31 @@ Una comuna puede aparecer bajo más de un andén — eso es justo lo que marca `
 `PreRouteTab` quedó sin referencias y era la única raíz de `AndenCard` → `ComunaBreakdown` → `OrderList`, `PreRouteSelectionBar` y `usePreRouteSelection`. Todo eliminado con sus tests: código muerto con tests verdes es el peor tipo, porque parece mantenido.
 
 `PreRouteFilters` **se conserva y se reutiliza** en el tablero. El board lee `date` y `window` de la URL, así que borrar el único control que los fija habría dejado al operador clavado en hoy/todas.
+
+
+---
+
+## Fase 4.3 — Distribución / modo rápido
+
+**Ruta:** `/app/distribution/quicksort` · **Mock:** `1d`
+
+La pantalla más sensible del sistema: se usa de pie, a distancia, con las manos ocupadas. Todo sale de ahí — campo de escaneo de 78px siempre enfocado, resultado como el elemento más grande de la pantalla y persistente hasta el siguiente escaneo, y grilla de andenes que muestra dónde fue el último paquete sin que el operario despegue la vista del mesón.
+
+Aquí es donde se cobran los primitivos de la fase 3: `ScanField`, `ScanResult` y `DockCard` se usan por primera vez.
+
+Componentes: `QuickSortScanner` (misma máquina de estados, presentación nueva), `RecentScansPanel` (nuevo), `DockCard` (fase 3), tarjetas KPI en la página.
+
+### El flujo de dos pasos se conserva
+
+**El mock muestra un escaneo de un paso** — escanear paquete → aparece ANDÉN 3. El código real tiene dos: escanear paquete → mostrar destino → **escanear el andén para confirmar**, y `validateDockDestination` rechaza el andén equivocado.
+
+Ese segundo paso es un control de verificación real, no un rodeo de UI. Adoptar el flujo del mock habría eliminado una comprobación de seguridad que el autor del diseño probablemente no sabía que existía. **Se conserva el flujo de dos pasos y solo cambia su presentación.** Si se decide que la verificación sobra, que sea una decisión de operaciones explícita, no un efecto secundario del rebranding.
+
+### Datos — lo que sí y lo que no
+
+- **SECTORIZADOS**, no "SECTORIZADOS HOY": `useSectorizedByZone` cuenta paquetes en estado `sectorizado` sin filtrar por fecha. Etiquetarlo "hoy" sería falso.
+- **EN ESTA SESIÓN** reemplaza a **RITMO** (`312 /h`). El ritmo necesita marcas de tiempo por escaneo que ningún endpoint entrega hoy; el conteo de sesión es real y es lo que el operario contrasta con su propio turno.
+- **PENDIENTES** y **CONSOLIDACIÓN** salen de `useDistributionKPIs`.
+- **Sin barra de ocupación en las tarjetas de andén.** `DockZone` no tiene campo de capacidad, así que no hay porcentaje que mostrar. `DockCard` se ajustó para **ocultar la barra** cuando no hay dato, en vez de pintar una barra al 0% permanentemente — que se lee como defecto de render, no como "sin dato".
+- **"Últimos escaneos" es de sesión, no del servidor.** `useDockScans` consulta por batch, y aquí un batch es un paquete, así que no existe un feed de escaneos recientes. El alcance de sesión además es lo que el operario necesita: confirmación de lo que acaba de hacer, para pillar un error en segundos.
+- **COMUNAS SIN ZONA** baja al pie de ese panel (`useUnmatchedComunas`), donde el operario lo ve mientras trabaja, en vez de un banner arriba que la grilla empuja fuera de pantalla.
