@@ -30,7 +30,7 @@ jobs:
       # Runs before the slow jobs: a duplicate version prefix breaks every
       # deploy, and there is no point burning 6 minutes of lint/build to find out.
       - name: Check migration version prefixes are unique
-        run: ./scripts/check-migration-versions.sh
+        run: bash ./scripts/check-migration-versions.sh
 
       - name: Lint
         run: npx turbo run lint
