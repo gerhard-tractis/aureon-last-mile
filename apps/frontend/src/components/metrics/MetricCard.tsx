@@ -46,14 +46,20 @@ export function MetricCard({ label, value, trend, sparklineData, icon: Icon, cla
     : '';
 
   return (
-    <div className={cn('bg-surface border border-border rounded-md p-3', className)}>
+    <div className={cn('bg-surface border border-border rounded-[10px] p-3.5', className)}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 mb-1">
+          {/* spec-54: eyebrow is mono, 9.5px, tracked out and uppercase; the
+              value is the only thing meant to be read at a glance. */}
+          <div className="flex items-center gap-1.5 mb-1.5">
             {Icon && <Icon className="h-3.5 w-3.5 text-text-muted" />}
-            <span className="text-xs text-text-muted uppercase tracking-wide truncate">{label}</span>
+            <span className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-muted truncate">
+              {label}
+            </span>
           </div>
-          <div data-value className="font-mono text-xl font-semibold text-text">{value}</div>
+          <div data-value className="font-mono text-[26px] font-bold leading-none text-text">
+            {value}
+          </div>
           {trend && (
             <div data-trend className={cn('text-xs mt-0.5', trendColor)}>
               <span>{TREND_ARROWS[trend.direction]}</span>{' '}
