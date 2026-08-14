@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
+import { deriveOrderStage, deriveRouteStage } from '@/lib/ops-control/stage';
 
 export type OrderRow = Record<string, unknown>;
 export type RouteRow = Record<string, unknown>;
@@ -8,34 +9,21 @@ export type PickupRow = Record<string, unknown>;
 export type ReturnRow = Record<string, unknown>;
 export type RetailerSlaConfigRow = Record<string, unknown>;
 
-/** Map order status → ops-control stage key */
-function orderStage(status: unknown): string | null {
-  switch (status) {
-    case 'en_bodega':              return 'reception';
-    case 'asignado':
-    case 'en_carga':
-    case 'listo_para_despacho':   return 'docks';
-    case 'en_ruta':               return 'delivery';
-    default:                      return null;
-  }
-}
-
-/** Map route status → ops-control stage key */
-function routeStage(status: unknown): string | null {
-  switch (status) {
-    case 'draft':
-    case 'planned':       return 'docks';
-    case 'in_progress':   return 'delivery';
-    default:              return null;
-  }
-}
+/**
+ * Minimum gap between snapshot refetches triggered by Realtime. Package status
+ * is not in the Realtime publication (only orders and dock_verifications are),
+ * so a dock scan only reaches us as the orders UPDATE that
+ * recalculate_order_status emits — the packages[] behind the stage has to come
+ * from a refetch. Throttled so a scanning burst costs one RPC, not one per box.
+ */
+const REFETCH_THROTTLE_MS = 5_000;
 
 function enrichOrder(o: OrderRow): OrderRow {
-  return { ...o, stage: orderStage(o['status']) };
+  return { ...o, stage: deriveOrderStage(o) };
 }
 
 function enrichRoute(r: RouteRow): RouteRow {
-  return { ...r, stage: routeStage(r['status']) };
+  return { ...r, stage: deriveRouteStage(r['status']) };
 }
 
 export type OpsSnapshot = {
@@ -90,6 +78,22 @@ function upsertRow(
   return next;
 }
 
+/**
+ * A Realtime payload carries only the orders table's own columns, so it lacks
+ * everything get_ops_control_snapshot joins on: packages[], pickup_point_name,
+ * dwell/age/idle minutes. Layer it over the row we already hold rather than
+ * replacing it, or every package-driven order UPDATE strips the order back to
+ * its bare columns — which, with the stage now derived from packages[], would
+ * drop it out of Andenes/Consolidación on the first scan.
+ */
+function mergeOrderRow(
+  rows: Record<string, unknown>[],
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  const existing = rows.find((r) => r['id'] === incoming['id']);
+  return existing ? { ...existing, ...incoming } : incoming;
+}
+
 function removeRow(
   rows: Record<string, unknown>[],
   deleted: Record<string, unknown>
@@ -115,6 +119,31 @@ export function useOpsControlSnapshot(
   const [version, setVersion] = useState(0);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const lastQueryData = useRef<OpsSnapshot | null>(null);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRefetchAt = useRef(0);
+
+  /** Refetch now, or once the throttle window closes — never more than one pending. */
+  const scheduleRefetch = useCallback(() => {
+    if (refetchTimer.current) return;
+
+    const run = () => {
+      refetchTimer.current = null;
+      lastRefetchAt.current = Date.now();
+      queryClient.invalidateQueries({
+        queryKey: ['ops-control', operatorId, 'snapshot'],
+      });
+    };
+
+    const elapsed = Date.now() - lastRefetchAt.current;
+    if (elapsed >= REFETCH_THROTTLE_MS) run();
+    else refetchTimer.current = setTimeout(run, REFETCH_THROTTLE_MS - elapsed);
+  }, [queryClient, operatorId]);
+
+  useEffect(() => {
+    return () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    };
+  }, []);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['ops-control', operatorId, 'snapshot'],
@@ -154,7 +183,7 @@ export function useOpsControlSnapshot(
               returns: removeRow(current.returns, payload.old),
             };
           } else {
-            const row = enrichOrder(payload.new);
+            const row = enrichOrder(mergeOrderRow(current.orders, payload.new));
             const status = row['status'] as string;
             if (RETURN_ORDER_STATUSES.has(status)) {
               // Order moved into a return state — drop from orders[] and
@@ -172,6 +201,11 @@ export function useOpsControlSnapshot(
                 ? { ...current, returns: removeRow(current.returns, row), orders: upsertRow(current.orders, row) }
                 : { ...current, orders: upsertRow(current.orders, row) };
               snapshotRef.current = next;
+              // The event may be the echo of a package status change (a dock
+              // scan bumps orders.status_updated_at through
+              // recalculate_order_status) — the new packages[] only arrives
+              // with a refetch.
+              scheduleRefetch();
             }
           }
           setLastSyncAt(new Date());
@@ -209,7 +243,7 @@ export function useOpsControlSnapshot(
       client.removeChannel(ordersCh);
       client.removeChannel(routesCh);
     };
-  }, [operatorId, !!data, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [operatorId, !!data, queryClient, scheduleRefetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   void version; // Force re-reads of the ref
 
