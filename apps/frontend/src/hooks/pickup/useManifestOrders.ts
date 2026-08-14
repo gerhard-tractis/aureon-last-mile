@@ -7,6 +7,10 @@ export interface ManifestPackage {
   package_number: string | null;
   sku_items: Array<{ sku: string; description: string; quantity: number }>;
   declared_weight_kg: number | null;
+  // spec-55 — present on every row once the migration lands. Optional here so
+  // existing fixtures/tests that predate spec-55 keep type-checking.
+  is_generated_label?: boolean;
+  parent_label?: string | null;
 }
 
 export interface ManifestOrder {
@@ -28,7 +32,7 @@ export function useManifestOrders(
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('orders')
-        .select('id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg, deleted_at)')
+        .select('id, order_number, customer_name, comuna, delivery_address, packages(id, label, package_number, sku_items, declared_weight_kg, is_generated_label, parent_label, deleted_at)')
         .eq('operator_id', operatorId!)
         .eq('external_load_id', externalLoadId!)
         .is('deleted_at', null)

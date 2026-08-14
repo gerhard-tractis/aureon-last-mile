@@ -2,7 +2,7 @@
 
 > **Related:** [spec-53](spec-53-package-label-printing.md) (label printing — this is the follow-up recorded there), [spec-01](spec-01-epic4a-pickup-verification.md) / [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (pickup verification), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (package state engine)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-14_
 

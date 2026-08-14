@@ -3,6 +3,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { OrderCard } from './OrderCard';
 import type { ScanRecord } from '@/hooks/pickup/usePickupScans';
 
+vi.mock('@/hooks/pickup/useExpandCarton', () => ({
+  useExpandCarton: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 describe('OrderCard', () => {
   const mockOrder = {
     id: 'order-1',
