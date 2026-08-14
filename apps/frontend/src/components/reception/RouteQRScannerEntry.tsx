@@ -115,8 +115,21 @@ export function RouteQRScannerEntry({
 
     startScanner();
     return () => {
-      if (scanner) {
-        scanner.stop().catch(() => {}).finally(() => scanner?.clear());
+      const running = scanner;
+      scanner = null;
+      if (!running) return;
+      // html5-qrcode THROWS SYNCHRONOUSLY from stop() when the scanner never
+      // started ("Cannot stop, scanner is not running or paused") — it does not
+      // return a rejected promise, so the old `.catch()` never saw it. A throw
+      // out of an effect cleanup unmounts the tree into the error boundary, and
+      // the whole reception screen goes white. That is the normal path on any
+      // dock terminal without camera permission: open the QR dialog, close it,
+      // lose the app.
+      const clear = () => { try { running.clear(); } catch { /* already gone */ } };
+      try {
+        Promise.resolve(running.stop()).catch(() => {}).finally(clear);
+      } catch {
+        clear();
       }
     };
   }, [enableCamera, resolveAndNavigate]);

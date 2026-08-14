@@ -5,11 +5,14 @@ import userEvent from '@testing-library/user-event';
 const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
 
-// Avoid html5-qrcode trying to use cameras in jsdom
+// Avoid html5-qrcode trying to use cameras in jsdom.
+// `stop` is overridable because the library's real failure mode is a
+// SYNCHRONOUS throw, not a rejected promise — see the unmount test below.
+const qrStop = { impl: () => Promise.resolve() as unknown };
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: class {
     start = vi.fn(() => Promise.reject(new Error('no camera')));
-    stop = vi.fn(() => Promise.resolve());
+    stop = vi.fn(() => qrStop.impl());
     clear = vi.fn();
   },
 }));
@@ -45,6 +48,22 @@ describe('RouteQRScannerEntry', () => {
     hookState.isPending = false;
     mockResolveRouteId.mockResolvedValue('route-uuid-1');
     mockMutate.mockImplementation((_a, opts) => opts?.onSuccess?.());
+    qrStop.impl = () => Promise.resolve();
+  });
+
+  // Found by the spec-52 end-to-end: on a terminal with no camera the dialog
+  // mounted fine and then took the whole reception screen down on close.
+  it('unmounts cleanly when the camera never started and stop() throws', async () => {
+    qrStop.impl = () => {
+      throw new Error('Cannot stop, scanner is not running or paused.');
+    };
+    const { unmount } = render(
+      <RouteQRScannerEntry operatorId="op-1" enableCamera />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/No se pudo acceder a la cámara/)).toBeInTheDocument(),
+    );
+    expect(() => unmount()).not.toThrow();
   });
 
   it('renders code input and search button', () => {
