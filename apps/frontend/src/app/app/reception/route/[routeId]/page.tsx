@@ -15,6 +15,7 @@ import { ReceptionScanner } from '@/components/reception/ReceptionScanner';
 import { RouteReceptionHeader } from '@/components/reception/RouteReceptionHeader';
 import { ConsolidatedScanList } from '@/components/reception/ConsolidatedScanList';
 import { FinalizeReceptionButton } from '@/components/reception/FinalizeReceptionButton';
+import { ReopenRouteButton } from '@/components/reception/ReopenRouteButton';
 import type { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
 
 export default function RouteReceptionPage() {
@@ -121,10 +122,11 @@ export default function RouteReceptionPage() {
       <RouteReceptionHeader
         code={snapshot.route.code}
         driverName={snapshot.route.driver_name}
-        vehicleLabel={snapshot.route.vehicle_label}
+        plate={snapshot.route.plate}
         manifestCount={snapshot.manifests.length}
         expectedCount={snapshot.route_reception.expected_count}
         receivedCount={snapshot.route_reception.received_count}
+        unexpectedCount={snapshot.route_reception.unexpected_count}
       />
 
       <ReceptionScanner
@@ -142,8 +144,18 @@ export default function RouteReceptionPage() {
       <FinalizeReceptionButton
         receivedCount={snapshot.route_reception.received_count}
         expectedCount={snapshot.route_reception.expected_count}
+        unexpectedCount={snapshot.route_reception.unexpected_count}
         isPending={completeMutation.isPending}
         onFinalize={handleFinalize}
+      />
+
+      {/* Escape hatch for a QR scanned before the truck was really unloaded.
+          Hides itself the moment a package is received — from then on the
+          correct move is to finish and note the discrepancy. */}
+      <ReopenRouteButton
+        routeId={routeId}
+        code={snapshot.route.code}
+        receivedCount={snapshot.route_reception.received_count}
       />
     </div>
   );

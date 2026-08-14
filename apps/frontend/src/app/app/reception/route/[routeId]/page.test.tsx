@@ -32,6 +32,11 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+const mockReopenMutate = vi.fn();
+vi.mock('@/hooks/reception/useReopenRouteReception', () => ({
+  useReopenRouteReception: () => ({ mutate: mockReopenMutate, isPending: false }),
+}));
+
 // NOT a hand-written literal any more. The previous inline `baseSnapshot` was
 // untyped, so it silently used keys the RPC did not return — these tests were
 // green for six months while the page threw TypeError on render in production.
@@ -85,6 +90,25 @@ describe('RouteReceptionPage', () => {
   it('renders the finalize button', () => {
     render(<RouteReceptionPage />);
     expect(screen.getByRole('button', { name: /finalizar recepción/i })).toBeInTheDocument();
+  });
+
+  it('hides the reopen button once packages have been received', () => {
+    render(<RouteReceptionPage />);
+    expect(screen.queryByRole('button', { name: /reabrir ruta/i })).not.toBeInTheDocument();
+  });
+
+  it('mounts the reopen button while the batch is still empty', () => {
+    mockSnapshot.mockReturnValue({
+      data: {
+        ...baseSnapshot,
+        route_reception: { ...baseSnapshot.route_reception, received_count: 0 },
+      },
+      isLoading: false,
+      error: null,
+    });
+    render(<RouteReceptionPage />);
+    expect(screen.getByRole('button', { name: /reabrir ruta/i })).toBeInTheDocument();
+    expect(mockReopenMutate).not.toHaveBeenCalled();
   });
 
   it('renders skeletons while loading', () => {

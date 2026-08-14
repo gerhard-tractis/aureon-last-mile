@@ -7,7 +7,7 @@ const mockOrder = vi.fn();
 const mockIs = vi.fn(() => ({ order: mockOrder }));
 const mockEq2 = vi.fn(() => ({ is: mockIs }));
 const mockEq1 = vi.fn(() => ({ eq: mockEq2 }));
-const mockSelect = vi.fn(() => ({ eq: mockEq1 }));
+const mockSelect = vi.fn((_query: string) => ({ eq: mockEq1 }));
 const mockFrom = vi.fn(() => ({ select: mockSelect }));
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -37,7 +37,7 @@ describe('useIncomingRoutes', () => {
       data: [
         {
           id: 'r1', code: 'PR-2026-0001', driver_id: 'd1',
-          vehicle_label: 'AAA-111', in_transit_at: '2026-06-25T08:00:00Z',
+          vehicle: { plate: 'AAA-111' }, in_transit_at: '2026-06-25T08:00:00Z',
           driver: { full_name: 'Ana Ruiz' },
           manifests: [{ id: 'm1', total_packages: 10 }, { id: 'm2', total_packages: 5 }],
           route_receptions: [{ expected_count: 15 }],
@@ -59,10 +59,49 @@ describe('useIncomingRoutes', () => {
         id: 'r1',
         code: 'PR-2026-0001',
         driver_name: 'Ana Ruiz',
+        plate: 'AAA-111',
         manifest_count: 2,
         expected_packages: 15,
       }),
     ]);
+  });
+
+  it('accepts in_progress and orders those by started_at', async () => {
+    mockOrder.mockResolvedValue({
+      data: [
+        {
+          id: 'r3', code: 'PR-2026-0003', driver_id: 'd3',
+          vehicle: null, in_transit_at: null,
+          started_at: '2026-06-25T06:00:00Z',
+          driver: { full_name: 'Luis Soto' },
+          manifests: [{ id: 'm9', total_packages: 4 }],
+          route_receptions: [],
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(() => useIncomingRoutes('op-1', 'in_progress'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockEq2).toHaveBeenCalledWith('status', 'in_progress');
+    expect(mockOrder).toHaveBeenCalledWith('started_at', { ascending: false });
+    expect(result.current.data?.[0]).toEqual(
+      expect.objectContaining({ started_at: '2026-06-25T06:00:00Z', expected_packages: 4 }),
+    );
+  });
+
+  it('orders in_transit routes by in_transit_at', async () => {
+    mockOrder.mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useIncomingRoutes('op-1', 'in_transit'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockOrder).toHaveBeenCalledWith('in_transit_at', { ascending: false });
   });
 
   it('falls back to summing total_packages when route_reception is missing', async () => {
@@ -70,7 +109,7 @@ describe('useIncomingRoutes', () => {
       data: [
         {
           id: 'r2', code: 'PR-2026-0002', driver_id: 'd2',
-          vehicle_label: null, in_transit_at: null,
+          vehicle: null, in_transit_at: null,
           driver: null,
           manifests: [{ id: 'm3', total_packages: 7 }],
           route_receptions: [],
@@ -86,5 +125,22 @@ describe('useIncomingRoutes', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.[0].expected_packages).toBe(7);
     expect(result.current.data?.[0].driver_name).toBeNull();
+    expect(result.current.data?.[0].plate).toBeNull();
+  });
+
+  // spec-52: `pickup_routes.vehicle_label` is a deprecated mirror written only
+  // so the pre-switch UI would not go blank. The plate lives on `vehicles`, so
+  // the select must JOIN it rather than read the mirror column.
+  it('joins vehicles for the plate instead of selecting the deprecated vehicle_label', async () => {
+    mockOrder.mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useIncomingRoutes('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const selectArg = mockSelect.mock.calls[0][0];
+    expect(selectArg).toMatch(/vehicle:vehicles\s*\(\s*plate\s*\)/);
+    expect(selectArg).not.toContain('vehicle_label');
   });
 });

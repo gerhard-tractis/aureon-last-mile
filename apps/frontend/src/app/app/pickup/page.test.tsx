@@ -43,8 +43,9 @@ vi.mock('@/hooks/modules/useEnabledModules', () => ({
   useModuleEnabled: () => false,
 }));
 
+let mockActiveRoute: { id: string; code: string; started_at: string } | null = null;
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
-  useActivePickupRoute: () => ({ data: null, isLoading: false }),
+  useActivePickupRoute: () => ({ data: mockActiveRoute, isLoading: false }),
 }));
 vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
   useStartPickupRoute: () => ({ mutate: vi.fn(), isPending: false }),
@@ -84,9 +85,28 @@ vi.mock('next/navigation', () => ({
 describe('PickupPage', () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockActiveRoute = null;
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
+  });
+
+  describe('Active route banner', () => {
+    it('does not render a QR link when there is no active route', () => {
+      render(<PickupPage />);
+      expect(screen.queryByRole('link', { name: /QR/i })).not.toBeInTheDocument();
+    });
+
+    it('passes the active route id through so the QR link points at that route', () => {
+      mockActiveRoute = {
+        id: 'route-99',
+        code: 'PR-2026-0099',
+        started_at: new Date().toISOString(),
+      };
+      render(<PickupPage />);
+      const qrLink = screen.getByRole('link', { name: /QR/i });
+      expect(qrLink).toHaveAttribute('href', '/app/pickup/route/route-99/qr');
+    });
   });
 
   describe('KPI cards', () => {

@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import { useAtRiskOrders } from '@/hooks/ops-control/useAtRiskOrders';
+import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
+import { useActiveRoutes } from '@/hooks/useActiveRoutes';
 import { useStageQuery } from '../lib/useStageQuery';
 import { computeStageHealth } from '../lib/health';
 import { STAGE_KEYS } from '../lib/labels.es';
@@ -10,9 +12,10 @@ import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import type { StageKey } from '../lib/labels.es';
 import { Skeleton } from '@/components/ui/skeleton';
 
-import { StageStrip } from './StageStrip';
-import { AtRiskBanner } from './AtRiskBanner';
-import { AtRiskTable } from './AtRiskTable';
+import { StageRail } from './StageRail';
+import { AtRiskPanel } from './AtRiskPanel';
+import { PromiseCard } from './PromiseCard';
+import { FleetCard } from './FleetCard';
 import { PickupPanel } from './stage-panels/PickupPanel';
 import { ReceptionPanel } from './stage-panels/ReceptionPanel';
 import { ConsolidationPanel } from './stage-panels/ConsolidationPanel';
@@ -38,25 +41,34 @@ function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, 
 
 interface OpsControlDesktopProps {
   operatorId: string;
+  onSelectOrder?: (orderId: string) => void;
 }
 
-export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
+export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDesktopProps) {
   const { snapshot, isLoading, lastSyncAt } = useOpsControlSnapshot(operatorId);
   const { activeStage, setStage } = useStageQuery();
   const [atRiskPage, setAtRiskPage] = useState(1);
+  const [reasonFilter, setReasonFilter] = useState<string | null>(null);
+
   const { orders: atRiskOrders, total: atRiskTotal, pageCount: atRiskPageCount } =
     useAtRiskOrders(operatorId, new Date(), atRiskPage);
+  const promise = useDayPromise(operatorId);
+  const { data: activeRoutes, isLoading: routesLoading } = useActiveRoutes(operatorId);
 
   if (isLoading && !snapshot) {
+    // Geometry matches the loaded layout so the page does not reflow.
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-10 w-full rounded-md" />
-        <div className="grid grid-cols-7 gap-3">
+      <div className="flex flex-col gap-[18px]">
+        <Skeleton className="h-9 w-64 rounded" />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
           {Array.from({ length: 7 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-md" />
+            <Skeleton key={i} className="h-[92px] rounded-[10px]" />
           ))}
         </div>
-        <Skeleton className="h-64 w-full rounded-lg" />
+        <div className="grid gap-4 xl:grid-cols-[1fr_336px]">
+          <Skeleton className="h-[420px] rounded-[10px]" />
+          <Skeleton className="hidden h-[420px] rounded-[10px] xl:block" />
+        </div>
       </div>
     );
   }
@@ -71,12 +83,15 @@ export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
   const renderPanel = () => {
     if (!activeStage) {
       return (
-        <AtRiskTable
+        <AtRiskPanel
           orders={atRiskOrders}
           total={atRiskTotal}
           page={atRiskPage}
           pageCount={Math.max(atRiskPageCount, 1)}
           onPageChange={setAtRiskPage}
+          reasonFilter={reasonFilter}
+          onReasonFilterChange={setReasonFilter}
+          onSelectOrder={onSelectOrder}
         />
       );
     }
@@ -93,22 +108,19 @@ export function OpsControlDesktop({ operatorId }: OpsControlDesktopProps) {
   };
 
   return (
-    <div className="space-y-4">
-      {atRiskTotal > 0 && (
-        <AtRiskBanner
-          orders={atRiskOrders.slice(0, 3)}
-          total={atRiskTotal}
-          onViewAll={() => setStage(null)}
-        />
-      )}
+    <div className="flex flex-col gap-[18px]">
+      <StageRail stages={stages} activeStage={activeStage} onStageChange={setStage} />
 
-      <StageStrip
-        stages={stages}
-        activeStage={activeStage}
-        onStageChange={setStage}
-      />
+      {/* The action queue and the day's context sit side by side above 1280px
+          and stack below it, per the handoff's responsive rule. */}
+      <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_336px]">
+        <div className="min-w-0">{renderPanel()}</div>
 
-      {renderPanel()}
+        <aside className="flex min-h-0 flex-col gap-4">
+          <PromiseCard promise={promise} />
+          <FleetCard routes={activeRoutes ?? []} isLoading={routesLoading} />
+        </aside>
+      </div>
     </div>
   );
 }

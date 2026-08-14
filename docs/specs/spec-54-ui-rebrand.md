@@ -66,10 +66,10 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 
 | Fase | Alcance | Estado |
 |---|---|---|
-| **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ en este PR |
-| **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ en este PR |
-| **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | pendiente |
-| **4 — Módulos, uno por PR** | Torre de control → Despacho → Distribución → Recepción → móvil. | pendiente |
+| **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
+| **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
+| **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho → Distribución → Recepción → móvil. | en curso |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -199,3 +199,32 @@ Reglas que aplican a todas ellas y que se verifican en review:
 - El oro es acento de marca y de selección, **nunca** un color de estado.
 - Cada estado codificado por dos canales: color + forma.
 - Los mensajes offline dicen qué pasa con el trabajo del usuario, no el estado técnico de la red.
+
+
+---
+
+## Fase 4.1 — Torre de control
+
+**Ruta:** `/app/operations-control` · **Mock:** `2a`
+
+Componentes nuevos: `StageRail` (reemplaza `StageStrip`), `AtRiskPanel` (reemplaza `AtRiskTable`), `PromiseCard`, `FleetCard`, `TowerHeader`. Eliminados: `StageStrip`, `AtRiskTable`, `AtRiskBanner` — el panel de acción absorbe el trabajo del banner.
+
+La página deja de usar `PageShell`: la fila de título del mock lleva subtítulo en vivo y acción primaria junto al `h1`, y el cuerpo es una grilla de dos columnas a altura completa. Envolver eso en `PageShell` era pelear con él.
+
+### Datos — lo que sí y lo que no
+
+`useDayPromise` (nuevo) alimenta la tarjeta "Promesa del día" desde `get_pipeline_counts`, **no** desde el snapshot de ops-control: el snapshot excluye a propósito `entregado` (ver `20260513000004`), y esta tarjeta trata sobre todo de lo que ya aterrizó. Los cuatro segmentos particionan el total sin doble conteo — una orden entregada tarde ya no está *en riesgo*, se resolvió.
+
+**No se muestra OTIF**, aunque el mock lo incluye. La base define OTIF como `on_time / total_orders` (`20260309000005`) y `get_pipeline_counts` no lleva señal de on-time. `delivered/total` es otro número; ponerle la etiqueta OTIF en la pantalla que el jefe de operaciones reporta hacia arriba sería peor que omitirlo. Pendiente: conectar el rollup de dashboard.
+
+**No se construye el segmentado Hoy / Mañana / Semana.** `useOpsControlSnapshot` no acepta fecha, así que las tres opciones mostrarían hoy. Un control muerto es peor que no ofrecer la opción todavía; vuelve cuando el RPC acepte fecha.
+
+`AtRiskOrder` gana `comuna` — el snapshot ya la traía y la tabla se escanea por comuna.
+
+### Deuda tocada de paso
+
+`useActiveRoutes` tenía el bug de `rpc` desprendido (mismo que #404 y `usePipelineCounts`). Corregido con `callRpc` porque la Torre ahora lo consume. **Quedan 11 sitios** con el mismo idiom: `hooks/dashboard/{useCpoChapter,useNorthStars,useOtifChapter}`, `hooks/pickup/useManifests`, `useCapacityCalendar`, `useCapacityUtilization`, `useForecastAccuracy`. Merecen su propia pasada.
+
+### Seguimiento conocido
+
+La página monta su propio `OrderInspector` para el clic en fila, y `AppLayout` monta otro para la paleta de búsqueda. Son estados independientes; si algún día se abren a la vez, unificar vía contexto en lugar de duplicar el Sheet.

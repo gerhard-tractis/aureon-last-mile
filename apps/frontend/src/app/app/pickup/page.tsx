@@ -3,17 +3,14 @@
 import { Suspense, useState, useMemo } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Camera, ClipboardList, Package, CheckCircle, Search, X } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { MetricCard } from '@/components/metrics/MetricCard';
-import { EmptyState } from '@/components/EmptyState';
-import { ManifestCard } from '@/components/pickup/ManifestCard';
 import { ClientFilter } from '@/components/pickup/ClientFilter';
+import { PickupManifestTabs } from '@/components/pickup/PickupManifestTabs';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
 import { ActiveRouteBanner } from '@/components/pickup/ActiveRouteBanner';
 import { StartRouteButton } from '@/components/pickup/StartRouteButton';
@@ -46,22 +43,10 @@ function PickupPageContent() {
   const { t } = useTranslation();
   const { operatorId } = useOperatorId();
   const labelsEnabled = useModuleEnabled(operatorId, ModuleKey.PACKAGE_LABELS);
-  const [activeTab, setActiveTab] = useState<'active' | 'in_transit' | 'completed'>('active');
   const [intakeOpen, setIntakeOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const selectedClient = searchParams.get('client');
-
-  // Match against load id, retailer name, and pickup point. Case-insensitive substring.
-  const matchesSearch = (m: { external_load_id: string; retailer_name: string | null; pickup_point: string | null }) => {
-    if (!searchTerm.trim()) return true;
-    const q = searchTerm.trim().toLowerCase();
-    return (
-      m.external_load_id.toLowerCase().includes(q) ||
-      (m.retailer_name?.toLowerCase().includes(q) ?? false) ||
-      (m.pickup_point?.toLowerCase().includes(q) ?? false)
-    );
-  };
 
   const setSelectedClient = (client: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -94,31 +79,9 @@ function PickupPageContent() {
     return [...new Set(names)];
   }, [pendingManifests]);
 
-  const filteredPending = useMemo(
-    () => (pendingManifests ?? [])
-      .filter((m) => !selectedClient || m.retailer_name === selectedClient)
-      .filter(matchesSearch),
-    // matchesSearch is recomputed each render but only its inputs (searchTerm) need
-    // to be in the dep list — eslint-disable for the closure capture.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pendingManifests, selectedClient, searchTerm],
-  );
-
-  const filteredCompleted = useMemo(
-    () => (completedManifests ?? [])
-      .filter((m) => !selectedClient || m.retailer_name === selectedClient)
-      .filter(matchesSearch),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [completedManifests, selectedClient, searchTerm],
-  );
-
-  const filteredInTransit = useMemo(
-    () => (inTransitManifests ?? [])
-      .filter((m) => !selectedClient || m.retailer_name === selectedClient)
-      .filter(matchesSearch),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [inTransitManifests, selectedClient, searchTerm],
-  );
+  // The per-tab filtering by `selectedClient` + `searchTerm` lives in
+  // PickupManifestTabs. The unfiltered pending list stays here because the KPI
+  // cards above count it.
 
   // ── Manifest click handlers ────────────────────────────────────────────────
   // Active tab: ensure a manifest row exists for the load (creating one on
@@ -187,9 +150,9 @@ function PickupPageContent() {
     operatorId,
   );
   const startMut = useStartPickupRoute(operatorId);
-  const handleStartRoute = (vehicleLabel: string | null) => {
+  const handleStartRoute = (vehicleId: string) => {
     startMut.mutate(
-      { vehicleLabel },
+      { vehicleId },
       {
         onSuccess: () => router.push('/app/pickup/route/active'),
         onError: (err) => toast.error(err.message),
@@ -214,9 +177,11 @@ function PickupPageContent() {
           code={activeRoute.code}
           startedAt={activeRoute.started_at}
           manifestCount={activeManifests.length}
+          routeId={activeRoute.id}
         />
       ) : (
         <StartRouteButton
+          operatorId={operatorId}
           isSubmitting={startMut.isPending}
           onStart={handleStartRoute}
         />
@@ -257,121 +222,20 @@ function PickupPageContent() {
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'active' | 'in_transit' | 'completed')}>
-        <TabsList>
-          <TabsTrigger value="active">Activos</TabsTrigger>
-          <TabsTrigger value="in_transit">En tránsito</TabsTrigger>
-          <TabsTrigger value="completed">Completados</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="active">
-          <div className="space-y-3">
-            {pendingLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
-              ))
-            ) : filteredPending.length === 0 ? (
-              <EmptyState
-                icon={Package}
-                title="Sin manifiestos pendientes"
-                description="Los manifiestos asignados aparecerán aquí."
-              />
-            ) : (
-              filteredPending.map((m) => (
-                <ManifestCard
-                  key={m.external_load_id}
-                  externalLoadId={m.external_load_id}
-                  retailerName={m.retailer_name}
-                  pickupPoint={m.pickup_point}
-                  orderCount={m.order_count}
-                  packageCount={m.package_count}
-                  verifiedCount={m.verified_count}
-                  createdAt={m.created_at}
-                  labelsEnabled={labelsEnabled}
-                  manifestId={m.id}
-                  labelsPrintedAt={m.labels_printed_at}
-                  labelsPrintedByName={m.labels_printed_by_name}
-                  onPrintLabels={() => m.id && handlePrintLabels(m.id)}
-                  onClick={() => handleManifestClick(
-                    m.external_load_id, m.retailer_name, m.order_count, m.package_count,
-                  )}
-                />
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="in_transit">
-          <div className="space-y-3">
-            {inTransitLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
-              ))
-            ) : filteredInTransit.length === 0 ? (
-              <EmptyState
-                icon={Package}
-                title="Sin manifiestos en tránsito"
-                description="Los manifiestos entregados a bodega aparecerán aquí."
-              />
-            ) : (
-              filteredInTransit.map((m) => (
-                <ManifestCard
-                  key={m.id}
-                  externalLoadId={m.external_load_id}
-                  retailerName={m.retailer_name}
-                  pickupPoint={m.pickup_point}
-                  orderCount={m.total_orders ?? 0}
-                  packageCount={m.total_packages ?? 0}
-                  createdAt={m.created_at}
-                  inTransit
-                  labelsEnabled={labelsEnabled}
-                  manifestId={m.id}
-                  labelsPrintedAt={m.labels_printed_at}
-                  labelsPrintedByName={m.labels_printed_by_name}
-                  onPrintLabels={() => handlePrintLabels(m.id)}
-                  onClick={() => handleInTransitClick(m.external_load_id)}
-                />
-              ))
-            )}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="completed">
-          <div className="space-y-3">
-            {completedLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-[72px] w-full rounded-lg" />
-              ))
-            ) : filteredCompleted.length === 0 ? (
-              <EmptyState
-                icon={Package}
-                title="Sin manifiestos completados"
-                description="Los manifiestos finalizados aparecerán aquí."
-              />
-            ) : (
-              filteredCompleted.map((m) => (
-                <ManifestCard
-                  key={m.id}
-                  externalLoadId={m.external_load_id}
-                  retailerName={m.retailer_name}
-                  pickupPoint={m.pickup_point}
-                  orderCount={m.total_orders ?? 0}
-                  packageCount={m.total_packages ?? 0}
-                  createdAt={m.created_at}
-                  completedAt={m.completed_at}
-                  interactive={false}
-                  labelsEnabled={labelsEnabled}
-                  manifestId={m.id}
-                  labelsPrintedAt={m.labels_printed_at}
-                  labelsPrintedByName={m.labels_printed_by_name}
-                  onPrintLabels={() => handlePrintLabels(m.id)}
-                  onClick={() => {}}
-                />
-              ))
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+      <PickupManifestTabs
+        pending={pendingManifests}
+        inTransit={inTransitManifests}
+        completed={completedManifests}
+        pendingLoading={pendingLoading}
+        inTransitLoading={inTransitLoading}
+        completedLoading={completedLoading}
+        selectedClient={selectedClient}
+        searchTerm={searchTerm}
+        labelsEnabled={labelsEnabled}
+        onManifestClick={handleManifestClick}
+        onInTransitClick={handleInTransitClick}
+        onPrintLabels={handlePrintLabels}
+      />
 
       {/* Camera Intake Dialog */}
       <Dialog open={intakeOpen} onOpenChange={setIntakeOpen}>

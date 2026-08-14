@@ -16,30 +16,59 @@ import { Textarea } from '@/components/ui/textarea';
 interface FinalizeReceptionButtonProps {
   receivedCount: number;
   expectedCount: number;
+  /**
+   * Received packages with no verified pickup scan on this route
+   * (`route_receptions.unexpected_count`). Load-bearing — see `needsNotes`.
+   */
+  unexpectedCount: number;
   isPending?: boolean;
   onFinalize: (discrepancyNotes: string | null) => void;
 }
 
 /**
- * Closes the consolidated reception. When `received === expected` the
- * button finalises directly. Otherwise it opens a notes modal — the
- * receptionist MUST type a discrepancy explanation before finalising,
- * matching the server-side guard in `complete_route_reception`.
+ * Closes the consolidated reception, demanding discrepancy notes on exactly
+ * the condition the server enforces in `complete_route_reception`.
+ *
+ * THE RULE, AND WHY IT IS NOT `received < expected`. spec-52 accepts a package
+ * that arrives with no verified pickup scan on this route: refusing it would
+ * force the receptionist to lie to the system. Such a package increments
+ * `received_count` AND `unexpected_count`, so the two error modes offset:
+ *
+ *   10 expected · 10 received · 1 unexpected
+ *     -> received === expected, yet ONE expected package never arrived and ONE
+ *        package belonging to another truck did.
+ *
+ * That is the most likely real-world shape — a package mis-loaded at one client
+ * while another is left behind — and precisely what the discrepancy report
+ * exists to catch. Comparing raw counts waves it through silently. Separating
+ * the populations does not:
+ *
+ *   matched := received - unexpected      (expected AND arrived)
+ *   notes required when matched !== expected OR unexpected > 0
+ *
+ * This modal trigger and the server guard are ONE rule expressed twice. Keep
+ * them identical: a server that demands notes the UI never prompts for makes
+ * the reception unfinishable — no modal opens, `onFinalize(null)` is sent, the
+ * RPC raises, and the receptionist has no way to supply what is being asked
+ * for. The server-side tightening is contract-phase work and lands only once
+ * this component is live.
  */
 export function FinalizeReceptionButton({
   receivedCount,
   expectedCount,
+  unexpectedCount,
   isPending = false,
   onFinalize,
 }: FinalizeReceptionButtonProps) {
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState('');
 
-  const hasMissing = receivedCount < expectedCount;
-  const missingCount = Math.max(0, expectedCount - receivedCount);
+  const matchedCount = receivedCount - unexpectedCount;
+  const needsNotes = matchedCount !== expectedCount || unexpectedCount > 0;
+  const missingCount = Math.max(0, expectedCount - matchedCount);
 
   const handleClick = () => {
-    if (hasMissing) {
+    if (needsNotes) {
       setOpen(true);
     } else {
       onFinalize(null);
@@ -76,9 +105,24 @@ export function FinalizeReceptionButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Recepción incompleta</DialogTitle>
+            <DialogTitle>Recepción con discrepancias</DialogTitle>
             <DialogDescription>
-              Faltan {missingCount} paquete{missingCount === 1 ? '' : 's'} por recibir.
+              {missingCount > 0 && (
+                <>
+                  Falta{missingCount === 1 ? '' : 'n'} {missingCount} paquete
+                  {missingCount === 1 ? '' : 's'} por recibir
+                </>
+              )}
+              {missingCount > 0 && unexpectedCount > 0 && ' y '}
+              {unexpectedCount > 0 && (
+                <>
+                  {missingCount > 0 ? 'lleg' : 'Lleg'}
+                  {unexpectedCount === 1 ? 'ó' : 'aron'} {unexpectedCount} paquete
+                  {unexpectedCount === 1 ? '' : 's'} inesperado
+                  {unexpectedCount === 1 ? '' : 's'}
+                </>
+              )}
+              {'. '}
               Describe la discrepancia para finalizar la recepción.
             </DialogDescription>
           </DialogHeader>

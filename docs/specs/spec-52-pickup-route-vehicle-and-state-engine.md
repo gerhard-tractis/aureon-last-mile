@@ -1055,6 +1055,20 @@ The largest frontend task. Contains the regression fix.
 - **No sprint tracker to update.** `docs/sprint-status.yaml` was deliberately removed in `45d9d1d` and is gitignored (`.gitignore:36`) — parallel branches editing it caused constant merge conflicts. Status lives in this file's `**Status:**` line. Do not recreate it.
 - Modify: `docs/specs/spec-52-…md` — flip `**Status:**` to `in progress` on the first implementation commit
 
+> **Unplanned, landed with this task: `route.driver_name` was dead in production.**
+> `RouteReceptionHeader.tsx` has rendered `snapshot.route.driver_name` since
+> spec-47, but `pickup_routes` has no such column and
+> `get_route_reception_snapshot` built its `route` node from a bare
+> `to_jsonb(pr.*)`. The key was never emitted, and the header's
+> `{driverName && ...}` guard hid the driver line silently. Fixed the same way
+> Task 11 added the plate — `20260813000005_spec52_snapshot_driver_name.sql`,
+> `CREATE OR REPLACE` templated on 20260813000004 (the latest), `LEFT JOIN
+> public.users ON pickup_routes.driver_id` merging `full_name` as
+> `driver_name`. **Third defect in this one RPC**, all with the same cause: the
+> contract test's presence list for `route` did not name a field the component
+> reads. `driver_name` is now in that list, plus a value assertion — presence
+> alone cannot see a join wired to the wrong column.
+
 - [ ] **Step 1: Failing test** for `PickupManifestTabs` (tab switching, client filter)
 - [ ] **Step 2: Run, confirm fail**
 - [ ] **Step 3: Extract** the tab/filter logic. Scoped to the file already being edited — not a refactor sweep. Verify `page.tsx` is now under 300 lines.
@@ -1068,14 +1082,34 @@ The largest frontend task. Contains the regression fix.
 
 **Files:** Create the E2E under the existing test setup.
 
-- [ ] **Step 1: Write the E2E**
+- [x] **Step 1: Write the E2E**
+
+`apps/frontend/e2e/spec52-pickup-reception-end-to-end.spec.ts` with its fixture at
+`apps/frontend/e2e/support/spec52-fixture.ts`.
 
 Depart hub with a vehicle → visit 2 clients, add 3 cargas → scan packages → arrive → receptionist scans QR → scan packages **flat and deliberately out of carga order** → finalize.
 
 Assert: packages `en_bodega`; orders rolled up by the existing trigger; manifests `completed` with `completed_at`; route `received`; `in_transit_at` ≈ QR scan time; `received_at` ≈ finalize time.
 
-- [ ] **Step 2: Run it — expect green if Tasks 1-12 are correct**
-- [ ] **Step 3: Commit** — `test(spec-52): end-to-end pickup route and consolidated reception`
+**Nothing is mocked.** The fixture seeds over `pg` and drives the real screens against a
+real Supabase; the point is to exercise the RPCs and triggers that six months of green
+unit tests never touched. Two extra assertions earn their keep: the checklist tick is
+asserted per `data-package-id` (a count would have passed straight through the
+`pk.id AS package_id` bug), and reception ends with `received === expected` yet one
+unexpected package, so the offsetting case still demands discrepancy notes.
+
+**Running it** needs a local Supabase — PostgREST + GoTrue on `NEXT_PUBLIC_SUPABASE_URL`
+and Postgres on `E2E_DATABASE_URL` (default `postgresql://postgres:postgres@127.0.0.1:54322/postgres`)
+— plus `npm run dev` on :3000. The pgTAP harness alone is not enough: it is Postgres only,
+with no PostgREST and no GoTrue, so nothing the frontend calls can reach it.
+
+- [x] **Step 2: Run it** — 7/7 green locally. It found one real defect on the way:
+  `RouteQRScannerEntry`'s effect cleanup called `html5-qrcode`'s `stop()` on a scanner
+  that never started. The library throws that **synchronously**, so the existing
+  `.catch()` never saw it, the throw escaped the effect cleanup and the whole reception
+  screen fell into the error boundary — the normal path on any dock terminal without
+  camera permission. Fixed, with a unit regression test that fails without the fix.
+- [x] **Step 3: Commit** — `test(spec-52): end-to-end pickup route and consolidated reception`
 
 ---
 

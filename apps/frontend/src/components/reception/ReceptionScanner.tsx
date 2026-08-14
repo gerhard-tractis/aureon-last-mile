@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, XCircle, Copy } from 'lucide-react';
+import { CheckCircle, XCircle, Copy, Truck as TruckIcon } from 'lucide-react';
 
 interface ScanFeedback {
   scanResult: string;
@@ -17,10 +17,12 @@ interface ReceptionScannerProps {
 
 // Hardware scanners that aren't configured to send a CR/Enter suffix arrive
 // as a fast burst of keystrokes with no terminator. We detect the burst by
-// the elapsed time between the first character and the moment typing stops:
-// scanners drop the full barcode in well under 200 ms, while human typing
-// pauses much longer between characters.
-const SCANNER_BURST_MAX_MS = 200;
+// the gap BETWEEN consecutive characters, not the total duration: scanners
+// emit ~15–50 ms per character regardless of barcode length, while human
+// typing pauses well over 100 ms between keys. (Total-duration detection
+// broke on real scanners: a 10+ char CTN takes >200 ms end to end even
+// though every inter-key gap is tiny.)
+const SCANNER_MAX_KEY_GAP_MS = 100;
 const IDLE_DEBOUNCE_MS = 120;
 const MIN_AUTO_SUBMIT_LENGTH = 4;
 
@@ -32,7 +34,8 @@ export function ReceptionScanner({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bufferStartRef = useRef<number | null>(null);
+  const lastCharAtRef = useRef<number | null>(null);
+  const maxKeyGapRef = useRef(0);
 
   // Auto-focus on mount and after each scan. preventScroll keeps the page
   // from jumping back to the top when focus returns to this input — common
@@ -57,7 +60,8 @@ export function ReceptionScanner({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    bufferStartRef.current = null;
+    lastCharAtRef.current = null;
+    maxKeyGapRef.current = 0;
     onScan(trimmed);
     setValue('');
     setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
@@ -72,19 +76,22 @@ export function ReceptionScanner({
       debounceRef.current = null;
     }
     if (newValue === '') {
-      bufferStartRef.current = null;
+      lastCharAtRef.current = null;
+      maxKeyGapRef.current = 0;
       return;
     }
-    if (bufferStartRef.current === null) {
-      bufferStartRef.current = Date.now();
+    const now = Date.now();
+    if (lastCharAtRef.current === null) {
+      maxKeyGapRef.current = 0;
+    } else {
+      maxKeyGapRef.current = Math.max(maxKeyGapRef.current, now - lastCharAtRef.current);
     }
+    lastCharAtRef.current = now;
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
-      const start = bufferStartRef.current;
       const finalValue = inputRef.current?.value ?? newValue;
       if (
-        start !== null &&
-        Date.now() - start <= SCANNER_BURST_MAX_MS &&
+        maxKeyGapRef.current <= SCANNER_MAX_KEY_GAP_MS &&
         finalValue.trim().length >= MIN_AUTO_SUBMIT_LENGTH
       ) {
         fireScan(finalValue);
@@ -146,6 +153,20 @@ function ScanFeedbackBanner({ result }: { result: ScanFeedback }) {
         <Copy className="h-5 w-5 text-status-warning" />
         <span className="text-sm font-medium text-status-warning">
           Paquete ya escaneado
+        </span>
+      </div>
+    );
+  }
+
+  // Wrong truck — split out of the not_found fallback deliberately. Without
+  // its own branch a `route_mismatch` reads as "Paquete no encontrado", which
+  // sends the receptionist looking for a barcode that scanned perfectly well.
+  if (scanResult === 'route_mismatch') {
+    return (
+      <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-md">
+        <TruckIcon className="h-5 w-5 text-status-error" />
+        <span className="text-sm font-medium text-status-error">
+          {message ?? 'Paquete de otro camión'}
         </span>
       </div>
     );

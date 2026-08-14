@@ -318,6 +318,8 @@ export type Database = {
           started_at: string
           status: string
           updated_at: string
+          vehicle_id: string | null
+          /** @deprecated spec-52 — read the joined vehicles.plate instead. */
           vehicle_label: string | null
         }
         Insert: {
@@ -333,6 +335,7 @@ export type Database = {
           started_at?: string
           status?: string
           updated_at?: string
+          vehicle_id?: string | null
           vehicle_label?: string | null
         }
         Update: {
@@ -348,6 +351,7 @@ export type Database = {
           started_at?: string
           status?: string
           updated_at?: string
+          vehicle_id?: string | null
           vehicle_label?: string | null
         }
         Relationships: [
@@ -363,6 +367,54 @@ export type Database = {
             columns: ["driver_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_routes_vehicle_id_fkey"
+            columns: ["vehicle_id"]
+            isOneToOne: false
+            referencedRelation: "vehicles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vehicles: {
+        Row: {
+          active: boolean
+          created_at: string
+          deleted_at: string | null
+          id: string
+          operator_id: string
+          plate: string
+          updated_at: string
+          vehicle_type: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          operator_id: string
+          plate: string
+          updated_at?: string
+          vehicle_type?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          operator_id?: string
+          plate?: string
+          updated_at?: string
+          vehicle_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vehicles_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
             referencedColumns: ["id"]
           },
         ]
@@ -1868,8 +1920,12 @@ export type Database = {
           retailer_name: string | null
         }[]
       }
+      // spec-52: the UUID overload is the real one. A deprecated
+      // `start_pickup_route(p_vehicle_label TEXT)` compat wrapper still exists
+      // in the database during the expand phase, but nothing calls it — it is
+      // dropped in the contract phase and is deliberately not typed here.
       start_pickup_route: {
-        Args: { p_vehicle_label?: string | null }
+        Args: { p_vehicle_id: string }
         Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
       }
       add_manifest_to_route: {
@@ -1891,6 +1947,16 @@ export type Database = {
       complete_route_reception: {
         Args: { p_route_id: string; p_discrepancy_notes?: string | null }
         Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
+      }
+      // spec-52 Task 5 (20260812000005). Hand-added like the rest of this file —
+      // `generate-types` runs against production and must never be used here.
+      open_route_reception: {
+        Args: { p_route_id: string }
+        Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
+      }
+      reopen_pickup_route: {
+        Args: { p_route_id: string }
+        Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
       }
       get_pre_route_snapshot: {
         Args: {

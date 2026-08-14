@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Camera, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { createSPAClient } from '@/lib/supabase/client';
+import { ROUTE_UUID_REGEX as UUID_REGEX, resolveRouteId } from '@/lib/reception/route-ref';
+import { useOpenRouteReception } from '@/hooks/reception/useOpenRouteReception';
 import { Html5Qrcode } from 'html5-qrcode';
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RouteQRScannerEntryProps {
   operatorId: string;
@@ -25,11 +23,17 @@ interface LookupResult {
 
 /**
  * Dual entry point for a hub receptionist: either point the camera at the
- * pickup route's QR (payload = route UUID) or type the short
- * `PR-YYYY-NNNN` code into the input. Both resolve to a `pickup_routes.id`
- * and navigate to `/app/reception/route/[routeId]`. Mirrors the old
- * per-manifest QRScanner but talks to `pickup_routes` and accepts the
- * human-typable code in addition to the UUID payload.
+ * pickup route's QR (payload = route UUID) or type the short `PR-YYYY-NNNN`
+ * code into the input. Only the code path needs a lookup, to turn the code
+ * into an id.
+ *
+ * The scan is what ends the trip. It no longer reads `pickup_routes` to
+ * second-guess the status client-side; it calls `open_route_reception`, which
+ * checks the status, creates the batch, stamps the arrival, freezes
+ * `expected_count` and takes the route lock in one transaction. An arriving
+ * truck is `in_progress` — the normal case, and the reason the old
+ * "aún no está en tránsito" gate had to go. `received` and `cancelled` are
+ * rejected by the server, in Spanish, and that message is shown as-is.
  */
 export function RouteQRScannerEntry({
   operatorId,
@@ -41,6 +45,8 @@ export function RouteQRScannerEntry({
   const [isLooking, setIsLooking] = useState(false);
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [cameraError, setCameraError] = useState(false);
+  const openReception = useOpenRouteReception();
+  const { mutate: openRouteReception } = openReception;
 
   const resolveAndNavigate = useCallback(
     async (input: string) => {
@@ -50,48 +56,38 @@ export function RouteQRScannerEntry({
       setLookupResult(null);
 
       try {
-        const supabase = createSPAClient();
-        const isUuid = UUID_REGEX.test(trimmed);
-        const base = supabase
-          .from('pickup_routes')
-          .select('id, status')
-          .eq('operator_id', operatorId)
-          .is('deleted_at', null);
-        const filtered = isUuid
-          ? base.eq('id', trimmed)
-          : base.eq('code', trimmed.toUpperCase());
-        const { data, error } = await filtered.limit(1);
+        const routeId = UUID_REGEX.test(trimmed)
+          ? trimmed
+          : await resolveRouteId(operatorId, trimmed.toUpperCase());
 
-        if (error || !data || data.length === 0) {
+        if (!routeId) {
           setLookupResult({ type: 'error', message: 'Ruta no encontrada' });
           return;
         }
 
-        const route = data[0];
-        if (route.status === 'received') {
-          setLookupResult({
-            type: 'already_received',
-            message: 'Esta ruta ya fue recibida',
-          });
-          return;
-        }
-        if (route.status !== 'in_transit') {
-          setLookupResult({
-            type: 'error',
-            message: 'La ruta aún no está en tránsito',
-          });
-          return;
-        }
-
-        onResolved?.();
-        router.push(`/app/reception/route/${route.id}`);
+        openRouteReception(
+          { routeId },
+          {
+            onSuccess: () => {
+              onResolved?.();
+              router.push(`/app/reception/route/${routeId}`);
+            },
+            onError: (error: Error) => {
+              const message = error.message || 'No se pudo abrir la recepción';
+              setLookupResult({
+                type: /ya fue recibida/i.test(message) ? 'already_received' : 'error',
+                message,
+              });
+            },
+          },
+        );
       } catch {
         setLookupResult({ type: 'error', message: 'Error al buscar ruta' });
       } finally {
         setIsLooking(false);
       }
     },
-    [operatorId, router, onResolved],
+    [operatorId, router, onResolved, openRouteReception],
   );
 
   useEffect(() => {
@@ -119,8 +115,21 @@ export function RouteQRScannerEntry({
 
     startScanner();
     return () => {
-      if (scanner) {
-        scanner.stop().catch(() => {}).finally(() => scanner?.clear());
+      const running = scanner;
+      scanner = null;
+      if (!running) return;
+      // html5-qrcode THROWS SYNCHRONOUSLY from stop() when the scanner never
+      // started ("Cannot stop, scanner is not running or paused") — it does not
+      // return a rejected promise, so the old `.catch()` never saw it. A throw
+      // out of an effect cleanup unmounts the tree into the error boundary, and
+      // the whole reception screen goes white. That is the normal path on any
+      // dock terminal without camera permission: open the QR dialog, close it,
+      // lose the app.
+      const clear = () => { try { running.clear(); } catch { /* already gone */ } };
+      try {
+        Promise.resolve(running.stop()).catch(() => {}).finally(clear);
+      } catch {
+        clear();
       }
     };
   }, [enableCamera, resolveAndNavigate]);
@@ -180,7 +189,7 @@ export function RouteQRScannerEntry({
             size="icon"
             variant="outline"
             onClick={handleManualSubmit}
-            disabled={isLooking}
+            disabled={isLooking || openReception.isPending}
             aria-label="Buscar ruta"
           >
             <Search className="h-4 w-4" />

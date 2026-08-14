@@ -114,6 +114,27 @@ describe('ReceptionScanner', () => {
     expect(input.value).toBe('');
   });
 
+  it('auto-submits a realistic scanner burst whose characters spread over more than 200 ms', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ReceptionScanner {...defaultProps} onScan={onScan} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+
+    // Real keyboard-wedge scanners (Bluetooth/Android especially) emit
+    // ~15–50 ms per character, so a 10-char CTN takes well over 200 ms end
+    // to end — but every inter-key gap stays tiny.
+    const code = 'CTN1234567';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      act(() => vi.advanceTimersByTime(25));
+    }
+
+    act(() => vi.advanceTimersByTime(120));
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith(code);
+    expect(input.value).toBe('');
+  });
+
   it('does not auto-submit when keystrokes arrive at human typing speed', () => {
     vi.useFakeTimers();
     const onScan = vi.fn();
@@ -143,5 +164,54 @@ describe('ReceptionScanner', () => {
     act(() => vi.advanceTimersByTime(500));
     expect(onScan).toHaveBeenCalledTimes(1);
     expect(onScan).toHaveBeenCalledWith('CTN12345');
+  });
+
+  describe('ScanFeedbackBanner', () => {
+    it('shows the received banner', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'received' }} />
+      );
+      expect(screen.getByText('Paquete recibido')).toBeInTheDocument();
+    });
+
+    it('shows the duplicate banner', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'duplicate' }} />
+      );
+      expect(screen.getByText('Paquete ya escaneado')).toBeInTheDocument();
+    });
+
+    it('shows a wrong-truck banner for route_mismatch, not the generic not_found text', () => {
+      render(
+        <ReceptionScanner
+          {...defaultProps}
+          lastScanResult={{ scanResult: 'route_mismatch' }}
+        />
+      );
+      expect(screen.getByText('Paquete de otro camión')).toBeInTheDocument();
+      expect(screen.queryByText('Paquete no encontrado')).not.toBeInTheDocument();
+    });
+
+    it('prefers the validator message for route_mismatch when present', () => {
+      render(
+        <ReceptionScanner
+          {...defaultProps}
+          lastScanResult={{
+            scanResult: 'route_mismatch',
+            message: 'Paquete no pertenece a este camión',
+          }}
+        />
+      );
+      expect(
+        screen.getByText('Paquete no pertenece a este camión')
+      ).toBeInTheDocument();
+    });
+
+    it('falls back to the not_found banner for any other result', () => {
+      render(
+        <ReceptionScanner {...defaultProps} lastScanResult={{ scanResult: 'not_found' }} />
+      );
+      expect(screen.getByText('Paquete no encontrado')).toBeInTheDocument();
+    });
   });
 });
