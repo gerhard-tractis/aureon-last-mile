@@ -12,24 +12,26 @@ import SentryUserProvider from "@/components/SentryUserProvider";
    Body: Inter. Numeric: JetBrains Mono. App display: Archivo.
    Note the variable names: Tailwind and globals.css read `--font-sans` /
    `--font-mono`, which the previous Geist wiring never actually set (Geist
-   exports `--font-geist-sans`), so the app had been falling back to system-ui. */
+   exports `--font-geist-sans`), so the app had been falling back to system-ui.
+
+   No `weight` array on purpose: all three are variable fonts, so omitting it
+   fetches one variable file covering the whole axis instead of one static file
+   per weight. Fewer build-time requests to Google (a static-weight build had
+   next/font fail intermittently in CI) and a smaller payload. */
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
   variable: "--font-sans",
   display: "swap",
 });
 
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
   variable: "--font-mono",
   display: "swap",
 });
 
 const archivo = Archivo({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
   variable: "--font-heading",
   display: "swap",
 });
