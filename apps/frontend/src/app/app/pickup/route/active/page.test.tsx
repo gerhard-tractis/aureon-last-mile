@@ -16,7 +16,7 @@ const route = {
   id: 'route-1',
   code: 'PR-2026-0001',
   started_at: new Date().toISOString(),
-  vehicle_label: null,
+  vehicle: { plate: 'AAA-111' },
 };
 
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
@@ -70,6 +70,13 @@ describe('ActiveRoutePage', () => {
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     expect(screen.getByText('A')).toBeInTheDocument();
     expect(screen.getByText('2/2')).toBeInTheDocument();
+  });
+
+  // spec-52: the header shows the real plate from the joined `vehicles` row,
+  // never pickup_routes.vehicle_label (a deprecated expand-phase mirror).
+  it('renders the vehicle plate in the route header', async () => {
+    wrap(<Page />);
+    await waitFor(() => expect(screen.getByText(/AAA-111/)).toBeInTheDocument());
   });
 
   it('clicking Cerrar ruta calls closeMut and navigates to QR on success', async () => {

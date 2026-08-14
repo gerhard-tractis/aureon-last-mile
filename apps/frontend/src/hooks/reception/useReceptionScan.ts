@@ -17,6 +17,7 @@ interface ReceptionScanInput {
 function toFeedbackType(scanResult: string): 'verified' | 'not_found' | 'duplicate' {
   if (scanResult === 'received') return 'verified';
   if (scanResult === 'duplicate') return 'duplicate';
+  // `route_mismatch` shares the not_found buzzer — both are rejections.
   return 'not_found';
 }
 
@@ -27,10 +28,9 @@ function toFeedbackType(scanResult: string): 'verified' | 'not_found' | 'duplica
  * invalidate the snapshot query so the page re-renders with the latest
  * counts and the package's checkmark.
  *
- * The validator is called with `manifestId=''` because for consolidated
- * reception we accept any package belonging to ANY manifest on this route
- * — the validator already scopes to operator and does not narrow by
- * manifest.
+ * The validator is scoped to the ROUTE, not to a manifest: for consolidated
+ * reception we accept any package belonging to ANY manifest on this route.
+ * The receptionist never picks a carga.
  */
 export function useReceptionScan() {
   const queryClient = useQueryClient();
@@ -40,7 +40,7 @@ export function useReceptionScan() {
       const result = await validateReceptionScan({
         barcode: input.barcode,
         receptionId: input.routeReceptionId,
-        manifestId: '',
+        routeId: input.routeId,
         operatorId: input.operatorId,
       });
 

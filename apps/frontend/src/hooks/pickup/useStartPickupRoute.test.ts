@@ -24,7 +24,7 @@ describe('useStartPickupRoute', () => {
     vi.clearAllMocks();
   });
 
-  it('invokes start_pickup_route RPC with vehicle label', async () => {
+  it('invokes start_pickup_route RPC with the vehicle id, never a label', async () => {
     mockRpc.mockResolvedValue({
       data: { id: 'r1', code: 'PR-2026-0001', status: 'in_progress' },
       error: null,
@@ -34,24 +34,41 @@ describe('useStartPickupRoute', () => {
       wrapper: wrapperFactory(),
     });
 
-    result.current.mutate({ vehicleLabel: 'AAA-111' });
+    result.current.mutate({ vehicleId: 'veh-1' });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockRpc).toHaveBeenCalledWith('start_pickup_route', { p_vehicle_label: 'AAA-111' });
+    expect(mockRpc).toHaveBeenCalledWith('start_pickup_route', { p_vehicle_id: 'veh-1' });
+    expect(JSON.stringify(mockRpc.mock.calls)).not.toContain('p_vehicle_label');
   });
 
-  it('surfaces error from RPC (e.g. active route exists)', async () => {
+  it('surfaces the named RPC error message (e.g. active route exists)', async () => {
     mockRpc.mockResolvedValue({
       data: null,
-      error: { message: 'driver already has an active pickup route' },
+      error: { message: 'El conductor ya tiene una ruta activa' },
     });
 
     const { result } = renderHook(() => useStartPickupRoute('op-1'), {
       wrapper: wrapperFactory(),
     });
 
-    result.current.mutate({});
+    result.current.mutate({ vehicleId: 'veh-1' });
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.error?.message).toMatch(/already/i);
+    expect(result.current.error).toBeInstanceOf(Error);
+    expect(result.current.error?.message).toBe('El conductor ya tiene una ruta activa');
+  });
+
+  it('surfaces the vehicle validation error raised by the RPC', async () => {
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'El vehículo no está activo' },
+    });
+
+    const { result } = renderHook(() => useStartPickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+
+    result.current.mutate({ vehicleId: 'veh-inactive' });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.message).toBe('El vehículo no está activo');
   });
 });

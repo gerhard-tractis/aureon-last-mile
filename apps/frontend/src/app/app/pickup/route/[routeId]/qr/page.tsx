@@ -26,9 +26,6 @@ export default function RouteQRPage() {
     if (!operatorId || !routeId) return;
     const supabase = createSPAClient();
     (async () => {
-      // Fetch route + reception summary in two cheap calls — the route_receptions
-      // row carries the frozen expected_count which is the canonical "packages
-      // on this truck" figure for the QR view.
       const { data: route, error: rErr } = await supabase
         .from('pickup_routes')
         .select('id, code')
@@ -38,24 +35,48 @@ export default function RouteQRPage() {
         .single();
       if (rErr) { setError(rErr.message); return; }
 
+      // Once the receptionist opens the batch, route_receptions.expected_count is
+      // the canonical figure — it is frozen at arrival and is what the hub counts
+      // against.
       const { data: rr } = await supabase
         .from('route_receptions')
         .select('expected_count')
         .eq('pickup_route_id', routeId)
+        .is('deleted_at', null)
         .maybeSingle();
 
-      const { count: mCount } = await supabase
+      const { data: manifests } = await supabase
         .from('manifests')
-        .select('id', { count: 'exact', head: true })
+        .select('id')
         .eq('operator_id', operatorId)
         .eq('pickup_route_id', routeId)
         .is('deleted_at', null);
+      const manifestIds = (manifests ?? []).map((m) => m.id);
+
+      // Before that, there is no route_receptions row at all. Reading
+      // expected_count here used to yield 0, so a driver mid-route showed the
+      // receptionist a card reading "3 manifiestos · 0 paquetes" — this page
+      // became reachable while the route is still in_progress, and the figure
+      // never caught up. Count the distinct packages actually scanned instead.
+      let packageCount = rr?.expected_count ?? 0;
+      if (!rr && manifestIds.length > 0) {
+        const { data: scans } = await supabase
+          .from('pickup_scans')
+          .select('package_id')
+          .eq('operator_id', operatorId)
+          .in('manifest_id', manifestIds)
+          .eq('scan_result', 'verified')
+          .is('deleted_at', null);
+        const distinct = new Set<string>();
+        for (const s of scans ?? []) if (s.package_id) distinct.add(s.package_id);
+        packageCount = distinct.size;
+      }
 
       setSummary({
         routeId: route.id,
         code: route.code,
-        manifestCount: mCount ?? 0,
-        packageCount: rr?.expected_count ?? 0,
+        manifestCount: manifestIds.length,
+        packageCount,
       });
     })();
   }, [operatorId, routeId]);

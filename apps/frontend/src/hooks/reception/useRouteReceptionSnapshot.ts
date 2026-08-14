@@ -6,7 +6,16 @@ export interface RouteReceptionRouteHeader {
   code: string;
   driver_id: string;
   driver_name: string | null;
-  vehicle_label: string | null;
+  /**
+   * The truck's registered plate, joined from `vehicles` by the RPC.
+   *
+   * NOT `pickup_routes.vehicle_label`. Since spec-52 a route carries
+   * `vehicle_id` and the plate is `vehicles.plate`; `vehicle_label` survives
+   * only as an expand-phase mirror written so the pre-switch UI would not go
+   * blank, and it is dropped in the contract phase. Null only for a route
+   * whose vehicle row was removed.
+   */
+  plate: string | null;
   status: string;
   in_transit_at: string | null;
 }
@@ -46,6 +55,18 @@ export interface RouteReceptionSnapshot {
     status: string;
     expected_count: number;
     received_count: number;
+    /**
+     * How many of `received_count` arrived with NO verified pickup scan on
+     * this route — packages physically present that the driver never scanned.
+     * Derived server-side by the counting trigger (spec-52), never
+     * client-attested, and reaches us for free through `to_jsonb(rr.*)`.
+     *
+     * `expected_count` and `received_count` therefore count DIFFERENT
+     * populations. The honest fraction is `received_count - unexpected_count`
+     * over `expected_count`; a bare `received_count !== expected_count` lets an
+     * absent package and an extra one cancel each other out.
+     */
+    unexpected_count: number;
     started_at: string | null;
     completed_at: string | null;
     discrepancy_notes: string | null;

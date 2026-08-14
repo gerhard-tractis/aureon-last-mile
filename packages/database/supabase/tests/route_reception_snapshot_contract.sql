@@ -275,10 +275,10 @@ BEGIN
       ('RouteReceptionManifest (manifests[0])',  v_snap -> 'manifests' -> 0,
        ARRAY['id','external_load_id','retailer_name']),
       ('RouteReceptionRouteHeader (route)',      v_snap -> 'route',
-       ARRAY['id','code','driver_id','status','in_transit_at']),
+       ARRAY['id','code','driver_id','driver_name','status','in_transit_at','plate']),
       ('route_reception (read in page.tsx JSX)', v_snap -> 'route_reception',
-       ARRAY['id','status','expected_count','received_count','started_at',
-             'completed_at','discrepancy_notes'])
+       ARRAY['id','status','expected_count','received_count','unexpected_count',
+             'started_at','completed_at','discrepancy_notes'])
     ) AS t(label, node, want)
   LOOP
     SELECT COALESCE(array_agg(w), '{}') INTO v_missing
@@ -291,6 +291,42 @@ BEGIN
   IF (v_snap -> 'route_reception' ->> 'expected_count')::INT <> 2 THEN
     RAISE EXCEPTION 'route_reception.expected_count should be 2, got %',
       v_snap -> 'route_reception' ->> 'expected_count';
+  END IF;
+
+  -- spec-52 -- `route.plate` is the JOINED vehicles.plate, and presence alone
+  -- is not enough: the key could exist and be NULL if the join were wrong, and
+  -- the header would render a blank truck for every route. Assert the VALUE.
+  -- The route was started via start_pickup_route('SNAP-813'), which binds the
+  -- vehicle inserted above.
+  IF v_snap -> 'route' ->> 'plate' IS DISTINCT FROM 'SNAP-813' THEN
+    RAISE EXCEPTION
+      'route.plate must be the joined vehicles.plate (expected SNAP-813), got %. route node: %',
+      v_snap -> 'route' ->> 'plate', v_snap -> 'route';
+  END IF;
+
+  -- spec-52 -- `route.driver_name` is the JOINED users.full_name. `pickup_routes`
+  -- has NO driver_name column, so while the route node was a bare `to_jsonb(pr.*)`
+  -- the key was simply absent and RouteReceptionHeader's `{driverName && ...}`
+  -- guard hid the whole driver line -- silently, for every route, since spec-47.
+  -- The presence list above is what stops it going dead again; the value check
+  -- here is what stops the join being wired to the wrong column, which presence
+  -- alone cannot see. The route was started by 'Driver Contrato' above.
+  IF v_snap -> 'route' ->> 'driver_name' IS DISTINCT FROM 'Driver Contrato' THEN
+    RAISE EXCEPTION
+      'route.driver_name must be the joined users.full_name (expected Driver Contrato), got %. route node: %',
+      v_snap -> 'route' ->> 'driver_name', v_snap -> 'route';
+  END IF;
+
+  -- spec-52 -- unexpected_count rides through `to_jsonb(rr.*)` with no code in
+  -- the RPC. Pinned here so dropping the column (or the passthrough) fails
+  -- loudly: FinalizeReceptionButton computes `matched := received - unexpected`
+  -- and a missing value would silently become NaN, collapsing the notes rule
+  -- back to the one that lets an absent and an extra package cancel out.
+  -- Every scan above is a package with a verified pickup scan on this route,
+  -- so nothing here is unexpected.
+  IF (v_snap -> 'route_reception' ->> 'unexpected_count')::INT <> 0 THEN
+    RAISE EXCEPTION 'route_reception.unexpected_count should be 0, got %',
+      v_snap -> 'route_reception' ->> 'unexpected_count';
   END IF;
 END $$;
 

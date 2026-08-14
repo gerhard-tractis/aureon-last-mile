@@ -6,32 +6,35 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { VehicleSelect } from '@/components/pickup/VehicleSelect';
 
 interface StartRouteButtonProps {
+  operatorId: string | null;
   disabled?: boolean;
   isSubmitting?: boolean;
-  /** Receives optional vehicle label (free text) and triggers the mutation. */
-  onStart: (vehicleLabel: string | null) => void;
+  /** Receives the selected `vehicles.id` and triggers the mutation. */
+  onStart: (vehicleId: string) => void;
 }
 
 /**
- * Primary CTA on the pickup landing when no route is active. Pops a small
- * dialog for an optional vehicle label and dispatches `onStart`. Spec keeps
- * vehicle as free text — no validation, no FK.
+ * Primary CTA on the pickup landing when no route is active. Pops a dialog
+ * with one **required** field: the vehicle. A route carries an FK to the truck
+ * that performed it, so there is no blank-vehicle path from the UI.
  */
 export function StartRouteButton({
+  operatorId,
   disabled = false,
   isSubmitting = false,
   onStart,
 }: StartRouteButtonProps) {
   const [open, setOpen] = useState(false);
-  const [label, setLabel] = useState('');
+  const [vehicleId, setVehicleId] = useState<string | null>(null);
 
   const handleConfirm = () => {
-    onStart(label.trim() || null);
+    if (!vehicleId) return;
+    onStart(vehicleId);
     setOpen(false);
-    setLabel('');
+    setVehicleId(null);
   };
 
   return (
@@ -56,22 +59,18 @@ export function StartRouteButton({
           <DialogHeader>
             <DialogTitle>Iniciar ruta de retiro</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <label htmlFor="vehicle-label" className="text-sm text-text-secondary">
-              Vehículo (opcional)
-            </label>
-            <Input
-              id="vehicle-label"
-              placeholder="Patente o alias"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </div>
+          <VehicleSelect
+            operatorId={operatorId}
+            value={vehicleId}
+            onChange={setVehicleId}
+          />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleConfirm}>Iniciar</Button>
+            <Button onClick={handleConfirm} disabled={!vehicleId}>
+              Iniciar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

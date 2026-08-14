@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, XCircle, Copy } from 'lucide-react';
+import { CheckCircle, XCircle, Copy, Truck as TruckIcon } from 'lucide-react';
 
 interface ScanFeedback {
   scanResult: string;
@@ -153,6 +153,20 @@ function ScanFeedbackBanner({ result }: { result: ScanFeedback }) {
         <Copy className="h-5 w-5 text-status-warning" />
         <span className="text-sm font-medium text-status-warning">
           Paquete ya escaneado
+        </span>
+      </div>
+    );
+  }
+
+  // Wrong truck — split out of the not_found fallback deliberately. Without
+  // its own branch a `route_mismatch` reads as "Paquete no encontrado", which
+  // sends the receptionist looking for a barcode that scanned perfectly well.
+  if (scanResult === 'route_mismatch') {
+    return (
+      <div className="flex items-center gap-2 p-2 bg-status-error-bg border border-status-error-border rounded-md">
+        <TruckIcon className="h-5 w-5 text-status-error" />
+        <span className="text-sm font-medium text-status-error">
+          {message ?? 'Paquete de otro camión'}
         </span>
       </div>
     );
