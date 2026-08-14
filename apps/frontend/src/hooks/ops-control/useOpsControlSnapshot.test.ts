@@ -43,9 +43,12 @@ const mockRpcData = {
 
 let mockRpcResponse = { data: mockRpcData, error: null };
 
+// Shared across createSPAClient() calls so tests can count snapshot fetches.
+const mockRpc = vi.fn(() => Promise.resolve(mockRpcResponse));
+
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => ({
-    rpc: vi.fn(() => Promise.resolve(mockRpcResponse)),
+    rpc: mockRpc,
     channel: mockChannel,
     removeChannel: mockRemoveChannel,
   }),
@@ -281,6 +284,131 @@ describe('useOpsControlSnapshot', () => {
     await waitFor(() => {
       expect(result.current.snapshot?.returns).toHaveLength(0);
     });
+  });
+
+  it('stages an order with sectorizado packages in docks, not reception', async () => {
+    mockRpcResponse = {
+      data: {
+        ...mockRpcData,
+        orders: [
+          {
+            id: 'order-1', operator_id: 'op-abc', status: 'en_bodega', deleted_at: null,
+            packages: [{ id: 'pkg-1', label: 'L1', status: 'sectorizado' }],
+          },
+        ],
+      },
+      error: null,
+    };
+
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(result.current.snapshot?.orders[0]?.['stage']).toBe('docks');
+  });
+
+  it('keeps the package-derived stage when Realtime delivers a bare orders row', async () => {
+    // A dock scan bumps orders.status_updated_at via recalculate_order_status,
+    // so an orders UPDATE arrives carrying only the orders table's own columns —
+    // no packages[]. Replacing the enriched row with it would drop the order
+    // back into Recepción.
+    mockRpcResponse = {
+      data: {
+        ...mockRpcData,
+        orders: [
+          {
+            id: 'order-1', operator_id: 'op-abc', status: 'en_bodega', deleted_at: null,
+            pickup_point_name: 'Bodega Central',
+            packages: [{ id: 'pkg-1', label: 'L1', status: 'sectorizado' }],
+          },
+        ],
+      },
+      error: null,
+    };
+
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      capturedCallbacks[channelName!][0]({
+        eventType: 'UPDATE',
+        new: { id: 'order-1', operator_id: 'op-abc', status: 'en_bodega', deleted_at: null },
+        old: { id: 'order-1' },
+      });
+    });
+
+    await waitFor(() => {
+      const order = result.current.snapshot?.orders[0];
+      expect(order?.['stage']).toBe('docks');
+      expect(order?.['pickup_point_name']).toBe('Bodega Central');
+    });
+  });
+
+  it('refetches the snapshot on an orders Realtime event so package changes surface', async () => {
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      capturedCallbacks[channelName!][0]({
+        eventType: 'UPDATE',
+        new: { id: 'order-1', operator_id: 'op-abc', status: 'en_bodega', deleted_at: null },
+        old: { id: 'order-1' },
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockRpc).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('coalesces a burst of orders events into a single refetch', async () => {
+    const { result } = renderHook(() => useOpsControlSnapshot('op-abc'), {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    const channelName = Object.keys(capturedCallbacks).find(k => k.includes('order'));
+
+    act(() => {
+      for (const status of ['en_bodega', 'en_bodega', 'en_bodega']) {
+        capturedCallbacks[channelName!][0]({
+          eventType: 'UPDATE',
+          new: { id: 'order-1', operator_id: 'op-abc', status, deleted_at: null },
+          old: { id: 'order-1' },
+        });
+      }
+    });
+
+    await waitFor(() => {
+      expect(mockRpc).toHaveBeenCalledTimes(2);
+    });
+
+    // The trailing refetch is still pending behind the throttle window — the
+    // burst must not have produced one RPC per scan.
+    expect(mockRpc).toHaveBeenCalledTimes(2);
   });
 
   it('subscribes to Realtime channels for orders and routes', async () => {

@@ -11,7 +11,7 @@ export function ConsolidationPanel({ operatorId, lastSyncAt }: StagePanelProps) 
   return (
     <StagePanel
       title="Consolidación"
-      subtitle="Órdenes en bodega pendientes de despacho"
+      subtitle="Órdenes retenidas en zona de consolidación"
       deepLink="/app/distribution"
       deepLinkLabel="Abrir Distribución"
       kpis={computeOrderKpis(rows)}
