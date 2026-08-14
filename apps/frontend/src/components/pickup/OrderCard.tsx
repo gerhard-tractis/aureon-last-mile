@@ -39,6 +39,27 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
     return ids;
   }, [scans]);
 
+  // spec-55 — group minted siblings under their parent (same base label),
+  // so an expanded carton family reads together rather than scattered in
+  // insertion order.
+  const sortedPackages = useMemo(() => {
+    return [...order.packages].sort((a, b) => {
+      const aKey = a.parent_label ?? a.label;
+      const bKey = b.parent_label ?? b.label;
+      if (aKey !== bKey) return aKey.localeCompare(bKey);
+      return a.label.localeCompare(b.label);
+    });
+  }, [order.packages]);
+
+  const familySize = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of order.packages) {
+      const key = p.parent_label ?? p.label;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [order.packages]);
+
   const orderPackageIds = new Set(order.packages.map(p => p.id));
   const verifiedCount = [...verifiedPackageIds].filter(id => orderPackageIds.has(id)).length;
   const totalCount = order.packages.length;
@@ -80,12 +101,13 @@ export function OrderCard({ order, scans, onManualVerify }: OrderCardProps) {
           {order.packages.length === 0 ? (
             <p className="text-sm text-text-muted text-center py-2">No packages</p>
           ) : (
-            order.packages.map(pkg => (
+            sortedPackages.map(pkg => (
               <PackageRow
                 key={pkg.id}
                 pkg={pkg}
                 isVerified={verifiedPackageIds.has(pkg.id)}
                 onManualVerify={onManualVerify}
+                existingBoxCount={familySize.get(pkg.parent_label ?? pkg.label) ?? 1}
               />
             ))
           )}
