@@ -2,7 +2,6 @@
 import { useRef, useEffect, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { createSPAClient } from '@/lib/supabase/client';
 import {
   determineDockZone,
@@ -21,7 +20,11 @@ interface QuickSortScannerProps {
   zones: DockZone[];
 }
 
-type ScanState = 'scan_package' | 'show_destination' | 'scan_anden';
+// Two states only: the destination is shown AND the andén scan is armed in a
+// single step after the package scan — a confirm tap in between was pure
+// friction. The physical andén scan is the confirmation; the validator locks
+// assignment to the suggested andén or Consolidación (capacity override).
+type ScanState = 'scan_package' | 'scan_anden';
 
 interface PackageInfo {
   id: string;
@@ -108,7 +111,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
       setCurrentBatchId(batch.id);
       setCurrentPackage({ id: pkg.id, label: pkg.label });
       setDestination(matchResult);
-      setState('show_destination');
+      setState('scan_anden');
     } catch {
       setError('Error al procesar — intente de nuevo');
     }
@@ -226,7 +229,7 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
         </div>
       )}
 
-      {state === 'show_destination' && destination && (
+      {state === 'scan_anden' && destination && (
         <div className="space-y-4">
           <div className="text-center space-y-2">
             <p className="text-4xl font-bold">{destination.zone_name}</p>
@@ -236,18 +239,6 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
                 Comuna sin andén asignado — redirigiendo a Consolidación
               </div>
             )}
-          </div>
-          <Button className="w-full" onClick={() => setState('scan_anden')}>
-            Confirmar andén
-          </Button>
-        </div>
-      )}
-
-      {state === 'scan_anden' && destination && (
-        <div className="space-y-4">
-          <div className="text-center space-y-1">
-            <p className="text-4xl font-bold">{destination.zone_name}</p>
-            <p className="text-2xl font-mono text-muted-foreground">{destination.zone_code}</p>
           </div>
           <div className="space-y-2">
             <p className="font-medium text-center text-muted-foreground">Escanear andén para confirmar</p>

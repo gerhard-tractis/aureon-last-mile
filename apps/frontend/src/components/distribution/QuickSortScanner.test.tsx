@@ -101,7 +101,6 @@ describe('QuickSortScanner', () => {
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
     await screen.findByText('Andén 1');
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
 
     const code = 'DOCK-001';
@@ -144,17 +143,15 @@ describe('QuickSortScanner', () => {
     expect(screen.getByPlaceholderText(/escanear paquete/i)).toBeInTheDocument();
   });
 
-  it('transitions to scan_anden state after clicking Confirmar andén', async () => {
+  it('arms the andén scan immediately after the package scan — no confirm button', async () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
     const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
-    // State B: show_destination — destination visible, no andén input yet
+    // Destination and andén input appear together in one step
     await screen.findByText('Andén 1');
-    await waitFor(() => expect(screen.queryByPlaceholderText(/escanear andén/i)).not.toBeInTheDocument());
-    // Click Confirmar andén → state C: scan_anden
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     await screen.findByPlaceholderText(/escanear andén/i);
+    expect(screen.queryByText(/confirmar andén/i)).not.toBeInTheDocument();
   });
 
   it('redirects to consolidación when CONSOL is scanned in state C and records redirect_reason', async () => {
@@ -163,7 +160,6 @@ describe('QuickSortScanner', () => {
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
     await screen.findByText('Andén 1');
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     fireEvent.change(andenInput, { target: { value: 'CONSOL' } });
     fireEvent.keyDown(andenInput, { key: 'Enter' });
@@ -194,7 +190,6 @@ describe('QuickSortScanner', () => {
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
     await screen.findByText('Andén 1');
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     fireEvent.change(andenInput, { target: { value: 'DOCK-002' } });
     fireEvent.keyDown(andenInput, { key: 'Enter' });
@@ -203,13 +198,11 @@ describe('QuickSortScanner', () => {
 
   it('shows wrong andén error when wrong code scanned in state C', async () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
-    // Get to state B (show_destination)
+    // Scan a package to arm the andén step
     const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
     await screen.findByText('Andén 1');
-    // Transition to state C (scan_anden)
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     // Scan wrong code
     fireEvent.change(andenInput, { target: { value: 'WRONG-CODE' } });
@@ -224,8 +217,6 @@ describe('QuickSortScanner', () => {
     fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
     fireEvent.keyDown(pkgInput, { key: 'Enter' });
     await screen.findByText('Andén 1');
-    // Confirm → state C
-    fireEvent.click(screen.getByText(/confirmar andén/i));
     const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
     // Scan correct andén code
     fireEvent.change(andenInput, { target: { value: 'DOCK-001' } });
