@@ -69,7 +69,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 | **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
 | **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
 | **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
-| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho → Distribución → Recepción → móvil. | en curso |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución → Recepción → móvil. | en curso |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -228,3 +228,34 @@ La página deja de usar `PageShell`: la fila de título del mock lleva subtítul
 ### Seguimiento conocido
 
 La página monta su propio `OrderInspector` para el clic en fila, y `AppLayout` monta otro para la paleta de búsqueda. Son estados independientes; si algún día se abren a la vez, unificar vía contexto en lugar de duplicar el Sheet.
+
+
+---
+
+## Fase 4.2 — Despacho
+
+**Ruta:** `/app/dispatch` · **Mock:** `1c`
+
+La pestaña Pre-ruta pasa de lista apilada a **tablero de tres columnas** (`330px | 1fr | 322px`), que es el cambio central del mock: qué está sin rutear, cómo se ve el plan y qué va a contener la ruta, todo visible mientras decides. Bajo 1024px las columnas se apilan.
+
+Componentes nuevos: `PreRouteBoard`, `UnroutedColumn`, `RoutePlanCanvas`, `RouteDraftPanel`, `UnmappedComunasNotice`, más `useUnroutedGroups` (`buildGroups` / `summariseSelection`, puros y testeados aparte).
+
+La cabecera de página cambia: las cinco `MetricCard` iguales se reemplazan por título + pestañas en línea con su conteo + "SIN RUTEAR n" + acción primaria. Cinco tarjetas del mismo tamaño no decían para qué era la pantalla.
+
+### Datos — lo que sí y lo que no
+
+**Agrupación: `Por andén` y `Por comuna` solamente.** El mock ofrece además *Por cliente* y *Por SLA*. `get_pre_route_snapshot` devuelve andenes con sus comunas y conteos — no trae cliente ni SLA por grupo. Los dos chips que faltan esperan a que el RPC devuelva esos datos, no se pintan como opciones muertas.
+
+Una comuna puede aparecer bajo más de un andén — eso es justo lo que marca `has_split_dock_zone_warnings` — así que al agrupar por comuna los conteos **suman** en vez de sobrescribirse, y se listan los andenes entre los que está repartida.
+
+**El mapa es un placeholder tokenizado y declarado como tal.** No hay proveedor de mapas.
+
+**No se muestran DISTANCIA / DURACIÓN / OCUPACIÓN / CPO EST.** Los cuatro salen del optimizador OR-Tools, que no tiene cableado en el frontend. La tira de métricas reporta lo que la selección *sí* contiene: órdenes, paquetes, comunas, grupos. Inventar cifras plausibles en una pantalla de planificación sería peor que no mostrarlas.
+
+**La columna derecha no dibuja conductor, ocupación de vehículo ni secuencia de paradas.** Eso pertenece a una ruta que existe: la asignación vive en `/app/dispatch/[routeId]` y la secuencia necesita el optimizador. Antes de "Armar ruta" no hay ruta ni secuencia, así que el panel muestra lo que la ruta *va a* contener y dice dónde ocurre el resto.
+
+### Código muerto eliminado
+
+`PreRouteTab` quedó sin referencias y era la única raíz de `AndenCard` → `ComunaBreakdown` → `OrderList`, `PreRouteSelectionBar` y `usePreRouteSelection`. Todo eliminado con sus tests: código muerto con tests verdes es el peor tipo, porque parece mantenido.
+
+`PreRouteFilters` **se conserva y se reutiliza** en el tablero. El board lee `date` y `window` de la URL, así que borrar el único control que los fija habría dejado al operador clavado en hoy/todas.

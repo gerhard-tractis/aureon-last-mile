@@ -2,15 +2,14 @@
 
 import { Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Plus, Route, Package, Truck, TrendingUp, Inbox } from 'lucide-react';
+import { Plus, Route, Package } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MetricCard } from '@/components/metrics/MetricCard';
 import { EmptyState } from '@/components/EmptyState';
 import { RouteListTile } from '@/components/dispatch/RouteListTile';
-import { PreRouteTab } from '@/components/dispatch/pre-route/PreRouteTab';
+import { PreRouteBoard } from '@/components/dispatch/pre-route/PreRouteBoard';
 import { DispatchInProgressTab } from '@/components/dispatch/DispatchInProgressTab';
 import { useDispatchKPIs } from '@/hooks/dispatch/useDispatchKPIs';
 import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
@@ -163,48 +162,42 @@ function DispatchPageContent() {
 
   const navigateToRoute = (id: string) => router.push(`/app/dispatch/${id}`);
 
+  const unrouted = preRouteSnapshot?.totals.order_count ?? 0;
+
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-text">Despacho</h1>
-        <Button onClick={handleNewRoute} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          Nueva Ruta
-        </Button>
+    <div className="flex min-h-0 flex-col">
+      {/* Header — title, tabs as inline chips, and the unrouted count that the
+          Pre-ruta tab is about. Replaces the KPI card row: five equal cards
+          gave no clue which one the screen was for. */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border bg-surface px-6 py-3.5">
+        <h1 className="font-heading text-lg font-semibold leading-none text-text">Despacho</h1>
+
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="pre-ruta">Pre-ruta</TabsTrigger>
+            <TabsTrigger value="open">Abiertas {kpisLoading ? '' : kpis?.openRoutes ?? 0}</TabsTrigger>
+            <TabsTrigger value="in_progress">En ruta {kpisLoading ? '' : kpis?.inRoute ?? 0}</TabsTrigger>
+            <TabsTrigger value="completed">Completadas</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="ml-auto flex items-center gap-3">
+          <span className="font-mono text-[11px] font-medium leading-none text-text-secondary">
+            SIN RUTEAR <span className="font-semibold text-text">{unrouted}</span>
+          </span>
+          <Button onClick={handleNewRoute} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva ruta
+          </Button>
+        </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {kpisLoading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-md" />
-          ))
-        ) : (
-          <>
-            <MetricCard label="Sin rutear" value={preRouteSnapshot?.totals.order_count ?? 0} icon={Inbox} />
-            <MetricCard label="Rutas abiertas" value={kpis?.openRoutes ?? 0} icon={Route} />
-            <MetricCard label="Paquetes pendientes" value={kpis?.pendingPackages ?? 0} icon={Package} />
-            <MetricCard label="Despachados hoy" value={kpis?.dispatchedToday ?? 0} icon={Truck} />
-            <MetricCard label="En ruta ahora" value={kpis?.inRoute ?? 0} icon={TrendingUp} />
-          </>
-        )}
-      </div>
-
-      {/* Tabs — Pre-ruta is default */}
-      <Tabs value={tab} onValueChange={setTab}>
-        <TabsList>
-          <TabsTrigger value="pre-ruta">Pre-ruta</TabsTrigger>
-          <TabsTrigger value="open">Abiertas</TabsTrigger>
-          <TabsTrigger value="in_progress">En Ruta</TabsTrigger>
-          <TabsTrigger value="completed">Completadas</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pre-ruta" className="mt-4">
-          <PreRouteTab onCreateRoute={handleCreateRoute} />
+      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
+        <TabsContent value="pre-ruta" className="mt-0 min-h-0 flex-1">
+          <PreRouteBoard onCreateRoute={handleCreateRoute} isCreating={createRouteMutation.isPending} />
         </TabsContent>
 
-        <TabsContent value="open" className="mt-4">
+        <TabsContent value="open" className="mt-0 p-6">
           <DispatchOpenTab
             operatorId={operatorId}
             onNewRoute={handleNewRoute}
@@ -213,11 +206,11 @@ function DispatchPageContent() {
           />
         </TabsContent>
 
-        <TabsContent value="in_progress" className="mt-4">
+        <TabsContent value="in_progress" className="mt-0 p-6">
           <DispatchInProgressTab operatorId={operatorId} />
         </TabsContent>
 
-        <TabsContent value="completed" className="mt-4">
+        <TabsContent value="completed" className="mt-0 p-6">
           <DispatchCompletedTab operatorId={operatorId} onNavigate={navigateToRoute} />
         </TabsContent>
       </Tabs>
