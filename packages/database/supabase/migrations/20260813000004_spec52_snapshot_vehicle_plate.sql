@@ -12,7 +12,7 @@
 -- `vehicle_id` but no plate — the UI cannot resolve it without a second
 -- round-trip, which is the one thing this single-roundtrip RPC exists to avoid.
 --
--- TEMPLATED ON THE LATEST DEFINITION: 20260813000001_fix_route_reception_snapshot_contract.sql
+-- TEMPLATED ON THE LATEST DEFINITION: 20260813000003_fix_route_reception_snapshot_contract.sql
 -- (NOT the spec-47 original 20260625000001:493, which returned the pre-#398 key
 -- names and would silently revert that fix — CLAUDE.md's CREATE OR REPLACE
 -- rule). Everything below is byte-for-byte that migration except the `v_route`

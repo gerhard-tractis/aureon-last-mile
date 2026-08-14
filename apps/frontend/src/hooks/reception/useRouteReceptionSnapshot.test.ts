@@ -78,7 +78,13 @@ describe('useRouteReceptionSnapshot', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.route.plate).toBe('AAA-111');
-    expect(result.current.data?.route).not.toHaveProperty('vehicle_label');
+    // NOT asserting `route` lacks vehicle_label: the RPC builds that node from
+    // to_jsonb(pr.*), so it genuinely still emits the column during the expand
+    // phase. The old assertion passed only because this fixture omits it — the
+    // test agreeing with itself rather than with production. What matters is
+    // that no read site consumes it; that is pinned in useIncomingRoutes.test.ts,
+    // which asserts the select string contains `vehicle:vehicles(plate)` and
+    // does not contain `vehicle_label`.
   });
 
   // spec-52: over-count is a normal outcome, so the batch carries how many of
