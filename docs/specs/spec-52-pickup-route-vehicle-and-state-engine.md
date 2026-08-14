@@ -1,9 +1,16 @@
 # Spec-52: Pickup Route Vehicle, Receptionist-Triggered Reception & Package State Engine
 
 > **Builds on:** [spec-47-pickup-route-and-consolidated-reception.md](spec-47-pickup-route-and-consolidated-reception.md)
+> **Completed by:** [spec-56-pickup-contract-phase.md](spec-56-pickup-contract-phase.md) — the contract phase
 > **Related:** [spec-01-epic4a-pickup-verification.md](spec-01-epic4a-pickup-verification.md), [spec-21-reception-visual-polish.md](spec-21-reception-visual-polish.md)
 
-**Status:** in progress
+**Status:** completed
+
+> **Completed 2026-08-14, user-confirmed.** Both chunks are merged and live in production: the database chunk (six migrations, applied 2026-08-13 20:11) and the frontend chunk (#405, applied 2026-08-14 17:14 with `20260813000004`/`000005`).
+>
+> **This shipped as the EXPAND half of an expand/contract release.** `start_pickup_route(TEXT)`, `close_pickup_route`, the `→ in_transit` trigger branch and `vehicle_label` are all still in production and still working, deliberately — the database deployed ahead of the frontend and every path the then-current UI called had to keep working. `uniq_pickup_routes_one_active_per_vehicle` and the tightened `complete_route_reception` guard were likewise deferred.
+>
+> **Those removals are [spec-56](spec-56-pickup-contract-phase.md), not lost work.** It carries the checklist, the production pre-flight that must run before the per-vehicle index is built, and the usage trigger that must be true before `close_pickup_route` is dropped. Marking this spec `completed` without that file would have left the compatibility layer permanent — the spec would then have added more deprecated surface than it removed.
 
 _Date: 2026-08-10_
 
