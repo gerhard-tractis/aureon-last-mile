@@ -60,10 +60,6 @@ export default function UserSettingsPage() {
     return (
         <PageShell
             title="User Settings"
-            breadcrumbs={[
-                { label: 'Dashboard', href: '/app/dashboard' },
-                { label: 'User Settings' },
-            ]}
         >
             <div className="space-y-6">
                 {error && (

@@ -153,10 +153,6 @@ function AuditLogsInner({
   return (
     <PageShell
       title="Auditoría"
-      breadcrumbs={[
-        { label: 'Operaciones', href: '/app/dashboard' },
-        { label: 'Auditoría' },
-      ]}
       actions={<AuditLogExport logs={logs} userMap={userMap} />}
     >
       <title>Registro de Auditoría | Aureon Last Mile</title>

@@ -167,10 +167,6 @@ export default function ImportOrdersPage() {
   return (
     <PageShell
       title="Importar Pedidos"
-      breadcrumbs={[
-        { label: 'Dashboard', href: '/app/dashboard' },
-        { label: 'Importar Pedidos' },
-      ]}
     >
       <div className="space-y-6">
         <Card>

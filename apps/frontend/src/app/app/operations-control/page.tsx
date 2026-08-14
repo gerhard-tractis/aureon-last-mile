@@ -18,10 +18,6 @@ export default function OpsControlPage() {
   return (
     <PageShell
       title="Control de Operaciones"
-      breadcrumbs={[
-        { label: 'Operaciones', href: '/app/dashboard' },
-        { label: 'Control de Operaciones' },
-      ]}
       actions={<RealtimeStatusIndicator status={realtimeStatus} />}
     >
       {/* Suspense required: OpsControlDesktop uses useSearchParams via useStageQuery */}
