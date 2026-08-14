@@ -1,6 +1,7 @@
 import { requireModuleEnabled } from '@/lib/modules/require-enabled';
 import { ModuleKey } from '@/lib/modules/registry';
 import { createSSRClient } from '@/lib/supabase/server';
+import { callRpc } from '@/lib/supabase/rpc';
 import { PrintPackageLabels } from './PrintPackageLabels';
 import type { ManifestLabelRow } from '@/lib/pickup/manifest-label-types';
 
@@ -19,10 +20,8 @@ export default async function PrintPackageLabelsPage({ params, searchParams }: P
   const { packageId } = await searchParams;
 
   const supabase = await createSSRClient();
-  const { data, error } = await (supabase.rpc as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: ManifestLabelRow[] | null; error: { message: string } | null }>)(
+  const { data, error } = await callRpc<ManifestLabelRow[]>(
+    supabase,
     'get_manifest_label_data',
     { p_manifest_id: manifestId, p_package_id: packageId ?? null },
   );
