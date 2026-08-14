@@ -35,9 +35,8 @@ export function useActiveRoutes(operatorId: string, routeDate?: string) {
       const args: Record<string, unknown> = { p_operator_id: operatorId };
       if (routeDate) args.p_route_date = routeDate;
 
-      // callRpc, not `(client.rpc as CallableFunction)(...)` — the cast-the-
-      // method form detaches rpc from its receiver and throws. See
-      // lib/supabase/rpc.ts.
+      // callRpc casts the client, not the method — see lib/supabase/rpc.ts.
+      // Casting the method detaches it from its receiver and throws at runtime.
       const { data, error } = await callRpc<ActiveRoute[]>(
         createSPAClient(),
         'get_active_routes_with_dispatches',

@@ -1,5 +1,6 @@
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 
 export interface NorthStarRow {
   row_type: 'current' | 'prior_month' | 'prior_year';
@@ -19,12 +20,13 @@ export function useNorthStars(operatorId: string, year: number, month: number) {
   return useQuery({
     queryKey: ['dashboard-north-stars', operatorId, year, month],
     queryFn: async () => {
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      const { data, error } = await callRpc<NorthStarRow[]>(
+        createSPAClient(),
         'get_dashboard_north_stars',
         { p_operator_id: operatorId, p_year: year, p_month: month },
       );
       if (error) throw error;
-      const rows = (data as NorthStarRow[]) ?? [];
+      const rows = data ?? [];
       return {
         current: rows.find((r) => r.row_type === 'current') ?? null,
         priorMonth: rows.find((r) => r.row_type === 'prior_month') ?? null,
