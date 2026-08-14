@@ -175,7 +175,34 @@ describe('breadcrumbForPath', () => {
     expect(breadcrumbForPath('/admin/users')?.page).toBe('Admin');
   });
 
-  it('returns null for a route with no nav entry', () => {
-    expect(breadcrumbForPath('/app/orders/new')).toBeNull();
+  it('returns null for a route neither the nav nor EXTRA_CRUMBS covers', () => {
+    expect(breadcrumbForPath('/app/ocr-test')).toBeNull();
+  });
+});
+
+describe('breadcrumbForPath — routes with no nav entry (spec-54)', () => {
+  it('resolves leaf routes that are reachable but not in the sidebar', () => {
+    // These pages used to carry their own breadcrumb in the page body, which
+    // put the crumb in two different places depending on the route.
+    expect(breadcrumbForPath('/app/orders/new')).toEqual({
+      section: 'Gestión',
+      page: 'Nuevo pedido',
+    });
+    expect(breadcrumbForPath('/app/orders/import')).toEqual({
+      section: 'Gestión',
+      page: 'Importar pedidos',
+    });
+    expect(breadcrumbForPath('/app/user-settings')).toEqual({
+      section: 'Gestión',
+      page: 'Mi cuenta',
+    });
+  });
+
+  it('lets a nav item win over an extra crumb on the same prefix', () => {
+    expect(breadcrumbForPath('/app/audit-logs')?.page).toBe('Auditoría');
+  });
+
+  it('still returns null for a genuinely unknown route', () => {
+    expect(breadcrumbForPath('/app/does-not-exist')).toBeNull();
   });
 });

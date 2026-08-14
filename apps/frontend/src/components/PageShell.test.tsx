@@ -13,14 +13,13 @@ describe('PageShell', () => {
     expect(screen.getByTestId('child')).toBeInTheDocument();
   });
 
-  it('renders breadcrumbs when provided', () => {
-    render(
-      <PageShell title="Operaciones" breadcrumbs={[{ label: 'Dashboard', href: '/app/dashboard' }, { label: 'Operaciones' }]}>
-        <div>content</div>
-      </PageShell>
+  it('never renders a breadcrumb — the topbar owns it (spec-54)', () => {
+    // Rendering one here too showed the same crumb twice on every page the
+    // sidebar covers.
+    const { container } = render(
+      <PageShell title="Operaciones"><div>content</div></PageShell>
     );
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getAllByText('Operaciones').length).toBeGreaterThan(0);
+    expect(container.querySelector('nav')).toBeNull();
   });
 
   it('renders actions slot', () => {
@@ -32,8 +31,8 @@ describe('PageShell', () => {
     expect(screen.getByRole('button', { name: 'Export' })).toBeInTheDocument();
   });
 
-  it('renders without breadcrumbs or actions', () => {
+  it('renders without actions', () => {
     const { container } = render(<PageShell title="Simple"><div>ok</div></PageShell>);
-    expect(container.querySelector('nav')).toBeNull(); // no breadcrumb nav
+    expect(container.querySelector('nav')).toBeNull();
   });
 });

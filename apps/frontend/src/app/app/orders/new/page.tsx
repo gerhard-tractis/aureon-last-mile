@@ -45,10 +45,6 @@ export default function NewOrderPage() {
   return (
     <PageShell
       title="Nuevo Pedido"
-      breadcrumbs={[
-        { label: 'Dashboard', href: '/app/dashboard' },
-        { label: 'Nuevo Pedido' },
-      ]}
     >
       <Card>
         <CardHeader>
