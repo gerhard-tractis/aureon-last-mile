@@ -12,6 +12,8 @@ export type AtRiskOrder = {
   retailer: string;
   customer: string;
   address: string;
+  /** spec-54: the tower scans by comuna, so it is surfaced separately. */
+  comuna: string;
   reasonFlag: string;
 };
 
@@ -54,6 +56,7 @@ export function useAtRiskOrders(
         retailer: (order['retailer'] as string) ?? '',
         customer: (order['customer_name'] as string) ?? '',
         address: (order['address'] as string) ?? '',
+        comuna: (order['comuna'] as string) ?? '',
         reasonFlag: (order['reason_flag'] as string) ?? '',
       });
     }
