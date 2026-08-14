@@ -9,12 +9,14 @@ import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
-import { XCircle, Clock, ArrowLeft } from 'lucide-react';
+import { XCircle, Clock, ArrowLeft, Printer } from 'lucide-react';
 import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
 import { ManifestDetailList } from '@/components/pickup/ManifestDetailList';
 import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
+import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
+import { ModuleKey } from '@/lib/modules/registry';
 
 export default function ScanningPage() {
   const params = useParams();
@@ -29,6 +31,11 @@ export default function ScanningPage() {
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState('00:00');
   const [userId, setUserId] = useState<string | null>(null);
+
+  // spec-53 — second entry point. Labels are normally printed from the pickup
+  // list before departure, but the crew also needs them here: this is the
+  // screen they are on when they discover a label is missing or unreadable.
+  const labelsEnabled = useModuleEnabled(operatorId, ModuleKey.PACKAGE_LABELS);
 
   useEffect(() => {
     if (!operatorId) return;
@@ -153,9 +160,28 @@ export default function ScanningPage() {
           >
             <ArrowLeft className="h-5 w-5 text-text-secondary" />
           </Button>
-          <div className="flex items-center gap-1 text-sm text-text-secondary">
-            <Clock className="h-4 w-4" />
-            {elapsed}
+          <div className="flex items-center gap-3">
+            {labelsEnabled && manifestId && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  window.open(
+                    `/app/pickup/manifests/${manifestId}/labels/print`,
+                    '_blank',
+                    'noopener',
+                  )
+                }
+                data-testid="print-labels-scan"
+              >
+                <Printer className="h-4 w-4 mr-1.5" />
+                Imprimir etiquetas
+              </Button>
+            )}
+            <div className="flex items-center gap-1 text-sm text-text-secondary">
+              <Clock className="h-4 w-4" />
+              {elapsed}
+            </div>
           </div>
         </div>
 
