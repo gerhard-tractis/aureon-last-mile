@@ -1,8 +1,24 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PackageRow } from './PackageRow';
 
+const mockMutate = vi.fn();
+let mockIsPending = false;
+vi.mock('@/hooks/pickup/useExpandCarton', () => ({
+  useExpandCarton: () => ({ mutate: mockMutate, isPending: mockIsPending }),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 describe('PackageRow', () => {
+  beforeEach(() => {
+    mockMutate.mockReset();
+    mockIsPending = false;
+    window.navigator.onLine = true;
+  });
+
   const defaultProps = {
     pkg: {
       id: 'pkg-1',
@@ -109,5 +125,62 @@ describe('PackageRow', () => {
 
     fireEvent.click(screen.getByLabelText('Ocultar SKUs'));
     expect(screen.queryByTestId('sku-table')).not.toBeInTheDocument();
+  });
+
+  describe('spec-55 carton expansion', () => {
+    it('shows the "Agregar bultos" button on a parent (non-generated) package', () => {
+      render(<PackageRow {...defaultProps} />);
+      expect(screen.getByRole('button', { name: /agregar bultos/i })).toBeInTheDocument();
+    });
+
+    it('hides the "Agregar bultos" button on a minted sibling', () => {
+      render(
+        <PackageRow
+          {...defaultProps}
+          pkg={{ ...defaultProps.pkg, label: 'CTN001-2', is_generated_label: true, parent_label: 'CTN001' }}
+        />
+      );
+      expect(screen.queryByRole('button', { name: /agregar bultos/i })).not.toBeInTheDocument();
+    });
+
+    it('shows the Aureon-generated badge on a minted sibling', () => {
+      render(
+        <PackageRow
+          {...defaultProps}
+          pkg={{ ...defaultProps.pkg, label: 'CTN001-2', is_generated_label: true, parent_label: 'CTN001' }}
+        />
+      );
+      expect(screen.getByTestId('generated-badge')).toBeInTheDocument();
+    });
+
+    it('does not show the generated badge on the parent', () => {
+      render(<PackageRow {...defaultProps} />);
+      expect(screen.queryByTestId('generated-badge')).not.toBeInTheDocument();
+    });
+
+    it('disables the button when offline', () => {
+      window.navigator.onLine = false;
+      render(<PackageRow {...defaultProps} />);
+      expect(screen.getByRole('button', { name: /agregar bultos/i })).toBeDisabled();
+    });
+
+    it('opens the expand sheet on click and previews the next label', () => {
+      render(<PackageRow {...defaultProps} existingBoxCount={1} />);
+      fireEvent.click(screen.getByRole('button', { name: /agregar bultos/i }));
+      expect(screen.getByText(/Agregar bultos a CTN001/)).toBeInTheDocument();
+      expect(screen.getByTestId('expand-preview')).toHaveTextContent('CTN001-2');
+    });
+
+    it('confirming the sheet calls the expand mutation with the package id', () => {
+      render(<PackageRow {...defaultProps} />);
+      fireEvent.click(screen.getByRole('button', { name: /agregar bultos/i }));
+      fireEvent.click(screen.getByRole('button', { name: 'Producto de varias cajas' }));
+      fireEvent.click(screen.getByRole('button', { name: /confirmar/i }));
+
+      expect(mockMutate).toHaveBeenCalledWith(
+        { packageId: 'pkg-1', additionalBoxes: 1, reason: 'Producto de varias cajas' },
+        expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) })
+      );
+    });
   });
 });

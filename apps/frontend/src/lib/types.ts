@@ -1827,6 +1827,26 @@ export type Database = {
         Args: { p_operator_id: string }
         Returns: Json
       }
+      expand_carton: {
+        Args: {
+          p_package_id: string
+          p_additional_boxes: number
+          p_reason: string
+        }
+        Returns: {
+          out_id: string
+          out_label: string
+          out_package_number: string | null
+          out_declared_box_count: number
+          out_parent_label: string | null
+          out_is_generated_label: boolean
+          out_order_id: string
+        }[]
+      }
+      delete_minted_carton: {
+        Args: { p_package_id: string; p_reason: string }
+        Returns: undefined
+      }
       mark_manifest_labels_printed: {
         Args: { p_manifest_id: string }
         Returns: undefined
