@@ -25,6 +25,12 @@ interface StageData {
   count: number;
   delta: string;
   health: HealthStatus;
+  /**
+   * Packages behind the orders in this stage. null when the stage's items
+   * carry no packages at all (the route-based stages), where "0 paquetes"
+   * would read as an empty stage rather than as no data.
+   */
+  packageCount?: number | null;
 }
 
 interface StageRailProps {
@@ -81,7 +87,8 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
       <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
         {ORDERED_KEYS.map((key, i) => {
           const stage =
-            stageMap.get(key) ?? { key, count: 0, delta: '—', health: 'neutral' as HealthStatus };
+            stageMap.get(key) ??
+            { key, count: 0, delta: '—', health: 'neutral' as HealthStatus, packageCount: null };
           const isSelected = activeStage === key;
 
           return (
@@ -132,6 +139,15 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
                   {stage.delta}
                 </span>
               </div>
+
+              {stage.packageCount != null && (
+                <span
+                  data-testid={`stage-packages-${key}`}
+                  className="whitespace-nowrap font-mono text-[10px] font-medium leading-none text-text-muted"
+                >
+                  {stage.packageCount} {stage.packageCount === 1 ? 'paquete' : 'paquetes'}
+                </span>
+              )}
 
               <div
                 data-testid={`stage-health-${key}`}

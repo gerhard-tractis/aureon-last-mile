@@ -7,6 +7,7 @@ import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
 import { useActiveRoutes } from '@/hooks/useActiveRoutes';
 import { useStageQuery } from '../lib/useStageQuery';
 import { computeStageHealth } from '../lib/health';
+import { countPackages } from '../lib/packages';
 import { STAGE_KEYS } from '../lib/labels.es';
 import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import type { StageKey } from '../lib/labels.es';
@@ -77,7 +78,13 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   const stages = STAGE_KEYS.map((key) => {
     const items = snapshot ? getItemsForStage(key, snapshot) : [];
     const health = computeStageHealth(key, items, now);
-    return { key, count: items.length, delta: health.delta, health: health.status };
+    return {
+      key,
+      count: items.length,
+      delta: health.delta,
+      health: health.status,
+      packageCount: countPackages(items),
+    };
   });
 
   const renderPanel = () => {

@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event';
 import { StageRail } from './StageRail';
 
 const STAGES = [
-  { key: 'pickup' as const, count: 5, delta: '+2', health: 'ok' as const },
+  { key: 'pickup' as const, count: 5, delta: '+2', health: 'ok' as const, packageCount: 12 },
   { key: 'reception' as const, count: 3, delta: '0', health: 'warn' as const },
   { key: 'consolidation' as const, count: 0, delta: '—', health: 'neutral' as const },
   { key: 'docks' as const, count: 2, delta: '-1', health: 'crit' as const },
-  { key: 'delivery' as const, count: 8, delta: '+3', health: 'ok' as const },
+  // Route-based stage: the snapshot carries no packages for routes.
+  { key: 'delivery' as const, count: 8, delta: '+3', health: 'ok' as const, packageCount: null },
   { key: 'returns' as const, count: 1, delta: '0', health: 'warn' as const },
   { key: 'reverse' as const, count: 0, delta: '—', health: 'neutral' as const },
 ];
@@ -75,5 +76,40 @@ describe('StageRail', () => {
     render(<StageRail stages={[STAGES[0]]} activeStage={null} onStageChange={() => {}} />);
     expect(screen.getAllByRole('button')).toHaveLength(7);
     expect(screen.getByTestId('stage-health-delivery').className).toContain('bg-border');
+  });
+
+  it('shows the package count under the order count', () => {
+    render(<StageRail stages={STAGES} activeStage={null} onStageChange={() => {}} />);
+    expect(screen.getByText('12 paquetes')).toBeInTheDocument();
+  });
+
+  it('says "1 paquete" in the singular', () => {
+    render(
+      <StageRail
+        stages={[{ ...STAGES[0], packageCount: 1 }]}
+        activeStage={null}
+        onStageChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('1 paquete')).toBeInTheDocument();
+  });
+
+  it('omits the line for stages whose items carry no packages', () => {
+    // Reparto is route-based; routes have no packages in the snapshot, so
+    // "0 paquetes" would read as an empty stage rather than as no data.
+    render(<StageRail stages={STAGES} activeStage={null} onStageChange={() => {}} />);
+    expect(screen.queryByTestId('stage-packages-delivery')).toBeNull();
+    expect(screen.getByTestId('stage-packages-pickup')).toBeInTheDocument();
+  });
+
+  it('still shows a genuine zero', () => {
+    render(
+      <StageRail
+        stages={[{ ...STAGES[0], packageCount: 0 }]}
+        activeStage={null}
+        onStageChange={() => {}}
+      />,
+    );
+    expect(screen.getByText('0 paquetes')).toBeInTheDocument();
   });
 });
