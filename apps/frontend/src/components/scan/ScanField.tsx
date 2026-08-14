@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useScannerAutoSubmit } from '@/hooks/useScannerAutoSubmit';
 
 /**
  * spec-54 phase 3 — the scan field (mocks 1d, 1e, 1h, 1k).
@@ -60,14 +61,28 @@ export function ScanField({
     if (!disabled) inputRef.current?.focus();
   }, [disabled]);
 
+  function submit(raw: string) {
+    if (disabled) return;
+    const code = raw.trim();
+    if (!code) return;
+    autoSubmit.reset();
+    onScan(code);
+    setValue('');
+  }
+
+  // Scanner guns without a CR/Enter suffix never trigger the Enter path —
+  // their burst is detected by inter-key timing and submitted automatically.
+  const autoSubmit = useScannerAutoSubmit(submit);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setValue(e.target.value);
+    autoSubmit.handleValueChange(e.target.value);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (disabled) return;
-    const code = value.trim();
-    if (!code) return;
-    onScan(code);
-    setValue('');
+    submit(value);
   }
 
   return (
@@ -92,7 +107,7 @@ export function ScanField({
         disabled={disabled}
         value={value}
         placeholder={placeholder}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         // Native focus ring removed: the container already carries the accent
         // border and halo, so a second ring inside it reads as a defect.

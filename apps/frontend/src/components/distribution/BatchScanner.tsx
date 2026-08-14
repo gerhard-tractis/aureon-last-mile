@@ -4,6 +4,7 @@ import { useRef, useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { CheckCircle, XCircle } from 'lucide-react';
 import type { DockScanValidationResult } from '@/lib/distribution/dock-scan-validator';
+import { useScannerAutoSubmit } from '@/hooks/useScannerAutoSubmit';
 
 interface BatchScannerProps {
   onScan: (barcode: string) => void;
@@ -21,12 +22,25 @@ export function BatchScanner({ onScan, lastResult, disabled }: BatchScannerProps
     }
   }, [disabled, lastResult]);
 
+  const fireScan = (submitValue: string) => {
+    if (disabled || !submitValue.trim()) return;
+    autoSubmit.reset();
+    onScan(submitValue.trim());
+    setValue('');
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const autoSubmit = useScannerAutoSubmit(fireScan);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue(e.target.value);
+    autoSubmit.handleValueChange(e.target.value);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && value.trim() && !disabled) {
       e.preventDefault();
-      onScan(value.trim());
-      setValue('');
-      setTimeout(() => inputRef.current?.focus(), 50);
+      fireScan(value);
     }
   };
 
@@ -36,7 +50,7 @@ export function BatchScanner({ onScan, lastResult, disabled }: BatchScannerProps
         ref={inputRef}
         type="text"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         onBlur={() => {
           if (!disabled) {

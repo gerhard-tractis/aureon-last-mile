@@ -14,21 +14,26 @@ export function useConsolidation(operatorId: string | null) {
     queryKey: ['distribution', 'consolidation', operatorId],
     queryFn: async (): Promise<ConsolidationPackage[]> => {
       const supabase = createSPAClient();
+      // No server-side ORDER BY here: ordering the parent by an embedded
+      // column (`order=orders.delivery_date`) is invalid PostgREST syntax and
+      // 400s every request — the panel rendered permanently empty. The list
+      // is small; sort client-side instead.
       const { data, error } = await supabase
         .from('packages')
         .select('id, label, dock_zone_id, order_id, orders!inner(delivery_date)')
         .eq('operator_id', operatorId!)
         .eq('status', 'retenido')
-        .is('deleted_at', null)
-        .order('orders.delivery_date', { ascending: true });
+        .is('deleted_at', null);
       if (error) throw error;
-      return (data ?? []).map((p: Record<string, unknown>) => ({
-        id: p.id as string,
-        label: p.label as string,
-        dock_zone_id: p.dock_zone_id as string | null,
-        order_id: p.order_id as string,
-        delivery_date: (p.orders as Record<string, unknown>)?.delivery_date as string,
-      }));
+      return (data ?? [])
+        .map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          label: p.label as string,
+          dock_zone_id: p.dock_zone_id as string | null,
+          order_id: p.order_id as string,
+          delivery_date: (p.orders as Record<string, unknown>)?.delivery_date as string,
+        }))
+        .sort((a, b) => (a.delivery_date ?? '').localeCompare(b.delivery_date ?? ''));
     },
     enabled: !!operatorId,
     staleTime: 15_000,

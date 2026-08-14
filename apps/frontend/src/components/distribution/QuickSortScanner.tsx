@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import { createSPAClient } from '@/lib/supabase/client';
@@ -32,7 +31,11 @@ interface QuickSortScannerProps {
   onScanEvent?: (event: QuickSortScanEvent) => void;
 }
 
-type ScanState = 'scan_package' | 'show_destination' | 'scan_anden';
+// Two states only: the destination is shown AND the andén scan is armed in a
+// single step after the package scan — a confirm tap in between was pure
+// friction. The physical andén scan is the confirmation; the validator locks
+// assignment to the suggested andén or Consolidación (capacity override).
+type ScanState = 'scan_package' | 'scan_anden';
 
 interface PackageInfo {
   id: string;
@@ -110,7 +113,7 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: Qui
       setCurrentBatchId(batch.id);
       setCurrentPackage({ id: pkg.id, label: pkg.label });
       setDestination(matchResult);
-      setState('show_destination');
+      setState('scan_anden');
     } catch {
       setError('Error al procesar — intente de nuevo');
     }
@@ -184,10 +187,10 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: Qui
       )}
 
       {/* The dock is confirmed by scanning it, not by trusting the suggestion —
-          validateDockDestination rejects the wrong one. The mock shows a
-          single-step scan; that would drop a real verification step, so the
-          two-step flow stays and only its presentation changes. */}
-      {state !== 'scan_package' && destination && (
+          validateDockDestination rejects the wrong one. Both scans stay; only
+          the confirm tap between them was removed: the andén field is armed
+          the moment the destination is shown. */}
+      {state === 'scan_anden' && destination && (
         <>
           <ScanResult
             status="ok"
@@ -202,18 +205,12 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: Qui
             </p>
           )}
 
-          {state === 'show_destination' ? (
-            <Button className="h-11" onClick={() => setState('scan_anden')}>
-              Confirmar andén
-            </Button>
-          ) : (
-            <ScanField
-              size="md"
-              ariaLabel="Escanear andén"
-              onScan={(code) => { void handleAndenScan(code); }}
-              helperText="Escanea el andén para confirmar"
-            />
-          )}
+          <ScanField
+            size="md"
+            ariaLabel="Escanear andén"
+            onScan={(code) => { void handleAndenScan(code); }}
+            helperText="Escanea el andén para confirmar"
+          />
         </>
       )}
 

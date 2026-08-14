@@ -1,8 +1,74 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { ScanField } from './ScanField';
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('ScanField', () => {
+  it('auto-submits a realistic scanner burst with no Enter suffix', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+
+    // Real keyboard-wedge scanners emit ~15–50 ms per character and many are
+    // not configured to send a CR/Enter terminator.
+    const code = 'CL7742891003';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      act(() => vi.advanceTimersByTime(25));
+    }
+    act(() => vi.advanceTimersByTime(120));
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith(code);
+    expect(input.value).toBe('');
+  });
+
+  it('does not auto-submit human-speed typing', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+
+    const code = 'CL774289';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      act(() => vi.advanceTimersByTime(300));
+    }
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(onScan).not.toHaveBeenCalled();
+    expect(input.value).toBe(code);
+  });
+
+  it('does not double-fire when Enter arrives at the end of a burst', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CL7742891003' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not auto-submit while disabled', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} disabled />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CL7742891003' } });
+    act(() => vi.advanceTimersByTime(500));
+
+    expect(onScan).not.toHaveBeenCalled();
+  });
+
   it('submits the code on Enter and clears itself', () => {
     const onScan = vi.fn();
     render(<ScanField onScan={onScan} />);
