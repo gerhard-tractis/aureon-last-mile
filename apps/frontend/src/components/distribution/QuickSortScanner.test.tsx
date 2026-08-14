@@ -76,6 +76,47 @@ beforeEach(() => {
 });
 
 describe('QuickSortScanner', () => {
+  it('auto-submits a package scan burst with no Enter suffix', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
+    const input = screen.getByPlaceholderText(/escanear paquete/i);
+
+    const code = 'PKG-001';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(input, { target: { value: code.slice(0, i) } });
+      await vi.advanceTimersByTimeAsync(25);
+    }
+    await vi.advanceTimersByTimeAsync(150);
+
+    // Destination appears without any Enter keypress
+    await screen.findByText('Andén 1');
+    expect(screen.getByText('DOCK-001')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it('auto-submits an andén scan burst with no Enter suffix', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
+    const pkgInput = screen.getByPlaceholderText(/escanear paquete/i);
+    fireEvent.change(pkgInput, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(pkgInput, { key: 'Enter' });
+    await screen.findByText('Andén 1');
+    fireEvent.click(screen.getByText(/confirmar andén/i));
+    const andenInput = await screen.findByPlaceholderText(/escanear andén/i);
+
+    const code = 'DOCK-001';
+    for (let i = 1; i <= code.length; i++) {
+      fireEvent.change(andenInput, { target: { value: code.slice(0, i) } });
+      await vi.advanceTimersByTimeAsync(25);
+    }
+    await vi.advanceTimersByTimeAsync(150);
+
+    // Cycle completes back to scan_package and the counter increments
+    await screen.findByText(/1 paquetes sectorizados/i);
+    expect(mockScanMutateAsync).toHaveBeenCalledWith({ barcode: 'PKG-001' });
+    vi.useRealTimers();
+  });
+
   it('starts in scan_package state with scanner visible', () => {
     render(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} />);
     expect(screen.getByPlaceholderText(/escanear paquete/i)).toBeInTheDocument();

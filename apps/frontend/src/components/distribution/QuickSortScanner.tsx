@@ -13,6 +13,7 @@ import { useCreateDockBatch, useCloseDockBatch } from '@/hooks/distribution/useD
 import { useDockScanMutation } from '@/hooks/distribution/useDockScans';
 import { validateDockDestination } from '@/lib/distribution/dock-scan-validator';
 import { updateBatchDockZone } from '@/lib/distribution/batch-zone';
+import { useScannerAutoSubmit } from '@/hooks/useScannerAutoSubmit';
 
 interface QuickSortScannerProps {
   operatorId: string;
@@ -165,21 +166,36 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
     setState('scan_package');
   };
 
-  const handlePkgKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+  const submitPkg = (raw: string) => {
+    const val = raw.trim();
+    if (!val) return;
+    pkgAutoSubmit.reset();
+    setPkgValue('');
+    void handlePackageScan(val);
+  };
+
+  const submitAnden = (raw: string) => {
+    const val = raw.trim();
+    if (!val) return;
+    andenAutoSubmit.reset();
+    setAndenValue('');
+    void handleAndenScan(val);
+  };
+
+  const pkgAutoSubmit = useScannerAutoSubmit(submitPkg);
+  const andenAutoSubmit = useScannerAutoSubmit(submitAnden);
+
+  const handlePkgKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && pkgValue.trim()) {
       e.preventDefault();
-      const val = pkgValue.trim();
-      setPkgValue('');
-      await handlePackageScan(val);
+      submitPkg(pkgValue);
     }
   };
 
-  const handleAndenKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
+  const handleAndenKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && andenValue.trim()) {
       e.preventDefault();
-      const val = andenValue.trim();
-      setAndenValue('');
-      await handleAndenScan(val);
+      submitAnden(andenValue);
     }
   };
 
@@ -197,7 +213,10 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
             aria-label="Escanear paquete"
             value={pkgValue}
             placeholder="Escanear paquete..."
-            onChange={e => setPkgValue(e.target.value)}
+            onChange={e => {
+              setPkgValue(e.target.value);
+              pkgAutoSubmit.handleValueChange(e.target.value);
+            }}
             onKeyDown={handlePkgKeyDown}
             onBlur={() => setTimeout(() => pkgInputRef.current?.focus(), 100)}
             autoComplete="off"
@@ -237,7 +256,10 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
               aria-label="Escanear andén"
               value={andenValue}
               placeholder="Escanear andén..."
-              onChange={e => setAndenValue(e.target.value)}
+              onChange={e => {
+                setAndenValue(e.target.value);
+                andenAutoSubmit.handleValueChange(e.target.value);
+              }}
               onKeyDown={handleAndenKeyDown}
               onBlur={() => setTimeout(() => andenInputRef.current?.focus(), 100)}
               autoComplete="off"
