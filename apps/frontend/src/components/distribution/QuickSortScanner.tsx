@@ -1,8 +1,8 @@
 'use client';
-import { useRef, useEffect, useState } from 'react';
-import type { KeyboardEvent } from 'react';
-import { Input } from '@/components/ui/input';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { ScanField } from '@/components/scan/ScanField';
+import { ScanResult } from '@/components/scan/ScanResult';
 import { createSPAClient } from '@/lib/supabase/client';
 import {
   determineDockZone,
@@ -14,10 +14,22 @@ import { useDockScanMutation } from '@/hooks/distribution/useDockScans';
 import { validateDockDestination } from '@/lib/distribution/dock-scan-validator';
 import { updateBatchDockZone } from '@/lib/distribution/batch-zone';
 
+export interface QuickSortScanEvent {
+  code: string;
+  zoneCode: string | null;
+  zoneName: string | null;
+  at: Date;
+  status: 'ok' | 'error';
+  /** Populated on error — shown instead of the dock code in the history. */
+  reason?: string;
+}
+
 interface QuickSortScannerProps {
   operatorId: string;
   userId: string;
   zones: DockZone[];
+  /** Feeds the "Últimos escaneos" panel alongside this console. */
+  onScanEvent?: (event: QuickSortScanEvent) => void;
 }
 
 type ScanState = 'scan_package' | 'show_destination' | 'scan_anden';
@@ -27,18 +39,13 @@ interface PackageInfo {
   label: string;
 }
 
-export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScannerProps) {
+export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: QuickSortScannerProps) {
   const [state, setState] = useState<ScanState>('scan_package');
   const [destination, setDestination] = useState<ZoneMatchResult | null>(null);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
   const [currentPackage, setCurrentPackage] = useState<PackageInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [counter, setCounter] = useState(0);
-  const [pkgValue, setPkgValue] = useState('');
-  const [andenValue, setAndenValue] = useState('');
-
-  const pkgInputRef = useRef<HTMLInputElement>(null);
-  const andenInputRef = useRef<HTMLInputElement>(null);
 
   const createBatch = useCreateDockBatch();
   const closeBatch = useCloseDockBatch();
@@ -52,14 +59,6 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
     userId
   );
 
-  useEffect(() => {
-    if (state === 'scan_package') {
-      setTimeout(() => pkgInputRef.current?.focus(), 50);
-    }
-    if (state === 'scan_anden') {
-      setTimeout(() => andenInputRef.current?.focus(), 50);
-    }
-  }, [state]);
 
   const handlePackageScan = async (barcode: string) => {
     setError(null);
@@ -80,6 +79,10 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
 
       if (!data || data.length === 0) {
         setError('Código no encontrado');
+        onScanEvent?.({
+          code: barcode, zoneCode: null, zoneName: null, at: new Date(),
+          status: 'error', reason: 'NO ENCONTRADO',
+        });
         return;
       }
 
@@ -125,8 +128,6 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
       setError(
         `Asignación fallida: andén incorrecto. Esperado ${outcome.expectedCode} o Consolidación.`
       );
-      setAndenValue('');
-      setTimeout(() => andenInputRef.current?.focus(), 50);
       return;
     }
 
@@ -156,97 +157,73 @@ export function QuickSortScanner({ operatorId, userId, zones }: QuickSortScanner
     }
 
     closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
+    onScanEvent?.({
+      code: currentPackage?.label ?? '',
+      zoneCode: destination.zone_code,
+      zoneName: destination.zone_name,
+      at: new Date(),
+      status: 'ok',
+    });
     setCounter(c => c + 1);
     setDestination(null);
     setCurrentBatchId(null);
     setCurrentPackage(null);
-    setPkgValue('');
-    setAndenValue('');
     setState('scan_package');
   };
 
-  const handlePkgKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && pkgValue.trim()) {
-      e.preventDefault();
-      const val = pkgValue.trim();
-      setPkgValue('');
-      await handlePackageScan(val);
-    }
-  };
 
-  const handleAndenKeyDown = async (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && andenValue.trim()) {
-      e.preventDefault();
-      const val = andenValue.trim();
-      setAndenValue('');
-      await handleAndenScan(val);
-    }
-  };
 
   return (
-    <div className="space-y-6">
-      <div className="text-sm text-muted-foreground font-medium">
-        {counter} paquetes sectorizados hoy
-      </div>
-
+    <div className="flex flex-col gap-3">
       {state === 'scan_package' && (
-        <div className="space-y-2">
-          <p className="font-medium">Escanear paquete</p>
-          <Input
-            ref={pkgInputRef}
-            aria-label="Escanear paquete"
-            value={pkgValue}
-            placeholder="Escanear paquete..."
-            onChange={e => setPkgValue(e.target.value)}
-            onKeyDown={handlePkgKeyDown}
-            onBlur={() => setTimeout(() => pkgInputRef.current?.focus(), 100)}
-            autoComplete="off"
-            className="text-lg font-mono"
+        <ScanField
+          ariaLabel="Escanear paquete"
+          onScan={(code) => { void handlePackageScan(code); }}
+          helperText="Escanea o escribe el código y presiona Enter"
+        />
+      )}
+
+      {/* The dock is confirmed by scanning it, not by trusting the suggestion —
+          validateDockDestination rejects the wrong one. The mock shows a
+          single-step scan; that would drop a real verification step, so the
+          two-step flow stays and only its presentation changes. */}
+      {state !== 'scan_package' && destination && (
+        <>
+          <ScanResult
+            status="ok"
+            title={`ANDÉN ${destination.zone_code} · ${destination.zone_name}`}
+            context={currentPackage?.label ?? ''}
+            code={destination.zone_code}
           />
-          {error && <p className="text-status-error text-sm">{error}</p>}
-        </div>
-      )}
 
-      {state === 'show_destination' && destination && (
-        <div className="space-y-4">
-          <div className="text-center space-y-2">
-            <p className="text-4xl font-bold">{destination.zone_name}</p>
-            <p className="text-2xl font-mono text-muted-foreground">{destination.zone_code}</p>
-            {destination.flagged && (
-              <div className="bg-status-warning-bg border border-status-warning-border rounded p-3 text-sm text-status-warning">
-                Comuna sin andén asignado — redirigiendo a Consolidación
-              </div>
-            )}
-          </div>
-          <Button className="w-full" onClick={() => setState('scan_anden')}>
-            Confirmar andén
-          </Button>
-        </div>
-      )}
+          {destination.flagged && (
+            <p className="rounded-lg border border-status-warning-border bg-status-warning-bg px-4 py-2.5 text-xs text-status-warning-text">
+              Comuna sin andén asignado — redirigiendo a Consolidación
+            </p>
+          )}
 
-      {state === 'scan_anden' && destination && (
-        <div className="space-y-4">
-          <div className="text-center space-y-1">
-            <p className="text-4xl font-bold">{destination.zone_name}</p>
-            <p className="text-2xl font-mono text-muted-foreground">{destination.zone_code}</p>
-          </div>
-          <div className="space-y-2">
-            <p className="font-medium text-center text-muted-foreground">Escanear andén para confirmar</p>
-            <Input
-              ref={andenInputRef}
-              aria-label="Escanear andén"
-              value={andenValue}
-              placeholder="Escanear andén..."
-              onChange={e => setAndenValue(e.target.value)}
-              onKeyDown={handleAndenKeyDown}
-              onBlur={() => setTimeout(() => andenInputRef.current?.focus(), 100)}
-              autoComplete="off"
-              className="text-lg font-mono"
+          {state === 'show_destination' ? (
+            <Button className="h-11" onClick={() => setState('scan_anden')}>
+              Confirmar andén
+            </Button>
+          ) : (
+            <ScanField
+              size="md"
+              ariaLabel="Escanear andén"
+              onScan={(code) => { void handleAndenScan(code); }}
+              helperText="Escanea el andén para confirmar"
             />
-            {error && <p className="text-status-error text-sm">{error}</p>}
-          </div>
-        </div>
+          )}
+        </>
       )}
+
+      {error && (
+        <ScanResult status="error" title={error} context={currentPackage?.label} />
+      )}
+
+      <p className="font-mono text-[10.5px] uppercase tracking-[.1em] text-text-muted">
+        {counter} paquetes sectorizados en esta sesión
+      </p>
     </div>
   );
 }
