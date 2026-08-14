@@ -287,3 +287,16 @@ Ese segundo paso es un control de verificación real, no un rodeo de UI. Adoptar
 - **Sin barra de ocupación en las tarjetas de andén.** `DockZone` no tiene campo de capacidad, así que no hay porcentaje que mostrar. `DockCard` se ajustó para **ocultar la barra** cuando no hay dato, en vez de pintar una barra al 0% permanentemente — que se lee como defecto de render, no como "sin dato".
 - **"Últimos escaneos" es de sesión, no del servidor.** `useDockScans` consulta por batch, y aquí un batch es un paquete, así que no existe un feed de escaneos recientes. El alcance de sesión además es lo que el operario necesita: confirmación de lo que acaba de hacer, para pillar un error en segundos.
 - **COMUNAS SIN ZONA** baja al pie de ese panel (`useUnmatchedComunas`), donde el operario lo ve mientras trabaja, en vez de un banner arriba que la grilla empuja fuera de pantalla.
+
+
+---
+
+## Fase 4.1b — Paquetes en las tarjetas del flujo
+
+Cambio de diseño posterior: las tarjetas del rail de la Torre ganan una línea con el conteo de paquetes bajo el conteo de órdenes (mono 10px, `--color-text-muted`, `white-space:nowrap`, entre la cifra y la barra de salud).
+
+**No hace falta tocar ningún endpoint.** `get_ops_control_snapshot` ya devuelve un array `packages` en cada orden y manifiesto — verificado contra el proyecto en vivo: 1.262 de 1.283 órdenes (98%) traen al menos un paquete, 1.421 en total.
+
+`countPackages` (`lib/packages.ts`) suma **filas de paquete**, la misma unidad que `get_pre_route_snapshot` reporta como `package_count`. Las cajas físicas son otro número (`packages.declared_box_count`, ver spec-53/55) y no es lo que "paquetes" significa en el resto del producto.
+
+Devuelve `null` —y la tarjeta oculta la línea— cuando ningún ítem de la etapa trae `packages`. Las etapas basadas en rutas (Reparto, y la parte de rutas de Andenes) no tienen paquetes en el snapshot: mostrar "0 paquetes" diría que la etapa está vacía, cuando lo cierto es que no tenemos el dato.
