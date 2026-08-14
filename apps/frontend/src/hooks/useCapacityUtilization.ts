@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 import type { CapacityRow } from './useCapacityCalendar';
 
 /**
@@ -14,7 +15,8 @@ export function useCapacityUtilization(
   return useQuery<CapacityRow[]>({
     queryKey: ['capacityUtilization', operatorId, dateFrom, dateTo],
     queryFn: async () => {
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      const { data, error } = await callRpc<CapacityRow[]>(
+        createSPAClient(),
         'get_capacity_utilization',
         {
           p_operator_id: operatorId!,
@@ -23,7 +25,7 @@ export function useCapacityUtilization(
         }
       );
       if (error) throw error;
-      return (data as CapacityRow[]) ?? [];
+      return data ?? [];
     },
     enabled: !!operatorId && !!dateFrom && !!dateTo,
     staleTime: 30_000,

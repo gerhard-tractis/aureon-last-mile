@@ -18,9 +18,8 @@ export function usePipelineCounts(operatorId: string | null, date?: string) {
       const args: Record<string, unknown> = { p_operator_id: operatorId! };
       if (date) args.p_date = date;
 
-      // callRpc, not `(client.rpc as CallableFunction)(...)` — see
-      // lib/supabase/rpc.ts. The cast-the-method form detaches `rpc` from its
-      // receiver and throws at runtime.
+      // callRpc casts the client, not the method — see lib/supabase/rpc.ts.
+      // Casting the method detaches it from its receiver and throws at runtime.
       const { data, error } = await callRpc<PipelineStageCount[]>(
         createSPAClient(),
         'get_pipeline_counts',

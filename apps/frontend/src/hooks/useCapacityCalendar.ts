@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 
 export interface CapacityRow {
   id: string | null;
@@ -43,7 +44,8 @@ export function useCapacityCalendar(
 
       // Fetch utilization data via RPC
       // Note: get_capacity_utilization does not accept p_client_id; filter client-side below.
-      const { data: rpcData, error: rpcError } = await (client.rpc as CallableFunction)(
+      const { data: rpcData, error: rpcError } = await callRpc<CapacityRow[]>(
+        client,
         'get_capacity_utilization',
         {
           p_operator_id: operatorId!,

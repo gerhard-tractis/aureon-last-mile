@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 
 export interface PendingManifest {
   /** NULL until a manifests row exists for the load (spec-53) — the operator
@@ -55,9 +56,9 @@ export function usePendingManifests(operatorId: string | null) {
     queryKey: ['pickup', 'manifests', 'pending', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data, error } = await (supabase.rpc as CallableFunction)('get_pending_manifests');
+      const { data, error } = await callRpc<PendingManifest[]>(supabase, 'get_pending_manifests');
       if (error) throw error;
-      return data as PendingManifest[];
+      return data ?? [];
     },
     enabled: !!operatorId,
     ...PICKUP_QUERY_OPTIONS,
@@ -69,9 +70,9 @@ export function useCompletedManifests(operatorId: string | null) {
     queryKey: ['pickup', 'manifests', 'completed', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data, error } = await (supabase.rpc as CallableFunction)('get_completed_manifests');
+      const { data, error } = await callRpc<CompletedManifest[]>(supabase, 'get_completed_manifests');
       if (error) throw error;
-      return data as CompletedManifest[];
+      return data ?? [];
     },
     enabled: !!operatorId,
     ...PICKUP_QUERY_OPTIONS,
@@ -83,9 +84,9 @@ export function useInTransitManifests(operatorId: string | null) {
     queryKey: ['pickup', 'manifests', 'in_transit', operatorId],
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data, error } = await (supabase.rpc as CallableFunction)('get_in_transit_manifests');
+      const { data, error } = await callRpc<InTransitManifest[]>(supabase, 'get_in_transit_manifests');
       if (error) throw error;
-      return data as InTransitManifest[];
+      return data ?? [];
     },
     enabled: !!operatorId,
     ...PICKUP_QUERY_OPTIONS,
