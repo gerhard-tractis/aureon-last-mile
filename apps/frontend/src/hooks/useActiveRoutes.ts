@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 
 export interface ActiveDispatch {
   id: string;
@@ -34,12 +35,16 @@ export function useActiveRoutes(operatorId: string, routeDate?: string) {
       const args: Record<string, unknown> = { p_operator_id: operatorId };
       if (routeDate) args.p_route_date = routeDate;
 
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      // callRpc, not `(client.rpc as CallableFunction)(...)` — the cast-the-
+      // method form detaches rpc from its receiver and throws. See
+      // lib/supabase/rpc.ts.
+      const { data, error } = await callRpc<ActiveRoute[]>(
+        createSPAClient(),
         'get_active_routes_with_dispatches',
         args,
       );
       if (error) throw error;
-      return (data as ActiveRoute[]) ?? [];
+      return data ?? [];
     },
     enabled: !!operatorId,
     staleTime: 60_000,
