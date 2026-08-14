@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 
 export interface ForecastAccuracyRow {
   client_id: string;
@@ -22,7 +23,8 @@ export function useForecastAccuracy(
   return useQuery<ForecastAccuracyRow[]>({
     queryKey: ['forecastAccuracy', operatorId, dateFrom, dateTo],
     queryFn: async () => {
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      const { data, error } = await callRpc<ForecastAccuracyRow[]>(
+        createSPAClient(),
         'get_forecast_accuracy',
         {
           p_operator_id: operatorId!,
@@ -31,7 +33,7 @@ export function useForecastAccuracy(
         }
       );
       if (error) throw error;
-      return (data as ForecastAccuracyRow[]) ?? [];
+      return data ?? [];
     },
     enabled: !!operatorId && !!dateFrom && !!dateTo,
     staleTime: 60_000,

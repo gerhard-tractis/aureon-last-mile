@@ -37,7 +37,8 @@ describe('usePendingManifests', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
-    expect(mockRpc).toHaveBeenCalledWith('get_pending_manifests');
+    // callRpc always forwards the args slot; these RPCs take none.
+    expect(mockRpc).toHaveBeenCalledWith('get_pending_manifests', undefined);
   });
 
   it('handles errors', async () => {
@@ -66,6 +67,7 @@ describe('useCompletedManifests', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(mockData);
-    expect(mockRpc).toHaveBeenCalledWith('get_completed_manifests');
+    // callRpc always forwards the args slot; these RPCs take none.
+    expect(mockRpc).toHaveBeenCalledWith('get_completed_manifests', undefined);
   });
 });

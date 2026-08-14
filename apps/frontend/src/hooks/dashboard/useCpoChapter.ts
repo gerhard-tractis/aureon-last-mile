@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 import type { DashboardPeriod } from '@/app/app/dashboard/lib/period';
 
 function toISODate(d: Date): string {
@@ -23,12 +24,13 @@ export function useCpoChapter(operatorId: string, period: DashboardPeriod) {
   const query = useQuery({
     queryKey: ['dashboard-route-tactics', operatorId, pStart, pEnd],
     queryFn: async () => {
-      const { data, error } = await (createSPAClient().rpc as CallableFunction)(
+      const { data, error } = await callRpc<RouteTactics[]>(
+        createSPAClient(),
         'get_dashboard_route_tactics',
         { p_operator_id: operatorId, p_start: pStart, p_end: pEnd },
       );
       if (error) throw error;
-      const rows = (data as RouteTactics[]) ?? [];
+      const rows = data ?? [];
       return rows[0] ?? null;
     },
     enabled: !!operatorId,
