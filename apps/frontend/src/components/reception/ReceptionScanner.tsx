@@ -17,10 +17,12 @@ interface ReceptionScannerProps {
 
 // Hardware scanners that aren't configured to send a CR/Enter suffix arrive
 // as a fast burst of keystrokes with no terminator. We detect the burst by
-// the elapsed time between the first character and the moment typing stops:
-// scanners drop the full barcode in well under 200 ms, while human typing
-// pauses much longer between characters.
-const SCANNER_BURST_MAX_MS = 200;
+// the gap BETWEEN consecutive characters, not the total duration: scanners
+// emit ~15–50 ms per character regardless of barcode length, while human
+// typing pauses well over 100 ms between keys. (Total-duration detection
+// broke on real scanners: a 10+ char CTN takes >200 ms end to end even
+// though every inter-key gap is tiny.)
+const SCANNER_MAX_KEY_GAP_MS = 100;
 const IDLE_DEBOUNCE_MS = 120;
 const MIN_AUTO_SUBMIT_LENGTH = 4;
 
@@ -32,7 +34,8 @@ export function ReceptionScanner({
   const inputRef = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bufferStartRef = useRef<number | null>(null);
+  const lastCharAtRef = useRef<number | null>(null);
+  const maxKeyGapRef = useRef(0);
 
   // Auto-focus on mount and after each scan. preventScroll keeps the page
   // from jumping back to the top when focus returns to this input — common
@@ -57,7 +60,8 @@ export function ReceptionScanner({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    bufferStartRef.current = null;
+    lastCharAtRef.current = null;
+    maxKeyGapRef.current = 0;
     onScan(trimmed);
     setValue('');
     setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
@@ -72,19 +76,22 @@ export function ReceptionScanner({
       debounceRef.current = null;
     }
     if (newValue === '') {
-      bufferStartRef.current = null;
+      lastCharAtRef.current = null;
+      maxKeyGapRef.current = 0;
       return;
     }
-    if (bufferStartRef.current === null) {
-      bufferStartRef.current = Date.now();
+    const now = Date.now();
+    if (lastCharAtRef.current === null) {
+      maxKeyGapRef.current = 0;
+    } else {
+      maxKeyGapRef.current = Math.max(maxKeyGapRef.current, now - lastCharAtRef.current);
     }
+    lastCharAtRef.current = now;
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null;
-      const start = bufferStartRef.current;
       const finalValue = inputRef.current?.value ?? newValue;
       if (
-        start !== null &&
-        Date.now() - start <= SCANNER_BURST_MAX_MS &&
+        maxKeyGapRef.current <= SCANNER_MAX_KEY_GAP_MS &&
         finalValue.trim().length >= MIN_AUTO_SUBMIT_LENGTH
       ) {
         fireScan(finalValue);
