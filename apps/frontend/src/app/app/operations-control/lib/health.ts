@@ -26,6 +26,22 @@ function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Compact duration for the stage-card micro-status. The inputs are raw
+ * EXTRACT(EPOCH)/60 floats from the snapshot RPC — never print them as-is
+ * ("Ruta inactiva 2969.0869358m"). Scale picks the coarsest readable unit:
+ * minutes under an hour, whole hours under two days, then days + hours.
+ */
+export function formatMinutes(rawMinutes: number): string {
+  const min = Math.round(rawMinutes);
+  if (min < 60) return `${min}m`;
+  const hours = Math.round(min / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest === 0 ? `${days}d` : `${days}d ${rest}h`;
+}
+
 // ── Stage handlers ────────────────────────────────────────────────────────────
 
 function pickup(items: Item[]): StageHealthResult {
@@ -34,8 +50,8 @@ function pickup(items: Item[]): StageHealthResult {
     const v = num(item, 'overdue_minutes');
     if (v > maxOverdue) maxOverdue = v;
   }
-  if (maxOverdue > 120) return { status: 'crit', delta: `Recogida atrasada ${maxOverdue}m`, reasonsByOrder: new Map() };
-  if (maxOverdue > 30)  return { status: 'warn', delta: `Recogida atrasada ${maxOverdue}m`, reasonsByOrder: new Map() };
+  if (maxOverdue > 120) return { status: 'crit', delta: `Recogida atrasada ${formatMinutes(maxOverdue)}`, reasonsByOrder: new Map() };
+  if (maxOverdue > 30)  return { status: 'warn', delta: `Recogida atrasada ${formatMinutes(maxOverdue)}`, reasonsByOrder: new Map() };
   return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
 }
 
@@ -45,8 +61,8 @@ function reception(items: Item[]): StageHealthResult {
     const v = num(item, 'dwell_minutes');
     if (v > maxDwell) maxDwell = v;
   }
-  if (maxDwell > 360) return { status: 'crit', delta: `${Math.round(maxDwell / 60)}h en recepción`, reasonsByOrder: new Map() };
-  if (maxDwell > 240) return { status: 'warn', delta: `${Math.round(maxDwell / 60)}h en recepción`, reasonsByOrder: new Map() };
+  if (maxDwell > 360) return { status: 'crit', delta: `${formatMinutes(maxDwell)} en recepción`, reasonsByOrder: new Map() };
+  if (maxDwell > 240) return { status: 'warn', delta: `${formatMinutes(maxDwell)} en recepción`, reasonsByOrder: new Map() };
   return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
 }
 
@@ -59,7 +75,7 @@ function consolidation(items: Item[]): StageHealthResult {
     const v = num(item, 'age_minutes');
     if (v > maxAge) maxAge = v;
   }
-  if (maxAge >= 120) return { status: 'warn', delta: `Antigüedad ${Math.round(maxAge / 60)}h`, reasonsByOrder: new Map() };
+  if (maxAge >= 120) return { status: 'warn', delta: `Antigüedad ${formatMinutes(maxAge)}`, reasonsByOrder: new Map() };
   return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
 }
 
@@ -107,8 +123,8 @@ function docks(items: Item[], now: Date): StageHealthResult {
   return {
     status: worst,
     delta: routeWins
-      ? `Ruta sin conductor ${maxWait}m`
-      : `${Math.floor(maxDwell / 60)}h en andén`,
+      ? `Ruta sin conductor ${formatMinutes(maxWait)}`
+      : `${formatMinutes(maxDwell)} en andén`,
     reasonsByOrder: new Map(),
   };
 }
@@ -122,8 +138,8 @@ function delivery(items: Item[]): StageHealthResult {
     if (behind > maxBehind) maxBehind = behind;
     if (noGps  > maxNoGps)  maxNoGps  = noGps;
   }
-  if (maxNoGps > 30)   return { status: 'crit', delta: `Sin GPS ${maxNoGps}m`, reasonsByOrder: new Map() };
-  if (maxBehind > 60)  return { status: 'warn', delta: `Ruta atrasada ${maxBehind}m`, reasonsByOrder: new Map() };
+  if (maxNoGps > 30)   return { status: 'crit', delta: `Sin GPS ${formatMinutes(maxNoGps)}`, reasonsByOrder: new Map() };
+  if (maxBehind > 60)  return { status: 'warn', delta: `Ruta atrasada ${formatMinutes(maxBehind)}`, reasonsByOrder: new Map() };
   return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
 }
 

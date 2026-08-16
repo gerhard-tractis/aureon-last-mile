@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { computeStageHealth } from './health';
+import { computeStageHealth, formatMinutes } from './health';
+
+describe('duration formatting in delta lines', () => {
+  // The three scale cases below used to go through the docks stage and its
+  // "Ruta inactiva" line. That line is gone — Andenes now reports an order's
+  // dwell and a route's wait separately — so the scales are asserted on
+  // formatMinutes directly, and the docks case below proves it is still wired
+  // into that stage's delta.
+  it('rounds raw fractional minutes — never prints floats like 2969.0869358m', () => {
+    expect(formatMinutes(2969.0869358)).toBe('2d 1h');
+  });
+
+  it('keeps short durations in minutes', () => {
+    expect(formatMinutes(45.7)).toBe('46m');
+  });
+
+  it('uses hours between 1h and 48h', () => {
+    expect(formatMinutes(150)).toBe('3h');
+  });
+
+  it('formats docks deltas the same way', () => {
+    const r = computeStageHealth(
+      'docks',
+      [{ order_number: 'ORD-1', idle_minutes: 2969.0869358 }],
+      new Date(),
+    );
+    expect(r.delta).toBe('2d 1h en andén');
+  });
+
+  it('formats delivery deltas the same way', () => {
+    const r = computeStageHealth('delivery', [{ behind_plan_minutes: 95.4, no_gps_minutes: 0 }], new Date());
+    expect(r.delta).toBe('Ruta atrasada 2h');
+  });
+
+  it('formats pickup overdue the same way', () => {
+    const r = computeStageHealth('pickup', [{ overdue_minutes: 200.9 }], new Date());
+    expect(r.delta).toBe('Recogida atrasada 3h');
+  });
+});
 
 const now = new Date('2026-04-06T12:00:00');
 
@@ -89,7 +127,7 @@ describe('computeStageHealth — docks', () => {
   it('crit when a route has waited 60m+ for a driver', () => {
     const result = computeStageHealth('docks', [route({ updated_at: '2026-04-06T10:30:00' })], now);
     expect(result.status).toBe('crit');
-    expect(result.delta).toBe('Ruta sin conductor 90m');
+    expect(result.delta).toBe('Ruta sin conductor 2h'); // 90m, via formatMinutes
   });
 
   it('ok when a waiting route already has a driver', () => {
@@ -106,7 +144,7 @@ describe('computeStageHealth — docks', () => {
     const items = [order(120), route({ updated_at: '2026-04-06T10:30:00' })];
     const result = computeStageHealth('docks', items, now);
     expect(result.status).toBe('crit');
-    expect(result.delta).toBe('Ruta sin conductor 90m');
+    expect(result.delta).toBe('Ruta sin conductor 2h');
   });
 });
 
