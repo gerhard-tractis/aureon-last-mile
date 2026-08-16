@@ -18,6 +18,14 @@ function bool(item: Item, key: string): boolean {
   return !!(item[key]);
 }
 
+/** Severity order, so two independent signals can be compared. */
+const RANK: Record<HealthStatus, number> = { neutral: 0, ok: 1, warn: 2, crit: 3 };
+
+/** Local YYYY-MM-DD, to compare against a route_date without a timezone shift. */
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // ── Stage handlers ────────────────────────────────────────────────────────────
 
 function pickup(items: Item[]): StageHealthResult {
@@ -55,15 +63,54 @@ function consolidation(items: Item[]): StageHealthResult {
   return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
 }
 
-function docks(items: Item[]): StageHealthResult {
-  let maxIdle = 0;
+/**
+ * Andenes is the one stage holding two kinds of item, and they go wrong in
+ * different ways: an ORDER parked at a dock too long, and a ROUTE waiting on a
+ * driver. Both used to be read as `idle_minutes` and reported as "Ruta
+ * inactiva" — but routes carry `idle_time_minutes`, never `idle_minutes`, so
+ * that figure was always an order's dwell wearing route wording. Each signal is
+ * now measured on its own field and named for what it is; the worse one is
+ * reported.
+ */
+function docks(items: Item[], now: Date): StageHealthResult {
+  let maxDwell = 0;   // minutes an order has sat in the andén
+  let maxWait = 0;    // minutes a route has waited for a driver
+
   for (const item of items) {
-    const v = num(item, 'idle_minutes');
-    if (v > maxIdle) maxIdle = v;
+    if (item['order_number']) {
+      const v = num(item, 'idle_minutes');
+      if (v > maxDwell) maxDwell = v;
+      continue;
+    }
+
+    // A route is only "waiting" once it has no driver and its day has come —
+    // a driverless route planned for tomorrow is not a problem today.
+    if (item['driver_name']) continue;
+    const routeDate = item['route_date'];
+    if (typeof routeDate === 'string' && routeDate > toDateKey(now)) continue;
+
+    const since = item['updated_at'];
+    if (typeof since !== 'string') continue;
+    const waited = Math.floor((now.getTime() - new Date(since).getTime()) / 60_000);
+    if (waited > maxWait) maxWait = waited;
   }
-  if (maxIdle >= 60) return { status: 'crit', delta: `Ruta inactiva ${maxIdle}m`, reasonsByOrder: new Map() };
-  if (maxIdle >= 30) return { status: 'warn', delta: `Ruta inactiva ${maxIdle}m`, reasonsByOrder: new Map() };
-  return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
+
+  const routeStatus: HealthStatus = maxWait >= 60 ? 'crit' : maxWait >= 30 ? 'warn' : 'ok';
+  const orderStatus: HealthStatus = maxDwell >= 240 ? 'crit' : maxDwell >= 120 ? 'warn' : 'ok';
+
+  // Ties go to the route: a driverless route blocks the whole andén, an order
+  // dwelling there only blocks itself.
+  const routeWins = RANK[routeStatus] >= RANK[orderStatus];
+  const worst = routeWins ? routeStatus : orderStatus;
+  if (worst === 'ok') return { status: 'ok', delta: 'Sin incidencias', reasonsByOrder: new Map() };
+
+  return {
+    status: worst,
+    delta: routeWins
+      ? `Ruta sin conductor ${maxWait}m`
+      : `${Math.floor(maxDwell / 60)}h en andén`,
+    reasonsByOrder: new Map(),
+  };
 }
 
 function delivery(items: Item[]): StageHealthResult {
@@ -110,13 +157,13 @@ function returns(items: Item[]): StageHealthResult {
 export function computeStageHealth(
   stageKey: string,
   items: Item[],
-  _now: Date,
+  now: Date,
 ): StageHealthResult {
   switch (stageKey) {
     case 'pickup':        return pickup(items);
     case 'reception':     return reception(items);
     case 'consolidation': return consolidation(items);
-    case 'docks':         return docks(items);
+    case 'docks':         return docks(items, now);
     case 'delivery':      return delivery(items);
     case 'returns':       return returns(items);
     case 'reverse':
