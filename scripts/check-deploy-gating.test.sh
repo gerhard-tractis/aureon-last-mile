@@ -54,23 +54,38 @@ GOOD='jobs:
     runs-on: ubuntu-latest
   deploy-qa:
     needs: [changes]
+    concurrency:
+      group: qa-deploy
+      cancel-in-progress: false
   approve-production:
     needs: [changes, deploy-qa]
     environment: production
   deploy-supabase:
     needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
   verify-prod-migrations:
     needs: [changes, deploy-supabase]
   deploy-edge-functions:
     needs: [changes, approve-production, deploy-supabase]
+    concurrency:
+      group: production-deploy-edge-functions
   deploy-vercel:
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
+    concurrency:
+      group: production-deploy-vercel
   deploy-worker:
     needs: [changes, approve-production, deploy-supabase]
+    concurrency:
+      group: production-deploy-worker
   deploy-agents:
     needs: [changes, approve-production, deploy-supabase]
+    concurrency:
+      group: production-deploy-agents
   deploy-solver:
-    needs: [changes, approve-production, deploy-supabase]'
+    needs: [changes, approve-production, deploy-supabase]
+    concurrency:
+      group: production-deploy-solver'
 
 assert_exit 0 "passes on a correctly gated workflow" "$GOOD"
 
@@ -166,6 +181,7 @@ OBJECT_ENV='jobs:
     runs-on: ubuntu-latest
   deploy-qa:
     needs: changes
+    concurrency: qa-deploy
   approve-production:
     needs: [changes, deploy-qa]
     environment:
@@ -173,18 +189,145 @@ OBJECT_ENV='jobs:
       url: https://aureon.tractis.ai
   deploy-supabase:
     needs: [changes, approve-production]
+    concurrency: production-deploy-supabase
   deploy-edge-functions:
     needs: [changes, approve-production]
+    concurrency: production-deploy-edge-functions
   deploy-vercel:
     needs: [changes, approve-production]
+    concurrency: production-deploy-vercel
   deploy-worker:
     needs: [changes, approve-production]
+    concurrency: production-deploy-worker
   deploy-agents:
     needs: [changes, approve-production]
+    concurrency: production-deploy-agents
   deploy-solver:
-    needs: [changes, approve-production]'
+    needs: [changes, approve-production]
+    concurrency: production-deploy-solver'
 
 assert_exit 0 "accepts the object form of environment:" "$OBJECT_ENV"
+
+# ── QA must not be starved by a pending approval ─────────────────────────────
+# A workflow-level concurrency group covers EVERY job, deploy-qa included. A run
+# paused at approve-production keeps holding that group, so the next merge's QA
+# sync cannot start — QA silently falls behind main for as long as nobody clicks
+# approve. Observed 2026-08-16: #424 sat pending while #426 waited on approval.
+WORKFLOW_CONCURRENCY='concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails on a workflow-level concurrency group" "$WORKFLOW_CONCURRENCY"
+assert_contains "workflow-level concurrency" \
+  "explains that it starves deploy-qa" "$WORKFLOW_CONCURRENCY"
+
+# ── Production still serialised, per job ─────────────────────────────────────
+UNSERIALISED='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when a prod job has no concurrency group of its own" "$UNSERIALISED"
+assert_contains "deploy-supabase" "names the unserialised job" "$UNSERIALISED"
+
+# ── QA sync must not race itself on the VPS ──────────────────────────────────
+QA_UNSERIALISED='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when deploy-qa has no concurrency group" "$QA_UNSERIALISED"
+assert_contains "deploy-qa" "names deploy-qa" "$QA_UNSERIALISED"
 
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then

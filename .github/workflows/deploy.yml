@@ -29,9 +29,16 @@ on:
 # Nothing touches production before a human approves `approve-production`
 # (defined at the bottom of this file). scripts/check-deploy-gating.sh fails CI
 # if any production job stops depending on it.
-concurrency:
-  group: production-deploy
-  cancel-in-progress: false
+#
+# CONCURRENCY LIVES ON THE JOBS, NOT HERE — do not "tidy" it back up to workflow
+# level. A workflow-level group covers every job in the run, deploy-qa included,
+# and a run paused at the gate keeps holding it. On 2026-08-16 the run for
+# 9d2a0f3 sat pending with zero jobs started, behind a run waiting on approval:
+# QA stopped tracking main because nobody had clicked a production button, which
+# is precisely what deploy-qa's "QA is the backstop, so it always runs" comment
+# rules out. One group per job keeps production serialised across runs, keeps
+# worker/agents/solver parallel within a run, and leaves QA free of the gate.
+# check-deploy-gating.sh enforces this shape.
 
 env:
   DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -88,6 +95,12 @@ jobs:
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
   deploy-supabase:
     name: Deploy Supabase Migrations
+    # One group per production job: two approved runs never mutate the same
+    # target at once, while worker/agents/solver still run in parallel within a
+    # run and deploy-qa is not blocked by a pending approval. See the header.
+    concurrency:
+      group: production-deploy-supabase
+      cancel-in-progress: false
     needs: [changes, approve-production]
     # The explicit result check matters here: unlike the app jobs below, this
     # `if:` has no `always()`, so it must state outright that a gate which did
@@ -189,6 +202,9 @@ jobs:
   # ─── 2. Edge Functions ───────────────────────────────────────────────────────
   deploy-edge-functions:
     name: Deploy Supabase Edge Functions
+    concurrency:
+      group: production-deploy-edge-functions
+      cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase]
     if: |
       always() &&
@@ -229,6 +245,9 @@ jobs:
   # schema, with no rollback.
   deploy-vercel:
     name: Deploy to Vercel
+    concurrency:
+      group: production-deploy-vercel
+      cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
     runs-on: ubuntu-latest
@@ -257,6 +276,9 @@ jobs:
   # ─── 4. Worker (VPS) ─────────────────────────────────────────────────────────
   deploy-worker:
     name: Deploy Worker to VPS
+    concurrency:
+      group: production-deploy-worker
+      cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
@@ -289,6 +311,9 @@ jobs:
   # ─── 5. Agents Suite (VPS) ───────────────────────────────────────────────────
   deploy-agents:
     name: Deploy Agents to VPS
+    concurrency:
+      group: production-deploy-agents
+      cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
@@ -320,6 +345,9 @@ jobs:
   # ─── 6. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
   deploy-solver:
     name: Deploy OR-Tools Solver to VPS
+    concurrency:
+      group: production-deploy-solver
+      cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
@@ -373,6 +401,12 @@ jobs:
   # dependency out.
   deploy-qa:
     name: Sync QA Environment
+    # QA's own group, unrelated to production: two syncs at once would race on
+    # the same checkout and build directory on the VPS, but a run waiting at the
+    # production gate must never hold this one.
+    concurrency:
+      group: qa-deploy
+      cancel-in-progress: false
     needs: [changes]
     if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
     runs-on: [self-hosted, vps]

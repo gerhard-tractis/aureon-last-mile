@@ -89,6 +89,43 @@ for (const job of PROD_JOBS) {
   }
 }
 
+// ── Concurrency: serialise production, never the QA sync ─────────────────────
+// A workflow-level concurrency group covers every job in the run, deploy-qa
+// included. A run paused at the gate keeps holding that group, so the NEXT
+// merge's QA sync cannot start — QA falls behind main for as long as nobody
+// clicks approve, which is exactly what deploy-qa's "QA is the backstop, so it
+// always runs" comment says must not happen. Observed 2026-08-16: the run for
+// 9d2a0f3 sat pending with zero jobs while an earlier run waited on approval.
+// Serialisation therefore lives on the jobs, one group each, so production is
+// still never deployed twice at once and QA is never blocked by a human.
+if (doc && doc.concurrency) {
+  errors.push(
+    'workflow-level concurrency starves deploy-qa: a run paused at the gate holds ' +
+    'the group, so later merges cannot sync QA. Put the group on each production ' +
+    `job instead (found: ${JSON.stringify(doc.concurrency)})`
+  );
+}
+
+/** `concurrency:` is legal as a bare string or an object with `group`. */
+const concurrencyGroupOf = (name) => {
+  const c = (jobs[name] || {}).concurrency;
+  if (!c) return null;
+  return typeof c === 'string' ? c : (c.group ?? null);
+};
+
+for (const job of [...PROD_JOBS, 'deploy-qa']) {
+  if (!jobs[job]) continue;
+  if (!concurrencyGroupOf(job)) {
+    errors.push(
+      job === 'deploy-qa'
+        ? 'deploy-qa needs its own concurrency group — two QA syncs at once would ' +
+          'race on the same checkout and build directory on the VPS'
+        : `${job} needs its own concurrency group — without it two approved runs ` +
+          'can mutate production simultaneously'
+    );
+  }
+}
+
 if (errors.length) {
   console.error(`deploy gating check FAILED (${workflow}):`);
   for (const e of errors) console.error(`  - ${e}`);
