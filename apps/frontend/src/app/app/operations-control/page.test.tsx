@@ -14,17 +14,13 @@ vi.mock('@/hooks/useRealtimeStatus', () => ({
   useRealtimeStatus: vi.fn(() => 'connected' as const),
 }));
 
-const mockPromise = {
-  total: 1284,
-  delivered: 823,
-  inFlight: 261,
-  atRisk: 117,
+const mockCounts = {
+  inOperation: 1284,
   late: 83,
-  segments: [],
   isLoading: false,
 };
-vi.mock('@/hooks/ops-control/useDayPromise', () => ({
-  useDayPromise: () => mockPromise,
+vi.mock('@/hooks/ops-control/useOperationCounts', () => ({
+  useOperationCounts: () => mockCounts,
 }));
 
 vi.mock('@/components/operations-control/RealtimeStatusIndicator', () => ({
@@ -57,7 +53,7 @@ describe('OpsControlPage', () => {
     expect(screen.getByTestId('ops-desktop')).toBeInTheDocument();
   });
 
-  it('summarises the day in the subtitle from live counts', () => {
+  it('summarises the operation in the subtitle from operation-wide counts', () => {
     render(<OpsControlPage />);
     expect(screen.getByText('1.284')).toBeInTheDocument();
     expect(screen.getByText('83')).toBeInTheDocument();

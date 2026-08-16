@@ -5,7 +5,7 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { RealtimeStatusIndicator } from '@/components/operations-control/RealtimeStatusIndicator';
 import { OrderInspector } from '@/components/inspector/OrderInspector';
 import { useRealtimeStatus } from '@/hooks/useRealtimeStatus';
-import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
+import { useOperationCounts } from '@/hooks/ops-control/useOperationCounts';
 import { OpsControlDesktop } from './components/OpsControlDesktop';
 import { TowerHeader } from './components/TowerHeader';
 
@@ -20,7 +20,7 @@ import { TowerHeader } from './components/TowerHeader';
 export default function OpsControlPage() {
   const { operatorId } = useOperatorId();
   const realtimeStatus = useRealtimeStatus();
-  const promise = useDayPromise(operatorId);
+  const counts = useOperationCounts(operatorId);
   const [inspectorOrderId, setInspectorOrderId] = useState<string | null>(null);
 
   if (!operatorId) {
@@ -31,7 +31,7 @@ export default function OpsControlPage() {
     <div className="flex flex-col gap-[18px] px-6 py-[22px]">
       <div className="flex flex-wrap items-end gap-4">
         <div className="min-w-0 flex-1">
-          <TowerHeader promise={promise} />
+          <TowerHeader counts={counts} />
         </div>
         <RealtimeStatusIndicator status={realtimeStatus} />
       </div>
