@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { breadcrumbForPath } from './sidebar/navigation';
 import ThemeToggle from './ThemeToggle';
+import { SyncChip } from './SyncChip';
 import CapacityAlertBell from './capacity/CapacityAlertBell';
 
 /**
@@ -71,6 +72,10 @@ export function TopBar({
         )}
 
         <ThemeToggle />
+
+        {/* Sync state lives here rather than in a fixed banner over the page —
+            see SyncChip. It renders nothing while online and drained. */}
+        <SyncChip />
 
         {showOpsTools && <CapacityAlertBell operatorId={operatorId} />}
       </div>

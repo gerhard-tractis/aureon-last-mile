@@ -69,7 +69,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 | **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
 | **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
 | **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
-| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recogida ✅ → Recepción → móvil. | en curso |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recogida ✅ → Recepción ✅ → móvil. | en curso |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -165,7 +165,7 @@ Barra de 56px que reemplaza los botones flotantes `absolute top-3 right-4` del l
 - Fondo `--color-surface`, borde inferior `--color-border`.
 - Izquierda: breadcrumb `Sección / Página`, 12px, derivado de la ruta (`usePathname`) contra el mismo `navigation.ts`, de modo que la nav y el breadcrumb no puedan divergir.
 - Derecha, en orden: buscador (270px, "Buscar orden, paquete o RUT…", `kbd` con `/`), toggle de tema, `CapacityAlertBell`.
-- **El chip de sync se difiere a la fase 4 (Recepción).** El handoff lo pide aquí, pero implementarlo obliga a desmontar `ConnectionStatusBanner` — que hoy es `fixed top-0` de ancho completo, vive en el layout raíz (cubre también auth y landing) y tiene sus propios tests e i18n. Ese cambio es de comportamiento offline, no de shell, y va junto con la cola de sincronización de `1e`, donde se rescribe la redacción ("se guardan en el dispositivo y se envían solos…"). Meterlo en el PR del shell es exactamente lo que el plan por fases existe para evitar.
+- **El chip de sync se difirió a la fase 4 (Recepción) — hecho ahí.** El handoff lo pide aquí, pero implementarlo obliga a desmontar `ConnectionStatusBanner` — que hoy es `fixed top-0` de ancho completo, vive en el layout raíz (cubre también auth y landing) y tiene sus propios tests e i18n. Ese cambio es de comportamiento offline, no de shell, y va junto con la cola de sincronización de `1e`, donde se rescribe la redacción ("se guardan en el dispositivo y se envían solos…"). Meterlo en el PR del shell es exactamente lo que el plan por fases existe para evitar.
 - El buscador abre `InspectorSearchPalette`, que ya existe; el atajo `/` se mantiene.
 - En viewports `<lg` el topbar sustituye a la barra de hamburguesa actual: hamburguesa + breadcrumb + toggle de tema + campana. El buscador se colapsa a icono. Así el toggle de tema **es alcanzable en móvil**, que es la decisión (1).
 
@@ -333,3 +333,32 @@ Por la misma razón, el código de carga es un botón que abre el flujo de escan
 ### Flujo de armado de ruta
 
 Marcar manifiestos → `start_pickup_route(vehicleId)` → `add_manifest_to_route` por cada uno. Si alguno falla, la ruta igual existe: se avisa cuántos no entraron en vez de dejar que el conductor salga con carga incompleta. Con una ruta ya abierta el panel se aparta — `start_pickup_route` permite una sola ruta activa por conductor, así que ofrecer crear otra es ofrecer un error.
+
+
+---
+
+## Fase 4.5 — Recepción
+
+**Ruta:** `/app/reception/route/[routeId]` · **Mock:** `1e`
+
+Tres columnas (`300px 1fr 340px`): las rutas a la izquierda, el conteo al centro, la cola de sincronización a la derecha. La sesión de conteo deja de ser una página estrecha aislada — el receptor cambia de ruta sin volver al listado.
+
+Componentes nuevos: `RouteSwitcherColumn`, `ReceptionCounts`, `SyncQueuePanel`, `SyncChip`, más `useSyncQueue`.
+
+### El chip de sync vuelve a casa
+
+Es la pieza que la fase 2 dejó pendiente. `ConnectionStatusBanner` — barra fija de ancho completo sobre la página — **se elimina**; su lectura de estado pasa a `useSyncQueue` y se muestra en el topbar como chip, que es lo que pedía el handoff.
+
+La redacción sigue la regla del handoff: dice qué pasa con el trabajo del operario, no que la red está caída. "SIN CONEXIÓN · 14 EN COLA" en el chip; en el panel, *"Sin conexión. Los escaneos se guardan en el dispositivo y se envían solos al recuperar señal. Puedes seguir contando."*
+
+El chip **no renderiza nada** estando en línea y con la cola vacía — el estado normal no necesita cromo. El banner anterior sí lo ocupaba.
+
+### Desviaciones del mock
+
+- **Las pestañas son Entrantes / En descarga / Cerradas**, no *Entrantes / Retornos / Cerradas*. Los retornos son *rutas de retorno*, otra entidad con su propio flujo de sesión; meterlas en este switcher cambiaría qué navega la columna, no cómo se ve. Los tres estados de una ruta entrante son los que el listado de recepción ya modela.
+- **La barra de progreso solo aparece en la ruta abierta.** `useIncomingRoutes` devuelve `expected_packages` pero no un conteo recibido, así que una barra en las demás filas sería inventada — muestran su total esperado. La ruta abierta sí tiene el dato, del snapshot.
+- **`ReceptionScanner` se conserva tal cual**, no se reemplaza por `ScanField`. Lleva `useScannerAutoSubmit` (detección de ráfaga del lector) que #411 y #418 acaban de corregir; cambiarlo por el primitivo perdería eso. Unificarlos exige portar `useScannerAutoSubmit` dentro de `ScanField` — trabajo aparte.
+
+### Código muerto eliminado
+
+`RouteReceptionHeader` queda sin referencias: su código de ruta pasa al encabezado de página y su barra de progreso a la columna izquierda, donde ahora lleva semántica `role="progressbar"` con `aria-valuenow` / `aria-valuemax`.
