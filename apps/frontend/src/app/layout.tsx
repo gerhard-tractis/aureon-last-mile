@@ -5,7 +5,6 @@ import { Analytics } from '@vercel/analytics/next';
 import CookieConsent from "@/components/Cookies";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
-import ConnectionStatusBanner from "@/components/ConnectionStatusBanner";
 import SentryUserProvider from "@/components/SentryUserProvider";
 
 /* Spec-54 type system — three roles, three families.
@@ -94,7 +93,6 @@ export default function RootLayout({
     <body>
       <SentryUserProvider />
       <ServiceWorkerRegistration />
-      <ConnectionStatusBanner />
       {children}
       <Analytics />
       <CookieConsent />
