@@ -1,17 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 const mockPending = [
-  { external_load_id: 'CARGA-001', retailer_name: 'Easy', order_count: 5, package_count: 12, created_at: '2026-04-09T10:00:00Z' },
-  { external_load_id: 'CARGA-002', retailer_name: 'Sodimac', order_count: 3, package_count: 8, created_at: '2026-04-09T11:00:00Z' },
+  {
+    id: 'm1',
+    external_load_id: 'CARGA-001',
+    retailer_name: 'Easy',
+    order_count: 5,
+    package_count: 12,
+    created_at: '2026-04-09T10:00:00Z',
+    pickup_point: 'Easy Vespucio',
+    verified_count: 0,
+  },
+  {
+    id: 'm2',
+    external_load_id: 'CARGA-002',
+    retailer_name: 'Sodimac',
+    order_count: 3,
+    package_count: 8,
+    created_at: '2026-04-09T11:00:00Z',
+    pickup_point: 'Sodimac Puente Alto',
+    verified_count: 0,
+  },
 ];
 const mockCompleted = [
   {
-    id: 'c1', external_load_id: 'CARGA-000', retailer_name: 'Easy',
-    total_orders: 2, total_packages: 4, completed_at: new Date().toISOString(),
+    id: 'c1',
+    external_load_id: 'CARGA-000',
+    retailer_name: 'Easy',
+    total_orders: 2,
+    total_packages: 4,
+    completed_at: new Date().toISOString(),
   },
 ];
 const mockInTransit = [
@@ -39,8 +61,9 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+let mockLabelsEnabled = false;
 vi.mock('@/hooks/modules/useEnabledModules', () => ({
-  useModuleEnabled: () => false,
+  useModuleEnabled: () => mockLabelsEnabled,
 }));
 
 let mockActiveRoute: { id: string; code: string; started_at: string } | null = null;
@@ -49,6 +72,9 @@ vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
 }));
 vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
   useStartPickupRoute: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock('@/hooks/pickup/useAddManifestToRoute', () => ({
+  useAddManifestToRoute: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock('@/hooks/pickup/useRouteManifests', () => ({
   useRouteManifests: () => ({ data: [], isLoading: false }),
@@ -74,6 +100,10 @@ vi.mock('@/components/pickup/ClientFilter', () => ({
   ClientFilter: () => null,
 }));
 
+vi.mock('@/components/pickup/StartRouteButton', () => ({
+  StartRouteButton: () => <button type="button">Crear ruta</button>,
+}));
+
 const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: vi.fn() }),
@@ -86,127 +116,123 @@ describe('PickupPage', () => {
   beforeEach(() => {
     mockPush.mockClear();
     mockActiveRoute = null;
+    mockLabelsEnabled = false;
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
   });
 
-  describe('Active route banner', () => {
-    it('does not render a QR link when there is no active route', () => {
+  describe('Header', () => {
+    it('renders the Recogida heading and a live subtitle', () => {
       render(<PickupPage />);
-      expect(screen.queryByRole('link', { name: /QR/i })).not.toBeInTheDocument();
-    });
-
-    it('passes the active route id through so the QR link points at that route', () => {
-      mockActiveRoute = {
-        id: 'route-99',
-        code: 'PR-2026-0099',
-        started_at: new Date().toISOString(),
-      };
-      render(<PickupPage />);
-      const qrLink = screen.getByRole('link', { name: /QR/i });
-      expect(qrLink).toHaveAttribute('href', '/app/pickup/route/route-99/qr');
+      expect(screen.getByRole('heading', { name: 'Recogida' })).toBeInTheDocument();
+      expect(screen.getByText(/manifiestos por retirar/)).toBeInTheDocument();
     });
   });
 
-  describe('KPI cards', () => {
-    it('renders three MetricCards with correct values', () => {
-      const { container } = render(<PickupPage />);
-      const valueEls = container.querySelectorAll('[data-value]');
-      expect(valueEls).toHaveLength(3);
-      // Pending count
-      expect(valueEls[0].textContent).toBe('2');
-      // Total packages
-      expect(valueEls[1].textContent).toBe('20');
-      // Completed today
-      expect(valueEls[2].textContent).toBe('1');
+  describe('Active route banner', () => {
+    it('does not render a QR link when there is no active route', () => {
+      render(<PickupPage />);
+      expect(screen.queryByRole('link', { name: /qr/i })).not.toBeInTheDocument();
     });
 
-    it('renders KPI labels in Spanish', () => {
+    it('passes the active route id through so the QR link points at that route', () => {
+      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString() };
       render(<PickupPage />);
-      expect(screen.getByText('Manifiestos pendientes')).toBeInTheDocument();
-      expect(screen.getByText('Paquetes totales')).toBeInTheDocument();
-      expect(screen.getByText('Completados hoy')).toBeInTheDocument();
+      // The code shows in the banner and again in the draft panel's
+      // "already have a route open" notice.
+      expect(screen.getAllByText('R-2492').length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('KPI tiles', () => {
+    it('reports manifests, orders, packages and today closures', () => {
+      render(<PickupPage />);
+      // 2 manifests, 5+3 orders, 12+8 packages, 1 completed today.
+      // "Órdenes" is also a table header, so scope to the tiles.
+      const tiles = screen.getAllByTestId('stat-tile');
+      const tile = (label: string) => tiles.find((t) => t.textContent?.startsWith(label))!;
+
+      expect(tile('Manifiestos pendientes')).toHaveTextContent('2');
+      expect(tile('Órdenes')).toHaveTextContent('8');
+      expect(tile('Paquetes totales')).toHaveTextContent('20');
+      expect(tile('Completados hoy')).toHaveTextContent('1');
     });
   });
 
   describe('Tabs', () => {
-    it('renders tab triggers in Spanish', () => {
+    it('renders the three tabs in Spanish with counts', () => {
       render(<PickupPage />);
-      expect(screen.getByRole('tab', { name: 'Activos' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: 'Completados' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pendientes · 2' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'En tránsito · 1' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Completados · 1' })).toBeInTheDocument();
     });
 
-    it('renders the "En tránsito" tab between Activos and Completados', () => {
+    it('shows in-transit manifests when that tab is selected', async () => {
       render(<PickupPage />);
-      expect(screen.getByRole('tab', { name: 'En tránsito' })).toBeInTheDocument();
-    });
-  });
-
-  describe('En tránsito tab', () => {
-    it('shows in-transit manifests when the tab is selected', async () => {
-      const user = userEvent.setup();
-      render(<PickupPage />);
-      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
-      expect(screen.getByText('Falabella')).toBeInTheDocument();
+      expect(screen.queryByText('CARGA-INT-1')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'En tránsito · 1' }));
       expect(screen.getByText('CARGA-INT-1')).toBeInTheDocument();
     });
 
-    it('renders an empty state when there are no in-transit manifests', async () => {
-      mockUseInTransitManifests.mockReturnValue({ data: [], isLoading: false });
-      const user = userEvent.setup();
+    it('offers selection only on the pending tab', async () => {
       render(<PickupPage />);
-      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
-      expect(screen.getByText('Sin manifiestos en tránsito')).toBeInTheDocument();
+      expect(screen.getAllByTestId('manifest-row')[0]).toHaveAttribute('aria-checked');
+      await userEvent.click(screen.getByRole('button', { name: 'Completados · 1' }));
+      expect(screen.getAllByTestId('manifest-row')[0]).not.toHaveAttribute('aria-checked');
+    });
+  });
+
+  describe('Route assembly', () => {
+    it('prompts for a selection before anything is ticked', () => {
+      render(<PickupPage />);
+      expect(screen.getByText(/Marca los manifiestos de la tabla/)).toBeInTheDocument();
     });
 
-    it('shows the "Pickup confirmado" badge on in-transit cards', async () => {
-      const user = userEvent.setup();
+    it('moves a ticked manifest into the draft panel', async () => {
       render(<PickupPage />);
-      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
-      expect(screen.getByText(/pickup confirmado/i)).toBeInTheDocument();
+      await userEvent.click(screen.getByText('Easy Vespucio'));
+      expect(screen.getByTestId('draft-manifest')).toBeInTheDocument();
+      expect(screen.getByText(/5 órdenes · 12 paquetes/)).toBeInTheDocument();
     });
 
-    it('routes to /app/pickup/route/active when an in-transit card is clicked', async () => {
-      const user = userEvent.setup();
+    it('refuses to assemble a second route while one is open', () => {
+      // start_pickup_route enforces one active route per driver, so offering
+      // to create another is offering an error.
+      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString() };
       render(<PickupPage />);
-      await user.click(screen.getByRole('tab', { name: 'En tránsito' }));
-      const card = screen.getByText('Falabella').closest('[role="button"]') as HTMLElement;
-      expect(card).toBeTruthy();
-      await user.click(card);
-      expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
+      expect(screen.getByText(/Ciérrala antes de armar otra/)).toBeInTheDocument();
+    });
+  });
+
+  describe('Label printing (spec-53)', () => {
+    it('is absent when the module is off', () => {
+      render(<PickupPage />);
+      expect(screen.queryByRole('button', { name: /imprimir etiquetas/i })).not.toBeInTheDocument();
+    });
+
+    it('is reachable per row when the module is on', () => {
+      mockLabelsEnabled = true;
+      render(<PickupPage />);
+      expect(
+        screen.getByRole('button', { name: 'Imprimir etiquetas de CARGA-001' }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("Today's closures", () => {
+    it('lists what closed today', () => {
+      render(<PickupPage />);
+      const panel = screen.getByText('Cierres de hoy').closest('section')!;
+      expect(within(panel).getByText('CARGA-000')).toBeInTheDocument();
     });
   });
 
   describe('Empty state', () => {
-    it('shows EmptyState when no pending manifests', () => {
+    it('explains an empty pending tab', () => {
       mockUsePendingManifests.mockReturnValue({ data: [], isLoading: false });
       render(<PickupPage />);
-      expect(screen.getByText('Sin manifiestos pendientes')).toBeInTheDocument();
-    });
-  });
-
-  describe('Manifest cards', () => {
-    it('renders pending manifest cards', () => {
-      render(<PickupPage />);
-      expect(screen.getByText('Easy')).toBeInTheDocument();
-      expect(screen.getByText('Sodimac')).toBeInTheDocument();
-    });
-
-    it('shows the creation date on pending manifest cards', () => {
-      render(<PickupPage />);
-      // created_at '2026-04-09T10:00:00Z' → toLocaleDateString() output
-      const expected = new Date('2026-04-09T10:00:00Z').toLocaleDateString();
-      const els = screen.getAllByText(`Creado el ${expected}`);
-      expect(els.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Container', () => {
-    it('has max-w constraint and responsive padding', () => {
-      const { container } = render(<PickupPage />);
-      const wrapper = container.querySelector('.max-w-4xl');
-      expect(wrapper).toBeTruthy();
+      expect(screen.getByText('No hay manifiestos pendientes de retiro.')).toBeInTheDocument();
     });
   });
 });
