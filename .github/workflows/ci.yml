@@ -32,6 +32,15 @@ jobs:
       - name: Check migration version prefixes are unique
         run: bash ./scripts/check-migration-versions.sh
 
+      # The production gate is only as good as its wiring, and this file has a
+      # history of gating bugs that shipped green. Fails the build if any prod
+      # deploy job stops depending on approve-production (spec-57).
+      - name: Check production deploy gating
+        run: bash ./scripts/check-deploy-gating.sh
+
+      - name: Test the deploy-gating guard
+        run: bash ./scripts/check-deploy-gating.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

@@ -17,6 +17,18 @@ on:
 # All deploy jobs run sequentially within their dependency chain — a failed
 # migration never reaches app deploys. Jobs are gated on path filters so a
 # CSS-only or docs-only push doesn't trigger DB or VPS work.
+#
+# EXECUTION ORDER (spec-57) — note this is NOT the order the jobs appear below;
+# the blocks kept their original positions so the diff stayed reviewable:
+#
+#   changes  →  deploy-qa  →  approve-production ⏸  →  deploy-supabase
+#                                (human)               →  deploy-edge-functions
+#                                                      →  deploy-vercel
+#                                                      →  deploy-worker/agents/solver
+#
+# Nothing touches production before a human approves `approve-production`
+# (defined at the bottom of this file). scripts/check-deploy-gating.sh fails CI
+# if any production job stops depending on it.
 concurrency:
   group: production-deploy
   cancel-in-progress: false
@@ -76,8 +88,13 @@ jobs:
   # ─── 1. Database Migrations ──────────────────────────────────────────────────
   deploy-supabase:
     name: Deploy Supabase Migrations
-    needs: changes
-    if: needs.changes.outputs.database == 'true'
+    needs: [changes, approve-production]
+    # The explicit result check matters here: unlike the app jobs below, this
+    # `if:` has no `always()`, so it must state outright that a gate which did
+    # not succeed stops the migration.
+    if: |
+      needs.approve-production.result == 'success' &&
+      needs.changes.outputs.database == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:
@@ -172,7 +189,7 @@ jobs:
   # ─── 2. Edge Functions ───────────────────────────────────────────────────────
   deploy-edge-functions:
     name: Deploy Supabase Edge Functions
-    needs: [changes, deploy-supabase]
+    needs: [changes, approve-production, deploy-supabase]
     if: |
       always() &&
       needs.changes.outputs.edge_functions == 'true' &&
@@ -212,7 +229,7 @@ jobs:
   # schema, with no rollback.
   deploy-vercel:
     name: Deploy to Vercel
-    needs: [changes, deploy-supabase, deploy-edge-functions]
+    needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -240,7 +257,7 @@ jobs:
   # ─── 4. Worker (VPS) ─────────────────────────────────────────────────────────
   deploy-worker:
     name: Deploy Worker to VPS
-    needs: [changes, deploy-supabase, deploy-edge-functions]
+    needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
       !failure() && !cancelled() &&
@@ -272,7 +289,7 @@ jobs:
   # ─── 5. Agents Suite (VPS) ───────────────────────────────────────────────────
   deploy-agents:
     name: Deploy Agents to VPS
-    needs: [changes, deploy-supabase, deploy-edge-functions]
+    needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
       !failure() && !cancelled() &&
@@ -303,7 +320,7 @@ jobs:
   # ─── 6. OR-Tools Solver Sidecar (VPS) ────────────────────────────────────────
   deploy-solver:
     name: Deploy OR-Tools Solver to VPS
-    needs: [changes, deploy-supabase, deploy-edge-functions]
+    needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
       always() &&
       !failure() && !cancelled() &&
@@ -345,8 +362,15 @@ jobs:
   # failures in prod (green checks while the DB job was skipped) — QA is the
   # backstop, so it always runs. App rebuilds ARE filtered via CHANGED_* flags.
   #
-  # No prod job depends on this one — a QA sync failure is surfaced with
-  # ::error:: but never blocks production deploys.
+  # CHANGED IN spec-57: this job is now production's precondition, not a
+  # parallel mirror. `approve-production` requires it to succeed, and every
+  # production job requires `approve-production` — so a QA sync failure DOES
+  # block production now. That is deliberate: QA replaying the full migration
+  # ledger is the only automated check that a merge's schema actually applies.
+  #
+  # Tradeoff accepted knowingly: a QA VPS outage blocks production deploys.
+  # The escape hatch is docs/runbooks/manual-deployment.md — not editing this
+  # dependency out.
   deploy-qa:
     name: Sync QA Environment
     needs: [changes]
@@ -377,3 +401,41 @@ jobs:
           echo "::error::QA environment sync failed — QA is now drifted from main."
           echo "To debug: run infra/supabase-qa/deploy-qa.sh on the VPS, or check"
           echo "journalctl -u aureon-frontend-qa/-agents-qa/-worker-qa -n 50."
+          echo "NOTE: this now blocks the production deploy (spec-57)."
+
+  # ─── 8. Production approval gate ─────────────────────────────────────────────
+  # The single human checkpoint between a green merge and production (spec-57).
+  #
+  # Despite sitting last in this file, it runs SECOND — right after deploy-qa.
+  # Every job that mutates production depends on it, and it depends on
+  # deploy-qa, so production is reachable only after QA has been synced to this
+  # commit and its post-checks passed.
+  #
+  # `environment: production` is what makes it pause: the Production environment
+  # carries a required-reviewer rule, so GitHub holds this job until a human
+  # approves it under Actions → this run → "Review deployments".
+  #
+  # Approving deploys the SHA echoed below, NOT main's tip. The run holds the
+  # `production-deploy` concurrency slot while it waits, so later merges queue
+  # as separate runs, each pinned to its own DEPLOY_SHA.
+  #
+  # ONE job carries the environment on purpose. Spreading `environment:` across
+  # all six production jobs would leave it to GitHub whether that means one
+  # approval or six; this way it is unambiguously one.
+  #
+  # scripts/check-deploy-gating.sh fails CI if any production job stops
+  # depending on this one. Do not remove that check.
+  approve-production:
+    name: Approve Production Deploy
+    needs: [changes, deploy-qa]
+    if: always() && !failure() && !cancelled() && needs.deploy-qa.result == 'success'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record what is being approved
+        run: |
+          echo "Commit approved for production: ${DEPLOY_SHA}"
+          echo "QA sync result: ${{ needs.deploy-qa.result }}"
+          echo "Verify at https://qa.aureon.tractis.ai before approving."
+          echo "Runbook: docs/runbooks/approve-production-deploy.md"
