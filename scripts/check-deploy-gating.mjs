@@ -14,14 +14,11 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-
-// js-yaml is CommonJS and does not expose an ESM default export under Node 24
-// ("does not provide an export named 'default'"), so require it explicitly
-// rather than relying on interop.
-const require = createRequire(import.meta.url);
-const yaml = require('js-yaml');
+// js-yaml 5's ESM build exports named bindings only — `import yaml from
+// 'js-yaml'` fails with "does not provide an export named 'default'". Import
+// `load` directly rather than reaching for createRequire.
+import { load } from 'js-yaml';
 
 const GATE = 'approve-production';
 
@@ -49,7 +46,7 @@ if (!fs.existsSync(workflow)) {
 
 let doc;
 try {
-  doc = yaml.load(fs.readFileSync(workflow, 'utf8'));
+  doc = load(fs.readFileSync(workflow, 'utf8'));
 } catch (err) {
   console.error(`ERROR: could not parse ${workflow}: ${err.message}`);
   process.exit(2);
