@@ -1,20 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { computeStageHealth } from './health';
+import { computeStageHealth, formatMinutes } from './health';
 
 describe('duration formatting in delta lines', () => {
+  // The three scale cases below used to go through the docks stage and its
+  // "Ruta inactiva" line. That line is gone — Andenes now reports an order's
+  // dwell and a route's wait separately — so the scales are asserted on
+  // formatMinutes directly, and the docks case below proves it is still wired
+  // into that stage's delta.
   it('rounds raw fractional minutes — never prints floats like 2969.0869358m', () => {
-    const r = computeStageHealth('docks', [{ idle_minutes: 2969.0869358 }], new Date());
-    expect(r.delta).toBe('Ruta inactiva 2d 1h');
+    expect(formatMinutes(2969.0869358)).toBe('2d 1h');
   });
 
   it('keeps short durations in minutes', () => {
-    const r = computeStageHealth('docks', [{ idle_minutes: 45.7 }], new Date());
-    expect(r.delta).toBe('Ruta inactiva 46m');
+    expect(formatMinutes(45.7)).toBe('46m');
   });
 
   it('uses hours between 1h and 48h', () => {
-    const r = computeStageHealth('docks', [{ idle_minutes: 150 }], new Date());
-    expect(r.delta).toBe('Ruta inactiva 3h');
+    expect(formatMinutes(150)).toBe('3h');
+  });
+
+  it('formats docks deltas the same way', () => {
+    const r = computeStageHealth(
+      'docks',
+      [{ order_number: 'ORD-1', idle_minutes: 2969.0869358 }],
+      new Date(),
+    );
+    expect(r.delta).toBe('2d 1h en andén');
   });
 
   it('formats delivery deltas the same way', () => {
@@ -73,14 +84,67 @@ describe('computeStageHealth — consolidation', () => {
 });
 
 describe('computeStageHealth — docks', () => {
-  it('ok when all routes idle < 30m', () => {
-    expect(computeStageHealth('docks', [{ idle_minutes: 29 }], now).status).toBe('ok');
+  // Andenes holds two kinds of item and they fail in different ways: orders
+  // parked at a dock, and routes waiting on a driver. The old rules read
+  // idle_minutes off both and reported every result as "Ruta inactiva" — but
+  // routes carry idle_time_minutes, never idle_minutes, so that number was
+  // always an ORDER's dwell wearing route wording.
+  const order = (idleMinutes: number) => ({ order_number: 'ORD-1', idle_minutes: idleMinutes });
+  const route = (over: Record<string, unknown>) => ({
+    external_route_id: 'R-1',
+    route_date: '2026-04-06',
+    driver_name: null,
+    updated_at: '2026-04-06T12:00:00',
+    ...over,
   });
-  it('warn when any route idle 30m+', () => {
-    expect(computeStageHealth('docks', [{ idle_minutes: 30 }], now).status).toBe('warn');
+
+  it('ok when nothing is waiting', () => {
+    expect(computeStageHealth('docks', [], now).status).toBe('ok');
   });
-  it('crit when any route idle 60m+', () => {
-    expect(computeStageHealth('docks', [{ idle_minutes: 61 }], now).status).toBe('crit');
+
+  it('ok when an order has been in the andén < 2h', () => {
+    expect(computeStageHealth('docks', [order(119)], now).status).toBe('ok');
+  });
+
+  it('warn when an order has been in the andén 2h+', () => {
+    const result = computeStageHealth('docks', [order(120)], now);
+    expect(result.status).toBe('warn');
+    expect(result.delta).toBe('2h en andén');
+  });
+
+  it('crit when an order has been in the andén 4h+', () => {
+    const result = computeStageHealth('docks', [order(245)], now);
+    expect(result.status).toBe('crit');
+    expect(result.delta).toBe('4h en andén');
+  });
+
+  it('warn when a route has waited 30m+ for a driver', () => {
+    const result = computeStageHealth('docks', [route({ updated_at: '2026-04-06T11:20:00' })], now);
+    expect(result.status).toBe('warn');
+    expect(result.delta).toBe('Ruta sin conductor 40m');
+  });
+
+  it('crit when a route has waited 60m+ for a driver', () => {
+    const result = computeStageHealth('docks', [route({ updated_at: '2026-04-06T10:30:00' })], now);
+    expect(result.status).toBe('crit');
+    expect(result.delta).toBe('Ruta sin conductor 2h'); // 90m, via formatMinutes
+  });
+
+  it('ok when a waiting route already has a driver', () => {
+    const items = [route({ driver_name: 'Ana Rojas', updated_at: '2026-04-06T10:30:00' })];
+    expect(computeStageHealth('docks', items, now).status).toBe('ok');
+  });
+
+  it('ok when a driverless route is dated for a later day', () => {
+    const items = [route({ route_date: '2026-04-07', updated_at: '2026-04-06T10:30:00' })];
+    expect(computeStageHealth('docks', items, now).status).toBe('ok');
+  });
+
+  it('reports the worse of the two signals', () => {
+    const items = [order(120), route({ updated_at: '2026-04-06T10:30:00' })];
+    const result = computeStageHealth('docks', items, now);
+    expect(result.status).toBe('crit');
+    expect(result.delta).toBe('Ruta sin conductor 2h');
   });
 });
 
