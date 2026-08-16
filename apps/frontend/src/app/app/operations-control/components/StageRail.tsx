@@ -149,10 +149,14 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
                 </span>
               )}
 
+              {/* mt-auto pins the health bar to the card's foot. The grid
+                  stretches every card in a row to the same height, but cards
+                  without the optional paquetes line have less content — without
+                  the pin their bar floats higher than their neighbours'. */}
               <div
                 data-testid={`stage-health-${key}`}
                 className={cn(
-                  'h-[3px] rounded-sm',
+                  'mt-auto h-[3px] rounded-sm',
                   isSelected ? 'bg-accent' : HEALTH_BAR[stage.health],
                 )}
               />
