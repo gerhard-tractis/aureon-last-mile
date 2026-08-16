@@ -69,7 +69,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 | **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
 | **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
 | **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
-| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recepción → móvil. | en curso |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recogida ✅ → Recepción → móvil. | en curso |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -300,3 +300,36 @@ Cambio de diseño posterior: las tarjetas del rail de la Torre ganan una línea 
 `countPackages` (`lib/packages.ts`) suma **filas de paquete**, la misma unidad que `get_pre_route_snapshot` reporta como `package_count`. Las cajas físicas son otro número (`packages.declared_box_count`, ver spec-53/55) y no es lo que "paquetes" significa en el resto del producto.
 
 Devuelve `null` —y la tarjeta oculta la línea— cuando ningún ítem de la etapa trae `packages`. Las etapas basadas en rutas (Reparto, y la parte de rutas de Andenes) no tienen paquetes en el snapshot: mostrar "0 paquetes" diría que la etapa está vacía, cuando lo cierto es que no tenemos el dato.
+
+
+---
+
+## Fase 4.4 — Recogida (escritorio)
+
+**Ruta:** `/app/pickup` · **Mock:** `1l`
+
+Corrección al plan: la primera versión de este spec decía que Recogida no tenía mock. Sí lo tiene — `1l`, añadido al archivo de diseño después del handoff original. El plan de fase 4 lo omitía por error, igual que a `1f` (Order Inspector, todavía pendiente).
+
+Dos columnas (`1fr 340px`): los manifiestos por retirar a la izquierda, la ruta en armado y los cierres del día a la derecha. Bajo 1024px se apilan.
+
+Componentes nuevos: `ManifestTable`, `PickupRouteDraftPanel`, `TodayClosuresPanel`, más `pickupSummary.ts` (`pendingTotals` / `clientBreakdown` / `completedToday`, puros y testeados aparte). `StatTile` se extrae a `components/` en su tercera copia — la Torre, quicksort y ahora Recogida tenían cada una la suya.
+
+Las tarjetas pasan a tabla, que es el cambio central del mock.
+
+### Datos — lo que sí y lo que no
+
+- **Sin columna VENTANA.** El mock la muestra ("09:00–13:00", "cierra 12:30" en rojo) y tiñe el borde izquierdo de la fila según cuán cerca esté el cierre. `get_pending_manifests` no devuelve ventana de retiro. Inventar un plazo en la pantalla que decide qué recoge la cuadrilla sería peor que omitir la columna. El borde izquierdo lleva en su lugar el progreso de escaneo, que sí es real.
+- **Sin "cierre de retiros 18:00"** en el subtítulo, por lo mismo.
+- **Sin ocupación estimada del vehículo.** Necesita capacidad en `vehicles` y volumen en `packages`; ninguna de las dos existe. Un porcentaje adivinado en la pantalla que decide si un furgón va lleno sería activamente dañino.
+- **Sin la comuna en negrita dentro del punto de recogida.** El RPC devuelve solo el nombre del punto (`MIN(pp.name)`), no la comuna.
+- **Los cierres no marcan faltantes.** El mock muestra "2 faltantes de 44" en paleta warning; `get_completed_manifests` da totales pero no verificados, así que la merma no se puede derivar sin una consulta por manifiesto. `useDiscrepancies` sigue siendo el lugar que responde "qué faltó".
+
+### Desviación deliberada del mock
+
+La tabla lleva **una séptima columna** que el mock no tiene: la impresión de etiquetas de spec-53. Vivía en `ManifestCard` y un rediseño que la eliminara en silencio sería una regresión funcional, no un cambio visual. Va como icono, con `stopPropagation` para no confundirse con la selección de la fila.
+
+Por la misma razón, el código de carga es un botón que abre el flujo de escaneo: el clic en la fila es selección para armar la ruta, y abrir el escaneo es la acción principal de la pantalla — no podía quedarse sin acceso.
+
+### Flujo de armado de ruta
+
+Marcar manifiestos → `start_pickup_route(vehicleId)` → `add_manifest_to_route` por cada uno. Si alguno falla, la ruta igual existe: se avisa cuántos no entraron en vez de dejar que el conductor salga con carga incompleta. Con una ruta ya abierta el panel se aparta — `start_pickup_route` permite una sola ruta activa por conductor, así que ofrecer crear otra es ofrecer un error.
