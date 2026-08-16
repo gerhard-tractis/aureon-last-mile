@@ -519,33 +519,86 @@ the run, which is the assumption behind the single-gate-job design.
 
 ---
 
-## Chunk 2 — Phase 2: E2E against QA (follow-up PR)
+## Chunk 2 — Phase 2: E2E against QA
 
-Deliberately **not** in the phase-1 PR. Phase 1 is a low-risk wiring change; this one needs
-decisions about test data that phase 1 does not.
+Implemented. Lands **advisory**, not blocking — see "Promotion to blocking" below.
 
-The Playwright specs already exist and are env-driven — `apps/frontend/e2e/support/spec52-fixture.ts`
-reads `E2E_DATABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL`, so pointing them at QA
-(Postgres `localhost:5433`, Kong `localhost:8100`, frontend `localhost:3200`) is mechanical.
+### The account bug this uncovered
 
-Open questions to resolve before implementing:
+`spec52-fixture.ts` never created its `operators` row; it assumed one. That assumption held
+only on a developer laptop, where `seed.sql` creates operator
+`00000000-0000-0000-0000-000000000001`. `seed.sql` is dev-only, and the sole migration that
+ever inserted that operator is `20260209_multi_tenant_rls.sql.bak` — a `.bak`, which
+`supabase db push` never applies.
 
-1. **Test data collision.** The specs `seed()` and `teardown()` against a live database. QA
-   carries the spec-51 scenario seed. Decide whether E2E gets its own operator, runs against a
-   throwaway schema, or whether teardown is trusted to be complete.
-2. **Config split.** `playwright.config.ts` hardcodes `baseURL: localhost:3000` and a
-   `webServer: npm run dev` block that must not run on the VPS. Needs a second config
-   (`playwright.qa.config.ts`) with no `webServer` and a QA `baseURL`.
-3. **Runner.** Must be `runs-on: [self-hosted, vps]` — QA ports bind to localhost. Requires
-   Playwright browsers installed on the VPS (`npx playwright install --with-deps chromium`).
-4. **Placement.** The job slots between `deploy-qa` and `approve-production`; the gate then
-   becomes `needs: [changes, deploy-qa, e2e-qa]`. `check-deploy-gating.sh` must be extended to
-   assert that edge too.
-5. **Serial mode.** `spec52` uses `test.describe.configure({ mode: 'serial' })`. Confirm the
-   suite's total runtime fits inside a sensible `timeout-minutes` before making it blocking.
+So **any environment built purely from the migration ledger has no such operator**: QA, and
+production. The suite would have died on a foreign key at the first `INSERT INTO auth.users`,
+before a browser opened.
 
-Until this lands, "tests pass in QA" means Gerhard checking https://qa.aureon.tractis.ai
-manually before clicking approve — which is exactly what the phase-1 gate makes possible.
+Fixed with an idempotent `ensureOperator()` at the top of `seed()`. `ON CONFLICT DO NOTHING`
+with no conflict target on purpose — on a laptop the id already exists (as
+`demo-chile`), in QA neither the id nor the slug does; both must be silent. It is deliberately
+**not** removed in teardown: it is shared scaffolding, and on a dev machine the rest of
+`seed.sql` hangs off it.
+
+### Tenant isolation is free
+
+Three distinct operators, so E2E data and QA scenario data cannot see each other — the
+project's `operator_id`-on-every-query rule doing the work:
+
+| Operator | UUID | Source | In QA? |
+|---|---|---|---|
+| E2E | `...0000-000000000001` | `ensureOperator()` (new) | yes, now |
+| Aureon internal | `...0000-0000000000a1` | `20260616000002` migration | yes |
+| QA Test Operator | `...4000-8000-...0001` | `seed-qa.sql` | yes |
+
+### Scope: spec-52 only, for now
+
+`playwright.qa.config.ts` sets `testMatch: /spec52-.*\.spec\.ts$/`. Of the other five specs:
+
+- `auth-pages`, `branding` — screenshot-generation tools (8 and 6 `screenshot` calls), not assertions
+- `dispatch-route`, `spec47-pickup-route-end-to-end` — no fixture
+- `spec47-consolidated-reception` — already `test.skip(true, 'pending seeded staging fixture')`
+
+That last one has been waiting for exactly this environment. Widen `testMatch` as each grows a
+fixture.
+
+### Files
+
+| File | Change |
+|---|---|
+| `apps/frontend/e2e/support/spec52-fixture.ts` | `ensureOperator()` |
+| `apps/frontend/playwright.qa.config.ts` | Create — no `webServer`, QA `baseURL`, `retries: 0` |
+| `apps/frontend/package.json` | `e2e`, `e2e:qa` scripts (neither existed) |
+| `.github/workflows/deploy.yml` | `e2e-qa` job, section 7b |
+| `.gitignore` | Playwright run output |
+
+### Design notes
+
+- **No `webServer`.** QA's frontend already runs under systemd on `:3200`; a `webServer` block
+  would try to start a second Next.js on a taken port and hang to timeout.
+- **`retries: 0`.** Green-on-retry hides exactly the flakiness that must be understood before
+  this gates production.
+- **`npx playwright install chromium` without `--with-deps`.** `--with-deps` needs root, and
+  this job must not require passwordless sudo. One-time on the VPS if Chromium's system
+  libraries are missing: `sudo npx playwright install-deps chromium`.
+- **Provisioned-guard.** Mirrors `deploy-qa.sh`: no `/home/aureon/.env.qa` → skip, don't fail.
+- **Report artifact**, 14-day retention, with trace and video on failure.
+
+### Promotion to blocking
+
+Deliberately advisory at first: `continue-on-error: true`, and `approve-production` does not
+list it in `needs:`. A suite that gates production before its flakiness and runtime are known
+just trains you to click through red.
+
+To promote, all three together:
+
+1. add `e2e-qa` to `approve-production`'s `needs:`
+2. extend `PROD_JOBS`/assertions in `scripts/check-deploy-gating.mjs` to require that edge
+3. drop `continue-on-error: true`
+
+**Unverified until it runs on the VPS:** total suite runtime (per-test timeouts inside the
+spec reach 240s; job cap is 30 min), and whether Chromium's system libraries are present.
 
 ---
 

@@ -403,6 +403,87 @@ jobs:
           echo "journalctl -u aureon-frontend-qa/-agents-qa/-worker-qa -n 50."
           echo "NOTE: this now blocks the production deploy (spec-57)."
 
+  # ─── 7b. End-to-end tests against QA ─────────────────────────────────────────
+  # Drives the real screens in the QA environment with Playwright, on the commit
+  # QA was just synced to (spec-57 phase 2).
+  #
+  # ADVISORY FOR NOW — it reports, it does not block. `approve-production`
+  # deliberately does NOT list this job in its `needs:`, and
+  # scripts/check-deploy-gating.sh does not assert it. A suite that gates
+  # production before its flakiness and runtime are known just trains you to
+  # click through red. Make it blocking once it has a track record: add `e2e-qa`
+  # to approve-production's needs, extend the guard, and drop continue-on-error.
+  #
+  # Must run on the VPS: every QA port binds to localhost there.
+  e2e-qa:
+    name: E2E against QA
+    needs: [changes, deploy-qa]
+    if: always() && !failure() && !cancelled() && needs.deploy-qa.result == 'success'
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 30
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      # Same guard as deploy-qa.sh: a host without QA provisioned must skip
+      # rather than fail, so this job never invents a reason to look red.
+      - name: Check QA is provisioned
+        id: qa
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if [ ! -f /home/aureon/.env.qa ]; then
+            echo "QA env file missing — skipping E2E"
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.qa.outputs.provisioned == 'true'
+        working-directory: .
+        run: npm ci
+
+      # Idempotent and cached in ~/.cache/ms-playwright. Deliberately without
+      # --with-deps: that needs root, and this job must not require passwordless
+      # sudo. If Chromium's system libraries are missing, run once on the VPS:
+      #   sudo npx playwright install-deps chromium
+      - name: Install Chromium
+        if: steps.qa.outputs.provisioned == 'true'
+        run: npx playwright install chromium
+
+      - name: Run E2E against QA
+        if: steps.qa.outputs.provisioned == 'true'
+        run: |
+          set -euo pipefail
+          PGPASS="$(grep -E '^POSTGRES_PASSWORD=' /home/aureon/.env.qa | tail -n1 | cut -d= -f2- | tr -d '\r')"
+          [ -n "$PGPASS" ] || { echo "::error::POSTGRES_PASSWORD missing from /home/aureon/.env.qa"; exit 1; }
+          export E2E_DATABASE_URL="postgresql://postgres:${PGPASS}@localhost:5433/postgres"
+          export E2E_BASE_URL="http://localhost:3200"
+          npm run e2e:qa
+
+      - name: Upload report
+        if: always() && steps.qa.outputs.provisioned == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-qa-report-${{ github.event.workflow_run.head_sha }}
+          path: apps/frontend/playwright-report-qa/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::E2E against QA failed on ${DEPLOY_SHA}."
+          echo "This is ADVISORY — it does not block the production deploy."
+          echo "Download the 'e2e-qa-report-*' artifact for traces and video."
+
   # ─── 8. Production approval gate ─────────────────────────────────────────────
   # The single human checkpoint between a green merge and production (spec-57).
   #
