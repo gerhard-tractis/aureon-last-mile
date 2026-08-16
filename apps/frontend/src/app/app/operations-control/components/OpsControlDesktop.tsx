@@ -7,7 +7,7 @@ import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
 import { useActiveRoutes } from '@/hooks/useActiveRoutes';
 import { useStageQuery } from '../lib/useStageQuery';
 import { computeStageHealth } from '../lib/health';
-import { countPackages } from '../lib/packages';
+import { stagePackageCount } from '../lib/packages';
 import { STAGE_KEYS } from '../lib/labels.es';
 import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
 import type { StageKey } from '../lib/labels.es';
@@ -83,7 +83,7 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
       count: items.length,
       delta: health.delta,
       health: health.status,
-      packageCount: countPackages(items),
+      packageCount: stagePackageCount(key, items),
     };
   });
 

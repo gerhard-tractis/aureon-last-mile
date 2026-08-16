@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { computeStageHealth } from './health';
 
+describe('duration formatting in delta lines', () => {
+  it('rounds raw fractional minutes — never prints floats like 2969.0869358m', () => {
+    const r = computeStageHealth('docks', [{ idle_minutes: 2969.0869358 }], new Date());
+    expect(r.delta).toBe('Ruta inactiva 2d 1h');
+  });
+
+  it('keeps short durations in minutes', () => {
+    const r = computeStageHealth('docks', [{ idle_minutes: 45.7 }], new Date());
+    expect(r.delta).toBe('Ruta inactiva 46m');
+  });
+
+  it('uses hours between 1h and 48h', () => {
+    const r = computeStageHealth('docks', [{ idle_minutes: 150 }], new Date());
+    expect(r.delta).toBe('Ruta inactiva 3h');
+  });
+
+  it('formats delivery deltas the same way', () => {
+    const r = computeStageHealth('delivery', [{ behind_plan_minutes: 95.4, no_gps_minutes: 0 }], new Date());
+    expect(r.delta).toBe('Ruta atrasada 2h');
+  });
+
+  it('formats pickup overdue the same way', () => {
+    const r = computeStageHealth('pickup', [{ overdue_minutes: 200.9 }], new Date());
+    expect(r.delta).toBe('Recogida atrasada 3h');
+  });
+});
+
 const now = new Date('2026-04-06T12:00:00');
 
 describe('computeStageHealth — pickup', () => {
