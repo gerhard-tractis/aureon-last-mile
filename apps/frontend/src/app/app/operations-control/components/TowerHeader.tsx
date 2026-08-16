@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
-import type { DayPromise } from '@/hooks/ops-control/useDayPromise';
+import type { OperationCounts } from '@/hooks/ops-control/useOperationCounts';
 
 /**
  * spec-54 phase 4 — the tower's title row (mock 2a).
@@ -24,11 +24,18 @@ function todayLabel(now: Date): string {
 }
 
 interface TowerHeaderProps {
-  promise: DayPromise;
+  /**
+   * Operation-wide counts (useOperationCounts), NOT the day promise: the
+   * subtitle claims "órdenes en operación", so it must count every picked-up,
+   * undelivered order regardless of delivery date — the promise counters only
+   * see today's date and showed 0 · 0 whenever the work in the building was
+   * promised for other days.
+   */
+  counts: OperationCounts;
   now?: Date;
 }
 
-export function TowerHeader({ promise, now = new Date() }: TowerHeaderProps) {
+export function TowerHeader({ counts, now = new Date() }: TowerHeaderProps) {
   return (
     <div className="flex flex-wrap items-end gap-4">
       <div className="flex min-w-0 flex-col gap-1.5">
@@ -37,15 +44,15 @@ export function TowerHeader({ promise, now = new Date() }: TowerHeaderProps) {
         </h1>
         <p className="text-[12.5px] leading-none text-text-secondary">
           {todayLabel(now)}
-          {!promise.isLoading && (
+          {!counts.isLoading && (
             <>
               {' · '}
               <span className="font-mono font-semibold text-text">
-                {promise.total.toLocaleString('es-CL')}
+                {counts.inOperation.toLocaleString('es-CL')}
               </span>
               {' órdenes en operación · '}
               <span className="font-mono font-semibold text-status-error-text">
-                {promise.late.toLocaleString('es-CL')}
+                {counts.late.toLocaleString('es-CL')}
               </span>
               {' atrasadas'}
             </>
