@@ -1,10 +1,20 @@
 # GitHub Actions Workflows
 
-Two workflows, chained: **CI must pass before anything deploys.**
+Two workflows, chained: **CI must pass before anything deploys, QA must be green
+before production is offered, and a human must approve it.**
 
 ```
 push / PR ──▶ ci.yml ──(success, push to main only)──▶ deploy.yml
+                                                          │
+                                                          ├─▶ changes
+                                                          ├─▶ deploy-qa           (QA VPS)
+                                                          ├─▶ approve-production  ⏸ HUMAN
+                                                          └─▶ production fan-out
+                                                                 DB → edge → vercel / VPS
 ```
+
+Nothing reaches production until `approve-production` is approved in the Actions
+UI. See `docs/runbooks/approve-production-deploy.md`.
 
 ---
 
@@ -41,22 +51,39 @@ them a deploy can ship a different commit than the one that passed.
 
 ### Jobs
 
+Listed in **execution** order, which is not the order they appear in the file —
+the blocks kept their original positions so the spec-57 diff stayed reviewable.
+
 | Job | Runs when | Target |
 |---|---|---|
 | `changes` | always (after green CI) | computes the diff vs the previous main commit |
-| `deploy-supabase` | migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
-| `verify-prod-migrations` | **every** green push (never path-filtered) | fails if prod's migration ledger diverges from the repo |
-| `deploy-edge-functions` | `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
-| `deploy-vercel` | **every** green push | `vercel --prod`, with rollback on failure |
-| `deploy-worker` | `apps/worker/**` changed | VPS via `apps/worker/scripts/deploy.sh` |
-| `deploy-agents` | `apps/agents/**` changed | VPS via `apps/agents/scripts/deploy.sh` |
-| `deploy-solver` | `sidecar/or-tools/**` changed | VPS venv + `systemctl restart aureon-solver` |
-| `deploy-qa` | **every** green push | syncs the spec-48 QA stack on the VPS; migrations always replayed, app rebuilds path-filtered. Never blocks prod (see `docs/qa-environment.md`) |
+| `deploy-qa` | **every** green push | syncs the spec-48 QA stack on the VPS; migrations always replayed, app rebuilds path-filtered (`docs/qa-environment.md`) |
+| `approve-production` | after `deploy-qa` succeeds | ⏸ **pauses for human approval** — `environment: production` |
+| `deploy-supabase` | approved **and** migrations / `seed.sql` / `config.toml` changed | `supabase db push --include-all` |
+| `verify-prod-migrations` | after `deploy-supabase` resolves, always | read-only; fails if prod's migration ledger diverges from the repo |
+| `deploy-edge-functions` | approved **and** `packages/database/supabase/functions/**` changed | `supabase functions deploy` |
+| `deploy-vercel` | approved (every green push) | `vercel --prod`, with rollback on failure |
+| `deploy-worker` | approved **and** `apps/worker/**` changed | VPS via `apps/worker/scripts/deploy.sh` |
+| `deploy-agents` | approved **and** `apps/agents/**` changed | VPS via `apps/agents/scripts/deploy.sh` |
+| `deploy-solver` | approved **and** `sidecar/or-tools/**` changed | VPS venv + `systemctl restart aureon-solver` |
 
 App deploys depend on the migration jobs, so a failed migration stops
 everything downstream. `concurrency: production-deploy` with
 `cancel-in-progress: false` means two merges queue rather than race — never
-cancel a half-applied migration.
+cancel a half-applied migration. A run waiting for approval holds that slot, so
+merges made while you deliberate queue behind it as separate runs, each pinned
+to its own `DEPLOY_SHA`.
+
+### The QA gate (spec-57)
+
+`deploy-qa` is production's precondition, not a parallel mirror. It replays the
+full migration ledger on every run, so it is the only automated proof that a
+merge's schema actually applies before production attempts the same thing.
+
+**A QA VPS outage therefore blocks production deploys.** That is deliberate. The
+escape hatch is `docs/runbooks/manual-deployment.md` — not editing the
+dependency out. `scripts/check-deploy-gating.sh` runs on every build and fails
+if any production job stops depending on `approve-production`.
 
 Change detection is a plain `git diff` against `HEAD^` (main is squash-merge
 only) over a full-depth checkout. It replaced a `dorny/paths-filter` +
