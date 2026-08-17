@@ -40,10 +40,12 @@ interface StatTileProps {
   /** Small trailing unit, e.g. "/h". Kept out of the figure so the number
    *  still scans as a number. */
   unit?: string;
+  /** Secondary fact beside the figure, e.g. "· 486 paq." */
+  detail?: string;
   className?: string;
 }
 
-export function StatTile({ label, value, tone = 'neutral', unit, className }: StatTileProps) {
+export function StatTile({ label, value, tone = 'neutral', unit, detail, className }: StatTileProps) {
   const t = TONE[tone];
   return (
     <div
@@ -58,10 +60,15 @@ export function StatTile({ label, value, tone = 'neutral', unit, className }: St
       >
         {label}
       </span>
-      <span className={cn('font-mono text-[27px] font-bold leading-none', t.value)}>
-        {typeof value === 'number' ? value.toLocaleString('es-CL') : value}
-        {unit && <span className="text-xs font-medium text-text-muted"> {unit}</span>}
-      </span>
+      <div className="flex items-baseline gap-2">
+        <span className={cn('font-mono text-[27px] font-bold leading-none', t.value)}>
+          {typeof value === 'number' ? value.toLocaleString('es-CL') : value}
+          {unit && <span className="text-xs font-medium text-text-muted"> {unit}</span>}
+        </span>
+        {detail && (
+          <span className={cn('truncate text-[11px] leading-none', t.label)}>{detail}</span>
+        )}
+      </div>
     </div>
   );
 }
