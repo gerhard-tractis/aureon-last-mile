@@ -18,7 +18,11 @@ export const DATABASE_URL =
   process.env.E2E_DATABASE_URL ??
   'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
-/** "Demo Chile (local dev)" — created by the repo's seed, not by this test. */
+/**
+ * The tenant every seeded row hangs off. Created by `ensureOperator()` below —
+ * it used to be assumed to exist, which was only true on a developer laptop
+ * (seed.sql). See that function for why.
+ */
 export const OPERATOR_ID = '00000000-0000-0000-0000-000000000001';
 
 /** Every seeded row carries this prefix so teardown can be exact. */
@@ -96,10 +100,39 @@ async function createUser(u: typeof DRIVER): Promise<string> {
   return rows[0].id as string;
 }
 
+/**
+ * Guarantees the tenant exists before anything references it.
+ *
+ * This fixture used to take the operator for granted, which held only on a
+ * developer laptop: `seed.sql` creates it, but `seed.sql` is dev-only. The one
+ * migration that ever inserted it is `20260209_multi_tenant_rls.sql.bak` — a
+ * `.bak`, so `supabase db push` never applies it. Any environment built purely
+ * from the migration ledger (QA, and production) therefore has no such row, and
+ * the suite died on a foreign key at the first user insert, before a browser
+ * ever opened.
+ *
+ * Deliberately NOT dropped in teardown: it is shared scaffolding rather than
+ * test data, and on a dev machine it is the operator the rest of `seed.sql`
+ * hangs off — deleting it would cascade well beyond this suite.
+ *
+ * `ON CONFLICT DO NOTHING` with no target on purpose: on a laptop the id
+ * already exists (as "Demo Logistics Chile"/`demo-chile`), in QA neither the id
+ * nor the slug does. Both cases must be silent.
+ */
+async function ensureOperator(): Promise<void> {
+  await db().query(
+    `INSERT INTO operators (id, name, slug, country_code, is_active)
+     VALUES ($1, 'E2E Test Operator', 'e2e-test-operator', 'CL', true)
+     ON CONFLICT DO NOTHING`,
+    [OPERATOR_ID],
+  );
+}
+
 export interface Seeded { driverId: string; receptionistId: string; }
 
 export async function seed(): Promise<Seeded> {
   await teardown();
+  await ensureOperator();
   const driverId = await createUser(DRIVER);
   const receptionistId = await createUser(RECEPTIONIST);
 

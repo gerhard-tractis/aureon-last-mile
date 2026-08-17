@@ -39,9 +39,14 @@ That SHA is what deploys — **not** `main`'s tip. If you merged more PRs while
 deliberating, each queued as its own run with its own SHA. Approve them in order.
 
 **2. Check QA.** https://qa.aureon.tractis.ai — it is running exactly that commit.
-Exercise whatever the merge touched. This is the manual test step; until the
-Playwright suite is wired to QA (spec-57 phase 2), there is no automated E2E
-coverage here.
+Exercise whatever the merge touched.
+
+**2b. Check the `E2E against QA` job.** Playwright drives the full spec-52
+pickup-and-reception workday through the real QA screens on that commit. It is
+**advisory** — a red suite does not block the deploy, so read it rather than
+relying on it to stop you. On failure, download the `e2e-qa-report-*` artifact
+for the trace and video. It covers spec-52 only; everything else in QA is still
+yours to check by hand.
 
 **3. Read `verify-prod-migrations`.** It is read-only and reports whether
 production's migration ledger already diverges from the repo. Deliberately not
