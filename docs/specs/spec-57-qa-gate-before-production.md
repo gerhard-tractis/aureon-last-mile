@@ -1,6 +1,6 @@
 # spec-57 — QA gate before production
 
-**Status:** in progress
+**Status:** completed
 
 > **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` or
 > `superpowers:executing-plans` to implement this plan. Steps use `- [ ]` checkbox syntax.
@@ -739,3 +739,58 @@ deterministic across runs (tests 1–4 passed identically in four consecutive ru
 Still recommended: leave advisory until it has run green in the pipeline a few
 times unattended. One green run on a hand-driven VPS invocation is not a track
 record. The three promotion steps are unchanged.
+
+---
+
+## Completed 2026-08-17
+
+Confirmed by Gerhard. Both phases live and evidenced.
+
+**The pipeline now is:**
+
+```
+merge → CI → deploy-qa → e2e-qa → approve-production ⏸ HUMAN → prod fan-out
+```
+
+Before this spec, QA and production deployed **in parallel** from the same merge,
+with no human checkpoint anywhere, and six Playwright specs that had never run once.
+
+**Final evidence** — `e2e-qa` on run 32053967258, `6acb3e86`, on the GitHub runner:
+
+```
+Running 7 tests using 1 worker
+  ✓ 1 driver departs the hub — the vehicle is required          (10.0s)
+  ✓ 2 collects from two clients, three cargas — verificado      (14.3s)
+  ✓ 3 the route QR is reachable while in_progress               (2.8s)
+  ✓ 4 receptionist scans the QR — route locks, in_transit       (6.5s)
+  ✓ 5 the reception page renders from the real snapshot         (239ms)
+  ✓ 6 packages scanned flat, out of order, checklist ticks      (4.2s)
+  ✓ 7 finalizing demands notes when counts offset, then closes  (1.0s)
+  7 passed (44.1s)
+```
+
+### Carried forward, deliberately not done here
+
+1. **Promote `e2e-qa` to blocking.** Now viable — 44s runtime, green across five
+   consecutive runs. Three steps documented above. Left advisory to build a track
+   record first.
+2. **Widen past spec-52.** `spec47-consolidated-reception` is still
+   `test.skip`ped "pending seeded staging fixture" — that fixture now exists.
+   `dispatch-route` and `spec47-pickup` still have none.
+3. **The `page.test.tsx` mock.** `apps/frontend/src/app/app/pickup/page.test.tsx`
+   mocks `StartRouteButton` away entirely, which is why the unit suite stayed
+   green through the whole spec-54 drift. Worth revisiting.
+
+### What the gate cost, honestly
+
+Turning it on stalled production twice in the first hour, both instructive:
+
+- #426 reached the gate, sat unnoticed, and was cancelled — production silently
+  fell four commits behind. #430's watchdog now catches that.
+- Workflow-level `concurrency` meant a run waiting for approval starved the QA
+  sync, and #425's run was evicted from the queue before it ever synced. #428
+  moved concurrency to per-job groups.
+
+Neither was a flaw in gating; both were consequences of it that only appeared under
+real traffic. The lesson worth keeping: **a gate nobody is told about is a stall,
+not a safeguard** — which is why the watchdog matters as much as the gate.
