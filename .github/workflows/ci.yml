@@ -5,6 +5,11 @@ on:
     branches: ['**']
   pull_request:
     branches: ['**']
+  # The merge queue rebases each PR onto the tip of main and asks CI to run
+  # against that combination before merging. Without this trigger the queue
+  # waits forever on a required check that is never dispatched, so it has to
+  # land on main *before* the queue is switched on.
+  merge_group:
 
 jobs:
   ci:
