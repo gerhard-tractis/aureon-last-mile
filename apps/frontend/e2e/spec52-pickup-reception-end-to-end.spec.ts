@@ -93,21 +93,21 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
 
   test('collects from two clients, three cargas — packages reach verificado', async () => {
     test.setTimeout(240_000);
-    // Tapping a pending load is what creates its manifests row.
-    for (const load of LOADS) {
-      await driver.goto('/app/pickup');
-      await driver.getByText(load.loadId, { exact: true }).click();
-      await driver.waitForURL(`**/app/pickup/scan/${load.loadId}`);
-    }
-
-    // Attach all three cargas to the active route.
+    // spec-54 (#425) inverted this. The cargas are attached when the ROUTE is
+    // created — ticking them in the table is what creates and attaches their
+    // manifests — so there is nothing left to add here. The old flow (create an
+    // empty route, then add manifests one by one from the active-route screen)
+    // no longer exists: "Agregar manifiesto" now reports "Sin manifiestos
+    // disponibles", because the previous test already attached all three.
+    //
+    // So attachment is asserted rather than performed, and each scan screen is
+    // opened directly. Navigating beats tapping the row: after attachment the
+    // carga no longer sits in the pending tab, and the scan URL is the same
+    // place the tap resolved to anyway.
     const route = await activeRoute();
     for (const load of LOADS) {
-      await driver.goto('/app/pickup/route/active');
-      await driver.getByTestId('open-add-manifest').click();
-      await driver.getByTestId('pickable-manifest-list')
-        .getByRole('button').filter({ hasText: load.loadId }).click();
-      await expect(driver.getByTestId('pickable-manifest-list')).toBeHidden();
+      await driver.goto(`/app/pickup/scan/${load.loadId}`);
+      await expect(driver.getByLabel(PICKUP_SCANNER)).toBeVisible();
     }
     await expect.poll(async () => {
       const { rows } = await db().query(
@@ -183,10 +183,27 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     // Rendering at all is the assertion: for six months this page threw
     // because the RPC returned `reception`/`packages` and it read
     // `route_reception`/`expected_packages`.
-    await expect(recep.getByTestId('reception-counts')).toBeVisible();
-    await expect(recep.getByText(route.code)).toBeVisible();
-    await expect(recep.getByText(DRIVER.fullName)).toBeVisible();
-    await expect(recep.getByText(PLATE, { exact: false })).toBeVisible();
+    // spec-54 phase 4.5 replaced the single `reception-counts` block with four
+    // StatTiles (Esperados / Verificados / Faltantes / Sobrantes). Assert the
+    // number rather than mere presence — "expected" is exactly what the RPC
+    // alias bug got wrong, so a visibility-only check would not have caught it.
+    const expectedTile = recep.getByTestId('stat-tile').filter({ hasText: 'Esperados' });
+    await expect(expectedTile).toBeVisible();
+    await expect(expectedTile).toContainText(String(COLLECTED.length));
+    // Assert against the h1 rather than a bare getByText: the heading is
+    // "Ruta {code} · conteo en recepción", so a containment check on the
+    // heading proves the snapshot's route header rendered, and a failure
+    // reports the text it actually found instead of just "not visible".
+    await expect(recep.getByRole('heading', { level: 1 })).toContainText(route.code);
+    // Containment on <main> rather than getByText: the subheader is one text
+    // node built from three interpolations ("{driver} · {plate} · N
+    // manifiestos"), and a failure here needs to distinguish "not rendered"
+    // from "rendered as Sin conductor" — the latter would mean the snapshot's
+    // users join broke again, which is the defect 20260813000005 exists to
+    // prevent. toBeVisible() cannot tell those apart; this prints the text.
+    const main = recep.locator('main');
+    await expect(main).toContainText(DRIVER.fullName);
+    await expect(main).toContainText(PLATE);
     await expect(recep.getByTestId('package-row')).toHaveCount(COLLECTED.length);
   });
 
@@ -215,7 +232,10 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     const rr = await routeReception(route.id);
     expect(rr.received_count).toBe(6);
     expect(rr.unexpected_count).toBe(1);
-    await expect(recep.getByTestId('unexpected-count')).toHaveText(/1 inesperado/);
+    // Same spec-54 4.5 rebuild: the "N inesperado" line is now the SOBRANTES tile.
+    await expect(
+      recep.getByTestId('stat-tile').filter({ hasText: 'Sobrantes' }),
+    ).toContainText('1');
   });
 
   test('finalizing still demands notes when the counts offset, then closes the trip',
