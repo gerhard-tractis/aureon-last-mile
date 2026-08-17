@@ -451,6 +451,15 @@ jobs:
   # Must run on the VPS: every QA port binds to localhost there.
   e2e-qa:
     name: E2E against QA
+    # Shares deploy-qa's group (#428): this job seeds and tears down rows in the
+    # QA database, so it must never overlap another run's QA sync rebuilding
+    # that same environment underneath it — nor a second E2E run seeding the
+    # same labels. Within a run the two are already sequential via `needs:`;
+    # this serialises them ACROSS runs. Deliberately NOT a production group —
+    # QA work must stay free of the approval gate.
+    concurrency:
+      group: qa-deploy
+      cancel-in-progress: false
     needs: [changes, deploy-qa]
     if: always() && !failure() && !cancelled() && needs.deploy-qa.result == 'success'
     runs-on: [self-hosted, vps]
