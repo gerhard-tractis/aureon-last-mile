@@ -99,7 +99,7 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
               data-health={stage.health}
               onClick={() => onStageChange(key)}
               className={cn(
-                'flex min-w-0 cursor-pointer flex-col gap-2 rounded-[10px] border p-3 text-left transition-all duration-150',
+                'flex min-w-0 cursor-pointer flex-col gap-1.5 rounded-[10px] border p-3 text-left transition-all duration-150',
                 isSelected
                   ? 'border-2 border-accent bg-accent-muted p-[11px] shadow-[0_2px_8px_rgba(230,193,92,.16)]'
                   : cn(HEALTH_SURFACE[stage.health], 'hover:shadow-[0_4px_12px_rgba(0,0,0,.15)]'),
@@ -126,19 +126,24 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
                 </span>
               </div>
 
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-mono text-[25px] font-bold leading-none text-text">
-                  {stage.count}
-                </span>
-                <span
-                  className={cn(
-                    'min-w-0 truncate font-mono text-[10.5px] font-medium leading-none',
-                    stage.health === 'ok' ? 'text-status-success-text' : HEALTH_TEXT[stage.health],
-                  )}
-                >
-                  {stage.delta}
-                </span>
-              </div>
+              <span className="font-mono text-[25px] font-bold leading-none text-text">
+                {stage.count}
+              </span>
+
+              {/* The mock sized this slot for a token like "+18". computeStageHealth
+                  returns a Spanish sentence ("Devolución SLA vencido"), which was
+                  truncating to "Devolución SLA…" beside the figure. Given its own
+                  line it fits across all seven columns, and the delta is the part
+                  that says WHY a stage is red — worth reading in full. */}
+              <span
+                className={cn(
+                  'font-mono text-[10.5px] font-medium leading-[1.3]',
+                  stage.health === 'ok' ? 'text-status-success-text' : HEALTH_TEXT[stage.health],
+                )}
+                title={stage.delta}
+              >
+                {stage.delta}
+              </span>
 
               {stage.packageCount != null && (
                 <span
