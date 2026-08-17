@@ -362,3 +362,30 @@ El chip **no renderiza nada** estando en línea y con la cola vacía — el esta
 ### Código muerto eliminado
 
 `RouteReceptionHeader` queda sin referencias: su código de ruta pasa al encabezado de página y su barra de progreso a la columna izquierda, donde ahora lleva semántica `role="progressbar"` con `aria-valuenow` / `aria-valuemax`.
+
+
+---
+
+## Fase 4.7 — Distribución (estado inicial del módulo)
+
+**Ruta:** `/app/distribution` · **Mock:** `3d`
+
+El ítem de nav Distribución aterrizaba en una pantalla sin tocar: `1d` es el modo rápido, y el landing no tenía mock hasta `3d`. Mismo hueco que Recogida antes de `1l` y Recepción antes de `3c`.
+
+Componentes nuevos: `OutboundDockGrid`, `ActiveSortersPanel`, más `useDistributionOverview` y el RPC `get_distribution_overview` (`20260817000002`).
+
+### La primera versión del mock no era construible
+
+`3d` llegó apoyado en **olas** (Ola 2 de 3, abierta 11:40, cierre previsto 14:00, "Cerrar ola 2") y en **estaciones** de trabajo. Ninguno de los dos existe en el esquema: no es una columna que falte, es un concepto que falta, y era la idea organizadora de la pantalla. Se levantó antes de escribir código y el diseño se corrigió:
+
+- **olas → lotes.** `dock_batches` sí existe (open/closed, `closed_at`, `package_count`), así que "5 lotes abiertos · último cierre 11:40" es real.
+- **estaciones → operarios activos.** Derivable de `dock_scans` (`scanned_by`, `scanned_at`, `batch_id` → zona).
+- **ritmo** pasa a ser calculable: escaneos aceptados en la última hora.
+
+Queda una sola brecha: **la capacidad del andén**. El mock muestra `168 / 180 paq.`, la barra de llenado y el badge `CASI LLENO`; `dock_zones` no tiene columna de capacidad. Se muestra el conteo sin denominador y sin barra — la misma decisión que toma `DockCard`. Añadir `dock_zones.capacity` desbloquea las tres cosas, pero necesita superficie de administración para fijarla, así que es un seguimiento y no un número inventado aquí.
+
+### Un solo RPC nuevo
+
+`get_distribution_overview` devuelve lotes abiertos, último cierre, clasificados hoy, ritmo de la última hora y quién está escaneando. Los cinco salen de `dock_batches` + `dock_scans`, así que viajan juntos en una llamada. Todo lo demás de la pantalla ya tenía hook y no se duplica.
+
+"Clasificados hoy" se cuenta desde los **escaneos**, no desde el estado del paquete: el estado es el actual, y un paquete que siguió avanzando dejaría de contar para el turno en que se clasificó.

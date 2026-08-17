@@ -1,12 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import DistributionPage from './page';
 
-// Mock all hooks used by the page
 const mockKpis = { pending: 5, consolidation: 3, dueSoon: 2 };
 const mockUseDistributionKPIs = vi.fn();
 vi.mock('@/hooks/distribution/useDistributionKPIs', () => ({
   useDistributionKPIs: (...args: unknown[]) => mockUseDistributionKPIs(...args),
+}));
+
+const mockUseDistributionOverview = vi.fn();
+vi.mock('@/hooks/distribution/useDistributionOverview', () => ({
+  useDistributionOverview: (...args: unknown[]) => mockUseDistributionOverview(...args),
 }));
 
 vi.mock('@/hooks/distribution/useConsolidation', () => ({
@@ -15,7 +19,10 @@ vi.mock('@/hooks/distribution/useConsolidation', () => ({
 }));
 
 const mockZones = [
-  { id: 'z1', name: 'Andén 1', code: 'D1', is_consolidation: false, comunas: [{ id: 'c1', nombre: 'las condes' }], is_active: true, operator_id: 'op1' },
+  {
+    id: 'z1', name: 'Andén 1', code: 'D1', is_consolidation: false,
+    comunas: [{ id: 'c1', nombre: 'Las Condes' }], is_active: true, operator_id: 'op1',
+  },
 ];
 const mockUseDockZones = vi.fn();
 vi.mock('@/hooks/distribution/useDockZones', () => ({
@@ -27,88 +34,121 @@ vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
   useSectorizedByZone: (...args: unknown[]) => mockUseSectorizedByZone(...args),
 }));
 
+let mockUnmatched: unknown[] = [];
+vi.mock('@/hooks/distribution/useUnmatchedComunas', () => ({
+  useUnmatchedComunas: () => ({ data: mockUnmatched }),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
-vi.mock('@/components/distribution/UnmappedComunasBanner', () => ({
-  UnmappedComunasBanner: () => null,
-}));
-
-// Mock next/link to render as <a>
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) => (
     <a href={href} {...props}>{children}</a>
   ),
 }));
 
+function tile(label: string): HTMLElement {
+  return screen.getAllByTestId('stat-tile').find((t) => t.textContent?.startsWith(label))!;
+}
+
 describe('DistributionPage', () => {
   beforeEach(() => {
+    mockUnmatched = [];
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
-    mockUseSectorizedByZone.mockReturnValue({ data: {} });
+    mockUseSectorizedByZone.mockReturnValue({ data: { z1: 42 } });
+    mockUseDistributionOverview.mockReturnValue({
+      data: {
+        open_batches: 5,
+        last_closed_at: '2026-08-17T14:40:00Z',
+        sorted_today: 15,
+        pace_per_hour: 214,
+        operators: [
+          { user_id: 'u1', name: 'J. Núñez', scans: 96, last_scan_at: '2026-08-17T15:41:00Z', zone_code: 'A3' },
+        ],
+      },
+      isLoading: false,
+    });
   });
 
-  describe('KPI cards', () => {
-    it('renders three MetricCards with correct values', () => {
-      const { container } = render(<DistributionPage />);
-      // MetricCard renders values inside [data-value] elements
-      const valueEls = container.querySelectorAll('[data-value]');
-      expect(valueEls).toHaveLength(3);
-      expect(valueEls[0].textContent).toBe('5');
-      expect(valueEls[1].textContent).toBe('3');
-      expect(valueEls[2].textContent).toBe('2');
-    });
-
-    it('renders KPI labels', () => {
+  describe('header', () => {
+    it('summarises andenes and open lotes', () => {
       render(<DistributionPage />);
-      expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
-      expect(screen.getByText('En consolidación')).toBeInTheDocument();
-      expect(screen.getByText('Próximos a despachar')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Distribución' })).toBeInTheDocument();
+      expect(screen.getByText(/lotes abiertos/)).toBeInTheDocument();
     });
 
-    it('always applies amber styling to the dispatch KPI card', () => {
-      // Even with dueSoon=0, the card should have warning styling
-      mockUseDistributionKPIs.mockReturnValue({
-        data: { pending: 0, consolidation: 0, dueSoon: 0 },
+    it('leads with Modo rápido — that is where the shift is spent', () => {
+      render(<DistributionPage />);
+      const link = screen.getByRole('link', { name: /entrar en modo rápido/i });
+      expect(link).toHaveAttribute('href', '/app/distribution/quicksort');
+    });
+  });
+
+  describe('KPI tiles', () => {
+    it('reports pending, sorted, pace and exceptions', () => {
+      render(<DistributionPage />);
+      expect(tile('Por clasificar')).toHaveTextContent('5');
+      expect(tile('Clasificados hoy')).toHaveTextContent('15');
+      expect(tile('Ritmo')).toHaveTextContent('214');
+      expect(tile('Excepciones de andén')).toHaveTextContent('0');
+    });
+
+    it('computes the sorted percentage against everything the shift touched', () => {
+      // 15 sorted of 20 touched (15 + 5 pending) = 75%.
+      render(<DistributionPage />);
+      expect(tile('Clasificados hoy')).toHaveTextContent('75 %');
+    });
+
+    it('omits the percentage rather than dividing by zero on an idle shift', () => {
+      mockUseDistributionKPIs.mockReturnValue({ data: { ...mockKpis, pending: 0 }, isLoading: false });
+      mockUseDistributionOverview.mockReturnValue({
+        data: { open_batches: 0, last_closed_at: null, sorted_today: 0, pace_per_hour: 0, operators: [] },
         isLoading: false,
       });
-      const { container } = render(<DistributionPage />);
-      const amberCard = container.querySelector('.border-status-warning-border.bg-status-warning-bg');
-      expect(amberCard).toBeTruthy();
-    });
-  });
-
-  describe('Action buttons', () => {
-    it('renders action links with icons', () => {
       render(<DistributionPage />);
-      expect(screen.getByRole('link', { name: /lote/i })).toHaveAttribute('href', '/app/distribution/batch');
-      expect(screen.getByRole('link', { name: /rápido/i })).toHaveAttribute('href', '/app/distribution/quicksort');
-      expect(screen.getByRole('link', { name: /andenes/i })).toHaveAttribute('href', '/app/distribution/settings');
+      expect(tile('Clasificados hoy')).not.toHaveTextContent('%');
     });
-  });
 
-  describe('Sectorized counts', () => {
-    it('passes sectorized counts from hook to the zone grid', () => {
-      mockUseSectorizedByZone.mockReturnValue({ data: { z1: 12 } });
+    it('turns exceptions red when comunas have no zone', () => {
+      mockUnmatched = [{ comuna_raw: 'Colina', order_count: 3 }];
       render(<DistributionPage />);
-      expect(screen.getByText('12')).toBeInTheDocument();
+      expect(tile('Excepciones de andén').className).toContain('bg-status-error-bg');
     });
   });
 
-  describe('Empty state', () => {
-    it('shows EmptyState when no active zones exist', () => {
+  describe('andenes de salida', () => {
+    it('renders a tile per active zone with its sorted count', () => {
+      render(<DistributionPage />);
+      const dock = screen.getByTestId('outbound-dock');
+      expect(within(dock).getByText('D1')).toBeInTheDocument();
+      expect(within(dock).getByText('42')).toBeInTheDocument();
+    });
+
+    it('shows an empty state when no zones are configured', () => {
       mockUseDockZones.mockReturnValue({ data: [] });
       render(<DistributionPage />);
       expect(screen.getByText('Sin andenes configurados')).toBeInTheDocument();
-      expect(screen.getByText(/configura tus andenes/i)).toBeInTheDocument();
+    });
+  });
+
+  describe('operarios activos', () => {
+    it('lists who is scanning and where', () => {
+      render(<DistributionPage />);
+      const row = screen.getByTestId('active-sorter');
+      expect(within(row).getByText(/J. Núñez · andén A3/)).toBeInTheDocument();
+      expect(within(row).getByText(/96 escaneos/)).toBeInTheDocument();
     });
 
-    it('still renders KPI cards even when no zones exist', () => {
-      mockUseDockZones.mockReturnValue({ data: [] });
-      const { container } = render(<DistributionPage />);
-      const valueEls = container.querySelectorAll('[data-value]');
-      expect(valueEls).toHaveLength(3);
+    it('says so plainly when nobody is on the floor', () => {
+      mockUseDistributionOverview.mockReturnValue({
+        data: { open_batches: 0, last_closed_at: null, sorted_today: 0, pace_per_hour: 0, operators: [] },
+        isLoading: false,
+      });
+      render(<DistributionPage />);
+      expect(screen.getByText('Nadie está escaneando en este momento.')).toBeInTheDocument();
     });
   });
 });
