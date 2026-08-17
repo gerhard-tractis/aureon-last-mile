@@ -704,3 +704,38 @@ selector.
 
 **Until then `e2e-qa` stays advisory.** It blocks nothing, and the promotion steps
 above should not be taken while the suite asserts a journey the product no longer has.
+
+### Resolution — suite green (2026-08-17)
+
+All 7 tests pass against QA. **41.6s** total.
+
+Realignment took five runs, each failure landing further along the journey:
+
+| # | Failure | Cause |
+|---|---|---|
+| 1 | `start-route-button` | spec-54: button only exists once manifests are ticked |
+| 2 | "Sin manifiestos disponibles" | spec-54 inverted attach — cargas attach at route creation |
+| 3 | `reception-counts` | spec-54 4.5 replaced it with four StatTiles |
+| 4 | route code not visible | bare `getByText` on an interpolated heading |
+| 5 | `Rita Conductora` not visible | same — name sits inside a three-part text node |
+
+Failures 1–3 were genuine drift: the suite encoded a pre-spec-54 pickup journey.
+Failures 4–5 were **the test's own locators**, not product defects — worth stating,
+because the driver-name one looked exactly like a regression of the users join that
+`20260813000005` exists to prevent. It wasn't. `toContainText` distinguishes
+"absent" from "rendered wrong"; `toBeVisible` cannot, which is why the rewritten
+assertions use it.
+
+Where a selector had to change, the assertion was strengthened rather than merely
+repaired — the counts tile now asserts `expected === 6` instead of mere presence,
+since "expected" is precisely what the old RPC alias bug got wrong.
+
+#### Promotion to blocking is now viable
+
+The blocker was never the wiring — it was not knowing the runtime or the failure
+rate. **41.6s** is negligible against a ~6min CI run, and the suite is
+deterministic across runs (tests 1–4 passed identically in four consecutive runs).
+
+Still recommended: leave advisory until it has run green in the pipeline a few
+times unattended. One green run on a hand-driven VPS invocation is not a track
+record. The three promotion steps are unchanged.
