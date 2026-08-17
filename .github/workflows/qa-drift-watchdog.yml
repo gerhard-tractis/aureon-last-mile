@@ -101,8 +101,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          echo "::warning::QA drifted — re-running deploy run ${{ steps.decide.outputs.run_id }}"
-          gh run rerun "${{ steps.decide.outputs.run_id }}" --failed --repo ${{ github.repository }}
+          echo "::warning::QA drifted — re-running deploy run ${{ steps.decide.outputs.run_id }} (${{ steps.decide.outputs.rerun_mode }})"
+          # A cancelled run has no failed jobs, so `--failed` would error with
+          # nothing to re-run; it goes again whole.
+          if [ "${{ steps.decide.outputs.rerun_mode }}" = "full" ]; then
+            gh run rerun "${{ steps.decide.outputs.run_id }}" --repo ${{ github.repository }}
+          else
+            gh run rerun "${{ steps.decide.outputs.run_id }}" --failed --repo ${{ github.repository }}
+          fi
 
       # One open issue, updated — not a new one every 15 minutes.
       - name: Raise the alarm

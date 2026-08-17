@@ -80,6 +80,7 @@ FAILED_RUN='{
 }'
 assert_action rerun "re-runs a failed deploy for main's tip" "$FAILED_RUN"
 assert_output "run_id=32041150063" "reports which run to re-run" "$FAILED_RUN"
+assert_output "rerun_mode=failed" "re-runs only the failed jobs of a failed run" "$FAILED_RUN"
 
 # ── Already re-run once and still failing → stop looping, shout ──────────────
 assert_action alert "alerts instead of re-running a second time" '{
@@ -149,6 +150,22 @@ assert_action alert "alerts when a successful run did not move QA" '{
 }'
 
 # ── A cancelled run is a failed run for our purposes ─────────────────────────
+# But NOT for `gh run rerun --failed`: a run cancelled before its jobs failed
+# has no failed jobs, and that command errors out with nothing to re-run. The
+# whole run has to go again.
+CANCELLED_RUN='{
+  "now": "'"$NOW"'",
+  "qaSha": "0fb4184b7ec8cf371cc29980f241df0434f53286",
+  "mainSha": "12bcf6c96a9c46be134875b06d70d1612cd4d466",
+  "mainCommittedAt": "2026-08-17T13:00:00Z",
+  "graceMinutes": 20,
+  "runs": [
+    {"databaseId": 32041150063, "headSha": "12bcf6c96a9c46be134875b06d70d1612cd4d466",
+     "status": "completed", "conclusion": "cancelled", "attempt": 1}
+  ]
+}'
+assert_output "rerun_mode=full" "re-runs a cancelled run whole, not just its failed jobs" "$CANCELLED_RUN"
+
 assert_action rerun "re-runs a cancelled deploy" '{
   "now": "'"$NOW"'",
   "qaSha": "0fb4184b7ec8cf371cc29980f241df0434f53286",

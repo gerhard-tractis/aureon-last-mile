@@ -25,6 +25,7 @@
  * Prints GITHUB_OUTPUT-shaped lines:
  *   action=ok|in_flight|rerun|alert
  *   run_id=<id>            (rerun only)
+ *   rerun_mode=failed|full (rerun only)
  *   reason=<one line>
  */
 import fs from 'node:fs';
@@ -93,10 +94,16 @@ const decide = (s) => {
     return { action: 'alert', reason: `${short} — run ${run.databaseId} ${run.conclusion} after ${run.attempt} attempts; not transient` };
   }
 
+  // `gh run rerun --failed` needs failed jobs to re-run. A run cancelled before
+  // anything failed has none, and the command errors out — so a cancelled run
+  // goes again whole.
+  const mode = run.conclusion === 'cancelled' ? 'full' : 'failed';
+
   return {
     action: 'rerun',
     runId: run.databaseId,
-    reason: `${short} — run ${run.databaseId} ${run.conclusion}; re-running its failed jobs`,
+    rerunMode: mode,
+    reason: `${short} — run ${run.databaseId} ${run.conclusion}; re-running ${mode === 'full' ? 'it' : 'its failed jobs'}`,
   };
 };
 
@@ -104,4 +111,5 @@ const verdict = decide(state);
 
 console.log(`action=${verdict.action}`);
 if (verdict.runId) console.log(`run_id=${verdict.runId}`);
+if (verdict.rerunMode) console.log(`rerun_mode=${verdict.rerunMode}`);
 console.log(`reason=${verdict.reason}`);
