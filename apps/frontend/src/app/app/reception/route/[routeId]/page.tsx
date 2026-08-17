@@ -12,7 +12,11 @@ import { useRouteReceptionSnapshot } from '@/hooks/reception/useRouteReceptionSn
 import { useReceptionScan } from '@/hooks/reception/useReceptionScan';
 import { useCompleteRouteReception } from '@/hooks/reception/useCompleteRouteReception';
 import { ReceptionScanner } from '@/components/reception/ReceptionScanner';
-import { RouteReceptionHeader } from '@/components/reception/RouteReceptionHeader';
+import { ReceptionCounts } from '@/components/reception/ReceptionCounts';
+import { RouteSwitcherColumn, type RouteTab } from '@/components/reception/RouteSwitcherColumn';
+import { SyncQueuePanel } from '@/components/reception/SyncQueuePanel';
+import { useIncomingRoutes } from '@/hooks/reception/useIncomingRoutes';
+import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { ConsolidatedScanList } from '@/components/reception/ConsolidatedScanList';
 import { FinalizeReceptionButton } from '@/components/reception/FinalizeReceptionButton';
 import { ReopenRouteButton } from '@/components/reception/ReopenRouteButton';
@@ -35,7 +39,14 @@ export default function RouteReceptionPage() {
     });
   }, []);
 
+  const [routeTab, setRouteTab] = useState<RouteTab>('unloading');
   const { data: snapshot, isLoading, error } = useRouteReceptionSnapshot(routeId);
+
+  // Left column: switch between routes without going back to the landing.
+  const { data: incoming = [] } = useIncomingRoutes(operatorId, 'in_progress');
+  const { data: unloading = [] } = useIncomingRoutes(operatorId, 'in_transit');
+  const { data: closed = [] } = useIncomingRoutes(operatorId, 'received');
+  const sync = useSyncQueue();
   const scanMutation = useReceptionScan();
   const completeMutation = useCompleteRouteReception();
 
@@ -103,9 +114,12 @@ export default function RouteReceptionPage() {
     );
   }
 
+  const routesForTab =
+    routeTab === 'incoming' ? incoming : routeTab === 'unloading' ? unloading : closed;
+
   return (
-    <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
+      <div className="flex items-center gap-3">
         <Button
           variant="ghost"
           size="icon"
@@ -114,49 +128,84 @@ export default function RouteReceptionPage() {
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <h1 className="font-heading text-2xl font-semibold leading-[1.1] tracking-[-.02em] text-text">
+            Ruta {snapshot.route.code} · conteo en recepción
+          </h1>
+          <p className="text-[12.5px] leading-none text-text-secondary">
+            {snapshot.route.driver_name ?? 'Sin conductor'}
+            {snapshot.route.plate ? ` · ${snapshot.route.plate}` : ''} ·{' '}
+            {snapshot.manifests.length}{' '}
+            {snapshot.manifests.length === 1 ? 'manifiesto' : 'manifiestos'}
+          </p>
+        </div>
         {completeMutation.isPending && (
-          <Loader2 className="h-4 w-4 animate-spin text-text-muted" />
+          <Loader2 className="ml-auto h-4 w-4 animate-spin text-text-muted" />
         )}
       </div>
 
-      <RouteReceptionHeader
-        code={snapshot.route.code}
-        driverName={snapshot.route.driver_name}
-        plate={snapshot.route.plate}
-        manifestCount={snapshot.manifests.length}
-        expectedCount={snapshot.route_reception.expected_count}
-        receivedCount={snapshot.route_reception.received_count}
-        unexpectedCount={snapshot.route_reception.unexpected_count}
-      />
+      <div className="grid min-h-0 gap-4 xl:grid-cols-[300px_1fr_340px]">
+        <RouteSwitcherColumn
+          tab={routeTab}
+          onTabChange={setRouteTab}
+          routes={routesForTab}
+          counts={{
+            incoming: incoming.length,
+            unloading: unloading.length,
+            closed: closed.length,
+          }}
+          activeRouteId={routeId}
+          activeProgress={{
+            received: snapshot.route_reception.received_count,
+            expected: snapshot.route_reception.expected_count,
+          }}
+        />
 
-      <ReceptionScanner
-        onScan={handleScan}
-        disabled={scanMutation.isPending}
-        lastScanResult={lastScanResult}
-      />
+        <div className="flex min-w-0 flex-col gap-4">
+          <ReceptionScanner
+            onScan={handleScan}
+            disabled={scanMutation.isPending}
+            lastScanResult={lastScanResult}
+          />
 
-      <ConsolidatedScanList
-        manifests={snapshot.manifests}
-        expectedPackages={snapshot.expected_packages}
-        scans={snapshot.scans}
-      />
+          <ReceptionCounts
+            expected={snapshot.route_reception.expected_count}
+            received={snapshot.route_reception.received_count}
+            unexpected={snapshot.route_reception.unexpected_count}
+          />
 
-      <FinalizeReceptionButton
-        receivedCount={snapshot.route_reception.received_count}
-        expectedCount={snapshot.route_reception.expected_count}
-        unexpectedCount={snapshot.route_reception.unexpected_count}
-        isPending={completeMutation.isPending}
-        onFinalize={handleFinalize}
-      />
+          <ConsolidatedScanList
+            manifests={snapshot.manifests}
+            expectedPackages={snapshot.expected_packages}
+            scans={snapshot.scans}
+          />
 
-      {/* Escape hatch for a QR scanned before the truck was really unloaded.
-          Hides itself the moment a package is received — from then on the
-          correct move is to finish and note the discrepancy. */}
-      <ReopenRouteButton
-        routeId={routeId}
-        code={snapshot.route.code}
-        receivedCount={snapshot.route_reception.received_count}
-      />
+          <FinalizeReceptionButton
+            receivedCount={snapshot.route_reception.received_count}
+            expectedCount={snapshot.route_reception.expected_count}
+            unexpectedCount={snapshot.route_reception.unexpected_count}
+            isPending={completeMutation.isPending}
+            onFinalize={handleFinalize}
+          />
+
+          {/* Escape hatch for a QR scanned before the truck was really
+              unloaded. Hides itself the moment a package is received — from
+              then on the correct move is to finish and note the discrepancy. */}
+          <ReopenRouteButton
+            routeId={routeId}
+            code={snapshot.route.code}
+            receivedCount={snapshot.route_reception.received_count}
+          />
+        </div>
+
+        <SyncQueuePanel
+          status={sync.status}
+          queuedCount={sync.queuedCount}
+          recent={sync.recent}
+          onRetry={sync.retryNow}
+          isRetrying={sync.isRetrying}
+        />
+      </div>
     </div>
   );
 }

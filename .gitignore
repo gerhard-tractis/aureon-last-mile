@@ -34,3 +34,9 @@ build/
 # Turborepo
 .turbo
 docs/sprint-status.yaml
+
+# Playwright output (spec-57 phase 2). The committed e2e/screenshots/ are
+# deliberate branding artefacts and stay tracked; these are run output.
+playwright-report/
+playwright-report-qa/
+test-results/
