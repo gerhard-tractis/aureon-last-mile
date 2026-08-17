@@ -68,7 +68,9 @@ An order appears in Pre-ruta iff:
 1. `orders.deleted_at IS NULL`
 2. `orders.delivery_date = filter.date`
 3. If filter.window set, `tsrange(delivery_window_start, delivery_window_end)` overlaps the chosen window band
-4. Has at least one `packages` row with `deleted_at IS NULL`, `dock_zone_id IS NOT NULL`, and `status IN ('en_bodega','asignado','listo_para_despacho')`
+4. Has at least one `packages` row with `deleted_at IS NULL`, `dock_zone_id IS NOT NULL`, and `status IN ('en_bodega','sectorizado','asignado','listo_para_despacho')`
+
+   > `'sectorizado'` was missing from this list until migration `20260817000003`. It is the status the dock-scan trigger writes on the very same UPDATE that sets `dock_zone_id`, so without it the cohort was unreachable through the normal andén-assignment flow and Pre-ruta always rendered empty. `'retenido'` (consolidation andén) stays out — those packages must be re-sorted onto a real andén before they can be routed.
 5. Has **no** non-deleted `dispatches` row whose `route_id` points to a `routes` row in `status IN ('draft','planned','in_progress')`
 6. `operator_id` matches the current operator
 
