@@ -13,6 +13,40 @@ const mockSnapshot = vi.fn();
 const mockScanMutate = vi.fn();
 const mockCompleteMutate = vi.fn();
 
+vi.mock('@/hooks/reception/useIncomingRoutes', () => ({
+  // Only the in_transit list carries the route being counted; the switcher
+  // renders its progress bar, which is where reception progress now lives.
+  useIncomingRoutes: (_op: string | null, status: string) => ({
+    data:
+      status === 'in_transit'
+        ? [
+            {
+              id: 'r1',
+              code: 'PR-2026-0001',
+              driver_id: 'd1',
+              driver_name: 'Ana',
+              plate: 'ABCD-12',
+              in_transit_at: null,
+              started_at: null,
+              manifest_count: 2,
+              expected_packages: 3,
+            },
+          ]
+        : [],
+    isLoading: false,
+  }),
+}));
+
+vi.mock('@/hooks/useSyncQueue', () => ({
+  useSyncQueue: () => ({
+    status: 'online',
+    queuedCount: 0,
+    recent: [],
+    retryNow: vi.fn(),
+    isRetrying: false,
+  }),
+}));
+
 vi.mock('@/hooks/reception/useRouteReceptionSnapshot', () => ({
   useRouteReceptionSnapshot: () => mockSnapshot(),
 }));
@@ -52,7 +86,10 @@ describe('RouteReceptionPage', () => {
 
   it('renders the route header with code', () => {
     render(<RouteReceptionPage />);
-    expect(screen.getByText('PR-2026-0001')).toBeInTheDocument();
+    // The code now sits inside the page heading rather than a separate header.
+    expect(
+      screen.getByRole('heading', { name: /Ruta PR-2026-0001 · conteo en recepción/ }),
+    ).toBeInTheDocument();
   });
 
   it('renders the consolidated order-grouped list', () => {

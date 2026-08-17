@@ -608,9 +608,42 @@ spec reach 240s; job cap is 30 min), and whether Chromium's system libraries are
 |---|---|
 | **QA VPS outage blocks production.** Accepted by decision 5. | `docs/runbooks/manual-deployment.md` is the escape hatch. The gate job can also be bypassed by an admin re-running with the environment rule temporarily removed — document, don't automate. |
 | **Approval fatigue** — every CSS tweak now waits on a click. | Watch for it. If it bites, the cheapest fix is narrowing `PROD_JOBS` in the guard and dropping the gate from `deploy-vercel` only, *not* disabling the environment rule. |
-| **Queued merges pile up** while waiting. | By design — `cancel-in-progress: false`. Each queued run is pinned to its own SHA, so approving them in order is correct. Approve or cancel promptly. |
+| **Queued merges pile up** while waiting. | By design — `cancel-in-progress: false`. Each queued run is pinned to its own SHA, so approving them in order is correct. Approve or cancel promptly. **Amended 2026-08-16 — see below: the queue must not include the QA sync.** |
 | **GitHub may raise approvals per-job rather than per-run.** Unverified. | The single-gate-job design makes it moot: only one job carries `environment:`. Task 5 Step 4 records the observed behaviour. |
 | **The gate is one `needs:` edit from being removed.** | `scripts/check-deploy-gating.sh` runs on every build. |
+
+## Amendment 2026-08-16 — concurrency moved off the workflow
+
+The queueing risk above was accepted for **production** runs. It also queued the
+**QA sync**, which was not intended and contradicts `deploy-qa`'s own rule that
+"QA is the backstop, so it always runs".
+
+`concurrency: production-deploy` was declared at workflow level, so it covered
+every job in the run — `deploy-qa` included — and a run paused at
+`approve-production` kept holding the group. Observed the same day this shipped:
+the run for `9d2a0f3` sat `pending` with zero jobs started, behind the run for
+`3702986` waiting on approval. QA stopped tracking `main` because nobody had
+clicked a production button. Since `main` merges continuously and approvals are
+occasional, QA drifts arbitrarily far behind — the exact failure the QA-first
+ordering exists to prevent.
+
+Fixed by moving concurrency onto the jobs:
+
+- one group per production job (`production-deploy-supabase`, `-vercel`, …) —
+  production is still never deployed twice at once, and `worker`/`agents`/`solver`
+  keep running in parallel within a run, which a single shared group would have
+  serialised
+- `deploy-qa` gets its own `qa-deploy` group — two syncs at once would still race
+  on the same checkout and build directory on the VPS
+- `approve-production` holds no group at all, so waiting for a human costs nothing
+
+`scripts/check-deploy-gating.mjs` now enforces this shape: it fails on any
+workflow-level `concurrency`, and on any production job or `deploy-qa` without a
+group of its own.
+
+**Known consequence, unchanged from before:** runs are still pinned to their own
+`DEPLOY_SHA`, so approving an older queued run after a newer one has deployed
+would put older code in production. Approve in order, or cancel the stale ones.
 
 ## Out of scope
 
