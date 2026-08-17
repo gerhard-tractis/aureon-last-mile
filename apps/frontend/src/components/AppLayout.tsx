@@ -141,7 +141,13 @@ export default function AppLayout({
         {/* Main — min-w-0 lets wide children (tables, code blocks) scroll inside
             their own overflow containers instead of stretching this column past
             the viewport and revealing the body bg behind AppLayout. */}
-        <div className={`flex-1 min-w-0 transition-all duration-200 ${pinned ? 'lg:ml-[216px]' : 'lg:ml-14'}`}>
+        {/* min-h-dvh + flex-col so <main> below can actually stretch. Without a
+            height on this chain every screen's `flex-1 min-h-0` had nothing to
+            fill against, and the rebuilt full-height layouts rendered as short
+            blocks with a large void underneath. */}
+        <div
+          className={`flex min-h-dvh flex-1 min-w-0 flex-col transition-all duration-200 ${pinned ? 'lg:ml-[216px]' : 'lg:ml-14'}`}
+        >
           <TopBar
             showOpsTools={isAdminOrManager}
             operatorId={operatorId}
@@ -165,7 +171,7 @@ export default function AppLayout({
             }
           />
 
-          <main>{children}</main>
+          <main className="flex min-h-0 flex-1 flex-col">{children}</main>
         </div>
 
         {isAdminOrManager && (

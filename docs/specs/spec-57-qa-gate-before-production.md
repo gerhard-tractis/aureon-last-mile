@@ -702,8 +702,8 @@ Option 2 matches the new design; option 1 preserves more coverage. Either way th
 suite should be re-derived from the current flow rather than patched selector by
 selector.
 
-**Until then `e2e-qa` stays advisory.** It blocks nothing, and the promotion steps
-above should not be taken while the suite asserts a journey the product no longer has.
+**`e2e-qa` stays advisory.** It blocks nothing. (Written before the realignment
+below; the suite now asserts the current journey — see Resolution.)
 
 ### Resolution — suite green (2026-08-17)
 
