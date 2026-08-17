@@ -278,17 +278,55 @@ INSERT INTO public.dispatches (
   )
 ON CONFLICT (id) DO NOTHING;
 
+-- =============================================================================
+-- dock_zones + dock_zone_comunas — the Distribución module's andenes
+-- =============================================================================
+-- Without these, Distribución and Modo rápido both render "Sin andenes
+-- configurados" and none of the sorting flow can be exercised in QA. They were
+-- simply never seeded — the sync only replays migrations, it does not seed, so
+-- QA has shown an empty andén grid since the module was built.
+--
+-- Comunas are looked up by name from chile_comunas (seeded by the
+-- 20260321000001 migration, not here) so the ids stay correct whatever the
+-- reference data says. A comuna that is absent just yields no row rather than
+-- failing the seed.
+INSERT INTO public.dock_zones (id, operator_id, name, code, is_consolidation, is_active)
+VALUES
+  ('00000000-0000-4000-8000-000000000180', '00000000-0000-4000-8000-000000000001',
+   'Sur Oriente',   'A1', false, true),
+  ('00000000-0000-4000-8000-000000000181', '00000000-0000-4000-8000-000000000001',
+   'Poniente',      'A2', false, true),
+  ('00000000-0000-4000-8000-000000000182', '00000000-0000-4000-8000-000000000001',
+   'Norte',         'A3', false, true),
+  ('00000000-0000-4000-8000-000000000183', '00000000-0000-4000-8000-000000000001',
+   'Consolidación', 'CO', true,  true)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.dock_zone_comunas (dock_zone_id, comuna_id)
+SELECT z.zone_id, c.id
+FROM (VALUES
+    ('00000000-0000-4000-8000-000000000180'::uuid, 'La Florida'),
+    ('00000000-0000-4000-8000-000000000180'::uuid, 'Puente Alto'),
+    ('00000000-0000-4000-8000-000000000181'::uuid, 'Maipú'),
+    ('00000000-0000-4000-8000-000000000181'::uuid, 'Pudahuel'),
+    ('00000000-0000-4000-8000-000000000182'::uuid, 'Quilicura'),
+    ('00000000-0000-4000-8000-000000000182'::uuid, 'Renca')
+  ) AS z(zone_id, comuna_name)
+JOIN public.chile_comunas c ON c.nombre = z.comuna_name
+ON CONFLICT (dock_zone_id, comuna_id) DO NOTHING;
+
 COMMIT;
 
 -- Summary (visible in psql output when run with -a or via RAISE)
 DO $$
 BEGIN
-  RAISE NOTICE 'seed-qa: operator=%, drivers=%, pickup_points=%, routes=%, orders=%, packages=%, dispatches=%',
+  RAISE NOTICE 'seed-qa: operator=%, drivers=%, pickup_points=%, routes=%, orders=%, packages=%, dispatches=%, dock_zones=%',
     (SELECT count(*) FROM public.operators WHERE id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.drivers   WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.pickup_points WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.routes    WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.orders    WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.packages  WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
-    (SELECT count(*) FROM public.dispatches WHERE operator_id = '00000000-0000-4000-8000-000000000001');
+    (SELECT count(*) FROM public.dispatches WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
+    (SELECT count(*) FROM public.dock_zones WHERE operator_id = '00000000-0000-4000-8000-000000000001');
 END $$;
