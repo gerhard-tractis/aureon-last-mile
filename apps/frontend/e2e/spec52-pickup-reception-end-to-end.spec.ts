@@ -195,8 +195,15 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     // heading proves the snapshot's route header rendered, and a failure
     // reports the text it actually found instead of just "not visible".
     await expect(recep.getByRole('heading', { level: 1 })).toContainText(route.code);
-    await expect(recep.getByText(DRIVER.fullName)).toBeVisible();
-    await expect(recep.getByText(PLATE, { exact: false })).toBeVisible();
+    // Containment on <main> rather than getByText: the subheader is one text
+    // node built from three interpolations ("{driver} · {plate} · N
+    // manifiestos"), and a failure here needs to distinguish "not rendered"
+    // from "rendered as Sin conductor" — the latter would mean the snapshot's
+    // users join broke again, which is the defect 20260813000005 exists to
+    // prevent. toBeVisible() cannot tell those apart; this prints the text.
+    const main = recep.locator('main');
+    await expect(main).toContainText(DRIVER.fullName);
+    await expect(main).toContainText(PLATE);
     await expect(recep.getByTestId('package-row')).toHaveCount(COLLECTED.length);
   });
 
