@@ -157,12 +157,16 @@ export default function DistributionPage() {
             sorters={overview?.operators ?? []}
             isLoading={overviewLoading}
           />
-          <ConsolidationPanel
-            packages={consolidationPackages ?? []}
-            onRelease={(ids) => releaseFromConsolidation.mutate(ids)}
-          />
         </aside>
       </div>
+
+      {/* Consolidation stays full width. Each row carries a package label, a
+          date and an action, which wrap onto three lines inside a 320px
+          column — this is a work queue, not a sidebar widget. */}
+      <ConsolidationPanel
+        packages={consolidationPackages ?? []}
+        onRelease={(ids) => releaseFromConsolidation.mutate(ids)}
+      />
     </div>
   );
 }
