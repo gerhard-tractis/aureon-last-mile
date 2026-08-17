@@ -329,6 +329,100 @@ QA_UNSERIALISED='jobs:
 assert_exit 1 "fails when deploy-qa has no concurrency group" "$QA_UNSERIALISED"
 assert_contains "deploy-qa" "names deploy-qa" "$QA_UNSERIALISED"
 
+# ── needs: is not enough when if: uses always() ──────────────────────────────
+# Observed 2026-08-17, run 32066950544: approve-production was SKIPPED (its own
+# needs had been cancelled), and deploy-vercel ran `vercel --prod` anyway. It
+# listed the gate in needs:, so the guard above was satisfied — but always()
+# overrides the implicit "a skipped need skips the job", and a skipped job is
+# neither failure() nor cancelled(). Production shipped with nobody approving.
+#
+# So a prod job that opts into always() must say out loud that the gate passed.
+ALWAYS_BYPASS='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled()
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled()
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled()
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when always() lets a skipped gate through" "$ALWAYS_BYPASS"
+assert_contains "deploy-vercel" "names the job that can bypass the gate" "$ALWAYS_BYPASS"
+
+# The same shape, but each always() job asserts the gate actually succeeded.
+# This is the form the real workflow has to use: the other needs (deploy-supabase,
+# deploy-edge-functions) are legitimately skipped by the path filters, so plain
+# success() semantics are not available — always() has to stay.
+ALWAYS_GATED='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled() && needs.approve-production.result == '"'"'success'"'"'
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled() && needs.approve-production.result == '"'"'success'"'"'
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    if: always() && !failure() && !cancelled() && needs.approve-production.result == '"'"'success'"'"'
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    if: always() && needs.approve-production.result == '"'"'success'"'"'
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 0 "accepts always() when the gate result is asserted" "$ALWAYS_GATED"
+
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then
   fail=$((fail + 1)); echo "  FAIL exits non-zero on a missing workflow file"

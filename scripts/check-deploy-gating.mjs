@@ -89,6 +89,44 @@ for (const job of PROD_JOBS) {
   }
 }
 
+// ── needs: is not enough once if: opts into always() ─────────────────────────
+// Normally a skipped dependency skips the dependent job, which is what makes
+// `needs: [approve-production]` a gate at all. `always()` throws that away: it
+// runs the job whatever the needs did, and the usual companions !failure() and
+// !cancelled() do not catch a SKIPPED gate, because skipped is neither.
+//
+// These jobs need always() for a real reason — deploy-supabase and
+// deploy-edge-functions are skipped by the path filters on most merges, and
+// plain success() semantics would then skip everything downstream of them. So
+// the fix is not to drop always() but to name the gate explicitly.
+//
+// Observed 2026-08-17 in run 32066950544: approve-production was skipped (its
+// own needs had been cancelled) and deploy-vercel ran `vercel --prod` anyway.
+// Every check was green and the guard above was satisfied.
+const ifOf = (name) => {
+  const v = (jobs[name] || {}).if;
+  return v == null ? '' : String(v);
+};
+
+const USES_ALWAYS = /\balways\s*\(\s*\)/;
+// Accept both `needs.approve-production.result` and the bracket form.
+const ASSERTS_GATE = new RegExp(
+  String.raw`needs\s*(?:\.\s*${GATE}|\[\s*['"]${GATE}['"]\s*\])\s*\.\s*result\s*==\s*['"]success['"]`
+);
+
+for (const job of PROD_JOBS) {
+  if (!jobs[job]) continue;
+  const cond = ifOf(job);
+  if (!USES_ALWAYS.test(cond)) continue;
+  if (!ASSERTS_GATE.test(cond)) {
+    errors.push(
+      `${job} uses always() without checking the gate — a SKIPPED ${GATE} is ` +
+      `neither failure() nor cancelled(), so this job deploys to production ` +
+      `unapproved. Add: needs.${GATE}.result == 'success'`
+    );
+  }
+}
+
 // ── Concurrency: serialise production, never the QA sync ─────────────────────
 // A workflow-level concurrency group covers every job in the run, deploy-qa
 // included. A run paused at the gate keeps holding that group, so the NEXT

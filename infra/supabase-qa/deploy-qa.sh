@@ -4,7 +4,10 @@
 # self-hosted VPS runner.
 #
 # Inputs (environment variables, set by the workflow):
-#   DEPLOY_SHA               commit to sync the QA checkout to (required)
+#   DEPLOY_SHA               the commit whose CI went green (required). QA is
+#                            synced to main's TIP, which is normally the same
+#                            commit — see sync_checkout for why it is the tip
+#                            and not this, and what breaks when it is not.
 #   GITHUB_TOKEN             token for the authenticated fetch (required)
 #   GITHUB_REPOSITORY        owner/repo (provided by the Actions runner)
 #   CHANGED_FRONTEND         true/false — apps/frontend touched
@@ -18,6 +21,9 @@
 #   - Migrations AND seed-qa.sql are applied on EVERY run (both idempotent) —
 #     this is the QA-drift backstop; app rebuilds/restarts happen only for the
 #     CHANGED_* flags.
+#   - Those flags are then widened against what QA actually had checked out, so
+#     a QA sync that GitHub dropped cannot leave an app un-rebuilt forever
+#     (widen_changed_flags).
 #
 # Test-only overrides (never set these on the VPS):
 #   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
@@ -59,19 +65,86 @@ guard_inputs() {
 }
 
 # --------------------------------------------------------------------------
-# Sync the QA checkout to the tested commit (token-scrub pattern: never leave
-# the token sitting in .git/config — same as the prod worker/agents jobs).
+# Sync the QA checkout to main's tip (token-scrub pattern: never leave the
+# token sitting in .git/config — same as the prod worker/agents jobs).
+#
+# main's TIP, not DEPLOY_SHA. Every Deploy Production run contends for the
+# `qa-deploy` concurrency group, and GitHub keeps only one PENDING run per
+# group: when a third merge queues, the one already waiting is cancelled. On
+# 2026-08-17 #441, #438 and #442 merged inside three minutes, #438's QA sync
+# was evicted, and the run that did land was #442 — an EARLIER commit. QA was
+# reset backwards and served pre-#438 code with every check green.
+#
+# Syncing to the tip makes a dropped run self-healing: whichever run survives
+# brings QA to whatever main has, so no merge can be skipped, only coalesced.
+# QA_PREV_SHA is recorded first so widen_changed_flags can tell what QA missed.
 # --------------------------------------------------------------------------
 sync_checkout() {
-  log "syncing ${QA_CHECKOUT_DIR} to ${DEPLOY_SHA}"
   cd "$QA_CHECKOUT_DIR"
+  QA_PREV_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
   git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
   # Scrub the token from .git/config even if fetch/reset fails mid-way.
   trap 'git -C "$QA_CHECKOUT_DIR" remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"' EXIT
   git fetch origin main
-  git reset --hard "$DEPLOY_SHA"
+  QA_SYNCED_SHA="$(git rev-parse FETCH_HEAD)"
+  if [ "$QA_SYNCED_SHA" != "${DEPLOY_SHA}" ]; then
+    log "note: main has moved to ${QA_SYNCED_SHA} since ${DEPLOY_SHA} was tested — syncing QA to the tip"
+  fi
+  log "syncing ${QA_CHECKOUT_DIR} to ${QA_SYNCED_SHA}"
+  git reset --hard "$QA_SYNCED_SHA"
   git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
   trap - EXIT
+}
+
+# --------------------------------------------------------------------------
+# Widen the CHANGED_* flags to cover everything QA has not seen yet.
+#
+# The flags arrive from the workflow's `changes` job, which diffs exactly one
+# commit — DEPLOY_SHA against its parent. That is only correct if every merge's
+# QA sync actually runs. When one is evicted (see sync_checkout), its files are
+# in no other run's diff, so nothing rebuilds them and QA keeps serving the old
+# bundle. That is exactly how #438's landing-page removal never reached QA.
+#
+# Migrations and the seed already defend against this by replaying in full
+# every run. This is the same backstop for app rebuilds: diff from what QA
+# actually has to what it is being moved to, and OR the result into the flags.
+# Widen only — the workflow's own answer is authoritative for its commit, and
+# turning a true into a false would skip a rebuild that is genuinely needed.
+# --------------------------------------------------------------------------
+widen_changed_flags() {
+  local prev="${QA_PREV_SHA:-}"
+  local target="${QA_SYNCED_SHA:-${DEPLOY_SHA:-}}"
+  local changed
+
+  if [ -z "$prev" ] || ! git -C "$QA_CHECKOUT_DIR" rev-parse -q --verify "${prev}^{commit}" >/dev/null 2>&1; then
+    # A fresh checkout, or one whose old commit is gone. Assuming "nothing
+    # changed" is how QA stays stale; rebuilding everything is merely slow.
+    log "QA has no usable previous commit — rebuilding every app"
+    CHANGED_FRONTEND=true
+    CHANGED_WORKER=true
+    CHANGED_AGENTS=true
+    CHANGED_EDGE_FUNCTIONS=true
+    return 0
+  fi
+
+  [ "$prev" != "$target" ] || return 0
+
+  changed="$(git -C "$QA_CHECKOUT_DIR" diff --name-only "$prev" "$target" 2>/dev/null || true)"
+  [ -n "$changed" ] || return 0
+
+  widen() { # $1 current flag, $2 path regex
+    if [ "$1" = true ]; then echo true
+    elif printf '%s\n' "$changed" | grep -qE "$2"; then echo true
+    else echo false
+    fi
+  }
+
+  CHANGED_FRONTEND="$(widen "${CHANGED_FRONTEND:-false}" '^apps/frontend/')"
+  CHANGED_WORKER="$(widen "${CHANGED_WORKER:-false}" '^apps/worker/')"
+  CHANGED_AGENTS="$(widen "${CHANGED_AGENTS:-false}" '^apps/agents/')"
+  CHANGED_EDGE_FUNCTIONS="$(widen "${CHANGED_EDGE_FUNCTIONS:-false}" '^packages/database/supabase/functions/')"
+
+  log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS}"
 }
 
 # --------------------------------------------------------------------------
@@ -252,7 +325,7 @@ post_checks() {
     err "one or more QA post-checks FAILED — inspect: journalctl -u <unit> -n 50 / docker compose logs"
     exit 1
   fi
-  log "QA in sync at ${DEPLOY_SHA}"
+  log "QA in sync at ${QA_SYNCED_SHA:-${DEPLOY_SHA}}"
 }
 
 # --------------------------------------------------------------------------
@@ -261,6 +334,9 @@ main() {
   guard_env_file
   guard_inputs
   sync_checkout
+  # Must follow sync_checkout: it needs QA_PREV_SHA and QA_SYNCED_SHA, and it
+  # decides which units the sudo guard below has to cover.
+  widen_changed_flags
 
   # Fail before the expensive builds if we cannot restart what we are about to
   # rebuild. Migrations still run below either way — schema parity is the
