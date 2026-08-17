@@ -190,7 +190,11 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     const expectedTile = recep.getByTestId('stat-tile').filter({ hasText: 'Esperados' });
     await expect(expectedTile).toBeVisible();
     await expect(expectedTile).toContainText(String(COLLECTED.length));
-    await expect(recep.getByText(route.code)).toBeVisible();
+    // Assert against the h1 rather than a bare getByText: the heading is
+    // "Ruta {code} · conteo en recepción", so a containment check on the
+    // heading proves the snapshot's route header rendered, and a failure
+    // reports the text it actually found instead of just "not visible".
+    await expect(recep.getByRole('heading', { level: 1 })).toContainText(route.code);
     await expect(recep.getByText(DRIVER.fullName)).toBeVisible();
     await expect(recep.getByText(PLATE, { exact: false })).toBeVisible();
     await expect(recep.getByTestId('package-row')).toHaveCount(COLLECTED.length);
