@@ -15,8 +15,9 @@
 # Behavior:
 #   - If the QA environment is not provisioned (checkout or env file missing),
 #     exits 0 with a message — QA is optional, prod deploys must not break.
-#   - Migrations are applied on EVERY run (idempotent) — this is the QA-drift
-#     backstop; app rebuilds/restarts happen only for the CHANGED_* flags.
+#   - Migrations AND seed-qa.sql are applied on EVERY run (both idempotent) —
+#     this is the QA-drift backstop; app rebuilds/restarts happen only for the
+#     CHANGED_* flags.
 #
 # Test-only overrides (never set these on the VPS):
 #   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
@@ -84,6 +85,33 @@ apply_migrations() {
   log "applying migrations (localhost:5433)"
   "${QA_CHECKOUT_DIR}/infra/supabase-qa/apply-migrations.sh" \
     --db-url "postgresql://postgres:${pw}@localhost:5433/postgres"
+}
+
+# --------------------------------------------------------------------------
+# Seed — ALSO applied on every run, for the same reason as migrations.
+#
+# seed-qa.sql is idempotent by construction (every INSERT is ON CONFLICT DO
+# NOTHING on a fixed id, and nothing in it deletes or truncates), so replaying
+# it converges QA to the seed baseline without touching rows QA already has.
+#
+# It used to run only from setup-qa.sh, the one-time bootstrap. That meant any
+# seed row added after provisioning never reached QA: the dock zones added for
+# spec-54 left Distribución showing "Sin andenes configurados" until someone
+# SSHed in. Seeding here removes the manual step.
+#
+# create-qa-users.sh deliberately stays in setup-qa.sh — it calls the GoTrue
+# admin API, the users already exist, and it is not needed to correct drift.
+# --------------------------------------------------------------------------
+apply_seed() {
+  local pw; pw="$(env_get POSTGRES_PASSWORD)"
+  [ -n "$pw" ] || { err "POSTGRES_PASSWORD missing in $QA_ENV_FILE"; return 1; }
+  local seed="${QA_CHECKOUT_DIR}/packages/database/supabase/seed-qa.sql"
+  [ -f "$seed" ] || { err "seed file not found: $seed"; return 1; }
+  log "applying seed-qa.sql (localhost:5433)"
+  # ON_ERROR_STOP=1: without it psql skips failed statements and still exits 0,
+  # which would report a half-applied seed as a healthy deploy.
+  PGPASSWORD="$pw" psql -h localhost -p 5433 -U postgres -d postgres \
+    -v ON_ERROR_STOP=1 -q -f "$seed"
 }
 
 # --------------------------------------------------------------------------
@@ -248,6 +276,7 @@ main() {
   fi
 
   apply_migrations
+  apply_seed
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi

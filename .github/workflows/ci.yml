@@ -51,6 +51,14 @@ jobs:
       - name: Test the QA drift watchdog
         run: bash ./scripts/qa-drift-check.test.sh
 
+      # deploy-qa.sh runs on the VPS, so nothing here executes it — but its
+      # guards are unit-tested the same way. These lived under infra/ and were
+      # never wired into CI, so they had never actually run on a PR.
+      - name: Test the QA deploy guards
+        run: |
+          bash ./infra/supabase-qa/deploy-qa.guard-sudo.test.sh
+          bash ./infra/supabase-qa/deploy-qa.seed.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

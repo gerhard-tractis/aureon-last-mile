@@ -283,8 +283,10 @@ ON CONFLICT (id) DO NOTHING;
 -- =============================================================================
 -- Without these, Distribución and Modo rápido both render "Sin andenes
 -- configurados" and none of the sorting flow can be exercised in QA. They were
--- simply never seeded — the sync only replays migrations, it does not seed, so
--- QA has shown an empty andén grid since the module was built.
+-- simply never seeded: the deploy replayed migrations but seeding happened
+-- only in setup-qa.sh, the one-time bootstrap, so QA showed an empty andén
+-- grid from the day the module was built. deploy-qa.sh now applies this file
+-- on every run too, so a new seed row reaches QA on the next merge.
 --
 -- Comunas are looked up by name from chile_comunas (seeded by the
 -- 20260321000001 migration, not here) so the ids stay correct whatever the

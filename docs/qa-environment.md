@@ -11,6 +11,12 @@ All artifacts referenced here live in `infra/supabase-qa/` and
 `packages/database/supabase/seed-qa.sql`; CI sync is the `deploy-qa` job in
 `.github/workflows/deploy.yml`.
 
+The sync replays **both** the migration ledger and `seed-qa.sql` on every green
+merge to `main`, because both are idempotent. Adding a row to the seed file is
+therefore enough to get it into QA — no SSH step. (Before this, seeding ran only
+in `setup-qa.sh` at provisioning time, so seed rows added later never arrived.)
+Creating QA login users stays manual, in `create-qa-users.sh`.
+
 ## Port map
 
 QA ports. All bind to localhost; nginx publishes only the frontend and Kong to
