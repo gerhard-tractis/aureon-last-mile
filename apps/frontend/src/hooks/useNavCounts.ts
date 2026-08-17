@@ -1,29 +1,24 @@
 'use client';
 
-import { useMemo } from 'react';
-import { usePipelineCounts } from './usePipelineCounts';
-import type { OrderStatus } from '@/lib/types/pipeline';
+import { useQuery } from '@tanstack/react-query';
+import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 import { countKeyThresholds, type CountKey } from '@/components/sidebar/navigation';
 
 /**
- * spec-54 phase 2 — queue counters for the sidebar.
+ * spec-54 — queue counters for the sidebar.
  *
- * The design handoff sourced these from four separate hooks
- * (useDistributionKPIs, useDispatchKPIs, usePendingManifests,
- * useIncomingRoutes). The sidebar renders on every page in the product, so
- * that would be four permanent round-trips per navigation.
+ * Reads get_nav_counts (20260817000001), which counts the same unit each
+ * module's own screen leads with. It used to map get_pipeline_counts, which
+ * counts ORDERS by orders.status — the wrong unit, and one that under-reports:
+ * recalculate_order_status collapses the package-only states back to
+ * `en_bodega`, so a package already sorted onto an andén still counted as
+ * reception work. The nav read Distribución 0 while the Distribución screen
+ * showed 25 packages waiting to be sorted.
  *
- * get_pipeline_counts already returns every stage in one call and is already
- * cached (30s stale, 60s refetch), so this maps that one result instead.
+ * Still one round trip, and still cached — the sidebar renders on every page,
+ * so this hook has to stay cheap.
  */
-
-const STATUSES_BY_KEY: Record<CountKey, OrderStatus[]> = {
-  pickup: ['ingresado'],
-  reception: ['verificado'],
-  distribution: ['en_bodega'],
-  // Everything staged at the hub and not yet rolling counts as dispatch work.
-  dispatch: ['asignado', 'en_carga', 'listo_para_despacho'],
-};
 
 export type NavCounts = Record<CountKey, number | null>;
 
@@ -34,26 +29,41 @@ const LOADING: NavCounts = {
   dispatch: null,
 };
 
+interface NavCountsRow {
+  pickup: number;
+  reception: number;
+  distribution: number;
+  dispatch: number;
+}
+
 export function useNavCounts(operatorId: string | null): NavCounts {
-  const { data } = usePipelineCounts(operatorId);
-
-  return useMemo(() => {
-    // null, not 0, while unresolved: a badge that renders "0" and then jumps to
-    // "318" reads as a queue that just filled up.
-    if (!data) return LOADING;
-
-    const byStatus = new Map<string, number>();
-    for (const row of data) byStatus.set(row.status, row.count);
-
-    const result = {} as NavCounts;
-    for (const key of Object.keys(STATUSES_BY_KEY) as CountKey[]) {
-      result[key] = STATUSES_BY_KEY[key].reduce(
-        (sum, status) => sum + (byStatus.get(status) ?? 0),
-        0,
+  const { data } = useQuery<NavCountsRow | null>({
+    queryKey: ['nav-counts', operatorId],
+    enabled: !!operatorId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data, error } = await callRpc<NavCountsRow[]>(
+        createSPAClient(),
+        'get_nav_counts',
+        { p_operator_id: operatorId! },
       );
-    }
-    return result;
-  }, [data]);
+      if (error) throw error;
+      // RETURNS TABLE gives a one-row set, not a scalar.
+      return data?.[0] ?? null;
+    },
+  });
+
+  // null, not 0, while unresolved: a badge that renders "0" and then jumps to
+  // "318" reads as a queue that just filled up.
+  if (!data) return LOADING;
+
+  return {
+    pickup: data.pickup,
+    reception: data.reception,
+    distribution: data.distribution,
+    dispatch: data.dispatch,
+  };
 }
 
 /** Neutral badge, or warning once the module's queue threshold is crossed. */
