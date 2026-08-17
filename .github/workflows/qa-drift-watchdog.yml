@@ -1,0 +1,152 @@
+name: QA Drift Watchdog
+
+# QA is supposed to track main on every merge. It stopped doing so three times
+# on 2026-08-16/17 and nobody found out until a human went looking for a fix
+# that "wasn't there": a concurrency group starved the sync, GitHub's own CDN
+# 502'd during "Set up job", and a run was cancelled to clear a queue. Green PR
+# checks say nothing about any of that — only QA's checked-out SHA does.
+#
+# So this reads that SHA, compares it to main, and heals or shouts. The decision
+# is in scripts/qa-drift-check.mjs (pure, unit-tested); this file only gathers
+# state and carries out the verdict.
+#
+# It deliberately does NOT run infra/supabase-qa/deploy-qa.sh itself. That script
+# only rebuilds and restarts apps for the CHANGED_* flags the deploy workflow
+# computes; calling it bare would move the checkout forward WITHOUT rebuilding
+# the frontend, leaving QA claiming to be current while serving stale code —
+# a worse failure than the one being fixed. Healing therefore means re-running
+# the real deploy run.
+#
+# Two jobs on purpose: the VPS runner has no `gh` (jq/git/node only), and the
+# only thing that must happen there is reading QA's HEAD. That job also skips
+# actions/checkout — downloading an action is exactly what failed on 2026-08-17,
+# and a watchdog that shares its target's failure mode is not a watchdog.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: qa-drift-watchdog
+  cancel-in-progress: false
+
+permissions:
+  actions: write      # re-run failed deploy jobs
+  contents: read
+  issues: write       # raise the alarm when healing is not possible
+
+jobs:
+  qa-sha:
+    name: Read QA's deployed commit
+    runs-on: [self-hosted, vps]
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.read.outputs.sha }}
+      provisioned: ${{ steps.read.outputs.provisioned }}
+    steps:
+      - name: Read HEAD of the QA checkout
+        id: read
+        env:
+          QA_CHECKOUT_DIR: /home/aureon/aureon-qa
+        run: |
+          set -euo pipefail
+          if [ ! -d "$QA_CHECKOUT_DIR/.git" ]; then
+            echo "::notice::QA is not provisioned on this host — nothing to watch."
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git -c safe.directory="$QA_CHECKOUT_DIR" -C "$QA_CHECKOUT_DIR" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: Compare against main
+    needs: [qa-sha]
+    if: needs.qa-sha.outputs.provisioned == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Gather state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QA_SHA: ${{ needs.qa-sha.outputs.sha }}
+        run: |
+          set -euo pipefail
+          MAIN="$(gh api repos/${{ github.repository }}/commits/main)"
+          RUNS="$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?per_page=20" \
+                    --jq '[.workflow_runs[] | {databaseId: .id, headSha: .head_sha, status: .status, conclusion: .conclusion, attempt: .run_attempt}]')"
+
+          jq -n \
+            --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg qaSha "$QA_SHA" \
+            --arg mainSha "$(printf '%s' "$MAIN" | jq -r .sha)" \
+            --arg mainCommittedAt "$(printf '%s' "$MAIN" | jq -r .commit.committer.date)" \
+            --argjson runs "$RUNS" \
+            '{now: $now, qaSha: $qaSha, mainSha: $mainSha, mainCommittedAt: $mainCommittedAt, graceMinutes: 20, runs: $runs}' \
+            > qa-state.json
+
+      - name: Decide
+        id: decide
+        run: node scripts/qa-drift-check.mjs qa-state.json >> "$GITHUB_OUTPUT"
+
+      - name: Report
+        run: echo "::notice::${{ steps.decide.outputs.action }} — ${{ steps.decide.outputs.reason }}"
+
+      - name: Heal — re-run the failed deploy
+        if: steps.decide.outputs.action == 'rerun'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "::warning::QA drifted — re-running deploy run ${{ steps.decide.outputs.run_id }} (${{ steps.decide.outputs.rerun_mode }})"
+          # A cancelled run has no failed jobs, so `--failed` would error with
+          # nothing to re-run; it goes again whole.
+          if [ "${{ steps.decide.outputs.rerun_mode }}" = "full" ]; then
+            gh run rerun "${{ steps.decide.outputs.run_id }}" --repo ${{ github.repository }}
+          else
+            gh run rerun "${{ steps.decide.outputs.run_id }}" --failed --repo ${{ github.repository }}
+          fi
+
+      # One open issue, updated — not a new one every 15 minutes.
+      - name: Raise the alarm
+        if: steps.decide.outputs.action == 'alert'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: |
+          set -euo pipefail
+          EXISTING="$(gh issue list --repo ${{ github.repository }} \
+                        --state open --label qa-drift --json number --jq '.[0].number' || true)"
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo ${{ github.repository }} \
+              --body "Still drifted at $(date -u +%Y-%m-%dT%H:%M:%SZ): ${REASON}"
+          else
+            gh label create qa-drift --repo ${{ github.repository }} \
+              --color B60205 --description 'QA environment is behind main' 2>/dev/null || true
+            gh issue create --repo ${{ github.repository }} --title 'QA has drifted from main' --label qa-drift \
+              --body "$(printf '%s\n\n%s\n\n%s\n' \
+                  "${REASON}" \
+                  'QA is not serving what main says it serves. Anything tested there is testing old code.' \
+                  'Runbook: check the latest deploy.yml run for main tip, then infra/supabase-qa/deploy-qa.sh on the VPS. See docs/specs/spec-57-qa-gate-before-production.md.')"
+          fi
+          echo "::error::QA has drifted from main and could not self-heal — ${REASON}"
+          exit 1
+
+      # Drift resolved on its own (or by the re-run above) — close the issue so
+      # an open one always means "QA is stale right now".
+      - name: Stand down
+        if: steps.decide.outputs.action == 'ok'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          EXISTING="$(gh issue list --repo ${{ github.repository }} \
+                        --state open --label qa-drift --json number --jq '.[0].number' || true)"
+          if [ -n "$EXISTING" ]; then
+            gh issue close "$EXISTING" --repo ${{ github.repository }} \
+              --comment "QA is back on main (${{ steps.decide.outputs.reason }})."
+          fi

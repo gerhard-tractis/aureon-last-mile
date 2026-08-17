@@ -41,6 +41,11 @@ jobs:
       - name: Test the deploy-gating guard
         run: bash ./scripts/check-deploy-gating.test.sh
 
+      # The watchdog is the only thing that notices QA going stale, so its
+      # decision logic is unit-tested like any other guard.
+      - name: Test the QA drift watchdog
+        run: bash ./scripts/qa-drift-check.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

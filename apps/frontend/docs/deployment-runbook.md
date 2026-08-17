@@ -336,6 +336,42 @@ bash apps/worker/scripts/deploy.sh
 
 - **BetterStack:** HTTP monitor `http://<VPS_IP>:5678/healthz` (n8n health endpoint)
 - **Sentry:** Worker errors via `SENTRY_DSN` in `.env`
+- **QA drift watchdog:** `.github/workflows/qa-drift-watchdog.yml`, every 15 min
+
+#### QA drift watchdog
+
+A merged PR is not a deployed PR. Green checks on a PR say nothing about whether
+its deploy ran — on 2026-08-16/17 QA fell behind `main` three times without a
+sound: a concurrency group starved the sync while a run waited at the production
+gate, GitHub's CDN returned 502/429 during `Set up job`, and a run was cancelled
+to clear a queue.
+
+The watchdog compares QA's actually-checked-out SHA (`/home/aureon/aureon-qa`)
+against `main` every 15 minutes and:
+
+| Situation | What it does |
+|---|---|
+| QA on `main`'s tip | nothing, and closes any open `qa-drift` issue |
+| `main` tip < 20 min old, or its deploy run still going | nothing — a deploy is in flight |
+| That run failed or was cancelled (first attempt) | re-runs its failed jobs |
+| Failed twice, run missing, run "succeeded" but QA did not move, or run paused at the gate with QA still behind | opens/updates the `qa-drift` issue and fails loudly |
+
+**An open `qa-drift` issue means QA is stale right now — anything tested there is
+testing old code.**
+
+It re-runs the deploy rather than calling `infra/supabase-qa/deploy-qa.sh`
+directly, on purpose: that script only rebuilds and restarts apps for the
+`CHANGED_*` flags the deploy workflow computes, so calling it bare would move the
+checkout forward *without* rebuilding the frontend — QA would report itself
+current while serving stale code.
+
+Decision logic: `scripts/qa-drift-check.mjs` (pure, unit-tested by
+`scripts/qa-drift-check.test.sh`, which runs in CI). To check by hand:
+
+```bash
+ssh <vps> 'git -c safe.directory=/home/aureon/aureon-qa -C /home/aureon/aureon-qa rev-parse HEAD'
+git ls-remote origin main
+```
 
 ---
 

@@ -413,15 +413,41 @@ jobs:
     timeout-minutes: 15
     steps:
       # The QA checkout self-syncs inside the script, but the script FILE must
-      # come from the tested commit — so check out DEPLOY_SHA into the runner
-      # workspace and run it from there.
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+      # come from the tested commit — so put DEPLOY_SHA in a scratch clone and
+      # run it from there.
+      #
+      # Plain git, NOT actions/checkout, matching the worker/agents/solver jobs
+      # above. actions/checkout has to download itself from codeload.github.com,
+      # and this VPS's IP is rate-limited there: on 2026-08-17 two consecutive
+      # QA syncs died at "Set up job" with 502 then 429 before a single step
+      # ran, leaving QA stale with a green-looking merge. git talks to a
+      # different endpoint and the runner already has it.
+      - name: Sync repo to the tested commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Its own scratch clone, not the ~/aureon-last-mile the production VPS
+          # jobs share: those reset that directory to THEIR run's DEPLOY_SHA, and
+          # deploy-qa is deliberately in a different concurrency group, so the two
+          # can run at once and would fight over it.
+          WORKDIR="$HOME/qa-deploy-src"
+          [ -d "$WORKDIR/.git" ] || git init -q "$WORKDIR"
+          cd "$WORKDIR"
+          git remote remove origin 2>/dev/null || true
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          # Shallow fetch of the one commit; fall back to main's history if the
+          # server refuses a bare SHA.
+          git fetch -q --depth 1 origin "${DEPLOY_SHA}" || git fetch -q origin main
+          git reset -q --hard "${DEPLOY_SHA}"
+          # Don't leave the token sitting in .git/config on the VPS.
+          git remote set-url origin "https://github.com/${{ github.repository }}.git"
 
       - name: Sync QA environment
-        run: bash infra/supabase-qa/deploy-qa.sh
+        run: |
+          set -euo pipefail
+          cd "$HOME/qa-deploy-src"
+          bash infra/supabase-qa/deploy-qa.sh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CHANGED_FRONTEND: ${{ needs.changes.outputs.frontend }}
