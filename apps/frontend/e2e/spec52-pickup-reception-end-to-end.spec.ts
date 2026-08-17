@@ -183,7 +183,13 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     // Rendering at all is the assertion: for six months this page threw
     // because the RPC returned `reception`/`packages` and it read
     // `route_reception`/`expected_packages`.
-    await expect(recep.getByTestId('reception-counts')).toBeVisible();
+    // spec-54 phase 4.5 replaced the single `reception-counts` block with four
+    // StatTiles (Esperados / Verificados / Faltantes / Sobrantes). Assert the
+    // number rather than mere presence — "expected" is exactly what the RPC
+    // alias bug got wrong, so a visibility-only check would not have caught it.
+    const expectedTile = recep.getByTestId('stat-tile').filter({ hasText: 'Esperados' });
+    await expect(expectedTile).toBeVisible();
+    await expect(expectedTile).toContainText(String(COLLECTED.length));
     await expect(recep.getByText(route.code)).toBeVisible();
     await expect(recep.getByText(DRIVER.fullName)).toBeVisible();
     await expect(recep.getByText(PLATE, { exact: false })).toBeVisible();
@@ -215,7 +221,10 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     const rr = await routeReception(route.id);
     expect(rr.received_count).toBe(6);
     expect(rr.unexpected_count).toBe(1);
-    await expect(recep.getByTestId('unexpected-count')).toHaveText(/1 inesperado/);
+    // Same spec-54 4.5 rebuild: the "N inesperado" line is now the SOBRANTES tile.
+    await expect(
+      recep.getByTestId('stat-tile').filter({ hasText: 'Sobrantes' }),
+    ).toContainText('1');
   });
 
   test('finalizing still demands notes when the counts offset, then closes the trip',
