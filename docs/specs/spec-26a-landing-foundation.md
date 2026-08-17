@@ -1,8 +1,13 @@
 # Spec-26a: Landing Foundation (Font, Icons, Copy, Accessibility)
 
-> **Status:** backlog
+> **Status:** superseded
 > **Depends on:** spec-17 (landing page — implemented)
 > **Layer:** 1 of 3 (see also: spec-26b, spec-26c)
+
+> **Superseded 2026-08-17 (#438).** The landing page this builds on was removed
+> from the product surface; `/` now redirects to login or into the app. This work
+> would polish a page no one can reach, so it is not pickup-ready — reviving it
+> means re-routing the landing page first. See spec-17 for the details.
 
 ## Goal
 

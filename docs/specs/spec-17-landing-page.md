@@ -1,6 +1,18 @@
 # Spec 17 — Aureon Landing Page
 
-**Status:** completed
+**Status:** superseded
+
+> **Superseded 2026-08-17 (#438).** The landing page has been removed from the
+> product surface on both QA and production. `/` now redirects to `/auth/login`
+> when signed out, and into the app when signed in — that is, the very redirect
+> the Overview below says this spec replaces is back.
+>
+> The components still exist, unrouted, in
+> `apps/frontend/src/app/(landing)/components/`. That directory holds no
+> `page.tsx`, so nothing under it is reachable. Reviving the page means adding a
+> route again, not just editing components.
+>
+> Nothing below describes live behaviour. Read it as history.
 
 ## Overview
 

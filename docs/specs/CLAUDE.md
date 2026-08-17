@@ -21,11 +21,17 @@ Every spec file must have a `**Status:**` line at the top. Keep it updated.
 | `backlog` | Spec written, not yet started |
 | `in progress` | Implementation has begun |
 | `completed` | User confirms no additional PRs needed |
+| `superseded` | The feature was removed or replaced — the spec is history, not live behaviour |
 
 Rules:
 - Set to `in progress` when the first implementation commit is made
 - Set to `completed` only when the user explicitly confirms the feature is done
 - Never self-declare completed — wait for user confirmation
+- Set to `superseded` when later work removes or replaces what the spec describes,
+  and say so in a note at the top: what replaced it, which PR, and what a revival
+  would actually require. A `completed` spec reads as a description of the running
+  system, and a `backlog` one reads as ready to pick up — both mislead once the
+  feature is gone. The landing specs (17, 26a-c) are the worked example.
 
 ## Required Skills — In Order
 
