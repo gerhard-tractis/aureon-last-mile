@@ -1,80 +1,31 @@
-"use client";
-import React from 'react';
-import { useGlobal } from '@/lib/context/GlobalContext';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
-import { CalendarDays, Settings, ExternalLink } from 'lucide-react';
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { createSSRClient } from '@/lib/supabase/server';
+import { getEnabledModulesForCurrentUser } from '@/lib/modules/enabled';
+import { resolveLandingPath } from '@/components/sidebar/navigation';
 
-export default function DashboardContent() {
-    const { loading, user } = useGlobal();
+/**
+ * `/app` is the single answer to "where does a signed-in user start".
+ *
+ * It replaces the boilerplate welcome card that shipped with the template.
+ * Every path into the product converges here — the root route, the post-login
+ * redirect in the Supabase middleware, and the PWA start_url — so the landing
+ * decision only has to be made once, and it is made server-side to avoid a
+ * flash of the wrong shell before the client knows the user's role.
+ */
+export default async function AppIndexPage() {
+  const supabase = await createSSRClient();
+  const [{ data }, enabledModules] = await Promise.all([
+    supabase.auth.getSession(),
+    getEnabledModulesForCurrentUser(),
+  ]);
 
-    const getDaysSinceRegistration = () => {
-        if (!user?.registered_at) return 0;
-        const today = new Date();
-        const diffTime = Math.abs(today.getTime() - user.registered_at.getTime());
-        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    };
+  const claims = data.session?.user?.app_metadata?.claims;
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
-            </div>
-        );
-    }
-
-    const daysSinceRegistration = getDaysSinceRegistration();
-
-    return (
-        <>
-        <div className="space-y-6 p-6">
-            <Card>
-                <CardHeader>
-                    <CardTitle>Welcome, {user?.email?.split('@')[0]}! 👋</CardTitle>
-                    <CardDescription className="flex items-center gap-2">
-                        <CalendarDays className="h-4 w-4" />
-                        Member for {daysSinceRegistration} days
-                    </CardDescription>
-                </CardHeader>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card>
-                <CardHeader>
-                    <CardTitle>Quick Actions</CardTitle>
-                    <CardDescription>Frequently used features</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <Link
-                            href="/app/user-settings"
-                            className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted transition-colors"
-                        >
-                            <div className="p-2 bg-[var(--color-surface-raised)] rounded-full">
-                                <Settings className="h-4 w-4 text-accent" />
-                            </div>
-                            <div>
-                                <h3 className="font-medium">User Settings</h3>
-                                <p className="text-sm text-muted-foreground">Manage your account preferences</p>
-                            </div>
-                        </Link>
-
-                        <Link
-                            href="/app/table"
-                            className="flex items-center gap-3 p-4 border rounded-lg hover:bg-muted transition-colors"
-                        >
-                            <div className="p-2 bg-[var(--color-surface-raised)] rounded-full">
-                                <ExternalLink className="h-4 w-4 text-accent" />
-                            </div>
-                            <div>
-                                <h3 className="font-medium">Example Page</h3>
-                                <p className="text-sm text-muted-foreground">Check out example features</p>
-                            </div>
-                        </Link>
-                    </div>
-                </CardContent>
-            </Card>
-        </div>
-        </>
-    );
+  redirect(
+    resolveLandingPath({
+      role: claims?.role ?? null,
+      permissions: claims?.permissions ?? [],
+      enabledModules: Array.from(enabledModules),
+    }),
+  );
 }

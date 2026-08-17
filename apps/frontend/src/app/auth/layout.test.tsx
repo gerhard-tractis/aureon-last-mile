@@ -60,6 +60,12 @@ describe('AuthLayout', () => {
     expect(screen.getByText(/Powered by/i)).toBeTruthy();
   });
 
+  it('has no "Volver" link back to the removed landing page', () => {
+    const { container } = render(<AuthLayout><div>child</div></AuthLayout>);
+    expect(screen.queryByText('Volver')).toBeNull();
+    expect(container.querySelector('a[href="/"]')).toBeNull();
+  });
+
   it('renders children', () => {
     render(<AuthLayout><div data-testid="child">content</div></AuthLayout>);
     expect(screen.getByTestId('child')).toBeTruthy();

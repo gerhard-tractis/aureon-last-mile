@@ -168,6 +168,22 @@ export function buildNavSections(ctx: NavContext): NavSection[] {
 }
 
 /**
+ * Where a signed-in user starts. Used by `/app` now that the marketing landing
+ * page no longer occupies `/`.
+ *
+ * This is deliberately the first item the sidebar would show rather than a
+ * hardcoded route: OPERACIÓN leads with the control tower, so admins and
+ * operations managers land there, while a warehouse or driver account — for
+ * whom the tower is hidden and would render empty — lands on the first queue
+ * it can actually work. Dashboard ejecutivo is visible to everyone, so the
+ * fallback is only reached if the nav is ever emptied entirely.
+ */
+export function resolveLandingPath(ctx: NavContext): string {
+  const first = buildNavSections(ctx)[0]?.items[0];
+  return first?.href ?? '/app/dashboard';
+}
+
+/**
  * Reachable pages that are deliberately not in the sidebar — you arrive at them
  * from a button or a menu, not from the nav. They still need a breadcrumb, and
  * it has to come from here: the topbar is the only place a crumb is rendered,
