@@ -653,3 +653,54 @@ would put older code in production. Approve in order, or cancel the stale ones.
   inert; leave it.
 - Vercel Git integration stays disabled — unchanged by this spec, but re-read the warning at
   `.github/workflows/deploy.yml:207` before touching Vercel settings.
+
+---
+
+## Phase 2 addendum — first real E2E runs (2026-08-17)
+
+The `e2e-qa` job ran for the first time. Everything in the harness works; the
+**tests themselves are stale**, and by more than one selector.
+
+### Proven working
+
+| | |
+|---|---|
+| `ensureOperator()` | seeded the tenant — page rendered 3 manifiestos / 3 órdenes / 7 paquetes, exactly the fixture |
+| Auth against QA | signed in, reached `/app/pickup` |
+| Module gating, tenant isolation | only E2E data visible |
+| Chromium on the VPS | launches; `install` without `--with-deps` was sufficient, no sudo needed |
+| The `e2e-qa` job itself | ran end-to-end in the pipeline on `c962e4a` after #430 fixed the codeload 429s |
+| Advisory wiring | E2E failed, `approve-production` still offered approval — exactly as intended |
+
+### The real problem: the suite encodes a pre-spec-54 journey
+
+spec-54 (#425) rebuilt Recogida. The pickup flow changed shape:
+
+- **Was:** create an empty route → attach manifests from the active-route screen
+- **Now:** tick manifests in the table → the route is created *with them attached*
+
+Test 1 was fixed accordingly (tick rows first) and now passes in 10.2s, down from
+a 300s timeout. But that fix exposes the next layer: test 2 opens "Agregar
+manifiesto" to attach the same three cargas and finds **"Sin manifiestos
+disponibles"**, because test 1 already attached them at creation. It then waits
+out its timeout.
+
+Tests 3–7 have still never executed.
+
+### What realigning needs
+
+Not a selector sweep — a decision about the journey the suite should assert now.
+Options, needing whoever owns spec-54's flow:
+
+1. Test 1 ticks only `LOADS[0]`, leaving 1 and 2 for test 2 to attach. Preserves
+   both tests' intent, but assumes an already-attached manifest still appears in
+   the pending tab for test 2's scan loop — unverified.
+2. Drop test 2's attach block and assert attachment-at-creation instead, which is
+   what the product now does.
+
+Option 2 matches the new design; option 1 preserves more coverage. Either way the
+suite should be re-derived from the current flow rather than patched selector by
+selector.
+
+**Until then `e2e-qa` stays advisory.** It blocks nothing, and the promotion steps
+above should not be taken while the suite asserts a journey the product no longer has.
