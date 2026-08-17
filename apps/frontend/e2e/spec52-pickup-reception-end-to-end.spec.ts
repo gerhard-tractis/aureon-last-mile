@@ -93,21 +93,21 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
 
   test('collects from two clients, three cargas — packages reach verificado', async () => {
     test.setTimeout(240_000);
-    // Tapping a pending load is what creates its manifests row.
-    for (const load of LOADS) {
-      await driver.goto('/app/pickup');
-      await driver.getByText(load.loadId, { exact: true }).click();
-      await driver.waitForURL(`**/app/pickup/scan/${load.loadId}`);
-    }
-
-    // Attach all three cargas to the active route.
+    // spec-54 (#425) inverted this. The cargas are attached when the ROUTE is
+    // created — ticking them in the table is what creates and attaches their
+    // manifests — so there is nothing left to add here. The old flow (create an
+    // empty route, then add manifests one by one from the active-route screen)
+    // no longer exists: "Agregar manifiesto" now reports "Sin manifiestos
+    // disponibles", because the previous test already attached all three.
+    //
+    // So attachment is asserted rather than performed, and each scan screen is
+    // opened directly. Navigating beats tapping the row: after attachment the
+    // carga no longer sits in the pending tab, and the scan URL is the same
+    // place the tap resolved to anyway.
     const route = await activeRoute();
     for (const load of LOADS) {
-      await driver.goto('/app/pickup/route/active');
-      await driver.getByTestId('open-add-manifest').click();
-      await driver.getByTestId('pickable-manifest-list')
-        .getByRole('button').filter({ hasText: load.loadId }).click();
-      await expect(driver.getByTestId('pickable-manifest-list')).toBeHidden();
+      await driver.goto(`/app/pickup/scan/${load.loadId}`);
+      await expect(driver.getByLabel(PICKUP_SCANNER)).toBeVisible();
     }
     await expect.poll(async () => {
       const { rows } = await db().query(
