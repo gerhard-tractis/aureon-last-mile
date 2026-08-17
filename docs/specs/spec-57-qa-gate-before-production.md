@@ -1,6 +1,6 @@
 # spec-57 — QA gate before production
 
-**Status:** in progress
+**Status:** completed
 
 > **For agentic workers:** REQUIRED: Use `superpowers:subagent-driven-development` or
 > `superpowers:executing-plans` to implement this plan. Steps use `- [ ]` checkbox syntax.
@@ -702,5 +702,95 @@ Option 2 matches the new design; option 1 preserves more coverage. Either way th
 suite should be re-derived from the current flow rather than patched selector by
 selector.
 
-**Until then `e2e-qa` stays advisory.** It blocks nothing, and the promotion steps
-above should not be taken while the suite asserts a journey the product no longer has.
+**`e2e-qa` stays advisory.** It blocks nothing. (Written before the realignment
+below; the suite now asserts the current journey — see Resolution.)
+
+### Resolution — suite green (2026-08-17)
+
+All 7 tests pass against QA. **41.6s** total.
+
+Realignment took five runs, each failure landing further along the journey:
+
+| # | Failure | Cause |
+|---|---|---|
+| 1 | `start-route-button` | spec-54: button only exists once manifests are ticked |
+| 2 | "Sin manifiestos disponibles" | spec-54 inverted attach — cargas attach at route creation |
+| 3 | `reception-counts` | spec-54 4.5 replaced it with four StatTiles |
+| 4 | route code not visible | bare `getByText` on an interpolated heading |
+| 5 | `Rita Conductora` not visible | same — name sits inside a three-part text node |
+
+Failures 1–3 were genuine drift: the suite encoded a pre-spec-54 pickup journey.
+Failures 4–5 were **the test's own locators**, not product defects — worth stating,
+because the driver-name one looked exactly like a regression of the users join that
+`20260813000005` exists to prevent. It wasn't. `toContainText` distinguishes
+"absent" from "rendered wrong"; `toBeVisible` cannot, which is why the rewritten
+assertions use it.
+
+Where a selector had to change, the assertion was strengthened rather than merely
+repaired — the counts tile now asserts `expected === 6` instead of mere presence,
+since "expected" is precisely what the old RPC alias bug got wrong.
+
+#### Promotion to blocking is now viable
+
+The blocker was never the wiring — it was not knowing the runtime or the failure
+rate. **41.6s** is negligible against a ~6min CI run, and the suite is
+deterministic across runs (tests 1–4 passed identically in four consecutive runs).
+
+Still recommended: leave advisory until it has run green in the pipeline a few
+times unattended. One green run on a hand-driven VPS invocation is not a track
+record. The three promotion steps are unchanged.
+
+---
+
+## Completed 2026-08-17
+
+Confirmed by Gerhard. Both phases live and evidenced.
+
+**The pipeline now is:**
+
+```
+merge → CI → deploy-qa → e2e-qa → approve-production ⏸ HUMAN → prod fan-out
+```
+
+Before this spec, QA and production deployed **in parallel** from the same merge,
+with no human checkpoint anywhere, and six Playwright specs that had never run once.
+
+**Final evidence** — `e2e-qa` on run 32053967258, `6acb3e86`, on the GitHub runner:
+
+```
+Running 7 tests using 1 worker
+  ✓ 1 driver departs the hub — the vehicle is required          (10.0s)
+  ✓ 2 collects from two clients, three cargas — verificado      (14.3s)
+  ✓ 3 the route QR is reachable while in_progress               (2.8s)
+  ✓ 4 receptionist scans the QR — route locks, in_transit       (6.5s)
+  ✓ 5 the reception page renders from the real snapshot         (239ms)
+  ✓ 6 packages scanned flat, out of order, checklist ticks      (4.2s)
+  ✓ 7 finalizing demands notes when counts offset, then closes  (1.0s)
+  7 passed (44.1s)
+```
+
+### Carried forward, deliberately not done here
+
+1. **Promote `e2e-qa` to blocking.** Now viable — 44s runtime, green across five
+   consecutive runs. Three steps documented above. Left advisory to build a track
+   record first.
+2. **Widen past spec-52.** `spec47-consolidated-reception` is still
+   `test.skip`ped "pending seeded staging fixture" — that fixture now exists.
+   `dispatch-route` and `spec47-pickup` still have none.
+3. **The `page.test.tsx` mock.** `apps/frontend/src/app/app/pickup/page.test.tsx`
+   mocks `StartRouteButton` away entirely, which is why the unit suite stayed
+   green through the whole spec-54 drift. Worth revisiting.
+
+### What the gate cost, honestly
+
+Turning it on stalled production twice in the first hour, both instructive:
+
+- #426 reached the gate, sat unnoticed, and was cancelled — production silently
+  fell four commits behind. #430's watchdog now catches that.
+- Workflow-level `concurrency` meant a run waiting for approval starved the QA
+  sync, and #425's run was evicted from the queue before it ever synced. #428
+  moved concurrency to per-job groups.
+
+Neither was a flaw in gating; both were consequences of it that only appeared under
+real traffic. The lesson worth keeping: **a gate nobody is told about is a stall,
+not a safeguard** — which is why the watchdog matters as much as the gate.
