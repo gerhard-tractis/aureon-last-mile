@@ -58,6 +58,7 @@ jobs:
         run: |
           bash ./infra/supabase-qa/deploy-qa.guard-sudo.test.sh
           bash ./infra/supabase-qa/deploy-qa.seed.test.sh
+          bash ./infra/supabase-qa/deploy-qa.drift.test.sh
 
       - name: Lint
         run: npx turbo run lint

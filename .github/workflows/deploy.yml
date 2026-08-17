@@ -210,6 +210,7 @@ jobs:
     needs: [changes, approve-production, deploy-supabase]
     if: |
       always() &&
+      needs.approve-production.result == 'success' &&
       needs.changes.outputs.edge_functions == 'true' &&
       (needs.deploy-supabase.result == 'success' || needs.deploy-supabase.result == 'skipped')
     runs-on: ubuntu-latest
@@ -251,7 +252,10 @@ jobs:
       group: production-deploy-vercel
       cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
-    if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
+    if: |
+      always() && !failure() && !cancelled() &&
+      needs.approve-production.result == 'success' &&
+      needs.changes.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -283,8 +287,8 @@ jobs:
       cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
-      always() &&
-      !failure() && !cancelled() &&
+      always() && !failure() && !cancelled() &&
+      needs.approve-production.result == 'success' &&
       needs.changes.outputs.worker == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
@@ -318,8 +322,8 @@ jobs:
       cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
-      always() &&
-      !failure() && !cancelled() &&
+      always() && !failure() && !cancelled() &&
+      needs.approve-production.result == 'success' &&
       needs.changes.outputs.agents == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
@@ -352,8 +356,8 @@ jobs:
       cancel-in-progress: false
     needs: [changes, approve-production, deploy-supabase, deploy-edge-functions]
     if: |
-      always() &&
-      !failure() && !cancelled() &&
+      always() && !failure() && !cancelled() &&
+      needs.approve-production.result == 'success' &&
       needs.changes.outputs.solver == 'true'
     runs-on: [self-hosted, vps]
     timeout-minutes: 10
