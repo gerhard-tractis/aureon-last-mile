@@ -55,9 +55,27 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     await signIn(driver, DRIVER);
     await driver.goto('/app/pickup');
 
+    // spec-54 (#425) rebuilt Recogida: PickupRouteDraftPanel renders the
+    // "Iniciar ruta" control only once manifests are ticked — until then the
+    // panel shows "Marca los manifiestos de la tabla y agrégalos a una ruta".
+    // The old test clicked a button that no longer exists in the empty state
+    // and spent its whole timeout waiting for it. Tick the rows first, which
+    // is what that empty state instructs a driver to do.
+    //
+    // Space rather than click: the row is role=checkbox with tabIndex 0, and
+    // the load id inside it is a separate button that stopPropagation()s to
+    // open the scan screen. A plain .click() lands on the row's centre and can
+    // hit that button instead, navigating away rather than selecting.
+    for (const load of LOADS) {
+      const row = driver.getByTestId('manifest-row').filter({ hasText: load.loadId });
+      await expect(row).toBeVisible();
+      await row.press(' ');
+      await expect(row).toHaveAttribute('aria-checked', 'true');
+    }
+
     await driver.getByTestId('start-route-button').click();
     const confirm = driver.getByRole('button', { name: 'Iniciar', exact: true });
-    // The field is required: nothing selected, nothing submittable.
+    // The field is required: no vehicle selected, nothing submittable.
     await expect(confirm).toBeDisabled();
 
     await driver.locator('#vehicle-select').click();
