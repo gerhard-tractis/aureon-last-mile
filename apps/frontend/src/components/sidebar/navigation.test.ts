@@ -6,6 +6,7 @@ import {
   buildNavSections,
   breadcrumbForPath,
   countKeyThresholds,
+  resolveLandingPath,
 } from './navigation';
 
 const ALL_MODULES = [
@@ -204,5 +205,61 @@ describe('breadcrumbForPath — routes with no nav entry (spec-54)', () => {
 
   it('still returns null for a genuinely unknown route', () => {
     expect(breadcrumbForPath('/app/does-not-exist')).toBeNull();
+  });
+});
+
+describe('resolveLandingPath (landing page removal)', () => {
+  it('sends an admin to the control tower', () => {
+    expect(
+      resolveLandingPath({
+        role: 'admin',
+        permissions: ALL_PERMISSIONS,
+        enabledModules: ALL_MODULES,
+      }),
+    ).toBe('/app/operations-control');
+  });
+
+  it('sends an operations manager to the control tower', () => {
+    expect(
+      resolveLandingPath({
+        role: 'operations_manager',
+        permissions: [],
+        enabledModules: ALL_MODULES,
+      }),
+    ).toBe('/app/operations-control');
+  });
+
+  it('sends a warehouse user to their first reachable queue, not the tower', () => {
+    // The tower is admin/manager only — landing there would show an empty page
+    // with no sidebar entry to leave by.
+    expect(
+      resolveLandingPath({
+        role: 'warehouse',
+        permissions: ['reception', 'distribution'],
+        enabledModules: ALL_MODULES,
+      }),
+    ).toBe('/app/reception');
+  });
+
+  it('skips the tower when the ops-control module is off for the operator', () => {
+    expect(
+      resolveLandingPath({
+        role: 'admin',
+        permissions: ALL_PERMISSIONS,
+        enabledModules: [ModuleKey.PICKUP],
+      }),
+    ).toBe('/app/pickup');
+  });
+
+  it('falls back to the executive dashboard when nothing else is visible', () => {
+    expect(
+      resolveLandingPath({ role: null, permissions: [], enabledModules: [] }),
+    ).toBe('/app/dashboard');
+  });
+
+  it('never resolves to a path the sidebar would hide', () => {
+    const ctx = { role: 'driver', permissions: ['pickup'], enabledModules: ALL_MODULES };
+    const visible = buildNavSections(ctx).flatMap((s) => s.items.map((i) => i.href));
+    expect(visible).toContain(resolveLandingPath(ctx));
   });
 });

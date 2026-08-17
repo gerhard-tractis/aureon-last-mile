@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { ArrowLeft, BarChart3, Zap, FileText } from 'lucide-react';
+import { BarChart3, Zap, FileText } from 'lucide-react';
 
 export default function AuthLayout({
                                        children,
@@ -30,14 +29,10 @@ export default function AuthLayout({
         <div className="flex min-h-screen">
             {/* Left panel — form area */}
             <div className="w-full lg:w-[45%] flex flex-col justify-center py-12 px-6 sm:px-12 lg:px-16 bg-muted relative">
-                <Link
-                    href="/"
-                    className="absolute left-6 top-6 sm:left-8 sm:top-8 flex items-center text-xs font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground transition-colors"
-                >
-                    <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
-                    Volver
-                </Link>
-
+                {/*
+                  * No "Volver" link: with the landing page gone, `/` redirects
+                  * straight back to this form, so the link was a loop.
+                  */}
                 <div className="w-full max-w-sm mx-auto">
                     {/* Brand mark — T-symbol + product name */}
                     <div className="flex items-center gap-3 mb-10">
