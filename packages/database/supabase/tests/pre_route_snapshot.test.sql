@@ -573,6 +573,103 @@ END $$;
 ROLLBACK TO test_10;
 
 -- =============================================================================
+-- TEST 11: includes_sectorizado_packages
+--
+-- Regression guard. Every other fixture in this file inserts packages with
+-- status 'en_bodega' AND dock_zone_id set at once — a combination the app never
+-- produces. The only writer of packages.dock_zone_id is
+-- trg_dock_scan_advance_package_status (latest def: 20260506000001), and that
+-- same UPDATE sets status to 'sectorizado'. So the real docked state was outside
+-- the cohort and Pre-Ruta rendered empty no matter how many packages sat on an
+-- andén. Assert the state the app actually writes.
+-- =============================================================================
+SAVEPOINT test_11;
+
+DO $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at, comuna_id)
+  VALUES ('eeee0016-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'T37-ORD-011', 'Cliente 11', '+56900000016', 'Calle Norte 14', 'TestComuna Norte',
+    CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037');
+
+  -- Three packages docked on Andén Norte, exactly as the dock-scan trigger
+  -- leaves them.
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
+  VALUES
+    ('ffff0016-a000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0016-0000-0000-0000-000000000037', 'PKG-T37-011A', '{}'::jsonb, 'sectorizado',
+      'dddd0001-0000-0000-0000-000000000037'),
+    ('ffff0016-b000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0016-0000-0000-0000-000000000037', 'PKG-T37-011B', '{}'::jsonb, 'sectorizado',
+      'dddd0001-0000-0000-0000-000000000037'),
+    ('ffff0016-c000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0016-0000-0000-0000-000000000037', 'PKG-T37-011C', '{}'::jsonb, 'sectorizado',
+      'dddd0001-0000-0000-0000-000000000037');
+
+  SELECT public.get_pre_route_snapshot(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid,
+    CURRENT_DATE
+  ) INTO v_result;
+
+  IF (v_result->'totals'->>'order_count')::int = 1
+     AND (v_result->'totals'->>'package_count')::int = 3
+     AND jsonb_array_length(v_result->'andenes') = 1
+  THEN
+    RAISE NOTICE '✓ TEST 11 PASSED: sectorizado packages appear in the Pre-Ruta cohort';
+  ELSE
+    RAISE EXCEPTION 'TEST 11 FAILED: orders=%, packages=%, andenes=% — result: %',
+      (v_result->'totals'->>'order_count')::int,
+      (v_result->'totals'->>'package_count')::int,
+      jsonb_array_length(v_result->'andenes'),
+      v_result;
+  END IF;
+END $$;
+
+ROLLBACK TO test_11;
+
+-- =============================================================================
+-- TEST 12: excludes_retenido_packages
+--
+-- 'retenido' is what the same trigger writes for a *consolidation* andén. Those
+-- packages still need re-sorting onto a real andén before they can be routed, so
+-- widening the cohort for 'sectorizado' must not sweep them in too.
+-- =============================================================================
+SAVEPOINT test_12;
+
+DO $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at, comuna_id)
+  VALUES ('eeee0017-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'T37-ORD-012', 'Cliente 12', '+56900000017', 'Calle Norte 15', 'TestComuna Norte',
+    CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037');
+
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
+  VALUES ('ffff0017-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'eeee0017-0000-0000-0000-000000000037', 'PKG-T37-012', '{}'::jsonb, 'retenido',
+    'dddd0001-0000-0000-0000-000000000037');
+
+  SELECT public.get_pre_route_snapshot(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid,
+    CURRENT_DATE
+  ) INTO v_result;
+
+  IF (v_result->'totals'->>'order_count')::int = 0 THEN
+    RAISE NOTICE '✓ TEST 12 PASSED: retenido (consolidation) packages stay out of the cohort';
+  ELSE
+    RAISE EXCEPTION 'TEST 12 FAILED: expected 0 orders, got % — result: %',
+      (v_result->'totals'->>'order_count')::int, v_result;
+  END IF;
+END $$;
+
+ROLLBACK TO test_12;
+
+-- =============================================================================
 -- Summary
 -- =============================================================================
 -- RAISE is PL/pgSQL, not SQL: these three lines used to sit at statement level
