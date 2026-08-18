@@ -86,7 +86,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_last_attempt_at TIMES
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS geocode_next_attempt_at TIMESTAMPTZ;
 ```
 
-`geocode_next_attempt_at` is what makes "retry with backoff" real rather than aspirational. Without a time column the claim query has no way to space attempts, and a `*/10` cron would burn all five attempts in fifty minutes — turning a one-hour provider outage into a permanent centroid for that day's orders, which is the exact failure Decision 4 exists to prevent.
+`geocode_next_attempt_at` is what makes "retry with backoff" real rather than aspirational. Without a time column the claim query has no way to space attempts, and a `*/10` cron would burn both attempts in twenty minutes — turning a one-hour provider outage into a permanent centroid for that day's orders, which is the exact failure Decision 4 exists to prevent.
 
 `DECIMAL(10,7)` matches the precision already used on `dispatches` (`20260306000001_add_routes_dispatches_fleet_tables.sql:124-125`).
 
@@ -127,7 +127,7 @@ NEW.delivery_address IS DISTINCT FROM OLD.delivery_address
     → geocode_status := 'pending', geocode_attempts := 0, geocode_next_attempt_at := NULL
 ```
 
-**Trigger name ordering is a hard requirement, not cosmetics.** Postgres fires same-event BEFORE triggers in **alphabetical name order**, and the existing `orders_normalize_comuna_trigger` is declared `BEFORE INSERT OR UPDATE OF comuna` (`20260321000001:521-525`). That function both derives `NEW.comuna_id` *and* rewrites `NEW.comuna := v_name` (`:515`), so neither column is safe to compare before it runs:
+**Trigger name ordering is a hard requirement, not cosmetics.** Postgres fires same-event BEFORE triggers in **alphabetical name order**, and the existing `orders_normalize_comuna_trigger` is declared `BEFORE INSERT OR UPDATE OF comuna` (`20260321000001:523-526`). That function both derives `NEW.comuna_id` *and* rewrites `NEW.comuna := v_name` (`:516`), so neither column is safe to compare before it runs:
 
 - Compare `comuna_id` too early → it is not yet written, and the reset silently no-ops.
 - Compare raw `comuna` too late → it has already been canonicalised and equals `OLD.comuna` for any case or accent variant, and the reset silently no-ops.
@@ -234,7 +234,7 @@ The entire accuracy gate is measured off this mapping, so it cannot be left to t
 2. MapTiler → `source='maptiler'`, precision per the mapping above. **Written to the cache only when `precision='exact'`.**
 3. Comuna centroid → `source='comuna_centroid'`, `precision='approximate'`, `geocode_status='fallback'`. **Never written to the cache.**
 
-**Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry the state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value five times without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
+**Only `exact` results are cached.** Caching a coarse answer would silently defeat the retry the state machine promises: step 1 would short-circuit every subsequent attempt, the row would re-read the same approximate value on every run without a single network call, and it would land `unresolvable` while the spec claimed it was being retried. The same reasoning that has always excluded centroids applies to a provider's locality-level match — both are "we do not really know where this is", and neither should be frozen into the cache.
 
 There is no DispatchTrack step; see the section above.
 
@@ -269,15 +269,18 @@ LIMIT 200
 | Cache hit, or provider returned a street-level match | `resolved` | — | never |
 | Provider answered at locality/region granularity → centroid | `fallback` | **+1** | `now() + 7 days` |
 | Provider answered `null` — no match for this address → centroid | `fallback` | **+1** | `now() + 7 days` |
-| Provider **unavailable** — circuit-breaker open, quota exhausted, 429, timeout → centroid | `fallback` | **unchanged** | `now() + 30 min` |
+| Provider **unavailable** — circuit-breaker open, 429, timeout, network → centroid | `fallback` | **unchanged** | `now() + 30 min` |
+| **Monthly quota exhausted**, or `MAPTILER_API_KEY` absent → centroid | `fallback` | **unchanged** | start of next month |
 | 2 attempts exhausted | `unresolvable` | 2 | never |
 | No `comuna_id` and no provider answer | `unresolvable` | — | never |
 
 Two rules do the work here:
 
-**A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Classify these using the error taxonomy that already exists at `apps/agents/src/providers/types.ts:36` (`'rate_limit' | 'timeout' | 'api_error' | 'network'`) rather than inventing a parallel one that can drift from this table.
+Quota exhaustion and a missing key get their own row because they do not clear in half an hour: re-arming those every 30 minutes would churn the entire order book through the batch all month doing no useful work. A transient transport failure does clear, so it re-arms quickly.
 
-**A real answer — coarse or null — is evidence, and retrying it is nearly pure spend.** A deterministic geocoder returns the same coarse answer to the same query, so an aggressive ladder would buy several paid lookups per bad address with an expected yield near zero, applied to the ~20 % of the corpus the accuracy gate already tolerates. Hence one retry at 7 days (long enough for the provider's data to have actually changed), then stop. The realistic re-query volume is therefore *(coarse + null share) × order volume ÷ 7 days*, which must be stated against `MAPTILER_MONTHLY_QUOTA` when that value is chosen — this retry policy is the single largest driver of the monthly number.
+**A transport failure is not evidence about the address**, so it must not consume the attempt budget. That is what stops a provider outage of any length from marching a day's orders to `unresolvable` — it re-arms every 30 minutes indefinitely. Classify these with the union already spelled at `apps/agents/src/providers/types.ts:36` — `'rate_limit' | 'timeout' | 'api_error' | 'network'` — but note it is currently a member of `LLMError`, so importing it as-is would type a geocoding failure as an LLM error. Extract it to a shared `ProviderErrorType` (touching `openrouter.ts`) rather than inventing a second vocabulary that can drift from this table.
+
+**A real answer — coarse or null — is evidence, and retrying it is nearly pure spend.** A deterministic geocoder returns the same coarse answer to the same query, so an aggressive ladder would buy several paid lookups per bad address with an expected yield near zero, applied to the ~20 % of the corpus the accuracy gate already tolerates. Hence one retry at 7 days (long enough for the provider's data to have actually changed), then stop. The realistic re-query volume is *(coarse + null share) × monthly order volume* — each bad address is re-queried exactly once, and the 7 days is a delay, not a divisor. State that figure against `MAPTILER_MONTHLY_QUOTA` when the quota value is chosen; this retry policy is the single largest driver of the monthly number.
 
 **Claiming the batch.** The select must be `FOR UPDATE SKIP LOCKED`. Without it a run that outlives its ten-minute cron window — or any BullMQ retry, and the queue is configured `attempts: 3` — re-selects the identical 200 rows and pays the provider for them twice. "Claims a batch" has to be mechanised, not asserted.
 

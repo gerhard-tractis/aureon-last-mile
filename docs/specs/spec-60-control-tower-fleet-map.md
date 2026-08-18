@@ -57,7 +57,7 @@ WHERE completed_at IS NOT NULL
 GROUP BY 1 ORDER BY 1;
 ```
 
-Four things make this query the shape it is, and it should not be simplified back:
+Five things make this query the shape it is, and it should not be simplified back:
 
 - **`webhook_coords`, not just `any_coords`.** `scripts/backfill-dispatches.mjs:188-189` also wrote this column, from DT's top-level `d.latitude`, and sets `completed_at` from `arrived_at` (`:185`) — so backfilled rows satisfy every other predicate while carrying data the live map will never receive. The Filter Dispatches payload the backfill stores in `raw_data` has no `management_latitude` key at all, which is what makes that key a reliable discriminator. The filter also requires `latitude IS NOT NULL`, so the number is exactly what `getRoutePosition` would see rather than what the webhook merely sent.
 - **Do not re-run the backfill over the measured window.** It upserts with `resolution=merge-duplicates` and `raw_data: d`, replacing the column wholesale — which would erase `management_latitude` from webhook rows *and* overwrite `latitude`. Its hardcoded window (`:110`, `s=2026-02-14&e=2026-03-09`) makes that safe today, but it is one edited constant away from destroying the discriminator.
@@ -220,7 +220,7 @@ Worth knowing while reading `useOpsControlSnapshot`: it subscribes to `postgres_
 
 **Vitest — `FleetMapPanel`** (`react-leaflet` mocked as in spec-59): one marker per positioned route; `completed` and `cancelled` routes produce no marker; unpositioned routes are excluded from the map and the count text matches their number; empty state when no route has a position; overlapping positions render a stacked badge rather than two offset markers.
 
-**Vitest — `MapMarker`** (in spec-59's component, extended here): the three `freshness` values render three distinct treatments; `stackedIds.length > 1` renders the count badge and a popup line per member. Nobody else owns these assertions, since the rendering lives in the shared component but only this spec supplies the data.
+**Vitest — `MapMarker`** (in spec-59's component, extended here): the three `freshness` values render three distinct treatments. That is the only marker assertion this spec owns — the stacked badge and popup-per-member are spec-59's, asserted there, so check that file before writing a duplicate.
 
 **Vitest — `FleetCard`:** existing tests stay green, including `:97` (non-active routes reported by status); the "sin posición" indicator appears only for routes without a position; clicking a row calls `onSelectRoute`; clicking the selected row clears it.
 

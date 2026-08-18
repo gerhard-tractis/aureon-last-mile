@@ -84,6 +84,8 @@ export interface MapPoint {
   precision: 'exact' | 'approximate';
   /** Emphasis axis. This spec emits 'prominent' | 'muted'; spec-60 widens it. */
   tone?: 'prominent' | 'muted';
+  /** Set by the grouping pass; length > 1 means this marker stands for several. */
+  stackedIds?: string[];
 }
 ```
 
@@ -103,7 +105,7 @@ export interface MapPanelProps {
 }
 ```
 
-`precision`, `tone` and selection are **three separate axes** — an order can be approximate *and* muted *and* selected, and a single `variant` field cannot express that. `MapMarker` composes its appearance from `precision`, `tone`, and whether the id matches `selectedId`.
+`precision`, `tone` and selection are **three separate axes** — an order can be approximate *and* muted *and* selected, and a single `variant` field cannot express that. `MapMarker` composes its appearance from `precision`, `tone`, and whether `selectedId` matches this point — meaning its `id` **or any member of its `stackedIds`**, never `id` alone. See "Selection on a stacked marker" for why.
 
 **How Screen 1's set-wide emphasis reaches the map:** there is no plural selection prop, deliberately. `points.ts` takes the selected-order-id set and emits `tone: 'prominent' | 'muted'` per point; `selectedId` remains the single-highlight axis that only Screen 2 uses. One emphasis mechanism, decided in one pure function.
 
@@ -126,11 +128,9 @@ Orders that fall back to a comuna centroid land on **identical** coordinates, so
 
 So grouping lives here, in the shared core, not in a consumer: points within ~15 m of each other collapse into one `MapPoint` carrying `stackedIds: string[]`; `MapMarker` renders a count badge when `stackedIds.length > 1`, and the popup lists one line per stacked member. Points that do not collide are untouched. spec-60 reuses this for trucks that closed stops at the same building.
 
-```ts
-stackedIds?: string[];   // on MapPoint; length > 1 means this marker represents several
-```
-
 **Selection on a stacked marker.** The collapsed point's `id` is its first `stackedIds` member, and `stackedIds` order is deterministic (sorted by id) so a re-render cannot change which one that is. Clicking a *stacked* marker opens its popup rather than firing `onSelect` — selecting one of several by clicking the pile would silently pick an arbitrary member. Each popup line is itself clickable and fires `onSelect` with that member's id. A non-stacked marker fires `onSelect` directly, as before.
+
+**Matching must cover every member, not just the first.** On Screen 2 `selectedId` is a dispatch id chosen from the left-hand list, and two stops at the same building collapse into one marker. If the marker only compared its own `id`, selecting the *second* stop would match nothing and the highlight would silently disappear from the map — breaking the exact two-way link the screen exists for. So a stack renders selected when `selectedId` is any of its `stackedIds`.
 
 The caller owns height because the two call sites are structurally different: `RouteActivityRow`'s pane is a fixed-width column inside a flex row, while `RoutePlanCanvas` is a `min-h-[280px]` flex column with the metrics strip beneath it.
 
@@ -149,7 +149,7 @@ The caller owns height because the two call sites are structurally different: `R
 **Data path.** `RoutePlanCanvas` today receives exactly one prop, `summary: SelectionSummary`, which is counts plus `orderIds` (`useUnroutedGroups.ts:74-80`) — it has no addresses and no coordinates. The orders live in the snapshot held by `PreRouteBoard.tsx`, which renders `<RoutePlanCanvas summary={summary} />` at line 116. So:
 
 - `PreRouteBoard` derives `MapPoint[]` from `snapshot.andenes[].comunas[].orders[]` via `lib/map/points.ts` and passes it down.
-- `RoutePlanCanvas` gains `points: MapPoint[]` and `selectedOrderIds: Set<string>` alongside the existing `summary`.
+- `RoutePlanCanvas` gains `points: MapPoint[]` and `notes: string[]` alongside the existing `summary`. **`selectedOrderIds` stays in `PreRouteBoard`** — it is an input to `fromPreRouteSnapshot`, and by the time points reach the canvas the emphasis is already baked into `tone`. Passing the set down would either be a prop nothing reads or an invitation to re-derive emphasis in the component, breaking the one-mechanism rule above.
 
 **There is no separate "draft" to render.** On this board the selection *is* the draft — `RouteDraftPanel` derives what it shows from `groups` + `selectedIds` (`PreRouteBoard.tsx:118-125`). So the map has two states, not three: orders belonging to selected groups render prominent, everything else unrouted renders muted. Ops watches the route take shape as they tick groups.
 
@@ -170,7 +170,7 @@ Selecting an order in the left list highlights its marker; clicking a marker sel
 
 Its `emptyMessage` is "Sin paradas geolocalizadas" — distinct from Screen 1's copy, because on this screen the scope is one route's stops.
 
-`useRouteDispatches` (`src/hooks/dispatch/useRouteDispatches.ts:20`) already selects from `dispatches` joined to `orders`; add `latitude, longitude, geocode_precision` to that `orders(...)` projection and to `RouteDispatchSummary` in `src/lib/dispatch/types.ts:52`. No new hook.
+`RouteActivityRow` calls `fromRouteDispatches(...)` with the rows from `useRouteDispatches` and passes the resulting `points` and `notes` to `MapPanel`. `useRouteDispatches` (`src/hooks/dispatch/useRouteDispatches.ts:20`) already selects from `dispatches` joined to `orders`; add `latitude, longitude, geocode_precision` to that `orders(...)` projection and to `RouteDispatchSummary` in `src/lib/dispatch/types.ts:52`. No new hook.
 
 **Take the coordinates from `orders`, not from `dispatches`.** The adjacent `dispatches.latitude` / `dispatches.longitude` columns mean "where the courier stood when they closed the stop" — spec-58 documents this trap and spec-60 depends on that meaning. The delivery destination lives only on `orders`, geocoded by spec-58. DispatchTrack never returns a destination coordinate to us (its response-side `dispatches.latitude` is documented as "where the dispatch was deliverred"), so there is no second source to reconcile.
 
@@ -184,7 +184,7 @@ This is not a nicety. Ops needs to see at a glance that a pin in the middle of a
 
 ## Performance
 
-Both screens are bounded in practice (a route has tens of stops; a pre-route selection is at most a day's orders). Guard anyway: render at most 500 markers, and above that show the first 500 plus an explicit _"mostrando 500 de N"_ note. A silent cap would read as "that is all the orders" — exactly the kind of quiet truncation that misleads an operator.
+Both screens are bounded in practice (a route has tens of stops; a pre-route selection is at most a day's orders). Guard anyway: render at most 500 markers, and above that show the first 500 plus an explicit _"mostrando 500 de N"_ note, where **N counts orders, not markers** — grouping runs before the cap, so one marker can stand for several orders and a marker count would under-report exactly when the map is most crowded. A silent cap would read as "that is all the orders" — exactly the kind of quiet truncation that misleads an operator.
 
 If real usage regularly exceeds the cap, that is the signal to move to MapLibre and clustering — a separate spec.
 
@@ -215,7 +215,7 @@ If real usage regularly exceeds the cap, that is the signal to move to MapLibre 
 - `MapPanel`: skeleton before the dynamic chunk resolves; `emptyMessage` for zero points; the **config-error state** for a missing key, asserted as distinct copy from `emptyMessage`; `notes` render; `onSelect` fires with the clicked point id.
 - `AureonMap`: refits when the point-id set changes; **does not** refit on an unrelated re-render (the pan/zoom-preservation guarantee); a single point centres at the fixed zoom; markers still render when the tile layer errors; switching `useTheme()` mode remounts the `TileLayer` with the other style URL (the `key` behaviour from Decision 6).
 - Attribution: `AureonMap` passes a non-empty attribution to `TileLayer`. Note the limit honestly — with `react-leaflet` mocked this asserts a prop reached a mock, and Playwright stubs tiles, so the *rendered* attribution control is never exercised in CI. Assert the rendered control in the e2e run so the licensing obligation has one real check.
-- `RouteActivityRow`: one marker per geolocated dispatch; selecting an order marks the matching marker selected; clicking a marker selects the order. Replaces the placeholder assertion at line 140.
+- `RouteActivityRow`: one marker per geolocated dispatch; selecting an order marks the matching marker selected; **selecting a stop that is stacked with another still marks the stack selected** (the `stackedIds` match, not `id` alone); clicking a marker selects the order. Replaces the placeholder assertion at line 140.
 - `RoutePlanCanvas`: markers for selected groups render prominent and the rest muted; the metrics strip is unchanged (a guard against regressing the honest metrics).
 - `src/app/__tests__/design-tokens.test.ts` stays green; the assertions at lines 110 and 214-215 are unchanged. The tokens are already in use today — this spec only moves where.
 
