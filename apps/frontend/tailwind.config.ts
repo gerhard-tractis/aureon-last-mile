@@ -50,6 +50,10 @@ const config: Config = {
           muted:      "var(--color-accent-muted)",
           foreground: "var(--color-accent-foreground)",
           "light-foreground": "var(--color-accent-light-foreground)",
+          // spec-54 mock 1h — accent-hued text on a plain surface (e.g. a
+          // large numeral on a white card) needs more contrast than the raw
+          // brand gold gives in light mode. See globals.css for the ratios.
+          emphasis:   "var(--color-accent-emphasis)",
         },
         text: {
           DEFAULT:    "var(--color-text)",

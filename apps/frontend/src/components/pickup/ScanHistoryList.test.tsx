@@ -50,4 +50,25 @@ describe('ScanHistoryList', () => {
     expect(screen.getByText('CTN0')).toBeInTheDocument();
     expect(screen.queryByText('CTN3')).not.toBeInTheDocument();
   });
+
+  it('shows the not-in-load reason instead of a timestamp for not_found scans', () => {
+    render(<ScanHistoryList scans={mockScans} />);
+    expect(screen.getByText('NO ESTÁ EN LA CARGA')).toBeInTheDocument();
+  });
+
+  it('shows a timestamp, not a reason, for verified scans', () => {
+    render(<ScanHistoryList scans={[mockScans[0]]} />);
+    expect(screen.queryByText('NO ESTÁ EN LA CARGA')).not.toBeInTheDocument();
+    expect(screen.getByText(/\d{1,2}:\d{2}:\d{2}/)).toBeInTheDocument();
+  });
+
+  it('renders one status dot per row', () => {
+    render(<ScanHistoryList scans={mockScans} />);
+    expect(screen.getAllByTestId('scan-history-dot')).toHaveLength(3);
+  });
+
+  it('shows the already-scanned reason instead of a timestamp for duplicate scans', () => {
+    render(<ScanHistoryList scans={mockScans} />);
+    expect(screen.getByText('YA ESCANEADO')).toBeInTheDocument();
+  });
 });

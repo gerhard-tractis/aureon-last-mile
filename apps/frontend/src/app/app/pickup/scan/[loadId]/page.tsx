@@ -6,11 +6,14 @@ import { Button } from '@/components/ui/button';
 import { ScannerInput } from '@/components/pickup/ScannerInput';
 import { ScanHistoryList } from '@/components/pickup/ScanHistoryList';
 import { ScanResultPopup } from '@/components/pickup/ScanResultPopup';
+import { ScanResultCard } from '@/components/pickup/ScanResultCard';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { createSPAClient } from '@/lib/supabase/client';
 import { XCircle, Clock, ArrowLeft, Printer } from 'lucide-react';
 import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
+import { useLatestScanResult } from '@/hooks/pickup/useLatestScanResult';
 import { ManifestDetailList } from '@/components/pickup/ManifestDetailList';
 import { PickupFlowHeader } from '@/components/pickup/PickupFlowHeader';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
@@ -27,10 +30,19 @@ export default function ScanningPage() {
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [totalPackages, setTotalPackages] = useState(0);
   const [pickupRouteId, setPickupRouteId] = useState<string | null>(null);
+  const [retailerName, setRetailerName] = useState<string | null>(null);
+  const [pickupPoint, setPickupPoint] = useState<string | null>(null);
   const [showNotFoundPopup, setShowNotFoundPopup] = useState(false);
   const [startTime] = useState(() => Date.now());
   const [elapsed, setElapsed] = useState('00:00');
   const [userId, setUserId] = useState<string | null>(null);
+
+  // spec-54 mock 1h — real device queue state for the "COLA N" badge. No
+  // writer populates `db.scan_queue` from this screen today (see
+  // PickupFlowHeader's `queuedCount` doc comment), so `queuedCount` is
+  // always 0 in practice; wired to the real hook rather than hard-coded so
+  // the badge starts working the day a writer exists.
+  const sync = useSyncQueue();
 
   // spec-53 — second entry point. Labels are normally printed from the pickup
   // list before departure, but the crew also needs them here: this is the
@@ -42,7 +54,7 @@ export default function ScanningPage() {
     const supabase = createSPAClient();
     supabase
       .from('manifests')
-      .select('id, total_packages, pickup_route_id')
+      .select('id, total_packages, pickup_route_id, retailer_name, pickup_location')
       .eq('operator_id', operatorId)
       .eq('external_load_id', loadId)
       .is('deleted_at', null)
@@ -53,6 +65,10 @@ export default function ScanningPage() {
           setTotalPackages(data.total_packages ?? 0);
           setPickupRouteId(
             (data as { pickup_route_id: string | null }).pickup_route_id ?? null
+          );
+          setRetailerName((data as { retailer_name: string | null }).retailer_name ?? null);
+          setPickupPoint(
+            (data as { pickup_location: string | null }).pickup_location ?? null
           );
         }
       });
@@ -97,6 +113,19 @@ export default function ScanningPage() {
     [scans]
   );
 
+  // spec-54 mock 1h — the "Bloque de resultado" card. Reflects the latest
+  // scan attempt of ANY outcome (verified/not_found/duplicate), not just
+  // the latest success — see useLatestScanResult's own comment for why.
+  const latestScanResult = useLatestScanResult(scans, orders);
+
+  // Scan failures (most commonly: offline, since useScanMutation writes
+  // straight to Supabase with no local queue) must surface to the operator
+  // — silently swallowing them would mean a scan the driver believes
+  // registered actually vanished.
+  const handleScanError = useCallback(() => {
+    toast.error('El escaneo no se registró. Verifica tu conexión e inténtalo de nuevo.');
+  }, []);
+
   const handleScan = useCallback(
     (barcode: string) => {
       if (!manifestId || !operatorId || !userId) return;
@@ -117,10 +146,11 @@ export default function ScanningPage() {
               setShowNotFoundPopup(true);
             }
           },
+          onError: handleScanError,
         }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router]
+    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
   );
 
   const handleManualVerify = useCallback(
@@ -133,24 +163,28 @@ export default function ScanningPage() {
         return;
       }
       scanMutation.mutate(
-        { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId }
+        { barcode: packageLabel, manifestId, operatorId, externalLoadId: loadId, userId },
+        { onError: handleScanError }
       );
     },
-    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router]
+    [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
   );
 
   return (
     <>
-      <div className="space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
+      <div className="space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
         <ScanResultPopup
           visible={showNotFoundPopup}
           onDismiss={() => setShowNotFoundPopup(false)}
         />
 
         <PickupStepBreadcrumb current="scan" />
-        <PickupFlowHeader loadId={loadId} scanned={verifiedCount} total={totalPackages} />
 
-        {/* Back + timer row */}
+        {/* Back + timer row. Kept as a sibling of PickupFlowHeader (not
+            nested inside it) so it renders even when the header is mocked
+            out in tests — the back button and label-printing entry point
+            are both real, test-covered behaviour that must survive the
+            restyle untouched. */}
         <div className="flex items-center justify-between -mt-2">
           <Button
             variant="ghost"
@@ -185,6 +219,15 @@ export default function ScanningPage() {
           </div>
         </div>
 
+        <PickupFlowHeader
+          loadId={loadId}
+          retailerName={retailerName}
+          pickupPoint={pickupPoint}
+          scanned={verifiedCount}
+          total={totalPackages}
+          queuedCount={sync.queuedCount}
+        />
+
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />
 
         {/* Not-found counter */}
@@ -194,6 +237,8 @@ export default function ScanningPage() {
             <span className="text-sm text-text">{notFoundCount} no encontrados en manifiesto</span>
           </div>
         )}
+
+        <ScanResultCard {...latestScanResult} />
 
         <div className="bg-surface border border-border rounded-lg">
           <div className="px-3 pt-3 pb-1">
@@ -214,7 +259,23 @@ export default function ScanningPage() {
         />
       </div>
 
-      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
+      {/*
+        spec-54 mock 1h fixed footer — 60px primary action, padding
+        16px/20px/26px per the handoff. The mock also specifies two
+        secondary 50%-width buttons here, both omitted deliberately:
+
+        - "Ingresar código" would open a manual-entry field that is already
+          on screen (ScannerInput doubles as the manual-entry surface for
+          this flow) — adding a second entry point would duplicate it
+          rather than unblock anything.
+        - "Cerrar carga" has no backing mutation at the manifest level on
+          this screen. The only close action that exists today is
+          `useClosePickupRoute`, which closes the whole pickup route
+          (potentially several manifests), not "this load" — using it here
+          would silently do something bigger than the label promises. A
+          per-manifest "finish this load" RPC would unblock adding it.
+      */}
+      <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border pt-4 px-4 pb-[26px] sm:px-6">
         <div className="max-w-2xl mx-auto">
           <Button
             onClick={() =>
@@ -222,7 +283,7 @@ export default function ScanningPage() {
                 `/app/pickup/review/${encodeURIComponent(loadId)}`
               )
             }
-            className="w-full"
+            className="w-full h-[60px] text-base"
             size="lg"
           >
             Continuar a revisión

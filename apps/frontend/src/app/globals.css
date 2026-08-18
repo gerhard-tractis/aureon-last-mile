@@ -25,6 +25,12 @@ html.light {
   /* Text on the --color-accent-light button fill. White fails contrast on
      #e6c15c, so the gold button carries its own foreground. */
   --color-accent-light-foreground: #2b2620;
+  /* spec-54 mock 1h — large numerals (32px scanned-count) set directly in
+     accent gold on a plain white card. #ca9a04 on #ffffff is ~2.6:1, below
+     the 3:1 floor for large text. This darker gold clears 3:1 (~5:1) while
+     staying visibly "accent"; dark mode reuses --color-accent, which was
+     already well above the floor on the dark surface. */
+  --color-accent-emphasis: #8a6a00;
 
   --color-text:            #0f172a;
   --color-text-secondary:  #64748b;
@@ -82,6 +88,8 @@ html.dark {
   --color-accent-muted:    rgba(230,193,92,.09);
   --color-accent-foreground: #0d0b09;
   --color-accent-light-foreground: #13110d;
+  /* Already high-contrast against the dark surface — no darkening needed. */
+  --color-accent-emphasis: #e6c15c;
 
   --color-text:            #f5ecd7;
   --color-text-secondary:  #c8b99a;
@@ -139,6 +147,7 @@ html.custom {
   --color-accent-muted:    #fffdf5;
   --color-accent-foreground: #ffffff;
   --color-accent-light-foreground: #2b2620;
+  --color-accent-emphasis: #8a6a00;
   --color-text:            #0f172a;
   --color-text-secondary:  #64748b;
   --color-text-muted:      #94a3b8;
