@@ -363,6 +363,38 @@ El chip **no renderiza nada** estando en línea y con la cola vacía — el esta
 
 `RouteReceptionHeader` queda sin referencias: su código de ruta pasa al encabezado de página y su barra de progreso a la columna izquierda, donde ahora lleva semántica `role="progressbar"` con `aria-valuenow` / `aria-valuemax`.
 
+---
+
+## Fase 4.6 — Ruta activa del conductor (móvil)
+
+**Ruta:** `/app/pickup/route/active` · **Mock:** `1i`
+
+El mock `1i` está redactado para una ruta de **entregas**: paradas con ETA, ventana horaria, botón de navegación, y un desglose entregadas/fallidas/restan. Esta pantalla es la ruta de **retiro** (pickup) del conductor — el dominio real es manifiestos por verificar, no paradas de entrega. No se forzó la pantalla hacia el mock; se restyleó lo que existe.
+
+Componentes nuevos: `RouteProgressHeader`, `RouteMapPlaceholder`, `NextManifestCard`, `RouteCompleteNotice`, `UpcomingManifestList`, más `lib/pickup/manifestProgress.ts` (helpers puros compartidos), reutilizando `StackedProgress` (creado en fase 3 anticipando esta pantalla) para la barra apilada.
+
+### Datos — lo que sí y lo que no
+
+- **Sin badge de SLA ni "CIERRE EST."** `pickup_routes` no tiene columna de deadline ni de estado SLA (ver `20260625000001_spec47_pickup_routes_consolidated_reception.sql`). Omitido, igual que en 4.4 (recogida escritorio).
+- **Sin segmento "FALLIDAS" en la barra apilada ni en las métricas.** `scan_result_enum` es `verified | not_found | duplicate` — `not_found` es un escaneo que no coincide con el manifiesto, no un "no se pudo entregar". No hay un estado de fallo por paquete distinto de "aún no verificado". La barra lleva dos segmentos (verificados / restantes) en vez de tres, y la fila de métricas es VERIFICADOS / RESTAN / MANIFIESTOS en vez de las cuatro del mock.
+- **Sin mapa real.** No hay proveedor de mapas en el proyecto (fuera de alcance) ni geometría de ruta en ningún lado del esquema. `RouteMapPlaceholder` usa los tokens `--color-map-surface` (fondo) y texto/ícono en `text-text-secondary` — **no** `--color-map-line`, que en modo oscuro da ~1.9:1 contra el fondo del mapa y vuelve el placeholder invisible; ese token queda reservado para trazar la polilínea el día que exista.
+- **Dirección: existe, y se usa.** Corrección a una versión anterior de esta nota, que decía que no había dirección ni lat/lng — `manifests.pickup_location` (TEXT, sin join) está en la misma fila que `useRouteManifests` ya selecciona. Se agrega al `select` y se muestra en `NextManifestCard`. Con eso, **"ABRIR NAVEGACIÓN" también existe**: un link `https://maps.google.com/?q=<dirección>` no necesita proveedor de mapas — se renderiza sobre `RouteMapPlaceholder` cuando el manifiesto destacado tiene `pickup_location`, y se omite (no se deshabilita) cuando es `null`.
+- **Sin botón "llamar".** Corrección a la misma nota anterior: sí existe un teléfono de contacto (`pickup_points.pickup_locations[].contact_phone`, ver `lib/api/pickup-points.ts`) — la afirmación de que "no hay teléfono" era falsa. Lo que falta es el camino para llegar a él desde esta pantalla: `manifests` no guarda `pickup_point_id`, solo el texto libre `pickup_location`; `pickup_points` solo se une hoy vía `orders.pickup_point_id` en los RPCs de recogida. Añadirlo aquí requeriría ese join, que esta consulta cliente-a-tabla no hace. Se omite el botón por esa razón — no porque el dato no exista.
+- **Sin ETA ni "más opciones" en la tarjeta "siguiente manifiesto".** No hay tiempos por manifiesto en ningún lado, y no hay un menú de acciones secundarias definido para esta pantalla.
+- **"Siguiente manifiesto" ya no dependía de un orden real — ahora sí.** `useRouteManifests` no tenía `.order(...)`; el orden de Postgres es arbitrario y el hook refresca al volver el foco, así que la tarjeta destacada (y su número de posición) podía saltar de un manifiesto a otro entre refrescos sin que nada hubiera cambiado. Se agregó `.order('created_at', { ascending: true })` — el más antiguo (el primero agregado a la ruta) primero. **Ascendente, no descendente como los RPC de listado de manifiestos** (`20260428000001_sort_manifests_by_created_at.sql`): esos son un historial de cargas recién llegadas, un tipo de pantalla distinto. Esta es una cola de trabajo a la que el conductor agrega desde la misma pantalla (`handleAdd` invalida esta consulta) — con orden descendente, un manifiesto recién agregado aparecería en la posición 0, saltaría directo a "Siguiente manifiesto" y renumeraría cada badge en pantalla, reintroduciendo la misma inestabilidad que el `.order(...)` vino a resolver. El número en la tarjeta es la posición estable de un manifiesto en esa lista — no una secuencia de visita geográfica como "PARADA 19 de 24" del mock, que esta pantalla no puede modelar.
+- **Total de paquetes desconocido ≠ cero.** `manifests.total_packages` es nullable (OCR/carga manual no lo garantiza). `verified_count < (total_packages ?? 0)` leía un total desconocido como cero, así que un manifiesto sin conteo se mostraba como "ya completo" y desaparecía de la lista de pendientes; con algunos escaneos ya hechos mostraba un "5/0" imposible. `lib/pickup/manifestProgress.ts` centraliza la regla: un total `null` es DESCONOCIDO, nunca cero. El encabezado muestra el denominador como "—" (y una nota "total pendiente de definir en N manifiestos") en vez de sumar solo los totales conocidos y presentarlo como si fuera el total real de la ruta.
+- **`total_packages: 0` cuenta como no-completo, igual que `null`.** Decisión deliberada (round 2 de revisión): `isManifestComplete` no trata `0 >= 0` como "listo". Un manifiesto nunca espera legítimamente cero paquetes; un 0 real casi siempre significa que el intake (OCR o manual) todavía no registró el conteo. Coincide con el predicado que ya tenía `RouteManifestList` antes de este cambio (`expected > 0 && verified >= expected`).
+- **Ruta completa ya no reutiliza la tarjeta de "siguiente".** Antes, cuando todos los manifiestos estaban verificados, la tarjeta caía a `routeManifests[0]` y seguía mostrando un botón "Verificar" para trabajo que ya no existía. `RouteCompleteNotice` es el estado explícito para ese caso — sin CTA fabricado.
+
+### Lista completa detrás de un toggle
+
+El mock pone la lista completa de paradas detrás de "Ver las 24 paradas". Se implementó igual: `RouteManifestList` (ya existente) queda oculta por defecto y aparece con "Ver los N manifiestos" (singular "Ver el manifiesto" cuando hay exactamente uno) — con `aria-expanded` / `aria-controls` hacia el panel. El toggle no se renderiza cuando la ruta no tiene manifiestos: no hay nada que mostrar u ocultar, y el estado vacío de `RouteManifestList` queda visible directo. `AddManifestSheet` y `CloseRouteButton` no se tocaron: misma lógica de mutación, mismos data-testid.
+
+`RouteManifestList` en sí **sí cambió de comportamiento**, no solo de posición en la pantalla: su predicado de "completo" y su etiqueta de progreso pasaron a `lib/pickup/manifestProgress.ts` (`isManifestComplete` / `progressLabel`) para compartir la misma corrección de `total_packages` nulo que el resto de esta fase (ver más abajo). Sus dos tests originales se preservaron sin tocar; se agregó uno nuevo para el caso `total_packages: null`.
+
+### Accesibilidad de la barra de progreso
+
+`StackedProgress` (compartido con la Torre) expone el desglose solo en su atributo `title`, que los lectores de pantalla no anuncian de forma confiable. En vez de cambiarle el contrato de accesibilidad a un componente que usan otras pantallas, esta pantalla lo envuelve con una oración `sr-only` con los mismos números ("18 de 24 paquetes verificados").
 
 ---
 
