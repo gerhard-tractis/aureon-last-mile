@@ -2,12 +2,18 @@
 
 import { Package, ShoppingCart } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
+import { isManifestComplete, progressLabel } from '@/lib/pickup/manifestProgress';
 
 export interface RouteManifestRow {
   id: string;
   external_load_id: string;
   retailer_name: string | null;
+  /** Free-text pickup address (manifests.pickup_location). Null when not
+   *  captured at intake — never fabricate a value when absent. */
+  pickup_location: string | null;
   total_orders: number | null;
+  /** Null when intake (OCR or manual) never recorded a package count — an
+   *  unknown denominator, not zero. Callers must not read null as "complete". */
   total_packages: number | null;
   /** Count of verified pickup_scans for this manifest. */
   verified_count: number;
@@ -40,15 +46,18 @@ export function RouteManifestList({
   return (
     <div className="space-y-3" data-testid="route-manifest-list">
       {manifests.map((m) => {
-        const expected = m.total_packages ?? 0;
-        const verified = m.verified_count;
-        const complete = expected > 0 && verified >= expected;
+        const complete = isManifestComplete(m);
         return (
           <button
             key={m.id}
             type="button"
             onClick={() => onManifestClick(m.external_load_id)}
-            className="w-full text-left rounded-lg border border-border bg-surface p-4 transition-colors hover:border-accent/50"
+            // hover:border-accent-light, not hover:border-accent/50: this
+            // file's colour tokens are bare `var(--color-…)` values with no
+            // <alpha-value> channel, so a Tailwind opacity modifier here
+            // emits no CSS at all (same root cause as the map placeholder's
+            // border fix). accent-light is a real, already-defined token.
+            className="w-full text-left rounded-lg border border-border bg-surface p-4 transition-colors hover:border-accent-light"
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
@@ -66,7 +75,7 @@ export function RouteManifestList({
                 </div>
                 <div className="flex items-center gap-1">
                   <Package className="h-4 w-4" />
-                  <span className="font-mono">{verified}/{expected}</span>
+                  <span className="font-mono">{progressLabel(m)}</span>
                 </div>
               </div>
             </div>

@@ -29,7 +29,8 @@ html.light {
      accent gold on a plain white card. #ca9a04 on #ffffff is ~2.6:1, below
      the 3:1 floor for large text. This darker gold clears 3:1 (~5:1) while
      staying visibly "accent"; dark mode reuses --color-accent, which was
-     already well above the floor on the dark surface. */
+     already well above the floor on the dark surface. Also used by mock
+     1i's next-manifest position badge, same contrast floor. */
   --color-accent-emphasis: #8a6a00;
 
   --color-text:            #0f172a;
