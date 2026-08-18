@@ -139,6 +139,52 @@ describe('useReturnReceptionSession', () => {
     expect(result.current.sessionId).toBe('sess-1');
     expect(result.current.expectedCount).toBe(3);
     expect(result.current.receivedCount).toBe(1);
+    // spec-54 mock 1k — badge "EN CURSO" reads this directly from the session row.
+    expect(result.current.status).toBe('in_progress');
+  });
+
+  it('exposes driverName (from the route already resolved for the packages) and comuna per package', async () => {
+    mockSessionRpcResult = { data: VALID_SESSION, error: null };
+    packagesQueue = [
+      [
+        {
+          id: 'pkg-1',
+          order_id: 'ord-1',
+          label: 'CTN001',
+          return_reason: 'Cliente ausente',
+          status_updated_at: '2026-05-10T00:00:00Z',
+          orders: { order_number: 'ORD-1', comuna: 'Ñuñoa' },
+        },
+      ],
+    ];
+    dispatchesQueue = [
+      [{ order_id: 'ord-1', route_id: 'route-a', external_route_id: 'RUTA-001', created_at: '2026-05-01T00:00:00Z' }],
+    ];
+    routesQueue = [
+      [{ id: 'route-a', external_route_id: 'RUTA-001', driver_name: 'Juan Pérez' }],
+    ];
+
+    const { useReturnReceptionSession } = await import('./useReturnReceptionSession');
+    const { result } = renderHook(() => useReturnReceptionSession(BASE_OPTS), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.packages.length).toBe(1));
+    expect(result.current.driverName).toBe('Juan Pérez');
+    expect(result.current.packages[0].comuna).toBe('Ñuñoa');
+  });
+
+  it('driverName is null when no route resolves for any package', async () => {
+    mockSessionRpcResult = { data: VALID_SESSION, error: null };
+    packagesQueue = [[]];
+
+    const { useReturnReceptionSession } = await import('./useReturnReceptionSession');
+    const { result } = renderHook(() => useReturnReceptionSession(BASE_OPTS), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.driverName).toBeNull();
   });
 
   it('scan with valid barcode belonging to this route returns "received" with real order status', async () => {
