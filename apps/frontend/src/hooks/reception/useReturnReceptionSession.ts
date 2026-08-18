@@ -2,12 +2,20 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { createSPAClient } from '@/lib/supabase/client';
 import { resolveRoutesByOrder } from './returnRouteResolution';
+import {
+  findOrCreateSession,
+  loadPackagesForRoute,
+  findPackageByBarcode,
+  recordUnmatchedScan,
+} from './useReturnReceptionSession.queries';
 
 export interface ReturnReceptionPackage {
   id: string;
   label: string;
   order_number: string | null;
   return_reason: string | null;
+  /** orders.comuna — real column, joined alongside order_number. */
+  comuna: string | null;
   received: boolean;
 }
 
@@ -19,137 +27,32 @@ export type ScanOutcome =
 
 export interface ReturnReceptionSessionResult {
   sessionId: string | null;
+  /** hub_reception_status_enum — 'pending' | 'in_progress' | 'completed'. */
+  status: string | null;
   expectedCount: number;
   receivedCount: number;
   packages: ReturnReceptionPackage[];
+  /**
+   * routes.driver_name for the route the returning packages came from —
+   * already resolved per-order by resolveRoutesByOrder for the route-mismatch
+   * check; this just surfaces it instead of discarding it. Null when no
+   * dispatch/route row is found (mirrors useReturnRoutes' 'Sin ruta' fallback,
+   * left to the caller to render).
+   */
+  driverName: string | null;
   isLoading: boolean;
   scan: (barcode: string) => Promise<ScanOutcome>;
   error: Error | null;
+  /** Error from the packages query specifically — kept separate from
+   *  `error` (session query) so the UI can tell "session not found" apart
+   *  from "packages failed to load" instead of silently rendering an empty
+   *  list for both. */
+  packagesError: Error | null;
 }
 
 interface UseReturnReceptionSessionOptions {
   operatorId: string | null;
   externalRouteId: string | null;
-}
-
-interface RawSession {
-  id: string;
-  operator_id: string;
-  external_route_id: string;
-  status: string;
-  expected_count: number;
-  received_count: number;
-}
-
-interface RawScan {
-  id: string;
-  package_id: string | null;
-  scan_result: string;
-  barcode: string;
-}
-
-async function findOrCreateSession(
-  operatorId: string,
-  externalRouteId: string
-): Promise<RawSession> {
-  const supabase = createSPAClient();
-  const { data, error } = await supabase.rpc('find_or_create_return_reception', {
-    p_operator_id: operatorId,
-    p_external_route_id: externalRouteId,
-  });
-  if (error) throw error;
-  return data as unknown as RawSession;
-}
-
-async function loadPackagesForRoute(
-  operatorId: string,
-  externalRouteId: string,
-  sessionId: string
-): Promise<ReturnReceptionPackage[]> {
-  const supabase = createSPAClient();
-
-  const { data: pkgs, error: pkgsErr } = await supabase
-    .from('packages')
-    .select('id, order_id, label, return_reason, status_updated_at, orders(order_number)')
-    .eq('operator_id', operatorId)
-    .eq('status', 'retorno_hub')
-    .is('deleted_at', null);
-  if (pkgsErr) throw pkgsErr;
-  if (!pkgs || pkgs.length === 0) return [];
-
-  type PkgRow = {
-    id: string;
-    order_id: string;
-    label: string;
-    return_reason: string | null;
-    orders: { order_number: string } | null;
-  };
-  const packages = pkgs as PkgRow[];
-  const orderIds = [...new Set(packages.map(p => p.order_id))];
-
-  const routesByOrder = await resolveRoutesByOrder(supabase, operatorId, orderIds);
-
-  const { data: scans } = await supabase
-    .from('return_reception_scans')
-    .select('id, package_id, scan_result, barcode')
-    .eq('return_reception_id', sessionId)
-    .eq('operator_id', operatorId);
-
-  const receivedPackageIds = new Set(
-    ((scans ?? []) as RawScan[])
-      .filter(s => s.scan_result === 'received' && s.package_id)
-      .map(s => s.package_id as string)
-  );
-
-  const result: ReturnReceptionPackage[] = [];
-  for (const pkg of packages) {
-    const pkgExternalRoute = routesByOrder.get(pkg.order_id)?.externalRouteId ?? null;
-    if (pkgExternalRoute !== externalRouteId) continue;
-    result.push({
-      id: pkg.id,
-      label: pkg.label,
-      order_number: pkg.orders?.order_number ?? null,
-      return_reason: pkg.return_reason ?? null,
-      received: receivedPackageIds.has(pkg.id),
-    });
-  }
-  return result;
-}
-
-async function findPackageByBarcode(
-  operatorId: string,
-  barcode: string
-): Promise<{ id: string; order_id: string; label: string } | null> {
-  const supabase = createSPAClient();
-  const { data } = await supabase
-    .from('packages')
-    .select('id, order_id, label, status')
-    .eq('operator_id', operatorId)
-    .eq('label', barcode)
-    .eq('status', 'retorno_hub')
-    .is('deleted_at', null);
-  const row = (data ?? [])[0] as
-    | { id: string; order_id: string; label: string; status: string }
-    | undefined;
-  return row ? { id: row.id, order_id: row.order_id, label: row.label } : null;
-}
-
-async function recordUnmatchedScan(
-  operatorId: string,
-  sessionId: string,
-  barcode: string,
-  scanResult: 'not_found' | 'route_mismatch',
-  packageId: string | null
-): Promise<void> {
-  const supabase = createSPAClient();
-  await supabase.from('return_reception_scans').insert({
-    return_reception_id: sessionId,
-    operator_id: operatorId,
-    barcode,
-    scan_result: scanResult,
-    package_id: packageId,
-    scanned_at: new Date().toISOString(),
-  });
 }
 
 export function useReturnReceptionSession({
@@ -166,7 +69,7 @@ export function useReturnReceptionSession({
     staleTime: 10_000,
   });
 
-  const { data: packages, isLoading: pkgsLoading } = useQuery({
+  const { data: packages, isLoading: pkgsLoading, error: pkgsError } = useQuery({
     queryKey: ['return-reception-packages', operatorId, externalRouteId, session?.id],
     queryFn: () => loadPackagesForRoute(operatorId!, externalRouteId!, session!.id),
     enabled: enabled && !!session?.id,
@@ -280,11 +183,14 @@ export function useReturnReceptionSession({
 
   return {
     sessionId: session?.id ?? null,
+    status: session?.status ?? null,
     expectedCount: session?.expected_count ?? 0,
     receivedCount: session?.received_count ?? 0,
-    packages: packages ?? [],
+    packages: packages?.packages ?? [],
+    driverName: packages?.driverName ?? null,
     isLoading: sessionLoading || pkgsLoading,
     scan,
     error: (sessionError as Error | null) ?? null,
+    packagesError: (pkgsError as Error | null) ?? null,
   };
 }
