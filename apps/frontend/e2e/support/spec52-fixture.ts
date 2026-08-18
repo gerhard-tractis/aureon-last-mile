@@ -188,8 +188,16 @@ export async function teardown(): Promise<void> {
     [like, PLATE],
   );
   await db().query(
+    // package_id is nullable — a 'not_found' scan (barcode matched no
+    // package) still carries manifest_id, so matching on package_id alone
+    // leaves it behind. That orphan then blocks the `DELETE FROM manifests`
+    // below with `pickup_scans_manifest_id_fkey`, and stays stuck forever
+    // because nothing else ever revisits it. Mirror the manifest_id fallback
+    // already used for reception_scans below.
     `DELETE FROM pickup_scans WHERE package_id IN
-       (SELECT id FROM packages WHERE label LIKE $1)`, [like]);
+       (SELECT id FROM packages WHERE label LIKE $1)
+     OR manifest_id IN
+       (SELECT id FROM manifests WHERE external_load_id LIKE $1)`, [like]);
   await db().query(
     `DELETE FROM route_receptions WHERE pickup_route_id IN
        (SELECT id FROM pickup_routes WHERE vehicle_id IN
