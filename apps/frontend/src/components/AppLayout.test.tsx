@@ -548,7 +548,7 @@ describe('AppLayout — spec-54 mobile bottom tab bar (floor/van roles only)', (
     expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
   });
 
-  it('drops a tab whose module is disabled for the operator', () => {
+  it('renders a module-disabled tab as disabled, not absent — the bar still shows all four', () => {
     mockRole = 'warehouse_staff';
     mockPermissions = ['reception', 'distribution'];
     render(
@@ -559,6 +559,20 @@ describe('AppLayout — spec-54 mobile bottom tab bar (floor/van roles only)', (
     const tabBar = screen.getByRole('navigation', { name: /navegación principal/i });
     expect(within(tabBar).getByRole('link', { name: 'Recepción' })).toBeTruthy();
     expect(within(tabBar).queryByRole('link', { name: 'Distribución' })).toBeNull();
+    expect(tabBar.querySelectorAll('a, span[aria-disabled]')).toHaveLength(4);
+  });
+
+  it('the four-tab invariant holds even with zero permissions and zero enabled modules', () => {
+    mockRole = 'loading_crew';
+    mockPermissions = [];
+    render(
+      <AppLayout enabledModules={[]}>
+        <div>content</div>
+      </AppLayout>,
+    );
+    const tabBar = screen.getByRole('navigation', { name: /navegación principal/i });
+    expect(tabBar.querySelectorAll('a, span[aria-disabled]')).toHaveLength(4);
+    expect(tabBar.querySelectorAll('a')).toHaveLength(0);
   });
 
   it('pads scrollable content by the tab bar height so it clears the bar', () => {
