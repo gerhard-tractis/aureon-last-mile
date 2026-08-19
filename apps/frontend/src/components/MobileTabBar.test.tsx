@@ -48,17 +48,66 @@ describe('MobileTabBar', () => {
     }
   });
 
-  it('only shows the tabs backed by the driver’s actual permissions', () => {
+  it('still shows all four tabs on a partial permission set — the missing ones are disabled, not hidden', () => {
     render(
       <MobileTabBar ctx={{ role: 'pickup_crew', permissions: ['pickup'], enabledModules: ALL_MODULES }} />,
     );
     expect(screen.getByRole('link', { name: 'Recogida' })).toBeTruthy();
+    // No permission for these three: present, but not links.
     expect(screen.queryByRole('link', { name: 'Recepción' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Distribución' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Despacho' })).toBeNull();
+    expect(screen.getByText(/^Recepción/)).toBeTruthy();
+    expect(screen.getByText(/^Distribución/)).toBeTruthy();
+    expect(screen.getByText(/^Despacho/)).toBeTruthy();
   });
 
-  it('does not render a tab whose module is disabled for the operator', () => {
+  it('renders a permission-missing tab as a non-focusable, aria-disabled element with a self-explaining label', () => {
+    render(
+      <MobileTabBar ctx={{ role: 'pickup_crew', permissions: ['pickup'], enabledModules: ALL_MODULES }} />,
+    );
+    const disabled = screen.getByText(/^Recepción/).closest('[aria-disabled]');
+    expect(disabled).toBeTruthy();
+    expect(disabled?.tagName).toBe('SPAN');
+    expect(disabled?.getAttribute('href')).toBeNull();
+    // Not tabbable: no tabIndex, and not an element the tab order includes.
+    expect(disabled?.hasAttribute('tabindex')).toBe(false);
+    expect(disabled?.tagName).not.toBe('A');
+    // Muted token, no opacity stacked on top of it (compositing opacity
+    // over the token dropped light-mode contrast to ~1.7:1 — unreadable).
+    expect(disabled?.className).toMatch(/text-text-muted/);
+    expect(disabled?.className).not.toMatch(/opacity-/);
+    // Screen-reader-only explanation, not conveyed by appearance alone.
+    expect(disabled?.textContent).toContain('sin acceso');
+  });
+
+  it('badges the disabled tab icon with a lock — the non-colour "no access" cue', () => {
+    render(
+      <MobileTabBar ctx={{ role: 'pickup_crew', permissions: ['pickup'], enabledModules: ALL_MODULES }} />,
+    );
+    const disabled = screen.getByText(/^Recepción/).closest('[aria-disabled]');
+    expect(disabled?.querySelector('svg.lucide-lock')).toBeTruthy();
+  });
+
+  it('does not badge the enabled tab with a lock', () => {
+    render(
+      <MobileTabBar ctx={{ role: 'pickup_crew', permissions: ['pickup'], enabledModules: ALL_MODULES }} />,
+    );
+    const link = screen.getByRole('link', { name: 'Recogida' });
+    expect(link.querySelector('svg.lucide-lock')).toBeNull();
+  });
+
+  it('keeps the enabled tab a real, routable, focusable link even when siblings are disabled', () => {
+    render(
+      <MobileTabBar ctx={{ role: 'pickup_crew', permissions: ['pickup'], enabledModules: ALL_MODULES }} />,
+    );
+    const link = screen.getByRole('link', { name: 'Recogida' });
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('/app/pickup');
+    expect(link.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('renders a module-disabled tab as present-but-disabled, not absent', () => {
     render(
       <MobileTabBar
         ctx={{
@@ -68,8 +117,25 @@ describe('MobileTabBar', () => {
         }}
       />,
     );
+    // Reception: permission + module both present — a live link.
     expect(screen.getByRole('link', { name: 'Recepción' })).toBeTruthy();
+    // Distribución: permission held, but the module is off for this operator
+    // — still rendered, as a disabled item, not omitted.
     expect(screen.queryByRole('link', { name: 'Distribución' })).toBeNull();
+    const disabled = screen.getByText(/^Distribución/).closest('[aria-disabled]');
+    expect(disabled).toBeTruthy();
+    expect(disabled?.tagName).toBe('SPAN');
+  });
+
+  it('always renders exactly four tabs for an operations role, whatever the permission/module state', () => {
+    render(
+      <MobileTabBar
+        ctx={{ role: 'pickup_crew', permissions: [], enabledModules: [] }}
+      />,
+    );
+    const nav = screen.getByRole('navigation', { name: /navegación principal/i });
+    expect(nav.querySelectorAll('a, span[aria-disabled]')).toHaveLength(4);
+    expect(nav.querySelectorAll('a')).toHaveLength(0);
   });
 
   it('marks the tab matching the current route active with aria-current, not colour alone', () => {
