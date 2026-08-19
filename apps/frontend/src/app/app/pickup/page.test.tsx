@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
@@ -76,8 +76,9 @@ vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
 vi.mock('@/hooks/pickup/useAddManifestToRoute', () => ({
   useAddManifestToRoute: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
+const mockUseRouteManifests = vi.fn();
 vi.mock('@/hooks/pickup/useRouteManifests', () => ({
-  useRouteManifests: () => ({ data: [], isLoading: false }),
+  useRouteManifests: (...args: unknown[]) => mockUseRouteManifests(...args),
   useUnassignedManifests: () => ({ data: [], isLoading: false }),
 }));
 vi.mock('sonner', () => ({
@@ -88,8 +89,13 @@ vi.mock('@/lib/i18n/useTranslation', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+// A spy, not `{}` — item 1's regression test needs to positively assert
+// that tapping a mobile route-manifest card never touches Supabase at all
+// (the fix for the total_orders/total_packages corruption bug is to make
+// that tap navigation-only).
+const mockSupabaseFrom = vi.fn();
 vi.mock('@/lib/supabase/client', () => ({
-  createSPAClient: () => ({}),
+  createSPAClient: () => ({ from: mockSupabaseFrom }),
 }));
 
 vi.mock('@/components/pickup/CameraIntake', () => ({
@@ -115,11 +121,13 @@ vi.mock('next/navigation', () => ({
 describe('PickupPage', () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockSupabaseFrom.mockClear();
     mockActiveRoute = null;
     mockLabelsEnabled = false;
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
+    mockUseRouteManifests.mockReturnValue({ data: [], isLoading: false });
   });
 
   describe('Header', () => {
@@ -233,6 +241,150 @@ describe('PickupPage', () => {
       mockUsePendingManifests.mockReturnValue({ data: [], isLoading: false });
       render(<PickupPage />);
       expect(screen.getByText('No hay manifiestos pendientes de retiro.')).toBeInTheDocument();
+    });
+  });
+
+  // spec-54 3h review fix — the responsive switch itself was previously
+  // untested; the desktop guarantee rested entirely on the global
+  // `matches: false` matchMedia stub in src/test/setup.ts. These tests would
+  // fail if that global stub ever flipped to `matches: true`.
+  describe('Responsive layout switch (mobile 3h vs desktop 1l)', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    it('mounts the mobile card view below the lg breakpoint, and not the desktop table', () => {
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(screen.getByTestId('pickup-mobile-view')).toBeInTheDocument();
+      expect(screen.queryAllByTestId('manifest-row')).toHaveLength(0);
+    });
+
+    it('mounts the desktop table at/above the lg breakpoint, and not the mobile view', () => {
+      mockBelowLg(false);
+      render(<PickupPage />);
+      expect(screen.queryByTestId('pickup-mobile-view')).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('manifest-row').length).toBeGreaterThan(0);
+    });
+
+    // item 8 — mobile has no "en tránsito" tab and never reads this data,
+    // so the query is skipped entirely on a phone instead of fetched and
+    // discarded.
+    it('skips the in-transit query on mobile but keeps it on desktop', () => {
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(mockUseInTransitManifests).toHaveBeenLastCalledWith('op-1', false);
+
+      mockBelowLg(false);
+      render(<PickupPage />);
+      expect(mockUseInTransitManifests).toHaveBeenLastCalledWith('op-1', true);
+    });
+
+    it('defaults to the desktop table when matchMedia is unmocked (matches the global test stub)', () => {
+      render(<PickupPage />);
+      expect(screen.queryByTestId('pickup-mobile-view')).not.toBeInTheDocument();
+      expect(screen.getAllByTestId('manifest-row').length).toBeGreaterThan(0);
+    });
+  });
+
+  // spec-54 3h review fix (round 2, critical #1) — tapping a mobile card
+  // for a manifest already on the active route must still flip
+  // status/started_at (same as the desktop path — started_at drives the
+  // pickup/complete duration figure and has no other writer), but must
+  // NEVER write total_orders/total_packages: the old code reused
+  // handleRowOpen wholesale, which would coerce a genuine NULL (unknown
+  // total, e.g. QA-CARGA-C) into 0 — permanently. Round 2 over-corrected by
+  // dropping the write entirely; round 3 restores status/started_at only.
+  describe('Mobile — opening a route manifest (regression, item 1)', () => {
+    const originalMatchMedia = window.matchMedia;
+
+    function chainResolving(data: unknown[]) {
+      const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+      for (const m of ['select', 'eq', 'is', 'update']) {
+        chain[m] = vi.fn().mockReturnValue(chain);
+      }
+      chain.limit = vi.fn().mockResolvedValue({ data, error: null });
+      return chain;
+    }
+
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+
+    beforeEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+      mockActiveRoute = { id: 'route-9', code: 'PR-2026-0042', started_at: new Date().toISOString() };
+      mockUseRouteManifests.mockReturnValue({
+        data: [
+          {
+            id: 'rm1',
+            external_load_id: 'CARGA-NULL-TOTAL',
+            retailer_name: 'Easy',
+            pickup_location: 'Bodega Central',
+            total_orders: 3,
+            // The exact case that was getting corrupted: intake never
+            // recorded a package count.
+            total_packages: null,
+            verified_count: 0,
+            status: 'pending',
+          },
+        ],
+        isLoading: false,
+      });
+    });
+
+    it('tapping a card with an unknown total_packages writes status/started_at only, then navigates', async () => {
+      const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
+      mockSupabaseFrom.mockReturnValue(manifestsChain);
+
+      render(<PickupPage />);
+      await userEvent.click(screen.getByTestId('mobile-manifest-card'));
+
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-NULL-TOTAL');
+      expect(manifestsChain.update).toHaveBeenCalledTimes(1);
+      const written = manifestsChain.update.mock.calls[0][0];
+      expect(written).toMatchObject({ status: 'in_progress' });
+      expect(written.started_at).toEqual(expect.any(String));
+      // The regression this round fixes: total_packages must never be
+      // coerced from null to 0 by this write.
+      expect(written).not.toHaveProperty('total_orders');
+      expect(written).not.toHaveProperty('total_packages');
     });
   });
 });

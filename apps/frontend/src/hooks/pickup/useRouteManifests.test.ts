@@ -81,6 +81,27 @@ describe('useRouteManifests', () => {
     expect(result.current.data?.[0].pickup_location).toBe('Av. Siempre Viva 123');
   });
 
+  // spec-54 3h (mobile) — the card view sorts by real status and shows a
+  // status badge, so the manifest's lifecycle state has to travel through
+  // this hook rather than being guessed from verified_count.
+  it('selects and passes through the manifest status', async () => {
+    const manifestsChain = chainResolving([
+      { id: 'm1', external_load_id: 'L1', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: 2, status: 'in_progress' },
+    ]);
+    const scansChain = chainResolving([]);
+    mockFrom.mockImplementation((table: string) =>
+      table === 'manifests' ? manifestsChain : scansChain,
+    );
+
+    const { result } = renderHook(() => useRouteManifests('route-1', 'op-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(manifestsChain.select).toHaveBeenCalledWith(expect.stringContaining('status'));
+    expect(result.current.data?.[0].status).toBe('in_progress');
+  });
+
   it('passes through a null pickup_location rather than fabricating one', async () => {
     const manifestsChain = chainResolving([
       { id: 'm1', external_load_id: 'L1', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: 2 },

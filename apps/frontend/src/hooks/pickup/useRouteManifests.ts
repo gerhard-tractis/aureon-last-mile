@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
-import type { RouteManifestRow } from '@/components/pickup/RouteManifestList';
+import type { RouteManifestRow, ManifestStatus } from '@/components/pickup/RouteManifestList';
 
 /**
  * Fetches all manifests linked to the given pickup_route plus their verified
@@ -41,7 +41,7 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
       const { data: manifests, error } = await supabase
         .from('manifests')
         .select(
-          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages',
+          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages, status',
         )
         .eq('operator_id', operatorId!)
         .eq('pickup_route_id', routeId!)
@@ -78,6 +78,7 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
         total_orders: m.total_orders,
         total_packages: m.total_packages,
         verified_count: verifiedByManifest.get(m.id)?.size ?? 0,
+        status: m.status as ManifestStatus | undefined,
       }));
     },
   });
