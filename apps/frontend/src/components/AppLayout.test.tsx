@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import React from 'react';
 
 let mockRole = 'admin';
@@ -508,5 +508,88 @@ describe('AppLayout — topbar (spec-54)', () => {
     expect(screen.queryByTestId('inspector-palette')).toBeNull();
     fireEvent.keyDown(document, { key: '/' });
     expect(screen.getByTestId('inspector-palette')).toBeTruthy();
+  });
+});
+
+describe('AppLayout — spec-54 mobile bottom tab bar (floor/van roles only)', () => {
+  it('gives an operations role the tab bar and hides the hamburger', () => {
+    mockRole = 'pickup_crew';
+    mockPermissions = ['pickup'];
+    mockPathname = '/app/pickup';
+    render(
+      <AppLayout enabledModules={[ModuleKey.PICKUP]}>
+        <div>content</div>
+      </AppLayout>,
+    );
+    const tabBar = screen.getByRole('navigation', { name: /navegación principal/i });
+    expect(within(tabBar).getByRole('link', { name: 'Recogida' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Abrir barra lateral' })).toBeNull();
+  });
+
+  it('gives operations_manager the hamburger and no tab bar', () => {
+    mockRole = 'operations_manager';
+    mockPermissions = [];
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('navigation', { name: /navegación principal/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
+  });
+
+  it('gives admin the hamburger and no tab bar', () => {
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('navigation', { name: /navegación principal/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
+  });
+
+  it('falls back to the hamburger for a role the tab bar does not recognise', () => {
+    mockRole = 'some_future_role';
+    render(<AppLayout><div>content</div></AppLayout>);
+    expect(screen.queryByRole('navigation', { name: /navegación principal/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
+  });
+
+  it('drops a tab whose module is disabled for the operator', () => {
+    mockRole = 'warehouse_staff';
+    mockPermissions = ['reception', 'distribution'];
+    render(
+      <AppLayout enabledModules={[ModuleKey.RECEPTION]}>
+        <div>content</div>
+      </AppLayout>,
+    );
+    const tabBar = screen.getByRole('navigation', { name: /navegación principal/i });
+    expect(within(tabBar).getByRole('link', { name: 'Recepción' })).toBeTruthy();
+    expect(within(tabBar).queryByRole('link', { name: 'Distribución' })).toBeNull();
+  });
+
+  it('pads scrollable content by the tab bar height so it clears the bar', () => {
+    mockRole = 'pickup_crew';
+    mockPermissions = ['pickup'];
+    render(
+      <AppLayout enabledModules={[ModuleKey.PICKUP]}>
+        <div>content</div>
+      </AppLayout>,
+    );
+    const main = document.querySelector('main');
+    expect(main?.className).toMatch(/pb-\[var\(--mobile-tabbar-h\)\]/);
+  });
+
+  it('does not pad content for a role that keeps the hamburger', () => {
+    mockRole = 'admin';
+    render(<AppLayout><div>content</div></AppLayout>);
+    const main = document.querySelector('main');
+    expect(main?.className).not.toMatch(/mobile-tabbar-h/);
+  });
+
+  it('yields to the hamburger on a screen that already owns a fixed bottom bar', () => {
+    mockRole = 'pickup_crew';
+    mockPermissions = ['pickup'];
+    mockPathname = '/app/pickup/scan/LOAD-1';
+    render(
+      <AppLayout enabledModules={[ModuleKey.PICKUP]}>
+        <div>content</div>
+      </AppLayout>,
+    );
+    expect(screen.queryByRole('navigation', { name: /navegación principal/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Abrir barra lateral' })).toBeTruthy();
   });
 });
