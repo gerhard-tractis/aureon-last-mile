@@ -181,31 +181,36 @@ export function isOperationsRole(role: string | null): boolean {
   return role !== null && MOBILE_TAB_ROLES.has(role);
 }
 
+/** A mobile tab, plus whether the signed-in user may actually open it. */
+export interface MobileTab extends NavItem {
+  /**
+   * True when this user cannot open the tab right now — missing permission,
+   * or the operator hasn't enabled the module (spec-45). Renders either way
+   * (see MobileTab's consumer): a live link would be a fake destination in
+   * both cases — every module page bounces on the client
+   * (`_client-gate.tsx`) the instant a permission is missing.
+   */
+  disabled: boolean;
+}
+
 /**
- * The four tabs are the same set for every operations role — Recogida,
- * Recepción, Distribución, Despacho, in that fixed order — taken straight
- * from OPERATION_ITEMS so the tab bar can never drift from the sidebar's
- * icons or labels. `Torre de control` is excluded even though it lives in
- * the same array: it is gated by `isAdminOrManager`, which is never true
- * for an operations role, so it would never pass the filter below anyway.
+ * Always the same four, same order, for every operations role — Recogida,
+ * Recepción, Distribución, Despacho — taken straight from OPERATION_ITEMS so
+ * the tab bar can never drift from the sidebar's icons/labels. `Torre de
+ * control` is excluded: it's gated by `isAdminOrManager`, never true here.
  *
- * Each tab still runs through the item's own `isVisible` (permission) and
- * `module` (spec-45 tenant activation) checks — the same two gates the
- * sidebar applies. A crew member only holding a subset of the four
- * permissions (e.g. a fresh `pickup_crew` seed only carries `pickup`, see
- * `20260811000001_align_permission_vocabulary.sql`) sees only the tabs they
- * can actually open — every module page redirects on the client
- * (`_client-gate.tsx`) the instant a permission is missing, so a tab that
- * ignored this would bounce the driver straight back to `/app`.
+ * Exactly four, always — never fewer, whatever the permission/module
+ * state — marking `disabled` rather than omitting. The permission gate
+ * (`isVisible`) and the spec-45 module gate (`enabledModules`) both fold
+ * into that one flag: an ops user sees the whole shape of the app, greyed
+ * out wherever it isn't theirs, for either reason.
  */
-export function buildMobileTabs(ctx: NavContext): NavItem[] {
+export function buildMobileTabs(ctx: NavContext): MobileTab[] {
   if (!isOperationsRole(ctx.role)) return [];
-  return OPERATION_ITEMS.filter(
-    (item) =>
-      item.href !== '/app/operations-control' &&
-      item.isVisible(ctx) &&
-      (item.module === undefined || ctx.enabledModules.includes(item.module)),
-  );
+  return OPERATION_ITEMS.filter((item) => item.href !== '/app/operations-control').map((item) => ({
+    ...item,
+    disabled: !item.isVisible(ctx) || (item.module !== undefined && !ctx.enabledModules.includes(item.module)),
+  }));
 }
 
 /**
