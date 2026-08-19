@@ -4,6 +4,10 @@ import { Package, ShoppingCart } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { isManifestComplete, progressLabel } from '@/lib/pickup/manifestProgress';
 
+/** Mirrors `manifest_status_enum` (packages/database/supabase/migrations/
+ *  20260310100000_create_pickup_verification_tables.sql:33). */
+export type ManifestStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
 export interface RouteManifestRow {
   id: string;
   external_load_id: string;
@@ -17,6 +21,12 @@ export interface RouteManifestRow {
   total_packages: number | null;
   /** Count of verified pickup_scans for this manifest. */
   verified_count: number;
+  /** spec-54 3h (mobile) — real lifecycle state from `manifests.status`,
+   *  used to sort cards and choose a status badge. Optional because callers
+   *  that predate this field (this list's own rows here) still work without
+   *  it; added for the mobile card view, which needs a genuine status
+   *  rather than deriving one from verified_count. */
+  status?: ManifestStatus;
 }
 
 interface RouteManifestListProps {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { usePendingManifests, useCompletedManifests } from './useManifests';
+import { usePendingManifests, useCompletedManifests, useInTransitManifests } from './useManifests';
 
 const mockRpc = vi.fn();
 
@@ -69,5 +69,29 @@ describe('useCompletedManifests', () => {
     expect(result.current.data).toEqual(mockData);
     // callRpc always forwards the args slot; these RPCs take none.
     expect(mockRpc).toHaveBeenCalledWith('get_completed_manifests', undefined);
+  });
+});
+
+describe('useInTransitManifests', () => {
+  it('does not fetch when operatorId is null', () => {
+    mockRpc.mockClear();
+    renderHook(() => useInTransitManifests(null), { wrapper: createWrapper() });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('fetches by default when operatorId is provided (no `enabled` arg)', async () => {
+    mockRpc.mockClear();
+    mockRpc.mockResolvedValue({ data: [], error: null });
+    renderHook(() => useInTransitManifests('op-123'), { wrapper: createWrapper() });
+    await waitFor(() => expect(mockRpc).toHaveBeenCalledWith('get_in_transit_manifests', undefined));
+  });
+
+  // spec-54 3h review fix, item 8 — the mobile pickup landing has no
+  // "en tránsito" tab and never reads this data, so page.tsx passes
+  // `enabled: !isBelowLg` to skip the RPC on a phone entirely.
+  it('does not fetch when `enabled` is explicitly false, even with an operatorId', () => {
+    mockRpc.mockClear();
+    renderHook(() => useInTransitManifests('op-123', false), { wrapper: createWrapper() });
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

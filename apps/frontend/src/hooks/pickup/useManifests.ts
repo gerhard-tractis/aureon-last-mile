@@ -79,7 +79,14 @@ export function useCompletedManifests(operatorId: string | null) {
   });
 }
 
-export function useInTransitManifests(operatorId: string | null) {
+/**
+ * `enabled` (default `true`) — spec-54 3h review fix, item 8. The mobile
+ * pickup landing has no "en tránsito" tab (it's a start-of-shift screen —
+ * 3h deliberately narrower than 1l's admin-style tabs) and never reads this
+ * hook's data, so `page.tsx` passes `enabled: !isBelowLg` to skip the
+ * RPC call entirely on a phone instead of fetching and discarding it.
+ */
+export function useInTransitManifests(operatorId: string | null, enabled = true) {
   return useQuery({
     queryKey: ['pickup', 'manifests', 'in_transit', operatorId],
     queryFn: async () => {
@@ -88,7 +95,7 @@ export function useInTransitManifests(operatorId: string | null) {
       if (error) throw error;
       return data ?? [];
     },
-    enabled: !!operatorId,
+    enabled: !!operatorId && enabled,
     ...PICKUP_QUERY_OPTIONS,
   });
 }
