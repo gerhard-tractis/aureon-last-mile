@@ -6,6 +6,7 @@ import { breadcrumbForPath } from './sidebar/navigation';
 import ThemeToggle from './ThemeToggle';
 import { SyncChip } from './SyncChip';
 import CapacityAlertBell from './capacity/CapacityAlertBell';
+import { TopBarUserMenu } from './user-menu/TopBarUserMenu';
 
 /**
  * spec-54 phase 2 — the 56px application topbar.
@@ -78,6 +79,12 @@ export function TopBar({
         <SyncChip />
 
         {showOpsTools && <CapacityAlertBell operatorId={operatorId} />}
+
+        {/* The desktop sidebar already renders SidebarUserMenu at `lg` and
+            up (see AppLayout) — this trigger is `lg:hidden` internally so
+            phones and tablets never lose account access, and desktop never
+            shows the menu twice. */}
+        <TopBarUserMenu />
       </div>
     </header>
   );
