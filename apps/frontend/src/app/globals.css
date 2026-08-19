@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* spec-54 — mobile bottom tab bar height. A layout dimension, not a colour,
+   so it is defined once on :root rather than per-mode: content zone (9px top
+   padding + 21px icon + 10px label + gaps, rounded up for safety) plus the
+   bar's own bottom padding, which floors at 22px and grows with the iOS home
+   indicator. AppLayout reads the same variable to pad scrollable content so
+   nothing renders underneath the fixed bar. */
+:root {
+  --mobile-tabbar-h: calc(56px + max(22px, env(safe-area-inset-bottom)));
+}
+
 /* ============================================================
    DESIGN SYSTEM — THREE MODES
    Mode class applied to <html>: light | dark | custom

@@ -168,6 +168,71 @@ export function buildNavSections(ctx: NavContext): NavSection[] {
 }
 
 /**
+ * spec-54 — the mobile bottom tab bar.
+ *
+ * Floor and van roles only. `operations_manager` and `admin` do their work
+ * on desktop; a phone in their hand is incidental, and a 4-tab driver bar
+ * would hide most of the 9-item nav they actually need — they keep the
+ * hamburger `Sheet` instead (see AppLayout).
+ */
+const MOBILE_TAB_ROLES = new Set(['pickup_crew', 'warehouse_staff', 'loading_crew']);
+
+export function isOperationsRole(role: string | null): boolean {
+  return role !== null && MOBILE_TAB_ROLES.has(role);
+}
+
+/**
+ * The four tabs are the same set for every operations role — Recogida,
+ * Recepción, Distribución, Despacho, in that fixed order — taken straight
+ * from OPERATION_ITEMS so the tab bar can never drift from the sidebar's
+ * icons or labels. `Torre de control` is excluded even though it lives in
+ * the same array: it is gated by `isAdminOrManager`, which is never true
+ * for an operations role, so it would never pass the filter below anyway.
+ *
+ * Each tab still runs through the item's own `isVisible` (permission) and
+ * `module` (spec-45 tenant activation) checks — the same two gates the
+ * sidebar applies. A crew member only holding a subset of the four
+ * permissions (e.g. a fresh `pickup_crew` seed only carries `pickup`, see
+ * `20260811000001_align_permission_vocabulary.sql`) sees only the tabs they
+ * can actually open — every module page redirects on the client
+ * (`_client-gate.tsx`) the instant a permission is missing, so a tab that
+ * ignored this would bounce the driver straight back to `/app`.
+ */
+export function buildMobileTabs(ctx: NavContext): NavItem[] {
+  if (!isOperationsRole(ctx.role)) return [];
+  return OPERATION_ITEMS.filter(
+    (item) =>
+      item.href !== '/app/operations-control' &&
+      item.isVisible(ctx) &&
+      (item.module === undefined || ctx.enabledModules.includes(item.module)),
+  );
+}
+
+/**
+ * Screens that already own a fixed, full-width action bar pinned to the
+ * viewport bottom (a 60px primary button, safe-area padding of their own).
+ * Stacking the tab bar under/over one of these would either hide the
+ * screen's own button or make the last list row unreachable — so the tab
+ * bar (and AppLayout's compensating scroll padding) is suppressed here.
+ * The hamburger reappears as the fallback way to leave the screen.
+ *
+ * `/app/pickup/route/active` is reachable from the Recogida tab (it is not
+ * a tab destination itself) and carries the same fixed-footer pattern, so
+ * it is listed alongside the two loadId-scoped flows.
+ */
+const MOBILE_IMMERSIVE_PREFIXES = [
+  '/app/pickup/scan',
+  '/app/pickup/review',
+  '/app/pickup/route/active',
+];
+
+export function isImmersiveMobileRoute(pathname: string): boolean {
+  return MOBILE_IMMERSIVE_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(prefix + '/'),
+  );
+}
+
+/**
  * Where a signed-in user starts. Used by `/app` now that the marketing landing
  * page no longer occupies `/`.
  *

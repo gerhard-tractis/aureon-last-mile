@@ -4,8 +4,11 @@ import {
   NAV_SECTIONS,
   OPERATION_ITEMS,
   buildNavSections,
+  buildMobileTabs,
   breadcrumbForPath,
   countKeyThresholds,
+  isImmersiveMobileRoute,
+  isOperationsRole,
   resolveLandingPath,
 } from './navigation';
 
@@ -261,5 +264,90 @@ describe('resolveLandingPath (landing page removal)', () => {
     const ctx = { role: 'driver', permissions: ['pickup'], enabledModules: ALL_MODULES };
     const visible = buildNavSections(ctx).flatMap((s) => s.items.map((i) => i.href));
     expect(visible).toContain(resolveLandingPath(ctx));
+  });
+});
+
+describe('isOperationsRole', () => {
+  it('is true for the three floor/van roles', () => {
+    expect(isOperationsRole('pickup_crew')).toBe(true);
+    expect(isOperationsRole('warehouse_staff')).toBe(true);
+    expect(isOperationsRole('loading_crew')).toBe(true);
+  });
+
+  it('is false for management, unknown, and null roles', () => {
+    expect(isOperationsRole('operations_manager')).toBe(false);
+    expect(isOperationsRole('admin')).toBe(false);
+    expect(isOperationsRole('super_admin')).toBe(false);
+    expect(isOperationsRole('some_future_role')).toBe(false);
+    expect(isOperationsRole(null)).toBe(false);
+  });
+});
+
+describe('buildMobileTabs', () => {
+  it('returns nothing for management and unrecognised roles — they keep the hamburger', () => {
+    for (const role of ['operations_manager', 'admin', 'super_admin', null, 'viewer']) {
+      expect(
+        buildMobileTabs({ role, permissions: ALL_PERMISSIONS, enabledModules: ALL_MODULES }),
+      ).toEqual([]);
+    }
+  });
+
+  it('gives an operations role with every permission and module all four tabs, in order', () => {
+    const tabs = buildMobileTabs({
+      role: 'pickup_crew',
+      permissions: ALL_PERMISSIONS,
+      enabledModules: ALL_MODULES,
+    });
+    expect(tabs.map((t) => ({ href: t.href, label: t.label }))).toEqual([
+      { href: '/app/pickup', label: 'Recogida' },
+      { href: '/app/reception', label: 'Recepción' },
+      { href: '/app/distribution', label: 'Distribución' },
+      { href: '/app/dispatch', label: 'Despacho' },
+    ]);
+    expect(tabs.some((t) => t.href === '/app/operations-control')).toBe(false);
+  });
+
+  it('never returns the same four for every role — it follows the seeded permission set', () => {
+    // 20260811000001_align_permission_vocabulary.sql: a freshly seeded
+    // pickup_crew only carries 'pickup'. A tab into a module the driver
+    // cannot open would instant-bounce them back to /app (_client-gate.tsx).
+    const tabs = buildMobileTabs({
+      role: 'pickup_crew',
+      permissions: ['pickup'],
+      enabledModules: ALL_MODULES,
+    });
+    expect(tabs.map((t) => t.href)).toEqual(['/app/pickup']);
+  });
+
+  it('drops a tab whose module the operator has not enabled, even with full permissions', () => {
+    const tabs = buildMobileTabs({
+      role: 'warehouse_staff',
+      permissions: ['reception', 'distribution'],
+      enabledModules: [ModuleKey.RECEPTION],
+    });
+    expect(tabs.map((t) => t.href)).toEqual(['/app/reception']);
+  });
+
+  it('gives loading_crew its seeded distribution + dispatch tabs', () => {
+    const tabs = buildMobileTabs({
+      role: 'loading_crew',
+      permissions: ['distribution', 'dispatch'],
+      enabledModules: ALL_MODULES,
+    });
+    expect(tabs.map((t) => t.href)).toEqual(['/app/distribution', '/app/dispatch']);
+  });
+});
+
+describe('isImmersiveMobileRoute', () => {
+  it('suppresses the tab bar on screens with their own fixed bottom action bar', () => {
+    expect(isImmersiveMobileRoute('/app/pickup/scan/LOAD-1')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/pickup/review/LOAD-1')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/pickup/route/active')).toBe(true);
+  });
+
+  it('leaves ordinary tab destinations alone', () => {
+    expect(isImmersiveMobileRoute('/app/pickup')).toBe(false);
+    expect(isImmersiveMobileRoute('/app/reception')).toBe(false);
+    expect(isImmersiveMobileRoute('/app/dispatch/R-2491')).toBe(false);
   });
 });

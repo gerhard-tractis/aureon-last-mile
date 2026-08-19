@@ -1,19 +1,22 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
 import { useBranding } from '@/providers/BrandingProvider';
 import { ModuleKey } from '@/lib/modules/registry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { cn } from '@/lib/utils';
 import { useSidebarPin } from './sidebar/useSidebarPin';
 import { SidebarNavItem } from './sidebar/SidebarNavItem';
 import { SidebarBrand } from './sidebar/SidebarBrand';
 import { SidebarUserMenu } from './sidebar/SidebarUserMenu';
-import { buildNavSections } from './sidebar/navigation';
+import { buildNavSections, buildMobileTabs, isImmersiveMobileRoute } from './sidebar/navigation';
 import { useNavCounts, navCountTone } from '@/hooks/useNavCounts';
 import TopBar from './TopBar';
+import { MobileTabBar } from './MobileTabBar';
 import { InspectorSearchPalette } from './inspector/InspectorSearchPalette';
 import { OrderInspector } from './inspector/OrderInspector';
 
@@ -42,14 +45,23 @@ export default function AppLayout({
   const { role, permissions, operatorId } = useGlobal();
   const { logoUrl, companyName } = useBranding();
   const { pinned, togglePin } = useSidebarPin();
+  const pathname = usePathname();
   const [logoError, setLogoError] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [inspectorOrderId, setInspectorOrderId] = useState<string | null>(null);
 
   const isAdminOrManager = role === 'admin' || role === 'operations_manager';
 
-  const sections = buildNavSections({ role, permissions, enabledModules });
+  const navCtx = { role, permissions, enabledModules };
+  const sections = buildNavSections(navCtx);
   const counts = useNavCounts(operatorId);
+
+  // spec-54 — the bottom tab bar replaces the hamburger for floor/van roles
+  // (see buildMobileTabs). It also yields to the hamburger on screens that
+  // already own a fixed bottom action bar (isImmersiveMobileRoute) so the
+  // two never stack — see MobileTabBar's doc comment for the route list.
+  const mobileTabs = buildMobileTabs(navCtx);
+  const showMobileTabs = mobileTabs.length > 0 && !isImmersiveMobileRoute(pathname ?? '');
 
   useEffect(() => {
     if (!isAdminOrManager) return;
@@ -153,26 +165,46 @@ export default function AppLayout({
             operatorId={operatorId}
             onOpenSearch={() => setIsPaletteOpen(true)}
             menuSlot={
-              <div className="flex lg:hidden">
-                <Sheet>
-                  <SheetTrigger asChild>
-                    <button
-                      className="-ml-1 p-1 text-text-secondary"
-                      aria-label="Abrir barra lateral"
-                    >
-                      <Menu className="h-5 w-5" />
-                    </button>
-                  </SheetTrigger>
-                  <SheetContent side="left" className="w-[216px] p-0 bg-sidebar border-sidebar-border">
-                    <SidebarInner mobilePinned />
-                  </SheetContent>
-                </Sheet>
-              </div>
+              // The hamburger is the fallback for every role the bottom tab
+              // bar does not serve — operations_manager, admin, and any role
+              // not recognised as a floor/van role (buildMobileTabs returns
+              // []) — plus the operations roles themselves whenever they are
+              // on a screen that owns its own fixed bottom action bar
+              // (isImmersiveMobileRoute), so there is always a way to
+              // navigate away from a full-bleed flow.
+              !showMobileTabs && (
+                <div className="flex lg:hidden">
+                  <Sheet>
+                    <SheetTrigger asChild>
+                      <button
+                        className="-ml-1 p-1 text-text-secondary"
+                        aria-label="Abrir barra lateral"
+                      >
+                        <Menu className="h-5 w-5" />
+                      </button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-[216px] p-0 bg-sidebar border-sidebar-border">
+                      <SidebarInner mobilePinned />
+                    </SheetContent>
+                  </Sheet>
+                </div>
+              )
             }
           />
 
-          <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+          <main
+            className={cn(
+              'flex min-h-0 flex-1 flex-col',
+              // Reserve exactly the tab bar's own height so the last row of
+              // any list can still scroll into view above it.
+              showMobileTabs && 'pb-[var(--mobile-tabbar-h)] lg:pb-0',
+            )}
+          >
+            {children}
+          </main>
         </div>
+
+        {showMobileTabs && <MobileTabBar ctx={navCtx} />}
 
         {isAdminOrManager && (
           <>
