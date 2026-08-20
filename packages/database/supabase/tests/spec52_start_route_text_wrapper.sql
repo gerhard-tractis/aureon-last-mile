@@ -56,11 +56,16 @@ SELECT d.id, '00000000-0000-0000-0000-000000000000','authenticated','authenticat
 ON CONFLICT (id) DO NOTHING;
 
 -- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows.
-INSERT INTO public.users (id, operator_id, email, full_name, permissions)
-SELECT d.id, 'aaaaaaaa-0000-4000-a000-000000000862', d.email, d.full_name, ARRAY['pickup']
+-- All four are `pickup_leader`: spec-61 Task 2 gates start_pickup_route() to
+-- pickup_leader/operations_manager/admin/super_admin, and every driver here
+-- calls the TEXT wrapper directly below -- pickup_crew default would fail
+-- them all with the leader refusal instead of the wrapper behaviour tested.
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
+SELECT d.id, 'aaaaaaaa-0000-4000-a000-000000000862', 'pickup_leader', d.email, d.full_name, ARRAY['pickup']
   FROM spec52_wrap_drivers d
 ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id,
+      role        = EXCLUDED.role,
       full_name   = EXCLUDED.full_name,
       permissions = EXCLUDED.permissions;
 

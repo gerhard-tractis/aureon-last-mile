@@ -1227,11 +1227,44 @@ the grant is reissued below.
 
       Run:
       ```
-      ./scripts/pgtap-local.sh run spec52_start_route_text_wrapper spec52_vehicle_constraints \
+      ./scripts/pgtap-local.sh run spec52_start_route_text_wrapper spec52_vehicle_constraints \r
         spec47_single_active_route_per_driver spec52_migration_reconciliation spec47_migration_invariants
       ```
-      Expected: `── pass=5 fail=0 ──`. `spec52_start_route_text_wrapper` is the one that
-      proves the deprecated TEXT overload still resolves to the recreated function.
+
+      **CORRECTION (post-implementation): the `pass=5 fail=0` originally predicted here was
+      wrong.** Two of the five needed changes as part of *this* task, not a later one --
+      a change that breaks an existing test has to fix it, that is part of completing
+      the change:
+
+      - `spec52_vehicle_constraints.sql:93-96` asserted `pronargs = 1 AND proargtypes[0]
+        = 'uuid'` for `start_pickup_route`. Dropping and recreating it as
+        `(UUID, UUID[] DEFAULT)` makes `pronargs = 2`, so the count went to 0 and the
+        test raised. Fixed to assert the specific two-argument shape (still catches an
+        accidental extra overload) plus a companion check that the old one-argument form
+        is gone.
+      - Both `spec52_vehicle_constraints.sql` (driver fixture `:32-58`) and
+        `spec52_start_route_text_wrapper.sql` (driver fixture `:37-51`) insert their test
+        drivers into `public.users` with no `role`, so they fell to the table default
+        `pickup_crew` -- which the new leader gate now refuses regardless of which
+        overload (UUID or TEXT) they call through. Fixed by promoting exactly the
+        fixture users that call `start_pickup_route` directly to `pickup_leader` (one
+        driver in `spec52_vehicle_constraints.sql`, all four in
+        `spec52_start_route_text_wrapper.sql`, which opens routes as every driver in
+        turn) -- fixture users that never call the RPC were deliberately left at
+        `pickup_crew`, with a comment saying why, so the next edit doesn't promote
+        everyone by reflex.
+
+      `spec47_single_active_route_per_driver.sql` and `spec52_migration_reconciliation.sql`
+      insert `pickup_routes` rows directly and never call `start_pickup_route()`, so the
+      gate never sees them -- unaffected. `spec47_migration_invariants.sql` asserts
+      schema-level and seed-data invariants (table drops, FK targets, enum labels,
+      manifest/reception_scan consistency against the live seed) that this task's
+      migration does not touch at all -- if it fails, that predates spec-61 and is not
+      this task's regression.
+
+      Expected, corrected: `spec52_start_route_text_wrapper` and `spec52_vehicle_constraints`
+      required the fixture/assertion fixes above to pass; the other three were already
+      unaffected by this task's changes.
 
 - [ ] **Step 6: Ship the QA leader in the same commit**
 

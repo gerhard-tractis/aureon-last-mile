@@ -52,13 +52,21 @@ ON CONFLICT (id) DO NOTHING;
 
 -- DO UPDATE, not DO NOTHING: with the signup trigger enabled handle_new_user()
 -- already created these rows, and DO NOTHING would silently drop `permissions`.
-INSERT INTO public.users (id, operator_id, email, full_name, permissions)
+--
+-- Driver A1 is `pickup_leader`: spec-61 Task 2 gates start_pickup_route() to
+-- pickup_leader/operations_manager/admin/super_admin, and A1 is the only
+-- fixture driver that calls the RPC directly below -- pickup_crew default
+-- would fail every call with the leader refusal, not the vehicle error each
+-- case tests. A2 and B1 stay pickup_crew: A2's route (§2) is a raw INSERT
+-- bypassing the RPC, and B1 never calls it -- promoting them is cosmetic.
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
 VALUES
-  ('aaaaaaaa-0000-4000-a000-000000000853','aaaaaaaa-0000-4000-a000-000000000852','driver-a1@spec52veh.test','Driver A1',ARRAY['pickup']),
-  ('aaaaaaaa-0000-4000-a000-000000000854','aaaaaaaa-0000-4000-a000-000000000852','driver-a2@spec52veh.test','Driver A2',ARRAY['pickup']),
-  ('bbbbbbbb-0000-4000-b000-000000000853','bbbbbbbb-0000-4000-b000-000000000852','driver-b1@spec52veh.test','Driver B1',ARRAY['pickup'])
+  ('aaaaaaaa-0000-4000-a000-000000000853','aaaaaaaa-0000-4000-a000-000000000852','pickup_leader','driver-a1@spec52veh.test','Driver A1',ARRAY['pickup']),
+  ('aaaaaaaa-0000-4000-a000-000000000854','aaaaaaaa-0000-4000-a000-000000000852','pickup_crew','driver-a2@spec52veh.test','Driver A2',ARRAY['pickup']),
+  ('bbbbbbbb-0000-4000-b000-000000000853','bbbbbbbb-0000-4000-b000-000000000852','pickup_crew','driver-b1@spec52veh.test','Driver B1',ARRAY['pickup'])
 ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id,
+      role        = EXCLUDED.role,
       full_name   = EXCLUDED.full_name,
       permissions = EXCLUDED.permissions;
 
@@ -88,12 +96,27 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one start_pickup_route(TEXT) compatibility wrapper, found %', n_text;
   END IF;
 
+  -- spec-61 Task 2 dropped start_pickup_route(UUID) and replaced it with
+  -- (UUID, UUID[] DEFAULT) so the crew rides in the same transaction as the
+  -- route -- a second overload beside the one-argument form would make every
+  -- named call (p_vehicle_id => ...) ambiguous. Assert the SPECIFIC
+  -- two-argument shape, not just "a function of that name exists": the
+  -- point of this check is to catch an accidental extra overload.
   SELECT COUNT(*) INTO n_uuid FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
-     AND p.pronargs = 1 AND p.proargtypes[0] = 'uuid'::regtype;
+     AND p.pronargs = 2
+     AND p.proargtypes[0] = 'uuid'::regtype
+     AND p.proargtypes[1] = 'uuid[]'::regtype;
   IF n_uuid <> 1 THEN
-    RAISE EXCEPTION 'expected exactly one start_pickup_route(UUID), found %', n_uuid;
+    RAISE EXCEPTION 'expected exactly one start_pickup_route(UUID, UUID[]), found %', n_uuid;
+  END IF;
+
+  -- Leftover one-argument overload would make p_vehicle_id => ... ambiguous.
+  IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
+                AND p.pronargs = 1 AND p.proargtypes[0] = 'uuid'::regtype) THEN
+    RAISE EXCEPTION 'the one-argument start_pickup_route(UUID) should have been DROPped by spec-61 Task 2';
   END IF;
 END $$;
 
