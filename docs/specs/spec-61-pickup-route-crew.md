@@ -90,13 +90,24 @@ CREATE TABLE IF NOT EXISTS public.pickup_route_crew (
 - `removed_at` rather than a hard delete: who was on the trip is audit-bearing, and
   this repo is soft-delete throughout.
 
-### Capability, not a role
+### The lead capability is a role
 
-Restricting creation needs a capability difference. Do **not** add a `pickup_leader`
-value to `user_role` — the enum drives permissions across the whole app, and the
-same person leads on Tuesday and is crew on Wednesday. Use a permission
-(`pickup.lead` or similar) on the existing vocabulary
-(`20260811000001_align_permission_vocabulary.sql`), granted independently of role.
+`pickup_leader`: every `pickup_crew` permission, plus route creation.
+
+I recommended a permission on the existing vocabulary rather than a new value in
+`user_role`, because that enum drives access across the whole app and the same person
+may lead one shift and not the next. That was considered and overruled. It is a role.
+
+Implementing it means touching `user_role`, the permission mapping in
+`20260811000001_align_permission_vocabulary.sql`, and every place that switches on
+role — including `isOperationsRole` in `components/sidebar/navigation.ts`, which
+decides who gets the mobile tab bar. `pickup_leader` must be an operations role there,
+or a leader loses mobile navigation entirely.
+
+**Open, and it matters operationally:** there is no admin surface for granting roles
+today. If making someone a leader needs a developer or a SQL console, the model turns
+into a support ticket every time a shift lead changes. Decide how the grant happens
+before this ships.
 
 ## Behaviour
 
@@ -113,16 +124,50 @@ same person leads on Tuesday and is crew on Wednesday. Use a permission
 - A crew member on a route sees `3h`, the same as the leader.
 - `3h` shows who is on the trip.
 
-## Open questions — answer before implementing
+## Decided
 
-1. **Can the crew change mid-route?** Someone joins late, someone goes home. If yes,
-   `3h` needs an edit path and `removed_at` carries real meaning.
-2. **Can crew scan without the leader present?** Today yes — nothing checks. Keep it?
-3. **Who may close the route** — leader only, or anyone on it?
-4. **A picker already on another trip** — refuse, or move them? Refusing is safer and
-   matches the leader constraint.
-5. **Who grants the lead capability**, and through which surface? There is no admin UI
-   for permissions today.
+All five open questions were answered on 2026-08-20. They are settled, not
+suggestions.
+
+1. **The crew cannot change once the route is open.** No joining late, no leaving.
+   `removed_at` on the crew row therefore exists for correction and audit, not for
+   an edit path in the UI — `3h` gets no crew editor.
+2. **Crew can scan for as long as they are on the route.** This already works:
+   the scan guard checks only that the manifest is on an `in_progress` route, and
+   `pickup_scans.scanned_by_user_id` attributes every scan. No change needed.
+3. **The driver still marks the end of collecting; the hub ends the route.**
+   `close_pickup_route` stays as it is — it requires `in_progress` plus at least one
+   verified scan and moves the route to `in_transit`, meaning "collected, on the way".
+   Only reception takes it to `received`. This is the existing state machine and the
+   design's `3h` / `3o`; nothing changes.
+4. **A picker already on an active route cannot be added to another.** Refuse, with a
+   message naming the route they are already on. Same rule the per-driver index
+   already enforces for leaders.
+5. **A new role, `pickup_leader`** — every `pickup_crew` permission plus route
+   creation. I argued for a permission instead of a role, on the grounds that the
+   enum drives access app-wide and the same person may lead one day and not the next.
+   That was considered and overruled: it is a role. Implement it as one.
+
+### What this makes measurable — already, with no new columns
+
+The reason the hub ends the route is measurement: route length is only real once
+reception actually starts. That timestamp already exists and already means the right
+thing.
+
+`route_receptions.started_at` is set when the reception status flips to `in_progress`,
+or on the first `received` scan (`started_at = COALESCE(started_at, NOW())`). It is
+**not** set when the driver closes — the row is created at close with `status='pending'`
+and `started_at` NULL.
+
+| Interval | Expression |
+|---|---|
+| Collecting | `pickup_routes.in_transit_at − pickup_routes.started_at` |
+| In transit | `route_receptions.started_at − pickup_routes.in_transit_at` |
+| Trip total | `route_receptions.started_at − pickup_routes.started_at` |
+| Full cycle | `route_receptions.completed_at − pickup_routes.started_at` |
+
+No migration is required for any of these. If route duration is to be *reported*, that
+is a query over existing columns, not new state.
 
 ## Also fix, independent of the model
 
