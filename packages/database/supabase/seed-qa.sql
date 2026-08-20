@@ -325,24 +325,44 @@ ON CONFLICT (dock_zone_id, comuna_id) DO NOTHING;
 -- retorno_hub:
 --   /app/pickup (3j "no active route")  useActivePickupRoute.ts:28 reads
 --     pickup_routes WHERE driver_id = auth.uid() AND status = 'in_progress'.
---     The account that walks 3j through to "Iniciar ruta de recogida" is now
---     qa-pickup-leader@qa.test (fixed id 00000000-0000-4000-8000-000000000207,
---     created by create-qa-users.sh): spec-61 Task 2 gates
---     start_pickup_route() to pickup_leader / operations_manager / admin /
---     super_admin, so qa-pickup-crew@qa.test can no longer open one.
+--     The account that walks 3j through to "Iniciar ruta de recogida" is
+--     qa-pickup-leader@qa.test (fixed id 00000000-0000-4000-8000-000000000207)
+--     -- created only by create-qa-users.sh, which deploy-qa.sh never calls
+--     (setup-qa.sh:195 is its one caller), so that account exists only after
+--     someone runs it by hand on an already-bootstrapped VPS. See
+--     docs/qa-environment.md for that instruction; it is not automatic.
 --     qa-pickup-crew@qa.test (fixed id 00000000-0000-4000-8000-000000000201)
---     is instead the account for the "crew with no route" state — someone a
---     leader can add to their crew but who cannot start a route themself.
---     Both need NO active pickup_routes row, which is exactly what this seed
---     already asserts below, so no SQL changes were needed here. A
---     pre-opened route made 3j permanently unreachable for the account it
---     was built for (see PR/spec discussion — the route INSERT that used to
---     live here, id 00000000-0000-4000-8000-000000000185, was removed for
---     exactly this reason). start_pickup_route(p_vehicle_id)
+--     is the account for the "crew with no route" state — someone a leader
+--     can add to their crew but who cannot start a route themself. THIS
+--     requires a real SQL change here, below: spec-61 Task 2's backfill
+--     (20260820000003 PART 1) promotes every pickup_crew row to
+--     pickup_leader in the SAME migration that gates start_pickup_route() to
+--     leaders -- necessary so no real account is ever refused, but it also
+--     catches this fixture, since it already exists on any QA stack that was
+--     bootstrapped before this migration lands. Left alone, …201 would stop
+--     being able to demonstrate the crew state at all. The demotion below
+--     undoes that promotion for this one fixture, every deploy (seed-qa.sql
+--     runs on every deploy; the migration's backfill does not).
+--     Both …201 and …207 need NO active pickup_routes row, which is exactly
+--     what this seed already asserts below. A pre-opened route made 3j
+--     permanently unreachable for the account it was built for (see PR/spec
+--     discussion — the route INSERT that used to live here, id
+--     00000000-0000-4000-8000-000000000185, was removed for exactly this
+--     reason). start_pickup_route(p_vehicle_id)
 --     (body: 20260812000003_spec52_pickup_routes_vehicle.sql:138) validates
 --     the vehicle is operator-owned, non-deleted and active — the QA vehicle
 --     below (id …184) satisfies all three, so 3j's selector has something
 --     real to choose.
+--
+--     Demotion: idempotent (WHERE role = 'pickup_leader' is a no-op once
+--     applied), and a no-op on a fresh stack too (this UPDATE runs before
+--     create-qa-users.sh in setup-qa.sh, so …201 does not exist yet there --
+--     it is created straight as pickup_crew and this backfill never sees it,
+--     since 20260820000003 has already run by then).
+UPDATE public.users
+   SET role = 'pickup_crew'
+ WHERE id = '00000000-0000-4000-8000-000000000201'
+   AND role = 'pickup_leader';
 --   /app/pickup 3j's grouped pending list + /app/pickup/scan/[loadId]
 --     get_pending_manifests() (latest def: 20260428000004) returns every
 --     external_load_id with orders that are not deleted and whose manifest

@@ -41,14 +41,11 @@ ON CONFLICT (id) DO NOTHING;
 
 -- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows.
 -- The driver holds 'pickup' and the receptionist 'reception' -- open_route_reception
--- enforces that separation of duties. The driver is `pickup_leader`: spec-61
--- Task 2 gates start_pickup_route() to pickup_leader/operations_manager/
--- admin/super_admin, and this driver calls it directly below (line ~84) --
--- pickup_crew default would fail that call with the leader refusal before
--- this file's real subject, the snapshot's JSON contract, is ever reached.
--- The receptionist's role is untouched (stays the pickup_crew table
--- default): she never calls start_pickup_route, so the gate never sees her,
--- and open_route_reception checks the 'reception' PERMISSION, not role.
+-- enforces that separation of duties. The driver is `pickup_leader` (calls
+-- start_pickup_route directly below); the receptionist stays `pickup_crew`
+-- (never calls it, and open_route_reception checks a PERMISSION, not role).
+-- Why the driver needs promoting: docs/specs/spec-61-pickup-route-crew.md,
+-- Task 2 Step 5's correction.
 INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','pickup_leader','driver@snapcontract.test','Driver Contrato',ARRAY['pickup']),

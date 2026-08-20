@@ -132,8 +132,12 @@ BEGIN
   -- re-login too). SECURITY DEFINER, so RLS does not hide the row.
   -- operations_manager / admin / super_admin keep the capability they have
   -- today; pickup_crew is the role this spec exists to stop.
+  -- operator_id IS scoped here (not just id): without it a JWT whose `sub`
+  -- belongs to operator X but whose operator_id claim says Y would pass the
+  -- gate on X's role and then write a route under Y. The mismatch now falls
+  -- into the refusal below for free, same as any other non-leader.
   SELECT role INTO v_role FROM public.users
-   WHERE id = v_driver AND deleted_at IS NULL;
+   WHERE id = v_driver AND operator_id = v_operator AND deleted_at IS NULL;
 
   IF v_role IS NULL
      OR v_role::text NOT IN ('pickup_leader','operations_manager','admin','super_admin') THEN
@@ -239,10 +243,61 @@ BEGIN
   END IF;
 
   -- Same transaction as the route: a route can never exist without its crew.
-  INSERT INTO public.pickup_route_crew (operator_id, pickup_route_id, user_id, added_by)
-  SELECT DISTINCT v_operator, v_row.id, u, v_driver
-    FROM unnest(COALESCE(p_crew_user_ids, '{}'::UUID[])) AS u
-   WHERE u <> v_driver;
+  -- Wrapped: the pre-flight above is a READ: two leaders naming the same
+  -- picker at once both pass it, and the loser would otherwise hit
+  -- uniq_pickup_route_crew_one_active_per_user with no handler here --
+  -- useStartPickupRoute.ts:26 does `throw new Error(error.message)`
+  -- verbatim, so a raw Postgres unique-violation string would reach the
+  -- driver in English, naming an internal index. Re-run the same busy
+  -- lookup the pre-flight used to name the person and the route the same
+  -- way; if the competing transaction hasn't committed yet, that lookup
+  -- finds nothing, so a generic Spanish fallback covers the window instead
+  -- of a raw string. ERRCODE stays '23505' on both this path and the
+  -- pre-flight's above: both represent the same Postgres error class (a
+  -- unique-violation on this exact index) and the precedent five lines
+  -- above ("ruta de retiro activa") already uses '23505' for the same kind
+  -- of business refusal -- a caller keying on SQLSTATE alone cannot tell
+  -- "friendly" from "raw" apart, but after this fix there IS no raw path
+  -- left to distinguish from; the message text is what carries the
+  -- difference now.
+  BEGIN
+    INSERT INTO public.pickup_route_crew (operator_id, pickup_route_id, user_id, added_by)
+    SELECT DISTINCT v_operator, v_row.id, u, v_driver
+      FROM unnest(COALESCE(p_crew_user_ids, '{}'::UUID[])) AS u
+     WHERE u <> v_driver;
+  EXCEPTION WHEN unique_violation THEN
+    v_busy := NULL;
+    FOREACH v_uid IN ARRAY COALESCE(p_crew_user_ids, '{}'::UUID[]) LOOP
+      CONTINUE WHEN v_uid = v_driver;
+
+      SELECT pr.code INTO v_busy FROM public.pickup_routes pr
+       WHERE pr.operator_id = v_operator AND pr.driver_id = v_uid
+         AND pr.status = 'in_progress' AND pr.deleted_at IS NULL
+       LIMIT 1;
+
+      IF v_busy IS NULL THEN
+        SELECT pr.code INTO v_busy
+          FROM public.pickup_route_crew c
+          JOIN public.pickup_routes pr ON pr.id = c.pickup_route_id
+         WHERE c.operator_id = v_operator AND c.user_id = v_uid
+           AND c.removed_at IS NULL AND c.deleted_at IS NULL
+           AND pr.status = 'in_progress' AND pr.deleted_at IS NULL
+         LIMIT 1;
+      END IF;
+
+      IF v_busy IS NOT NULL THEN
+        SELECT * INTO v_member FROM public.users WHERE id = v_uid;
+        RAISE EXCEPTION '% ya está en la ruta % y no puede estar en dos a la vez',
+                        COALESCE(v_member.full_name, v_member.email), v_busy
+          USING ERRCODE = '23505';
+      END IF;
+    END LOOP;
+
+    -- The competing transaction hasn't committed yet, so the lookup above
+    -- found nobody to name. This IS the race window, not a bug in the loop.
+    RAISE EXCEPTION 'Otro líder acaba de agregar a esa persona a su ruta. Intenta de nuevo.'
+      USING ERRCODE = '23505';
+  END;
 
   RETURN v_row;
 END $$;
@@ -252,10 +307,51 @@ COMMENT ON FUNCTION public.start_pickup_route(UUID, UUID[])
      'its crew, in one transaction (spec-61). Refuses a caller whose role cannot '
      'lead (pickup_leader / operations_manager / admin / super_admin may), and '
      'refuses a crew member already active on another route, naming it. Every '
-     'refusal message is Spanish and shown to the driver verbatim.';
+     'BUSINESS refusal message is Spanish and shown to the driver verbatim -- a '
+     'handful of internal/should-never-happen errors (malformed JWT, exhausted '
+     'code-allocation retries) stay in English, same as the template.';
 
 -- DROP FUNCTION took the old grant with it.
 GRANT EXECUTE ON FUNCTION public.start_pickup_route(UUID, UUID[]) TO authenticated;
 REVOKE ALL ON FUNCTION public.start_pickup_route(UUID, UUID[]) FROM anon;
+
+-- =============================================================================
+-- PART 3 — Validation (template: 20260812000003 PART 8)
+-- =============================================================================
+-- Migrations run once against production and pgTAP never touches production,
+-- so without this the backfill has no deploy-time proof it worked and the
+-- DROP/CREATE has no proof it left exactly one overload. This is also the
+-- honest answer to "does a test prove the backfill ran": a pgTAP test can
+-- only re-execute a hand-copied duplicate of PART 1 against a fixture it
+-- seeds itself (see spec61_start_route_leader_gate.sql) -- it cannot observe
+-- PART 1's actual UPDATE against the actual rows. This block does.
+DO $$
+DECLARE v_leftover INT; v_two_arg INT; v_one_arg INT;
+BEGIN
+  SELECT COUNT(*) INTO v_leftover FROM public.users
+   WHERE role = 'pickup_crew' AND deleted_at IS NULL;
+  IF v_leftover <> 0 THEN
+    RAISE EXCEPTION '% pickup_crew row(s) survived the backfill -- PART 1 did not run or its WHERE regressed', v_leftover;
+  END IF;
+
+  SELECT COUNT(*) INTO v_two_arg FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
+     AND p.pronargs = 2 AND p.proargtypes[0] = 'uuid'::regtype
+     AND p.proargtypes[1] = 'uuid[]'::regtype;
+  IF v_two_arg <> 1 THEN
+    RAISE EXCEPTION 'expected exactly one start_pickup_route(UUID, UUID[]), found %', v_two_arg;
+  END IF;
+
+  SELECT COUNT(*) INTO v_one_arg FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
+     AND p.pronargs = 1 AND p.proargtypes[0] = 'uuid'::regtype;
+  IF v_one_arg <> 0 THEN
+    RAISE EXCEPTION 'the one-argument start_pickup_route(UUID) survived the DROP -- it and the two-argument form together make start_pickup_route(p_vehicle_id => ...) ambiguous, found %', v_one_arg;
+  END IF;
+
+  RAISE NOTICE 'spec-61 Task 2 migration validation passed';
+END $$;
 
 COMMIT;

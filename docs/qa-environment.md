@@ -140,6 +140,16 @@ QA login users (created by `create-qa-users.sh`, password `QaTest123!` for all):
 | qa-admin@qa.test | admin | QA Test Operator |
 | qa-super-admin@qa.test | super_admin | internal Aureon operator |
 
+`qa-pickup-leader@qa.test` only exists after `create-qa-users.sh` has actually
+run. `deploy-qa.sh` never calls it -- only `setup-qa.sh`'s one-time bootstrap
+does (`setup-qa.sh:195`) -- so on an already-bootstrapped VPS it must be run by
+hand once, after this row was added:
+`bash ~/aureon-last-mile/infra/supabase-qa/create-qa-users.sh /home/aureon/.env.qa`
+(idempotent). Until then, `qa-pickup-crew@qa.test` stays `pickup_crew` --
+`seed-qa.sql` demotes it back on every deploy, undoing spec-61 Task 2's
+one-time backfill for that one fixture -- so the "crew with no route" state
+stays testable even before the leader account exists.
+
 QA operator id: `00000000-0000-4000-8000-000000000001` (fixed, seeded by `seed-qa.sql`).
 
 ## Continuous sync (CI)

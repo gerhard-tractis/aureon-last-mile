@@ -53,12 +53,10 @@ ON CONFLICT (id) DO NOTHING;
 -- DO UPDATE, not DO NOTHING: with the signup trigger enabled handle_new_user()
 -- already created these rows, and DO NOTHING would silently drop `permissions`.
 --
--- Driver A1 is `pickup_leader`: spec-61 Task 2 gates start_pickup_route() to
--- pickup_leader/operations_manager/admin/super_admin, and A1 is the only
--- fixture driver that calls the RPC directly below -- pickup_crew default
--- would fail every call with the leader refusal, not the vehicle error each
--- case tests. A2 and B1 stay pickup_crew: A2's route (§2) is a raw INSERT
--- bypassing the RPC, and B1 never calls it -- promoting them is cosmetic.
+-- Driver A1 is `pickup_leader` -- A2 and B1 stay `pickup_crew` on purpose
+-- (A2's route below is a raw INSERT bypassing the RPC; if you make it call
+-- the RPC, promote A2 too). Why: docs/specs/spec-61-pickup-route-crew.md,
+-- Task 2 Step 5's correction.
 INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
 VALUES
   ('aaaaaaaa-0000-4000-a000-000000000853','aaaaaaaa-0000-4000-a000-000000000852','pickup_leader','driver-a1@spec52veh.test','Driver A1',ARRAY['pickup']),
@@ -96,12 +94,9 @@ BEGIN
     RAISE EXCEPTION 'expected exactly one start_pickup_route(TEXT) compatibility wrapper, found %', n_text;
   END IF;
 
-  -- spec-61 Task 2 dropped start_pickup_route(UUID) and replaced it with
-  -- (UUID, UUID[] DEFAULT) so the crew rides in the same transaction as the
-  -- route -- a second overload beside the one-argument form would make every
-  -- named call (p_vehicle_id => ...) ambiguous. Assert the SPECIFIC
-  -- two-argument shape, not just "a function of that name exists": the
-  -- point of this check is to catch an accidental extra overload.
+  -- spec-61 Task 2 replaced start_pickup_route(UUID) with
+  -- (UUID, UUID[] DEFAULT) -- assert the SPECIFIC two-argument shape, not
+  -- just "a function of that name exists", to catch an accidental overload.
   SELECT COUNT(*) INTO n_uuid FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
