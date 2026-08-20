@@ -37,7 +37,23 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
 
   test.beforeAll(async ({ browser }) => {
     ({ driverId } = await seed());
-    driverCtx = await browser.newContext({ viewport: { width: 768, height: 1024 } });
+    // 768 was below `lg` (1024px) even before spec-54 (#455) split
+    // /app/pickup into two trees at that breakpoint — it was harmless only
+    // because before #455 there was a single desktop-style layout at every
+    // width. Below `lg` now renders PickupMobileView, whose cards carry
+    // `mobile-manifest-card` instead of the `manifest-row` testid (and a
+    // tap-to-select interaction instead of role=checkbox rows) that every
+    // driver-side step in this file drives. This suite exercises the
+    // desktop tree end-to-end, so the driver context must stay at or above
+    // `lg` — matching playwright.qa.config.ts's own default.
+    //
+    // NOTE, deliberate debt: 768 vs the receptionist's 1280 was modelling a
+    // driver on a small device against a receptionist at a desk. Widening the
+    // driver keeps this suite green but drops that distinction, so nothing
+    // here covers what a driver on a phone actually sees. The right fix is a
+    // separate mobile spec driving PickupMobileView at 390px; it is not this
+    // one, because 3h is being redesigned and mobile selectors would churn.
+    driverCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     recepCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     driver = await driverCtx.newPage();
     recep = await recepCtx.newPage();
