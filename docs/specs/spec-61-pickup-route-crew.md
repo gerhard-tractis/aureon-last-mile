@@ -104,10 +104,13 @@ role — including `isOperationsRole` in `components/sidebar/navigation.ts`, whi
 decides who gets the mobile tab bar. `pickup_leader` must be an operations role there,
 or a leader loses mobile navigation entirely.
 
-**Open, and it matters operationally:** there is no admin surface for granting roles
-today. If making someone a leader needs a developer or a SQL console, the model turns
-into a support ticket every time a shift lead changes. Decide how the grant happens
-before this ships.
+**How the grant happens — resolved.** An earlier draft claimed there was no admin
+surface for roles. There is: `/admin` → `components/admin/UserForm.tsx`, which renders
+`roleOptions` from `lib/validation/userSchema.ts:62-68`. Adding `pickup_leader` is an
+option on an existing form, not a new screen.
+
+Note the promoted user must re-login before the JWT claim refreshes — an operational
+instruction, not an aside.
 
 ## Behaviour
 
@@ -208,7 +211,7 @@ existing form, not a new screen. This plan implements the role.
 | `public.users` is SELECT-able by any authenticated user of the same operator, so the crew picker needs no new RPC | `20260216170542_create_users_table_with_rbac.sql:77-96` |
 | The client's `role` comes from the JWT claim, not a query — **a role change only takes effect once the token refreshes (re-login)** | `apps/frontend/src/lib/context/GlobalContext.tsx:52-55`, read through `useOperatorId()` |
 | `MOBILE_TAB_ROLES` is a literal `Set` of three strings; `isOperationsRole` is its only reader and `buildMobileTabs` returns `[]` for anything else — a role missing here gets **no mobile tab bar at all** | `apps/frontend/src/components/sidebar/navigation.ts:178-181, 209` |
-| There are **four** role zod enums, not two: `app/api/users/route.ts:38`, `app/api/users/[id]/route.ts:10`, and `lib/validation/userSchema.ts:28` and `:42`. `UserForm.tsx` holds no role list of its own — it renders `roleOptions` (`lib/validation/userSchema.ts:62-68`) | see cited files |
+| There are **four** role zod enums, not two: `app/api/users/route.ts:38`, `app/api/users/[id]/route.ts:10`, and `lib/validation/userSchema.ts:30` and `:42`. `UserForm.tsx` holds no role list of its own — it renders `roleOptions` (`lib/validation/userSchema.ts:62-68`) | see cited files |
 | `Database` types are **hand-maintained**, not generated: `start_pickup_route` is typed `Args: { p_vehicle_id: string }` | `apps/frontend/src/lib/types.ts:1924-1930` |
 | `create-qa-users.sh` seeds six roles from a `ROLE_ROWS` table with fixed UUIDs (`…0201`–`…0206`) | `infra/supabase-qa/create-qa-users.sh:99-104` |
 | **`create-qa-users.sh` does NOT run on deploy** — `deploy-qa.sh:175` deliberately leaves it in `setup-qa.sh:195`, the one-time bootstrap. Adding a row to the script does not create the user in QA; someone must run it on the VPS | cited files, plus `docs/qa-environment.md:196, 270` |
@@ -597,7 +600,10 @@ fixed at creation (Decision 1): `removed_at` has exactly one writer.
 - [ ] **Step 2: Run it, verify it fails**
 
       Run: `./scripts/pgtap-local.sh sync && ./scripts/pgtap-local.sh run spec61_pickup_route_crew`
-      Expected: `FAIL` with `ERROR: relation "public.pickup_route_crew" does not exist`
+      Expected: `FAIL` with `ERROR: pickup_route_crew does not have RLS enabled`.
+      Not "relation does not exist" — the script's first assertion is the
+      `pg_class.relrowsecurity` check, which raises its own message before anything
+      queries the table.
 
 - [ ] **Step 3: Minimal implementation — the table, the index, the trigger**
 
@@ -714,7 +720,15 @@ fixed at creation (Decision 1): `removed_at` has exactly one writer.
           WITH CHECK (operator_id = public.get_operator_id());
       EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-      GRANT SELECT, INSERT, UPDATE ON public.pickup_route_crew TO authenticated;
+      -- SELECT only, deliberately. Nothing in the frontend writes this table:
+      -- start_pickup_route and the route-status trigger are both SECURITY
+      -- DEFINER and bypass these grants. Granting INSERT/UPDATE here would let
+      -- any authenticated user of the operator seat themselves on any route
+      -- over PostgREST, or UPDATE removed_at to free their own seat — which
+      -- would falsify the "exactly one writer" property the one-active-seat
+      -- index depends on. vehicles grants INSERT/UPDATE because it IS written
+      -- from the UI; this table is not, so do not copy that shape.
+      GRANT SELECT ON public.pickup_route_crew TO authenticated;
       REVOKE ALL ON public.pickup_route_crew FROM anon;
       GRANT ALL ON public.pickup_route_crew TO service_role;
 
@@ -822,6 +836,49 @@ fixed at creation (Decision 1): `removed_at` has exactly one writer.
       ```
 
 ### Task 2: `start_pickup_route` — leader gate, crew in the same transaction, and a QA leader
+
+**Rollout — read before writing the migration. Decided 2026-08-20.**
+
+The gate cannot simply be switched on. This repo deploys the database ahead of the
+frontend (`deploy.yml`: `deploy-vercel` `needs: [… deploy-supabase]`). The moment the
+gate lands:
+
+- every existing `pickup_crew` account is refused by it;
+- **nobody holds `pickup_leader`** — the enum value is brand new;
+- the only surface that grants it, `roleOptions`, does not exist until the *frontend*
+  chunk deploys, i.e. afterwards;
+- and a promoted user must re-login before the claim refreshes.
+
+So without a backfill, pickup is **down in production** from DB-deploy until
+frontend-deploy plus admin grants plus a re-login per driver.
+
+**The decision: the same migration promotes every existing `pickup_crew` user to
+`pickup_leader`.** Nothing breaks at the moment it lands — everyone can open a route
+exactly as they can today — and the operator then demotes people to crew deliberately,
+through the admin UI, as they decide who leads. Safe by default, tightened by choice.
+
+```sql
+-- Backfill BEFORE the gate is enforced, in the same migration, so there is no
+-- window in which a working account is refused.
+UPDATE public.users
+   SET role = 'pickup_leader'
+ WHERE role = 'pickup_crew'
+   AND deleted_at IS NULL;
+```
+
+Consequences to carry into the steps below:
+
+- The promotion must also apply the `pickup_leader` permission default, or a promoted
+  user is bounced by `_client-gate` despite holding the role. Assert this in the test —
+  the role alone is not sufficient.
+- Promoted users still need a re-login for the JWT claim to refresh. State it in the
+  step; it is a real operational instruction, not an aside.
+- **Back-out:** a follow-up migration widening the gate's whitelist to include
+  `pickup_crew` restores the previous behaviour without touching data or the enum. Name
+  it in the migration header — the enum value itself cannot be removed.
+- QA: the `pickup_leader` row added to `create-qa-users.sh` is still needed for a *fresh*
+  QA, but the backfill means the existing `qa-pickup-crew` account keeps working through
+  the deploy. Do not rely on the backfill for a new environment.
 
 **Files:**
 - Create: `packages/database/supabase/tests/spec61_start_route_leader_gate.sql`
@@ -1243,7 +1300,7 @@ given it). Nothing here is user-visible on its own except the `/admin` role drop
 - Modify: `apps/frontend/src/lib/types/auth.types.ts:15-33`, `:198-207`
 - Modify: `apps/frontend/src/lib/permissions.ts:38-45`
 - Create: `apps/frontend/src/lib/permissions.test.ts`
-- Modify: `apps/frontend/src/lib/validation/userSchema.ts:28`, `:42`, `:62-68`
+- Modify: `apps/frontend/src/lib/validation/userSchema.ts:30`, `:42`, `:62-68`
 - Modify: `apps/frontend/src/app/api/users/route.ts:38`
 - Modify: `apps/frontend/src/app/api/users/[id]/route.ts:10`
 - Modify: `apps/frontend/src/components/sidebar/navigation.ts:174-181`
@@ -1459,18 +1516,23 @@ construction rather than by restating the strings, so the next role added cannot
       `Property '[UserRole.PICKUP_LEADER]' is missing in type … Record<UserRole, string>`.
       That error *is* the test for this step; there is no runtime assertion to write.
 
-      Make these five edits, then re-run `npx tsc --noEmit` until clean:
+      Make these **seven** edits, then re-run `npx tsc --noEmit` until clean.
+
+      **Edits 6 and 7 are the dangerous ones: `tsc` will NOT flag them.** `super_admin`
+      is already missing from both lists, which proves nothing depends on them for
+      compilation — so they get left stale and silently drift. Do not skip them because
+      the type-check passes.
 
       1. `auth.types.ts:15-33` — add the member, above `WAREHOUSE_STAFF`:
          ```ts
            /** Pickup route leaders — open the route and name its crew (spec-61) */
            PICKUP_LEADER = 'pickup_leader',
          ```
-      2. `auth.types.ts:198-207` — add to `roleNames`:
+      2. `auth.types.ts:197-206` — add to `roleNames`:
          ```ts
              [UserRole.PICKUP_LEADER]: 'Pickup Leader',
          ```
-      3. `lib/validation/userSchema.ts:28` and `:42` — both enums become
+      3. `lib/validation/userSchema.ts:30` and `:42` — both enums become
          ```ts
            ['pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
          ```
@@ -1483,6 +1545,15 @@ construction rather than by restating the strings, so the next role added cannot
       5. `app/api/users/route.ts:38` and `app/api/users/[id]/route.ts:10` — same enum list as
          (3). These are the server-side gate; without them the form can offer the role and the
          API will reject it with `Please select a valid role`.
+
+      6. `lib/api/users.ts:9` and `:15` — `CreateUserInput.role` and `UpdateUserInput.role`
+         are two more hand-written role unions. Same list as (3). `tsc` does catch these.
+
+      7. `lib/types.ts:2078` (`Enums.user_role`) and `:2262` (`Constants.user_role`) — the
+         hand-maintained database types. **`tsc` will not catch these.** Add
+         `'pickup_leader'` to both, keeping the enum order consistent with the migration.
+         Task 4 Step 9 already edits this file for other reasons; do not assume it covers
+         the enum, because it does not.
 
 - [ ] **Step 10: Prove the API and the form agree**
 
@@ -2267,6 +2338,17 @@ point is that the message is *actionable*: it must say a route is not open and w
          render `<CrewSelect …/>` between the `VehicleSelect` and the error line, and change
          the button to `onCreateRoute(vehicleId, crewIds)`. Update
          `PickupMobileStartRouteProps.onCreateRoute` to `(vehicleId: string, crewIds: string[]) => void`.
+
+         **`crewIds` MUST be defaulted on `handleCreateRoute` itself:**
+         ```ts
+         const handleCreateRoute = async (vehicleId: string, crewIds: string[] = []) => {
+         ```
+         The desktop path still calls it with one argument: `PickupDesktopView.tsx:193`
+         threads it to `PickupRouteDraftPanel.tsx:117` as `onStart`, and
+         `StartRouteButton` invokes `onStart(vehicleId)`. Two required parameters is a
+         `tsc` error on that prop type, and at runtime desktop would pass `undefined` as
+         the crew. `StartRouteButton.tsx` itself needs **no** edit — but only because of
+         this default, which is why it is called out here rather than left implicit.
       2. `useStartPickupRoute.ts` — `StartArgs` gains `crewUserIds?: string[]`, and the call
          becomes:
          ```ts
@@ -2278,7 +2360,7 @@ point is that the message is *actionable*: it must say a route is not open and w
          The RPC's Spanish messages (`Solo un líder…`, `… ya está en la ruta …`) are rethrown
          verbatim, as they already are — no new error mapping, and none wanted: the RPC's
          message names the person and the route.
-      3. `page.tsx:184` — `handleCreateRoute(vehicleId: string, crewIds: string[])` passes
+      3. `page.tsx:185` — `handleCreateRoute(vehicleId: string, crewIds: string[])` passes
          `{ vehicleId, crewUserIds: crewIds }` to `startMut.mutate`. The rest of the handler,
          including the partial-attach toast at `:200`, is untouched.
 
@@ -2651,6 +2733,28 @@ change the badge and the list legitimately differ; see Decision 9.
       leader-only flow and no leader.
 
 ### Risks to carry
+
+**A reopened route can strand its crew, permanently.** The restore branch of the
+route-status trigger skips any seat whose holder is active elsewhere — correct, because
+otherwise a receptionist's undo aborts on a 23505 — but nothing ever retries. That
+person's `removed_at` stays set, so `get_my_active_pickup_route()` returns NULL for them
+while the route they were on is `in_progress` again. They land on the no-route screen
+with no explanation, and Decision 1 (crew fixed at creation, no `add_crew_to_route`)
+means there is no way back onto it.
+
+The same shape reaches further: the trigger is `AFTER UPDATE` only, so a crew row
+inserted against a route that is not `in_progress` is never stamped at all, and blocks
+that person from every future route.
+
+Two things follow, and neither is optional:
+
+- The Task 1.2 test that asserts the skipped-seat state must **not** describe it as
+  correct. Assert the behaviour, and name it as a known limitation in the same breath.
+- Decide whether a stranded seat gets any signal — at minimum the crew screen should be
+  able to say "you were on a route that reopened without you" rather than showing the
+  same blank state as someone who was never on one. If the answer is "no signal for now",
+  write that down here rather than leaving it to be discovered on a warehouse floor.
+
 
 - **The enum change touches auth.** Eight migrations reference `user_role` and RLS policies
   read it (`20260216170542:86` restricts user writes to `admin`/`operations_manager`; the JWT
