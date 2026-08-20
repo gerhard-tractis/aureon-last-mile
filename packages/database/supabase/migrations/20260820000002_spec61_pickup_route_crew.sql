@@ -32,7 +32,11 @@ COMMENT ON TABLE public.pickup_route_crew IS
   'Who besides the leader is on a pickup trip (spec-61). The leader is '
   'pickup_routes.driver_id and is deliberately NOT a row here. The crew is '
   'fixed when the route opens: start_pickup_route inserts these rows in the '
-  'same transaction as the route and nothing else ever inserts one.';
+  'same transaction as the route and nothing else ever inserts one. No '
+  'updated_at/set_updated_at, unlike vehicles: rows do mutate (removed_at, '
+  'deleted_at) but every mutation is a stamp on a specific column that '
+  'already names its own "when" -- an updated_at would only duplicate '
+  'whichever of the two fired last, not add information.';
 
 COMMENT ON COLUMN public.pickup_route_crew.removed_at IS
   'Set when the route stops being in_progress, by trg_pickup_route_crew_sync. '
@@ -52,6 +56,19 @@ CREATE INDEX IF NOT EXISTS idx_pickup_route_crew_deleted_at
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_pickup_route_crew_one_active_per_user
   ON public.pickup_route_crew(operator_id, user_id)
   WHERE removed_at IS NULL AND deleted_at IS NULL;
+
+-- At most one (removed or active) row per (route, user). Without this,
+-- nothing stops the same person collecting a SECOND removed_at IS NOT NULL
+-- row on the SAME route (e.g. added, removed, re-added by hand), and the
+-- reopen UPDATE below would then try to restore both in one statement --
+-- NOT EXISTS is evaluated once against the pre-statement snapshot, so it
+-- would pass for both, and the second row's restore would collide with the
+-- first inside the same UPDATE and violate
+-- uniq_pickup_route_crew_one_active_per_user. This index makes that
+-- in-statement double-restore structurally impossible.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_pickup_route_crew_one_row_per_route_user
+  ON public.pickup_route_crew(pickup_route_id, user_id)
+  WHERE deleted_at IS NULL;
 
 -- ── removed_at follows the route's status ──────────────────────────────────
 -- One trigger instead of edits to close_pickup_route / cancel_pickup_route /
@@ -78,11 +95,21 @@ BEGIN
   -- already active somewhere else: a raw restore would hit the unique index
   -- and abort the receptionist's reopen with a 23505 on someone else's data.
   --
-  -- KNOWN LIMITATION: when the holder IS active elsewhere, this branch
-  -- silently skips restoring their seat and nothing retries -- that person
-  -- is left off the reopened route with no way back on except being re-added
-  -- by hand. Accepted so a reopen can never abort with a 23505; see spec-61
-  -- Task 1.2 test 5.
+  -- This guard REDUCES 23505s; it does not eliminate them. It cannot: NOT
+  -- EXISTS below is evaluated against a snapshot, so two concurrent reopens
+  -- of DIFFERENT routes for the SAME person can each see "not active
+  -- elsewhere" and both proceed -- the second one's UPDATE then blocks on
+  -- the other's uncommitted row and raises 23505 on commit. Accepted: that
+  -- window is a genuine concurrent double-reopen of one person's seats,
+  -- narrow, and the failure mode is safe (the whole reopen transaction rolls
+  -- back, nothing corrupted -- just retry).
+  --
+  -- KNOWN LIMITATION (the common, non-concurrent case): when the holder IS
+  -- already active elsewhere at the time this runs, this branch silently
+  -- skips restoring their seat and nothing retries -- that person is left
+  -- off the reopened route with no way back on except being re-added by
+  -- hand. Accepted so a reopen against a single already-committed state
+  -- does not abort; see spec-61 Task 1.2 test assertion 8.
   UPDATE public.pickup_route_crew c
      SET removed_at = NULL
    WHERE c.pickup_route_id = NEW.id
@@ -96,6 +123,9 @@ BEGIN
               AND o.deleted_at IS NULL);
   RETURN NEW;
 END $$;
+
+COMMENT ON FUNCTION public.sync_pickup_route_crew_seats
+  IS 'Keeps pickup_route_crew.removed_at truthful against pickup_routes.status/deleted_at (spec-61). Stamps removed_at on every path off in_progress; on the way back to in_progress, restores a seat only when its holder holds no other active seat -- see the KNOWN LIMITATION note above the restore UPDATE for what that guard does and does not guarantee.';
 
 DROP TRIGGER IF EXISTS trg_pickup_route_crew_sync ON public.pickup_routes;
 CREATE TRIGGER trg_pickup_route_crew_sync
