@@ -487,7 +487,7 @@ describe('UserForm', () => {
       expect(options.length).toBe(7);
       expect(options[0].textContent).toBe('Seleccionar rol');
       expect(options[1].textContent).toBe('Pickup Crew');
-      expect(options[2].textContent).toBe('Líder de recogida');
+      expect(options[2].textContent).toBe('Pickup Leader');
       expect(options[3].textContent).toBe('Warehouse Staff');
       expect(options[4].textContent).toBe('Loading Crew');
       expect(options[5].textContent).toBe('Operations Manager');

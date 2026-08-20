@@ -58,10 +58,19 @@ export type UpdateUserFormData = z.infer<typeof updateUserSchema>;
 
 /**
  * Role options for dropdown
+ *
+ * spec-61 — the 'pickup_leader' option here depends on the enum value added
+ * by spec-61 Task 1.1 (migration 20260820000001_spec61_user_role_pickup_leader.sql,
+ * currently on an unmerged branch). Do not ship this ahead of that migration:
+ * an admin selecting "Pickup Leader" before the enum has the value makes
+ * handle_new_user's `::user_role` cast fail with Postgres 22P02, surfaced as
+ * a 500 from auth.admin.createUser.
  */
 export const roleOptions = [
   { value: 'pickup_crew', label: 'Pickup Crew', color: 'gray' },
-  { value: 'pickup_leader', label: 'Líder de recogida', color: 'gray' },
+  // English label to match its five neighbours in this list (auth.types.ts's
+  // roleNames also says 'Pickup Leader' — kept in sync, see that file).
+  { value: 'pickup_leader', label: 'Pickup Leader', color: 'gray' },
   { value: 'warehouse_staff', label: 'Warehouse Staff', color: 'gray' },
   { value: 'loading_crew', label: 'Loading Crew', color: 'gray' },
   { value: 'operations_manager', label: 'Operations Manager', color: 'blue' },

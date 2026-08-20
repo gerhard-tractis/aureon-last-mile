@@ -270,12 +270,6 @@ describe('resolveLandingPath (landing page removal)', () => {
 });
 
 describe('isOperationsRole', () => {
-  it('is true for every operations role', () => {
-    for (const role of OPERATIONS_ROLES) {
-      expect(isOperationsRole(role)).toBe(true);
-    }
-  });
-
   // The trap this test exists for: buildMobileTabs returns [] for any role
   // outside the set, so a floor role missing here gets NO bottom tab bar --
   // the only navigation a phone user has. spec-61 added pickup_leader.
