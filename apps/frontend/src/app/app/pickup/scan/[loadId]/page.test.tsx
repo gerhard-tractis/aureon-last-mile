@@ -196,10 +196,25 @@ describe('ScanningPage', () => {
     it('blocks the scan and tells the driver to start a route, without touching the mutation', async () => {
       // The manifests fixture mocked above never returns a pickup_route_id,
       // so pickupRouteId is null — exactly the "no active route" state.
+      //
+      // handleScan also bails out early when `manifestId` or `userId` is
+      // still null (see page.tsx), and both are only populated once the
+      // manifest-lookup effect's promise chain resolves. Firing the scan
+      // right after `findByTestId('fire-scan')` races that effect: the
+      // scanner button is present on the very first render regardless of
+      // whether the effect has settled, so an unlucky microtask ordering
+      // makes handleScan return before ever reaching the pickup_route_id
+      // guard — and neither `mutate` nor `toast.error` gets called. Reuse
+      // the labels-enabled gate (manifestId-dependent, already exercised
+      // above) purely as a wait condition, the same way the "scan failure
+      // feedback" test below does, so the click is guaranteed to happen
+      // after the effect has set manifestId/userId.
       const mutate = vi.fn();
       mockUseScanMutation.mockReturnValue({ mutate, isPending: false });
-      render(<ScanningPage />);
+      mockUseModuleEnabled.mockReturnValue(true);
 
+      render(<ScanningPage />);
+      await screen.findByTestId('print-labels-scan');
       (await screen.findByTestId('fire-scan')).click();
 
       expect(mutate).not.toHaveBeenCalled();
