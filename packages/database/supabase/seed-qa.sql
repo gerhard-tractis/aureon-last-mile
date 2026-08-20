@@ -318,41 +318,57 @@ JOIN public.chile_comunas c ON c.nombre = z.comuna_name
 ON CONFLICT (dock_zone_id, comuna_id) DO NOTHING;
 
 -- =============================================================================
--- Mobile in-flight state: active pickup route, scannable manifest, returns
+-- Mobile in-flight state: pending manifests to route, and returns
 -- =============================================================================
--- Three mobile screens render an empty state with nothing further to test
--- them against — no active pickup_routes row, no manifest a driver could
--- scan against, no packages sitting in retorno_hub:
---   /app/pickup/route/active   useActivePickupRoute.ts:28  — reads
---     pickup_routes WHERE driver_id = auth.uid() (the SIGNED-IN driver's own
---     id, not a row in the `drivers` table above) AND status = 'in_progress'.
---     "Yours" is decided entirely by driver_id = the caller's auth.uid(), so
---     this can only be seeded for a real auth user. The QA pickup_crew login
---     (qa-pickup-crew@qa.test) is created with the FIXED id
---     00000000-0000-4000-8000-000000000201 by create-qa-users.sh (see that
---     script's ROLE_ROWS) — that id is used as driver_id below. This seed
---     runs BEFORE create-qa-users.sh on a brand-new environment
---     (setup-qa.sh: migrations -> seed-qa.sql -> create-qa-users.sh), so the
---     pickup-route block is written as INSERT ... SELECT ... WHERE EXISTS
---     against public.users: it inserts nothing until that user exists, then
---     self-heals on the next deploy-qa.sh run (which reapplies this file on
---     every merge, but never re-runs create-qa-users.sh — see deploy-qa.sh).
---   /app/pickup/scan/[loadId]  — manifest reachable by external_load_id, spec-47
---     guards scanning on manifests.pickup_route_id pointing at an in_progress
---     route, so manifest B below (queued for scanning) is chained off the
---     same guard.
+-- Two mobile screens render an empty state with nothing further to test them
+-- against — no pending un-routed manifest, no packages sitting in
+-- retorno_hub:
+--   /app/pickup (3j "no active route")  useActivePickupRoute.ts:28 reads
+--     pickup_routes WHERE driver_id = auth.uid() AND status = 'in_progress'.
+--     The QA pickup_crew login (qa-pickup-crew@qa.test, fixed id
+--     00000000-0000-4000-8000-000000000201, created by create-qa-users.sh)
+--     must have NO such row so it lands on 3j and can exercise the real flow:
+--     3j -> choose vehicle -> "Iniciar ruta de recogida" -> add manifests ->
+--     3h. A pre-opened route made 3j permanently unreachable for the only
+--     account it was built for (see PR/spec discussion — the route INSERT
+--     that used to live here, id 00000000-0000-4000-8000-000000000185, was
+--     removed for exactly this reason). start_pickup_route(p_vehicle_id)
+--     (body: 20260812000003_spec52_pickup_routes_vehicle.sql:138) validates
+--     the vehicle is operator-owned, non-deleted and active — the QA vehicle
+--     below (id …184) satisfies all three, so 3j's selector has something
+--     real to choose.
+--   /app/pickup 3j's grouped pending list + /app/pickup/scan/[loadId]
+--     get_pending_manifests() (latest def: 20260428000004) returns every
+--     external_load_id with orders that are not deleted and whose manifest
+--     row (if any) is not 'completed' and has no reception_status set. It
+--     does NOT exclude manifests by pickup_route_id, so a manifest with
+--     pickup_route_id left NULL is still returned — routing state plays no
+--     part in this query. Manifests A/B/C below are left completely
+--     unrouted (pickup_route_id NULL, status 'pending') so all three surface
+--     as pending, un-routed loads for the driver to pick up through the UI.
 --   /app/reception "Retornos" tab  useReturnRoutes.ts / returnRouteResolution.ts
 --     — groups packages.status = 'retorno_hub' by the route resolved through
 --     dispatches.external_route_id (falling back to routes.external_route_id).
 --     No return_receptions/route_receptions row is written here — the app
 --     creates that session lazily via find_or_create_return_reception RPC.
 --
--- pickup_routes.vehicle_id is NOT NULL (spec-52); a dedicated QA vehicle row
--- is inserted first, unconditionally, so it never blocks on the driver guard.
+-- No pickup_scans are seeded for A/B/C either (previously A had 2/2 verified
+-- scans, B had 2/3 + one not_found). trg_pickup_scan_advance_status
+-- (20260812000002) advances the SCANNED PACKAGE to 'verificado' on a verified
+-- pickup_scans insert, but nothing advances the MANIFEST — get_pending_manifests
+-- never filters on package status, only on manifest status/reception_status
+-- (see above), so the scans were not the reason the loads would vanish from
+-- 3j. They were removed anyway: a manifest with mixed scan history but no
+-- route is incoherent data (partial progress toward a trip that, per the
+-- app's own model, never started), and starting all three loads clean and
+-- untouched matches what a driver would actually see the first time they open
+-- 3j on a fresh QA environment.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
--- 8. QA pickup vehicle (pickup_routes.vehicle_id NOT NULL — 20260812000003)
+-- 8. QA pickup vehicle (pickup_routes.vehicle_id NOT NULL — 20260812000003).
+--    KEPT: 3j's vehicle selector and start_pickup_route(UUID) both need an
+--    operator-owned, non-deleted, active vehicle to exist.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.vehicles (id, operator_id, plate, vehicle_type, active)
 VALUES (
@@ -363,57 +379,88 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- 9. Active pickup_routes row for the QA pickup_crew driver (spec-47/spec-52).
---    Guarded on the driver's public.users row existing — see header note.
+-- 9. Cleanup for a QA database seeded BEFORE this change (id-scoped, additive
+--    ON CONFLICT DO NOTHING elsewhere in this file cannot remove a row it
+--    already inserted on a prior deploy). Every statement below targets only
+--    the fixed ids this file itself owns, is safe to run every deploy
+--    (no-ops once applied), and never touches a route/scan/status a human
+--    created by hand while testing:
+--      a) drop the 5 pickup_scans this file used to seed on A/B (by fixed id)
+--      b) reset the 6 packages those scans had advanced back to 'ingresado'
+--         (by fixed id) so no load carries a half-scanned history
+--      c) detach manifests A/B/C from the old route and put them back to
+--         'pending' (by fixed id)
+--      d) delete the pre-opened pickup_routes row itself (by fixed id) —
+--         only now safe, since (c) already dropped the FK reference to it
+--    On a brand-new QA (nothing to clean) every statement affects 0 rows.
 -- ---------------------------------------------------------------------------
-INSERT INTO public.pickup_routes (
-  id, operator_id, code, driver_id, vehicle_id, status, started_at
-)
-SELECT
-  '00000000-0000-4000-8000-000000000185',
-  '00000000-0000-4000-8000-000000000001',
-  'PR-QA-SEED-01',
-  '00000000-0000-4000-8000-000000000201',
-  '00000000-0000-4000-8000-000000000184',
-  'in_progress',
-  NOW() - INTERVAL '2 hours'
-WHERE EXISTS (
-  SELECT 1 FROM public.users
-   WHERE id = '00000000-0000-4000-8000-000000000201'
-     AND operator_id = '00000000-0000-4000-8000-000000000001'
-)
-ON CONFLICT (id) DO NOTHING;
+-- MUST NOT TOUCH A TESTER'S WORK. Every statement below is scoped to this
+-- file's own fixed ids, and the two UPDATEs are additionally scoped to state
+-- only the seed could have produced: the manifests are reset only while they
+-- still point at the seeded route, and a package is reverted only when no
+-- surviving verified scan explains its status. A route started from the app
+-- gets a fresh uuid and its manifests a different pickup_route_id, so this
+-- block leaves them alone. Widening either scope would silently undo a
+-- tester's progress on the next deploy, and this runs on every deploy.
+DELETE FROM public.pickup_scans WHERE id IN (
+  '00000000-0000-4000-8000-000000000198',
+  '00000000-0000-4000-8000-000000000199',
+  '00000000-0000-4000-8000-000000000100',
+  '00000000-0000-4000-8000-000000000101',
+  '00000000-0000-4000-8000-000000000102'
+);
+
+-- Only undo the status the SEEDED scans caused. A package a tester scanned
+-- through the app still has its own pickup_scans row (a fresh uuid, not one
+-- of the five deleted above), so NOT EXISTS leaves it alone.
+UPDATE public.packages p SET status = 'ingresado', status_updated_at = NOW()
+ WHERE p.id IN (
+  '00000000-0000-4000-8000-000000000192',
+  '00000000-0000-4000-8000-000000000193',
+  '00000000-0000-4000-8000-000000000194',
+  '00000000-0000-4000-8000-000000000195',
+  '00000000-0000-4000-8000-000000000196',
+  '00000000-0000-4000-8000-000000000197'
+ )
+ AND p.status <> 'ingresado'
+ AND NOT EXISTS (
+   SELECT 1 FROM public.pickup_scans s
+    WHERE s.package_id = p.id
+      AND s.scan_result = 'verified'
+      AND s.deleted_at IS NULL
+ );
+
+UPDATE public.manifests SET pickup_route_id = NULL, status = 'pending'
+ WHERE id IN (
+  '00000000-0000-4000-8000-000000000186',
+  '00000000-0000-4000-8000-000000000187',
+  '00000000-0000-4000-8000-000000000188'
+ )
+ AND pickup_route_id = '00000000-0000-4000-8000-000000000185';
+
+DELETE FROM public.pickup_routes WHERE id = '00000000-0000-4000-8000-000000000185';
 
 -- ---------------------------------------------------------------------------
--- 10. Three manifests on that route, in mixed verification states
---     (manifest_status_enum: pending|in_progress|completed|cancelled):
---       A — fully verified (2/2 packages scanned)
---       B — partially verified (2/3 scanned + 1 not_found) — also the
---           /app/pickup/scan/[loadId] target (external_load_id QA-CARGA-B)
+-- 10. Three manifests, all pending and UNROUTED (pickup_route_id NULL) —
+--     3j's grouped list groups by external_load_id, not by route, so these
+--     appear the moment their matching orders (step 11) exist.
+--       A/B — total_packages known (2 and 3)
 --       C — total_packages IS NULL — exercises the "unknown total" path
 -- ---------------------------------------------------------------------------
 INSERT INTO public.manifests (
   id, operator_id, external_load_id, retailer_name, pickup_location,
   total_orders, total_packages, status, pickup_route_id, created_at
 )
-SELECT v.id, v.operator_id, v.external_load_id, v.retailer_name, v.pickup_location,
-       v.total_orders, v.total_packages, v.status::manifest_status_enum,
-       v.pickup_route_id, v.created_at
-FROM (VALUES
-  ('00000000-0000-4000-8000-000000000186'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+VALUES
+  ('00000000-0000-4000-8000-000000000186', '00000000-0000-4000-8000-000000000001',
    'QA-CARGA-A', 'QA Retail', 'QA Hub Bodega Central',
-   1, 2, 'in_progress', '00000000-0000-4000-8000-000000000185'::uuid, NOW() - INTERVAL '2 hours'),
-  ('00000000-0000-4000-8000-000000000187'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+   1, 2, 'pending', NULL, NOW() - INTERVAL '2 hours'),
+  ('00000000-0000-4000-8000-000000000187', '00000000-0000-4000-8000-000000000001',
    'QA-CARGA-B', 'QA Retail', 'QA Hub Bodega Central',
-   1, 3, 'in_progress', '00000000-0000-4000-8000-000000000185'::uuid, NOW() - INTERVAL '90 minutes'),
-  ('00000000-0000-4000-8000-000000000188'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+   1, 3, 'pending', NULL, NOW() - INTERVAL '90 minutes'),
+  ('00000000-0000-4000-8000-000000000188', '00000000-0000-4000-8000-000000000001',
    'QA-CARGA-C', 'QA Retail', 'QA Hub Bodega Central',
-   1, NULL, 'pending', '00000000-0000-4000-8000-000000000185'::uuid, NOW() - INTERVAL '30 minutes')
-) AS v(id, operator_id, external_load_id, retailer_name, pickup_location,
-       total_orders, total_packages, status, pickup_route_id, created_at)
-WHERE EXISTS (
-  SELECT 1 FROM public.pickup_routes WHERE id = '00000000-0000-4000-8000-000000000185'
-)
+   1, NULL, 'pending', NULL, NOW() - INTERVAL '30 minutes')
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
@@ -426,117 +473,60 @@ INSERT INTO public.orders (
   status, leading_status, pickup_point_id, external_load_id,
   raw_data, imported_via, imported_at
 )
-SELECT v.id, v.operator_id, v.order_number, v.customer_name, v.customer_phone,
-       v.delivery_address, v.comuna, v.delivery_date, v.retailer_name,
-       v.status::order_status_enum, v.leading_status::order_status_enum,
-       v.pickup_point_id, v.external_load_id, v.raw_data,
-       v.imported_via::imported_via_enum, v.imported_at
-FROM (VALUES
-  ('00000000-0000-4000-8000-000000000189'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+VALUES
+  ('00000000-0000-4000-8000-000000000189', '00000000-0000-4000-8000-000000000001',
    'QA-ORD-PICKA-1', 'Cliente QA Carga A', '+56922222301',
    'Calle Falsa 201', 'Maipú', CURRENT_DATE, 'QA Retail',
-   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120'::uuid,
+   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120',
    'QA-CARGA-A', '{"source": "seed-qa"}'::jsonb, 'MANUAL', NOW() - INTERVAL '3 hours'),
-  ('00000000-0000-4000-8000-000000000190'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+  ('00000000-0000-4000-8000-000000000190', '00000000-0000-4000-8000-000000000001',
    'QA-ORD-PICKB-1', 'Cliente QA Carga B', '+56922222302',
    'Calle Falsa 202', 'Pudahuel', CURRENT_DATE, 'QA Retail',
-   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120'::uuid,
+   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120',
    'QA-CARGA-B', '{"source": "seed-qa"}'::jsonb, 'MANUAL', NOW() - INTERVAL '2 hours'),
-  ('00000000-0000-4000-8000-000000000191'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
+  ('00000000-0000-4000-8000-000000000191', '00000000-0000-4000-8000-000000000001',
    'QA-ORD-PICKC-1', 'Cliente QA Carga C', '+56922222303',
    'Calle Falsa 203', 'Ñuñoa', CURRENT_DATE, 'QA Retail',
-   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120'::uuid,
+   'ingresado', 'ingresado', '00000000-0000-4000-8000-000000000120',
    'QA-CARGA-C', '{"source": "seed-qa"}'::jsonb, 'MANUAL', NOW() - INTERVAL '1 hour')
-) AS v(id, operator_id, order_number, customer_name, customer_phone,
-       delivery_address, comuna, delivery_date, retailer_name,
-       status, leading_status, pickup_point_id, external_load_id,
-       raw_data, imported_via, imported_at)
-WHERE EXISTS (
-  SELECT 1 FROM public.pickup_routes WHERE id = '00000000-0000-4000-8000-000000000185'
-)
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- 12. Packages for those orders — A has 2 (both will be scanned verified),
---     B has 3 (2 scanned verified, 1 left unscanned), C has 1 (unscanned;
---     its manifest carries the NULL total_packages).
+-- 12. Packages for those orders — A has 2, B has 3, C has 1 (its manifest
+--     carries the NULL total_packages). All start 'ingresado': unscanned.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.packages (
   id, operator_id, order_id, label, status, sku_items, raw_data
 )
-SELECT v.id, v.operator_id, v.order_id, v.label, v.status::package_status_enum,
-       v.sku_items, v.raw_data
-FROM (VALUES
-  ('00000000-0000-4000-8000-000000000192'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000189'::uuid, 'QA-CARGA-A-1', 'ingresado',
+VALUES
+  ('00000000-0000-4000-8000-000000000192', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000189', 'QA-CARGA-A-1', 'ingresado',
    '[{"sku": "QA-SKU-A1", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb),
-  ('00000000-0000-4000-8000-000000000193'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000189'::uuid, 'QA-CARGA-A-2', 'ingresado',
+  ('00000000-0000-4000-8000-000000000193', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000189', 'QA-CARGA-A-2', 'ingresado',
    '[{"sku": "QA-SKU-A2", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb),
-  ('00000000-0000-4000-8000-000000000194'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000190'::uuid, 'QA-CARGA-B-1', 'ingresado',
+  ('00000000-0000-4000-8000-000000000194', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000190', 'QA-CARGA-B-1', 'ingresado',
    '[{"sku": "QA-SKU-B1", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb),
-  ('00000000-0000-4000-8000-000000000195'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000190'::uuid, 'QA-CARGA-B-2', 'ingresado',
+  ('00000000-0000-4000-8000-000000000195', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000190', 'QA-CARGA-B-2', 'ingresado',
    '[{"sku": "QA-SKU-B2", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb),
-  ('00000000-0000-4000-8000-000000000196'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000190'::uuid, 'QA-CARGA-B-3', 'ingresado',
+  ('00000000-0000-4000-8000-000000000196', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000190', 'QA-CARGA-B-3', 'ingresado',
    '[{"sku": "QA-SKU-B3", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb),
-  ('00000000-0000-4000-8000-000000000197'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000191'::uuid, 'QA-CARGA-C-1', 'ingresado',
+  ('00000000-0000-4000-8000-000000000197', '00000000-0000-4000-8000-000000000001',
+   '00000000-0000-4000-8000-000000000191', 'QA-CARGA-C-1', 'ingresado',
    '[{"sku": "QA-SKU-C1", "description": "Caja QA", "quantity": 1}]'::jsonb,
    '{"source": "seed-qa"}'::jsonb)
-) AS v(id, operator_id, order_id, label, status, sku_items, raw_data)
-WHERE EXISTS (
-  SELECT 1 FROM public.pickup_routes WHERE id = '00000000-0000-4000-8000-000000000185'
-)
 ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- 13. pickup_scans — manifest A fully verified (2/2), manifest B partially
---     verified (2/3) plus one not_found scan so the scan screen's history and
---     result card have real mixed content (scan_result_enum:
---     verified|not_found|duplicate). scanned_by_user_id left NULL: it is a
---     nullable FK to public.users and the driver row is already guarded for
---     above via pickup_routes — no need for a second guard here.
---     Each INSERT fires trg_pickup_scan_advance_status (20260812000002),
---     which advances the matched package to 'verificado' on first apply; a
---     later idempotent re-run hits ON CONFLICT DO NOTHING and does not refire.
--- ---------------------------------------------------------------------------
-INSERT INTO public.pickup_scans (
-  id, operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at
-)
-SELECT v.id, v.operator_id, v.manifest_id, v.package_id, v.barcode_scanned,
-       v.scan_result::scan_result_enum, v.scanned_at
-FROM (VALUES
-  ('00000000-0000-4000-8000-000000000198'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000186'::uuid, '00000000-0000-4000-8000-000000000192'::uuid,
-   'QA-CARGA-A-1', 'verified', NOW() - INTERVAL '110 minutes'),
-  ('00000000-0000-4000-8000-000000000199'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000186'::uuid, '00000000-0000-4000-8000-000000000193'::uuid,
-   'QA-CARGA-A-2', 'verified', NOW() - INTERVAL '108 minutes'),
-  ('00000000-0000-4000-8000-000000000100'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000187'::uuid, '00000000-0000-4000-8000-000000000194'::uuid,
-   'QA-CARGA-B-1', 'verified', NOW() - INTERVAL '80 minutes'),
-  ('00000000-0000-4000-8000-000000000101'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000187'::uuid, '00000000-0000-4000-8000-000000000195'::uuid,
-   'QA-CARGA-B-2', 'verified', NOW() - INTERVAL '78 minutes'),
-  ('00000000-0000-4000-8000-000000000102'::uuid, '00000000-0000-4000-8000-000000000001'::uuid,
-   '00000000-0000-4000-8000-000000000187'::uuid, NULL,
-   'QA-CARGA-B-UNKNOWN', 'not_found', NOW() - INTERVAL '75 minutes')
-) AS v(id, operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at)
-WHERE EXISTS (
-  SELECT 1 FROM public.pickup_routes WHERE id = '00000000-0000-4000-8000-000000000185'
-)
-ON CONFLICT (id) DO NOTHING;
-
--- ---------------------------------------------------------------------------
--- 14. Return route: routes + dispatches + packages in status = 'retorno_hub'
+-- 13. Return route: routes + dispatches + packages in status = 'retorno_hub'
 --     for the /app/reception "Retornos" tab. useReturnRoutes.ts groups
 --     retorno_hub packages by the route resolved through
 --     returnRouteResolution.ts (dispatches.external_route_id, falling back to
@@ -695,10 +685,16 @@ BEGIN
     (SELECT count(*) FROM public.packages  WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.dispatches WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.dock_zones WHERE operator_id = '00000000-0000-4000-8000-000000000001');
-  RAISE NOTICE 'seed-qa: vehicles=%, pickup_routes=%, manifests(pickup_route)=%, pickup_scans=%, retorno_hub packages=%',
+  -- pickup_routes should read 0 here: the QA pickup_crew driver must land on
+  -- 3j (no active route) and start one through the UI (spec-54). unrouted
+  -- pending manifests should read 3 (QA-CARGA-A/B/C, pickup_route_id NULL) —
+  -- that's what makes them visible in 3j's grouped list via
+  -- get_pending_manifests(). pickup_scans should read 0: none are seeded for
+  -- those loads, on purpose (see "Mobile in-flight state" note above).
+  RAISE NOTICE 'seed-qa: vehicles=%, pickup_routes(active)=%, unrouted pending pickup manifests=%, pickup_scans=%, retorno_hub packages=%',
     (SELECT count(*) FROM public.vehicles      WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
-    (SELECT count(*) FROM public.pickup_routes WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
-    (SELECT count(*) FROM public.manifests     WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND pickup_route_id IS NOT NULL),
+    (SELECT count(*) FROM public.pickup_routes WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND status = 'in_progress' AND deleted_at IS NULL),
+    (SELECT count(*) FROM public.manifests     WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND external_load_id IN ('QA-CARGA-A','QA-CARGA-B','QA-CARGA-C') AND pickup_route_id IS NULL),
     (SELECT count(*) FROM public.pickup_scans  WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.packages      WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND status = 'retorno_hub');
 END $$;
