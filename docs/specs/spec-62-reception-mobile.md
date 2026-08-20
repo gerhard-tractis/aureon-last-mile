@@ -16,7 +16,7 @@ Dar a la cuadrilla de andén las tres pantallas de Recepción que hoy solo exist
 2. **`3q` — descarga.** Escaneo continuo con lector Zebra, sin confirmar bulto por bulto.
 3. **`3p` — acta.** Qué quedó registrado al cerrar y qué se dispara con eso.
 
-Más la pantalla que el servidor ya exige y ninguna UI móvil captura: la **nota de discrepancia** antes de cerrar.
+Más la pantalla que ninguna UI móvil captura hoy: la **nota de discrepancia** antes de cerrar. El servidor la exige cuando faltan paquetes; la UI la exige en más casos que ese, a propósito — ver decisión 5.
 
 El escritorio (`3c` estado inicial, `1e` sesión de conteo) ya está implementado y **no se toca**.
 
@@ -128,8 +128,8 @@ Datos: `useRouteReceptionSnapshot`, `useReceptionScan`, `useSyncQueue`. Mutacion
   La hora del primer escaneo en el caso `duplicate` sale de `snapshot.scans` — el escaneo previo con ese `barcode` —, no del validador: su rama `duplicate` selecciona solo `id` y no devuelve marca de tiempo. Si no está en el snapshot, el titular va sin hora; no se inventa.
 
 - **Historial** desde `snapshot.scans`, más reciente arriba, con chips `AJENO` / `REPETIDO`. Ningún resultado bloquea el flujo: se registra, se marca y el conteo sigue.
-- **Pie fijo**: *Reportar discrepancia* (abre la hoja de nota) y *Confirmar*, 56px. *Confirmar* aplica `needsNote` de `finalizeRule.ts`: si es falso llama `complete_route_reception` con `null`; si es verdadero abre la hoja.
-- **Hoja de nota**: `Sheet` inferior a pantalla completa, textarea, el conteo que la motiva ("faltan 2 · 1 ajeno") y confirmación. Sin texto no cierra — igual que el guard del servidor.
+- **Pie fijo**: *Reportar discrepancia* (abre la hoja de nota) y *Confirmar*, 56px. *Confirmar* aplica `needsNote` de `finalize-rule.ts`: si es falso llama `complete_route_reception` con `null`; si es verdadero abre la hoja.
+- **Hoja de nota**: `Sheet` inferior a pantalla completa, textarea, el conteo que la motiva ("faltan 2 · 1 ajeno") y confirmación. Sin texto no cierra — por la regla de la decisión 5, que es más estricta que el guard del servidor: en el caso que se compensa (`10 esperados · 10 recibidos · 1 ajeno`) el servidor aceptaría la nota vacía y la hoja no.
 
 ### `3p` — Acta (`/app/reception/route/[routeId]/completa`, nueva)
 
