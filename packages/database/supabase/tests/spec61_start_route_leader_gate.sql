@@ -38,6 +38,70 @@ INSERT INTO public.vehicles (id, operator_id, plate, active) VALUES
   ('99999999-0000-4000-9000-000000000622','aaaaaaaa-0000-4000-a000-000000000620','VEH-62-2', true)
 ON CONFLICT DO NOTHING;
 
+-- ── Rollout backfill: role AND permission, additively ───────────────────────
+-- Spec-61's Rollout block is explicit: "The promotion must also apply the
+-- pickup_leader permission default ... Assert this in the test -- the role
+-- alone is not sufficient." The backfill itself (20260820000003 PART 1) is
+-- one-shot DML that already ran, once, against whatever rows existed at
+-- migration-apply time -- by the time THIS test executes, that historical
+-- run cannot be re-observed on a genuinely pre-existing row, and there is no
+-- reusable function to call again the way spec52_migration_reconciliation.sql
+-- calls reconcile_abandoned_pickup_routes a second time. So this seeds a
+-- fresh pickup_crew fixture and re-executes the EXACT statement PART 1 runs
+-- (scoped to this fixture's id only, for test isolation -- the real
+-- migration has no such scope), then asserts both effects it must have:
+-- the ROLE flips to pickup_leader, and 'pickup' is guaranteed in
+-- permissions WITHOUT dropping a permission ('reception') the account
+-- already had -- proving the update is additive, not a reset.
+-- Keep this in sync with 20260820000003 PART 1 by hand; there is nothing to
+-- import it from.
+INSERT INTO auth.users (
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+  confirmation_token, recovery_token
+) VALUES
+  ('aaaaaaaa-0000-4000-a000-000000000624','00000000-0000-0000-0000-000000000000',
+   'authenticated','authenticated','gate-backfill@spec61.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000620","role":"pickup_crew"}'::jsonb,
+   '{"full_name":"Backfill Crew"}'::jsonb, NOW(), NOW(), '', '')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions) VALUES
+  ('aaaaaaaa-0000-4000-a000-000000000624','aaaaaaaa-0000-4000-a000-000000000620','pickup_crew',
+   'gate-backfill@spec61.test','Backfill Crew',ARRAY['pickup','reception'])
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id, role = EXCLUDED.role,
+      full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
+
+DO $$
+DECLARE v_role public.user_role; v_perms TEXT[];
+BEGIN
+  -- Verbatim copy of 20260820000003 PART 1's UPDATE, plus "AND id = ..." to
+  -- keep the blast radius to this one fixture row.
+  UPDATE public.users
+     SET role = 'pickup_leader',
+         permissions = CASE WHEN 'pickup' = ANY(permissions)
+                            THEN permissions
+                            ELSE permissions || ARRAY['pickup']::TEXT[]
+                       END
+   WHERE role = 'pickup_crew'
+     AND deleted_at IS NULL
+     AND id = 'aaaaaaaa-0000-4000-a000-000000000624';
+
+  SELECT role, permissions INTO v_role, v_perms FROM public.users
+   WHERE id = 'aaaaaaaa-0000-4000-a000-000000000624';
+
+  IF v_role IS DISTINCT FROM 'pickup_leader' THEN
+    RAISE EXCEPTION 'backfill should promote a pickup_crew account to pickup_leader, got role %', v_role;
+  END IF;
+  IF NOT ('pickup' = ANY(v_perms)) THEN
+    RAISE EXCEPTION 'backfill must guarantee the pickup permission -- role alone is not sufficient, got %', v_perms;
+  END IF;
+  IF NOT ('reception' = ANY(v_perms)) THEN
+    RAISE EXCEPTION 'backfill must be additive: an existing reception permission was dropped, got %', v_perms;
+  END IF;
+END $$;
+
 -- Act as the CREW member.
 SET LOCAL request.jwt.claims = '{"sub":"aaaaaaaa-0000-4000-a000-000000000622","operator_id":"aaaaaaaa-0000-4000-a000-000000000620","claims":{"operator_id":"aaaaaaaa-0000-4000-a000-000000000620"}}';
 

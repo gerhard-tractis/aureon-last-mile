@@ -12,8 +12,11 @@
 -- which would break useStartPickupRoute.ts the moment this deploys, before the
 -- frontend chunk lands. Dropping the one-argument form and giving the new
 -- parameter a DEFAULT keeps every existing call site resolving unchanged --
--- including the deprecated TEXT wrapper's internal call (same file's PART 6,
--- `RETURN public.start_pickup_route(v_vehicle_id);`).
+-- including BOTH of the deprecated TEXT wrapper's internal calls (same
+-- file's PART 6): the blank-label path at :344,
+-- `RETURN public.start_pickup_route(public._get_or_create_unregistered_vehicle(v_operator));`,
+-- and the typed-plate path at :399, `RETURN public.start_pickup_route(v_vehicle_id);`.
+-- Both resolve to the recreated two-argument function via its DEFAULT.
 -- DROP FUNCTION also drops the GRANT; it is reissued at the bottom.
 --
 -- The route insert's retry loop no longer wraps the crew insert. It used to be
@@ -35,7 +38,14 @@
 -- Promoted users still need to log out and back in: the JWT role/permission
 -- claims are minted at login (GlobalContext.tsx:52 reads the same claim this
 -- backfill changes), so a promoted user's existing session still reads the
--- old role until they refresh it.
+-- old role until they refresh it. This is also WHY a re-login is sufficient
+-- and nothing more: sync_claims_on_user_change
+-- (20260312120000_sync_app_metadata_claims.sql:54) fires
+-- AFTER UPDATE OF operator_id, role, permissions on public.users and
+-- propagates straight into auth.users' raw_app_meta_data, so this backfill's
+-- UPDATE (which touches both role and permissions) already lands in
+-- auth.users before anyone logs back in -- the next login just mints a JWT
+-- from metadata that is already correct.
 --
 -- BACK-OUT: a follow-up migration widening the gate's role whitelist (PART 2
 -- below) to include pickup_crew restores pre-spec-61 behaviour without
@@ -64,13 +74,20 @@ BEGIN;
 --     observable effect except widening a future undelete's blast radius.
 -- No operator_id filter: this is intentionally EVERY operator's pickup_crew
 -- roster, matching the spec's decision that nothing breaks anywhere the
--- instant this lands. Permissions stays ARRAY['pickup'] -- identical to what
--- pickup_crew already carried (handle_new_user's CASE, 20260811000001:101,
--- and its pickup_leader twin in 20260820000002) -- so this changes WHO may
--- start a route, not what a promoted user may otherwise do.
+-- instant this lands. permissions is ADDITIVE, not reset: handle_new_user's
+-- pickup_crew default is ARRAY['pickup'] (20260811000001:101), but
+-- apps/frontend/src/app/api/users/[id]/route.ts accepts an arbitrary
+-- permissions array on update, so a pickup_crew account an admin widened to
+-- e.g. ['pickup','reception'] is a real possibility. Overwriting with a bare
+-- ARRAY['pickup'] would silently revoke that grant on promotion -- the spec
+-- says apply the pickup_leader default, not reset the column, so this only
+-- APPENDS 'pickup' when it is missing and otherwise leaves the array alone.
 UPDATE public.users
    SET role = 'pickup_leader',
-       permissions = ARRAY['pickup']
+       permissions = CASE WHEN 'pickup' = ANY(permissions)
+                          THEN permissions
+                          ELSE permissions || ARRAY['pickup']::TEXT[]
+                     END
  WHERE role = 'pickup_crew'
    AND deleted_at IS NULL;
 
