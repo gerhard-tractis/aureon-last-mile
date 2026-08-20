@@ -101,7 +101,7 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
       const { data: manifests, error } = await supabase
         .from('manifests')
         .select(
-          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages, status',
+          'id, external_load_id, retailer_name, pickup_location, total_orders, total_packages, status, completed_at',
         )
         .eq('operator_id', operatorId!)
         .eq('pickup_route_id', routeId!)
@@ -121,6 +121,20 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
         .is('deleted_at', null);
       if (scanErr) throw scanErr;
 
+      // spec-54 3h redesign — the completed compact row shows "N
+      // notas" (discrepancy_notes count — see PickupMobileCompactRow.tsx
+      // for why it's labelled "notas", not "diferencias"). Batch-fetched
+      // the same way as verified scans above, rather than an RPC, since
+      // this hook already does a client-side join for exactly this reason
+      // (short-lived screen, driver tabs in for a minute).
+      const { data: notes, error: notesErr } = await supabase
+        .from('discrepancy_notes')
+        .select('manifest_id')
+        .eq('operator_id', operatorId!)
+        .in('manifest_id', ids)
+        .is('deleted_at', null);
+      if (notesErr) throw notesErr;
+
       const verifiedByManifest = new Map<string, Set<string>>();
       for (const s of scans ?? []) {
         if (!s.manifest_id || !s.package_id) continue;
@@ -130,10 +144,19 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
         verifiedByManifest.get(s.manifest_id)!.add(s.package_id);
       }
 
+      const discrepancyCountByManifest = new Map<string, number>();
+      for (const n of notes ?? []) {
+        if (!n.manifest_id) continue;
+        discrepancyCountByManifest.set(
+          n.manifest_id,
+          (discrepancyCountByManifest.get(n.manifest_id) ?? 0) + 1,
+        );
+      }
+
       // Only chase the derived count for manifests that actually need it —
       // most manifests already carry a real total_packages, and skipping
       // the extra queries entirely for a fully-populated route keeps this
-      // hook at its original 2-query cost in the common case.
+      // hook at its original cost in the common case.
       const missingLoadIds = (manifests ?? [])
         .filter((m) => m.total_packages == null)
         .map((m) => m.external_load_id);
@@ -157,6 +180,8 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
           total_packages: totalPackages,
           verified_count: verifiedByManifest.get(m.id)?.size ?? 0,
           status: m.status as ManifestStatus | undefined,
+          completed_at: m.completed_at ?? null,
+          discrepancy_count: discrepancyCountByManifest.get(m.id) ?? 0,
         };
       });
     },

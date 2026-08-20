@@ -219,10 +219,15 @@ function PickupPageContent() {
             {totals.manifests === 1 ? 'manifiesto por retirar' : 'manifiestos por retirar'}
           </p>
         </div>
-        <Button onClick={() => setIntakeOpen(true)} className="ml-auto gap-2">
-          <Camera className="h-4 w-4" />
-          {t('pickup.nuevo_manifiesto')}
-        </Button>
+        {/* spec-54 3h redesign — dropped on mobile: the mock's phone screen
+            is for a driver starting a route, not creating manifests; that
+            action stays on desktop, where dispatchers do intake. */}
+        {!isBelowLg && (
+          <Button onClick={() => setIntakeOpen(true)} className="ml-auto gap-2">
+            <Camera className="h-4 w-4" />
+            {t('pickup.nuevo_manifiesto')}
+          </Button>
+        )}
       </div>
 
       {isBelowLg && (

@@ -119,6 +119,42 @@ describe('useActivePickupRoute', () => {
     expect(result.current.data?.vehicle?.plate).toBe('AAA-111');
   });
 
+  // spec-54 3h redesign — the mobile header's subtitle needs the driver's
+  // NAME, not just driver_id. `driver_id` is a real FK to `public.users`,
+  // which has `full_name` — join it here rather than showing a raw id.
+  it('joins users for the driver full_name instead of leaving it at driver_id', async () => {
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const select = lastChain!.select as ReturnType<typeof vi.fn>;
+    expect(select.mock.calls[0][0]).toMatch(/driver:users\s*\(\s*full_name\s*\)/);
+  });
+
+  it('surfaces the joined driver name on the returned route', async () => {
+    mockQueryResult = {
+      data: [
+        {
+          id: 'route-1',
+          operator_id: 'op-1',
+          driver_id: 'driver-1',
+          code: 'PR-2026-0001',
+          status: 'in_progress',
+          vehicle: { plate: 'AAA-111' },
+          driver: { full_name: 'M. Rojas' },
+        },
+      ],
+      error: null,
+    };
+
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.driver?.full_name).toBe('M. Rojas');
+  });
+
   it('does not fetch when operatorId is null', () => {
     renderHook(() => useActivePickupRoute(null), { wrapper: wrapperFactory() });
     expect(mockFrom).not.toHaveBeenCalled();

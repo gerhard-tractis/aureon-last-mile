@@ -2,34 +2,41 @@
 
 import { PackageSearch } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
+import { PickupMobileActiveRoute } from './PickupMobileActiveRoute';
 import { PickupMobileManifestCard, type CardStatusTone } from './PickupMobileManifestCard';
 import { PickupRouteDraftPanel } from './PickupRouteDraftPanel';
 import type { ManifestRow } from './ManifestTable';
-import type { RouteManifestRow, ManifestStatus } from './RouteManifestList';
+import type { RouteManifestRow } from './RouteManifestList';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 
 /**
- * spec-54 mock 3h — "Recogidas del día", móvil (estado inicial).
+ * spec-54 mock 3h — "Recogidas de hoy", móvil.
  *
  * Rendered below the `lg` breakpoint instead of the desktop `1l` two-column
- * screen (`PickupPage` picks one or the other — see page.tsx). Cards, not a
- * table: the desktop `ManifestTable` uses fixed pixel columns that wrap
- * "PUNTO DE RECOGIDA" onto two lines at phone widths.
+ * screen (`PickupPage` picks one or the other — see page.tsx).
  *
- * Deliberately omitted — see the spec-54 handoff for 3h:
- *   - "2 de 4 cargas guardadas" and a per-card "SIN DESCARGAR" chip. Both
- *     describe a client-side manifest cache. Neither app has one: the web
- *     app (this file) has no offline manifest store, and the Expo app's
- *     `apps/mobile/lib/storage.ts` today persists only the UI language.
- *     Rendering either would be inventing state no data layer holds.
- *   - A stop sequence / position number on the card. `manifests` hangs off
- *     `pickup_routes` by FK only — no `sequence`/`stop_order` column — so
- *     cards are ordered and badged by real STATUS instead (see below).
+ * Two states:
+ *   - No active route: the pre-existing pending-manifest picker + route
+ *     draft panel (unrelated to the 3h mock, which only shows a driver
+ *     already on a route — left as-is).
+ *   - Active route (the 3h mock): header with driver + route code, three
+ *     KPI tiles, a hero "next load" card, then the remaining/completed
+ *     loads as compact rows, then footer actions.
  *
- * Also out of scope here (not in the 3h card design, and each already has
- * its own screen): search, the client filter, and per-load label printing
- * (`ManifestTable`'s spec-53 affordance) — dispatcher conveniences for a
- * warehouse desk, not a phone screen with a handful of today's loads.
+ * Deliberately omitted from the active-route redesign — see the spec-54
+ * handoff for 3h:
+ *   - The download banner ("2 de 4 cargas guardadas… Descargar"), the
+ *     per-card "SIN DESCARGAR" badge, and the "Manifiesto descargado"
+ *     line. All three describe a client-side offline manifest cache that
+ *     exists in NEITHER app: the web app (this file) has no manifest
+ *     store, and the Expo app's `apps/mobile/lib/storage.ts` persists only
+ *     the UI language. The handoff itself assigns this to the mobile team.
+ *   - "Reportar problema" (footer) — see PickupMobileFooterActions.
+ *   - A stop-sequence / position number on the hero card. `manifests`
+ *     hangs off `pickup_routes` by FK only — no `sequence`/`stop_order`
+ *     column — so "next" is derived by `splitLoads` (first not-yet-
+ *     finished load in queue order) and the badge reads "SIGUIENTE", a
+ *     status, never a position.
  */
 
 interface PickupMobileViewProps {
@@ -53,39 +60,8 @@ interface PickupMobileViewProps {
   isCreatingRoute: boolean;
 }
 
-/**
- * manifests.status → card badge.
- *
- * Round 3 review: with the pending→in_progress write restored in
- * page.tsx's handleRouteManifestOpen (via openPendingManifest), `status`
- * itself is correct again for this screen's own tap path — so is the
- * `verifiedCount` check now redundant? No: kept deliberately, because
- * `/app/pickup/route/active`'s `goToScan` (RouteManifestList,
- * NextManifestCard, UpcomingManifestList) navigates a driver into the same
- * scan flow WITHOUT ever writing `status` — that page has no equivalent of
- * openPendingManifest at all. A manifest scanned exclusively from that
- * screen can sit at 'pending' in the DB indefinitely with verified_count >
- * 0. `verifiedCount` is checked first so THIS card still shows "En
- * progreso" for that real, pre-existing case — it is always live (read
- * straight off `pickup_scans`), unlike `status`. Not papering over this
- * screen's own write path; guarding a gap in a different one.
- */
-function routeStatusInfo(
-  status: ManifestStatus | undefined,
-  verifiedCount: number,
-): { label: string; tone: CardStatusTone } {
-  if (status === 'completed') return { label: 'Cerrada', tone: 'complete' };
-  if (status === 'cancelled') return { label: 'Cancelada', tone: 'pending' };
-  if (status === 'in_progress' || verifiedCount > 0) {
-    return { label: 'En progreso', tone: 'progress' };
-  }
-  return { label: 'Pendiente', tone: 'pending' };
-}
-
-/** get_pending_manifests never returns a status column (these loads are, by
- *  construction, 'pending' or 'in_progress' — it excludes 'completed'), so
- *  the badge is derived from verified_count>0, the same signal ManifestTable
- *  and ManifestCard already use for their "en progreso" indicator. */
+/** manifests.status → card badge, for the no-active-route pending list
+ *  below (unrelated to the active-route 3h redesign above). */
 function pendingStatusInfo(verifiedCount: number | undefined): {
   label: string;
   tone: CardStatusTone;
@@ -93,26 +69,6 @@ function pendingStatusInfo(verifiedCount: number | undefined): {
   return (verifiedCount ?? 0) > 0
     ? { label: 'En progreso', tone: 'progress' }
     : { label: 'Pendiente', tone: 'pending' };
-}
-
-const STATUS_RANK: Record<ManifestStatus, number> = {
-  pending: 0,
-  in_progress: 0,
-  completed: 1,
-  cancelled: 2,
-};
-
-/** Pending/active cards first, closed ones at the bottom — per the spec-54
- *  handoff. Stable sort: ties keep the hook's own order (created_at
- *  ascending — the route's attach queue). */
-function sortByStatus(rows: RouteManifestRow[]): RouteManifestRow[] {
-  return rows
-    .map((row, index) => ({ row, index }))
-    .sort((a, b) => {
-      const rankDiff = STATUS_RANK[a.row.status ?? 'pending'] - STATUS_RANK[b.row.status ?? 'pending'];
-      return rankDiff !== 0 ? rankDiff : a.index - b.index;
-    })
-    .map(({ row }) => row);
 }
 
 export function PickupMobileView({
@@ -130,48 +86,12 @@ export function PickupMobileView({
   isCreatingRoute,
 }: PickupMobileViewProps) {
   if (activeRoute) {
-    const closedCount = activeManifests.filter((m) => m.status === 'completed').length;
-    const cards = sortByStatus(activeManifests);
-
     return (
-      <div className="flex flex-col gap-4" data-testid="pickup-mobile-view">
-        <header className="rounded-[10px] border border-border bg-surface p-4">
-          <h2 className="font-heading text-[15px] font-semibold text-text">Recogidas del día</h2>
-          <p className="mt-0.5 text-[12px] text-text-secondary">
-            Ruta <span className="font-mono font-semibold text-text">{activeRoute.code}</span> ·{' '}
-            {activeManifests.length} {activeManifests.length === 1 ? 'manifiesto' : 'manifiestos'}{' '}
-            · {closedCount} cerradas
-          </p>
-        </header>
-
-        {cards.length === 0 ? (
-          <EmptyState
-            icon={PackageSearch}
-            title="Sin manifiestos en la ruta"
-            description="Agrega manifiestos desde la ruta activa para empezar a verificar."
-          />
-        ) : (
-          <div className="flex flex-col gap-2.5">
-            {cards.map((m) => {
-              const status = routeStatusInfo(m.status, m.verified_count);
-              return (
-                <PickupMobileManifestCard
-                  key={m.id}
-                  externalLoadId={m.external_load_id}
-                  retailerName={m.retailer_name}
-                  pickupLocation={m.pickup_location}
-                  totalOrders={m.total_orders}
-                  totalPackages={m.total_packages}
-                  verifiedCount={m.verified_count}
-                  statusLabel={status.label}
-                  statusTone={status.tone}
-                  onOpen={() => onOpenRouteManifest(m.external_load_id)}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <PickupMobileActiveRoute
+        activeRoute={activeRoute}
+        activeManifests={activeManifests}
+        onOpenRouteManifest={onOpenRouteManifest}
+      />
     );
   }
 
