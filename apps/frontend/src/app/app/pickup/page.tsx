@@ -194,6 +194,9 @@ function PickupPageContent() {
           if (failed > 0) {
             // The route exists either way — say what did not make it rather
             // than let the driver leave with a short load.
+            // KNOWN GAP (spec'd separately): if EVERY add fails, the driver
+            // still lands on 3h with an empty route, and the one-active-
+            // route index makes 3j unreachable — no cancel affordance here.
             toast.error(
               `La ruta se creó, pero ${failed} de ${ids.length} manifiestos no se pudieron agregar.`,
             );
@@ -208,42 +211,41 @@ function PickupPageContent() {
 
   return (
     <div className="flex min-h-0 flex-col gap-[18px] px-6 py-[22px]">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="font-heading text-[26px] font-semibold leading-[1.1] tracking-[-.02em] text-text">
-            Recogida
-          </h1>
-          <p className="text-[12.5px] leading-none text-text-secondary">
-            {todayLabel(new Date())} ·{' '}
-            <span className="font-mono font-semibold text-text">{totals.manifests}</span>{' '}
-            {totals.manifests === 1 ? 'manifiesto por retirar' : 'manifiestos por retirar'}
-          </p>
-        </div>
-        {/* spec-54 3h redesign — dropped on mobile: the mock's phone screen
-            is for a driver starting a route, not creating manifests; that
-            action stays on desktop, where dispatchers do intake. */}
-        {!isBelowLg && (
+      {/* Desktop-only. Mobile (3h/3j) renders its own header inside
+          PickupMobileView — both stacked on a 390px screen before this
+          guard (found live in QA). */}
+      {!isBelowLg && (
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h1 className="font-heading text-[26px] font-semibold leading-[1.1] tracking-[-.02em] text-text">
+              Recogida
+            </h1>
+            <p className="text-[12.5px] leading-none text-text-secondary">
+              {todayLabel(new Date())} ·{' '}
+              <span className="font-mono font-semibold text-text">{totals.manifests}</span>{' '}
+              {totals.manifests === 1 ? 'manifiesto por retirar' : 'manifiestos por retirar'}
+            </p>
+          </div>
           <Button onClick={() => setIntakeOpen(true)} className="ml-auto gap-2">
             <Camera className="h-4 w-4" />
             {t('pickup.nuevo_manifiesto')}
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       {isBelowLg && (
         <PickupMobileView
           activeRoute={activeRoute ?? null}
           activeManifests={activeManifests}
           pendingRows={pendingRows}
-          closuresCount={closures.length}
           selectedIds={selectedIds}
           onToggleSelect={toggle}
           selectedManifests={selectedManifests}
-          onOpenPending={(row) => { void handleRowOpen(row); }}
           onOpenRouteManifest={(loadId) => { void handleRouteManifestOpen(loadId); }}
           operatorId={operatorId}
           onCreateRoute={handleCreateRoute}
           isCreatingRoute={startMut.isPending || addMut.isPending}
+          createRouteError={startMut.error?.message ?? null}
         />
       )}
 

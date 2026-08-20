@@ -95,6 +95,12 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
           setOpen(true);
           if (value) onChange(null);
         }}
+        // Review fix (spec-54 3j): this field is now a mobile screen's
+        // mandatory FIRST interaction — ui/input's default h-10 (40px) is
+        // below the 44px touch-target floor. Every other control this
+        // screen introduced is ≥44px; this pre-existing shared component
+        // was the one gap.
+        className="min-h-[44px]"
       />
 
       {open && (
@@ -119,7 +125,7 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
               role="option"
               aria-selected={v.id === value}
               onClick={() => select(v)}
-              className="flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-surface-hover"
+              className="flex min-h-[44px] w-full items-center gap-2 p-2 text-left text-sm hover:bg-surface-hover"
             >
               <Truck className="h-4 w-4 text-text-muted" />
               <span className="font-medium">{v.plate}</span>
@@ -151,7 +157,10 @@ export function VehicleSelect({ operatorId, value, onChange }: VehicleSelectProp
       )}
 
       {error && (
-        <p role="alert" className="text-sm text-error">
+        // Review fix: `text-error` emits no CSS — `tailwind.config.ts` has
+        // no top-level `error` token, only nested `status.error*`. A failed
+        // "Registrar patente" was rendering this alert uncoloured.
+        <p role="alert" className="text-sm text-status-error-text">
           {error}
         </p>
       )}

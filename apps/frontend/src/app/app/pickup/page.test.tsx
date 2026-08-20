@@ -85,6 +85,24 @@ vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+// PickupMobileStartRoute (3j) renders VehicleSelect, which needs a real
+// QueryClientProvider unless the vehicle hooks are mocked — same pattern
+// used by VehicleSelect.test.tsx / PickupMobileView.test.tsx.
+vi.mock('@/hooks/pickup/useVehicles', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/pickup/useVehicles')>(
+    '@/hooks/pickup/useVehicles',
+  );
+  return {
+    ...actual,
+    useVehicles: () => ({ data: [], isLoading: false }),
+    useCreateVehicle: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  };
+});
+
+vi.mock('@/hooks/useCurrentUserName', () => ({
+  useCurrentUserName: () => ({ data: 'Marcela R.' }),
+}));
+
 vi.mock('@/lib/i18n/useTranslation', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -325,6 +343,25 @@ describe('PickupPage', () => {
       expect(
         screen.queryByRole('button', { name: 'pickup.nuevo_manifiesto' }),
       ).not.toBeInTheDocument();
+    });
+
+    // Coordinator fix, found live in QA at 390px: the page-level
+    // `<h1>Recogida</h1>` + "N manifiestos por retirar" subtitle stacked on
+    // top of PickupMobileView's own PickupMobileHeader ("Recogidas de hoy").
+    // Only one heading may render on mobile; the desktop header must still
+    // render at `lg`+.
+    it('renders exactly one heading on mobile, and the desktop page header at lg+', () => {
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(screen.getAllByRole('heading')).toHaveLength(1);
+      expect(screen.queryByRole('heading', { name: 'Recogida' })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Recogidas de hoy' })).toBeInTheDocument();
+      cleanup();
+
+      mockBelowLg(false);
+      render(<PickupPage />);
+      expect(screen.getByRole('heading', { name: 'Recogida' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Recogidas de hoy' })).not.toBeInTheDocument();
     });
   });
 

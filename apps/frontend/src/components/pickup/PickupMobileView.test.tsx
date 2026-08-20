@@ -1,18 +1,29 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PickupMobileView } from './PickupMobileView';
 import type { ManifestRow } from './ManifestTable';
 import type { RouteManifestRow } from './RouteManifestList';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 
-vi.mock('@/components/pickup/PickupRouteDraftPanel', () => ({
-  PickupRouteDraftPanel: ({ selected }: { selected: ManifestRow[] }) => (
-    <div data-testid="draft-panel">{selected.length} seleccionados</div>
-  ),
-}));
+// PickupMobileStartRoute (3j) renders VehicleSelect, which reads real hooks.
+// Mocked the same way VehicleSelect.test.tsx mocks them, so this file stays
+// a pure wiring test for PickupMobileView's branch choice + prop threading.
+vi.mock('@/hooks/pickup/useVehicles', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/pickup/useVehicles')>(
+    '@/hooks/pickup/useVehicles',
+  );
+  return {
+    ...actual,
+    useVehicles: () => ({ data: [], isLoading: false }),
+    useCreateVehicle: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  };
+});
 
-const noop = () => {};
+const mockUseCurrentUserName = vi.fn();
+vi.mock('@/hooks/useCurrentUserName', () => ({
+  useCurrentUserName: () => mockUseCurrentUserName(),
+}));
 
 const pendingRows: ManifestRow[] = [
   {
@@ -78,11 +89,9 @@ function baseProps() {
     activeRoute: null,
     activeManifests: [],
     pendingRows,
-    closuresCount: 1,
     selectedIds: new Set<string>(),
     onToggleSelect: vi.fn(),
     selectedManifests: [],
-    onOpenPending: vi.fn(),
     onOpenRouteManifest: vi.fn(),
     operatorId: 'op-1',
     onCreateRoute: vi.fn(),
@@ -91,50 +100,67 @@ function baseProps() {
 }
 
 describe('PickupMobileView', () => {
-  describe('no active route — pending manifests', () => {
-    it('renders a card per pending manifest', () => {
+  beforeEach(() => {
+    mockUseCurrentUserName.mockReturnValue({ data: 'Marcela R.' });
+  });
+
+  // spec-54 mock 3j — "Sin ruta activa: iniciar ruta y sumarle
+  // manifiestos". Deep coverage of the grouping/selection/vehicle-required
+  // behaviour lives in PickupMobileStartRoute.test.tsx and
+  // pickupStartRouteGrouping.test.ts; this file stays a wiring test for
+  // which branch renders and that props reach PickupMobileStartRoute.
+  describe('no active route — 3j start-route screen', () => {
+    it('renders 3j (not 3h) when there is no active route', () => {
       render(<PickupMobileView {...baseProps()} />);
+      expect(screen.getByTestId('pickup-mobile-start-route')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /iniciar ruta de recogida/i })).toBeInTheDocument();
+    });
+
+    it('renders the shared PickupMobileHeader with no route code (no route exists yet)', () => {
+      render(<PickupMobileView {...baseProps()} />);
+      expect(screen.getByRole('heading', { name: 'Recogidas de hoy' })).toBeInTheDocument();
+      const subtitle = screen.getByTestId('mobile-header-subtitle');
+      expect(subtitle.textContent?.trim().endsWith('·')).toBe(false);
+    });
+
+    // Review fix, item 8 — the header's driver name now comes from
+    // `useCurrentUserName` (there is no route yet to join a driver name
+    // from), not a hardcoded `null`.
+    it('wires the signed-in user\'s name into the header, driver-first', () => {
+      mockUseCurrentUserName.mockReturnValue({ data: 'Marcela R.' });
+      render(<PickupMobileView {...baseProps()} />);
+      const subtitle = screen.getByTestId('mobile-header-subtitle');
+      expect(subtitle.textContent?.startsWith('Marcela R. ·')).toBe(true);
+      expect(screen.getByTestId('mobile-header-avatar')).toHaveTextContent('MR');
+    });
+
+    it('never fabricates a driver name while the query is still resolving', () => {
+      mockUseCurrentUserName.mockReturnValue({ data: undefined });
+      render(<PickupMobileView {...baseProps()} />);
+      expect(screen.getByTestId('mobile-header-avatar')).toHaveTextContent('··');
+    });
+
+    it('groups pending manifests by client under the "MANIFIESTOS POR RETIRAR" eyebrow', () => {
+      render(<PickupMobileView {...baseProps()} />);
+      expect(screen.getByText(/MANIFIESTOS POR RETIRAR/)).toBeInTheDocument();
+      expect(screen.getByText('Easy')).toBeInTheDocument();
+      expect(screen.getByText('Sodimac')).toBeInTheDocument();
       expect(screen.getByText('CARGA-001')).toBeInTheDocument();
       expect(screen.getByText('CARGA-002')).toBeInTheDocument();
     });
 
-    it('reports the real closed-today count, not a client-cache figure', () => {
-      render(<PickupMobileView {...baseProps()} closuresCount={3} />);
-      expect(screen.getByText(/3 cerradas hoy/)).toBeInTheDocument();
-    });
-
-    it('badges a card with verified scans as "En progreso", others as "Pendiente"', () => {
-      render(<PickupMobileView {...baseProps()} />);
-      const badges = screen.getAllByTestId('card-status-badge');
-      expect(badges[0]).toHaveTextContent('Pendiente');
-      expect(badges[1]).toHaveTextContent('En progreso');
-    });
-
-    it('tapping the checkbox toggles selection', async () => {
+    it('tapping a manifest checkbox toggles selection', async () => {
       const onToggleSelect = vi.fn();
       render(<PickupMobileView {...baseProps()} onToggleSelect={onToggleSelect} />);
-      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar CARGA-001' }));
       expect(onToggleSelect).toHaveBeenCalledWith('m1');
     });
 
-    it('tapping the load id opens the manifest instead of toggling selection', async () => {
-      const onOpenPending = vi.fn();
-      const onToggleSelect = vi.fn();
-      render(
-        <PickupMobileView
-          {...baseProps()}
-          onOpenPending={onOpenPending}
-          onToggleSelect={onToggleSelect}
-        />,
-      );
-      await userEvent.click(screen.getAllByTestId('mobile-manifest-open')[0]);
-      expect(onOpenPending).toHaveBeenCalledWith(pendingRows[0]);
-      expect(onToggleSelect).not.toHaveBeenCalled();
-    });
-
-    it('renders the route draft panel so a route can still be assembled from a phone', () => {
+    it('the footer totals reflect the current selection', () => {
       render(<PickupMobileView {...baseProps()} selectedManifests={[pendingRows[0]]} />);
-      expect(screen.getByTestId('draft-panel')).toHaveTextContent('1 seleccionados');
+      expect(screen.getByTestId('start-route-footer-totals')).toHaveTextContent(
+        '1 manifiesto · 12 paq.',
+      );
     });
 
     it('shows an empty state when there are no pending manifests', () => {
@@ -146,6 +172,18 @@ describe('PickupMobileView', () => {
       render(<PickupMobileView {...baseProps()} />);
       expect(screen.queryByText(/guardad/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/SIN DESCARGAR/i)).not.toBeInTheDocument();
+    });
+
+    it('surfaces the one-active-route-per-driver error readably, not as a raw Postgres message', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          createRouteError="El conductor ya tiene una ruta de retiro activa"
+        />,
+      );
+      expect(
+        screen.getByText('El conductor ya tiene una ruta de retiro activa'),
+      ).toBeInTheDocument();
     });
   });
 
