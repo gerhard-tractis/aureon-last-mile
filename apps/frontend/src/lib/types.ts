@@ -2074,12 +2074,18 @@ export type Database = {
         | "awaiting_reception"
         | "reception_in_progress"
         | "received"
+      // Hand-maintained fork of generated Supabase output — this file isn't
+      // regenerated, so `tsc` cannot check this list against the database
+      // enum. super_admin is already missing below; that's the standing
+      // proof nothing here enforces it. Update by hand whenever the
+      // database's user_role enum changes.
       user_role:
         | "pickup_crew"
         | "warehouse_staff"
         | "loading_crew"
         | "operations_manager"
         | "admin"
+        | "pickup_leader"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2258,12 +2264,18 @@ export const Constants = {
         "reception_in_progress",
         "received",
       ],
+      // Hand-maintained fork of generated Supabase output — this file isn't
+      // regenerated, so `tsc` cannot check this list against the database
+      // enum. super_admin is already missing below; that's the standing
+      // proof nothing here enforces it. Update by hand whenever the
+      // database's user_role enum changes.
       user_role: [
         "pickup_crew",
         "warehouse_staff",
         "loading_crew",
         "operations_manager",
         "admin",
+        "pickup_leader",
       ],
     },
   },

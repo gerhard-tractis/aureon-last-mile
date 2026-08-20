@@ -3,6 +3,7 @@ import { ModuleKey } from '@/lib/modules/registry';
 import {
   NAV_SECTIONS,
   OPERATION_ITEMS,
+  OPERATIONS_ROLES,
   buildNavSections,
   buildMobileTabs,
   breadcrumbForPath,
@@ -269,13 +270,27 @@ describe('resolveLandingPath (landing page removal)', () => {
 });
 
 describe('isOperationsRole', () => {
-  it('is true for the three floor/van roles', () => {
-    expect(isOperationsRole('pickup_crew')).toBe(true);
-    expect(isOperationsRole('warehouse_staff')).toBe(true);
-    expect(isOperationsRole('loading_crew')).toBe(true);
+  // The trap this test exists for: buildMobileTabs returns [] for any role
+  // outside the set, so a floor role missing here gets NO bottom tab bar --
+  // the only navigation a phone user has. spec-61 added pickup_leader.
+  it('covers every floor role that works on a phone', () => {
+    expect([...OPERATIONS_ROLES].sort()).toEqual(
+      ['loading_crew', 'pickup_crew', 'pickup_leader', 'warehouse_staff'].sort(),
+    );
   });
 
-  it('is false for management, unknown, and null roles', () => {
+  it('gives every operations role the full four-tab bar', () => {
+    for (const role of OPERATIONS_ROLES) {
+      const tabs = buildMobileTabs({
+        role,
+        permissions: [],
+        enabledModules: [],
+      });
+      expect(tabs).toHaveLength(4);
+    }
+  });
+
+  it('is false for desk roles and for unknown input', () => {
     expect(isOperationsRole('operations_manager')).toBe(false);
     expect(isOperationsRole('admin')).toBe(false);
     expect(isOperationsRole('super_admin')).toBe(false);

@@ -7,7 +7,7 @@ import { VALID_PERMISSIONS } from '@/lib/permissions';
 // Validation schema for updating users
 const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-  role: z.enum(['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
+  role: z.enum(['pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
     message: 'Invalid role'
   }).optional(),
   permissions: z.array(z.enum(VALID_PERMISSIONS)).optional(),

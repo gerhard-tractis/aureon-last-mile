@@ -174,8 +174,21 @@ export function buildNavSections(ctx: NavContext): NavSection[] {
  * on desktop; a phone in their hand is incidental, and a 4-tab driver bar
  * would hide most of the 9-item nav they actually need — they keep the
  * hamburger `Sheet` instead (see AppLayout).
+ *
+ * spec-61 — `pickup_leader` belongs here for the same reason `pickup_crew`
+ * does: it is a van role. A role missing from this set gets NO tab bar
+ * (`buildMobileTabs` returns `[]` below), which on a phone means no
+ * navigation at all. Exported so navigation.test.ts can assert the set
+ * rather than restate it.
  */
-const MOBILE_TAB_ROLES = new Set(['pickup_crew', 'warehouse_staff', 'loading_crew']);
+export const OPERATIONS_ROLES = [
+  'pickup_crew',
+  'pickup_leader',
+  'warehouse_staff',
+  'loading_crew',
+] as const;
+
+const MOBILE_TAB_ROLES: ReadonlySet<string> = new Set(OPERATIONS_ROLES);
 
 export function isOperationsRole(role: string | null): boolean {
   return role !== null && MOBILE_TAB_ROLES.has(role);
