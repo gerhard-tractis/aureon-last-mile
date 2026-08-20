@@ -3,13 +3,31 @@
 import { driverInitials, shortDateLabel } from '@/lib/pickup/pickupMobileHelpers';
 
 /**
- * spec-54 3h redesign — mock header: "Recogidas de hoy" in display type,
- * a subtitle "mié 13/08 · M. Rojas · PR-2026-0148" (date · driver · route
- * code), and a round avatar with the driver's initials at top right.
+ * spec-54 3h/3j — the ONE header for the mobile Recogida screen, shared by
+ * both mutually-exclusive states (see PickupMobileView.tsx): "Recogidas de
+ * hoy" in display type, a subtitle "M. Rojas · mié 13/08 · PR-2026-0148"
+ * (driver · date · route code), and a round avatar with the driver's
+ * initials at top right.
+ *
+ * Review fix — order is DRIVER first, then date, matching the 3j artboard
+ * ("Marcela R. · mié 13/08") literally. An earlier draft rendered
+ * date-first; changed here for both 3h and 3j since they share this one
+ * component, and 3h's own tests only assert substring presence, not order.
+ *
+ * `routeCode` is optional: the 3j mock (no active route yet) shows the same
+ * header WITHOUT a route code segment — there is no route to name. Passing
+ * `null`/`undefined` omits that segment cleanly rather than rendering a
+ * trailing " · " separator or an empty <span>.
+ *
+ * Coordinator fix (found live in QA at 390px): the page-level `<h1>Recogida
+ * </h1>` + "N manifiestos por retirar" subtitle in page.tsx is the DESKTOP
+ * header and must not also render on mobile alongside this one — see the
+ * `!isBelowLg` guard added around it in page.tsx. This component is the only
+ * header mobile renders, in both the 3h and 3j states.
  */
 export interface PickupMobileHeaderProps {
   driverName: string | null;
-  routeCode: string;
+  routeCode?: string | null;
   /** Injectable for tests; defaults to the real current time. */
   now?: Date;
 }
@@ -26,10 +44,14 @@ export function PickupMobileHeader({ driverName, routeCode, now }: PickupMobileH
           data-testid="mobile-header-subtitle"
           className="mt-1 truncate text-[12.5px] text-text-secondary"
         >
+          {driverName && <>{driverName} · </>}
           {shortDateLabel(date)}
-          {driverName && <> · {driverName}</>}
-          {' · '}
-          <span className="font-mono font-semibold text-text">{routeCode}</span>
+          {routeCode && (
+            <>
+              {' · '}
+              <span className="font-mono font-semibold text-text">{routeCode}</span>
+            </>
+          )}
         </p>
       </div>
       <div

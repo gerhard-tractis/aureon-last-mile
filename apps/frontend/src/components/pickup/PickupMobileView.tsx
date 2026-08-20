@@ -1,27 +1,34 @@
 'use client';
 
-import { PackageSearch } from 'lucide-react';
-import { EmptyState } from '@/components/EmptyState';
 import { PickupMobileActiveRoute } from './PickupMobileActiveRoute';
-import { PickupMobileManifestCard, type CardStatusTone } from './PickupMobileManifestCard';
-import { PickupRouteDraftPanel } from './PickupRouteDraftPanel';
+import { PickupMobileHeader } from './PickupMobileHeader';
+import { PickupMobileStartRoute } from './PickupMobileStartRoute';
+import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import type { ManifestRow } from './ManifestTable';
 import type { RouteManifestRow } from './RouteManifestList';
 import type { ActivePickupRoute } from '@/hooks/pickup/useActivePickupRoute';
 
 /**
- * spec-54 mock 3h — "Recogidas de hoy", móvil.
+ * spec-54 mocks 3h/3j — the mobile Recogida screen.
  *
  * Rendered below the `lg` breakpoint instead of the desktop `1l` two-column
- * screen (`PickupPage` picks one or the other — see page.tsx).
+ * screen (`PickupPage` picks one or the other — see page.tsx). The
+ * page-level `<h1>Recogida</h1>` header in page.tsx is gated to desktop
+ * only (`!isBelowLg`) for the same reason: this screen renders its OWN
+ * header (`PickupMobileHeader`, shared below), and both together would
+ * stack two headers on one phone screen.
  *
- * Two states:
- *   - No active route: the pre-existing pending-manifest picker + route
- *     draft panel (unrelated to the 3h mock, which only shows a driver
- *     already on a route — left as-is).
- *   - Active route (the 3h mock): header with driver + route code, three
- *     KPI tiles, a hero "next load" card, then the remaining/completed
- *     loads as compact rows, then footer actions.
+ * `3h` and `3j` are mutually exclusive states of the same screen, enforced
+ * by the DB (`uniq_pickup_routes_one_active_per_driver` allows one
+ * draft/in_progress route per driver):
+ *   - No active route → `3j` (`PickupMobileStartRoute`): a vehicle picker +
+ *     "Iniciar ruta de recogida", then the operator's pending manifests
+ *     grouped Cliente → Punto → Manifiesto for pre-selection into the new
+ *     route. See PickupMobileStartRoute.tsx for the `assigned_to_user_id`
+ *     decision this branch had to make.
+ *   - Active route → `3h` (`PickupMobileActiveRoute`): header with driver +
+ *     route code, three KPI tiles, a hero "next load" card, then the
+ *     remaining/completed loads as compact rows, then footer actions.
  *
  * Deliberately omitted from the active-route redesign — see the spec-54
  * handoff for 3h:
@@ -46,45 +53,38 @@ interface PickupMobileViewProps {
   /** Manifests not yet on a route (usePendingManifests, already mapped by
    *  the page into the shared ManifestRow shape used by ManifestTable). */
   pendingRows: ManifestRow[];
-  /** Real "closed today" count — get_completed_manifests, i.e.
-   *  manifest_status_enum = 'completed'. Not the omitted client-cache
-   *  "guardadas" count; a different, real figure. */
-  closuresCount: number;
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   selectedManifests: ManifestRow[];
-  onOpenPending: (row: ManifestRow) => void;
   onOpenRouteManifest: (loadId: string) => void;
   operatorId: string | null;
   onCreateRoute: (vehicleId: string) => void;
   isCreatingRoute: boolean;
-}
-
-/** manifests.status → card badge, for the no-active-route pending list
- *  below (unrelated to the active-route 3h redesign above). */
-function pendingStatusInfo(verifiedCount: number | undefined): {
-  label: string;
-  tone: CardStatusTone;
-} {
-  return (verifiedCount ?? 0) > 0
-    ? { label: 'En progreso', tone: 'progress' }
-    : { label: 'Pendiente', tone: 'pending' };
+  /** start_pickup_route's error message, already a readable Spanish string
+   *  raised by the RPC (e.g. the one-active-route-per-driver case) — see
+   *  PickupMobileStartRoute.tsx. */
+  createRouteError?: string | null;
 }
 
 export function PickupMobileView({
   activeRoute,
   activeManifests,
   pendingRows,
-  closuresCount,
   selectedIds,
   onToggleSelect,
   selectedManifests,
-  onOpenPending,
   onOpenRouteManifest,
   operatorId,
   onCreateRoute,
   isCreatingRoute,
+  createRouteError = null,
 }: PickupMobileViewProps) {
+  // Called unconditionally (rules of hooks) even though only the 3j return
+  // below uses it — 3h already gets the driver's name from
+  // `useActivePickupRoute`'s `driver:users(full_name)` join, which needs an
+  // active route to exist. This is the one source that works before that.
+  const { data: currentUserName } = useCurrentUserName();
+
   if (activeRoute) {
     return (
       <PickupMobileActiveRoute
@@ -97,57 +97,22 @@ export function PickupMobileView({
 
   return (
     <div className="flex flex-col gap-4" data-testid="pickup-mobile-view">
-      <header className="rounded-[10px] border border-border bg-surface p-4">
-        <h2 className="font-heading text-[15px] font-semibold text-text">Recogidas del día</h2>
-        <p className="mt-0.5 text-[12px] text-text-secondary">
-          {pendingRows.length} {pendingRows.length === 1 ? 'manifiesto' : 'manifiestos'} por
-          retirar · {closuresCount} {closuresCount === 1 ? 'cerrada' : 'cerradas'} hoy
-        </p>
-      </header>
+      {/* No `routeCode`: there is no route yet. `driverName` now comes from
+          `useCurrentUserName` (review fix) — `PickupMobileHeader` still
+          handles `null` cleanly (falls back to "··" in the avatar, omits
+          the name segment) for the brief window before that query
+          resolves, rather than fabricating a name. */}
+      <PickupMobileHeader driverName={currentUserName ?? null} routeCode={null} />
 
-      {pendingRows.length === 0 ? (
-        <EmptyState
-          icon={PackageSearch}
-          title="Sin recogidas pendientes"
-          description="No tienes manifiestos por retirar hoy."
-        />
-      ) : (
-        <div className="flex flex-col gap-2.5">
-          {pendingRows.map((row) => {
-            const status = pendingStatusInfo(row.verifiedCount);
-            const selectableRow = row.id != null;
-            return (
-              <PickupMobileManifestCard
-                key={row.externalLoadId}
-                externalLoadId={row.externalLoadId}
-                retailerName={row.retailerName}
-                pickupLocation={row.pickupPoint}
-                totalOrders={row.orderCount}
-                totalPackages={row.packageCount}
-                verifiedCount={row.verifiedCount ?? 0}
-                statusLabel={status.label}
-                statusTone={status.tone}
-                selectable={selectableRow}
-                selected={row.id != null && selectedIds.has(row.id)}
-                onSelect={() => row.id && onToggleSelect(row.id)}
-                onOpen={() => onOpenPending(row)}
-              />
-            );
-          })}
-        </div>
-      )}
-
-      {/* No `activeRouteCode` here: this branch only renders when
-          `activeRoute` is null (the early return above handles the
-          in-progress-route case), so the panel always offers to build a new
-          route. */}
-      <PickupRouteDraftPanel
+      <PickupMobileStartRoute
         operatorId={operatorId}
-        selected={selectedManifests}
-        onRemove={onToggleSelect}
-        onCreate={onCreateRoute}
-        isCreating={isCreatingRoute}
-        activeRouteCode={null}
+        pendingRows={pendingRows}
+        selectedIds={selectedIds}
+        onToggleSelect={onToggleSelect}
+        selectedManifests={selectedManifests}
+        onCreateRoute={onCreateRoute}
+        isCreatingRoute={isCreatingRoute}
+        createRouteError={createRouteError}
       />
     </div>
   );
