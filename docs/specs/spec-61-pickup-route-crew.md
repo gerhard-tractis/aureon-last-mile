@@ -131,6 +131,67 @@ routed load still appears available to everyone. Two people can try to claim the
 load and the second gets a raw rejection from `add_manifest_to_route`. This is wrong
 under any of the options above and should be corrected regardless.
 
+---
+
+## Implementation plan
+
+Ordered. Each task is independently reviewable; later tasks depend on earlier ones,
+so do not parallelise. TDD throughout — tests first, and the DB tasks carry pgTAP or
+an equivalent assertion of the constraint they add.
+
+- [ ] **1 — Migration: role and crew table.**
+  Add `pickup_leader` to `user_role`. Map its permissions in the vocabulary migration:
+  everything `pickup_crew` has, plus whatever marks route creation. Create
+  `pickup_route_crew` as sketched above, with RLS matching the sibling pickup tables and
+  a partial unique index preventing one person from being active crew on two routes.
+  A new enum value cannot be added and used in the same transaction in older Postgres —
+  check the target version and split the migration if required. Adding an enum value is
+  irreversible; say so in the file header.
+
+- [ ] **2 — RPCs.**
+  `start_pickup_route` refuses a caller without the leader capability, with a Spanish
+  message the UI shows as-is (`'El conductor ya tiene una ruta de retiro activa'` is the
+  precedent). It accepts the crew and inserts the rows in the same transaction as the
+  route, so a route can never exist without its crew. A picker already active on another
+  route is refused, naming that route. Decide whether a companion `add_crew_to_route`
+  is needed at all given the crew is fixed at creation — if it is not, do not build it.
+
+- [ ] **3 — Frontend role plumbing.**
+  `pickup_leader` added to: `lib/types/auth.types.ts`, `lib/permissions.ts`,
+  the two zod enums in `app/api/users/**`, `components/admin/UserForm.tsx`, and
+  `MOBILE_TAB_ROLES` / `isOperationsRole` in `components/sidebar/navigation.ts`.
+  **The navigation one is the trap:** a `pickup_leader` missing from that set gets no
+  mobile tab bar at all. Add a test that every operations role appears there.
+
+- [ ] **4 — `useActivePickupRoute` resolves crew membership.**
+  "My route" becomes *I am the leader* OR *I am active crew*. Today it filters
+  `driver_id = auth.uid()`. Keep one query; do not introduce an N+1.
+
+- [ ] **5 — `3j` for leaders, and what crew see instead.**
+  Leaders pick vehicle + crew and start. A crew member with no active route must NOT see
+  `3j` — no vehicle selector, no start button they cannot use. They see that no route is
+  open and who to ask. Decide that copy with the artboard in hand.
+
+- [ ] **6 — `3h` shows the crew.**
+  Who is on this trip. No edit path: the crew is fixed once the route opens.
+
+- [ ] **7 — `get_pending_manifests` excludes routed manifests.**
+  Independent of the crew model and wrong today under any of them: a routed load still
+  appears available to everyone, so two people can claim it and the second gets a raw
+  rejection from `add_manifest_to_route`. Adding `pickup_route_id IS NULL` to the
+  predicate changes what several existing screens list — check every caller before
+  changing it.
+
+### Risks to carry
+
+- **The enum change touches auth.** Eight migrations reference `user_role`, and RLS
+  policies read it. A mistake here does not fail a test, it locks people out.
+- **Deploy aborts on data, not code** — the lesson spec-56 records. Any constraint added
+  over live rows needs a pre-flight query against production first.
+- **QA has no `pickup_leader` user.** `create-qa-users.sh` seeds five roles; none of them
+  will be able to start a route once task 2 lands. That script must gain a leader before
+  the QA flow can be walked at all, or QA breaks the moment this deploys.
+
 ## Non-goals
 
 - The per-vehicle uniqueness index (spec-56 owns it).
