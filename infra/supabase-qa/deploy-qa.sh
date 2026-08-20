@@ -412,7 +412,15 @@ sql_tests_check() {
       record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
     elif printf '%s' "$section" | grep -qE "ERROR|not ok "; then
       fail=$((fail + 1))
-      record_advisory "sql: $base" FAIL "advisory — see deploy log for detail"
+      # Echo the failing lines. Without this the summary row says "see the
+      # deploy log" and the log does not contain it — the section lives only in
+      # $output, which is never printed. A check that reports a failure you
+      # cannot diagnose is barely better than no check, and this one is
+      # advisory, so the log IS the whole product.
+      log "--- $base failed, first 20 offending lines:"
+      printf '%s
+' "$section" | grep -E "ERROR|not ok |EXCEPTION" | head -20 | sed 's/^/    /'
+      record_advisory "sql: $base" FAIL "see the block above this table"
     else
       pass=$((pass + 1))
       record_advisory "sql: $base" ok ""
