@@ -1,0 +1,28 @@
+-- =============================================================================
+-- spec-61 Task 1 — add `pickup_leader` to public.user_role
+-- =============================================================================
+-- IRREVERSIBLE. Postgres cannot remove a value from an enum. Undoing this means
+-- rebuilding the type and every column, default, cast and RLS predicate that
+-- reads it. Do not merge it on the assumption it can be walked back.
+--
+-- THIS FILE CONTAINS ONE STATEMENT AND MUST STAY THAT WAY. The Supabase CLI
+-- wraps each migration file in a single transaction, and Postgres refuses to
+-- USE an enum value added by that same transaction:
+--     ERROR: unsafe use of new value "pickup_leader" of enum type user_role
+-- (the exemption is only for a type created in the same transaction). QA runs
+-- Postgres 17.6.1 (infra/supabase-qa/docker-compose.yml:400) and the local
+-- pgTAP harness runs 15.8 (scripts/pgtap-local.sh:14); the rule is the same in
+-- both. Precedents: 20260616000001 (super_admin, also alone in its file) and
+-- 20260512000001 (spec-43), whose header states the same rule.
+--
+-- AUTH SURFACE. `user_role` is read by RLS policies (e.g.
+-- 20260216170542_create_users_table_with_rbac.sql:86 restricts writes to
+-- admin/operations_manager) and by the JWT claims hook. Adding a value changes
+-- no existing row and no existing policy: every current user keeps their role
+-- and every predicate that names roles explicitly keeps the same answer. That
+-- is why this migration is additive-only and touches nothing else.
+--
+-- The NEXT migration (20260820000002) is free to write 'pickup_leader'.
+-- =============================================================================
+
+ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'pickup_leader';
