@@ -27,7 +27,7 @@ export const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
   role: z.enum(
-    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
+    ['pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
     { message: 'Please select a valid role' }
   ),
   permissions: z.array(z.enum(PERMISSION_VALUES))
@@ -41,7 +41,7 @@ export const createUserSchema = z.object({
 export const updateUserSchema = z.object({
   full_name: z.string().min(2, 'Name must be at least 2 characters').optional(),
   role: z.enum(
-    ['pickup_crew', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
+    ['pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const,
     { message: 'Please select a valid role' }
   ).optional(),
   permissions: z.array(z.enum(PERMISSION_VALUES)).optional(),
@@ -61,6 +61,7 @@ export type UpdateUserFormData = z.infer<typeof updateUserSchema>;
  */
 export const roleOptions = [
   { value: 'pickup_crew', label: 'Pickup Crew', color: 'gray' },
+  { value: 'pickup_leader', label: 'Líder de recogida', color: 'gray' },
   { value: 'warehouse_staff', label: 'Warehouse Staff', color: 'gray' },
   { value: 'loading_crew', label: 'Loading Crew', color: 'gray' },
   { value: 'operations_manager', label: 'Operations Manager', color: 'blue' },
