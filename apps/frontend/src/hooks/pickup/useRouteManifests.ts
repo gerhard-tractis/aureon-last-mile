@@ -29,7 +29,67 @@ import type { RouteManifestRow, ManifestStatus } from '@/components/pickup/Route
  * Also selects `pickup_location` (a plain TEXT column on `manifests`, no
  * join needed) so the driver can see, and navigate to, where the manifest
  * actually is.
+ *
+ * spec-54 QA-CARGA-C fix: `manifests.total_packages` is nullable and, per
+ * `20260814000001_manifest_row_per_carga.sql`, deliberately left NULL when
+ * the manifest row is created — "the pickup RPCs compute those from orders,
+ * so a stale denormalised count would be worse than none." The only writer
+ * that ever populates it (`expand_carton`/`delete_minted_carton` in
+ * `20260814000002_spec55_carton_expansion.sql`) sets it to exactly
+ * `COUNT(packages)` joined through `orders.external_load_id` — the same
+ * number desktop's `get_pending_manifests` computes directly and shows in
+ * its `PAQ.` column. So a NULL here does not mean "a different, unknown
+ * quantity" — it means "nobody has (re)computed the real count yet", and
+ * the real count is one query away. When `total_packages` is NULL for a
+ * manifest, this hook now derives the same COUNT(real, non-deleted package
+ * rows) desktop already shows, instead of leaving mobile stuck on "—" for a
+ * manifest with real, already-ingested packages. A manifest with NO package
+ * rows still renders "—" (see `deriveTotalPackages` below) — a genuine 0
+ * package rows is indistinguishable from "not ingested yet", so it is never
+ * shown as a trustworthy denominator, matching `isManifestComplete`'s
+ * existing "0 means not counted, not empty" rule in `manifestProgress.ts`.
  */
+async function deriveTotalPackages(
+  supabase: ReturnType<typeof createSPAClient>,
+  operatorId: string,
+  externalLoadIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (externalLoadIds.length === 0) return result;
+
+  const { data: orders, error: ordersErr } = await supabase
+    .from('orders')
+    .select('id, external_load_id')
+    .eq('operator_id', operatorId)
+    .in('external_load_id', externalLoadIds)
+    .is('deleted_at', null);
+  if (ordersErr) throw ordersErr;
+
+  const orderIds = (orders ?? []).map((o) => o.id);
+  if (orderIds.length === 0) return result;
+
+  const loadIdByOrderId = new Map<string, string>();
+  for (const o of orders ?? []) {
+    if (!o.external_load_id) continue;
+    loadIdByOrderId.set(o.id, o.external_load_id);
+  }
+
+  const { data: packages, error: packagesErr } = await supabase
+    .from('packages')
+    .select('order_id')
+    .eq('operator_id', operatorId)
+    .in('order_id', orderIds)
+    .is('deleted_at', null);
+  if (packagesErr) throw packagesErr;
+
+  for (const p of packages ?? []) {
+    const loadId = p.order_id ? loadIdByOrderId.get(p.order_id) : undefined;
+    if (!loadId) continue;
+    result.set(loadId, (result.get(loadId) ?? 0) + 1);
+  }
+
+  return result;
+}
 export function useRouteManifests(routeId: string | null, operatorId: string | null) {
   return useQuery({
     queryKey: ['pickup', 'route-manifests', routeId],
@@ -70,16 +130,35 @@ export function useRouteManifests(routeId: string | null, operatorId: string | n
         verifiedByManifest.get(s.manifest_id)!.add(s.package_id);
       }
 
-      return (manifests ?? []).map((m) => ({
-        id: m.id,
-        external_load_id: m.external_load_id,
-        retailer_name: m.retailer_name,
-        pickup_location: m.pickup_location,
-        total_orders: m.total_orders,
-        total_packages: m.total_packages,
-        verified_count: verifiedByManifest.get(m.id)?.size ?? 0,
-        status: m.status as ManifestStatus | undefined,
-      }));
+      // Only chase the derived count for manifests that actually need it —
+      // most manifests already carry a real total_packages, and skipping
+      // the extra queries entirely for a fully-populated route keeps this
+      // hook at its original 2-query cost in the common case.
+      const missingLoadIds = (manifests ?? [])
+        .filter((m) => m.total_packages == null)
+        .map((m) => m.external_load_id);
+      const derivedByLoadId =
+        missingLoadIds.length > 0
+          ? await deriveTotalPackages(supabase, operatorId!, missingLoadIds)
+          : new Map<string, number>();
+
+      return (manifests ?? []).map((m) => {
+        // A derived 0 (real orders, zero package rows) is not a trustworthy
+        // denominator — never distinguishable from "not ingested yet" — so
+        // it stays NULL/"—" rather than becoming a fabricated "0".
+        const derived = derivedByLoadId.get(m.external_load_id);
+        const totalPackages = m.total_packages ?? (derived && derived > 0 ? derived : null);
+        return {
+          id: m.id,
+          external_load_id: m.external_load_id,
+          retailer_name: m.retailer_name,
+          pickup_location: m.pickup_location,
+          total_orders: m.total_orders,
+          total_packages: totalPackages,
+          verified_count: verifiedByManifest.get(m.id)?.size ?? 0,
+          status: m.status as ManifestStatus | undefined,
+        };
+      });
     },
   });
 }
