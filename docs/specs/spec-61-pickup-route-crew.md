@@ -4,7 +4,7 @@
 > [spec-56](spec-56-pickup-contract-phase.md) (per-vehicle uniqueness index),
 > [spec-54](spec-54-ui-rebrand.md) (screens `3j` / `3h`)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-20_
 

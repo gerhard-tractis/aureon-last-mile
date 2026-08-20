@@ -93,12 +93,26 @@ DO $$ BEGIN
   END IF;
 END $$;
 
+-- Deliberately constructed in a state the trigger cannot stamp: route
+-- '...613' is 'received', not 'in_progress', at the moment this seat is
+-- inserted, and trg_pickup_route_crew_sync only fires AFTER UPDATE on
+-- pickup_routes -- an INSERT here is invisible to it. This is a live
+-- instance of the AFTER-UPDATE-only limitation named in the spec (not an
+-- oversight): this seat's removed_at stays NULL forever, which blocks this
+-- person from ever holding an active seat on any future route. Task 1.2
+-- does not fix this; it is exercised here only as setup for assertion 5.
 INSERT INTO public.pickup_route_crew (operator_id, pickup_route_id, user_id, added_by)
 VALUES ('aaaaaaaa-0000-4000-a000-000000000610','77777777-0000-4000-7000-000000000613',
         'aaaaaaaa-0000-4000-a000-000000000612','aaaaaaaa-0000-4000-a000-000000000611');
 
--- 5. Reopening restores only seats whose holder is free (a reopen must never
---    abort on a 23505 -- reopen_pickup_route is the receptionist's undo).
+-- 5. Reopening restores a seat ONLY when its holder is not active elsewhere.
+--    That guard exists so a reopen can never abort with a 23505 on the
+--    receptionist's undo -- but it is a KNOWN LIMITATION, not the desired
+--    outcome: the seat above (route '...613', still active because the
+--    trigger never touched it) makes this person "active elsewhere" the
+--    moment route '...611' reopens, so their '...611' seat is skipped and
+--    they are left off a route they were just restored to, with no
+--    automatic way back on.
 UPDATE public.pickup_routes SET status = 'in_progress'
  WHERE id = '77777777-0000-4000-7000-000000000611';
 
