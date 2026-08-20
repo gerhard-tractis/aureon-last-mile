@@ -24,6 +24,9 @@
 #   - Those flags are then widened against what QA actually had checked out, so
 #     a QA sync that GitHub dropped cannot leave an app un-rebuilt forever
 #     (widen_changed_flags).
+#   - packages/database/supabase/tests/*.sql are also run on every deploy, as
+#     an ADVISORY post-check (sql_tests_check) — they report pass/fail but can
+#     never fail the deploy. See sql_tests_check for why.
 #
 # Test-only overrides (never set these on the VPS):
 #   QA_CHECKOUT_DIR=<path>   QA checkout location (default /home/aureon/aureon-qa)
@@ -275,6 +278,11 @@ CHECKS=()
 RESULT=0
 record() { CHECKS+=("$1|$2|$3"); [ "$2" = "ok" ] || RESULT=1; }
 
+# A deliberate fork of record(): same CHECKS array and table row shape, but
+# never touches RESULT. Used only by sql_tests_check — see its comment for why
+# a SQL test failure must never be able to fail this deploy.
+record_advisory() { CHECKS+=("$1|$2|$3"); }
+
 http_check() { # $1 name, $2 url, $3 mode: any (any HTTP response) | success (2xx/3xx)
   local code
   code="$(curl -s -o /dev/null --max-time 10 -w '%{http_code}' "$2" || true)"
@@ -298,11 +306,127 @@ db_check() {
   fi
 }
 
+# --------------------------------------------------------------------------
+# SQL tests — packages/database/supabase/tests/*.sql, run against QA's live
+# Postgres after migrations+seed. ADVISORY ONLY, always, no exceptions:
+#
+#   - None of these 31 files have ever run anywhere (scripts/pgtap-local.sh:2
+#     says outright "NOT used by CI"), so some are near-certain to fail
+#     against schema that has moved since they were written.
+#   - A few assume fixtures that only pgtap-local.sh's docker bootstrap sets
+#     up (shimmed auth.uid()/auth.role()/auth.jwt(), extra auth.users
+#     columns) — QA runs the real Supabase image, so that shim shouldn't be
+#     needed there, but an untested test file can fail for the wrong reason.
+#   - A gate that goes red on day one, from files nobody has ever run, just
+#     trains people to click through red — the exact reasoning behind the
+#     e2e-qa job in .github/workflows/deploy.yml (see its ADVISORY comment).
+#
+# record_advisory() (defined above, next to record()) is what makes this
+# airtight under `set -euo pipefail`: it appends to CHECKS but never sets
+# RESULT, so no matter how many of the 31 files fail, post_checks' final
+# `[ "$RESULT" -ne 0 ] && exit 1` cannot see them. Nothing in this function
+# calls record() or exits non-zero itself either — every psql invocation is
+# guarded with `|| true`, and the function always falls through to its final
+# `log` line, which returns 0.
+#
+# Verified by hand (all 31 files): every one is `BEGIN; ... ROLLBACK;` with
+# no COMMIT anywhere, so nothing here can persist — including the one file
+# (spec52_open_route_reception.sql) that runs ALTER TABLE ... DISABLE/ENABLE
+# TRIGGER mid-test: DDL is transactional in Postgres, so ROLLBACK undoes it
+# same as any INSERT. Read-only in effect, against a live environment people
+# are testing in right now.
+#
+# Two files use pgTAP's plan()/finish() instead of RAISE EXCEPTION (detected
+# by content — grep for `plan(` — not a hardcoded filename list, so a new
+# pgTAP file is picked up automatically). Nothing in the migrations installs
+# the pgtap extension, and creating it here would be a schema write this
+# function must not make, so those two are skipped with a named reason
+# whenever `pgtap` is not in pg_extension.
+#
+# All 31 run through ONE psql connection (a generated script of \i's, each
+# wrapped in \echo markers) rather than 31 separate invocations. Cheaper, and
+# safe: each file already opens and closes its own transaction, so one file's
+# RAISE EXCEPTION (which aborts only its own transaction) can't touch the
+# next file's BEGIN. ON_ERROR_STOP is deliberately left at psql's default of
+# 0 here — unlike apply_seed's ON_ERROR_STOP=1 — specifically so an error in
+# file 5 does not stop files 6 through 31 from running.
+#
+# Failure detection matches scripts/pgtap-local.sh's `run` case: grep the
+# captured output for "ERROR" (a RAISE EXCEPTION) rather than trust psql's
+# process exit status, which stays 0 even when a statement inside the script
+# errored (that is what ON_ERROR_STOP=1 would change, and we don't set it).
+# pgTAP failures don't raise, so pgTAP sections are additionally grepped for
+# TAP's "not ok " failure marker.
+# --------------------------------------------------------------------------
+sql_tests_check() {
+  local pw; pw="$(env_get POSTGRES_PASSWORD)"
+  if [ -z "$pw" ]; then
+    record_advisory "sql tests" SKIP "POSTGRES_PASSWORD missing"
+    return 0
+  fi
+
+  local tests_dir="${QA_CHECKOUT_DIR}/packages/database/supabase/tests"
+  if [ ! -d "$tests_dir" ]; then
+    record_advisory "sql tests" SKIP "tests dir not found: $tests_dir"
+    return 0
+  fi
+
+  shopt -s nullglob
+  local files=("$tests_dir"/*.sql)
+  shopt -u nullglob
+  if [ ${#files[@]} -eq 0 ]; then
+    record_advisory "sql tests" SKIP "no *.sql files in $tests_dir"
+    return 0
+  fi
+
+  local psql_qa=(psql -h localhost -p 5433 -U postgres -d postgres)
+  local pgtap_ok
+  pgtap_ok="$(PGPASSWORD="$pw" "${psql_qa[@]}" -tAc \
+    "SELECT 1 FROM pg_extension WHERE extname = 'pgtap'" 2>/dev/null || true)"
+
+  local begin_tag="__SQLTEST_BEGIN__" end_tag="__SQLTEST_END__"
+  local runner; runner="$(mktemp)"
+  local f base
+  for f in "${files[@]}"; do
+    base="$(basename "$f")"
+    echo "\\echo ${begin_tag} ${base}" >> "$runner"
+    if grep -q 'plan(' "$f" && [ "$pgtap_ok" != "1" ]; then
+      echo "\\echo SKIPPED-NO-PGTAP" >> "$runner"
+    else
+      echo "\\i '${f}'" >> "$runner"
+    fi
+    echo "\\echo ${end_tag} ${base}" >> "$runner"
+  done
+
+  local output
+  output="$(PGPASSWORD="$pw" "${psql_qa[@]}" -v ON_ERROR_STOP=0 -q -f "$runner" 2>&1 || true)"
+  rm -f "$runner"
+
+  local pass=0 fail=0 skip=0 section
+  for f in "${files[@]}"; do
+    base="$(basename "$f")"
+    section="$(printf '%s\n' "$output" | awk -v b="$begin_tag $base" -v e="$end_tag $base" \
+      '$0==b{on=1;next} $0==e{on=0} on')"
+    if printf '%s' "$section" | grep -q "SKIPPED-NO-PGTAP"; then
+      skip=$((skip + 1))
+      record_advisory "sql: $base" SKIP "pgtap extension not installed on QA"
+    elif printf '%s' "$section" | grep -qE "ERROR|not ok "; then
+      fail=$((fail + 1))
+      record_advisory "sql: $base" FAIL "advisory — see deploy log for detail"
+    else
+      pass=$((pass + 1))
+      record_advisory "sql: $base" ok ""
+    fi
+  done
+  log "sql tests (advisory): pass=$pass fail=$fail skip=$skip"
+}
+
 post_checks() {
   log "post-checks (giving restarted services a few seconds to boot)"
   sleep 5
   http_check "kong (8100)" "http://localhost:8100/" any
   db_check
+  sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
     http_check "frontend (3200)" "http://localhost:3200/" success
     unit_check aureon-frontend-qa
