@@ -325,14 +325,20 @@ ON CONFLICT (dock_zone_id, comuna_id) DO NOTHING;
 -- retorno_hub:
 --   /app/pickup (3j "no active route")  useActivePickupRoute.ts:28 reads
 --     pickup_routes WHERE driver_id = auth.uid() AND status = 'in_progress'.
---     The QA pickup_crew login (qa-pickup-crew@qa.test, fixed id
---     00000000-0000-4000-8000-000000000201, created by create-qa-users.sh)
---     must have NO such row so it lands on 3j and can exercise the real flow:
---     3j -> choose vehicle -> "Iniciar ruta de recogida" -> add manifests ->
---     3h. A pre-opened route made 3j permanently unreachable for the only
---     account it was built for (see PR/spec discussion — the route INSERT
---     that used to live here, id 00000000-0000-4000-8000-000000000185, was
---     removed for exactly this reason). start_pickup_route(p_vehicle_id)
+--     The account that walks 3j through to "Iniciar ruta de recogida" is now
+--     qa-pickup-leader@qa.test (fixed id 00000000-0000-4000-8000-000000000207,
+--     created by create-qa-users.sh): spec-61 Task 2 gates
+--     start_pickup_route() to pickup_leader / operations_manager / admin /
+--     super_admin, so qa-pickup-crew@qa.test can no longer open one.
+--     qa-pickup-crew@qa.test (fixed id 00000000-0000-4000-8000-000000000201)
+--     is instead the account for the "crew with no route" state — someone a
+--     leader can add to their crew but who cannot start a route themself.
+--     Both need NO active pickup_routes row, which is exactly what this seed
+--     already asserts below, so no SQL changes were needed here. A
+--     pre-opened route made 3j permanently unreachable for the account it
+--     was built for (see PR/spec discussion — the route INSERT that used to
+--     live here, id 00000000-0000-4000-8000-000000000185, was removed for
+--     exactly this reason). start_pickup_route(p_vehicle_id)
 --     (body: 20260812000003_spec52_pickup_routes_vehicle.sql:138) validates
 --     the vehicle is operator-owned, non-deleted and active — the QA vehicle
 --     below (id …184) satisfies all three, so 3j's selector has something
