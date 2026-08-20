@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
 
@@ -306,6 +306,26 @@ describe('PickupPage', () => {
       expect(screen.queryByTestId('pickup-mobile-view')).not.toBeInTheDocument();
       expect(screen.getAllByTestId('manifest-row').length).toBeGreaterThan(0);
     });
+
+    // spec-54 3h redesign — "Nuevo Manifiesto" is a dispatcher/intake
+    // action, dropped from the mobile screen (not in the mock; that screen
+    // is for a driver starting a route). Regression test for review round
+    // 2 item 5: mutation testing flipped `!isBelowLg` to `isBelowLg` in
+    // page.tsx and every other test still passed 19/19.
+    it('shows "Nuevo Manifiesto" on desktop and hides it on mobile', () => {
+      mockBelowLg(false);
+      render(<PickupPage />);
+      expect(
+        screen.getByRole('button', { name: 'pickup.nuevo_manifiesto' }),
+      ).toBeInTheDocument();
+      cleanup();
+
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(
+        screen.queryByRole('button', { name: 'pickup.nuevo_manifiesto' }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   // spec-54 3h review fix (round 2, critical #1) — tapping a mobile card
@@ -369,12 +389,12 @@ describe('PickupPage', () => {
       });
     });
 
-    it('tapping a card with an unknown total_packages writes status/started_at only, then navigates', async () => {
+    it('tapping the hero card with an unknown total_packages writes status/started_at only, then navigates', async () => {
       const manifestsChain = chainResolving([{ id: 'db-id-1', status: 'pending' }]);
       mockSupabaseFrom.mockReturnValue(manifestsChain);
 
       render(<PickupPage />);
-      await userEvent.click(screen.getByTestId('mobile-manifest-card'));
+      await userEvent.click(screen.getByRole('button', { name: /iniciar recogida/i }));
 
       expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-NULL-TOTAL');
       expect(manifestsChain.update).toHaveBeenCalledTimes(1);

@@ -15,6 +15,11 @@ export type PickupRoute = Database['public']['Tables']['pickup_routes']['Row'];
  */
 export type ActivePickupRoute = PickupRoute & {
   vehicle: { plate: string } | null;
+  /** spec-54 3h redesign — `driver_id` joined against `public.users` for
+   *  the header subtitle ("mié 13/08 · M. Rojas · PR-2026-0148") and the
+   *  avatar initials. Null only if the user row was removed; the mobile
+   *  header falls back to a placeholder rather than showing an id. */
+  driver: { full_name: string } | null;
 };
 
 /**
@@ -39,7 +44,7 @@ export function useActivePickupRoute(operatorId: string | null) {
 
       const { data, error } = await supabase
         .from('pickup_routes')
-        .select('*, vehicle:vehicles(plate)')
+        .select('*, vehicle:vehicles(plate), driver:users(full_name)')
         .eq('operator_id', operatorId!)
         .eq('driver_id', driverId)
         // `draft` is dead: start_pickup_route creates routes directly as

@@ -19,31 +19,20 @@ function createWrapper() {
   };
 }
 
-/** A chain that resolves on its terminal call, recording every intermediate call. */
-function chainResolving(data: unknown[], error: unknown = null) {
+/** A chain that resolves on its terminal call, recording every intermediate
+ *  call. `terminal` defaults to 'order' (the manifests query's real
+ *  terminal call, spec-54 4.6 fix); pass 'is' for every other query in this
+ *  hook — pickup_scans, discrepancy_notes, and the orders/packages
+ *  derived-count queries in `deriveTotalPackages` — none of which call
+ *  `.order(...)`. (Round 3: collapsed the former separate `chainResolvingIs`
+ *  helper into this one — same chain shape, just a different terminal.) */
+function chainResolving(data: unknown[], error: unknown = null, terminal: 'order' | 'is' = 'order') {
   const chain: Record<string, ReturnType<typeof vi.fn>> = {};
   const methods = ['select', 'eq', 'is', 'in', 'order'];
   for (const m of methods) {
     chain[m] = vi.fn().mockReturnValue(chain);
   }
-  // `order` is the real terminal call for the manifests query (spec-54 4.6
-  // fix); making it resolve directly means a query that forgets to call
-  // `.order(...)` fails the test rather than silently returning data via
-  // some other chained method.
-  chain.order = vi.fn().mockResolvedValue({ data, error });
-  return chain;
-}
-
-/** Same shape, but resolves on `.is(...)` — the real terminal call for the
- *  `orders`/`packages` derived-count queries in `deriveTotalPackages`,
- *  which never call `.order(...)`. */
-function chainResolvingIs(data: unknown[], error: unknown = null) {
-  const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-  const methods = ['select', 'eq', 'is', 'in', 'order'];
-  for (const m of methods) {
-    chain[m] = vi.fn().mockReturnValue(chain);
-  }
-  chain.is = vi.fn().mockResolvedValue({ data, error });
+  chain[terminal] = vi.fn().mockResolvedValue({ data, error });
   return chain;
 }
 
@@ -172,10 +161,12 @@ describe('useRouteManifests', () => {
         { id: 'm1', external_load_id: 'QA-CARGA-C', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: null },
       ]);
       const scansChain = chainResolving([]);
-      const ordersChain = chainResolvingIs([
-        { id: 'o1', external_load_id: 'QA-CARGA-C' },
-      ]);
-      const packagesChain = chainResolvingIs([{ order_id: 'o1' }]);
+      const ordersChain = chainResolving(
+        [{ id: 'o1', external_load_id: 'QA-CARGA-C' }],
+        null,
+        'is',
+      );
+      const packagesChain = chainResolving([{ order_id: 'o1' }], null, 'is');
       mockFrom.mockImplementation((table: string) => {
         if (table === 'manifests') return manifestsChain;
         if (table === 'orders') return ordersChain;
@@ -196,8 +187,8 @@ describe('useRouteManifests', () => {
         { id: 'm1', external_load_id: 'L1', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: null },
       ]);
       const scansChain = chainResolving([]);
-      const ordersChain = chainResolvingIs([{ id: 'o1', external_load_id: 'L1' }]);
-      const packagesChain = chainResolvingIs([]);
+      const ordersChain = chainResolving([{ id: 'o1', external_load_id: 'L1' }], null, 'is');
+      const packagesChain = chainResolving([], null, 'is');
       mockFrom.mockImplementation((table: string) => {
         if (table === 'manifests') return manifestsChain;
         if (table === 'orders') return ordersChain;
@@ -212,5 +203,71 @@ describe('useRouteManifests', () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(result.current.data?.[0].total_packages).toBeNull();
     });
+  });
+
+  // spec-54 3h redesign — the completed compact row needs "cerrada HH:MM"
+  // and "N diferencias", so completed_at and a discrepancy_notes count
+  // travel through this hook too.
+  it('selects completed_at and returns a discrepancy count per manifest', async () => {
+    const manifestsChain = chainResolving([
+      {
+        id: 'm1',
+        external_load_id: 'L1',
+        retailer_name: 'A',
+        pickup_location: null,
+        total_orders: 1,
+        total_packages: 2,
+        status: 'completed',
+        completed_at: '2026-08-13T07:31:00.000Z',
+      },
+    ]);
+    const scansChain = chainResolving([], null, 'is');
+    const notesChain = chainResolving(
+      [{ manifest_id: 'm1' }, { manifest_id: 'm1' }],
+      null,
+      'is',
+    );
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') return manifestsChain;
+      if (table === 'discrepancy_notes') return notesChain;
+      return scansChain;
+    });
+
+    const { result } = renderHook(() => useRouteManifests('route-1', 'op-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(manifestsChain.select).toHaveBeenCalledWith(
+      expect.stringContaining('completed_at'),
+    );
+    expect(result.current.data?.[0].completed_at).toBe('2026-08-13T07:31:00.000Z');
+    expect(result.current.data?.[0].discrepancy_count).toBe(2);
+  });
+
+  it('defaults discrepancy_count to 0 for a manifest with no discrepancy_notes rows', async () => {
+    const manifestsChain = chainResolving([
+      { id: 'm1', external_load_id: 'L1', retailer_name: 'A', pickup_location: null, total_orders: 1, total_packages: 2 },
+    ]);
+    const scansChain = chainResolving([], null, 'is');
+    // Round 3 fix (N5) — terminal must be 'is', the real terminal call for
+    // discrepancy_notes. With the default 'order' terminal, `.is(...)`
+    // never resolves, `notes` comes back `undefined`, and the assertion
+    // below passed only because nothing was fetched — not because a real
+    // empty result set came back. This now exercises the actual zero-rows
+    // path.
+    const notesChain = chainResolving([], null, 'is');
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'manifests') return manifestsChain;
+      if (table === 'discrepancy_notes') return notesChain;
+      return scansChain;
+    });
+
+    const { result } = renderHook(() => useRouteManifests('route-1', 'op-1'), {
+      wrapper: createWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.[0].discrepancy_count).toBe(0);
   });
 });

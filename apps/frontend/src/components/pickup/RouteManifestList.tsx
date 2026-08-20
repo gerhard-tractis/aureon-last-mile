@@ -27,6 +27,20 @@ export interface RouteManifestRow {
    *  it; added for the mobile card view, which needs a genuine status
    *  rather than deriving one from verified_count. */
   status?: ManifestStatus;
+  /** spec-54 3h redesign — `manifests.completed_at`, for the compact
+   *  completed row's "cerrada HH:MM". Optional/undefined for callers that
+   *  never fetch it (this list does not need it); null when the DB column
+   *  itself is null (not yet completed). */
+  completed_at?: string | null;
+  /** spec-54 3h redesign — count of `discrepancy_notes` rows for this
+   *  manifest, for the compact completed row's "N notas". This is a note
+   *  count, not a full discrepancy count: `discrepancy_notes` is written
+   *  only when a driver manually types a note about a missing package, and
+   *  it excludes `not_found`/unexpected scans (a different figure, tracked
+   *  in `pickup_scans` via `useDiscrepancies`). Optional/undefined for
+   *  callers that never fetch it (this list does not need it) — render
+   *  `undefined` as unknown, never as a fabricated 0. */
+  discrepancy_count?: number;
 }
 
 interface RouteManifestListProps {
