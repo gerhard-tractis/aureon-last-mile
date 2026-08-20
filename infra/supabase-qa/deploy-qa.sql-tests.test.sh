@@ -148,7 +148,7 @@ check_true "runs to completion (exit 0) with pgtap absent" $rc
 check "RESULT stays 0 even though one file errors and one is a pgTAP file" \
   "RESULT=0" "$(grep '^RESULT=' "$STUB_DIR/out1")"
 check "the RAISE EXCEPTION file is reported FAIL" \
-  "sql: bbb_error_test.sql|FAIL|advisory — see deploy log for detail" \
+  "sql: bbb_error_test.sql|FAIL|see the block above this table" \
   "$(grep '^sql: bbb_error_test.sql' "$STUB_DIR/out1")"
 check "the clean file is reported ok" \
   "sql: aaa_pass_test.sql|ok|" \
@@ -168,7 +168,7 @@ check_true "runs to completion (exit 0) with pgtap present" $rc
 check "RESULT still stays 0 with pgtap installed and a real TAP failure" \
   "RESULT=0" "$(grep '^RESULT=' "$STUB_DIR/out2")"
 check "a pgTAP 'not ok' (no ERROR text at all) is still caught as FAIL" \
-  "sql: ccc_tapfail_test.sql|FAIL|advisory — see deploy log for detail" \
+  "sql: ccc_tapfail_test.sql|FAIL|see the block above this table" \
   "$(grep '^sql: ccc_tapfail_test.sql' "$STUB_DIR/out2")"
 
 # ── psql itself fails outright (e.g. connection refused) — must not blow up
