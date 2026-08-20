@@ -58,14 +58,22 @@ Los artboards `3r` / `3s` (reingresos agrupados por ruta) **quedan fuera** — v
 
 4. **El acta es una ruta, no un estado en memoria.** `/app/reception/route/[routeId]/completa` sobrevive a un refresco, se puede volver a abrir, y es adonde navega también el escritorio al cerrar. Espeja lo que hace Recogida al cerrar una ruta (`close_pickup_route` → `/app/pickup/route/[id]/qr`). Hoy el cierre de recepción solo deja un toast: el acta no existe en ninguna parte.
 
-5. **La regla de nota obligatoria se extrae a `lib/reception/finalizeRule.ts`.** Vive dentro de `FinalizeReceptionButton` y es un espejo del guard de `complete_route_reception`:
+5. **La regla de nota obligatoria se extrae a `lib/reception/finalize-rule.ts`, y es más estricta que el servidor a propósito.** Hoy vive dentro de `FinalizeReceptionButton`:
 
    ```
-   matched  := received_count - unexpected_count
+   matched   := received_count - unexpected_count
    needsNote := matched !== expected_count || unexpected_count > 0
    ```
 
-   Con dos consumidores (diálogo de escritorio y hoja móvil) no puede estar escrita dos veces: un servidor que exige nota donde la UI no la pide deja la recepción sin poder cerrarse. Se extrae con sus tests, y ambos la importan.
+   **No es un espejo del guard actual.** `complete_route_reception` conserva su definición de spec-47 y solo exige nota cuando `received_count < expected_count`. La migración `20260812000006_spec52_unexpected_count.sql`, PART 3, dice explícitamente que la regla anterior **no** se aplicó ahí y que no hay que "terminar el trabajo": el endurecimiento del servidor es trabajo de fase de contrato (spec-56).
+
+   La asimetría es en la dirección segura: la UI pide nota en casos donde el servidor la aceptaría vacía, nunca al revés. El caso que el servidor deja pasar en silencio es `10 esperados · 10 recibidos · 1 ajeno` — cuadra en crudo, pero un paquete esperado no llegó y uno ajeno sí.
+
+   Consecuencias para el plan, ambas load-bearing:
+   - **Ningún test de paridad UI ↔ servidor.** Lo que se testea es la inclusión: todo caso en que el servidor exige nota, la UI también. La igualdad hoy falla y debe fallar.
+   - **El endurecimiento del servidor queda fuera de este spec.** Es de spec-56 y traería migración, lo que contradice el "sin migraciones" de más abajo.
+
+   Con dos consumidores (diálogo de escritorio y hoja móvil) la regla no puede estar escrita dos veces. Se extrae con sus tests y ambos la importan.
 
 6. **La barra de pestañas cede en la sesión.** `/app/reception/route` se suma a `MOBILE_IMMERSIVE_PREFIXES`, junto a los tres prefijos de Recogida. `3q` y `3p` tienen barra de acciones fija abajo; apilarla con `MobileTabBar` deja dos barras y roba 60px de la pantalla más densa del módulo. `/app/reception` **sí** conserva las pestañas, con Recepción activa.
 
@@ -79,7 +87,7 @@ Cada renuncia con su motivo. Ninguna se rellena con un dato inventado.
 |---|---|---|
 | `Recepción · Andén 2`, `turno AM` | Se cae. Cabecera: "Recepción" + nombre del receptor e iniciales | No hay andén de recepción ni turnos en el schema. `dock_zones` es distribución, no el andén donde se descarga |
 | Barra de estado del teléfono (`12:41`, batería, `EN LÍNEA`) | No se dibuja. En su lugar, el chip real de `useSyncQueue` | Es cromo del sistema operativo. Dibujar una batería falsa es mentir sobre el dispositivo |
-| `Zebra TC22 · lector listo` | Se muestra el foco real del `ScanField` ("Lector listo" / "Toca para reactivar el lector") + botón de código manual de 44px | No podemos identificar el modelo del lector. El foco del input sí es real, y es exactamente lo que determina si el gatillo va a aterrizar |
+| `Zebra TC22 · lector listo` | Se muestra el foco real del `ScanField` ("Lector listo" / "Toca para reactivar el lector") + botón de código manual de 44px | No podemos identificar el modelo del lector. El foco del input sí es real, y es exactamente lo que determina si el gatillo va a aterrizar. **Requiere trabajo**: `ScanField` hoy fuerza el foco al montar y no observa el `blur`, ni tiene entrada manual — ver fase 1 |
 | `88 paquetes esperados` antes de abrir | Se muestra solo en rutas ya en patio (`in_transit`) | `expected_count` se congela en `open_route_reception`. Antes de eso no hay expectativa que mostrar |
 | `Ver acta de la ruta` (segunda acción de `3p`) | Enlaza a `/app/reception/route/[routeId]/preview` | La pantalla ya es el acta. El botón lleva al detalle de la ruta, que sí es otra cosa |
 | `Las 3 cargas de la ruta quedaron cerradas` | Se compone desde `snapshot.manifests.length` | Es un efecto real de `trg_route_receptions_status_sync`, no texto fijo |
@@ -91,9 +99,12 @@ Cada renuncia con su motivo. Ninguna se rellena con un dato inventado.
 Datos: `useIncomingRoutes(operatorId, 'in_transit')` (patio), `'in_progress'` (en camino) y `useOpenDiscrepancies`. La espera sale de `buildArrivals` / `arrivals.ts`, que ya la deriva de `pickup_routes.in_transit_at` — se reutiliza, no se recalcula.
 
 - **Héroe** = la ruta en patio que más espera. Código `PR-…` en mono 30px, conductor y patente, `N paquetes esperados`, badge de espera en paleta error sobre `YARD_WAIT_WARNING_MINUTES`. Acción **Iniciar conteo**, 64px → `/app/reception/route/[id]`. Navega directo: una ruta `in_transit` ya tiene su recepción abierta.
+  El héroe recibe el `IncomingRoute` crudo, **no** el `ArrivalRow`: `buildArrivals` no propaga `plate`, y la patente es lo que el receptor coteja contra el camión que tiene delante. `ArrivalRow` sigue alimentando la espera y el estado.
 - **También en patio**: el resto, filas de 56px con chevron.
-- **Diferencias abiertas**: bloque en paleta error con *Resolver*, desde `useOpenDiscrepancies`.
-- **Pie fijo**: *Escanear QR de ruta* (`RouteQRScannerEntry` en hoja a pantalla completa) y *Recibir sin QR* (`ReceiveWithoutQRButton`). Son los dos únicos caminos que pueden llamar a `open_route_reception`, que congela `expected_count` y bloquea el escaneo de recogida del conductor: nunca se invoca al montar.
+- **Diferencias abiertas**: bloque en paleta error desde `useOpenDiscrepancies`. *Resolver* abre el acta de esa recepción (`/completa`), que es donde están las cuatro cifras y la nota. Requiere sumar `pickup_route_id` al `select` del hook y `routeId` a `OpenDiscrepancy` — hoy solo devuelve el id de la recepción y el código de ruta, con los que no se puede construir la URL. No se inventa una acción de "resolver" que hoy no existe en ninguna capa: el botón lleva a leer el caso, no lo cierra.
+- **Pie fijo**: *Escanear QR de ruta* (`RouteQRScannerEntry` en hoja a pantalla completa) y *Recibir sin QR*.
+  `ReceiveWithoutQRButton` exige `{ routeId, code, plate }` y hoy solo se monta en la página de una ruta concreta (`/route/[routeId]/preview`), así que **no puede vivir tal cual en un pie sin ruta seleccionada**. El pie abre `ReceiveWithoutQRSheet`: lista las rutas `in_progress` (en camino, sin QR escaneado) con código, conductor y patente; al elegir una, monta el `ReceiveWithoutQRButton` existente con su confirmación, sin duplicar la mutación ni el texto de advertencia. Es el caso real — el camión llegó y el QR está ilegible o el conductor no lo trae.
+  Estos dos son los únicos caminos que pueden llamar a `open_route_reception`, que congela `expected_count` y bloquea el escaneo de recogida del conductor: nunca se invoca al montar.
 - Sin tarjetas KPI y sin conmutador de tema, como pide el mock.
 - Vacío: `EmptyState` con `ArrowUpDown` — "Ningún camión en patio", y el pie sigue disponible.
 
@@ -102,7 +113,8 @@ Datos: `useIncomingRoutes(operatorId, 'in_transit')` (patio), `'in_progress'` (e
 Datos: `useRouteReceptionSnapshot`, `useReceptionScan`, `useSyncQueue`. Mutaciones sin cambios.
 
 - **Cabecera fija**: `PR-…`, conductor, `61 / 88` en mono 26px y barra de 8px. Chip de cola cuando `useSyncQueue` no está `online`, con la redacción del handoff: *"Se guardan en el dispositivo y se envían solos al recuperar señal."*
-- **`ScanField size="sm"`** (62px), siempre enfocado, con `useScannerAutoSubmit` para el lector de QA que no manda sufijo Enter.
+- **`ScanField size="sm"`** (62px), siempre enfocado, con `useScannerAutoSubmit` para el lector de QA que no manda sufijo Enter. El primitivo gana una prop opcional `onFocusStateChange`: sin ella se comporta igual que hoy, con ella informa foco/blur para que la sesión pueda decir "Lector listo" o "Toca para reactivar el lector". Un lector que dispara contra un input desenfocado pierde escaneos en silencio, y hoy nada lo delata.
+- **Código manual**: botón de 44px junto al estado del lector que abre `ManualCodeSheet` — la única entrada táctil de la pantalla, para etiqueta ilegible. Envía por la misma mutación que el lector.
 - **Bloque de resultado persistente** (`ScanResult`), hasta el siguiente escaneo. Hoy la página lo borra con un `setTimeout` de 3s; el handoff pide lo contrario y esa línea se elimina en móvil y escritorio.
 
   | `scanResult` | Tono | Titular |
@@ -112,6 +124,8 @@ Datos: `useRouteReceptionSnapshot`, `useReceptionScan`, `useSyncQueue`. Mutacion
   | `duplicate` | warn | `YA ESCANEADO` + hora del primero |
   | `not_found` | error | `NO ESTÁ EN LA RUTA` |
   | `route_mismatch` | error | `ES DE OTRA RUTA` |
+
+  La hora del primer escaneo en el caso `duplicate` sale de `snapshot.scans` — el escaneo previo con ese `barcode` —, no del validador: su rama `duplicate` selecciona solo `id` y no devuelve marca de tiempo. Si no está en el snapshot, el titular va sin hora; no se inventa.
 
 - **Historial** desde `snapshot.scans`, más reciente arriba, con chips `AJENO` / `REPETIDO`. Ningún resultado bloquea el flujo: se registra, se marca y el conteo sigue.
 - **Pie fijo**: *Reportar discrepancia* (abre la hoja de nota) y *Confirmar*, 56px. *Confirmar* aplica `needsNote` de `finalizeRule.ts`: si es falso llama `complete_route_reception` con `null`; si es verdadero abre la hoja.
@@ -137,19 +151,24 @@ components/reception/ReceptionMobileHeader.tsx      A
 components/reception/ReceptionMobileYardCard.tsx    A  héroe + Iniciar conteo
 components/reception/ReceptionMobileCompactRow.tsx  A
 components/reception/ReceptionMobileFooterActions.tsx A
+components/reception/ReceiveWithoutQRSheet.tsx      A  selector de ruta in_progress
 components/reception/ReceptionMobileSession.tsx     A  3q
 components/reception/ReceptionScanFeedback.tsx      A  mapea scanResult → props de ScanResult
+components/reception/ManualCodeSheet.tsx            A  entrada manual de código
 components/reception/DiscrepancyNoteSheet.tsx       A
 components/reception/ReceptionReceipt.tsx           A  cuerpo de 3p
-components/reception/FinalizeReceptionButton.tsx    M  importa finalizeRule
+components/reception/FinalizeReceptionButton.tsx    M  importa finalize-rule
 components/scan/ScanResult.tsx                      M  tono warn
+components/scan/ScanField.tsx                       M  onFocusStateChange opcional
 components/sidebar/navigation.ts                    M  /app/reception/route inmersiva
 
-lib/reception/finalizeRule.ts                       A  needsNote / matched / missing
-lib/reception/receptionMobileHelpers.ts             A  iniciales, hora, etiquetas de espera
+lib/reception/finalize-rule.ts                      A  needsNote / matched / missing
+lib/reception/reception-mobile-helpers.ts           A  iniciales, hora, etiquetas de espera
 ```
 
-Hooks: ninguno nuevo. `useIncomingRoutes`, `useOpenDiscrepancies`, `useRouteReceptionSnapshot`, `useReceptionScan`, `useCompleteRouteReception`, `useSyncQueue`, `useIsBelowLg`, `useCurrentUserName` se consumen tal cual.
+Nombres en kebab-case, que es la convención de `lib/reception/` en disco (`reception-scan-validator.ts`, `route-ref.ts`).
+
+Hooks: ninguno nuevo. `useIncomingRoutes`, `useRouteReceptionSnapshot`, `useReceptionScan`, `useCompleteRouteReception`, `useSyncQueue`, `useIsBelowLg`, `useCurrentUserName` se consumen tal cual. `useOpenDiscrepancies` es el único que se toca: suma `pickup_route_id` al `select` y `routeId` a `OpenDiscrepancy`, para poder enlazar el acta.
 
 Base de datos: **sin migraciones**. Todo sale de columnas y RPCs existentes.
 
@@ -166,8 +185,9 @@ Base de datos: **sin migraciones**. Todo sale de columnas y RPCs existentes.
 
 TDD, con Vitest + Testing Library, siguiendo el patrón de `PickupMobileView.test.tsx`. Cobertura sobre 70%.
 
-- `finalizeRule.test.ts` — la tabla completa, incluido el caso `10 esperados · 10 recibidos · 1 ajeno` que exige nota pese a cuadrar en crudo.
-- `ReceptionMobileView.test.tsx` — el héroe es la ruta que más espera; sin rutas en patio va a vacío; *Iniciar conteo* navega; el pie no llama a `open_route_reception` al montar.
+- `finalize-rule.test.ts` — la tabla completa, incluido el caso `10 esperados · 10 recibidos · 1 ajeno` que exige nota pese a cuadrar en crudo. Y el test de **inclusión**, no de paridad: todo caso en que el servidor exigiría nota (`received < expected`) la UI también la exige. La igualdad con el servidor no se testea porque hoy no se cumple, por diseño (decisión 5).
+- `ReceptionMobileView.test.tsx` — el héroe es la ruta que más espera y muestra la patente; sin rutas en patio va a vacío; *Iniciar conteo* navega; el pie no llama a `open_route_reception` al montar.
+- `ReceiveWithoutQRSheet.test.tsx` — lista solo rutas `in_progress`; elegir una monta la confirmación existente; cerrar sin elegir no muta nada.
 - `ReceptionScanFeedback.test.tsx` — las cinco filas de la tabla de tonos.
 - `ReceptionMobileSession.test.tsx` — el bloque persiste tras un segundo escaneo; *Confirmar* sin diferencias cierra sin hoja; con diferencias la abre y no cierra sin texto.
 - `ReceptionReceipt.test.tsx` — las cuatro cifras salen del snapshot; sin nota no se inventa el bloque.
@@ -182,13 +202,14 @@ Un PR por fase, con auto-merge.
 
 | Fase | Alcance |
 |---|---|
-| **1 — Base compartida** | `finalizeRule.ts` extraído con tests, `ScanResult` tono `warn`, `/app/reception/route` inmersiva, `receptionMobileHelpers.ts`. Sin cambios visibles. |
-| **2 — `3i` patio** | `ReceptionMobileView` y sus cuatro componentes; rama en `page.tsx`. |
-| **3 — `3q` descarga + nota** | `ReceptionMobileSession`, `ReceptionScanFeedback`, `DiscrepancyNoteSheet`; rama en la página de sesión; se elimina el auto-ocultado de 3s. |
+| **1 — Base compartida** | `finalize-rule.ts` extraído con tests, `ScanResult` tono `warn`, `ScanField` con `onFocusStateChange`, `/app/reception/route` inmersiva, `reception-mobile-helpers.ts`, `pickup_route_id` en `useOpenDiscrepancies`. Sin cambios visibles salvo el estado del lector. |
+| **2 — `3i` patio** | `ReceptionMobileView` y sus componentes, incluido `ReceiveWithoutQRSheet`; rama en `page.tsx`. |
+| **3 — `3q` descarga + nota** | `ReceptionMobileSession`, `ReceptionScanFeedback`, `ManualCodeSheet`, `DiscrepancyNoteSheet`; rama en la página de sesión; se elimina el auto-ocultado de 3s. |
 | **4 — `3p` acta** | Ruta nueva, `ReceptionReceipt`, y la redirección de cierre en ambos árboles. |
 | **5 — E2E** | Playwright móvil contra QA. |
 
 ## Preguntas abiertas
 
 1. **Reingresos (`3r`/`3s`).** Al abrirlos hay que decidir con el negocio si el tercer intento fallido obliga a elegir destino y si esa regla se valida en el servidor — hoy no hay RPC de cierre para reingresos.
-2. **Rutas en patio simultáneas.** El mock asume una en curso; el schema no lo impide. La sesión es por ruta, así que abrir una segunda no rompe nada, pero conviene confirmar si operaciones quiere permitirlo o advertirlo.
+2. **El endurecimiento de `complete_route_reception`.** La regla `matched`/`unexpected_count` sigue pendiente en el servidor desde spec-52 y pertenece a spec-56 (fase de contrato). Mientras no aterrice, la UI es la única que la aplica: un cliente que llame la RPC directamente puede cerrar sin nota un caso que la UI habría bloqueado.
+3. **Rutas en patio simultáneas.** El mock asume una en curso; el schema no lo impide. La sesión es por ruta, así que abrir una segunda no rompe nada, pero conviene confirmar si operaciones quiere permitirlo o advertirlo.
