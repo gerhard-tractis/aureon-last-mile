@@ -69,7 +69,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 | **1 — Tokens y tipografía** | `globals.css`, `tailwind.config.ts`, `layout.tsx` (fuentes). Sin tocar componentes. | ✅ #401 |
 | **2 — Shell** | `AppLayout.tsx`, `components/sidebar/*`, `TopBar` nuevo, `ThemeToggle` al topbar. | ✅ #403, breadcrumb #407 |
 | **3 — Primitivos compartidos** | `MetricCard`, `StatusBadge`, `EmptyState`, fila de tabla, campo de escaneo, bloque de resultado de escaneo, tarjeta de andén, barra apilada. | ✅ #408 |
-| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recogida ✅ → Recepción ✅ → móvil. | en curso |
+| **4 — Módulos, uno por PR** | Torre de control ✅ → Despacho ✅ → Distribución ✅ → Recogida ✅ → Recepción ✅ → móvil `1h` ✅ `1i` ✅ `1k` ✅, `1g` bloqueada. | ✅ salvo `1g` |
 | **5 — Opcional** | Variante `1b` y proveedor de mapas. | diferida (non-goal) |
 
 ---
@@ -421,3 +421,83 @@ Queda una sola brecha: **la capacidad del andén**. El mock muestra `168 / 180 p
 `get_distribution_overview` devuelve lotes abiertos, último cierre, clasificados hoy, ritmo de la última hora y quién está escaneando. Los cinco salen de `dock_batches` + `dock_scans`, así que viajan juntos en una llamada. Todo lo demás de la pantalla ya tenía hook y no se duplica.
 
 "Clasificados hoy" se cuenta desde los **escaneos**, no desde el estado del paquete: el estado es el actual, y un paquete que siguió avanzando dejaría de contar para el turno en que se clasificó.
+
+---
+
+## Fase 4.8 — Móvil: lo que se hizo y lo que quedó bloqueado
+
+Las cinco pantallas móviles del handoff (`1g`–`1k`) no eran el mismo tipo de
+trabajo. Tres eran rediseños de pantallas que ya existían y funcionaban; dos
+son pantallas nuevas cuyo elemento central depende de datos que el esquema no
+tiene. Se implementaron las tres primeras y se documentan aquí las otras dos,
+en vez de construirlas contra datos inventados.
+
+| Mock | Ruta | Resultado |
+|---|---|---|
+| `1h` Escaneo de recogida | `/app/pickup/scan/[loadId]` | ✅ #447 |
+| `1i` Ruta activa | `/app/pickup/route/active` | ✅ #450 |
+| `1k` Reingresos | `ReturnReceptionSession` | ✅ #449 |
+| `1g` Home del operario | — | ⛔ bloqueada (abajo) |
+| `1j` Parada y prueba de entrega | — | ⛔ bloqueada (abajo) |
+| `3e` Distribución handheld | — | pendiente, no bloqueada |
+
+### El mock móvil asume un dominio de reparto que el producto todavía no tiene
+
+Es el mismo hallazgo tres veces, y conviene nombrarlo una sola vez: `1i`, `1j`
+y buena parte de `1g` están dibujados para un conductor **repartiendo**. Lo que
+existe hoy es el lado de **recogida** — se retiran manifiestos de puntos de
+recogida. No hay secuencia de paradas, ni ETA por parada, ni resultado de
+entrega, ni plazo SLA por ruta.
+
+`1i` se implementó contra lo que sí existe (código de ruta, patente, hora de
+salida, manifiestos verificados sobre esperados) en lugar de forzar la pantalla
+hacia semántica de reparto. Las omisiones concretas están en la Fase 4.6.
+
+### `1g` — Home del operario: falta el vínculo usuario ↔ conductor
+
+El elemento dominante del mock es la tarjeta "TU TAREA AHORA": la siguiente
+tarea **de esta persona**. No es construible.
+
+`public.drivers` no tiene `user_id` ni ninguna referencia a `auth.users`, y
+ninguna migración posterior la agrega. Las rutas apuntan a `driver_id`, pero
+nada conecta esa fila con la cuenta que tiene el teléfono en la mano. El
+sistema no puede responder "cuál es *mi* próxima tarea".
+
+Lo que sí se podría construir hoy:
+
+- el saludo — `public.users.full_name` existe;
+- ESCANEADOS — los escaneos llevan `scanned_by` / `user_id`, así que un conteo
+  personal del día es real;
+- PENDIENTES HOY — solo a nivel de operador, no "tuyas";
+- la tab bar — es navegación.
+
+Lo que no: la tarjeta de tarea y la lista "DESPUÉS DE ESTA", que son la razón
+de ser de la pantalla.
+
+**Qué la desbloquea:** una columna `drivers.user_id` (o una tabla de asociación
+`users` ↔ `drivers`), más una superficie de administración para mantener ese
+mapeo. Es trabajo de esquema con su propio spec, no un rediseño.
+
+### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba
+
+Pide foto, firma y RUT al entregar. No existe flujo de entrega en el frontend
+y, sobre todo, no hay dónde guardar la prueba: `delivery_attempts` es una tabla
+de métricas para FADR (`attempt_number`, `status`, `failure_reason`,
+`attempted_at`) — sin firma, sin foto, sin RUT, y sin bucket de storage.
+
+**Qué la desbloquea:** migración para la prueba de entrega, un bucket de
+storage, RPCs de escritura y encolado offline para capturas hechas sin señal.
+Es una funcionalidad, no un restyle.
+
+### Deuda transversal encontrada de paso
+
+**47 usos de modificadores de opacidad sobre tokens del proyecto no generan CSS
+en absoluto.** `tailwind.config.ts` mapea cada token a un `var(--color-…)`
+pelado, sin `<alpha-value>`, así que Tailwind 3 no puede componer alfa y
+descarta la clase en silencio. `hover:border-accent/50`, `focus:ring-accent/40`,
+`bg-accent/10` y compañía se leen bien en el código y no existen en pantalla.
+Se corrigieron los casos dentro de estas pantallas; el resto sigue.
+
+Arreglarlo de raíz es un cambio de configuración (tokens en canales RGB o
+`color-mix()`) que haría aparecer ~47 tintes hoy invisibles de una sola vez —
+un cambio visual transversal que merece su propio PR y revisión.
