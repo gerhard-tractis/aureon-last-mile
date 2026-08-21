@@ -411,3 +411,41 @@ All earlier tests retained; distribution suite **195 tests pass**, full suite st
 - Auto-scroll-to-zone when an Andén-coded scan is detected.
 - Per-group collapse/expand.
 - Group reordering by operator.
+
+---
+
+## Addendum 3 — Modo Rápido regression restored (2026-08-21)
+
+**Trigger:** QA on a real operator account — four packages sitting in `en_bodega`,
+none of them visible after entering Modo rápido.
+
+**Cause.** `e1141ab feat(spec-54): rebuild Distribución quicksort against mock 1d
+(phase 4.3) (#417)` rewrote `quicksort/page.tsx` from scratch against the rebrand
+mock. The mock has no pending list, so the rewrite silently dropped
+`PendingDockList` and, with it, everything spec-39 and spec-41 wired into that
+screen: the pending pile, tap-to-verify, the manager's per-row `⋯` assign and the
+`Asignar todo` bulk assign. Nothing in `spec-54-ui-rebrand.md` calls for the
+removal — it names only the `PENDIENTES` tile — so this was collateral, not a
+decision. Modo Lote kept its copy (`batch/[batchId]/page.tsx`), which is why only
+Modo Rápido looked empty.
+
+**Fix.** The component and every hook behind it survived untouched in the tree, so
+only the page wiring had to be restored:
+
+- `usePendingSectorization`, `useDockVerifications`, `useDockVerificationMutation`
+  and `useManualDockAssignment` are mounted again on `quicksort/page.tsx`.
+- `PendingDockList` sits under the andén grid inside the left column and scrolls
+  in its own box, so the scan field is never pushed off screen. This is not
+  Addendum 2's full-width placement: spec-54's layout puts `RecentScansPanel` in a
+  right rail, and the list takes the height the andén grid leaves unused rather
+  than displacing either.
+- `onManualAssign` / `onManualAssignAll` are passed only when
+  `useManualDockAssignment().canUse` — the permission rule in the table above is
+  unchanged.
+
+**Tests.** New `apps/frontend/src/app/app/distribution/quicksort/page.test.tsx` —
+6 cases: the list renders beside the scanner, empty state, tap verifies, an
+already-verified row is a no-op, `⋯` hidden from warehouse staff and offered to
+managers. It is the page-level regression guard this route never had.
+
+Distribution suite 156 pass; `tsc --noEmit` and eslint clean.
