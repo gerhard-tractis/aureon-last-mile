@@ -50,8 +50,14 @@ ON CONFLICT DO NOTHING;
 -- Three CARGAs. trg_ensure_manifest_for_order (20260814000001) creates the
 -- manifests rows from these inserts -- do not insert manifests by hand.
 -- customer_name/customer_phone/delivery_address/comuna/delivery_date/raw_data/
--- imported_via are all NOT NULL on public.orders (20260217000003:50), and
--- orders has no `status` column at all -- a shorter INSERT does not parse.
+-- imported_via/imported_at are all NOT NULL on public.orders
+-- (20260217000003:50) -- a shorter INSERT does not parse. `status` is omitted
+-- on purpose rather than because it is absent: it exists, as
+-- order_status_enum NOT NULL DEFAULT 'ingresado' (20260223000001:338, retyped
+-- by 20260313000001), and nothing in this test depends on its value, so the
+-- default is the honest choice. Note the enum's members are
+-- ingresado/verificado/en_bodega/asignado/en_carga/listo/en_ruta/entregado/
+-- cancelado -- 'pendiente' is not one of them.
 INSERT INTO public.orders (
   id, operator_id, order_number, customer_name, customer_phone,
   delivery_address, comuna, delivery_date, external_load_id, retailer_name,
@@ -176,9 +182,15 @@ BEGIN
   IF r.id IS DISTINCT FROM v_manifest_id THEN
     RAISE EXCEPTION 'id must be the manifests row id for the load: expected %, got %', v_manifest_id, r.id;
   END IF;
-  IF r.verified_count IS DISTINCT FROM 0 THEN
-    RAISE EXCEPTION 'verified_count changed shape: expected 0 for a load with no scans, got %', r.verified_count;
-  END IF;
+
+  -- There is deliberately NO verified_count assertion here. The plan's draft
+  -- had `IF r.verified_count <> 0`, and an earlier revision of this file kept
+  -- it as `IS DISTINCT FROM 0`. Both are dead: verified_count is
+  -- COALESCE(...,0)::BIGINT, so it cannot be NULL, and this fixture seeds no
+  -- pickup_scans, so it cannot be anything but 0 -- no plausible defect makes
+  -- it fail. Real coverage would mean seeding a verified pickup_scan and
+  -- asserting the count follows, which belongs to spec-53's tests, not to a
+  -- test about which rows the exclusion predicate returns.
 END $$;
 
 ROLLBACK;

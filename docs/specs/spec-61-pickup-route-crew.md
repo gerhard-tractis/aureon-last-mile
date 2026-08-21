@@ -2647,11 +2647,16 @@ change the badge and the list legitimately differ; see Decision 9.
       --
       -- CORRECTED DURING IMPLEMENTATION (2026-08-20). The draft below was
       -- `(id, operator_id, order_number, external_load_id, retailer_name, status)`
-      -- with status 'pendiente'. public.orders (20260217000003:50) has NO
-      -- `status` column, and customer_name, customer_phone, delivery_address,
-      -- comuna, delivery_date, raw_data and imported_via are all NOT NULL --
-      -- the draft INSERT could never have run. Shape taken from
-      -- spec53_manifest_per_carga.sql:20-28, which does work.
+      -- with status 'pendiente'. It could never have run, for two reasons:
+      -- 'pendiente' is not a member of order_status_enum (its members are
+      -- ingresado/verificado/en_bodega/asignado/en_carga/listo/en_ruta/
+      -- entregado/cancelado, per 20260313000001), and customer_name,
+      -- customer_phone, delivery_address, comuna, delivery_date, raw_data,
+      -- imported_via and imported_at are all NOT NULL on public.orders
+      -- (20260217000003:50) and were all omitted. `status` itself DOES exist
+      -- (20260223000001:338, retyped by 20260313000001) and is NOT NULL
+      -- DEFAULT 'ingresado'; it is left out below because the default is
+      -- correct here, not because the column is missing.
       INSERT INTO public.orders (
         id, operator_id, order_number, customer_name, customer_phone,
         delivery_address, comuna, delivery_date, external_load_id, retailer_name,
@@ -2705,13 +2710,18 @@ change the badge and the list legitimately differ; see Decision 9.
       **CORRECTED DURING IMPLEMENTATION (2026-08-20)** — three weaknesses in the
       draft above, all fixed in the file that shipped:
 
-      1. `r.verified_count <> 0` is this plan's own trap #1: if `verified_count`
-         ever came back NULL, `NULL <> 0` is NULL and the `IF` never fires.
-         Shipped as `IS DISTINCT FROM 0`. The id check is likewise compared
-         against the actual `manifests.id` for the load rather than merely
-         `IS NOT NULL`, and a `proargnames` check was added so that templating on
-         a pre-spec-53 definition — the one real hazard of this migration — fails
-         loudly instead of silently dropping three columns.
+      1. `r.verified_count <> 0` was **deleted, not repaired.** It looks like
+         this plan's trap #1 (`NULL <> 0` is NULL, so the `IF` never fires), but
+         repairing it to `IS DISTINCT FROM 0` would have been theatre:
+         `verified_count` is `COALESCE(…,0)::BIGINT` and so cannot be NULL, and
+         the fixture seeds no `pickup_scans`, so it cannot be anything but 0. No
+         plausible defect makes it fail either way. Real coverage means seeding a
+         verified scan and asserting the count follows — which belongs to
+         spec-53's tests. The id check, by contrast, was strengthened: it now
+         compares against the actual `manifests.id` for the load rather than
+         merely `IS NOT NULL`, and a `proargnames` check was added so that
+         templating on a pre-spec-53 definition — the one real hazard of this
+         migration — fails loudly instead of silently dropping three columns.
       2. `SELECT * INTO r` with no `IF NOT FOUND` leaves every field NULL when the
          row is absent, so the id assertion would have reported the wrong defect.
          `IF NOT FOUND THEN RAISE` added.
