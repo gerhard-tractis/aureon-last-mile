@@ -52,3 +52,10 @@ export function minutesSince(iso: string | null, now: Date): number | null {
   if (Number.isNaN(at)) return null;
   return Math.max(0, Math.floor((now.getTime() - at) / 60_000));
 }
+
+/** A truck waiting this long without being counted is the thing to act on.
+ *  Lives here, beside `waitLabel`, which formats the same quantity — moved
+ *  from `app/app/reception/arrivals.ts` to restore the `app→components→
+ *  hooks→lib→Supabase` layering rule (components may not import `app/`).
+ *  `arrivals.ts` re-exports it so existing importers keep working. */
+export const YARD_WAIT_WARNING_MINUTES = 30;

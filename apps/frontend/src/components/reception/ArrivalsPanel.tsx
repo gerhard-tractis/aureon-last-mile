@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
   ARRIVAL_STATE_LABEL,
-  YARD_WAIT_WARNING_MINUTES,
   type ArrivalRow,
   type ArrivalState,
 } from '@/app/app/reception/arrivals';
+import { YARD_WAIT_WARNING_MINUTES } from '@/lib/reception/reception-mobile-helpers';
 
 /**
  * spec-54 phase 4.6 — "Llegadas de hoy" (mock 3c, left).

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { FileText, QrCode, ScanLine } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,9 +9,12 @@ import { StatTile } from '@/components/StatTile';
 import { ArrivalsPanel } from '@/components/reception/ArrivalsPanel';
 import { PendingResolutionPanel } from '@/components/reception/PendingResolutionPanel';
 import { RouteQRScannerEntry } from '@/components/reception/RouteQRScannerEntry';
+import { ReceptionMobileView } from '@/components/reception/ReceptionMobileView';
 import { useIncomingRoutes } from '@/hooks/reception/useIncomingRoutes';
 import { useOpenDiscrepancies } from '@/hooks/reception/useOpenDiscrepancies';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useCurrentUserName } from '@/hooks/useCurrentUserName';
+import { useIsBelowLg } from '@/hooks/useViewport';
 import { arrivalTotals, buildArrivals, type ArrivalState } from './arrivals';
 import { ReturnRouteList } from './ReturnRouteList';
 import { ReturnReceptionSession } from './ReturnReceptionSession';
@@ -24,9 +28,19 @@ import { ReturnReceptionSession } from './ReturnReceptionSession';
  *
  * Returns keep their own tab: a return route is a different entity with its
  * own session, and the mock's arrivals table describes inbound routes only.
+ *
+ * spec-62 3i — below `lg` (1024px) this swaps entirely for
+ * `ReceptionMobileView`'s phone card layout instead of squeezing the
+ * arrivals table and StatTiles above into 390px. `useIsBelowLg` picks
+ * exactly one of the two trees; the QR scanner dialog and the returns
+ * block (`returnsSlot`) are identical in both, so they are built once and
+ * mounted from whichever branch renders.
  */
 export default function ReceptionPage() {
+  const router = useRouter();
   const { operatorId } = useOperatorId();
+  const { data: userName = null } = useCurrentUserName();
+  const isBelowLg = useIsBelowLg();
 
   // "Entrantes" is in_progress, not in_transit: under spec-52 a route only
   // reaches in_transit once the receptionist has scanned its QR, so the trucks
@@ -56,6 +70,56 @@ export default function ReceptionPage() {
   );
   const totals = arrivalTotals(arrivals);
   const isLoading = loadingIncoming || loadingYard || loadingClosed;
+
+  // ReturnRouteList/ReturnReceptionSession hang only off this page. Built
+  // once and mounted from both trees — desktop keeps it inside its
+  // "Reingresos" tab, mobile mounts it as its own REINGRESOS section
+  // (ReceptionMobileView's returnsSlot prop).
+  const returnsSlot =
+    selectedReturnRoute && operatorId ? (
+      <ReturnReceptionSession
+        operatorId={operatorId}
+        externalRouteId={selectedReturnRoute}
+        onBack={() => setSelectedReturnRoute(null)}
+      />
+    ) : (
+      operatorId && (
+        <ReturnRouteList operatorId={operatorId} onSelectRoute={setSelectedReturnRoute} />
+      )
+    );
+
+  // Same QR flow either way — built once, mounted from both trees.
+  const scannerDialog = (
+    <Dialog open={showScanner} onOpenChange={setShowScanner}>
+      <DialogContent className="max-w-sm p-0">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Escanear QR de ruta</DialogTitle>
+        </DialogHeader>
+        {showScanner && operatorId && (
+          <RouteQRScannerEntry operatorId={operatorId} onResolved={() => setShowScanner(false)} />
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (isBelowLg) {
+    return (
+      <>
+        <ReceptionMobileView
+          yardRoutes={yardRoutes}
+          transitRoutes={incomingRoutes}
+          discrepancies={discrepancies}
+          isLoading={isLoading}
+          userName={userName}
+          onStartCount={(routeId) => router.push(`/app/reception/route/${routeId}`)}
+          onOpenQRScanner={() => setShowScanner(true)}
+          onOpenDiscrepancy={(routeId) => router.push(`/app/reception/route/${routeId}/completa`)}
+          returnsSlot={returnsSlot}
+        />
+        {scannerDialog}
+      </>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-col gap-[18px] px-6 py-[22px]">
@@ -139,21 +203,11 @@ export default function ReceptionPage() {
             <TabsList>
               <TabsTrigger value="returns">
                 <FileText className="mr-1.5 h-3.5 w-3.5" />
-                Retornos
+                Reingresos
               </TabsTrigger>
             </TabsList>
             <TabsContent value="returns" className="mt-3">
-              {selectedReturnRoute && operatorId ? (
-                <ReturnReceptionSession
-                  operatorId={operatorId}
-                  externalRouteId={selectedReturnRoute}
-                  onBack={() => setSelectedReturnRoute(null)}
-                />
-              ) : (
-                operatorId && (
-                  <ReturnRouteList operatorId={operatorId} onSelectRoute={setSelectedReturnRoute} />
-                )
-              )}
+              {returnsSlot}
             </TabsContent>
           </Tabs>
         </div>
@@ -164,16 +218,7 @@ export default function ReceptionPage() {
         />
       </div>
 
-      <Dialog open={showScanner} onOpenChange={setShowScanner}>
-        <DialogContent className="max-w-sm p-0">
-          <DialogHeader className="sr-only">
-            <DialogTitle>Escanear QR de ruta</DialogTitle>
-          </DialogHeader>
-          {showScanner && operatorId && (
-            <RouteQRScannerEntry operatorId={operatorId} onResolved={() => setShowScanner(false)} />
-          )}
-        </DialogContent>
-      </Dialog>
+      {scannerDialog}
     </div>
   );
 }
