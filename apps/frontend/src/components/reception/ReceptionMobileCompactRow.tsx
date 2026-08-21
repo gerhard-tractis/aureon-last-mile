@@ -51,7 +51,7 @@ export function ReceptionMobileCompactRow({
                 data-testid="compact-row-wait-badge"
                 className={cn(
                   'inline-flex items-center gap-0.5 font-mono',
-                  overdue && 'text-status-error-text',
+                  overdue && 'text-status-warning-text',
                 )}
               >
                 {/* Colour alone never carries a status here — a colour-blind

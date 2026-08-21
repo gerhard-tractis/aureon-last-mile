@@ -58,7 +58,7 @@ describe('ReceptionMobileCompactRow', () => {
     expect(screen.queryByText(/^\d+ h/)).not.toBeInTheDocument();
   });
 
-  it('marks an overdue wait with the error palette and an AlertTriangle icon, not colour alone', () => {
+  it('marks an overdue wait with the warning palette and an AlertTriangle icon, not colour alone', () => {
     render(
       <ReceptionMobileCompactRow
         route={buildRoute()}
@@ -67,12 +67,16 @@ describe('ReceptionMobileCompactRow', () => {
       />,
     );
 
+    // Warning, not error: 30 minutes is an attention threshold, not a
+    // failure, and matches the shipped desktop ArrivalsPanel's palette for
+    // the identical condition — see spec-62 for the deliberate deviation
+    // from the mock's error-red badge.
     const badge = screen.getByTestId('compact-row-wait-badge');
-    expect(badge.className).toMatch(/status-error/);
+    expect(badge.className).toMatch(/status-warning/);
     expect(badge.querySelector('svg')).not.toBeNull();
   });
 
-  it('does not mark a normal wait with the error palette or an icon', () => {
+  it('does not mark a normal wait with the warning palette or an icon', () => {
     render(
       <ReceptionMobileCompactRow
         route={buildRoute()}
@@ -82,7 +86,7 @@ describe('ReceptionMobileCompactRow', () => {
     );
 
     const badge = screen.getByTestId('compact-row-wait-badge');
-    expect(badge.className).not.toMatch(/status-error/);
+    expect(badge.className).not.toMatch(/status-warning/);
     expect(badge.querySelector('svg')).toBeNull();
   });
 

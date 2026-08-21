@@ -46,7 +46,7 @@ export function ReceptionMobileYardCard({
             className={cn(
               'flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[11px] font-semibold leading-none',
               overdue
-                ? 'border border-status-error-border bg-status-error-bg text-status-error-text'
+                ? 'border border-status-warning-border bg-status-warning-bg text-status-warning-text'
                 : 'border border-border bg-surface-raised text-text-secondary',
             )}
           >

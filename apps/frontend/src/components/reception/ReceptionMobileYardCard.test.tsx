@@ -57,14 +57,14 @@ describe('ReceptionMobileYardCard', () => {
       />,
     );
     const badge = screen.getByTestId('yard-card-wait-badge');
-    // Positive assertion, not just "no error token": a badge with an empty
-    // className would also satisfy `not.toContain('status-error')`.
+    // Positive assertion, not just "no warning token": a badge with an empty
+    // className would also satisfy `not.toContain('status-warning')`.
     expect(badge.className).toContain('border-border');
-    expect(badge.className).not.toContain('status-error');
+    expect(badge.className).not.toContain('status-warning');
     expect(badge.querySelector('svg')).not.toBeInTheDocument();
   });
 
-  it('at or over the threshold, the wait badge uses the error palette and a warning icon', () => {
+  it('at or over the threshold, the wait badge uses the warning palette and a warning icon', () => {
     render(
       <ReceptionMobileYardCard
         route={route}
@@ -73,7 +73,11 @@ describe('ReceptionMobileYardCard', () => {
       />,
     );
     const badge = screen.getByTestId('yard-card-wait-badge');
-    expect(badge.className).toContain('status-error');
+    // Warning, not error: 30 minutes is an attention threshold, not a
+    // failure, and matches the shipped desktop ArrivalsPanel's palette for
+    // the identical condition — see spec-62 for the deliberate deviation
+    // from the mock's error-red badge.
+    expect(badge.className).toContain('status-warning');
     // Colour is not the only channel: a colour-blind receptionist standing
     // in the yard must still be able to tell this badge apart by shape.
     expect(badge.querySelector('svg')).toBeInTheDocument();
