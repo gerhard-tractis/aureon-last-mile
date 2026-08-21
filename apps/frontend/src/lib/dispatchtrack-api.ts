@@ -1,5 +1,10 @@
 export interface DTDispatch {
-  identifier: number;           // order number / guide number
+  /**
+   * Guide number — orders.order_number verbatim. Typed Integer in DT's docs,
+   * but its webhooks send it as a string and Musan's guide format follows the
+   * client, so it is not always numeric. Both forms go through as-is.
+   */
+  identifier: number | string;
   contact_name: string | null;
   contact_address: string | null;
   contact_phone: string | null;

@@ -435,28 +435,39 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
     expect(sent.dispatches[0].identifier).toBe(2916967493);
   });
 
-  it('rejects the whole dispatch when an order_number is not a guide number', async () => {
+  it('sends a non-numeric guide number as the string it is', async () => {
     (createSSRClient as ReturnType<typeof vi.fn>)
-      .mockResolvedValue(clientForOrderNumbers(['2916967493', 'CARGA-EASY-001-ORD-101']));
+      .mockResolvedValue(clientForOrderNumbers(['CARGA-EASY-001-ORD-101']));
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    const sent = (createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sent.dispatches[0].identifier).toBe('CARGA-EASY-001-ORD-101');
+  });
+
+  it('keeps a guide number too large for an exact integer as a string', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(clientForOrderNumbers(['99999999999999999999']));
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    const sent = (createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sent.dispatches[0].identifier).toBe('99999999999999999999');
+  });
+
+  it('refuses the dispatch when an order carries no guide number at all', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(clientForOrderNumbers(['2916967493', '   ']));
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
 
     expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body.code).toBe('INVALID_ORDER_NUMBER');
-    expect(body.order_numbers).toEqual(['CARGA-EASY-001-ORD-101']);
-    // RouteBuilder renders `message` verbatim, so it has to name the offender.
-    expect(body.message).toContain('CARGA-EASY-001-ORD-101');
-    expect(createDTRoute).not.toHaveBeenCalled();
-  });
-
-  it('rejects an order_number too large to be an exact integer', async () => {
-    (createSSRClient as ReturnType<typeof vi.fn>)
-      .mockResolvedValue(clientForOrderNumbers(['99999999999999999999']));
-
-    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
-
-    expect(res.status).toBe(422);
+    expect(body.code).toBe('MISSING_ORDER_NUMBER');
     expect(createDTRoute).not.toHaveBeenCalled();
   });
 });

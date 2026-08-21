@@ -52,22 +52,44 @@ export async function POST(
     // dispatches.identifier is DT's guide number, and order_number IS that
     // number: the inbound beetrack-webhook matches on `order_number =
     // body.identifier`, and scripts/sync-pending-orders.mjs looks guides up as
-    // GET /dispatches/:order_number. This used to be
-    // parseInt(order_number.replace(/\D/g, '')), which quietly turned any
-    // order_number that was not already all digits into a *different* number —
-    // creating a guide in DT that matches nothing on either side, and NaN (JSON
-    // null) when it held no digits at all. Refuse the dispatch instead: a route
-    // that cannot be identified in DT must not be half-created there.
-    const invalidOrderNumbers: string[] = [];
+    // GET /dispatches/:order_number. So it goes out verbatim.
+    //
+    // Guide numbers are not always numeric — the format follows Musan's client,
+    // so some are digits and some are alphanumeric strings. DT's docs type the
+    // field Integer, but its own webhooks send it as a string ("2916967493"),
+    // and the string form is what both sides already match on. Numeric ones are
+    // sent as numbers to match the documented type; anything else goes as the
+    // string it is. What must never happen is the previous behaviour,
+    // parseInt(order_number.replace(/\D/g, '')), which invented a different
+    // number for non-numeric guides and NaN (JSON null) for those with no
+    // digits — a guide matching nothing on either side.
+    const missingOrderNumbers = dispatches.filter((d) => {
+      const ord = Array.isArray(d.orders) ? d.orders[0] : d.orders;
+      return !ord?.order_number?.trim();
+    });
+
+    if (missingOrderNumbers.length) {
+      return NextResponse.json(
+        {
+          code: 'MISSING_ORDER_NUMBER',
+          count: missingOrderNumbers.length,
+          // RouteBuilder surfaces `message` verbatim.
+          message:
+            `${missingOrderNumbers.length} orden(es) de la ruta no tienen número de guía; no se puede despachar.`,
+        },
+        { status: 422 },
+      );
+    }
+
     const dtDispatches: DTDispatch[] = dispatches.map((d) => {
       const ord = Array.isArray(d.orders) ? d.orders[0] : d.orders;
-      const orderNumber = ord?.order_number?.trim() ?? '';
-      const identifier = Number(orderNumber);
-      if (!/^\d+$/.test(orderNumber) || !Number.isSafeInteger(identifier)) {
-        invalidOrderNumbers.push(orderNumber);
-      }
+      const orderNumber = (ord?.order_number ?? '').trim();
+      const asNumber = Number(orderNumber);
       return {
-        identifier,
+        identifier:
+          /^\d+$/.test(orderNumber) && Number.isSafeInteger(asNumber)
+            ? asNumber
+            : orderNumber,
         contact_name: ord?.customer_name ?? null,
         contact_address: ord?.delivery_address ?? null,
         contact_phone: ord?.customer_phone ?? null,
@@ -75,19 +97,6 @@ export async function POST(
         current_state: 1,
       };
     });
-
-    if (invalidOrderNumbers.length) {
-      return NextResponse.json(
-        {
-          code: 'INVALID_ORDER_NUMBER',
-          order_numbers: invalidOrderNumbers,
-          // RouteBuilder surfaces `message` verbatim, so name the offenders.
-          message:
-            `Estas órdenes no tienen un número de guía válido para DispatchTrack: ${invalidOrderNumbers.join(', ')}`,
-        },
-        { status: 422 },
-      );
-    }
 
     // DISPATCHTRACK_API_KEY is the name every other consumer uses (the
     // scripts/*.mjs backfills, the dispatchtrack-route-poll edge function).
