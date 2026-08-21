@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import { toast } from 'sonner';
 import RouteReceptionPage from './page';
 import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
 
@@ -242,6 +243,53 @@ describe('RouteReceptionPage', () => {
       ).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /reabrir ruta/i })).not.toBeInTheDocument();
       expect(screen.queryByText('Pedido #101')).not.toBeInTheDocument();
+    });
+  });
+
+  // Task 23 — closing a reception used to push back to the list, throwing
+  // away the acta the operator just produced (what was expected, what
+  // arrived, the note they wrote). Both trees now land on the same
+  // /completa route instead. The toast stays: it confirms the action while
+  // the navigation happens, it does not replace landing on the acta.
+  describe('closing lands on the acta', () => {
+    beforeEach(() => {
+      // baseSnapshot is 1 received / 3 expected / 0 unexpected, so
+      // finalizeRule demands a note on both trees — exercise the real
+      // discrepancy flow rather than a no-note shortcut.
+      mockCompleteMutate.mockImplementation((_vars, { onSuccess }) => {
+        onSuccess();
+      });
+    });
+
+    it('sends router.push to /completa with the route id from params on the desktop tree', async () => {
+      render(<RouteReceptionPage />);
+      fireEvent.click(screen.getByRole('button', { name: /finalizar recepción/i }));
+      fireEvent.change(await screen.findByTestId('discrepancy-notes-input'), {
+        target: { value: 'falta un paquete' },
+      });
+      fireEvent.click(screen.getByTestId('confirm-finalize'));
+      expect(mockPush).toHaveBeenCalledWith('/app/reception/route/r1/completa');
+      expect(toast.success).toHaveBeenCalledWith('Recepción completada');
+    });
+
+    describe('below lg', () => {
+      beforeEach(() => {
+        mockUseIsBelowLg.mockReturnValue(true);
+      });
+
+      it('sends router.push to the same /completa route on the mobile tree', async () => {
+        render(<RouteReceptionPage />);
+        await act(async () => {
+          await Promise.resolve();
+        });
+        fireEvent.click(screen.getByRole('button', { name: /^Confirmar/ }));
+        fireEvent.change(await screen.findByLabelText('Notas de discrepancia'), {
+          target: { value: 'falta un paquete' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Cerrar recepción' }));
+        expect(mockPush).toHaveBeenCalledWith('/app/reception/route/r1/completa');
+        expect(toast.success).toHaveBeenCalledWith('Recepción completada');
+      });
     });
   });
 });

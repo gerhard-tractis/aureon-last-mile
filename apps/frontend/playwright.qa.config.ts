@@ -20,12 +20,14 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
 
-  // Scoped to spec-52 for now — the only suite with a real seed/teardown
-  // fixture. Of the rest: auth-pages and branding are screenshot-generation
-  // tools rather than assertions, dispatch-route and spec47-pickup have no
-  // fixture, and spec47-consolidated-reception is `test.skip`ped pending
-  // exactly this environment. Widen this pattern as each grows a fixture.
-  testMatch: /spec52-.*\.spec\.ts$/,
+  // Scoped to the suites that have a real seed/teardown fixture — spec-52,
+  // and now spec-62's reception-mobile (built on spec52-fixture.ts plus
+  // support/reception-mobile-fixture.ts). Of the rest: auth-pages and
+  // branding are screenshot-generation tools rather than assertions,
+  // dispatch-route and spec47-pickup have no fixture, and
+  // spec47-consolidated-reception is `test.skip`ped pending exactly this
+  // environment. Widen this pattern as each grows a fixture.
+  testMatch: /(spec52-.*|reception-mobile)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
   // workday and polls the database between steps; the per-test timeouts inside
@@ -35,6 +37,15 @@ export default defineConfig({
   // No retries: a green-on-retry E2E hides exactly the flakiness we need to
   // see before this job is allowed to gate production.
   retries: 0,
+
+  // LOAD-BEARING, not a default left alone: every suite testMatch collects
+  // shares spec-52's seed namespace — same PREFIX ('E2E52'), same PLATE, same
+  // two user emails (spec52-fixture.ts and reception-mobile-fixture.ts both
+  // build on it) — and seed() opens with teardown(). Serial execution is the
+  // only reason a second suite's seed() doesn't delete the first suite's
+  // still-running route. Raising this (or turning on fullyParallel) requires
+  // namespacing the fixtures first — otherwise the failure that shows up
+  // looks like app flakiness, not a config change.
   workers: 1,
   forbidOnly: true,
 
