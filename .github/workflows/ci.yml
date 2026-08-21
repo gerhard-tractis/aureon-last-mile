@@ -60,6 +60,7 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.seed.test.sh
           bash ./infra/supabase-qa/deploy-qa.drift.test.sh
           bash ./infra/supabase-qa/deploy-qa.sql-tests.test.sh
+          bash ./infra/supabase-qa/deploy-qa.functions.test.sh
 
       - name: Lint
         run: npx turbo run lint

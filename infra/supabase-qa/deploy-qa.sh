@@ -145,7 +145,11 @@ widen_changed_flags() {
   CHANGED_FRONTEND="$(widen "${CHANGED_FRONTEND:-false}" '^apps/frontend/')"
   CHANGED_WORKER="$(widen "${CHANGED_WORKER:-false}" '^apps/worker/')"
   CHANGED_AGENTS="$(widen "${CHANGED_AGENTS:-false}" '^apps/agents/')"
-  CHANGED_EDGE_FUNCTIONS="$(widen "${CHANGED_EDGE_FUNCTIONS:-false}" '^packages/database/supabase/functions/')"
+  # The compose file counts as an edge-function change: it carries the
+  # runtime's environment block, and nothing else in the deploy recreates that
+  # container. Without this, adding a variable to the service changes nothing
+  # on the VPS and the deploy still reports success.
+  CHANGED_EDGE_FUNCTIONS="$(widen "${CHANGED_EDGE_FUNCTIONS:-false}" '^(packages/database/supabase/functions/|infra/supabase-qa/docker-compose\.yml$)')"
 
   log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS}"
 }
@@ -211,9 +215,15 @@ restart_functions() {
   rm -rf "${merge_dir:?}"/*
   cp -a "${QA_CHECKOUT_DIR}/packages/database/supabase/functions/." "$merge_dir/"
   cp -a "${infra_dir}/volumes/functions/main" "$merge_dir/"
-  log "restarting edge functions container"
+  # `up -d`, not `restart`: a restart reuses the container's existing config,
+  # so anything added to the service's `environment:` block is ignored. That
+  # is how BEETRACK_WEBHOOK_SECRET was added, deployed green, and never
+  # reached the runtime — the webhook kept answering 500 "Server
+  # misconfigured" until the container was recreated by hand. `up -d` is a
+  # no-op when nothing about the service changed.
+  log "recreating edge functions container"
   docker compose -f "${infra_dir}/docker-compose.yml" \
-    --env-file "$QA_ENV_FILE" restart functions
+    --env-file "$QA_ENV_FILE" up -d functions
 }
 
 # Restarting the QA units needs passwordless sudo. The prod units have a
