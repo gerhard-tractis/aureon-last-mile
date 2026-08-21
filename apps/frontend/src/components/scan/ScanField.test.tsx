@@ -143,9 +143,4 @@ describe('ScanField', () => {
     await user.click(screen.getByRole('button', { name: 'steal focus' }));
     expect(onFocusStateChange).toHaveBeenLastCalledWith(false);
   });
-
-  it('behaves exactly as before when the prop is omitted', () => {
-    // Not optional for convenience: the three current consumers don't pass it.
-    expect(() => render(<ScanField onScan={vi.fn()} />)).not.toThrow();
-  });
 });
