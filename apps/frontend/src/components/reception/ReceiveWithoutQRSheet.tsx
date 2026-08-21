@@ -8,6 +8,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Button } from '@/components/ui/button';
 import { ReceptionMobileCompactRow } from './ReceptionMobileCompactRow';
 import { ReceiveWithoutQRButton } from './ReceiveWithoutQRButton';
 import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
@@ -16,6 +17,10 @@ interface ReceiveWithoutQRSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   routes: IncomingRoute[];
+}
+
+function plateLabel(plate: string | null) {
+  return plate ?? 'Sin patente';
 }
 
 /**
@@ -59,11 +64,38 @@ export function ReceiveWithoutQRSheet({
 
         <div className="mt-4 flex flex-col gap-2">
           {selectedRoute ? (
-            <ReceiveWithoutQRButton
-              routeId={selectedRoute.id}
-              code={selectedRoute.code}
-              plate={selectedRoute.plate}
-            />
+            <div className="flex flex-col gap-3">
+              {/*
+                Echo the armed route so the last screen before ending a
+                driver's trip still says which truck it is — the button
+                below no longer carries any route identity of its own.
+                "Cambiar ruta" is the way back short of dismissing the
+                whole sheet.
+              */}
+              <div className="flex items-center justify-between gap-3 rounded-[13px] border border-border bg-surface px-3.5 py-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-base font-bold text-text">
+                    {selectedRoute.code}
+                  </p>
+                  <p className="mt-0.5 font-mono text-sm text-text-secondary">
+                    Patente: {plateLabel(selectedRoute.plate)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-h-11 flex-none"
+                  onClick={() => setSelectedRouteId(null)}
+                >
+                  Cambiar ruta
+                </Button>
+              </div>
+              <ReceiveWithoutQRButton
+                routeId={selectedRoute.id}
+                code={selectedRoute.code}
+                plate={selectedRoute.plate}
+              />
+            </div>
           ) : routes.length === 0 ? (
             <p className="py-6 text-center text-sm text-text-secondary">
               Ninguna ruta en camino todavía.
@@ -71,18 +103,28 @@ export function ReceiveWithoutQRSheet({
           ) : (
             routes.map((route) => (
               // `ReceptionMobileCompactRow` (Task 10) doesn't render the
-              // plate — its yard-screen job never needed it. Here the whole
-              // point is confirming the truck without a QR, so the plate is
-              // added alongside the reused row rather than forked into it.
-              <div key={route.id} className="flex flex-col gap-1">
+              // plate — its yard-screen job never needed it, and it stays
+              // untouched here. The plate is the single most load-bearing
+              // datum on this screen (it's what gets matched against the
+              // truck in front of the receptionist), so it's given its own
+              // prominent line and a shared bordered container with the row
+              // — never a dim caption floating between two cards, which
+              // would be ambiguous about which row it belongs to.
+              <div
+                key={route.id}
+                role="group"
+                aria-label={`Ruta ${route.code}, patente ${plateLabel(route.plate)}`}
+                data-testid={`receive-without-qr-option-${route.id}`}
+                className="flex flex-col gap-1 rounded-[13px] border border-border bg-surface p-1"
+              >
+                <p className="px-2.5 pt-1.5 font-mono text-sm font-semibold text-text">
+                  Patente: {plateLabel(route.plate)}
+                </p>
                 <ReceptionMobileCompactRow
                   route={route}
                   waitingMinutes={null}
                   onOpen={() => setSelectedRouteId(route.id)}
                 />
-                <p className="px-1 font-mono text-xs text-text-secondary">
-                  Patente: {route.plate ?? 'Sin patente'}
-                </p>
               </div>
             ))
           )}
