@@ -58,8 +58,16 @@ vi.mock('@/hooks/pickup/useManifests', () => ({
   useInTransitManifests: (...args: unknown[]) => mockUseInTransitManifests(...args),
 }));
 
+// spec-61 Task 5: this page now reads `role` (3j vs the crew screen, and
+// `1l`'s start affordance) and `userId` (whose route is this).
+const mockUseOperatorId = vi.fn();
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => ({ operatorId: 'op-1' }),
+  useOperatorId: () => mockUseOperatorId(),
+}));
+
+// 3j's crew picker.
+vi.mock('@/hooks/pickup/useCrewCandidates', () => ({
+  useCrewCandidates: () => ({ data: [], isLoading: false }),
 }));
 
 let mockLabelsEnabled = false;
@@ -79,8 +87,15 @@ let mockActiveRoute: {
   started_at: string;
   crew: RouteCrewMember[];
 } | null = null;
+let mockActiveRouteError = false;
+const mockRefetchActiveRoute = vi.fn();
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
-  useActivePickupRoute: () => ({ data: mockActiveRoute, isLoading: false }),
+  useActivePickupRoute: () => ({
+    data: mockActiveRoute,
+    isLoading: false,
+    isError: mockActiveRouteError,
+    refetch: mockRefetchActiveRoute,
+  }),
 }));
 vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
   useStartPickupRoute: () => ({ mutate: vi.fn(), isPending: false }),
@@ -153,7 +168,17 @@ describe('PickupPage', () => {
     mockPush.mockClear();
     mockSupabaseFrom.mockClear();
     mockActiveRoute = null;
+    mockActiveRouteError = false;
+    mockRefetchActiveRoute.mockClear();
     mockLabelsEnabled = false;
+    mockUseOperatorId.mockReturnValue({
+      operatorId: 'op-1',
+      // Every pre-spec-61 test in this file expects the start affordances,
+      // which are now leader-only on both surfaces.
+      role: 'pickup_leader',
+      permissions: [],
+      userId: 'user-me',
+    });
     mockUsePendingManifests.mockReturnValue({ data: mockPending, isLoading: false });
     mockUseCompletedManifests.mockReturnValue({ data: mockCompleted, isLoading: false });
     mockUseInTransitManifests.mockReturnValue({ data: mockInTransit, isLoading: false });
@@ -454,6 +479,135 @@ describe('PickupPage', () => {
       // coerced from null to 0 by this write.
       expect(written).not.toHaveProperty('total_orders');
       expect(written).not.toHaveProperty('total_packages');
+    });
+  });
+
+  /**
+   * spec-61 Task 5 — the two start affordances (`3j` on a phone, the `1l`
+   * draft panel on a laptop) both came off one unconditional branch, so a
+   * pickup_crew user was invited to open a route `start_pickup_route`
+   * refuses by role. They opened a SECOND route for the same van instead of
+   * joining their leader's.
+   */
+  describe('spec-61 — only a leader is offered a route', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    function asCrew() {
+      mockUseOperatorId.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'user-me',
+      });
+    }
+
+    it('gives a crew member on a phone the ask-your-leader screen, not 3j', () => {
+      asCrew();
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /iniciar ruta de recogida/i }),
+      ).toBeNull();
+    });
+
+    it('gives a crew member on a laptop the same answer in the draft panel', async () => {
+      asCrew();
+      mockBelowLg(false);
+      render(<PickupPage />);
+      // Tick a manifest — before this gate, a selection was all it took to
+      // put the start button on screen.
+      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      expect(screen.getByText(/solo un líder de ruta puede abrir una ruta/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Crear ruta' })).toBeNull();
+    });
+
+    it('still offers a leader the start affordance on both surfaces', async () => {
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(
+        screen.getByRole('button', { name: /iniciar ruta de recogida/i }),
+      ).toBeInTheDocument();
+      cleanup();
+
+      mockBelowLg(false);
+      render(<PickupPage />);
+      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      expect(screen.getByRole('button', { name: 'Crear ruta' })).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * spec-61 Task 5 — this page read only `data` from useActivePickupRoute.
+   * Once React Query exhausts its retries a FAILED lookup is
+   * indistinguishable from "no route", so a leader who already had one open
+   * was shown 3j and invited to open a second. Task 4 fixed the same hole on
+   * route/active/page.tsx.
+   */
+  describe('spec-61 — a failed route lookup is not an empty one', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockBelowLg(isBelowLg: boolean) {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: query.includes('1023px') ? isBelowLg : false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    it('offers a retry instead of 3j on a phone', async () => {
+      mockActiveRouteError = true;
+      mockBelowLg(true);
+      render(<PickupPage />);
+      expect(
+        screen.queryByRole('button', { name: /iniciar ruta de recogida/i }),
+      ).toBeNull();
+
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(mockRefetchActiveRoute).toHaveBeenCalled();
+    });
+
+    it('refuses to offer the draft panel start button on a laptop', async () => {
+      mockActiveRouteError = true;
+      mockBelowLg(false);
+      render(<PickupPage />);
+      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      expect(screen.getByText(/no pudimos cargar tu ruta/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Crear ruta' })).toBeNull();
     });
   });
 });

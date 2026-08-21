@@ -64,8 +64,15 @@ interface PickupDesktopViewProps {
   onOpen: (row: ManifestRow) => void;
   operatorId: string | null;
   selectedManifests: ManifestRow[];
+  /** Desktop never sends a crew — `1l` has no crew picker, and
+   *  `handleCreateRoute` defaults the argument. spec-61 Task 5. */
   onCreateRoute: (vehicleId: string) => void;
   isCreatingRoute: boolean;
+  /** spec-61 — false for a pickup_crew user; gates `1l`'s own start
+   *  affordance the same way 3j is gated. */
+  canLead?: boolean;
+  /** spec-61 — true when the active-route lookup FAILED. */
+  routeUnknown?: boolean;
 }
 
 export function PickupDesktopView({
@@ -93,6 +100,8 @@ export function PickupDesktopView({
   selectedManifests,
   onCreateRoute,
   isCreatingRoute,
+  canLead = true,
+  routeUnknown = false,
 }: PickupDesktopViewProps) {
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_340px]">
@@ -197,6 +206,8 @@ export function PickupDesktopView({
           onCreate={onCreateRoute}
           isCreating={isCreatingRoute}
           activeRouteCode={activeRoute?.code ?? null}
+          canLead={canLead}
+          routeUnknown={routeUnknown}
         />
         <TodayClosuresPanel rows={closures} />
       </aside>

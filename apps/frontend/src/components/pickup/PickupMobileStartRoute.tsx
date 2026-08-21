@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Loader2, PackageSearch, Plus, Search, X } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { VehicleSelect } from './VehicleSelect';
+import { CrewSelect } from './CrewSelect';
 import { PickupMobileClientGroup } from './PickupMobileClientGroup';
 import {
   clientSelectionState,
@@ -49,11 +50,17 @@ import type { ManifestRow } from './ManifestTable';
  */
 export interface PickupMobileStartRouteProps {
   operatorId: string | null;
+  /** The signed-in leader — never offered to themselves in CrewSelect. */
+  currentUserId: string | null;
   pendingRows: ManifestRow[];
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
   selectedManifests: ManifestRow[];
-  onCreateRoute: (vehicleId: string) => void;
+  /** spec-61: the crew rides in the SAME call as the vehicle, because
+   *  `start_pickup_route` inserts the route and its seats in one
+   *  transaction. `[]` is a solo route — an explicit choice, not a
+   *  missing argument. */
+  onCreateRoute: (vehicleId: string, crewIds: string[]) => void;
   isCreatingRoute: boolean;
   /** start_pickup_route's error message (already a readable Spanish string
    *  raised by the RPC, e.g. "El conductor ya tiene una ruta de retiro
@@ -73,6 +80,7 @@ function matchesQuery(row: ManifestRow, query: string): boolean {
 
 export function PickupMobileStartRoute({
   operatorId,
+  currentUserId,
   pendingRows,
   selectedIds,
   onToggleSelect,
@@ -82,6 +90,9 @@ export function PickupMobileStartRoute({
   createRouteError = null,
 }: PickupMobileStartRouteProps) {
   const [vehicleId, setVehicleId] = useState<string | null>(null);
+  // spec-61 Task 5 — who rides along. Held here rather than inside
+  // CrewSelect so it is the same array the button hands to the RPC.
+  const [crewIds, setCrewIds] = useState<string[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -132,6 +143,16 @@ export function PickupMobileStartRoute({
           <VehicleSelect operatorId={operatorId} value={vehicleId} onChange={setVehicleId} />
         </div>
 
+        {/* Only a leader ever renders this screen (PickupMobileView branches
+            on `role`), so the crew picker is unconditional here. The crew is
+            NOT required: an untouched list opens a solo route. */}
+        <CrewSelect
+          operatorId={operatorId}
+          excludeUserId={currentUserId}
+          value={crewIds}
+          onChange={setCrewIds}
+        />
+
         {createRouteError && (
           // `text-error` (no top-level `error` token exists — only nested
           // `status.error*`) is a pre-existing dead class elsewhere in this
@@ -144,7 +165,7 @@ export function PickupMobileStartRoute({
         <button
           type="button"
           disabled={!vehicleId || isCreatingRoute}
-          onClick={() => vehicleId && onCreateRoute(vehicleId)}
+          onClick={() => vehicleId && onCreateRoute(vehicleId, crewIds)}
           className="mt-3 flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent-light text-[15px] font-semibold text-accent-light-foreground transition-colors active:opacity-90 disabled:opacity-50"
         >
           {isCreatingRoute ? (

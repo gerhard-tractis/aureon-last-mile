@@ -20,6 +20,19 @@ vi.mock('@/hooks/pickup/useVehicles', async () => {
   };
 });
 
+// 3j's crew picker (spec-61 Task 5) reads the operator directory.
+const mockUseCrewCandidates = vi.fn();
+vi.mock('@/hooks/pickup/useCrewCandidates', () => ({
+  useCrewCandidates: (...args: unknown[]) => mockUseCrewCandidates(...args),
+}));
+
+// 3h can now offer the route's leader a cancel (spec-61 Task 5). The hook
+// behind it is mocked: this file renders without a QueryClientProvider.
+const mockCancelMutateAsync = vi.fn();
+vi.mock('@/hooks/pickup/useCancelPickupRoute', () => ({
+  useCancelPickupRoute: () => ({ mutateAsync: mockCancelMutateAsync, isPending: false }),
+}));
+
 const mockUseCurrentUserName = vi.fn();
 vi.mock('@/hooks/useCurrentUserName', () => ({
   useCurrentUserName: () => mockUseCurrentUserName(),
@@ -97,6 +110,10 @@ function baseProps() {
     selectedManifests: [],
     onOpenRouteManifest: vi.fn(),
     operatorId: 'op-1',
+    // spec-61 Task 5: 3j is the LEADER's screen, so every pre-existing test
+    // in this file (all of which expect 3j) is a leader by default.
+    role: 'pickup_leader',
+    currentUserId: 'user-me',
     onCreateRoute: vi.fn(),
     isCreatingRoute: false,
   };
@@ -105,6 +122,79 @@ function baseProps() {
 describe('PickupMobileView', () => {
   beforeEach(() => {
     mockUseCurrentUserName.mockReturnValue({ data: 'Marcela R.' });
+    mockUseCrewCandidates.mockReturnValue({ data: [], isLoading: false });
+  });
+
+  // spec-61 Task 5 — 3j used to be the only no-route screen, so a
+  // pickup_crew member landed on a vehicle picker and an "Iniciar ruta"
+  // button that start_pickup_route refuses by role. They opened a SECOND
+  // route for the same van instead of joining their leader's.
+  describe('spec-61 — who may open a route', () => {
+    it('shows 3j to a leader with no active route', () => {
+      render(<PickupMobileView {...baseProps()} role="pickup_leader" />);
+      expect(screen.getByTestId('pickup-mobile-start-route')).toBeInTheDocument();
+      expect(screen.queryByTestId('pickup-mobile-no-route')).toBeNull();
+    });
+
+    it('shows crew with no route the ask-your-leader screen, not 3j', () => {
+      render(<PickupMobileView {...baseProps()} role="pickup_crew" />);
+      expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+      expect(screen.queryByTestId('pickup-mobile-start-route')).toBeNull();
+      // The point of the branch: no control the RPC would refuse.
+      expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();
+    });
+
+    it('shows 3h, not the ask-your-leader screen, to a crew member who IS on a route', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          role="pickup_crew"
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+        />,
+      );
+      // "Bodega Norte" is 3h's hero card — it renders on no other branch.
+      expect(screen.getByRole('heading', { name: 'Bodega Norte' })).toBeInTheDocument();
+      expect(screen.queryByTestId('pickup-mobile-no-route')).toBeNull();
+    });
+  });
+
+  // spec-61 Task 5 — page.tsx used to read only `data` from
+  // useActivePickupRoute. After React Query exhausts its retries a FAILED
+  // lookup is indistinguishable from "no route": `data` is undefined. A
+  // leader who already has a route open was then shown 3j and invited to
+  // open a second one. Same fix Task 4 made on route/active/page.tsx.
+  describe('spec-61 — a failed lookup is not an empty one', () => {
+    it('offers a retry instead of 3j when the active-route lookup failed', async () => {
+      const onRetryRoute = vi.fn();
+      render(
+        <PickupMobileView {...baseProps()} routeUnknown onRetryRoute={onRetryRoute} />,
+      );
+      expect(screen.queryByTestId('pickup-mobile-start-route')).toBeNull();
+      expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();
+
+      await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+      expect(onRetryRoute).toHaveBeenCalled();
+    });
+
+    it('does not send a leader to the ask-your-leader screen on a failed lookup', () => {
+      render(<PickupMobileView {...baseProps()} routeUnknown onRetryRoute={vi.fn()} />);
+      expect(screen.queryByTestId('pickup-mobile-no-route')).toBeNull();
+      expect(screen.getByText(/no pudimos cargar tu ruta/i)).toBeInTheDocument();
+    });
+
+    it('still shows the route it DID load, even if a later refetch failed', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          routeUnknown
+          onRetryRoute={vi.fn()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+        />,
+      );
+      expect(screen.getByRole('heading', { name: 'Bodega Norte' })).toBeInTheDocument();
+    });
   });
 
   // spec-54 mock 3j — "Sin ruta activa: iniciar ruta y sumarle
@@ -370,6 +460,38 @@ describe('PickupMobileView', () => {
       );
       expect(screen.queryByText(/^EQUIPO/)).not.toBeInTheDocument();
       expect(screen.queryByTestId('crew-member')).not.toBeInTheDocument();
+    });
+
+    /**
+     * spec-61 Task 5 — below `lg` there is no link to route/active at all
+     * (ActiveRouteBanner lives in PickupDesktopView), so 3h is the only
+     * screen a phone can reach once the route exists. A leader whose
+     * manifests all failed to attach was stuck here with an empty route and
+     * no way back to 3j.
+     */
+    it('offers the route leader a cancel', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+          canCancelRoute
+        />,
+      );
+      expect(screen.getByRole('button', { name: /cancelar ruta/i })).toBeInTheDocument();
+    });
+
+    it('offers no cancel to someone who is not the route leader', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /cancelar ruta/i })).toBeNull();
+      // 3h is otherwise whole — a missing control, not a blocked screen.
+      expect(screen.getByRole('heading', { name: 'Bodega Norte' })).toBeInTheDocument();
     });
 
     it('does not render the route draft panel while a route is already active', () => {

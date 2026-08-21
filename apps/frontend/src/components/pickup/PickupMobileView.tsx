@@ -3,6 +3,8 @@
 import { PickupMobileActiveRoute } from './PickupMobileActiveRoute';
 import { PickupMobileHeader } from './PickupMobileHeader';
 import { PickupMobileStartRoute } from './PickupMobileStartRoute';
+import { PickupMobileNoRoute } from './PickupMobileNoRoute';
+import { canLeadPickupRoute } from '@/lib/permissions';
 import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import type { ManifestRow } from './ManifestTable';
 import type { RouteManifestRow } from './RouteManifestList';
@@ -58,7 +60,21 @@ interface PickupMobileViewProps {
   selectedManifests: ManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
   operatorId: string | null;
-  onCreateRoute: (vehicleId: string) => void;
+  /** The JWT role claim (GlobalContext.tsx:53). Decides 3j vs the crew
+   *  screen — a picker promoted to pickup_leader keeps seeing the crew
+   *  screen until their token refreshes, which is a re-login. */
+  role: string | null;
+  /** The signed-in user, so the leader is never offered to themselves as
+   *  crew on 3j. */
+  currentUserId: string | null;
+  /** True when `useActivePickupRoute` FAILED. Not the same as "no route":
+   *  see the branch below. */
+  routeUnknown?: boolean;
+  onRetryRoute?: () => void;
+  /** spec-61 Task 5 — true only for the active route's own leader; gates
+   *  the cancel affordance on 3h. */
+  canCancelRoute?: boolean;
+  onCreateRoute: (vehicleId: string, crewIds: string[]) => void;
   isCreatingRoute: boolean;
   /** start_pickup_route's error message, already a readable Spanish string
    *  raised by the RPC (e.g. the one-active-route-per-driver case) — see
@@ -75,6 +91,11 @@ export function PickupMobileView({
   selectedManifests,
   onOpenRouteManifest,
   operatorId,
+  role,
+  currentUserId,
+  routeUnknown = false,
+  onRetryRoute,
+  canCancelRoute = false,
   onCreateRoute,
   isCreatingRoute,
   createRouteError = null,
@@ -91,9 +112,22 @@ export function PickupMobileView({
         activeRoute={activeRoute}
         activeManifests={activeManifests}
         onOpenRouteManifest={onOpenRouteManifest}
+        operatorId={operatorId}
+        canCancelRoute={canCancelRoute}
       />
     );
   }
+
+  // spec-61 Task 5 — 3j is the LEADER's screen. A crew member with no route
+  // gets PickupMobileNoRoute instead: `start_pickup_route` refuses them by
+  // role (migration 20260820000003), so rendering the vehicle picker and the
+  // start button would be offering a control that can only fail.
+  //
+  // ONE crew screen, not two. A picker whose seat was released by a route
+  // reopen lands on exactly this branch with no distinct message — spec-61,
+  // "DECIDED 2026-08-21 — no signal": the recovery action is identical
+  // either way, so there is nothing to branch on.
+  const canLead = canLeadPickupRoute(role);
 
   return (
     <div className="flex flex-col gap-4" data-testid="pickup-mobile-view">
@@ -104,16 +138,39 @@ export function PickupMobileView({
           resolves, rather than fabricating a name. */}
       <PickupMobileHeader driverName={currentUserName ?? null} routeCode={null} />
 
-      <PickupMobileStartRoute
-        operatorId={operatorId}
-        pendingRows={pendingRows}
-        selectedIds={selectedIds}
-        onToggleSelect={onToggleSelect}
-        selectedManifests={selectedManifests}
-        onCreateRoute={onCreateRoute}
-        isCreatingRoute={isCreatingRoute}
-        createRouteError={createRouteError}
-      />
+      {/* spec-61 Task 5 — a FAILED lookup is not an empty one. After React
+          Query exhausts its retries, `data` is undefined and this component
+          cannot tell "you have no route" from "we could not ask". Falling
+          through to 3j told a leader who HAS an open route that they do not,
+          and invited them to open a second. Offer the retry instead — the
+          same fix Task 4 made on route/active/page.tsx. Checked before the
+          role branch because it is true for leader and crew alike. */}
+      {routeUnknown ? (
+        <section className="rounded-[10px] border border-border bg-surface p-5 text-center">
+          <p className="text-[13px] text-text">No pudimos cargar tu ruta.</p>
+          <button
+            type="button"
+            onClick={onRetryRoute}
+            className="mt-3 min-h-[44px] w-full rounded-[10px] border border-border bg-surface-raised text-[13.5px] font-medium text-text active:opacity-90"
+          >
+            Reintentar
+          </button>
+        </section>
+      ) : !canLead ? (
+        <PickupMobileNoRoute />
+      ) : (
+        <PickupMobileStartRoute
+          operatorId={operatorId}
+          currentUserId={currentUserId}
+          pendingRows={pendingRows}
+          selectedIds={selectedIds}
+          onToggleSelect={onToggleSelect}
+          selectedManifests={selectedManifests}
+          onCreateRoute={onCreateRoute}
+          isCreatingRoute={isCreatingRoute}
+          createRouteError={createRouteError}
+        />
+      )}
     </div>
   );
 }

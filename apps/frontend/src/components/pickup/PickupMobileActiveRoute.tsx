@@ -9,6 +9,7 @@ import { PickupRouteCrewStrip } from './PickupRouteCrewStrip';
 import { PickupMobileNextLoadCard } from './PickupMobileNextLoadCard';
 import { PickupMobileCompactRow } from './PickupMobileCompactRow';
 import { PickupMobileFooterActions } from './PickupMobileFooterActions';
+import { CancelRouteButton } from './CancelRouteButton';
 import { sumExpected } from '@/lib/pickup/manifestProgress';
 import { splitLoads } from '@/lib/pickup/pickupMobileHelpers';
 import type { RouteManifestRow } from './RouteManifestList';
@@ -38,10 +39,15 @@ export function PickupMobileActiveRoute({
   activeRoute,
   activeManifests,
   onOpenRouteManifest,
+  operatorId = null,
+  canCancelRoute = false,
 }: {
   activeRoute: ActivePickupRoute;
   activeManifests: RouteManifestRow[];
   onOpenRouteManifest: (loadId: string) => void;
+  operatorId?: string | null;
+  /** spec-61 Task 5 — true only for the route's own leader. */
+  canCancelRoute?: boolean;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -186,6 +192,18 @@ export function PickupMobileActiveRoute({
           if (searchOpen) setQuery('');
         }}
       />
+
+      {/* spec-61 Task 5 — the only exit from an abandoned route that a phone
+          can reach. `ActiveRouteBanner`'s "Ver ruta" link lives in
+          PickupDesktopView, so below `lg` the route/active screen (where
+          "Cerrar ruta" and the other copy of this control sit) is reachable
+          only in the moment right after the route is created. Without this,
+          a leader whose manifests all failed to attach is stuck on 3h with
+          an empty route and no way back to 3j. Leader only — see page.tsx
+          for the gate and its client-side-only caveat. */}
+      {canCancelRoute && (
+        <CancelRouteButton routeId={activeRoute.id} operatorId={operatorId} />
+      )}
     </div>
   );
 }

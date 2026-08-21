@@ -21,13 +21,14 @@ import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
 import { RouteManifestList } from '@/components/pickup/RouteManifestList';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
+import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
 
 const MANIFEST_LIST_PANEL_ID = 'route-manifest-list-panel';
 
 export default function ActiveRoutePage() {
   const router = useRouter();
-  const { operatorId } = useOperatorId();
+  const { operatorId, userId } = useOperatorId();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
@@ -212,6 +213,26 @@ export default function ActiveRoutePage() {
             isSubmitting={closeMut.isPending}
             onClose={handleClose}
           />
+          {/* spec-61 Task 5 — the exit for a route that should not have been
+              opened. Task 7 stopped offering routed loads to anyone else, so
+              without this the loads sit locked to an abandoned route until
+              someone opens psql.
+
+              Only the route's own LEADER sees it: `driver_id` is the leader,
+              and a crew member cancelling the trip out from under everyone
+              is not a thing this spec grants. `!!userId` first — comparing
+              two undefineds would read as "this is my route".
+
+              The gate is CLIENT-SIDE ONLY. cancel_pickup_route checks the
+              operator and nothing else, and EXECUTE is granted to
+              `authenticated`; see useCancelPickupRoute.ts. */}
+          {!!userId && route.driver_id === userId && (
+            <CancelRouteButton
+              routeId={route.id}
+              operatorId={operatorId}
+              onCancelled={() => router.push('/app/pickup')}
+            />
+          )}
         </div>
       </div>
     </div>
