@@ -1,6 +1,6 @@
 'use client';
 
-import { Barcode } from 'lucide-react';
+import { AlertTriangle, Barcode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { waitLabel } from '@/lib/reception/reception-mobile-helpers';
 import { YARD_WAIT_WARNING_MINUTES } from '@/app/app/reception/arrivals';
@@ -45,12 +45,16 @@ export function ReceptionMobileYardCard({
           <span
             data-testid="yard-card-wait-badge"
             className={cn(
-              'rounded px-1.5 py-1 font-mono text-[11px] font-semibold leading-none',
+              'flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[11px] font-semibold leading-none',
               overdue
                 ? 'border border-status-error-border bg-status-error-bg text-status-error-text'
                 : 'border border-border bg-surface-raised text-text-secondary',
             )}
           >
+            {/* Colour alone never carries a status here — a colour-blind
+                receptionist standing in the yard needs a second, shape
+                channel to tell the overdue badge apart from the neutral one. */}
+            {overdue && <AlertTriangle className="h-3 w-3" aria-hidden="true" />}
             {wait}
           </span>
         )}
