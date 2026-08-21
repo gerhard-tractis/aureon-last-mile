@@ -100,6 +100,11 @@ COMMENT ON FUNCTION public.get_my_active_pickup_route() IS
 -- should not be copied forward as if it worked.
 REVOKE ALL ON FUNCTION public.get_my_active_pickup_route() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_my_active_pickup_route() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_my_active_pickup_route() TO service_role;
+
+-- No service_role grant, following 20260812000004:100-104: service_role is
+-- not assumed to hold EXECUTE, and nothing needs it here anyway -- this
+-- function answers "who am I and what is my route" from auth.jwt() and
+-- get_operator_id(), so a service-role connection would only ever get NULL.
+-- If a job ever needs it, add an explicit GRANT here.
 
 COMMIT;

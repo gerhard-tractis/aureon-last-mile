@@ -108,6 +108,12 @@ END $$;
 -- A soft-deleted route is nobody route. Checked on the LEADER and BEFORE the
 -- status change: deleted_at leaves status at in_progress and the leader holds
 -- no crew row, so this is the only assertion here that pins deleted_at IS NULL.
+--
+-- ORDER IS LOAD-BEARING. Move this block below the in_transit UPDATE and it
+-- stops being able to fail: status would already be off in_progress, so
+-- deleting `pr.deleted_at IS NULL` from the function would still leave the
+-- leader with NULL. Keep the soft-delete case first, on a route that is still
+-- open.
 UPDATE public.pickup_routes SET deleted_at = NOW()
  WHERE id = '77777777-0000-4000-7000-000000000631';
 
@@ -118,8 +124,11 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Undelete (trg_pickup_route_crew_sync restores the active seat), then close
--- the route for real.
+-- Undelete, then close the route for real. trg_pickup_route_crew_sync
+-- restores BOTH seats on the way back to in_progress -- Ana and Zoe alike,
+-- since neither holds an active seat anywhere else -- so Zoe is no longer a
+-- removed member after this point. Nothing below asserts her state, and the
+-- assertions that needed her removed are all above.
 UPDATE public.pickup_routes SET deleted_at = NULL
  WHERE id = '77777777-0000-4000-7000-000000000631';
 UPDATE public.pickup_routes SET status = 'in_transit', in_transit_at = NOW()
