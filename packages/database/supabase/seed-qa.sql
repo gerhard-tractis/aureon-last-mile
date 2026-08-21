@@ -737,6 +737,89 @@ FROM public.operators o
 WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
 ON CONFLICT (id) DO NOTHING;
 
+-- =============================================================================
+-- Re-anchor the dated fixtures to today
+-- =============================================================================
+-- Every INSERT above computes its dates from CURRENT_DATE, and every INSERT is
+-- ON CONFLICT (id) DO NOTHING. Both are right on the day QA is first seeded and
+-- wrong on every day after: the rows keep the date they were created with, and
+-- re-running the seed cannot correct them because the conflict clause skips the
+-- row entirely. QA fixtures therefore age out of every date-scoped screen —
+-- on 2026-08-21 the Pre-Ruta board returned 0 orders for today and 5 for
+-- 2026-08-11, the day the environment happened to be seeded.
+--
+-- So shift them instead of re-inserting them. The shift is a whole number of
+-- days applied uniformly per cohort, which preserves the relative spread the
+-- fixtures encode (QA-ORD-001 yesterday, -003 tomorrow, -005 in two days) —
+-- pinning every row to CURRENT_DATE would flatten exactly the spread the
+-- date-range screens exist to show.
+--
+--   baseline cohort   ids 00000000-0000-4000-8000-…, seeded by this file.
+--                     Anchor: QA-ORD-002 (…141), the one order written as
+--                     plain CURRENT_DATE, so today minus its date IS the drift.
+--   generated cohort  ids 00000000-0000-4000-9000-…, from the seed-qa TS
+--                     generator, which stamps every order with the same
+--                     new Date() — so its latest date is that cohort's anchor.
+--
+-- Rows outside those two id ranges are left alone: anything a tester created by
+-- hand in QA is not a fixture and must not be moved under them.
+--
+-- Idempotent: a second run computes a delta of 0 and skips.
+DO $$
+DECLARE
+  v_delta integer;
+BEGIN
+  -- ── baseline cohort ──────────────────────────────────────────────────────
+  SELECT CURRENT_DATE - delivery_date INTO v_delta
+    FROM public.orders
+   WHERE id = '00000000-0000-4000-8000-000000000141';
+
+  IF COALESCE(v_delta, 0) <> 0 THEN
+    UPDATE public.orders
+       SET delivery_date         = delivery_date + v_delta,
+           delivery_window_start = delivery_window_start + make_interval(days => v_delta),
+           delivery_window_end   = delivery_window_end   + make_interval(days => v_delta)
+     WHERE id::text LIKE '00000000-0000-4000-8000-%';
+
+    UPDATE public.routes
+       SET route_date = route_date + v_delta
+     WHERE id::text LIKE '00000000-0000-4000-8000-%';
+
+    UPDATE public.dispatches
+       SET estimated_at = estimated_at + make_interval(days => v_delta),
+           arrived_at   = arrived_at   + make_interval(days => v_delta),
+           completed_at = completed_at + make_interval(days => v_delta)
+     WHERE id::text LIKE '00000000-0000-4000-8000-%';
+
+    RAISE NOTICE 'seed-qa: baseline fixtures rolled forward % day(s)', v_delta;
+  END IF;
+
+  -- ── generated cohort ─────────────────────────────────────────────────────
+  SELECT CURRENT_DATE - max(delivery_date) INTO v_delta
+    FROM public.orders
+   WHERE id::text LIKE '00000000-0000-4000-9000-%';
+
+  IF COALESCE(v_delta, 0) <> 0 THEN
+    UPDATE public.orders
+       SET delivery_date         = delivery_date + v_delta,
+           delivery_window_start = delivery_window_start + make_interval(days => v_delta),
+           delivery_window_end   = delivery_window_end   + make_interval(days => v_delta)
+     WHERE id::text LIKE '00000000-0000-4000-9000-%';
+
+    UPDATE public.routes
+       SET route_date = route_date + v_delta
+     WHERE id::text LIKE '00000000-0000-4000-9000-%';
+
+    UPDATE public.dispatches
+       SET estimated_at = estimated_at + make_interval(days => v_delta),
+           arrived_at   = arrived_at   + make_interval(days => v_delta),
+           completed_at = completed_at + make_interval(days => v_delta)
+     WHERE id::text LIKE '00000000-0000-4000-9000-%';
+
+    RAISE NOTICE 'seed-qa: generated fixtures rolled forward % day(s)', v_delta;
+  END IF;
+END $$;
+
 COMMIT;
 
 -- Summary (visible in psql output when run with -a or via RAISE)
