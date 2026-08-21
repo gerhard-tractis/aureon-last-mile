@@ -78,8 +78,9 @@ export function isValidPermission(value: string): value is Permission {
  * (lib/context/GlobalContext.tsx:53), which is minted at login. A user just
  * promoted to pickup_leader keeps the old answer until their token refreshes.
  *
- * Unused until spec-61 Task 6 renders the "start route" control that reads
- * it — no call site yet is expected, not a mistake.
+ * Call sites (spec-61 Task 5): PickupMobileView picks 3j or the crew screen
+ * with it, and app/app/pickup/page.tsx gates the desktop `1l` draft panel's
+ * own start button the same way.
  */
 export const ROUTE_LEADER_ROLES = [
   'pickup_leader',

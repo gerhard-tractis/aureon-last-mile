@@ -2094,6 +2094,17 @@ Depends on Chunks 1 and 2. This is the only chunk a driver can see.
 
 ### Task 5: `3j` becomes the leader's screen, and crew get their own
 
+> **Every even-numbered step below is unticked on purpose, and stays unticked.** They are the
+> "run it, verify it fails / verify it passes" steps, and nothing can execute in the
+> implementation environment: vitest cannot spawn workers on that machine (Norton) and Docker
+> is down, so there is no pgTAP and no psql either. `tsc --noEmit` and `eslint` are the only
+> checks that were run, and both are clean. **CI is the execution of record for the vitest
+> suites, and the QA deploy (`deploy-qa.sh:375`) for the SQL tests.** The odd-numbered steps —
+> write the test, write the implementation — are ticked because they were done. Steps 10 and
+> 12 fold an implementation into a "run it" step: the implementation was written, the run was
+> not, so they stay unticked with the rest. Do not tick the even ones on this task's behalf;
+> if they are ever ticked it should be because someone watched them run.
+
 **Files:**
 - Create: `apps/frontend/src/hooks/pickup/useCrewCandidates.ts` + `.test.ts`
 - Create: `apps/frontend/src/components/pickup/CrewSelect.tsx` + `.test.tsx`
@@ -2108,7 +2119,7 @@ Depends on Chunks 1 and 2. This is the only chunk a driver can see.
 Copy for the crew screen is fixed here rather than left to the implementer, because the whole
 point is that the message is *actionable*: it must say a route is not open and who opens it.
 
-- [ ] **Step 1: Write the failing test for the crew's empty screen**
+- [x] **Step 1: Write the failing test for the crew's empty screen**
 
       `apps/frontend/src/components/pickup/PickupMobileNoRoute.test.tsx`:
 
@@ -2118,9 +2129,9 @@ point is that the message is *actionable*: it must say a route is not open and w
       import { PickupMobileNoRoute } from './PickupMobileNoRoute';
 
       describe('PickupMobileNoRoute', () => {
-        it('says no route is open and who opens it', () => {
+        it('says no route is open and who to ask', () => {
           render(<PickupMobileNoRoute />);
-          expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+          expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
           expect(screen.getByText(/líder/i)).toBeInTheDocument();
         });
 
@@ -2140,7 +2151,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupMobileNoRoute.test.tsx --maxWorkers=2`
       Expected: FAIL — `Failed to resolve import "./PickupMobileNoRoute"`
 
-- [ ] **Step 3: Minimal implementation**
+- [x] **Step 3: Minimal implementation**
 
       `apps/frontend/src/components/pickup/PickupMobileNoRoute.tsx`:
 
@@ -2167,12 +2178,19 @@ point is that the message is *actionable*: it must say a route is not open and w
             className="rounded-[10px] border border-border bg-surface p-5 text-center"
           >
             <Users className="mx-auto h-7 w-7 text-text-muted" aria-hidden="true" />
+            {/* CORRECTED 2026-08-21: the DECIDED block's wording, not this
+                step's original draft ("No hay una ruta abierta para ti" /
+                "El líder de tu equipo abre la ruta y te agrega a ella…").
+                That block is the later and more considered text, it is what
+                the user was shown when they chose this option, and it names
+                the action rather than only the absence. It is also already
+                the string route/active/page.tsx shows for the same
+                situation. */}
             <p className="mt-3 font-heading text-[15px] font-semibold text-text">
-              No hay una ruta abierta para ti
+              No tienes una ruta activa.
             </p>
             <p className="mt-1.5 text-[13px] leading-[1.45] text-text-secondary">
-              El líder de tu equipo abre la ruta y te agrega a ella. Pídele que te
-              incluya y esta pantalla se actualiza sola.
+              Pídele a tu líder que te agregue a su ruta.
             </p>
           </section>
         );
@@ -2184,7 +2202,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupMobileNoRoute.test.tsx --maxWorkers=2`
       Expected: PASS
 
-- [ ] **Step 5: Write the failing branch test on `PickupMobileView`**
+- [x] **Step 5: Write the failing branch test on `PickupMobileView`**
 
       Append to `apps/frontend/src/components/pickup/PickupMobileView.test.tsx` (it already
       mocks the hooks this file uses — reuse its existing setup and props factory):
@@ -2219,7 +2237,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Expected: FAIL — `Unable to find an element by: [data-testid="pickup-mobile-no-route"]`
       (crew currently get `3j`)
 
-- [ ] **Step 7: Minimal implementation**
+- [x] **Step 7: Minimal implementation**
 
       In `PickupMobileView.tsx`: add `role: string | null` and `crewIds`-carrying
       `onCreateRoute` to the props, import `canLeadPickupRoute` and `PickupMobileNoRoute`, and
@@ -2261,7 +2279,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupMobileView.test.tsx --maxWorkers=2`
       Expected: PASS
 
-- [ ] **Step 9: Write the failing test for the crew picker's data source**
+- [x] **Step 9: Write the failing test for the crew picker's data source**
 
       `apps/frontend/src/hooks/pickup/useCrewCandidates.test.ts` — same mock shape as
       `useAuditLogUsers.test.ts` (a `from()` chain), asserting:
@@ -2323,7 +2341,7 @@ point is that the message is *actionable*: it must say a route is not open and w
 
       Run the test again. Expected: PASS.
 
-- [ ] **Step 11: Write the failing test for `CrewSelect`**
+- [x] **Step 11: Write the failing test for `CrewSelect`**
 
       `apps/frontend/src/components/pickup/CrewSelect.test.tsx` — render with a stub candidate
       list (mock `useCrewCandidates`) and assert:
@@ -2348,6 +2366,11 @@ point is that the message is *actionable*: it must say a route is not open and w
       read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
       "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
 
+      **DECIDED 2026-08-21 — `ACOMPAÑANTES · N`.** Take the recommendation. This header
+      reads `ACOMPAÑANTES · N`, leader-exclusive, counting exactly the checked rows beneath
+      it. `EQUIPO · N` stays on `3h` and stays leader-inclusive. Neither count changes; only
+      this label does. Assert the string here so the collision cannot silently return.
+
 - [ ] **Step 12: Run it, verify it fails, then implement**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/CrewSelect.test.tsx --maxWorkers=2`
@@ -2357,7 +2380,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       internal state. It is its own component so `PickupMobileStartRoute.tsx` (233 lines)
       stays under the 300-line limit. Re-run: PASS.
 
-- [ ] **Step 13: Wire the crew through `3j` and the mutation — failing test first**
+- [x] **Step 13: Wire the crew through `3j` and the mutation — failing test first**
 
       In `PickupMobileStartRoute.test.tsx`, add:
 
@@ -2388,7 +2411,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupMobileStartRoute.test.tsx src/hooks/pickup/useStartPickupRoute.test.ts --maxWorkers=2`
       Expected: FAIL — `expected "spy" to be called with … but got ['vehicle-1']`
 
-- [ ] **Step 15: Implement the wiring**
+- [x] **Step 15: Implement the wiring**
 
       1. `PickupMobileStartRoute.tsx` — add `const [crewIds, setCrewIds] = useState<string[]>([])`,
          render `<CrewSelect …/>` between the `VehicleSelect` and the error line, and change
@@ -2425,7 +2448,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx vitest run src/components/pickup src/hooks/pickup src/app/app/pickup --maxWorkers=2`
       Expected: all PASS
 
-- [ ] **Step 17: Close the desktop hole**
+- [x] **Step 17: Close the desktop hole**
 
       `1l` has its own start affordance — `PickupRouteDraftPanel.tsx:117` renders
       `StartRouteButton`. A `pickup_crew` user on a laptop would still see a button the RPC
@@ -2451,7 +2474,7 @@ point is that the message is *actionable*: it must say a route is not open and w
       Run: `cd apps/frontend && npx tsc --noEmit && npx vitest run src/components/pickup src/hooks/pickup src/app/app/pickup src/components/sidebar --maxWorkers=2`
       Expected: no `tsc` output; all suites PASS.
 
-- [ ] **Step 19: Commit**
+- [x] **Step 19: Commit**
 
       ```
       git add apps/frontend/src/components/pickup apps/frontend/src/hooks/pickup apps/frontend/src/app/app/pickup/page.tsx
@@ -2462,6 +2485,205 @@ point is that the message is *actionable*: it must say a route is not open and w
       crew in 3j and it rides into the RPC in the same call. The desktop 1l draft
       panel is gated the same way -- it had its own start button."
       ```
+
+#### Task 5 — corrections found while implementing (2026-08-21)
+
+Recorded here rather than in a review comment, because every prior task in this spec
+found errors in its own plan text and the corrections belong with the plan.
+
+1. **Two different copies for the crew screen.** Step 3 originally fixed it as "No hay una
+   ruta abierta para ti" / "El líder de tu equipo abre la ruta y te agrega a ella…", while the
+   "DECIDED — no signal" note quotes "No tienes una ruta activa. Pídele a tu líder que te
+   agregue a su ruta." **Resolved 2026-08-21 in favour of the DECIDED block**, and Step 3 above
+   has been corrected to match: it is the later and more considered text, it is what the user
+   was shown when they chose the option, it tells the person what to *do* rather than only what
+   is absent, and it is already the exact string `route/active/page.tsx` shows for the same
+   situation — so a picker gets one answer to "where is my route" wherever they are standing.
+   Either way the decision holds: one blank state, no mention that a seat was released.
+
+2. **Step 5's `renderView` does not exist.** `PickupMobileView.test.tsx` has a `baseProps()`
+   factory spread into `render(<PickupMobileView {...baseProps()} />)`, no `renderView`. The
+   new tests follow the existing style; `role` and `currentUserId` were added to `baseProps()`
+   with a leader role, since every pre-existing test in that file expects `3j`.
+
+3. **Step 5's `3h` assertion was dead as drafted.** `PickupMobileActiveRoute` renders the
+   SAME `data-testid="pickup-mobile-view"` as the `3j` wrapper, so
+   `getByTestId('pickup-mobile-view')` cannot tell `3h` from `3j` — the test would have passed
+   with the branch deleted. Replaced with `3h`'s hero heading, which renders on no other
+   branch.
+
+4. **Step 11 and Step 13 disagree on what a crew row is.** Step 11 asks for "no checkboxes" in
+   the empty state; Step 13 selects a row with `getByRole('button', { name: /ana pérez/i })`.
+   Rows are `role="checkbox"` — the same pattern `PickupMobileClientGroup.tsx` already uses for
+   a toggle row — so Step 13's selector would not have matched. Tests use
+   `getByRole('checkbox', { name: … })`.
+
+5. **`excludeUserId` had no source.** Step 10 takes it as an argument and Step 7 threads only
+   `role` in from `page.tsx`; nothing in the plan says where the signed-in user's id comes
+   from. `useOperatorId()` now also returns `userId` (`auth.uid()`, straight off
+   `GlobalContext`), because `useGlobal()` throws outside a `GlobalProvider` and every call
+   site already mocks `useOperatorId`.
+
+6. **Step 17's placement.** The `canLead` message is rendered *before* the empty-selection
+   prompt, not only in place of the button: a crew member should learn they cannot open a
+   route before they spend time ticking manifests for one. `StartRouteButton.tsx` needed no
+   edit, exactly as Step 15 predicted, thanks to the `crewIds = []` default.
+
+7. **Line numbers have drifted.** `page.tsx:183-210` / `:185`, `PickupDesktopView.tsx:193`,
+   `PickupRouteDraftPanel.tsx:117` were right when written. `page.tsx` in particular had to
+   shed code (`pendingToRows`/`totalsToRows` moved to `lib/pickup/pickupPageHelpers.ts`, the
+   attach loop to `lib/pickup/attachManifestsToRoute.ts`) to stay under the 300-line limit
+   while carrying the new wiring.
+
+8. **Step 18's full check could not run.** Vitest cannot spawn workers on this machine and
+   Docker is down, so no suite and no pgTAP was executed for this task. `tsc --noEmit` and
+   `eslint` are clean; **no test in this task has been seen to pass.**
+
+##### `cancel_pickup_route` did NOT authorise the leader — fixed in `20260821000001`
+
+The decision above says "Only the route's own leader may cancel. Verify
+`cancel_pickup_route`'s own authorisation before relying on the UI to enforce it." Verified:
+**it does not check.** The latest definition (`20260812000003_spec52_pickup_routes_vehicle.sql`
+PART 7) checks `get_operator_id()` and that the route exists, is not soft-deleted and is in
+`draft`/`in_progress` — and nothing else. `EXECUTE` is granted to `authenticated`
+(`20260625000001…:610`). Any authenticated user of the same operator can therefore cancel any
+open pickup route by calling the RPC directly; a `pickup_crew` member can cancel their own
+leader's route.
+
+**Closed 2026-08-21** by `20260821000001_spec61_cancel_pickup_route_authz.sql`, templated on
+`20260812000003` PART 7 (verified: no later migration redefines the function). Who may cancel,
+and the reasoning, decided rather than inferred:
+
+- **the route's own `driver_id`** — the person this spec puts in charge of the route;
+- **`operations_manager` / `admin` / `super_admin`** — they keep exactly what they can do
+  today. This was not the moment to remove an operational escape hatch, especially while an
+  abandoned route has no other in-app exit;
+- **a `pickup_leader` who is not this route's driver gets nothing.** Leaders own their own
+  route; one leader cancelling another's is the same class of problem as the crew case;
+- **`pickup_crew` gets nothing.**
+
+This deliberately does **not** reuse `ROUTE_LEADER_ROLES` (`lib/permissions.ts`) or
+`start_pickup_route`'s list. That list answers "who may OPEN a route", a different question
+from "who may cancel THIS one", and it contains `pickup_leader`, which must not appear here.
+The migration's header says so, and its validation block asserts it — but be precise about
+what that block can and cannot do. It is a `DO` block inside the migration, so it runs **once**,
+when this migration applies, and pins the state *at that moment*: it proves this file installed
+the body it claims to. A later `CREATE OR REPLACE` in a new migration would not re-run it and
+would not be caught by it.
+
+What actually catches a later "fix the inconsistency" edit is **TEST 2 in
+`spec61_cancel_route_authz.sql`** — a different `pickup_leader` in the same operator being
+refused — because the SQL tests run on **every QA deploy** (`deploy-qa.sh:375`), against
+whatever the function is by then. Put `pickup_leader` back on the list and that test fails on
+the next deploy. The migration's block is the one-time proof; the test is the standing guard.
+
+Proof: `packages/database/supabase/tests/spec61_cancel_route_authz.sql`, which runs on every
+QA deploy (`deploy-qa.sh:375`). It calls the RPC under `SET LOCAL ROLE authenticated` (the
+owner is exempt from RLS and the EXECUTE grant is to `authenticated` specifically, so an owner
+connection would prove nothing) and carries **two operators**, without which
+`operator_id = v_operator` in the route lookup is unfalsifiable. Six cases: the crew member of
+that route is refused; a different `pickup_leader` in the same operator is refused; a leader
+from operator B is refused *by the route lookup* (asserted on the message, so the tenant check
+and the leader gate cannot be confused for one another); an `operations_manager` reaching
+across operators is refused the same way; an `operations_manager` can cancel a colleague's
+route; and the route's own driver can, with `cancellation_reason` persisted — which also pins
+that the migration was templated on the spec-52 definition and not the spec-47 original.
+
+The UI gate stays at both call sites as defence in depth, and so an elevated user is not
+casually offered a destructive control on a route that is not theirs. The server is now the
+authority.
+
+##### Where the cancel lives, and why it is in two places
+
+The decision says "from the route screen", and warns it "must not be a single stray tap next
+to *Cerrar ruta*" — which points at `/app/pickup/route/active`. It is there, under
+`CloseRouteButton`, behind a confirm.
+
+It is **also** on `3h`. `ActiveRouteBanner` — the only link to `/app/pickup/route/active`
+anywhere in the app — is rendered by `PickupDesktopView`, so below `lg` that screen is
+reachable only in the moment `handleCreateRoute` pushes to it. A leader whose manifests all
+failed to attach navigates away once and can never get back: exactly the abandoned-route case
+the decision exists to fix. One shared `CancelRouteButton`, two call sites.
+
+##### Added to Task 5's scope by the coordinator: the failed-lookup branch
+
+**Not in any written version of Task 5.** Task 4 found this bug, deferred it, and the
+coordinator put it in Task 5's dispatch as an explicit in-scope item. Recording that plainly,
+because the code is larger than "a fix": it added a third mobile blank state and a new branch
+on the desktop draft panel, and nothing about `isError`, `Reintentar` or `No pudimos` appears
+anywhere in this spec on `origin/main`.
+
+The bug: `page.tsx` destructured only `{ data: activeRoute }` from `useActivePickupRoute`.
+After React Query exhausts its retries a failed lookup leaves `data` undefined, which this page
+read as "no route" — offering `3j` on a phone and the `1l` draft panel's start button on a
+laptop to a leader who already had a route open. Task 4 fixed the equivalent on
+`route/active/page.tsx` by reading `isError`; this is the same fix on the other screen.
+
+What it added, so the diff is not a surprise:
+- `PickupMobileView` — `routeUnknown` / `onRetryRoute` props and a third no-route branch
+  ("No pudimos cargar tu ruta." + *Reintentar*), checked **before** the leader/crew branch
+  because it is true for both. Mobile therefore now has three blank states, not two.
+- `PickupRouteDraftPanel` — a `routeUnknown` branch ahead of `activeRouteCode`, so `1l` says
+  the route is unknown instead of offering to start a second one. Threaded through
+  `PickupDesktopView`.
+- `page.tsx` — reads `isError` and `refetch` from the hook and passes both down.
+- Tests in `PickupMobileView.test.tsx`, `PickupRouteDraftPanel.test.tsx` and `page.test.tsx`.
+
+##### Quality-review fixes (2026-08-21)
+
+Four change behaviour and belong in the record; the rest were styling.
+
+1. **`role === null` meant "crew" for the length of every cold load.**
+   `GlobalContext` resolves the JWT claims asynchronously (`GlobalContext.tsx:31-63`) and
+   `_client-gate.tsx:19` paints children while they are still empty, so nothing blocked the
+   render — and `canLeadPickupRoute(null)` is `false`. A real `pickup_leader` therefore read
+   *"No tienes una ruta activa. Pídele a tu líder que te agregue a su ruta."* on a phone, and
+   *"Solo un líder de ruta puede abrir una ruta"* on a laptop, for the whole auth round-trip:
+   a confident, wrong refusal telling a leader to ask someone else for permission they already
+   held, on exactly the cold warehouse connection where the round-trip is slowest. `role`
+   null means **unknown**, not crew. `page.tsx` now derives `roleUnknown = !operatorId` —
+   exact, because `GlobalContext` sets `operatorId` and `role` in one `setState` pass — and
+   threads it to both surfaces: `PickupMobileView` shows a neutral "Cargando tu perfil…"
+   ahead of the `!canLead` branch, and `PickupRouteDraftPanel` falls through to its selection
+   prompt (true regardless of who is asking) instead of the refusal. Tested on both surfaces,
+   each paired with a known-crew test so "never refuse" cannot be satisfied by deleting the
+   refusal.
+
+2. **The crew picker was unbounded.** `useCrewCandidates` fetches every non-deleted
+   `pickup_crew`/`pickup_leader` in the operator with no limit, and the list renders inside
+   3j's accent card *above* "Iniciar ruta de recogida" — twenty people is roughly 880px, so
+   the primary CTA left a 390px screen entirely. The list is now `max-h-[45vh]
+   overflow-y-auto`; the eyebrow still counts everyone, so the number is never what gets
+   truncated. Tested at twenty candidates, at the surface that owns the button, by driving the
+   button rather than asserting its presence.
+
+3. **A partial attach named a count, not the loads.** `handleCreateRoute` toasted "3 de 5
+   manifiestos no se pudieron agregar", then cleared the selection and navigated away — so the
+   driver could not find out *which* three short of hunting through `AddManifestSheet` on the
+   destination. `attachManifestsToRoute` now returns `failedLoadIds` (the `externalLoadId`s,
+   which are the codes printed on the load), and `partialAttachMessage` names them, capped at
+   five with "y N más" and pointing at the active route.
+
+4. **The whole success path was untested.** Everything after the route is created — the toast,
+   clearing the selection, the navigation — lives in `startMut.mutate`'s `onSuccess`, and
+   `page.test.tsx` mocked `mutate` as a bare `vi.fn()`, so the callback never ran.
+   `attachManifestsToRoute` was unit-tested thoroughly and its only consumer was not. The mock
+   now drives `onSuccess`, and the stubbed `StartRouteButton` actually calls `onStart`.
+
+Also: the start-route error was surfaced twice on mobile (a toast *and* 3j's persistent
+`role="alert"`); the toast is now desktop-only, where the draft panel has no inline line. Plus
+a clipped manifest list (`pb-24` → `pb-40`, since the fixed bar now carries two buttons), zero
+gap between the routine and destructive CTAs on `route/active` (`space-y-3` — 3h already had
+`gap-4`), two contrast failures in `CrewSelect` (the unchecked box at 1.23:1, the eyebrow at
+2.52:1 on the accent card), and `CancelRouteButton` turning brand-gold on hover because
+`variant="ghost"`'s `hover:text-accent-foreground` survived `twMerge`.
+
+**Found while fixing, not reported:** four tests written earlier in this task clicked
+`getAllByRole('checkbox')` on the DESKTOP path. The desktop table has no checkbox role at all —
+it selects by clicking the row (`ManifestTable.tsx:95`) — so all four would have thrown on
+first execution. They now click the row, the way this file's pre-existing tests already did.
+This is the cost of an environment where the suite cannot be run: `tsc` and `eslint` cannot
+see it.
 
 ### Task 6: `3h` shows who is on the trip
 
@@ -2979,12 +3201,26 @@ indefinitely, and the only fix is shell access to the database. The exclusion is
 correct — two leaders collecting the same load is worse — but the missing exit is now
 load-bearing rather than cosmetic.
 
-Two candidate fixes, neither built here (Task 5 owns the leader screen):
+Two candidate fixes:
 
 - Wire the **existing** `cancel_pickup_route` into the leader UI. Cheapest by far: the
   RPC and its type already exist, so this is a button and a confirm, not new backend.
 - Schedule the existing sweep. Needs a caller with EXECUTE, which means revisiting a
   grant that was locked down on purpose — the reason to prefer the first option.
+
+**DECIDED 2026-08-21 — Task 5 wires up `cancel_pickup_route`.** The first option, and it
+is now in Task 5's scope rather than deferred. A leader can cancel their own route from
+the route screen; the existing route-status trigger detaches the manifests and nulls
+`reception_status`, so the loads return to the pending list for anyone to claim.
+
+Requirements, since this is destructive and reachable one-handed on a phone:
+- Confirm before firing. The cancel must not be a single stray tap next to *Cerrar ruta*.
+- Say what happens in the confirm: the loads go back to the pending list and any scanning
+  progress on this route stops counting. Do not make the leader infer it.
+- Only the route's own leader may cancel. Verify `cancel_pickup_route`'s own authorisation
+  before relying on the UI to enforce it — if the RPC does not check, say so rather than
+  gating in the client alone.
+- The sweep stays unscheduled and its grant stays revoked. That was deliberate.
 
 **A reopened route can strand its crew, permanently.** The restore branch of the
 route-status trigger skips any seat whose holder is active elsewhere — correct, because
@@ -3006,6 +3242,21 @@ Two things follow, and neither is optional:
   able to say "you were on a route that reopened without you" rather than showing the
   same blank state as someone who was never on one. If the answer is "no signal for now",
   write that down here rather than leaving it to be discovered on a warehouse floor.
+
+**DECIDED 2026-08-21 — no signal.** A stranded crew member sees the ordinary no-route
+screen: "No tienes una ruta activa. Pídele a tu líder que te agregue a su ruta." No
+mention that anything changed, no distinct state to build or maintain.
+
+The reasoning, so nobody relitigates it from the risk text above: the recovery action is
+identical either way — find your leader and ask to be re-added — so a bespoke message
+buys the person nothing they will not do anyway, at the cost of a second empty state that
+has to be kept honest as the screen evolves. Task 5 must therefore **not** branch on
+"stranded vs never assigned"; one blank state serves both.
+
+This is a deliberate acceptance of a rough edge, not an oversight. If warehouse feedback
+says people are confused, the signal is cheap to add later — `pickup_route_crew` retains
+the row with `removed_at` stamped, so the information needed to say "your seat was
+released" is already in the database and is not being discarded.
 
 
 - **The enum change touches auth.** Eight migrations reference `user_role` and RLS policies

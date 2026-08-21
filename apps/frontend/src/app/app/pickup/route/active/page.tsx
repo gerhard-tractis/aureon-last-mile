@@ -21,13 +21,14 @@ import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
 import { RouteManifestList } from '@/components/pickup/RouteManifestList';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
+import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
 
 const MANIFEST_LIST_PANEL_ID = 'route-manifest-list-panel';
 
 export default function ActiveRoutePage() {
   const router = useRouter();
-  const { operatorId } = useOperatorId();
+  const { operatorId, userId } = useOperatorId();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
@@ -133,8 +134,14 @@ export default function ActiveRoutePage() {
 
   const manifestListVisible = routeManifests.length === 0 || showAll;
 
+  // pb-40 (160px), not pb-24: the fixed bar at the foot of this screen now
+  // carries TWO 40px buttons plus p-4/sm:p-6 padding -- ~112px on a phone,
+  // ~128px at `sm`. pb-24 reserved 96px, so the leader (the only person who
+  // sees both buttons) had the last 16-32px of the manifest list permanently
+  // under the bar, on the exact screen where they check what is left to
+  // collect.
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-24">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-40">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
       <RouteMapPlaceholder pickupLocation={nextManifest?.pickup_location ?? null} />
@@ -206,12 +213,39 @@ export default function ActiveRoutePage() {
       />
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
-        <div className="max-w-2xl mx-auto">
+        {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
+            the routine "Cerrar ruta y entregar". Flush, they are two
+            full-width 40px targets one thumb-width apart on a phone held
+            one-handed, with only the confirm dialog between a mis-tap and
+            detaching every manifest on the route. 3h already separates them
+            (`flex flex-col gap-4`); this surface did not. */}
+        <div className="max-w-2xl mx-auto space-y-3">
           <CloseRouteButton
             totalVerified={totalVerified}
             isSubmitting={closeMut.isPending}
             onClose={handleClose}
           />
+          {/* spec-61 Task 5 — the exit for a route that should not have been
+              opened. Task 7 stopped offering routed loads to anyone else, so
+              without this the loads sit locked to an abandoned route until
+              someone opens psql.
+
+              Only the route's own LEADER sees it: `driver_id` is the leader,
+              and a crew member cancelling the trip out from under everyone
+              is not a thing this spec grants. `!!userId` first — comparing
+              two undefineds would read as "this is my route".
+
+              Defence in depth, not the only gate: cancel_pickup_route
+              enforces the same rule server-side since migration
+              20260821000001 (driver, or an elevated role). See
+              useCancelPickupRoute.ts. */}
+          {!!userId && route.driver_id === userId && (
+            <CancelRouteButton
+              routeId={route.id}
+              operatorId={operatorId}
+              onCancelled={() => router.push('/app/pickup')}
+            />
+          )}
         </div>
       </div>
     </div>
