@@ -386,6 +386,11 @@ services:
       SUPABASE_PUBLISHABLE_KEYS: "{\"default\":\"${SUPABASE_PUBLISHABLE_KEY:-}\"}"
       SUPABASE_SECRET_KEYS: "{\"default\":\"${SUPABASE_SECRET_KEY:-}\"}"
       SUPABASE_DB_URL: postgresql://postgres:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      # beetrack-webhook fails closed when this is unset (500 Server
+      # misconfigured), which is what QA returned until now: the variable
+      # existed only in production. Its own secret, never production's — QA is
+      # reachable from the public internet and writes order status.
+      BEETRACK_WEBHOOK_SECRET: ${BEETRACK_WEBHOOK_SECRET:-}
       # TODO: Allow configuring VERIFY_JWT per function.
       VERIFY_JWT: "${FUNCTIONS_VERIFY_JWT}"
     command:
