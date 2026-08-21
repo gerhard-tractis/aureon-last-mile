@@ -2328,8 +2328,24 @@ point is that the message is *actionable*: it must say a route is not open and w
       list (mock `useCrewCandidates`) and assert:
       - every candidate renders as a toggleable row with an accessible name;
       - tapping one calls `onChange` with that id added; tapping again removes it;
-      - the header shows the count (`EQUIPO · 2`);
+      - the header shows the count — but SEE THE LABEL COLLISION BELOW before writing
+        `EQUIPO · 2`;
       - an empty candidate list renders "No hay compañeros registrados" and no checkboxes.
+
+      LABEL COLLISION WITH TASK 6 — decide this deliberately, it is not settled by the spec.
+      This header's count is leader-EXCLUSIVE by construction: `useCrewCandidates` filters
+      `u.id !== excludeUserId` (Step 10), so the leader is never a row and never counted.
+      Task 6's `PickupRouteCrewStrip` on `3h` uses the SAME label `EQUIPO · N` with N
+      leader-INCLUSIVE (`crew.length + 1`), so it matches the chips it sits over. As drafted,
+      one trip reads `EQUIPO · 2` on `3j` and `EQUIPO · 3` on `3h`, and the number changes
+      under the driver as they navigate between the two screens.
+
+      Task 6's author recommends fixing the LABEL here, not either count: a picker's counter
+      must count its own checked rows, and the leader can never be one of them; a roster that
+      omits the person driving is not "who is on the trip". Both numbers are right for their
+      own screen — the defect is one word standing for two quantities. So this header should
+      read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
+      "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
 
 - [ ] **Step 12: Run it, verify it fails, then implement**
 
@@ -2535,15 +2551,42 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
 
 - [x] **Step 3: Minimal implementation**
 
-      `PickupRouteCrewStrip.tsx` (~50 lines): an eyebrow `EQUIPO · N` — N counts the whole
+      `PickupRouteCrewStrip.tsx` (~115 lines): an eyebrow `EQUIPO · N` — N counts the whole
       trip, leader included, so it matches the number of chips below it (see the collision
-      note below) — and a wrapped row
-      of name chips, the leader's carrying a `LÍDER` marker, each `data-testid="crew-member"`;
-      `full_name ?? 'Sin nombre'`; returns `null` when `crew.length === 0`. Read-only: no
-      `<button>` anywhere.
+      note below) — and a wrapped `<ul>` of name chips, the leader's carrying a `LÍDER`
+      marker, each `data-testid="crew-member"`; returns `null` when `crew.length === 0`.
+      Read-only: no `<button>` anywhere.
 
-      CORRECTION: the draft justified `'Sin nombre'` as "the same choice `PickupMobileHeader`
-      makes". It is not — `PickupMobileHeader` renders no placeholder at all: it omits the
+      Four things the draft did not specify, settled during review:
+
+      - **Placeholder wording.** `full_name ?? 'Cuenta eliminada'`, not `'Sin nombre'`. The
+        null has exactly one cause — the member's account was soft-deleted mid-route, so
+        RLS hid the row the RPC LEFT JOINs. `'Sin nombre'` reads as *the record is
+        incomplete* and would send a leader chasing a data-entry problem that does not exist.
+      - **Contrast.** The `LÍDER` marker must be a bordered, tinted pill with
+        `text-text-secondary` — the shape every other inline marker in `pickup/` uses
+        (`PickupRouteDraftPanel.tsx:51`, `PickupMobileNextLoadCard.tsx:47`). Bare
+        `text-text-muted` at 9.5px is ~2.3:1 on light and is not large text, so the one
+        element the feature rests on was theme-dependent. Chips take StatTile's neutral pair
+        (`border-border bg-surface`) rather than `bg-surface-raised`, which is a 1.02:1 fill
+        against the page and left the chips with no boundary in light mode.
+      - **No `truncate` on names.** A phone has no hover and Decision 1 leaves no tap target,
+        so a clipped name is unrecoverable — the driver could not find out who is in their
+        van, which is the point of the strip. Names wrap; the `ul` already wraps.
+      - **A cap, which spec-61 sets nowhere.** Five chips (leader + four), remainder as plain
+        text `+N más` — text, not a control, so the no-affordance rule survives. Unbounded,
+        nine chips wrap to ~4 rows on a 390px phone and push the STATS grid and the "next
+        load" hero ~130px down. Capping rather than reordering: moving the strip below the
+        STATS grid protects the grid but not the hero, which sits below both either way. The
+        eyebrow keeps counting everyone, so the headcount is never what gets truncated.
+
+      Accessibility: `<section aria-labelledby>` pointing at the eyebrow, so the count becomes
+      the region's accessible name rather than competing with a second `aria-label` string;
+      the leader's `<li>` carries `aria-label="{name}, líder"` with the badge `aria-hidden`,
+      or a screen reader announces name and badge as one run.
+
+      CORRECTION: the draft justified its placeholder as "the same choice
+      `PickupMobileHeader` makes". It is not — `PickupMobileHeader` renders no placeholder at all: it omits the
       name segment entirely (`{driverName && <>{driverName} · </>}`) and falls back to `'··'`
       initials via `driverInitials()`. Omitting is fine for a subtitle segment but not here,
       where a chip must still stand for a person who is on the trip. The placeholder is a new
@@ -2634,6 +2677,13 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
       route. No edit path: the crew is fixed when the route opens, which is what
       makes removed_at's single writer (the status trigger) safe."
       ```
+
+- **Follow-up, deliberately not built here:** the four things review caught on this strip —
+  badge legibility, chip boundaries, wrapping at eight members, an unrecoverable truncated
+  name — are all invisible to jsdom, so nothing in the vitest suite can guard them against
+  the next edit. The cheap guard is one 390px Playwright screenshot in `apps/frontend/e2e`
+  rendering a six-member crew with a ~30-character name, in both themes. Worth doing when
+  `pickup/` next gets e2e coverage; not worth standing up an e2e harness for on its own.
 
 ## Chunk 4 — `get_pending_manifests` stops offering routed loads
 
