@@ -19,8 +19,10 @@ const route = {
   vehicle: { plate: 'AAA-111' },
 };
 
+const activeRouteMock = vi.fn();
+const refetchRoute = vi.fn();
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
-  useActivePickupRoute: () => ({ data: route, isLoading: false }),
+  useActivePickupRoute: () => activeRouteMock(),
 }));
 
 // spec-54 phase 4.6 fix: the default fixture now has a genuinely incomplete
@@ -75,6 +77,14 @@ describe('ActiveRoutePage', () => {
     pushMock.mockReset();
     addMutate.mockReset();
     closeMutate.mockReset();
+    activeRouteMock.mockReset();
+    refetchRoute.mockReset();
+    activeRouteMock.mockReturnValue({
+      data: route,
+      isLoading: false,
+      isError: false,
+      refetch: refetchRoute,
+    });
     routeManifestsMock.mockReset();
     routeManifestsMock.mockReturnValue({
       data: [INCOMPLETE_MANIFEST, COMPLETE_MANIFEST],
@@ -201,6 +211,26 @@ describe('ActiveRoutePage', () => {
     await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
     expect(screen.queryByText('0/0')).toBeNull();
     expect(screen.getByText(/cargando manifiestos/i)).toBeInTheDocument();
+  });
+
+  // spec-61: the route is one RPC now, so a failure is wholesale. Rendering
+  // the empty state on error would tell a leader with an open route that they
+  // have none — and send them back to 3j to open a second one for the same
+  // van.
+  it('offers a retry on a failed lookup instead of claiming there is no route', async () => {
+    activeRouteMock.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: refetchRoute,
+    });
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(screen.getByText(/no pudimos cargar tu ruta/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/no tienes una ruta activa/i)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+    expect(refetchRoute).toHaveBeenCalledTimes(1);
   });
 
   it('renders the map placeholder instead of a real map', async () => {

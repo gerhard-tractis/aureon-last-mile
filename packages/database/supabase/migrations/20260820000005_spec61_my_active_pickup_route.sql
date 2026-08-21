@@ -58,10 +58,13 @@ AS $$
               AND c.deleted_at IS NULL
          )
        )
-     -- Ordered + LIMIT 1 for the same reason the hook did: the indexes make
-     -- two active rows impossible, and if one ever slips through, the newest
-     -- is the least wrong answer.
-     ORDER BY pr.started_at DESC
+     -- Ordered + LIMIT 1 because two rows here are REACHABLE, unlike the
+     -- comment the hook carried: uniq_pickup_routes_one_active_per_driver and
+     -- uniq_pickup_route_crew_one_active_per_user are separate indexes and
+     -- neither excludes the other, so one person can lead route B while
+     -- holding an active seat on route A. Newest wins; pr.id breaks a
+     -- started_at tie so the answer is at least stable across calls.
+     ORDER BY pr.started_at DESC, pr.id DESC
      LIMIT 1
   )
   SELECT to_jsonb(m.*) || jsonb_build_object(
@@ -71,12 +74,18 @@ AS $$
     -- ActivePickupRoute['vehicle'] being nullable.
     'plate',       (SELECT v.plate     FROM public.vehicles v WHERE v.id = m.vehicle_id),
     'driver_name', (SELECT u.full_name FROM public.users   u WHERE u.id = m.driver_id),
+    -- LEFT JOIN, not JOIN: users_tenant_isolation_select filters
+    -- deleted_at IS NULL, so an inner join would make a soft-deleted
+    -- colleague VANISH from the crew array and quietly shorten the head
+    -- count a leader reads on 3h. The seat is the fact; the name is the
+    -- decoration, and RouteCrewMember.full_name is nullable to say so.
+    -- NULL names sort last under ORDER BY ... ASC.
     'crew', COALESCE((
       SELECT jsonb_agg(
                jsonb_build_object('user_id', c.user_id, 'full_name', u.full_name)
                ORDER BY u.full_name)
         FROM public.pickup_route_crew c
-        JOIN public.users u ON u.id = c.user_id
+        LEFT JOIN public.users u ON u.id = c.user_id
        WHERE c.pickup_route_id = m.id
          AND c.removed_at IS NULL
          AND c.deleted_at IS NULL
