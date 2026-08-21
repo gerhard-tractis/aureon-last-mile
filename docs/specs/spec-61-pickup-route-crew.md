@@ -2348,6 +2348,11 @@ point is that the message is *actionable*: it must say a route is not open and w
       read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
       "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
 
+      **DECIDED 2026-08-21 — `ACOMPAÑANTES · N`.** Take the recommendation. This header
+      reads `ACOMPAÑANTES · N`, leader-exclusive, counting exactly the checked rows beneath
+      it. `EQUIPO · N` stays on `3h` and stays leader-inclusive. Neither count changes; only
+      this label does. Assert the string here so the collision cannot silently return.
+
 - [ ] **Step 12: Run it, verify it fails, then implement**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/CrewSelect.test.tsx --maxWorkers=2`
@@ -2979,12 +2984,26 @@ indefinitely, and the only fix is shell access to the database. The exclusion is
 correct — two leaders collecting the same load is worse — but the missing exit is now
 load-bearing rather than cosmetic.
 
-Two candidate fixes, neither built here (Task 5 owns the leader screen):
+Two candidate fixes:
 
 - Wire the **existing** `cancel_pickup_route` into the leader UI. Cheapest by far: the
   RPC and its type already exist, so this is a button and a confirm, not new backend.
 - Schedule the existing sweep. Needs a caller with EXECUTE, which means revisiting a
   grant that was locked down on purpose — the reason to prefer the first option.
+
+**DECIDED 2026-08-21 — Task 5 wires up `cancel_pickup_route`.** The first option, and it
+is now in Task 5's scope rather than deferred. A leader can cancel their own route from
+the route screen; the existing route-status trigger detaches the manifests and nulls
+`reception_status`, so the loads return to the pending list for anyone to claim.
+
+Requirements, since this is destructive and reachable one-handed on a phone:
+- Confirm before firing. The cancel must not be a single stray tap next to *Cerrar ruta*.
+- Say what happens in the confirm: the loads go back to the pending list and any scanning
+  progress on this route stops counting. Do not make the leader infer it.
+- Only the route's own leader may cancel. Verify `cancel_pickup_route`'s own authorisation
+  before relying on the UI to enforce it — if the RPC does not check, say so rather than
+  gating in the client alone.
+- The sweep stays unscheduled and its grant stays revoked. That was deliberate.
 
 **A reopened route can strand its crew, permanently.** The restore branch of the
 route-status trigger skips any seat whose holder is active elsewhere — correct, because
@@ -3006,6 +3025,21 @@ Two things follow, and neither is optional:
   able to say "you were on a route that reopened without you" rather than showing the
   same blank state as someone who was never on one. If the answer is "no signal for now",
   write that down here rather than leaving it to be discovered on a warehouse floor.
+
+**DECIDED 2026-08-21 — no signal.** A stranded crew member sees the ordinary no-route
+screen: "No tienes una ruta activa. Pídele a tu líder que te agregue a su ruta." No
+mention that anything changed, no distinct state to build or maintain.
+
+The reasoning, so nobody relitigates it from the risk text above: the recovery action is
+identical either way — find your leader and ask to be re-added — so a bespoke message
+buys the person nothing they will not do anyway, at the cost of a second empty state that
+has to be kept honest as the screen evolves. Task 5 must therefore **not** branch on
+"stranded vs never assigned"; one blank state serves both.
+
+This is a deliberate acceptance of a rough edge, not an oversight. If warehouse feedback
+says people are confused, the signal is cheap to add later — `pickup_route_crew` retains
+the row with `removed_at` stamped, so the information needed to say "your seat was
+released" is already in the database and is not being discarded.
 
 
 - **The enum change touches auth.** Eight migrations reference `user_role` and RLS policies
