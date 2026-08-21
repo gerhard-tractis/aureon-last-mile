@@ -81,7 +81,7 @@ describe('ReceptionMobileView', () => {
     vi.clearAllMocks();
   });
 
-  it('el héroe es la ruta que lleva más tiempo esperando', () => {
+  it('the hero is the route that has waited longest', () => {
     render(<ReceptionMobileView {...baseProps} yardRoutes={[esperaCorta, esperaLarga]} />);
     const hero = screen.getByTestId('reception-yard-hero');
     // Positive AND negative: the longest wait is in the hero, the shorter
@@ -91,7 +91,7 @@ describe('ReceptionMobileView', () => {
     expect(within(hero).queryByText(esperaCorta.code)).not.toBeInTheDocument();
   });
 
-  it('las demás rutas en patio son filas, no decisiones', () => {
+  it('the other yard routes are rows, not decisions', () => {
     render(<ReceptionMobileView {...baseProps} yardRoutes={[esperaCorta, esperaLarga]} />);
     // Exactly one "Iniciar conteo" however many yard routes exist — the
     // compact row for esperaCorta has no call-to-action of its own.
@@ -99,7 +99,7 @@ describe('ReceptionMobileView', () => {
     expect(screen.getByText(esperaCorta.code)).toBeInTheDocument();
   });
 
-  it('muestra el eyebrow TAMBIÉN EN PATIO solo cuando hay filas ademas del héroe', () => {
+  it('shows the TAMBIÉN EN PATIO eyebrow only when there are rows besides the hero', () => {
     const { rerender } = render(
       <ReceptionMobileView {...baseProps} yardRoutes={[esperaCorta, esperaLarga]} />,
     );
@@ -113,14 +113,14 @@ describe('ReceptionMobileView', () => {
     expect(screen.queryByText('TAMBIÉN EN PATIO')).not.toBeInTheDocument();
   });
 
-  it('sin camiones en patio muestra el vacío y conserva el pie', () => {
+  it('with no trucks in the yard shows the empty state and keeps the footer', () => {
     render(<ReceptionMobileView {...baseProps} yardRoutes={[]} />);
     expect(screen.getByText(/Ningún camión en patio/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Escanear QR de ruta/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Recibir sin QR/i })).toBeInTheDocument();
   });
 
-  it('en carga muestra un esqueleto con la geometría de la tarjeta héroe, nunca un spinner', () => {
+  it('while loading shows a skeleton with the hero card geometry, never a spinner', () => {
     render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
     expect(screen.queryByTestId('reception-yard-hero')).not.toBeInTheDocument();
     expect(screen.queryByText(/Ningún camión en patio/i)).not.toBeInTheDocument();
@@ -135,22 +135,22 @@ describe('ReceptionMobileView', () => {
     expect(skeleton.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 
-  it('en carga el pie sigue montado — no hay un instante sin salida', () => {
+  it('while loading the footer stays mounted — there is never a moment with no way out', () => {
     render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
     expect(screen.getByRole('button', { name: /Escanear QR de ruta/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Recibir sin QR/i })).toBeInTheDocument();
   });
 
-  it('no monta KPIs ni conmutador de tema', () => {
-    // Decisión del mock 3i: el operario no actúa sobre un promedio del
-    // turno. Eso vive en 3c, que es la pantalla del jefe.
+  it('does not mount KPIs or a theme switcher', () => {
+    // Mock 3i decision: the operator does not act on a shift average.
+    // That lives in 3c, which is the supervisor's screen.
     render(<ReceptionMobileView {...baseProps} />);
     expect(screen.queryByText(/Rutas esperadas hoy/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/En patio sin contar/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /tema/i })).not.toBeInTheDocument();
   });
 
-  it('las diferencias abiertas llevan a leer el caso', async () => {
+  it('open discrepancies lead to reading the case', async () => {
     const onOpenDiscrepancy = vi.fn();
     const user = userEvent.setup();
     render(
@@ -160,13 +160,13 @@ describe('ReceptionMobileView', () => {
     expect(onOpenDiscrepancy).toHaveBeenCalledWith(dif.routeId);
   });
 
-  it('sin diferencias abiertas, no muestra el bloque ni el botón Resolver', () => {
+  it('with no open discrepancies, shows neither the block nor the Resolver button', () => {
     render(<ReceptionMobileView {...baseProps} discrepancies={[]} />);
     expect(screen.queryByText(/DIFERENCIAS ABIERTAS/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Resolver/i })).not.toBeInTheDocument();
   });
 
-  it('renderiza el returnsSlot bajo el eyebrow REINGRESOS cuando se pasa', () => {
+  it('renders returnsSlot under the REINGRESOS eyebrow when passed', () => {
     render(
       <ReceptionMobileView
         {...baseProps}
@@ -177,12 +177,12 @@ describe('ReceptionMobileView', () => {
     expect(screen.getByTestId('stub-returns-block')).toBeInTheDocument();
   });
 
-  it('sin returnsSlot, no renderiza el eyebrow REINGRESOS', () => {
+  it('with no returnsSlot, does not render the REINGRESOS eyebrow', () => {
     render(<ReceptionMobileView {...baseProps} returnsSlot={undefined} />);
     expect(screen.queryByText(/REINGRESOS/i)).not.toBeInTheDocument();
   });
 
-  it('nunca invoca open_route_reception al montar ni al iniciar un conteo', async () => {
+  it('never calls open_route_reception on mount nor on starting a count', async () => {
     // Starting a count is a plain callback — the mutation that ends the
     // driver's trip belongs only to the confirmed no-QR path.
     const user = userEvent.setup();
@@ -191,7 +191,7 @@ describe('ReceptionMobileView', () => {
     expect(mockMutate).not.toHaveBeenCalled();
   });
 
-  it('tocar el héroe llama a onStartCount con la ruta que más espera', async () => {
+  it('tapping the hero calls onStartCount with the route that has waited longest', async () => {
     const onStartCount = vi.fn();
     const user = userEvent.setup();
     render(
@@ -205,7 +205,7 @@ describe('ReceptionMobileView', () => {
     expect(onStartCount).toHaveBeenCalledWith(esperaLarga.id);
   });
 
-  it('el botón Escanear QR de ruta llama a onOpenQRScanner', async () => {
+  it('the Escanear QR de ruta button calls onOpenQRScanner', async () => {
     const onOpenQRScanner = vi.fn();
     const user = userEvent.setup();
     render(<ReceptionMobileView {...baseProps} onOpenQRScanner={onOpenQRScanner} />);
@@ -213,7 +213,7 @@ describe('ReceptionMobileView', () => {
     expect(onOpenQRScanner).toHaveBeenCalledTimes(1);
   });
 
-  it('el botón Recibir sin QR abre la hoja de recepción manual', async () => {
+  it('the Recibir sin QR button opens the manual reception sheet', async () => {
     const user = userEvent.setup();
     render(
       <ReceptionMobileView

@@ -30,7 +30,7 @@ vi.mock('@/hooks/reception/useIncomingRoutes', () => ({
 vi.mock('@/hooks/reception/useOpenDiscrepancies', () => ({
   useOpenDiscrepancies: () => ({ data: mockDiscrepancies, isLoading: false }),
 }));
-let mockOperatorId: string | null = 'op-1';
+const mockOperatorId = 'op-1';
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: mockOperatorId }),
 }));
@@ -74,7 +74,6 @@ describe('ReceptionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDiscrepancies = [];
-    mockOperatorId = 'op-1';
     mockUseIsBelowLg.mockReturnValue(false);
     mockUseIncomingRoutes.mockImplementation((_op: string, status: string) => {
       if (status === 'in_progress') return { data: onTheRoad, isLoading: false };
@@ -210,7 +209,7 @@ describe('ReceptionPage', () => {
       expect(screen.queryByTestId('reception-mobile-avatar')).not.toBeInTheDocument();
     });
 
-    it('los reingresos siguen alcanzables en móvil', () => {
+    it('reingresos stay reachable on mobile', () => {
       // ReturnRouteList and ReturnReceptionSession hang ONLY off this page.
       // A mobile tree that does not mount them leaves reingresos
       // unreachable below 1024px — and they were only just restyled for
@@ -229,7 +228,7 @@ describe('ReceptionPage', () => {
       expect(screen.getByTestId('route-qr-scanner')).toBeInTheDocument();
     });
 
-    it('never calls open_route_reception on mount of either tree', () => {
+    it('never calls open_route_reception on mount of the mobile tree', () => {
       mockUseIsBelowLg.mockReturnValue(true);
       render(<ReceptionPage />);
       expect(mockOpenRouteReceptionMutate).not.toHaveBeenCalled();
