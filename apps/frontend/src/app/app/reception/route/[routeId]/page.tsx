@@ -20,6 +20,8 @@ import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { ConsolidatedScanList } from '@/components/reception/ConsolidatedScanList';
 import { FinalizeReceptionButton } from '@/components/reception/FinalizeReceptionButton';
 import { ReopenRouteButton } from '@/components/reception/ReopenRouteButton';
+import { ReceptionMobileSession } from '@/components/reception/ReceptionMobileSession';
+import { useIsBelowLg } from '@/hooks/useViewport';
 import type { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
 
 export default function RouteReceptionPage() {
@@ -27,6 +29,7 @@ export default function RouteReceptionPage() {
   const router = useRouter();
   const routeId = params.routeId as string;
   const { operatorId } = useOperatorId();
+  const isBelowLg = useIsBelowLg();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [lastScanResult, setLastScanResult] =
@@ -64,7 +67,13 @@ export default function RouteReceptionPage() {
         {
           onSuccess: (result) => {
             setLastScanResult(result);
-            setTimeout(() => setLastScanResult(null), 3000);
+            // No auto-hide timer. This block must persist until the next
+            // scan — an operator looks at the box in their hands and back
+            // at the screen, and a result that vanished on a timer leaves
+            // them unable to tell whether that box registered, with no
+            // recovery but rescanning something that may already be
+            // counted (spec-62 task 19). Do not restore the old 3s
+            // setTimeout as "cleanup".
           },
         },
       );
@@ -111,6 +120,28 @@ export default function RouteReceptionPage() {
           {error?.message ?? 'No se pudo cargar la ruta'}
         </p>
       </div>
+    );
+  }
+
+  // spec-62 task 19 — below `lg` the andén operator gets ReceptionMobileSession
+  // instead of the desktop three-column tree, exactly like /app/reception
+  // already branches (chunk 2). It brings its own scanning and closing, so
+  // none of RouteSwitcherColumn, SyncQueuePanel, ReceptionCounts,
+  // ConsolidatedScanList, ReceptionScanner, FinalizeReceptionButton or
+  // ReopenRouteButton mount here. Reopening deliberately has no mobile
+  // equivalent — it is a hub correction, not an andén action.
+  if (isBelowLg) {
+    return (
+      <ReceptionMobileSession
+        snapshot={snapshot}
+        lastScanResult={lastScanResult}
+        syncStatus={sync.status}
+        queuedCount={sync.queuedCount}
+        isScanPending={scanMutation.isPending}
+        isFinalizePending={completeMutation.isPending}
+        onScan={handleScan}
+        onFinalize={handleFinalize}
+      />
     );
   }
 
