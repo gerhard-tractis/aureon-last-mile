@@ -12,11 +12,17 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1', role: 'driver', permissions: [] }),
 }));
 
+// This page does not render PickupRouteCrewStrip today, so the missing
+// `crew` key was latent rather than fatal here. Filled in anyway: `crew` is
+// required on ActivePickupRoute (spec-61 Task 4) and this object stands in
+// for one, so an untyped hole would become a render-time TypeError the first
+// time this screen shows the trip's crew.
 const route = {
   id: 'route-1',
   code: 'PR-2026-0001',
   started_at: new Date().toISOString(),
   vehicle: { plate: 'AAA-111' },
+  crew: [],
 };
 
 const activeRouteMock = vi.fn();
