@@ -364,3 +364,99 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
     expect(createDTRoute).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * dispatches.identifier is DispatchTrack's guide number, and it is the same
+ * value the inbound beetrack-webhook matches on (orders.order_number) and the
+ * one scripts/sync-pending-orders.mjs passes to GET /dispatches/:identifier.
+ * The handler used to strip non-digits out of order_number, which silently
+ * invented a different guide number for anything not already all-digits.
+ */
+describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
+  function clientForOrderNumbers(orderNumbers: string[]) {
+    const routeChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        error: null,
+      }),
+    };
+    const dispatchesChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({
+        data: orderNumbers.map((order_number, i) => ({
+          id: `d${i}`,
+          order_id: `o${i}`,
+          orders: {
+            order_number,
+            customer_name: 'Mario',
+            delivery_address: 'Av Principal 1',
+            customer_phone: null,
+          },
+        })),
+        error: null,
+      }),
+    };
+    const updateChain = {
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
+    };
+    return buildSessionClient({
+      fromMock: vi.fn()
+        .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(dispatchesChain)
+        .mockReturnValue(updateChain),
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
+  });
+
+  it('sends order_number as the guide number, unmodified', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(clientForOrderNumbers(['2916967493']));
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    const sent = (createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(sent.dispatches[0].identifier).toBe(2916967493);
+  });
+
+  it('rejects the whole dispatch when an order_number is not a guide number', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(clientForOrderNumbers(['2916967493', 'CARGA-EASY-001-ORD-101']));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('INVALID_ORDER_NUMBER');
+    expect(body.order_numbers).toEqual(['CARGA-EASY-001-ORD-101']);
+    // RouteBuilder renders `message` verbatim, so it has to name the offender.
+    expect(body.message).toContain('CARGA-EASY-001-ORD-101');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  it('rejects an order_number too large to be an exact integer', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValue(clientForOrderNumbers(['99999999999999999999']));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+});
