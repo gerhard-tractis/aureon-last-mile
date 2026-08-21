@@ -2,8 +2,7 @@
 
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { waitLabel } from '@/lib/reception/reception-mobile-helpers';
-import { YARD_WAIT_WARNING_MINUTES } from '@/app/app/reception/arrivals';
+import { waitLabel, YARD_WAIT_WARNING_MINUTES } from '@/lib/reception/reception-mobile-helpers';
 import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
 
 /**

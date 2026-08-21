@@ -1,6 +1,11 @@
 import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
 import { minutesSince, timeLabel } from '@/lib/reception/reception-mobile-helpers';
 
+// Re-exported so existing importers of this constant from `arrivals.ts` keep
+// working; the definition now lives in `lib/reception/reception-mobile-helpers.ts`
+// to respect the `app→components→hooks→lib→Supabase` layering rule.
+export { YARD_WAIT_WARNING_MINUTES } from '@/lib/reception/reception-mobile-helpers';
+
 /**
  * spec-54 phase 4.6 — "Llegadas de hoy" (mock 3c).
  *
@@ -29,8 +34,6 @@ export const ARRIVAL_STATE_LABEL: Record<ArrivalState, string> = {
   closed: 'CERRADA',
 };
 
-/** A truck waiting this long without being counted is the thing to act on. */
-export const YARD_WAIT_WARNING_MINUTES = 30;
 
 function toRow(route: IncomingRoute, state: ArrivalState, now: Date): ArrivalRow {
   return {
