@@ -364,14 +364,15 @@ UPDATE public.users
  WHERE id = '00000000-0000-4000-8000-000000000201'
    AND role = 'pickup_leader';
 --   /app/pickup 3j's grouped pending list + /app/pickup/scan/[loadId]
---     get_pending_manifests() (latest def: 20260428000004) returns every
+--     get_pending_manifests() (latest def: 20260820000006) returns every
 --     external_load_id with orders that are not deleted and whose manifest
---     row (if any) is not 'completed' and has no reception_status set. It
---     does NOT exclude manifests by pickup_route_id, so a manifest with
---     pickup_route_id left NULL is still returned — routing state plays no
---     part in this query. Manifests A/B/C below are left completely
---     unrouted (pickup_route_id NULL, status 'pending') so all three surface
---     as pending, un-routed loads for the driver to pick up through the UI.
+--     row (if any) is not 'completed', has no reception_status set, and —
+--     since spec-61 Task 7 — has no pickup_route_id. Routing state now DOES
+--     decide this query: a load already attached to a route is somebody
+--     else's trip, not something you can still claim. Manifests A/B/C below
+--     are left completely unrouted (pickup_route_id NULL, status 'pending')
+--     so all three surface as pending, un-routed loads for the driver to
+--     pick up through the UI. Leaving any of them routed would empty 3j.
 --   /app/reception "Retornos" tab  useReturnRoutes.ts / returnRouteResolution.ts
 --     — groups packages.status = 'retorno_hub' by the route resolved through
 --     dispatches.external_route_id (falling back to routes.external_route_id).

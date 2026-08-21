@@ -284,7 +284,8 @@ automated check that these migrations apply to a real database.
 | `20260820000001_spec61_user_role_pickup_leader.sql` | **Create.** One statement: `ALTER TYPE public.user_role ADD VALUE`. Nothing else may go in this file. |
 | `20260820000002_spec61_pickup_route_crew.sql` | **Create.** `pickup_route_crew` table, indexes, the partial unique index, RLS/grants/audit trigger, the route-status → `removed_at` trigger, and `handle_new_user` re-templated with the `pickup_leader` branch. |
 | `20260820000003_spec61_start_pickup_route_crew.sql` | **Create.** `DROP FUNCTION start_pickup_route(UUID)` and recreate it as `(p_vehicle_id UUID, p_crew_user_ids UUID[] DEFAULT '{}')` with the leader gate and the crew insert. |
-| `20260820000005_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. |
+| `20260820000004_spec61_pickup_route_crew_grant_fix.sql` | **Not in the original plan.** Shipped ahead of Task 4 and already on `main`; it took the `…0004` slot this table had reserved. |
+| `20260820000005_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. Renumbered from `…0004` by Task 4. |
 | `20260820000006_spec61_pending_manifests_exclude_routed.sql` | **Create.** `get_pending_manifests()` re-templated with routed loads excluded. |
 
 **Database tests** — `packages/database/supabase/tests/` (all **create**)
@@ -2595,6 +2596,19 @@ change the badge and the list legitimately differ; see Decision 9.
       doc comments. If anything new appears, stop and re-read that caller before changing the
       predicate.
 
+      **CORRECTED DURING IMPLEMENTATION (2026-08-20).** The audit above says "no other
+      caller" and that is true of RPC callers, but the grep also hits
+      `packages/database/seed-qa/scenarios/musan.ts:373-388`, which **hand-copies the
+      exclusion predicate** into a QA assertion (`musan/pickup-pending`, expected 2).
+      That is not a caller but it is a duplicate of the thing being changed, and left
+      alone it silently stops mirroring the RPC. It was updated with the same `OR`. The
+      expected count stays 2 — no musan carga carries a `pickup_route_id`. Three
+      prose comments describing the old predicate were corrected in the same commit:
+      `seed-qa.sql:366-374` (which also still named `20260428000004` as the latest
+      definition — stale since spec-53), `musan.ts:86-89`, and
+      `PickupMobileStartRoute.tsx:36-47`, whose whole "routed manifests are invisible
+      to this screen, so the toast is the only surface" paragraph stops being true here.
+
 - [ ] **Step 2: Write the failing test**
 
       `packages/database/supabase/tests/spec61_pending_excludes_routed.sql`:
@@ -2630,10 +2644,25 @@ change the badge and the list legitimately differ; see Decision 9.
 
       -- Two CARGAs. trg_ensure_manifest_for_order (20260814000001) creates the
       -- manifests rows from these inserts -- do not insert manifests by hand.
-      INSERT INTO public.orders (id, operator_id, order_number, external_load_id, retailer_name, status)
-      VALUES
-        ('66666666-0000-4000-6000-000000000641','aaaaaaaa-0000-4000-a000-000000000640','ORD-641','LOAD-FREE','Cliente A','pendiente'),
-        ('66666666-0000-4000-6000-000000000642','aaaaaaaa-0000-4000-a000-000000000640','ORD-642','LOAD-ROUTED','Cliente A','pendiente');
+      --
+      -- CORRECTED DURING IMPLEMENTATION (2026-08-20). The draft below was
+      -- `(id, operator_id, order_number, external_load_id, retailer_name, status)`
+      -- with status 'pendiente'. public.orders (20260217000003:50) has NO
+      -- `status` column, and customer_name, customer_phone, delivery_address,
+      -- comuna, delivery_date, raw_data and imported_via are all NOT NULL --
+      -- the draft INSERT could never have run. Shape taken from
+      -- spec53_manifest_per_carga.sql:20-28, which does work.
+      INSERT INTO public.orders (
+        id, operator_id, order_number, customer_name, customer_phone,
+        delivery_address, comuna, delivery_date, external_load_id, retailer_name,
+        raw_data, imported_via, imported_at
+      ) VALUES
+        ('66666666-0000-4000-6000-000000000641','aaaaaaaa-0000-4000-a000-000000000640','ORD-641',
+         'Cliente Uno','+56900000641','Calle Falsa 641','Providencia',CURRENT_DATE,
+         'LOAD-FREE','Cliente A','{}'::jsonb,'MANUAL',NOW()),
+        ('66666666-0000-4000-6000-000000000642','aaaaaaaa-0000-4000-a000-000000000640','ORD-642',
+         'Cliente Dos','+56900000642','Calle Falsa 642','Providencia',CURRENT_DATE,
+         'LOAD-ROUTED','Cliente A','{}'::jsonb,'MANUAL',NOW());
 
       INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
       VALUES ('77777777-0000-4000-7000-000000000641','aaaaaaaa-0000-4000-a000-000000000640',
@@ -2672,6 +2701,30 @@ change the badge and the list legitimately differ; see Decision 9.
 
       ROLLBACK;
       ```
+
+      **CORRECTED DURING IMPLEMENTATION (2026-08-20)** — three weaknesses in the
+      draft above, all fixed in the file that shipped:
+
+      1. `r.verified_count <> 0` is this plan's own trap #1: if `verified_count`
+         ever came back NULL, `NULL <> 0` is NULL and the `IF` never fires.
+         Shipped as `IS DISTINCT FROM 0`. The id check is likewise compared
+         against the actual `manifests.id` for the load rather than merely
+         `IS NOT NULL`, and a `proargnames` check was added so that templating on
+         a pre-spec-53 definition — the one real hazard of this migration — fails
+         loudly instead of silently dropping three columns.
+      2. `SELECT * INTO r` with no `IF NOT FOUND` leaves every field NULL when the
+         row is absent, so the id assertion would have reported the wrong defect.
+         `IF NOT FOUND THEN RAISE` added.
+      3. A single-operator fixture cannot show that the function's
+         `o.operator_id = public.get_operator_id()` filter matters (trap #3). The
+         shipped file adds operator B with its own unrouted load and asserts it
+         does not leak, in the **owner** context — where RLS is bypassed, so the
+         function's own filter is the only thing under test — behind the
+         RLS-bypass guard from `rls_operators_test.sql:75-88`. A second block
+         repeats the core exclusion under `SET LOCAL role = 'authenticated'`,
+         the only way to catch the failure mode where RLS hides the routed
+         `manifests` row from a real caller and the `NOT IN` subquery therefore
+         excludes nothing.
 
 - [ ] **Step 3: Run it, verify it fails**
 
@@ -2749,7 +2802,7 @@ change the badge and the list legitimately differ; see Decision 9.
 - [ ] **Step 8: Commit**
 
       ```
-      git add packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql
+      git add packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql packages/database/supabase/seed-qa.sql packages/database/seed-qa/scenarios/musan.ts apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx
       git commit -m "fix(spec-61): get_pending_manifests stops offering routed loads
 
       A load already attached to a route stayed in the Activos list, so a second
