@@ -3,30 +3,10 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
-const mockGetUser = vi.fn();
-let mockQueryResult: { data: unknown; error: unknown } = { data: [], error: null };
-
-let lastChain: Record<string, unknown> | null = null;
-
-function buildChain() {
-  const chain: Record<string, unknown> = {};
-  lastChain = chain;
-  chain.select = vi.fn().mockReturnValue(chain);
-  chain.eq = vi.fn().mockReturnValue(chain);
-  chain.in = vi.fn().mockReturnValue(chain);
-  chain.is = vi.fn().mockReturnValue(chain);
-  chain.order = vi.fn().mockReturnValue(chain);
-  chain.limit = vi.fn().mockImplementation(() => Promise.resolve(mockQueryResult));
-  return chain;
-}
-
-const mockFrom = vi.fn(() => buildChain());
+const mockRpc = vi.fn();
 
 vi.mock('@/lib/supabase/client', () => ({
-  createSPAClient: () => ({
-    from: mockFrom,
-    auth: { getUser: mockGetUser },
-  }),
+  createSPAClient: () => ({ rpc: mockRpc }),
 }));
 
 import { useActivePickupRoute } from './useActivePickupRoute';
@@ -39,14 +19,24 @@ function wrapperFactory() {
   return Wrapper;
 }
 
+const ROUTE = {
+  id: 'route-1',
+  operator_id: 'op-1',
+  driver_id: 'driver-1',
+  code: 'PR-2026-0001',
+  status: 'in_progress',
+  plate: 'AAA-111',
+  driver_name: 'M. Rojas',
+  crew: [{ user_id: 'crew-1', full_name: 'Ana Pérez' }],
+};
+
 describe('useActivePickupRoute', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'driver-1' } }, error: null });
-    mockQueryResult = { data: [], error: null };
+    mockRpc.mockResolvedValue({ data: null, error: null });
   });
 
-  it('returns null when no active route', async () => {
+  it('returns null when the caller is on no route', async () => {
     const { result } = renderHook(() => useActivePickupRoute('op-1'), {
       wrapper: wrapperFactory(),
     });
@@ -54,109 +44,76 @@ describe('useActivePickupRoute', () => {
     expect(result.current.data).toBeNull();
   });
 
-  it('returns the active route when one exists', async () => {
-    const route = {
-      id: 'route-1',
-      operator_id: 'op-1',
-      driver_id: 'driver-1',
-      code: 'PR-2026-0001',
-      status: 'in_progress',
-    };
-    mockQueryResult = { data: [route], error: null };
-
+  // spec-61: "my route" is resolved server-side as leader OR active crew.
+  // One call, no second query to pickup_route_crew — a crew member on a
+  // route their colleague opened must land on 3h, not 3j.
+  it('resolves the route in a single RPC call', async () => {
+    mockRpc.mockResolvedValue({ data: ROUTE, error: null });
     const { result } = renderHook(() => useActivePickupRoute('op-1'), {
       wrapper: wrapperFactory(),
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.data).toEqual(route);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith('get_my_active_pickup_route', undefined);
+    expect(result.current.data?.id).toBe('route-1');
   });
 
-  it('queries only in_progress — draft is no longer an active status', async () => {
-    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
-      wrapper: wrapperFactory(),
-    });
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    const eq = lastChain!.eq as ReturnType<typeof vi.fn>;
-    const inFn = lastChain!.in as ReturnType<typeof vi.fn>;
-    expect(eq).toHaveBeenCalledWith('status', 'in_progress');
-    expect(inFn).not.toHaveBeenCalled();
-    expect(JSON.stringify(eq.mock.calls)).not.toContain('draft');
-  });
-
-  // spec-52: the active-route header shows the truck's plate. `vehicle_label`
-  // on pickup_routes is a deprecated mirror kept alive only for the expand
-  // phase — the plate must come from the joined `vehicles` row.
-  it('joins vehicles for the plate instead of relying on vehicle_label', async () => {
-    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
-      wrapper: wrapperFactory(),
-    });
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    const select = lastChain!.select as ReturnType<typeof vi.fn>;
-    expect(select.mock.calls[0][0]).toMatch(/vehicle:vehicles\s*\(\s*plate\s*\)/);
-  });
-
-  it('surfaces the joined plate on the returned route', async () => {
-    mockQueryResult = {
-      data: [
-        {
-          id: 'route-1',
-          operator_id: 'op-1',
-          driver_id: 'driver-1',
-          code: 'PR-2026-0001',
-          status: 'in_progress',
-          vehicle: { plate: 'AAA-111' },
-        },
-      ],
-      error: null,
-    };
-
+  it('surfaces the plate and the driver name in the shape the screens read', async () => {
+    mockRpc.mockResolvedValue({ data: ROUTE, error: null });
     const { result } = renderHook(() => useActivePickupRoute('op-1'), {
       wrapper: wrapperFactory(),
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.data?.vehicle?.plate).toBe('AAA-111');
-  });
-
-  // spec-54 3h redesign — the mobile header's subtitle needs the driver's
-  // NAME, not just driver_id. `driver_id` is a real FK to `public.users`,
-  // which has `full_name` — join it here rather than showing a raw id.
-  it('joins users for the driver full_name instead of leaving it at driver_id', async () => {
-    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
-      wrapper: wrapperFactory(),
-    });
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
-
-    const select = lastChain!.select as ReturnType<typeof vi.fn>;
-    expect(select.mock.calls[0][0]).toMatch(/driver:users\s*\(\s*full_name\s*\)/);
-  });
-
-  it('surfaces the joined driver name on the returned route', async () => {
-    mockQueryResult = {
-      data: [
-        {
-          id: 'route-1',
-          operator_id: 'op-1',
-          driver_id: 'driver-1',
-          code: 'PR-2026-0001',
-          status: 'in_progress',
-          vehicle: { plate: 'AAA-111' },
-          driver: { full_name: 'M. Rojas' },
-        },
-      ],
-      error: null,
-    };
-
-    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
-      wrapper: wrapperFactory(),
-    });
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.data?.driver?.full_name).toBe('M. Rojas');
+    // The flat RPC fields must not leak through onto the route object — the
+    // screens read `vehicle`/`driver`, and a passthrough would hide a
+    // mapping that never ran.
+    expect(result.current.data).not.toHaveProperty('plate');
+    expect(result.current.data).not.toHaveProperty('driver_name');
+  });
+
+  it('leaves vehicle null when the vehicle row is gone', async () => {
+    mockRpc.mockResolvedValue({ data: { ...ROUTE, plate: null }, error: null });
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.vehicle).toBeNull();
+  });
+
+  it('carries the crew for 3h', async () => {
+    mockRpc.mockResolvedValue({ data: ROUTE, error: null });
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.crew).toEqual([
+      { user_id: 'crew-1', full_name: 'Ana Pérez' },
+    ]);
+  });
+
+  it('defaults crew to an empty array when the RPC omits it', async () => {
+    const { crew: _drop, ...noCrew } = ROUTE;
+    mockRpc.mockResolvedValue({ data: noCrew, error: null });
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.data?.crew).toEqual([]);
+  });
+
+  it('surfaces an RPC error instead of reporting no route', async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: 'permission denied' } });
+    const { result } = renderHook(() => useActivePickupRoute('op-1'), {
+      wrapper: wrapperFactory(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.data).toBeUndefined();
   });
 
   it('does not fetch when operatorId is null', () => {
     renderHook(() => useActivePickupRoute(null), { wrapper: wrapperFactory() });
-    expect(mockFrom).not.toHaveBeenCalled();
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

@@ -284,8 +284,8 @@ automated check that these migrations apply to a real database.
 | `20260820000001_spec61_user_role_pickup_leader.sql` | **Create.** One statement: `ALTER TYPE public.user_role ADD VALUE`. Nothing else may go in this file. |
 | `20260820000002_spec61_pickup_route_crew.sql` | **Create.** `pickup_route_crew` table, indexes, the partial unique index, RLS/grants/audit trigger, the route-status → `removed_at` trigger, and `handle_new_user` re-templated with the `pickup_leader` branch. |
 | `20260820000003_spec61_start_pickup_route_crew.sql` | **Create.** `DROP FUNCTION start_pickup_route(UUID)` and recreate it as `(p_vehicle_id UUID, p_crew_user_ids UUID[] DEFAULT '{}')` with the leader gate and the crew insert. |
-| `20260820000004_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. |
-| `20260820000005_spec61_pending_manifests_exclude_routed.sql` | **Create.** `get_pending_manifests()` re-templated with routed loads excluded. |
+| `20260820000005_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. |
+| `20260820000006_spec61_pending_manifests_exclude_routed.sql` | **Create.** `get_pending_manifests()` re-templated with routed loads excluded. |
 
 **Database tests** — `packages/database/supabase/tests/` (all **create**)
 
@@ -1625,7 +1625,7 @@ construction rather than by restating the strings, so the next role added cannot
 
 **Files:**
 - Create: `packages/database/supabase/tests/spec61_my_active_route.sql`
-- Create: `packages/database/supabase/migrations/20260820000004_spec61_my_active_pickup_route.sql`
+- Create: `packages/database/supabase/migrations/20260820000005_spec61_my_active_pickup_route.sql`
 - Modify: `apps/frontend/src/hooks/pickup/useActivePickupRoute.ts`
 - Modify: `apps/frontend/src/hooks/pickup/useActivePickupRoute.test.ts`
 - Modify: `apps/frontend/src/lib/types.ts` (add the function + the table)
@@ -1743,7 +1743,7 @@ round trip and carries the crew list Task 6 needs.
 
 - [ ] **Step 3: Minimal implementation**
 
-      `packages/database/supabase/migrations/20260820000004_spec61_my_active_pickup_route.sql`:
+      `packages/database/supabase/migrations/20260820000005_spec61_my_active_pickup_route.sql`:
 
       ```sql
       -- =============================================================================
@@ -2007,7 +2007,7 @@ round trip and carries the crew list Task 6 needs.
        * active route at all and dropped them on 3j, where they opened a SECOND
        * route for the same van. "Leader OR active crew" is an OR across a join and
        * PostgREST cannot express it in one request — see the migration header
-       * (20260820000004) before considering a return to `.select()`.
+       * (20260820000005) before considering a return to `.select()`.
        *
        * Refetches on window focus so someone who closes a route on one device sees
        * it disappear on another.
@@ -2077,7 +2077,7 @@ round trip and carries the crew list Task 6 needs.
 - [ ] **Step 11: Commit**
 
       ```
-      git add packages/database/supabase/migrations/20260820000004_spec61_my_active_pickup_route.sql packages/database/supabase/tests/spec61_my_active_route.sql apps/frontend/src/hooks/pickup/useActivePickupRoute.ts apps/frontend/src/hooks/pickup/useActivePickupRoute.test.ts apps/frontend/src/lib/types.ts
+      git add packages/database/supabase/migrations/20260820000005_spec61_my_active_pickup_route.sql packages/database/supabase/tests/spec61_my_active_route.sql apps/frontend/src/hooks/pickup/useActivePickupRoute.ts apps/frontend/src/hooks/pickup/useActivePickupRoute.test.ts apps/frontend/src/lib/types.ts
       git commit -m "feat(spec-61): my route is the one I lead OR am active crew on
 
       Resolved server-side in get_my_active_pickup_route: 'leader OR active crew'
@@ -2577,7 +2577,7 @@ to a route still appears available to everyone, so two people claim it and the s
 
 **Files:**
 - Create: `packages/database/supabase/tests/spec61_pending_excludes_routed.sql`
-- Create: `packages/database/supabase/migrations/20260820000005_spec61_pending_manifests_exclude_routed.sql`
+- Create: `packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql`
 
 **Caller audit, done — do not re-do it, but do re-run the grep before editing.**
 `get_pending_manifests` has exactly one caller: `usePendingManifests`
@@ -2680,7 +2680,7 @@ change the badge and the list legitimately differ; see Decision 9.
 
 - [ ] **Step 4: Minimal implementation**
 
-      `packages/database/supabase/migrations/20260820000005_spec61_pending_manifests_exclude_routed.sql`:
+      `packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql`:
       copy the **whole** function from `20260813000001_spec53_package_labels.sql:151-229` — the
       latest definition, per CLAUDE.md's `CREATE OR REPLACE` rule — and change exactly one line
       inside the exclusion subquery at `:186`:
@@ -2749,7 +2749,7 @@ change the badge and the list legitimately differ; see Decision 9.
 - [ ] **Step 8: Commit**
 
       ```
-      git add packages/database/supabase/migrations/20260820000005_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql
+      git add packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql
       git commit -m "fix(spec-61): get_pending_manifests stops offering routed loads
 
       A load already attached to a route stayed in the Activos list, so a second

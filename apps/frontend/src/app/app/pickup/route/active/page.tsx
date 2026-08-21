@@ -31,7 +31,12 @@ export default function ActiveRoutePage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
-  const { data: route, isLoading: routeLoading } = useActivePickupRoute(operatorId);
+  const {
+    data: route,
+    isLoading: routeLoading,
+    isError: routeError,
+    refetch: refetchRoute,
+  } = useActivePickupRoute(operatorId);
   const { data: routeManifests = [], isLoading: rmLoading } = useRouteManifests(
     route?.id ?? null,
     operatorId,
@@ -45,6 +50,27 @@ export default function ActiveRoutePage() {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-text-muted" />
+      </div>
+    );
+  }
+
+  // spec-61: a FAILED lookup is not an empty one. The route now comes from a
+  // single RPC, so one bad response -- a missing function, a stale PostgREST
+  // schema cache, a dropped connection -- fails the whole thing, and after
+  // React Query exhausts its retries `data` is undefined with `isLoading`
+  // false. Falling through to the empty state below would tell a leader who
+  // HAS an open route that they do not, which is the 3j double-open this task
+  // exists to prevent. Offer the retry instead.
+  if (routeError) {
+    return (
+      <div className="p-6 max-w-2xl mx-auto space-y-4 text-center">
+        <p className="text-text">No pudimos cargar tu ruta.</p>
+        <div className="flex items-center justify-center gap-2">
+          <Button onClick={() => refetchRoute()}>Reintentar</Button>
+          <Button variant="outline" onClick={() => router.push('/app/pickup')}>
+            Volver
+          </Button>
+        </div>
       </div>
     );
   }
