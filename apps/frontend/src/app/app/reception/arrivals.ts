@@ -1,4 +1,5 @@
 import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
+import { minutesSince, timeLabel } from '@/lib/reception/reception-mobile-helpers';
 
 /**
  * spec-54 phase 4.6 — "Llegadas de hoy" (mock 3c).
@@ -30,20 +31,6 @@ export const ARRIVAL_STATE_LABEL: Record<ArrivalState, string> = {
 
 /** A truck waiting this long without being counted is the thing to act on. */
 export const YARD_WAIT_WARNING_MINUTES = 30;
-
-function minutesSince(iso: string | null, now: Date): number | null {
-  if (!iso) return null;
-  const at = new Date(iso).getTime();
-  if (Number.isNaN(at)) return null;
-  return Math.max(0, Math.floor((now.getTime() - at) / 60_000));
-}
-
-function timeLabel(iso: string | null): string | null {
-  if (!iso) return null;
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return null;
-  return at.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
-}
 
 function toRow(route: IncomingRoute, state: ArrivalState, now: Date): ArrivalRow {
   return {
