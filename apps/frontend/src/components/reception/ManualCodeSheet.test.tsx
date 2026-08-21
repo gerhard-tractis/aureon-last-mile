@@ -18,16 +18,34 @@ describe('ManualCodeSheet', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('does not submit a blank code', async () => {
+  it('submits on Enter, not only via the button — the operator is typing one-handed', async () => {
     const onSubmit = vi.fn();
+    const onOpenChange = vi.fn();
     const user = userEvent.setup();
-    render(<ManualCodeSheet open onOpenChange={vi.fn()} onSubmit={onSubmit} />);
+    render(<ManualCodeSheet open onOpenChange={onOpenChange} onSubmit={onSubmit} />);
+
+    await user.type(
+      screen.getByRole('textbox', { name: /código/i }),
+      'CL7742891088{Enter}',
+    );
+
+    expect(onSubmit).toHaveBeenCalledWith('CL7742891088');
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('does not submit a blank code, and leaves the sheet open', async () => {
+    const onSubmit = vi.fn();
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+    render(<ManualCodeSheet open onOpenChange={onOpenChange} onSubmit={onSubmit} />);
 
     await user.click(screen.getByRole('button', { name: /Registrar/i }));
 
-    // Proves the mutation callback was never invoked, not merely that the
-    // sheet stayed open — an empty submit must be a true no-op.
+    // Proves the mutation callback was never invoked, and that closing
+    // wasn't hoisted above the empty-code guard — an empty submit must be
+    // a true no-op: no mutation, no toast, no state change.
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
   });
 
   it('trims whitespace on both sides — a phone keyboard adds it constantly', async () => {
@@ -56,5 +74,14 @@ describe('ManualCodeSheet', () => {
     rerender(<ManualCodeSheet open onOpenChange={vi.fn()} onSubmit={onSubmit} />);
 
     expect(screen.getByRole('textbox', { name: /código/i })).toHaveValue('');
+  });
+
+  it('marks the field for all-caps input, since the barcodes are upper-case', () => {
+    render(<ManualCodeSheet open onOpenChange={vi.fn()} onSubmit={vi.fn()} />);
+
+    expect(screen.getByRole('textbox', { name: /código/i })).toHaveAttribute(
+      'autocapitalize',
+      'characters',
+    );
   });
 });

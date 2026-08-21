@@ -31,38 +31,30 @@ interface ManualCodeSheetProps {
 export function ManualCodeSheet({ open, onOpenChange, onSubmit }: ManualCodeSheetProps) {
   const [code, setCode] = useState('');
 
-  // `open` can also flip via the parent (e.g. rerender after the session
-  // closes and reopens this sheet for the next box), not only through
-  // `handleOpenChange` below — so clearing has to react to the prop itself,
-  // not just to the internal Radix dismiss path.
+  // `open` can flip via the parent (e.g. the session closes and reopens
+  // this sheet for the next box) as well as via the internal Radix dismiss
+  // path, so clearing lives here rather than duplicated in a handler —
+  // this is the single place that sees every way the sheet re-opens.
   useEffect(() => {
     if (open) {
       setCode('');
     }
   }, [open]);
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) {
-      // Clear on close so the next box (opened fresh) never sees the
-      // previous one's leftover text.
-      setCode('');
-    }
-    onOpenChange(next);
-  };
-
   const handleSubmit = () => {
     const trimmed = code.trim();
     // A phone keyboard on the andén adds leading/trailing spaces constantly;
-    // an all-blank code is not a real scan and must be a silent no-op.
+    // an all-blank code is not a real scan and must be a silent no-op —
+    // no mutation, no toast, and the sheet stays open.
     if (trimmed === '') {
       return;
     }
     onSubmit(trimmed);
-    handleOpenChange(false);
+    onOpenChange(false);
   };
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom">
         <SheetHeader>
           <SheetTitle>Ingresar código manualmente</SheetTitle>
@@ -71,7 +63,16 @@ export function ManualCodeSheet({ open, onOpenChange, onSubmit }: ManualCodeShee
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-4 flex flex-col gap-3">
+        <form
+          className="mt-4 flex flex-col gap-3"
+          onSubmit={(event) => {
+            // The operator is typing one-handed at the truck — the phone
+            // keyboard's Go/Enter key must submit the same way the button
+            // does, not require a second reach for the button afterward.
+            event.preventDefault();
+            handleSubmit();
+          }}
+        >
           <Input
             aria-label="Código del bulto"
             inputMode="text"
@@ -83,14 +84,10 @@ export function ManualCodeSheet({ open, onOpenChange, onSubmit }: ManualCodeShee
             placeholder="CL7742891088"
             className="h-12 font-mono text-base"
           />
-          <Button
-            type="button"
-            onClick={handleSubmit}
-            className="h-[52px] text-base"
-          >
+          <Button type="submit" className="h-[52px] text-base">
             Registrar
           </Button>
-        </div>
+        </form>
       </SheetContent>
     </Sheet>
   );
