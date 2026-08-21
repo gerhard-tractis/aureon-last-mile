@@ -456,7 +456,15 @@ UPDATE public.packages p SET status = 'ingresado', status_updated_at = NOW()
       AND s.deleted_at IS NULL
  );
 
-UPDATE public.manifests SET pickup_route_id = NULL, status = 'pending'
+-- reception_status is cleared alongside pickup_route_id, not left behind.
+-- spec47_migration_invariants.sql asserts that a manifest carrying a
+-- reception_status always has a pickup_route_id, so detaching one while
+-- leaving the other set breaks that invariant. The seed never sets
+-- reception_status itself, but a tester who opened a reception against the
+-- seeded route does -- and then this block detaches the manifest under it on
+-- the next deploy. Clearing both keeps the pair consistent either way.
+UPDATE public.manifests
+   SET pickup_route_id = NULL, status = 'pending', reception_status = NULL
  WHERE id IN (
   '00000000-0000-4000-8000-000000000186',
   '00000000-0000-4000-8000-000000000187',

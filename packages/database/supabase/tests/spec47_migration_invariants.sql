@@ -40,15 +40,21 @@ BEGIN
 END $$;
 
 -- 3. Every reception_status-set manifest has pickup_route_id
+-- The message names the offending manifests, not just how many. A bare count
+-- tells you the invariant broke but gives you no way to find the rows without
+-- shell access to the QA box -- which is how this failure sat undiagnosed:
+-- the suite reported "4 manifests" on every deploy and nobody could tell which.
 DO $$
-DECLARE bad INT;
+DECLARE bad INT; culprits TEXT;
 BEGIN
-  SELECT COUNT(*) INTO bad FROM public.manifests
+  SELECT COUNT(*), string_agg(external_load_id || ' (' || id || ')', ', ' ORDER BY external_load_id)
+    INTO bad, culprits
+    FROM public.manifests
    WHERE reception_status IS NOT NULL
      AND pickup_route_id IS NULL
      AND deleted_at IS NULL;
   IF bad <> 0 THEN
-    RAISE EXCEPTION '% manifests with reception_status set are missing pickup_route_id', bad;
+    RAISE EXCEPTION '% manifests with reception_status set are missing pickup_route_id: %', bad, culprits;
   END IF;
 END $$;
 
