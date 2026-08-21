@@ -143,6 +143,30 @@ describe('ReceptionCompletePage', () => {
     expect(screen.queryByText(/QUEDA 1 RUTA EN PATIO/)).not.toBeInTheDocument();
   });
 
+  it('excludes the route just closed even when it is the oldest candidate, and picks the next one', () => {
+    // Production shape: the truck you just finished has usually been in the
+    // yard longest, so a naive "oldest wins" reducer that forgets to filter
+    // first would pick it right back. justClosed is deliberately the oldest
+    // here — otherRoute must win anyway.
+    const justClosed = yardRoute({
+      id: 'r1',
+      code: 'PR-2026-0148',
+      in_transit_at: '2026-08-20T08:00:00Z',
+    });
+    const otherRoute = yardRoute({
+      id: 'r6',
+      code: 'PR-2026-OTHER',
+      in_transit_at: '2026-08-20T10:00:00Z',
+    });
+    mockIncoming.mockReturnValue({
+      data: [justClosed, otherRoute],
+      isLoading: false,
+      error: null,
+    });
+    render(<ReceptionCompletePage />);
+    expect(screen.getByText('PR-2026-OTHER')).toBeInTheDocument();
+  });
+
   it('picks the route that has waited longest when several are in the yard', () => {
     const oldest = yardRoute({
       id: 'r3',
