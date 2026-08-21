@@ -706,6 +706,37 @@ INSERT INTO public.dispatches (
   )
 ON CONFLICT (id) DO NOTHING;
 
+-- =============================================================================
+-- fleet_vehicles — a vehicle Despacho can actually assign
+-- =============================================================================
+-- The Despacho route builder's vehicle dropdown reads fleet_vehicles (the
+-- DispatchTrack mirror), not the operator-managed `vehicles` table Recogida
+-- uses. Nothing seeds fleet_vehicles, and QA receives no DispatchTrack
+-- webhooks, so the dropdown was empty for Transportes Musan and no route could
+-- be dispatched. One dummy plate is enough to exercise the flow.
+--
+-- Musan's id is gen_random_uuid() in migration 20260223000001, so it differs
+-- per environment and must be resolved by slug, never hardcoded. If the
+-- operator is absent the SELECT yields no row and the seed simply skips it.
+--
+-- The route builder shows and submits external_vehicle_id (as
+-- routes.truck_identifier), so it carries the plate; plate_number repeats it
+-- for anything reading the plate column.
+INSERT INTO public.fleet_vehicles (
+  id, operator_id, provider, external_vehicle_id, plate_number, vehicle_type, driver_name
+)
+SELECT
+  '00000000-0000-4000-8000-000000000220',
+  o.id,
+  'dispatchtrack'::routing_provider_enum,
+  'JPRG26',
+  'JPRG26',
+  'Furgón',
+  NULL
+FROM public.operators o
+WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
 
 -- Summary (visible in psql output when run with -a or via RAISE)
