@@ -1,11 +1,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { callRpc } from '@/lib/supabase/rpc';
 import type { Database } from '@/lib/types';
 
 export type PickupRoute = Database['public']['Tables']['pickup_routes']['Row'];
 
+/** One person on the trip besides the leader (spec-61). */
+export interface RouteCrewMember {
+  user_id: string;
+  full_name: string | null;
+}
+
+/** The RPC's payload: the route row, flattened, plus three joined extras. */
+type ActiveRoutePayload = PickupRoute & {
+  plate: string | null;
+  driver_name: string | null;
+  crew?: RouteCrewMember[] | null;
+};
+
 /**
- * A route with its vehicle joined in.
+ * A route with its vehicle and leader joined in.
  *
  * spec-52 moved the truck's identity off `pickup_routes.vehicle_label` (a free
  * text field) onto `vehicle_id -> vehicles.plate`. `vehicle_label` is still
@@ -20,15 +34,23 @@ export type ActivePickupRoute = PickupRoute & {
    *  avatar initials. Null only if the user row was removed; the mobile
    *  header falls back to a placeholder rather than showing an id. */
   driver: { full_name: string } | null;
+  /** spec-61 — everyone else on this trip. Empty for a solo route. */
+  crew: RouteCrewMember[];
 };
 
 /**
- * Returns the current `in_progress` pickup_routes row for the signed-in driver
- * within the active operator, or null if none. This is the single source of
- * truth for "does the driver have a route open right now?" — the pickup
- * landing page reads it to decide whether to render the banner + disable the
- * "Iniciar ruta" button. Refetches on window focus so a driver who closes a
- * route on one device sees the banner disappear on another.
+ * The signed-in user's open pickup route — the one they LEAD or are active
+ * CREW on — or null.
+ *
+ * spec-61 moved the resolution into `get_my_active_pickup_route()`. It used
+ * to filter `driver_id = auth.uid()` here, which showed a crew member no
+ * active route at all and dropped them on 3j, where they opened a SECOND
+ * route for the same van. "Leader OR active crew" is an OR across a join and
+ * PostgREST cannot express it in one request — see the migration header
+ * (20260820000005) before considering a return to `.select()`.
+ *
+ * Refetches on window focus so someone who closes a route on one device sees
+ * it disappear on another.
  */
 export function useActivePickupRoute(operatorId: string | null) {
   return useQuery<ActivePickupRoute | null>({
@@ -38,24 +60,20 @@ export function useActivePickupRoute(operatorId: string | null) {
     staleTime: 10_000,
     queryFn: async () => {
       const supabase = createSPAClient();
-      const { data: authData } = await supabase.auth.getUser();
-      const driverId = authData.user?.id;
-      if (!driverId) return null;
-
-      const { data, error } = await supabase
-        .from('pickup_routes')
-        .select('*, vehicle:vehicles(plate), driver:users(full_name)')
-        .eq('operator_id', operatorId!)
-        .eq('driver_id', driverId)
-        // `draft` is dead: start_pickup_route creates routes directly as
-        // in_progress, and the DB's active-route indexes now cover only that.
-        .eq('status', 'in_progress')
-        .is('deleted_at', null)
-        .order('started_at', { ascending: false })
-        .limit(1);
-
+      const { data, error } = await callRpc<ActiveRoutePayload | null>(
+        supabase,
+        'get_my_active_pickup_route',
+      );
       if (error) throw error;
-      return (data?.[0] ?? null) as unknown as ActivePickupRoute | null;
+      if (!data) return null;
+
+      const { plate, driver_name, crew, ...route } = data;
+      return {
+        ...(route as PickupRoute),
+        vehicle: plate ? { plate } : null,
+        driver: driver_name ? { full_name: driver_name } : null,
+        crew: crew ?? [],
+      };
     },
   });
 }

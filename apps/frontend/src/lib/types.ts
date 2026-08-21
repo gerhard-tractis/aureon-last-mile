@@ -304,6 +304,79 @@ export type Database = {
           },
         ]
       }
+      /**
+       * spec-61 — who besides the leader is on a pickup trip. Read-only from
+       * the frontend: `authenticated` holds SELECT and nothing else
+       * (20260820000004), and both writers (start_pickup_route, the
+       * route-status trigger) are SECURITY DEFINER. Insert/Update are typed
+       * because the generated shape has them, not because the client may use
+       * them — a PostgREST write here fails on the grant.
+       */
+      pickup_route_crew: {
+        Row: {
+          added_at: string
+          added_by: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          operator_id: string
+          pickup_route_id: string
+          removed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          added_by: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          operator_id: string
+          pickup_route_id: string
+          removed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          added_by?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          operator_id?: string
+          pickup_route_id?: string
+          removed_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pickup_route_crew_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_route_crew_pickup_route_id_fkey"
+            columns: ["pickup_route_id"]
+            isOneToOne: false
+            referencedRelation: "pickup_routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_route_crew_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pickup_route_crew_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pickup_routes: {
         Row: {
           cancelled_at: string | null
@@ -1925,8 +1998,17 @@ export type Database = {
       // in the database during the expand phase, but nothing calls it — it is
       // dropped in the contract phase and is deliberately not typed here.
       start_pickup_route: {
-        Args: { p_vehicle_id: string }
+        // spec-61: the crew list is optional — a leader may still ride alone.
+        Args: { p_vehicle_id: string; p_crew_user_ids?: string[] }
         Returns: Database["public"]["Tables"]["pickup_routes"]["Row"]
+      }
+      // spec-61 — the caller's open route: the one they LEAD or are active
+      // CREW on, with plate, leader name and crew. `Json` because the function
+      // returns JSONB; the real shape is ActivePickupRoute's payload in
+      // hooks/pickup/useActivePickupRoute.ts.
+      get_my_active_pickup_route: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
       }
       add_manifest_to_route: {
         Args: { p_route_id: string; p_manifest_id: string }
