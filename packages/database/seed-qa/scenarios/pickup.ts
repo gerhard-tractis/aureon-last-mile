@@ -106,12 +106,49 @@ export async function seedPickup(
     { seq: 42, code: 'QA-PR-003', status: 'cancelled' },
   ];
 
+  // pickup_routes.vehicle_id has been NOT NULL since spec-52
+  // (20260812000003:59-89). This scenario predates that and inserted routes
+  // without one, so every run since 2026-08-12 has aborted here -- after the
+  // manifests above were written and before the attach block below could pair
+  // them with a route. That is exactly how QA ended up with four manifests
+  // carrying a reception_status and no pickup_route_id, failing
+  // spec47_migration_invariants.sql on every deploy. Nothing runs this seeder
+  // in CI, so the breakage was invisible until someone ran it by hand.
+  //
+  // Conflict target is (operator_id, plate), not id: uniq_vehicles_operator_plate
+  // (20260812000001:24) is a partial unique index, so a vehicle already carrying
+  // this plate under a different id would make an ON CONFLICT (id) clause miss
+  // and the insert would die -- the same mistake this scenario's manifest insert
+  // made against unique_manifest_per_operator. The id is then read back rather
+  // than assumed, so the routes below point at whichever row actually exists.
+  await db.query(
+    `INSERT INTO public.vehicles (id, operator_id, plate, active)
+     VALUES ($1, $2, $3, TRUE)
+     ON CONFLICT (operator_id, plate) WHERE deleted_at IS NULL DO NOTHING`,
+    [qaId(ScenarioGroup.PICKUP, 39), operatorId, 'QA-PK-01'],
+  );
+  const vehicleRows = await db.query<{ id: string }>(
+    `SELECT id FROM public.vehicles
+      WHERE operator_id = $1 AND plate = $2 AND deleted_at IS NULL`,
+    [operatorId, 'QA-PK-01'],
+  );
+  const vehicleId = vehicleRows[0]?.id;
+  if (!vehicleId) throw new Error('pickup scenario: QA-PK-01 vehicle missing after upsert');
+  created++;
+
   for (const r of routes) {
     await db.query(
-      `INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, status)
-       VALUES ($1, $2, $3, $4, $5::pickup_route_status_enum)
+      `INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
+       VALUES ($1, $2, $3, $4, $5, $6::pickup_route_status_enum)
        ON CONFLICT (id) DO NOTHING`,
-      [qaId(ScenarioGroup.PICKUP, r.seq), operatorId, r.code, driverUserId, r.status],
+      [
+        qaId(ScenarioGroup.PICKUP, r.seq),
+        operatorId,
+        r.code,
+        driverUserId,
+        vehicleId,
+        r.status,
+      ],
     );
     created++;
   }

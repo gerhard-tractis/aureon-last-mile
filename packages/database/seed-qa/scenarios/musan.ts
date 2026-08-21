@@ -286,12 +286,28 @@ export async function seedMusan(
         : carga.stage === 'in_transit' ? 'awaiting_reception'
         : null; // 'scanning' keeps it NULL so the load stays pending
 
+      // Conflict on (operator_id, external_load_id), NOT on id. Since
+      // 20260814000001 the trg_ensure_manifest_for_order trigger creates a
+      // manifest row the moment an order carrying a new external_load_id is
+      // inserted -- with gen_random_uuid(), not this scenario's fixed qaId. So
+      // on any re-run the orders seeded below already exist, their trigger-made
+      // manifest already holds the load id, and an ON CONFLICT (id) clause
+      // never fires: the insert dies on unique_manifest_per_operator instead.
+      // DO UPDATE rather than DO NOTHING so the scenario's descriptive fields
+      // and its deliberate status/reception_status pairings win over the
+      // trigger's bare row -- which is the whole point of seeding them.
       await db.query(
         `INSERT INTO public.manifests
            (id, operator_id, external_load_id, retailer_name, pickup_location,
             total_orders, total_packages, status, reception_status)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::manifest_status_enum, $9::reception_status_enum)
-         ON CONFLICT (id) DO NOTHING`,
+         ON CONFLICT ON CONSTRAINT unique_manifest_per_operator DO UPDATE
+            SET retailer_name    = EXCLUDED.retailer_name,
+                pickup_location  = EXCLUDED.pickup_location,
+                total_orders     = EXCLUDED.total_orders,
+                total_packages   = EXCLUDED.total_packages,
+                status           = EXCLUDED.status,
+                reception_status = EXCLUDED.reception_status`,
         [
           qaId(ScenarioGroup.MUSAN, 10 + c),
           operatorId,
