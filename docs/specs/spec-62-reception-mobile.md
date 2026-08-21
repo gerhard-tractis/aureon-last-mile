@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; fases 4.5 Recepción escritorio y 4.8 móvil), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (`route_receptions`, recepción consolidada), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (`open_route_reception`, `unexpected_count`, bloqueo de escaneo de recogida), [spec-43](spec-43-failed-delivery-return-flow.md) (reingresos)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-20_
 
@@ -78,6 +78,66 @@ Los artboards `3r` / `3s` (reingresos agrupados por ruta) **quedan fuera** — v
 6. **La barra de pestañas cede en la sesión.** `/app/reception/route` se suma a `MOBILE_IMMERSIVE_PREFIXES`, junto a los tres prefijos de Recogida. `3q` y `3p` tienen barra de acciones fija abajo; apilarla con `MobileTabBar` deja dos barras y roba 60px de la pantalla más densa del módulo. `/app/reception` **sí** conserva las pestañas, con Recepción activa.
 
 7. **El `<h1>` de escritorio no se renderiza en móvil.** Lección de QA en la fase 3h: la cabecera de página siguió montándose junto a la cabecera móvil y a 390px salieron dos títulos. La cabecera de página queda tras `!isBelowLg`.
+
+## Decisiones tomadas durante la implementación
+
+Tres preguntas que aparecieron en revisión y que no se podían resolver dentro de
+una tarea, porque cada una toca superficie ya desplegada.
+
+### 1. El piso de 13.5px aplica al dato operativo, no a la identificación
+
+La regla de terreno dice "nada informativo bajo 13.5px". El subtítulo que lleva
+el nombre del receptor va en 12.5px, igual que el de Recogida (`PickupMobileHeader`),
+que ya está en producción.
+
+**El piso se mantiene en 13.5px para lo que el operario lee y usa** — códigos,
+conteos, esperas, números de paquete, todo lo que se lee a distancia con las
+manos ocupadas. **No aplica a la identificación secundaria** — quién tiene el
+turno abierto, la fecha —, que se lee una vez al empezar y nunca más.
+
+Por qué no al revés: subir solo esta cabecera a 13.5px la separa de su gemela de
+Recogida, y dos cabeceras con el mismo trabajo y distinta escala tipográfica es
+peor que cualquiera de las dos respuestas. Si algún día el piso se quiere
+literal, las dos se mueven juntas y en su propio PR.
+
+### 2. Un camión que espera va en paleta **warning**, no error — en las dos superficies
+
+El mock `3i` dibuja el badge de espera en rojo y este plan lo copió. El
+`ArrivalsPanel` de escritorio — que ya está desplegado — pinta exactamente la
+misma condición, con la misma constante y la misma comparación, en ámbar.
+
+**Gana el escritorio: warning.** Tres razones:
+
+- **El mismo hecho no puede tener dos colores.** El supervisor mira la tabla de
+  llegadas y el receptor mira el teléfono; si una pantalla dice ámbar y la otra
+  roja, van a discutir sobre si el camión es urgente en vez de descargarlo.
+- **30 minutos es un umbral de atención, no una falla.** En este sistema los
+  tres pares semánticos significan algo: warning es "esto necesita atención",
+  error es "esto ya falló". Un camión esperando todavía se puede descargar a
+  tiempo.
+- **El rojo hay que reservarlo.** En la misma pantalla `3i` el bloque de
+  diferencias abiertas sí es un error: paquetes que no llegaron y nadie ha
+  resuelto. Si la espera también es roja, el operario ve dos alarmas iguales
+  donde solo una exige acción distinta.
+
+Se conserva el icono `AlertTriangle` junto a la paleta: el estado sigue viajando
+por dos canales.
+
+**Es una desviación deliberada del mock**, registrada aquí y no en un comentario
+de componente, para que la próxima persona que compare pantalla y artboard no la
+"corrija" de vuelta.
+
+### 3. El contraste de los chips de estado se va a un spec propio
+
+El glifo blanco sobre `--color-status-warning` da ~2.15:1, bajo el 3:1 que pide
+WCAG 1.4.11 para elementos no textuales. No lo introdujo este spec — blanco
+sobre `--color-status-success` ya venía en ~2.56:1 —, pero `warn` quedó como el
+peor de los tres justo en el canal del que depende la regla de dos canales.
+
+Arreglarlo bien significa auditar la paleta completa y tocar todos sus
+consumidores: torre, distribución, despacho, recogida. Eso no cabe en un PR de
+recepción, y meterlo aquí haría irrevisable un cambio de diseño transversal.
+Queda como **spec-63**, con las mediciones ya tomadas.
 
 ## Lo que el mock pide y el sistema no tiene
 
@@ -253,6 +313,23 @@ Desde `apps/frontend/`:
 - Archivos bajo 300 líneas. Si uno se pasa, pártelo por responsabilidad.
 - Español de Chile en toda la UI. Números comparables en `font-mono`.
 - Todo componente nuevo lleva su `.test.tsx` al lado.
+- **Los comentarios de código y los nombres de test van en INGLÉS.** El español es
+  solo para texto que el usuario ve renderizado: literales de UI, `aria-label`,
+  mensajes. Es la convención del repo — mira `ScanField.tsx`, `useViewport.ts`,
+  `MobileTabBar.tsx` o cualquier `*.test.tsx` existente.
+
+  > **Los fragmentos de código de este plan tienen los `it()` y algunos
+  > comentarios en español.** Está mal y es un defecto del plan, no una
+  > excepción a la regla: se escribieron así por inercia al redactarlo en
+  > español. Cinco tareas seguidas lo copiaron fielmente y cinco revisiones lo
+  > devolvieron. **Traduce al implementar** — el contenido del comentario es lo
+  > que importa, el idioma del snippet no.
+- **Cada estado va por dos canales, color Y forma.** Nunca solo color: un badge
+  que distingue "atrasado" de "en tiempo" cambiando únicamente la paleta es
+  invisible para un receptor daltónico y en una foto en escala de grises. Si
+  añades un estado, añade también su icono o su forma — y aféctalo en el test,
+  porque un icono que nunca se renderiza pasa igual un test que solo compara
+  clases de color.
 
 ---
 
