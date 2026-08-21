@@ -28,12 +28,16 @@ export function PickupMobileNoRoute() {
       className="rounded-[10px] border border-border bg-surface p-5 text-center"
     >
       <Users className="mx-auto h-7 w-7 text-text-muted" aria-hidden="true" />
+      {/* The wording from the DECIDED block, not Step 3's draft: it names the
+          action ("pídele … que te agregue") rather than only the absence, and
+          it is the text the decision was taken against. Deliberately the same
+          sentence route/active/page.tsx shows for the same situation — one
+          answer to "where is my route", wherever the picker happens to be. */}
       <p className="mt-3 font-heading text-[15px] font-semibold text-text">
-        No hay una ruta abierta para ti
+        No tienes una ruta activa.
       </p>
       <p className="mt-1.5 text-[13px] leading-[1.45] text-text-secondary">
-        El líder de tu equipo abre la ruta y te agrega a ella. Pídele que te incluya y esta
-        pantalla se actualiza sola.
+        Pídele a tu líder que te agregue a su ruta.
       </p>
     </section>
   );

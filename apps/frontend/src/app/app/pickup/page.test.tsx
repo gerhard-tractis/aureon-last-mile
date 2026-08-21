@@ -526,7 +526,7 @@ describe('PickupPage', () => {
       asCrew();
       mockBelowLg(true);
       render(<PickupPage />);
-      expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+      expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: /iniciar ruta de recogida/i }),
       ).toBeNull();

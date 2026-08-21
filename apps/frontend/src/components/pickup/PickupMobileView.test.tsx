@@ -138,7 +138,7 @@ describe('PickupMobileView', () => {
 
     it('shows crew with no route the ask-your-leader screen, not 3j', () => {
       render(<PickupMobileView {...baseProps()} role="pickup_crew" />);
-      expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+      expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
       expect(screen.queryByTestId('pickup-mobile-start-route')).toBeNull();
       // The point of the branch: no control the RPC would refuse.
       expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();

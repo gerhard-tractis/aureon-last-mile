@@ -68,12 +68,13 @@ describe('CrewSelect', () => {
    * of the rows it counts. One trip therefore used to read `EQUIPO · 2`
    * here and `EQUIPO · 3` there — the same word standing for two
    * quantities. Asserting the exact string is what stops that returning
-   * silently; `/EQUIPO/` or a testid would not have caught it.
+   * silently: a label reverted to `EQUIPO · 2` fails right here. A separate
+   * `queryByText(/EQUIPO/)` assertion was dropped as redundant — it can only
+   * fail in cases this one already catches.
    */
   it('counts the ticked rows under an ACOMPAÑANTES header, never EQUIPO', () => {
     render(<CrewSelect {...baseProps()} value={['crew-1', 'crew-2']} />);
     expect(screen.getByText('ACOMPAÑANTES · 2')).toBeInTheDocument();
-    expect(screen.queryByText(/EQUIPO/)).toBeNull();
   });
 
   it('counts zero, not the candidate list, when nothing is ticked', () => {

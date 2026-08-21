@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react';
 import { PickupMobileNoRoute } from './PickupMobileNoRoute';
 
 describe('PickupMobileNoRoute', () => {
-  it('says no route is open and who opens it', () => {
+  it('says no route is open and who to ask', () => {
     render(<PickupMobileNoRoute />);
-    expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+    expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
     // The message must be ACTIONABLE — naming the leader is the whole point.
     // A generic "sin ruta activa" would pass the line above and still leave
     // the picker with nothing to do, so this is a separate assertion.
