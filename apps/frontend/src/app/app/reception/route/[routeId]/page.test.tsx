@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import RouteReceptionPage from './page';
 import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
@@ -93,6 +93,13 @@ describe('RouteReceptionPage', () => {
     vi.clearAllMocks();
     mockSnapshot.mockReturnValue({ data: baseSnapshot, isLoading: false, error: null });
     mockUseIsBelowLg.mockReturnValue(false);
+  });
+
+  // Guards against fake timers leaking into later tests: if either
+  // assertion in the timer test below throws, a `vi.useRealTimers()` as
+  // that test's own last statement would never run.
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the route header with code', () => {
@@ -200,7 +207,6 @@ describe('RouteReceptionPage', () => {
       vi.advanceTimersByTime(5_000);
     });
     expect(screen.getByText('Paquete recibido')).toBeInTheDocument();
-    vi.useRealTimers();
   });
 
   describe('below lg', () => {
@@ -227,6 +233,9 @@ describe('RouteReceptionPage', () => {
       // RouteSwitcherColumn, SyncQueuePanel, ReceptionCounts,
       // ConsolidatedScanList, ReceptionScanner, FinalizeReceptionButton and
       // ReopenRouteButton all hang off the desktop tree only.
+      expect(screen.queryByRole('button', { name: /Entrantes/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Cola de sincronización')).not.toBeInTheDocument();
+      expect(screen.queryByText('Esperados')).not.toBeInTheDocument();
       expect(screen.queryByLabelText('Escáner de recepción')).not.toBeInTheDocument();
       expect(
         screen.queryByRole('button', { name: /finalizar recepción/i }),
