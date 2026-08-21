@@ -57,4 +57,18 @@ describe('ScanResult', () => {
     render(<ScanResult status="error" title="NO ESTÁ EN EL MANIFIESTO" />);
     expect(screen.queryByTestId('scan-result-code')).toBeNull();
   });
+
+  it('changes colour AND icon together on warn', () => {
+    // Same rule that already covers ok/error: every state is carried by two
+    // channels. A third tone that reused ok's check would be indistinguishable
+    // in a greyscale screenshot.
+    const { container } = render(
+      <ScanResult status="warn" title="YA ESCANEADO" timestamp="12:58" />,
+    );
+    expect(screen.getByText('YA ESCANEADO')).toBeInTheDocument();
+    expect(container.firstElementChild!.className).toContain('bg-status-warning-bg');
+    expect(screen.getByTestId('scan-result-icon-warn')).toBeInTheDocument();
+    expect(screen.queryByTestId('scan-result-icon-ok')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('scan-result-icon-error')).not.toBeInTheDocument();
+  });
 });

@@ -237,11 +237,17 @@ export function buildMobileTabs(ctx: NavContext): MobileTab[] {
  * `/app/pickup/route/active` is reachable from the Recogida tab (it is not
  * a tab destination itself) and carries the same fixed-footer pattern, so
  * it is listed alongside the two loadId-scoped flows.
+ *
+ * `/app/reception/route` covers the reception session and its completion
+ * record, both of which own the same fixed footer — but not
+ * `/app/reception` itself, which is the module-switching listing and needs
+ * the tab bar to get anywhere else.
  */
 const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/scan',
   '/app/pickup/review',
   '/app/pickup/route/active',
+  '/app/reception/route',
 ];
 
 export function isImmersiveMobileRoute(pathname: string): boolean {

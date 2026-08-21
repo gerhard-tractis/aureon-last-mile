@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  *     someone holding a box.
  */
 
-type ScanStatus = 'ok' | 'error';
+type ScanStatus = 'ok' | 'warn' | 'error';
 
 interface ScanResultProps {
   status: ScanStatus;
@@ -33,6 +33,11 @@ const TONE = {
     box: 'bg-status-success-bg border-status-success-border',
     icon: 'bg-status-success',
     text: 'text-status-success-text',
+  },
+  warn: {
+    box: 'bg-status-warning-bg border-status-warning-border',
+    icon: 'bg-status-warning',
+    text: 'text-status-warning-text',
   },
   error: {
     box: 'bg-status-error-bg border-status-error-border',
@@ -73,6 +78,23 @@ function CrossIcon() {
   );
 }
 
+function WarnIcon() {
+  return (
+    <svg
+      data-testid="scan-result-icon-warn"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#fff"
+      strokeWidth="3"
+      className="h-6 w-6"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5M12 16.5v.5" />
+    </svg>
+  );
+}
+
 export function ScanResult({
   status,
   title,
@@ -97,7 +119,7 @@ export function ScanResult({
       )}
     >
       <span className={cn('grid h-11 w-11 flex-none place-items-center rounded-xl', tone.icon)}>
-        {status === 'ok' ? <CheckIcon /> : <CrossIcon />}
+        {status === 'ok' ? <CheckIcon /> : status === 'warn' ? <WarnIcon /> : <CrossIcon />}
       </span>
 
       <div className="flex min-w-0 flex-col gap-1.5">
