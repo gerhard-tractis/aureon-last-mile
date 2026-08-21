@@ -23,6 +23,18 @@ describe('waitLabel', () => {
   it('has no wait to show without an arrival time', () => {
     expect(waitLabel(null)).toBeNull();
   });
+  it('still speaks in minutes right below the hour boundary', () => {
+    expect(waitLabel(59)).toBe('59 min');
+  });
+  it('drops the "0 min" tail on an exact hour', () => {
+    expect(waitLabel(60)).toBe('1 h');
+  });
+  it('drops the "0 min" tail on an exact multiple of an hour', () => {
+    expect(waitLabel(120)).toBe('2 h');
+  });
+  it('brings the tail back immediately above the hour boundary', () => {
+    expect(waitLabel(61)).toBe('1 h 1 min');
+  });
 });
 
 describe('timeLabel', () => {

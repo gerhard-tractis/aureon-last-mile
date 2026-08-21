@@ -23,14 +23,15 @@ export function receptionInitials(name: string | null | undefined): string {
   return (first + last).toUpperCase();
 }
 
-/** "41 min" under an hour, "1 h 35 min" over an hour. `null` when there is
- *  no arrival time to measure a wait from. */
+/** "41 min" under an hour, "1 h 35 min" over an hour, "1 h" on an exact
+ *  hour (no "0 min" tail). `null` when there is no arrival time to measure
+ *  a wait from. */
 export function waitLabel(minutes: number | null): string | null {
   if (minutes === null) return null;
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
   const remaining = minutes % 60;
-  return `${hours} h ${remaining} min`;
+  return remaining === 0 ? `${hours} h` : `${hours} h ${remaining} min`;
 }
 
 /** "07:31" from an ISO timestamp, or `null` for a missing/invalid date
