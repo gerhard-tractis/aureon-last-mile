@@ -61,8 +61,13 @@ export async function POST(
       };
     });
 
-    const apiToken = process.env.DT_API_KEY;
-    if (!apiToken) throw new Error('DT_API_KEY not configured');
+    // DISPATCHTRACK_API_KEY is the name every other consumer uses (the
+    // scripts/*.mjs backfills, the dispatchtrack-route-poll edge function).
+    // This handler read DT_API_KEY, which nothing sets anywhere, so every
+    // dispatch failed here before reaching DT. The old name stays as a
+    // fallback in case a deployed environment still carries it.
+    const apiToken = process.env.DISPATCHTRACK_API_KEY || process.env.DT_API_KEY;
+    if (!apiToken) throw new Error('DISPATCHTRACK_API_KEY not configured');
 
     // Call DT API — if this throws, nothing local changes
     const { external_route_id } = await createDTRoute({

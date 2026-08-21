@@ -71,3 +71,42 @@ describe('createDTRoute', () => {
     expect(body.driver_identifier).toBeUndefined();
   });
 });
+
+describe('createDTRoute — endpoint', () => {
+  it('posts to the Musan tenant by default', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute(payload, 'token');
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'https://transportesmusan.dispatchtrack.com/api/external/v1/routes',
+    );
+  });
+
+  it('honours DISPATCHTRACK_BASE_URL so QA can point elsewhere', async () => {
+    vi.stubEnv('DISPATCHTRACK_BASE_URL', 'https://sandbox.dispatchtrack.com');
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute(payload, 'token');
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'https://sandbox.dispatchtrack.com/api/external/v1/routes',
+    );
+    vi.unstubAllEnvs();
+  });
+
+  it('tolerates a trailing slash on the configured base URL', async () => {
+    vi.stubEnv('DISPATCHTRACK_BASE_URL', 'https://sandbox.dispatchtrack.com/');
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute(payload, 'token');
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'https://sandbox.dispatchtrack.com/api/external/v1/routes',
+    );
+    vi.unstubAllEnvs();
+  });
+});
