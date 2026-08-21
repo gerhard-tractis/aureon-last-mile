@@ -29,6 +29,13 @@ interface DiscrepancyNoteSheetProps {
  * `missing` comes from finalizeRule, never `expectedCount - receivedCount` —
  * see that module for why the raw subtraction hides real loss when an
  * "ajeno" package is present.
+ *
+ * `needsNote` is true whenever `missing > 0` OR `unexpectedCount > 0` — they
+ * are independent triggers, not always both present. `10 esperados · 11
+ * recibidos · 1 ajeno` opens this sheet with `missing === 0`: nothing is
+ * lost, but an ajeno still needs to be accounted for. The closing sentence
+ * below must name whichever condition actually caused the sheet to open,
+ * not assume it was always a loss.
  */
 export function DiscrepancyNoteSheet({
   open,
@@ -41,6 +48,10 @@ export function DiscrepancyNoteSheet({
 
   const { missing, matched } = finalizeRule(counts);
   const { expectedCount, unexpectedCount } = counts;
+  // `missing` clamps at 0, so a route that matched more boxes than expected
+  // (extra scans, a mislabeled ajeno counted as matched, etc.) leaves no
+  // trace in `missing` — surface it separately rather than silently drop it.
+  const surplus = Math.max(0, matched - expectedCount);
 
   const trimmed = note.trim();
   // Empty text must not submit: the server rejects it, and more importantly
@@ -49,6 +60,9 @@ export function DiscrepancyNoteSheet({
   const disabled = trimmed === '' || isPending;
 
   const handleConfirm = () => {
+    // Dead in practice — the disabled button already blocks this click —
+    // but this is the last line of defence on a control whose entire job
+    // is refusing to submit an empty note, so it stays.
     if (disabled) return;
     onConfirm(trimmed);
   };
@@ -63,7 +77,7 @@ export function DiscrepancyNoteSheet({
             {missing > 0 && (
               <>
                 {' '}
-                · faltan {missing} paquete{missing === 1 ? '' : 's'}
+                · falta{missing === 1 ? '' : 'n'} {missing} paquete{missing === 1 ? '' : 's'}
               </>
             )}
             {unexpectedCount > 0 && (
@@ -73,7 +87,21 @@ export function DiscrepancyNoteSheet({
                 {unexpectedCount === 1 ? '' : 's'}
               </>
             )}
-            . Describe qué pasó con los paquetes faltantes para cerrar la recepción.
+            {surplus > 0 && (
+              <>
+                {' '}
+                · sobra{surplus === 1 ? '' : 'n'} {surplus} paquete{surplus === 1 ? '' : 's'}
+              </>
+            )}
+            {'. '}
+            {missing > 0 ? (
+              'Describe qué pasó con los paquetes faltantes para cerrar la recepción.'
+            ) : (
+              <>
+                Describe el paquete{unexpectedCount === 1 ? '' : 's'} ajeno
+                {unexpectedCount === 1 ? '' : 's'} para cerrar la recepción.
+              </>
+            )}
           </SheetDescription>
         </SheetHeader>
 

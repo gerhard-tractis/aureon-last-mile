@@ -21,7 +21,7 @@ describe('DiscrepancyNoteSheet', () => {
       />,
     );
 
-    expect(screen.getByText(/3/)).toBeInTheDocument();
+    expect(screen.getByText(/faltan 3 paquetes/)).toBeInTheDocument();
     expect(screen.getByText(/ajeno/i)).toBeInTheDocument();
   });
 
@@ -101,5 +101,62 @@ describe('DiscrepancyNoteSheet', () => {
     await user.type(screen.getByRole('textbox'), 'Faltan 3');
 
     expect(screen.getByRole('button', { name: /Cerrar recepción/i })).toBeDisabled();
+  });
+
+  it('asks about the ajeno, not a loss, when nothing is missing but an ajeno still forced the note open', () => {
+    // 11 received - 1 ajeno = 10 matched against 10 expected -> missing is 0.
+    // needsNote is still true because unexpectedCount > 0: the sheet must
+    // name the ajeno as the reason, not talk about "paquetes faltantes"
+    // that never happened.
+    const noLossCounts = { expectedCount: 10, receivedCount: 11, unexpectedCount: 1 };
+    render(
+      <DiscrepancyNoteSheet
+        open
+        onOpenChange={vi.fn()}
+        counts={noLossCounts}
+        isPending={false}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText(/faltan?/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Describe el paquete ajeno para cerrar la recepción/),
+    ).toBeInTheDocument();
+  });
+
+  it('uses singular "falta" (not "faltan") when exactly one package is missing', () => {
+    const oneMissingCounts = { expectedCount: 5, receivedCount: 4, unexpectedCount: 0 };
+    render(
+      <DiscrepancyNoteSheet
+        open
+        onOpenChange={vi.fn()}
+        counts={oneMissingCounts}
+        isPending={false}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/falta 1 paquete/)).toBeInTheDocument();
+    expect(screen.queryByText(/faltan 1/)).not.toBeInTheDocument();
+  });
+
+  it('surfaces packages matched beyond what was expected instead of dropping them silently', () => {
+    // 8 received - 1 ajeno = 7 matched against 5 expected -> missing clamps
+    // to 0, but 2 boxes matched that were never expected. Losing this to
+    // Math.max(0, ...) would leave the operator with no explanation for the
+    // surplus while still being forced to write a note.
+    const surplusCounts = { expectedCount: 5, receivedCount: 8, unexpectedCount: 1 };
+    render(
+      <DiscrepancyNoteSheet
+        open
+        onOpenChange={vi.fn()}
+        counts={surplusCounts}
+        isPending={false}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/sobran 2 paquetes/)).toBeInTheDocument();
   });
 });
