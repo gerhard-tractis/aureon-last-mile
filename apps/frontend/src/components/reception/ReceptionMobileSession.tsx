@@ -8,7 +8,10 @@ import { DiscrepancyNoteSheet } from './DiscrepancyNoteSheet';
 import { finalizeRule } from '@/lib/reception/finalize-rule';
 import { timeLabel } from '@/lib/reception/reception-mobile-helpers';
 import { cn } from '@/lib/utils';
-import type { RouteReceptionSnapshot } from '@/hooks/reception/useRouteReceptionSnapshot';
+import type {
+  RouteReceptionSnapshot,
+  RouteReceptionScan,
+} from '@/hooks/reception/useRouteReceptionSnapshot';
 import type { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
 import type { ConnectionState } from '@/hooks/useSyncQueue';
 
@@ -128,7 +131,7 @@ export function ReceptionMobileSession({
         </div>
       </header>
 
-      {syncStatus !== 'online' && (
+      {(queuedCount > 0 || syncStatus === 'offline') && (
         <div className="mx-4 mt-3 flex-none rounded-lg border border-status-warning-border bg-status-warning-bg px-3 py-2 text-[12px] leading-[1.4] text-status-warning-text">
           <span className="font-mono font-semibold">{queuedCount}</span>{' '}
           {syncStatus === 'offline'
@@ -175,9 +178,17 @@ export function ReceptionMobileSession({
 
         {scans.length > 0 && (
           <div className="mt-4 flex flex-col gap-1.5">
-            {[...scans].reverse().map((scan) => (
-              <ScanHistoryRow key={scan.id} scan={scan} />
-            ))}
+            {/* `get_route_reception_snapshot` aggregates `scans` with no
+                ORDER BY (migration 20260813000005:113-116 — contrast
+                :142, where the same author DID add one for
+                `v_discrepancies`). Array order is not guaranteed
+                chronological, so `.reverse()` on the raw array is wrong;
+                sort explicitly, newest first. */}
+            {[...scans]
+              .sort((a, b) => b.scanned_at.localeCompare(a.scanned_at))
+              .map((scan) => (
+                <ScanHistoryRow key={scan.id} scan={scan} />
+              ))}
           </div>
         )}
       </div>
@@ -213,7 +224,7 @@ export function ReceptionMobileSession({
   );
 }
 
-const SCAN_ROW_CHIP: Record<string, { label: string; className: string } | undefined> = {
+const SCAN_ROW_CHIP: Partial<Record<RouteReceptionScan['scan_result'], { label: string; className: string }>> = {
   duplicate: { label: 'REPETIDO', className: 'bg-status-warning-bg text-status-warning-text' },
   not_found: { label: 'AJENO', className: 'bg-status-error-bg text-status-error-text' },
   route_mismatch: { label: 'AJENO', className: 'bg-status-error-bg text-status-error-text' },
@@ -222,7 +233,10 @@ const SCAN_ROW_CHIP: Record<string, { label: string; className: string } | undef
 function ScanHistoryRow({ scan }: { scan: RouteReceptionSnapshot['scans'][number] }) {
   const chip = SCAN_ROW_CHIP[scan.scan_result];
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-2">
+    <div
+      data-testid="scan-history-row"
+      className="flex items-center gap-2 rounded-lg border border-border-subtle px-3 py-2"
+    >
       <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-text">{scan.barcode}</span>
       {chip && (
         <span
