@@ -2457,7 +2457,7 @@ No edit path, by Decision 1. The crew is fixed when the route opens, and
 someone" control here would need a second RPC, a second uniqueness path, and an answer to
 "what happens to the loads they already scanned", none of which this spec settles.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
       `apps/frontend/src/components/pickup/PickupRouteCrewStrip.test.tsx`:
 
@@ -2501,43 +2501,78 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
           expect(screen.queryByRole('button')).toBeNull();
         });
 
-        it('falls back to a placeholder rather than showing an id', () => {
+        // CORRECTED during implementation. As drafted this test asserted only
+        // `expect(screen.queryByText('u1')).toBeNull()`, which no implementation
+        // could ever fail -- the id is never a candidate for display, so the
+        // assertion passes even if the component renders the member as a blank
+        // chip or drops them from the strip entirely. It now asserts the
+        // placeholder IS rendered and the seat still occupies a chip, which
+        // fails against both of those wrong implementations.
+        it('keeps a soft-deleted member on the strip under a placeholder, never an id', () => {
           render(
             <PickupRouteCrewStrip
               driverName={null}
-              crew={[{ user_id: 'u1', full_name: null }]}
+              crew={[
+                { user_id: 'u1', full_name: null },
+                { user_id: 'u2', full_name: 'Luis Soto' },
+              ]}
             />,
           );
+          const rendered = screen.getAllByTestId('crew-member').map((n) => n.textContent ?? '');
+          expect(rendered).toHaveLength(3);
+          expect(rendered[0]).toContain('Sin nombre');
+          expect(rendered[1]).toContain('Sin nombre');
+          expect(rendered[2]).toContain('Luis Soto');
           expect(screen.queryByText('u1')).toBeNull();
         });
       });
       ```
 
-- [ ] **Step 2: Run it, verify it fails**
+- [x] **Step 2: Run it, verify it fails**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupRouteCrewStrip.test.tsx --maxWorkers=2`
       Expected: FAIL — `Failed to resolve import "./PickupRouteCrewStrip"`
 
-- [ ] **Step 3: Minimal implementation**
+- [x] **Step 3: Minimal implementation**
 
-      `PickupRouteCrewStrip.tsx` (~50 lines): an eyebrow `EQUIPO · N` and a wrapped row of
-      name chips, the leader's carrying a `LÍDER` marker, each `data-testid="crew-member"`;
-      `full_name ?? 'Sin nombre'` (the same choice `PickupMobileHeader` makes — never show a
-      raw id); returns `null` when `crew.length === 0`. Read-only: no `<button>` anywhere.
+      `PickupRouteCrewStrip.tsx` (~50 lines): an eyebrow `EQUIPO · N` — N counts the whole
+      trip, leader included, so it matches the number of chips below it — and a wrapped row
+      of name chips, the leader's carrying a `LÍDER` marker, each `data-testid="crew-member"`;
+      `full_name ?? 'Sin nombre'`; returns `null` when `crew.length === 0`. Read-only: no
+      `<button>` anywhere.
 
-- [ ] **Step 4: Run it, verify it passes**
+      CORRECTION: the draft justified `'Sin nombre'` as "the same choice `PickupMobileHeader`
+      makes". It is not — `PickupMobileHeader` renders no placeholder at all: it omits the
+      name segment entirely (`{driverName && <>{driverName} · </>}`) and falls back to `'··'`
+      initials via `driverInitials()`. Omitting is fine for a subtitle segment but not here,
+      where a chip must still stand for a person who is on the trip. The placeholder is a new
+      choice for this component, not an existing precedent. (The "never show a raw id" rule
+      does hold — nothing in `pickup/` renders a uuid.)
+
+- [x] **Step 4: Run it, verify it passes**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupRouteCrewStrip.test.tsx --maxWorkers=2`
       Expected: PASS
 
-- [ ] **Step 5: Render it on `3h` — failing test first**
+- [x] **Step 5: Render it on `3h` — failing test first**
 
-      In `PickupMobileActiveRoute`'s suite (or `PickupMobileView.test.tsx`, which already
-      renders the active-route branch), assert that with
-      `activeRoute.crew = [{ user_id: 'u1', full_name: 'Ana Pérez' }]` the name appears on the
-      screen. Run it, expect FAIL.
+      CORRECTION: there is no `PickupMobileActiveRoute.test.tsx` — the component has never
+      had its own suite. `PickupMobileView.test.tsx` is the only place the active-route branch
+      is rendered, so the test goes there.
 
-- [ ] **Step 6: Implement**
+      Also unmentioned in the draft and mandatory: that file's shared `activeRoute` fixture
+      (`:52-63`) predates Task 4 and has no `crew` key. It is cast
+      `as unknown as ActivePickupRoute`, so `tsc` will not catch it, but the moment Step 6
+      passes `activeRoute.crew` into the strip every one of the ~15 existing "active route —
+      3h redesign" tests throws `Cannot read properties of undefined (reading 'length')`.
+      Add `crew: []` to the fixture as part of this step.
+
+      Assert that with `activeRoute.crew = [{ user_id: 'u1', full_name: 'Ana Pérez' }]` the
+      name appears on the screen, and that the unmodified (solo) fixture renders no strip —
+      the second half is what proves the strip reads the route's own crew rather than a
+      hardcoded list. Run it, expect FAIL.
+
+- [x] **Step 6: Implement**
 
       In `PickupMobileActiveRoute.tsx`, directly under `<PickupMobileHeader …/>` (`:80-83`):
 
@@ -2550,12 +2585,12 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
 
       No new query: `activeRoute.crew` comes from `get_my_active_pickup_route` (Task 4).
 
-- [ ] **Step 7: Run it, verify it passes**
+- [x] **Step 7: Run it, verify it passes**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup --maxWorkers=2`
       Expected: all PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
       ```
       git add apps/frontend/src/components/pickup/PickupRouteCrewStrip.tsx apps/frontend/src/components/pickup/PickupRouteCrewStrip.test.tsx apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx apps/frontend/src/components/pickup/PickupMobileView.test.tsx
