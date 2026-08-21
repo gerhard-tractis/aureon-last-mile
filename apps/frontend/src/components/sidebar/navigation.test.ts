@@ -414,4 +414,12 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/reception')).toBe(false);
     expect(isImmersiveMobileRoute('/app/dispatch/R-2491')).toBe(false);
   });
+
+  it('the reception session is immersive, the yard listing is not', () => {
+    // The listing needs the tabs: it's where the operator switches modules.
+    // The session and its record have their own fixed action bar.
+    expect(isImmersiveMobileRoute('/app/reception')).toBe(false);
+    expect(isImmersiveMobileRoute('/app/reception/route/abc-123')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/reception/route/abc-123/completa')).toBe(true);
+  });
 });
