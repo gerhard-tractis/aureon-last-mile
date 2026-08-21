@@ -20,12 +20,14 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
 
-  // Scoped to spec-52 for now — the only suite with a real seed/teardown
-  // fixture. Of the rest: auth-pages and branding are screenshot-generation
-  // tools rather than assertions, dispatch-route and spec47-pickup have no
-  // fixture, and spec47-consolidated-reception is `test.skip`ped pending
-  // exactly this environment. Widen this pattern as each grows a fixture.
-  testMatch: /spec52-.*\.spec\.ts$/,
+  // Scoped to the suites that have a real seed/teardown fixture — spec-52,
+  // and now spec-62's reception-mobile (built on spec52-fixture.ts plus
+  // support/reception-mobile-fixture.ts). Of the rest: auth-pages and
+  // branding are screenshot-generation tools rather than assertions,
+  // dispatch-route and spec47-pickup have no fixture, and
+  // spec47-consolidated-reception is `test.skip`ped pending exactly this
+  // environment. Widen this pattern as each grows a fixture.
+  testMatch: /(spec52-.*|reception-mobile)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
   // workday and polls the database between steps; the per-test timeouts inside

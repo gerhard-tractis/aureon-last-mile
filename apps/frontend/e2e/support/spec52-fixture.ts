@@ -43,6 +43,10 @@ export const RECEPTIONIST = {
 
 export const PLATE = 'E2E52AA';
 
+/** Accessible names of the two scanner inputs, shared by every spec that scans. */
+export const PICKUP_SCANNER_LABEL = 'Barcode scanner input';
+export const RECEPTION_SCANNER_LABEL = 'Escáner de recepción';
+
 /** Two clients, three cargas. */
 export const LOADS = [
   { loadId: `${PREFIX}-A1`, retailer: 'Alfa Retail', order: `${PREFIX}-ORD-A1` },
