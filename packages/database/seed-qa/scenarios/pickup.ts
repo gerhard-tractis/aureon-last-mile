@@ -116,7 +116,48 @@ export async function seedPickup(
     created++;
   }
 
+  // ── Attach the manifests to their routes ──────────────────────────────────
+  // A manifest carrying a reception_status must also carry a pickup_route_id:
+  // reception happens against a route, and spec47_migration_invariants.sql
+  // asserts the pair. Inserting these four with a reception_status and no route
+  // left QA permanently violating that invariant -- the SQL suite reported it
+  // on every deploy as a bare count, with no way to identify the rows.
+  //
+  // This runs as an UPDATE rather than folding pickup_route_id into the INSERT
+  // above for two reasons: the routes do not exist yet at that point, and the
+  // INSERT is ON CONFLICT DO NOTHING, so it would never repair the rows already
+  // sitting in QA from earlier runs. The UPDATE is idempotent and does both.
+  const manifestRoute: Record<number, number> = {
+    1: 40, // awaiting_reception  -> QA-PR-001 (in_transit)
+    2: 40, // reception_in_progress -> QA-PR-001 (in_transit)
+    3: 41, // received            -> QA-PR-002 (received)
+    4: 42, // cancelled           -> QA-PR-003 (cancelled)
+  };
+
+  for (const m of manifests) {
+    await db.query(
+      `UPDATE public.manifests SET pickup_route_id = $2
+        WHERE id = $1 AND pickup_route_id IS DISTINCT FROM $2`,
+      [qaId(ScenarioGroup.PICKUP, m.seq), qaId(ScenarioGroup.PICKUP, manifestRoute[m.seq])],
+    );
+  }
+
   // ── Assertions ────────────────────────────────────────────────────────────
+  // Guards the invariant this scenario used to break. Without it, a future edit
+  // that adds a fifth reception_status manifest and forgets the route mapping
+  // reintroduces the same silent QA breakage.
+  await assertCount(db, collector, {
+    scenario: 'pickup/manifest-route-pairing',
+    detail: 'no scenario manifest carries a reception_status without a route',
+    sql: `SELECT count(*) AS count FROM public.manifests
+           WHERE id::text LIKE $1
+             AND reception_status IS NOT NULL
+             AND pickup_route_id IS NULL
+             AND deleted_at IS NULL`,
+    params: [groupLikePattern(ScenarioGroup.PICKUP)],
+    expected: 0,
+  });
+
   await assertCount(db, collector, {
     scenario: 'pickup/manifests',
     detail: 'manifests seeded for the baseline operator',
