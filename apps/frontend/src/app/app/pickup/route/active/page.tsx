@@ -223,9 +223,10 @@ export default function ActiveRoutePage() {
               is not a thing this spec grants. `!!userId` first — comparing
               two undefineds would read as "this is my route".
 
-              The gate is CLIENT-SIDE ONLY. cancel_pickup_route checks the
-              operator and nothing else, and EXECUTE is granted to
-              `authenticated`; see useCancelPickupRoute.ts. */}
+              Defence in depth, not the only gate: cancel_pickup_route
+              enforces the same rule server-side since migration
+              20260821000001 (driver, or an elevated role). See
+              useCancelPickupRoute.ts. */}
           {!!userId && route.driver_id === userId && (
             <CancelRouteButton
               routeId={route.id}

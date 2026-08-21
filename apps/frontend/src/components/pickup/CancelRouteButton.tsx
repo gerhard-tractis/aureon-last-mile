@@ -25,9 +25,19 @@ import { useCancelPickupRoute } from '@/hooks/pickup/useCancelPickupRoute';
  * `reception_status` — is not visibly undoable from here. So it states both
  * consequences in words rather than leaving the leader to infer them.
  *
- * WHO MAY CANCEL: the caller renders this only for the route's own leader.
- * That gate is CLIENT-SIDE ONLY — `cancel_pickup_route` checks the operator
- * and nothing else. See useCancelPickupRoute.ts for the full note.
+ * WHO MAY CANCEL: the route's own `driver_id`, or an operations_manager /
+ * admin / super_admin — enforced by the RPC itself since migration
+ * 20260821000001, and by the callers rendering this only for the route's own
+ * leader. The client gate is defence in depth and keeps an elevated user from
+ * being casually offered a destructive control on a route that is not theirs;
+ * it is no longer the only thing standing there. See useCancelPickupRoute.ts.
+ *
+ * RENDERED IN TWO PLACES, on purpose: route/active (under "Cerrar ruta y
+ * entregar") and 3h. `ActiveRouteBanner` — the only link to route/active
+ * anywhere in the app — is rendered by PickupDesktopView, so below `lg` that
+ * screen is reachable only in the moment right after the route is created. A
+ * leader whose manifests all failed to attach navigates away once and can
+ * never get back: exactly the abandoned-route case this exists to fix.
  */
 export interface CancelRouteButtonProps {
   routeId: string;

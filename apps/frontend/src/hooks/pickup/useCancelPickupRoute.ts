@@ -23,15 +23,19 @@ const DEFAULT_REASON = 'Cancelada por el líder de la ruta';
  * list for anyone to claim — hence the `['pickup','manifests']`
  * invalidation, without which the leader sees no change at all.
  *
- * AUTHORISATION — READ BEFORE TRUSTING THIS: `cancel_pickup_route` checks
- * only that the route belongs to the caller's operator. It does NOT check
- * that the caller is the route's leader, and EXECUTE is granted to
- * `authenticated` (20260625000001:610). The "only the route's own leader may
- * cancel" rule in spec-61 is therefore enforced in the UI ONLY — any
- * authenticated user of the same operator can still cancel any open route by
- * calling the RPC directly. Closing that needs a migration and a decision
- * about whether admins/operations_managers keep the ability; spec-61 does
- * not settle it, so it is written down here rather than silently assumed.
+ * AUTHORISATION: enforced by the RPC, in migration 20260821000001. Until
+ * that migration `cancel_pickup_route` checked only the caller's operator —
+ * with EXECUTE granted to `authenticated` (20260625000001:610), any user of
+ * an operator could cancel any open route in it, including a pickup_crew
+ * member killing their own leader's route mid-shift.
+ *
+ * It now admits the route's own `driver_id`, plus operations_manager / admin
+ * / super_admin (who keep what they had, since an abandoned route has no
+ * other in-app exit). A `pickup_leader` who does not drive the route gets
+ * nothing — that is why this is NOT `ROUTE_LEADER_ROLES`, which answers the
+ * different question of who may OPEN a route. The refusal is Spanish and is
+ * rethrown verbatim below. The UI gate at the call sites stays as defence in
+ * depth; the server is the authority.
  */
 export function useCancelPickupRoute(operatorId: string | null) {
   const qc = useQueryClient();

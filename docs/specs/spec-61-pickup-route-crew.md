@@ -2118,9 +2118,9 @@ point is that the message is *actionable*: it must say a route is not open and w
       import { PickupMobileNoRoute } from './PickupMobileNoRoute';
 
       describe('PickupMobileNoRoute', () => {
-        it('says no route is open and who opens it', () => {
+        it('says no route is open and who to ask', () => {
           render(<PickupMobileNoRoute />);
-          expect(screen.getByText(/no hay una ruta abierta/i)).toBeInTheDocument();
+          expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
           expect(screen.getByText(/líder/i)).toBeInTheDocument();
         });
 
@@ -2167,12 +2167,19 @@ point is that the message is *actionable*: it must say a route is not open and w
             className="rounded-[10px] border border-border bg-surface p-5 text-center"
           >
             <Users className="mx-auto h-7 w-7 text-text-muted" aria-hidden="true" />
+            {/* CORRECTED 2026-08-21: the DECIDED block's wording, not this
+                step's original draft ("No hay una ruta abierta para ti" /
+                "El líder de tu equipo abre la ruta y te agrega a ella…").
+                That block is the later and more considered text, it is what
+                the user was shown when they chose this option, and it names
+                the action rather than only the absence. It is also already
+                the string route/active/page.tsx shows for the same
+                situation. */}
             <p className="mt-3 font-heading text-[15px] font-semibold text-text">
-              No hay una ruta abierta para ti
+              No tienes una ruta activa.
             </p>
             <p className="mt-1.5 text-[13px] leading-[1.45] text-text-secondary">
-              El líder de tu equipo abre la ruta y te agrega a ella. Pídele que te
-              incluya y esta pantalla se actualiza sola.
+              Pídele a tu líder que te agregue a su ruta.
             </p>
           </section>
         );
@@ -2473,14 +2480,15 @@ point is that the message is *actionable*: it must say a route is not open and w
 Recorded here rather than in a review comment, because every prior task in this spec
 found errors in its own plan text and the corrections belong with the plan.
 
-1. **Two different copies for the crew screen.** Step 3 fixes it as "No hay una ruta
-   abierta para ti" / "El líder de tu equipo abre la ruta y te agrega a ella…", and Step 1's
-   test asserts `/no hay una ruta abierta/i`. The "DECIDED — no signal" note in the risks
-   section quotes a *different* string: "No tienes una ruta activa. Pídele a tu líder que te
-   agregue a su ruta." **Step 3's copy is what shipped** — the Task 5 section is where the
-   spec says copy is fixed rather than left to the implementer. The quote in the risk note is
-   illustrative of *which screen* a stranded picker lands on, not a second copy decision.
-   Both satisfy the decision: one blank state, no mention that a seat was released.
+1. **Two different copies for the crew screen.** Step 3 originally fixed it as "No hay una
+   ruta abierta para ti" / "El líder de tu equipo abre la ruta y te agrega a ella…", while the
+   "DECIDED — no signal" note quotes "No tienes una ruta activa. Pídele a tu líder que te
+   agregue a su ruta." **Resolved 2026-08-21 in favour of the DECIDED block**, and Step 3 above
+   has been corrected to match: it is the later and more considered text, it is what the user
+   was shown when they chose the option, it tells the person what to *do* rather than only what
+   is absent, and it is already the exact string `route/active/page.tsx` shows for the same
+   situation — so a picker gets one answer to "where is my route" wherever they are standing.
+   Either way the decision holds: one blank state, no mention that a seat was released.
 
 2. **Step 5's `renderView` does not exist.** `PickupMobileView.test.tsx` has a `baseProps()`
    factory spread into `render(<PickupMobileView {...baseProps()} />)`, no `renderView`. The
@@ -2520,7 +2528,7 @@ found errors in its own plan text and the corrections belong with the plan.
    Docker is down, so no suite and no pgTAP was executed for this task. `tsc --noEmit` and
    `eslint` are clean; **no test in this task has been seen to pass.**
 
-##### `cancel_pickup_route` does NOT authorise the leader — the gate is client-side only
+##### `cancel_pickup_route` did NOT authorise the leader — fixed in `20260821000001`
 
 The decision above says "Only the route's own leader may cancel. Verify
 `cancel_pickup_route`'s own authorisation before relying on the UI to enforce it." Verified:
@@ -2531,12 +2539,40 @@ PART 7) checks `get_operator_id()` and that the route exists, is not soft-delete
 open pickup route by calling the RPC directly; a `pickup_crew` member can cancel their own
 leader's route.
 
-Task 5 renders the control only for `route.driver_id === auth.uid()`, and both
-`useCancelPickupRoute.ts` and `CancelRouteButton.tsx` carry that caveat in their headers. It
-was **not** closed with a migration, because doing so needs a decision this spec does not
-make: whether `admin` / `operations_manager` keep the ability they have today (the RPC is
-operator-scoped, and cancelling someone else's stuck route is a plausible support action).
-Closing it is a one-function migration once that is answered.
+**Closed 2026-08-21** by `20260821000001_spec61_cancel_pickup_route_authz.sql`, templated on
+`20260812000003` PART 7 (verified: no later migration redefines the function). Who may cancel,
+and the reasoning, decided rather than inferred:
+
+- **the route's own `driver_id`** — the person this spec puts in charge of the route;
+- **`operations_manager` / `admin` / `super_admin`** — they keep exactly what they can do
+  today. This was not the moment to remove an operational escape hatch, especially while an
+  abandoned route has no other in-app exit;
+- **a `pickup_leader` who is not this route's driver gets nothing.** Leaders own their own
+  route; one leader cancelling another's is the same class of problem as the crew case;
+- **`pickup_crew` gets nothing.**
+
+This deliberately does **not** reuse `ROUTE_LEADER_ROLES` (`lib/permissions.ts`) or
+`start_pickup_route`'s list. That list answers "who may OPEN a route", a different question
+from "who may cancel THIS one", and it contains `pickup_leader`, which must not appear here.
+The migration's header and its validation block both say so — the block fails the deploy if
+`pickup_leader` ever appears in the installed body — so a later "fix the inconsistency" edit
+cannot land quietly.
+
+Proof: `packages/database/supabase/tests/spec61_cancel_route_authz.sql`, which runs on every
+QA deploy (`deploy-qa.sh:375`). It calls the RPC under `SET LOCAL ROLE authenticated` (the
+owner is exempt from RLS and the EXECUTE grant is to `authenticated` specifically, so an owner
+connection would prove nothing) and carries **two operators**, without which
+`operator_id = v_operator` in the route lookup is unfalsifiable. Six cases: the crew member of
+that route is refused; a different `pickup_leader` in the same operator is refused; a leader
+from operator B is refused *by the route lookup* (asserted on the message, so the tenant check
+and the leader gate cannot be confused for one another); an `operations_manager` reaching
+across operators is refused the same way; an `operations_manager` can cancel a colleague's
+route; and the route's own driver can, with `cancellation_reason` persisted — which also pins
+that the migration was templated on the spec-52 definition and not the spec-47 original.
+
+The UI gate stays at both call sites as defence in depth, and so an elevated user is not
+casually offered a destructive control on a route that is not theirs. The server is now the
+authority.
 
 ##### Where the cancel lives, and why it is in two places
 
