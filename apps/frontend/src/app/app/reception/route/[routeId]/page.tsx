@@ -88,7 +88,13 @@ export default function RouteReceptionPage() {
         {
           onSuccess: () => {
             toast.success('Recepción completada');
-            router.push('/app/reception');
+            // spec-62 task 23 — closing lands on the acta (Task 22's
+            // /completa route), not back on the list. The acta is the
+            // record of what was expected, what arrived and the note just
+            // written; both the desktop and mobile trees share this one
+            // destination — there is no reason a mobile andén operator is
+            // denied the receipt a desktop receptionist gets.
+            router.push(`/app/reception/route/${routeId}/completa`);
           },
           onError: (e) => {
             toast.error(e.message ?? 'Error al finalizar recepción');
