@@ -102,6 +102,7 @@ Datos: `useIncomingRoutes(operatorId, 'in_transit')` (patio), `'in_progress'` (e
   El héroe recibe el `IncomingRoute` crudo, **no** el `ArrivalRow`: `buildArrivals` no propaga `plate`, y la patente es lo que el receptor coteja contra el camión que tiene delante. `ArrivalRow` sigue alimentando la espera y el estado.
 - **También en patio**: el resto, filas de 56px con chevron.
 - **Diferencias abiertas**: bloque en paleta error desde `useOpenDiscrepancies`. *Resolver* abre el acta de esa recepción (`/completa`), que es donde están las cuatro cifras y la nota. Requiere sumar `pickup_route_id` al `select` del hook y `routeId` a `OpenDiscrepancy` — hoy solo devuelve el id de la recepción y el código de ruta, con los que no se puede construir la URL. No se inventa una acción de "resolver" que hoy no existe en ninguna capa: el botón lleva a leer el caso, no lo cierra.
+- **Reingresos**: sección propia bajo las diferencias, con `ReturnRouteList` → `ReturnReceptionSession`, los mismos componentes que hoy monta la pestaña Retornos del escritorio. **No es una pantalla nueva** — `1k` ya los restyleó para móvil (#449) —, pero sí un punto de entrada obligatorio: `/app/reception/page.tsx` es el **único** lugar del que cuelgan, así que un árbol móvil que no los monte deja los reingresos inalcanzables bajo 1024px. `3r`/`3s` reemplazarán esta sección cuando se abran.
 - **Pie fijo**: *Escanear QR de ruta* (`RouteQRScannerEntry` en hoja a pantalla completa) y *Recibir sin QR*.
   `ReceiveWithoutQRButton` exige `{ routeId, code, plate }` y hoy solo se monta en la página de una ruta concreta (`/route/[routeId]/preview`), así que **no puede vivir tal cual en un pie sin ruta seleccionada**. El pie abre `ReceiveWithoutQRSheet`: lista las rutas `in_progress` (en camino, sin QR escaneado) con código, conductor y patente; al elegir una, monta el `ReceiveWithoutQRButton` existente con su confirmación, sin duplicar la mutación ni el texto de advertencia. Es el caso real — el camión llegó y el QR está ilegible o el conductor no lo trae.
   Estos dos son los únicos caminos que pueden llamar a `open_route_reception`, que congela `expected_count` y bloquea el escaneo de recogida del conductor: nunca se invoca al montar.
@@ -242,6 +243,13 @@ Desde `apps/frontend/`:
 ## Convenciones que este plan da por sentadas
 
 - **Un PR por chunk**, con `gh pr create` seguido de `gh pr merge --auto --squash`. Nunca push directo a `main`.
+- **Una rama por chunk**, creada desde `main` recién actualizado, no encadenada sobre la anterior:
+
+  ```bash
+  git fetch origin && git checkout -b feat/spec-62-chunkN-<nombre> origin/main
+  ```
+
+  Los chunks son secuenciales — cada uno usa lo que el anterior mergeó —, así que empezar el siguiente antes de que el anterior esté en `main` obliga a rebasar. El spec y su plan viven en la rama `docs/spec-62-reception-mobile`, que es aparte del código.
 - Archivos bajo 300 líneas. Si uno se pasa, pártelo por responsabilidad.
 - Español de Chile en toda la UI. Números comparables en `font-mono`.
 - Todo componente nuevo lleva su `.test.tsx` al lado.
@@ -512,6 +520,8 @@ it('sin la prop se comporta igual que siempre', () => {
 });
 ```
 
+`ScanField.test.tsx` hoy importa `render, screen, fireEvent, act`. Añade `import userEvent from '@testing-library/user-event'` — la dependencia ya está instalada.
+
 - [ ] **Step 2: Córrelo y confirma que falla**
 
 Run: `npx vitest run src/components/scan/ScanField.test.tsx`
@@ -620,13 +630,13 @@ git commit -m "feat(spec-62): las diferencias abiertas conocen su ruta"
 **Files:**
 - Create: `apps/frontend/src/lib/reception/reception-mobile-helpers.ts`
 - Create: `apps/frontend/src/lib/reception/reception-mobile-helpers.test.ts`
-- Modify: `apps/frontend/src/app/app/reception/arrivals.ts` (mueve `timeLabel` e impórtalo)
+- Modify: `apps/frontend/src/app/app/reception/arrivals.ts` (mueve `timeLabel` y `minutesSince`, e impórtalos)
 
 - [ ] **Step 1: Escribe el test que falla**
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { receptionInitials, waitLabel, timeLabel } from './reception-mobile-helpers';
+import { receptionInitials, waitLabel, timeLabel, minutesSince } from './reception-mobile-helpers';
 
 describe('receptionInitials', () => {
   it('toma la inicial del nombre y del apellido', () => {
@@ -657,6 +667,19 @@ describe('timeLabel', () => {
     expect(timeLabel('no-es-una-fecha')).toBeNull();
   });
 });
+
+describe('minutesSince', () => {
+  const now = new Date('2026-08-20T13:00:00Z');
+  it('cuenta los minutos desde la llegada', () => {
+    expect(minutesSince('2026-08-20T12:19:00Z', now)).toBe(41);
+  });
+  it('sin llegada no hay espera', () => {
+    expect(minutesSince(null, now)).toBeNull();
+  });
+  it('nunca devuelve una espera negativa por relojes desfasados', () => {
+    expect(minutesSince('2026-08-20T13:05:00Z', now)).toBe(0);
+  });
+});
 ```
 
 - [ ] **Step 2: Córrelo y confirma que falla**
@@ -664,7 +687,11 @@ describe('timeLabel', () => {
 Run: `npx vitest run src/lib/reception/reception-mobile-helpers.test.ts`
 Expected: FAIL — el módulo no existe.
 
-- [ ] **Step 3: Implementa** los tres helpers. `timeLabel` es el que hoy es privado en `arrivals.ts` (`toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })`, `null` si la fecha es inválida): **muévelo** aquí y haz que `arrivals.ts` lo importe. No lo dupliques.
+- [ ] **Step 3: Implementa** los cuatro helpers.
+
+  `timeLabel` y `minutesSince` **ya existen**, privados, dentro de `arrivals.ts` (`toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })` con `null` ante fecha inválida, y `Math.max(0, floor((now - at) / 60_000))`). **Muévelos** aquí, expórtalos, y haz que `arrivals.ts` los importe. No los dupliques: `minutesSince` es de donde sale el `waitingMinutes` de toda la pantalla de patio, y una segunda copia de esa aritmética se desincroniza en la primera corrección.
+
+  `lib/pickup/pickupMobileHelpers.ts` ya tiene su propio `timeLabel` y su `driverInitials`. No los importes desde aquí: los componentes móviles son propios de cada módulo (decisión 2 del spec), y un import cruzado Recepción → Recogida ata dos módulos por un formateo de tres líneas. Deja un comentario de una línea en el archivo nuevo diciendo esto, o el próximo revisor lo preguntará.
 
 - [ ] **Step 4: Corre los tests del módulo entero**
 
@@ -688,7 +715,7 @@ Expected: PASS. Si Vitest no arranca localmente, corre los dos primeros y deja q
 - [ ] **Step 2: PR con auto-merge**
 
 ```bash
-git push -u origin docs/spec-62-reception-mobile
+git push -u origin feat/spec-62-chunk1-base
 gh pr create --title "feat(spec-62): base compartida para Recepción móvil (fase 1)" --body "Chunk 1 del plan de spec-62. Sin cambios visibles salvo el estado del lector."
 gh pr merge --auto --squash
 ```
@@ -920,6 +947,13 @@ export interface ReceptionMobileViewProps {
   onStartCount: (routeId: string) => void;
   onOpenQRScanner: () => void;
   onOpenDiscrepancy: (routeId: string) => void;
+  /**
+   * El bloque de reingresos que hoy vive en la pestaña Retornos del
+   * escritorio (`ReturnRouteList` / `ReturnReceptionSession`). Llega como
+   * slot porque su estado — qué ruta está seleccionada — es de la página, y
+   * porque los dos árboles montan exactamente el mismo bloque.
+   */
+  returnsSlot?: React.ReactNode;
   /** Inyectable para los tests. */
   now?: Date;
 }
@@ -972,7 +1006,13 @@ it('las diferencias abiertas llevan a leer el caso', async () => {
 Run: `npx vitest run src/components/reception/ReceptionMobileView.test.tsx`
 Expected: FAIL.
 
-- [ ] **Step 3: Implementa** — la vista ordena `yardRoutes` por `in_transit_at` ascendente (más antiguo primero), pasa el primero a `ReceptionMobileYardCard` envuelto en `data-testid="reception-yard-hero"` y el resto a filas compactas bajo el eyebrow `TAMBIÉN EN PATIO`. Debajo, el bloque de diferencias en paleta error con su botón *Resolver*. `isLoading` → `Skeleton` con la geometría de la tarjeta héroe, nunca un spinner centrado. El pie es `ReceptionMobileFooterActions` (`{ onScanQR, onNoQR }`, dos botones de 52px), que abre el escáner QR o `ReceiveWithoutQRSheet` con `transitRoutes`.
+- [ ] **Step 3: Implementa** — la vista ordena `yardRoutes` por `in_transit_at` ascendente (más antiguo primero), pasa el primero a `ReceptionMobileYardCard` envuelto en `data-testid="reception-yard-hero"` y el resto a filas compactas bajo el eyebrow `TAMBIÉN EN PATIO`. Debajo, el bloque de diferencias en paleta error con su botón *Resolver*. El pie es `ReceptionMobileFooterActions` (`{ onScanQR, onNoQR }`, dos botones de 52px), que abre el escáner QR o `ReceiveWithoutQRSheet` con `transitRoutes`.
+
+  **De dónde sale `waitingMinutes`:** de `minutesSince(route.in_transit_at, now ?? new Date())`, el helper que la task 6 sacó de `arrivals.ts`. Es el único cálculo de espera de la pantalla; no lo reimplementes en la tarjeta ni en la fila, que lo reciben ya calculado justamente para poder testearse con un número fijo.
+
+  **Vacío:** `EmptyState` con el icono `ArrowUpDown` de `lucide-react` — el mismo que la nav usa para Recepción —, título "Ningún camión en patio" y una descripción que diga qué hacer (escanear el QR cuando llegue uno). El pie sigue montado: es la salida.
+
+  **Carga:** `Skeleton` con la geometría de la tarjeta héroe (mismo alto y radio), nunca un spinner centrado.
 
 - [ ] **Step 4: Corre los tests**
 
@@ -992,7 +1032,19 @@ git commit -m "feat(spec-62): pantalla de patio en móvil (mock 3i)"
 - Modify: `apps/frontend/src/app/app/reception/page.tsx`
 - Modify: `apps/frontend/src/app/app/reception/page.test.tsx`
 
-- [ ] **Step 1: Escribe el test que falla** — mockea `useIsBelowLg` y afirma que con `true` se renderiza `ReceptionMobileView` y **no** la tabla de llegadas ni los `StatTile`; con `false`, al revés. Mockea los hooks de datos como hace `PickupMobileView.test.tsx`.
+- [ ] **Step 1: Escribe el test que falla** — mockea `useIsBelowLg` y afirma que con `true` se renderiza `ReceptionMobileView` y **no** la tabla de llegadas ni los `StatTile`; con `false`, al revés. Mockea los hooks de datos como hace `PickupMobileView.test.tsx`. Añade además este test, que es el que evita una regresión:
+
+```tsx
+it('los reingresos siguen alcanzables en móvil', () => {
+  // ReturnRouteList y ReturnReceptionSession cuelgan ÚNICAMENTE de esta
+  // página. Un árbol móvil que no los monte deja los reingresos
+  // inalcanzables bajo 1024px — y ya están restyleados para móvil (1k,
+  // #449). 3r/3s reemplazarán esta sección cuando se abran.
+  mockUseIsBelowLg.mockReturnValue(true);
+  render(<ReceptionPage />);
+  expect(screen.getByText(/Reingresos/i)).toBeInTheDocument();
+});
+```
 
 - [ ] **Step 2: Córrelo y confirma que falla**
 
@@ -1017,6 +1069,7 @@ if (isBelowLg) {
         onStartCount={(routeId) => router.push(`/app/reception/route/${routeId}`)}
         onOpenQRScanner={() => setShowScanner(true)}
         onOpenDiscrepancy={(routeId) => router.push(`/app/reception/route/${routeId}/completa`)}
+        returnsSlot={returnsSlot}
       />
       {scannerDialog}
     </>
@@ -1024,7 +1077,15 @@ if (isBelowLg) {
 }
 ```
 
-El `<Dialog>` del escáner QR se extrae a una constante (`scannerDialog`) y lo montan **los dos** árboles: es el mismo flujo en ambos. El `<h1>` y el subtítulo de escritorio quedan solo en la rama de escritorio — si se montan junto a `ReceptionMobileHeader` salen dos títulos a 390px, que es lo que pasó en QA con `3h`.
+Tres cosas que este paso tiene que resolver, y ninguna es opcional:
+
+1. **Importa `useRouter`** de `next/navigation`. La página **no** lo tiene hoy: navega solo a través de componentes hijos. Sin esto, `onStartCount` no compila.
+
+2. **Los reingresos tienen que seguir alcanzables.** `ReturnRouteList` y `ReturnReceptionSession` cuelgan únicamente de este archivo (líneas 15-16, 147-154 hoy). Extrae ese bloque — el que hoy vive dentro del `<Tabs value="returns">` — a una constante `returnsSlot`, y móntala en **los dos** árboles: en escritorio dentro de su pestaña, como hoy, y en móvil como sección propia de `ReceptionMobileView` (una prop `returnsSlot?: React.ReactNode`, bajo el bloque de diferencias, con el encabezado `REINGRESOS`). Si la rama móvil no la monta, los reingresos desaparecen bajo 1024px y la regresión no la ve nadie hasta que un operario la reporte desde el andén.
+
+3. **El `<Dialog>` del escáner QR** también se extrae a una constante (`scannerDialog`) y lo montan los dos árboles: es el mismo flujo en ambos.
+
+El `<h1>` y el subtítulo de escritorio quedan solo en la rama de escritorio — si se montan junto a `ReceptionMobileHeader` salen dos títulos a 390px, que es lo que pasó en QA con `3h`.
 
 - [ ] **Step 4: Corre los tests**
 
@@ -1042,7 +1103,7 @@ git commit -m "feat(spec-62): /app/reception elige árbol de terreno bajo lg"
 
 - [ ] **Step 1: Verifica** — `npm run type-check && npm run lint && npm run test:run`.
 - [ ] **Step 2: Míralo a 390×844** (`npm run dev`, DevTools en iPhone 12): el héroe es el camión que más espera, ningún texto informativo bajo 13.5px, ninguna zona táctil bajo 44px, y la barra de pestañas sigue visible en esta pantalla.
-- [ ] **Step 3: PR con auto-merge** y espera el merge antes del chunk 3.
+- [ ] **Step 3: PR con auto-merge** desde `feat/spec-62-chunk2-patio`, y espera el merge antes de crear la rama del chunk 3.
 
 ---
 
@@ -1420,7 +1481,7 @@ git commit -m "feat(spec-62): la sesión elige árbol de terreno y el resultado 
 
 - [ ] **Step 1: Verifica** — `npm run type-check && npm run lint && npm run test:run`.
 - [ ] **Step 2: Pruébalo con el lector de QA** si tienes acceso: ráfaga sin sufijo Enter, un código repetido y uno que no pertenezca a la ruta. Los tres tienen que quedar registrados y visibles sin tocar la pantalla.
-- [ ] **Step 3: PR con auto-merge** y espera el merge antes del chunk 4.
+- [ ] **Step 3: PR con auto-merge** desde `feat/spec-62-chunk3-descarga`, y espera el merge antes de crear la rama del chunk 4.
 
 ---
 
@@ -1571,6 +1632,6 @@ git commit -m "test(spec-62): E2E móvil de patio a acta"
 ### Task 25: Cierra el spec
 
 - [ ] **Step 1: Verifica todo** — `npm run type-check && npm run lint && npm run test:run`, y la cobertura sobre 70% con `npm run test:coverage`.
-- [ ] **Step 2: PR con auto-merge**, espera `gh pr checks` y confirma el merge con `gh pr view <N> --json state,mergedAt`.
+- [ ] **Step 2: PR con auto-merge** desde `feat/spec-62-chunk4-acta`, espera `gh pr checks` y confirma el merge con `gh pr view <N> --json state,mergedAt`.
 - [ ] **Step 3: Revisa las tres pantallas en QA** desde un teléfono real o DevTools a 390×844, con el tema claro y el oscuro.
 - [ ] **Step 4: Deja el `**Status:**` del spec en `in progress`** hasta que el usuario confirme que está terminado. Nunca lo declares `completed` por tu cuenta.
