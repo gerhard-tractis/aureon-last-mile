@@ -22,7 +22,7 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import {
   seed, teardown, closeDb, packageStatus, routeReception, activeRoute,
-  scanBarcode, COLLECTED, UNEXPECTED, LEFT_BEHIND,
+  scanBarcode, scanUntilStatus, COLLECTED, UNEXPECTED, LEFT_BEHIND,
 } from './support/spec52-fixture';
 import { openRouteForReception } from './support/reception-mobile-fixture';
 
@@ -46,6 +46,28 @@ test.use({ viewport: { width: 390, height: 844 } });
  * instead of a silent `getByLabel` timeout on CI.
  */
 const MOBILE_SCANNER_LABEL = 'Código de barras';
+
+/**
+ * Same act-then-check pattern as `scanUntilStatus` (spec52-fixture.ts), for
+ * the one case that can't key off a package's DB status: re-scanning a
+ * package that is already `en_bodega` needs its `scanResult` to flip to
+ * `duplicate`, not its status to change — status is a poor proxy here
+ * because it's already at the target value before the duplicate scan even
+ * happens, so `scanUntilStatus` would return without ever exercising the
+ * duplicate path. Polls the visible result block instead, retrying the scan
+ * on each iteration that hasn't shown it yet — covering the same dropped-scan
+ * window (ids not yet resolved) `scanUntilStatus` guards against.
+ */
+async function scanUntilFeedback(
+  page: Page, label: string, code: string, want: string,
+): Promise<void> {
+  await expect.poll(async () => {
+    const text = (await page.getByTestId('scan-feedback').textContent()) ?? '';
+    if (text.includes(want)) return true;
+    await scanBarcode(page, label, code);
+    return false;
+  }, { timeout: 20_000, intervals: [500, 1000, 2000, 3000, 3000] }).toBe(true);
+}
 
 /**
  * The five expected packages a receptionist actually gets handed: every
@@ -106,7 +128,7 @@ test.describe('spec-62 mobile reception — yard to acta', () => {
     await expect(hero, `hero card for route ${routeCode} on the yard screen`).toBeVisible();
     await expect(hero).toContainText('EN PATIO ESPERANDO');
     await expect(hero).toContainText(routeCode);
-    await expect(hero).toContainText(String(HANDED_OVER.length + 1)); // expected_packages
+    await expect(hero).toContainText(`${HANDED_OVER.length + 1} paquetes esperados`);
   });
 
   test('starting the count lands on the scanning session', async () => {
@@ -122,14 +144,14 @@ test.describe('spec-62 mobile reception — yard to acta', () => {
   test('scanning moves the count; a repeat and an unexpected box do not block it',
     async () => {
       test.setTimeout(180_000);
-      const header = recep.locator('header').first();
+      // Not the page's own <header> — that's TopBar, rendered unconditionally
+      // above <main> with no `lg:` gating (AppLayout.tsx), so it exists at
+      // 390px too and would resolve first. The session's own counter header
+      // lives inside <main> (ReceptionMobileSession.tsx).
+      const header = recep.locator('main header');
 
       for (const label of HANDED_OVER) {
-        await scanBarcode(recep, MOBILE_SCANNER_LABEL, label);
-        await expect.poll(
-          () => packageStatus(label),
-          { timeout: 20_000, message: `package ${label} should reach en_bodega` },
-        ).toBe('en_bodega');
+        await scanUntilStatus(recep, MOBILE_SCANNER_LABEL, label, 'en_bodega');
       }
       // Five expected boxes handed over — the running counter has moved.
       await expect(header, 'the received/expected counter after five scans')
@@ -137,19 +159,15 @@ test.describe('spec-62 mobile reception — yard to acta', () => {
 
       // Re-scan a box already counted: the result block must say so, and the
       // counter must NOT move, but scanning must keep working afterward.
-      await scanBarcode(recep, MOBILE_SCANNER_LABEL, HANDED_OVER[0]);
+      await scanUntilFeedback(recep, MOBILE_SCANNER_LABEL, HANDED_OVER[0], 'YA ESCANEADO');
       await expect(recep.getByTestId('scan-feedback')).toContainText('YA ESCANEADO');
       await expect(header, 'counter unchanged after a duplicate scan')
         .toContainText(`${HANDED_OVER.length}/`);
 
       // A box that arrived on this truck but was never verified at pickup —
       // recorded, and it does move the counter, but tagged as "ajeno".
-      await scanBarcode(recep, MOBILE_SCANNER_LABEL, UNEXPECTED);
+      await scanUntilStatus(recep, MOBILE_SCANNER_LABEL, UNEXPECTED, 'en_bodega');
       await expect(recep.getByTestId('scan-feedback')).toContainText('AJENO');
-      await expect.poll(
-        () => packageStatus(UNEXPECTED),
-        { timeout: 20_000, message: 'the unexpected package should reach en_bodega too' },
-      ).toBe('en_bodega');
       await expect(header, 'counter after the unexpected scan')
         .toContainText(`${HANDED_OVER.length + 1}/`);
 
@@ -199,12 +217,15 @@ test.describe('spec-62 mobile reception — yard to acta', () => {
     // faltantes, ajenos. Real route_receptions columns, not a UI recount —
     // see ReceptionReceipt's own docstring for why a raw subtraction would
     // be wrong here (the unexpected package double-counts if you try).
-    await expect(recep.getByTestId('acta-esperados')).toContainText(
-      String(HANDED_OVER.length + 1));
-    await expect(recep.getByTestId('acta-recibidos')).toContainText(
-      String(HANDED_OVER.length + 1));
-    await expect(recep.getByTestId('acta-faltantes')).toContainText('1');
-    await expect(recep.getByTestId('acta-ajenos')).toContainText('1');
+    // Value is the last text node in each row (label span, then value span,
+    // e.g. "Faltantes1") — anchor on the end so this can't pass on the wrong
+    // digit if another row's number happened to be a substring.
+    await expect(recep.getByTestId('acta-esperados'))
+      .toContainText(new RegExp(`${HANDED_OVER.length + 1}$`));
+    await expect(recep.getByTestId('acta-recibidos'))
+      .toContainText(new RegExp(`${HANDED_OVER.length + 1}$`));
+    await expect(recep.getByTestId('acta-faltantes')).toContainText(/1$/);
+    await expect(recep.getByTestId('acta-ajenos')).toContainText(/1$/);
 
     // The note just written is on the acta, verbatim — not merely present.
     await expect(recep.getByTestId('acta-nota'), 'the discrepancy note on the acta')
