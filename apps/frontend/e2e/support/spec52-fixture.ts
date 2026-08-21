@@ -43,7 +43,15 @@ export const RECEPTIONIST = {
 
 export const PLATE = 'E2E52AA';
 
-/** Accessible names of the two scanner inputs, shared by every spec that scans. */
+/**
+ * Accessible names of the two scanner inputs. spec52's own spec still keeps
+ * local copies of both (its `PICKUP_SCANNER`/`RECEPTION_SCANNER` consts) —
+ * left as-is rather than switched over to these, to avoid touching a passing
+ * suite for this task. `PICKUP_SCANNER_LABEL` is used by
+ * `reception-mobile-fixture.ts`'s `openRouteForReception`; nothing imports
+ * `RECEPTION_SCANNER_LABEL` yet — exported ahead of Task 25's reception spec,
+ * which will need it for its own scanning steps.
+ */
 export const PICKUP_SCANNER_LABEL = 'Barcode scanner input';
 export const RECEPTION_SCANNER_LABEL = 'Escáner de recepción';
 

@@ -3,13 +3,14 @@
  *
  * Split out of spec52-fixture.ts rather than added to it: that file is
  * already at the repo's 300-line file guideline, and this helper — plus its
- * rationale — does not fit inside that budget. Everything it needs (seed,
- * signIn, scanUntilStatus, the LOADS/COLLECTED/PLATE constants) is re-exported
- * from there; this file adds exactly one function.
+ * rationale — does not fit inside that budget. This file exports exactly one
+ * function, `openRouteForReception`. Everything else Task 25 needs — `seed`,
+ * `teardown`, `db`, `signIn`, `scanUntilStatus`, the role/label constants —
+ * is NOT re-exported here; import those directly from `./spec52-fixture`.
  */
 import { expect, type Page } from '@playwright/test';
 import {
-  signIn, scanUntilStatus, activeRoute,
+  signIn, scanUntilStatus, activeRoute, routeReception, packageStatus,
   DRIVER, RECEPTIONIST, LOADS, COLLECTED, PLATE, PREFIX,
   PICKUP_SCANNER_LABEL,
 } from './spec52-fixture';
@@ -20,18 +21,27 @@ import {
  * at `in_progress` and hand the rest to the caller: reception is what that
  * spec exercises, so its own fixture setup must clear the driver side first.
  *
- * `seed()` alone does not reach this state. It only rows the tenant, the two
- * users, the vehicle and the packages (all `ingresado`) — nothing seeds a
- * `pickup_routes` row, because in this app a route is not data you insert, it
- * is a sequence of RPCs a signed-in user calls: `open_route_reception`
- * (20260812000005) checks `auth.uid()`'s permissions and stamps
- * `received_by`/`delivered_by` from it, and the pickup-scan trigger
- * (`trg_pickup_scans_enforce_route_lock`) reads the route status live. A raw
- * INSERT into `route_receptions` would skip both, produce a batch nothing
- * else recognizes as legitimately opened, and drift the moment either
- * function's body changes. So this reuses the exact screens spec-52's own
- * suite drives (`e2e/spec52-pickup-reception-end-to-end.spec.ts`, tests 1–4)
- * instead of re-deriving their SQL.
+ * PRECONDITION: `seed()` (from `./spec52-fixture`) must already have run in
+ * this test file's `beforeAll` — this function only drives UI screens, it
+ * does not seed the tenant, the two users, the vehicle or the packages
+ * itself. Checked below rather than assumed: without the check, a missing
+ * `seed()` call fails as an opaque timeout on a login form or a manifest row
+ * that never renders, on a suite that only ever runs on the remote VPS
+ * runner, where the failure is a log to read after the fact, not something
+ * to step through live.
+ *
+ * `seed()` alone does not reach the in_transit/open-reception state, though.
+ * It only rows the tenant, the two users, the vehicle and the packages (all
+ * `ingresado`) — nothing seeds a `pickup_routes` row, because in this app a
+ * route is not data you insert, it is a sequence of RPCs a signed-in user
+ * calls: `open_route_reception` (20260812000005) checks `auth.uid()`'s
+ * permissions and stamps `received_by`/`delivered_by` from it, and the
+ * pickup-scan trigger (`trg_pickup_scans_enforce_route_lock`) reads the route
+ * status live. A raw INSERT into `route_receptions` would skip both, produce
+ * a batch nothing else recognizes as legitimately opened, and drift the
+ * moment either function's body changes. So this reuses the exact screens
+ * spec-52's own suite drives (`e2e/spec52-pickup-reception-end-to-end.spec.ts`,
+ * tests 1–4) instead of re-deriving their SQL.
  *
  * Two pages, not one: the driver side needs `lg`-or-above (see the width note
  * in spec52's own beforeAll) or `PickupMobileView` mounts instead of the
@@ -50,6 +60,13 @@ import {
 export async function openRouteForReception(
   driverPage: Page, receptionistPage: Page,
 ): Promise<{ id: string; code: string }> {
+  if (!(await packageStatus(COLLECTED[0]))) {
+    throw new Error(
+      'openRouteForReception() requires seed() to have run first — ' +
+      `no package found with label ${COLLECTED[0]}`,
+    );
+  }
+
   await signIn(driverPage, DRIVER);
   await driverPage.goto('/app/pickup');
   for (const load of LOADS) {
@@ -83,6 +100,13 @@ export async function openRouteForReception(
   await receptionistPage.getByLabel('Código de ruta').fill(route.id);
   await receptionistPage.getByLabel('Buscar ruta').click();
   await receptionistPage.waitForURL(`**/app/reception/route/${route.id}`);
+
+  // Post-condition: the reception batch genuinely opened. Without this, a
+  // selector drift anywhere in the QR-scan step above would surface as an
+  // inexplicable assertion failure inside Task 25's first test rather than
+  // here, at the setup step that actually broke.
+  const rr = await routeReception(route.id);
+  expect(rr?.status).toBe('pending');
 
   return { id: route.id, code: route.code };
 }

@@ -37,6 +37,15 @@ export default defineConfig({
   // No retries: a green-on-retry E2E hides exactly the flakiness we need to
   // see before this job is allowed to gate production.
   retries: 0,
+
+  // LOAD-BEARING, not a default left alone: every suite testMatch collects
+  // shares spec-52's seed namespace — same PREFIX ('E2E52'), same PLATE, same
+  // two user emails (spec52-fixture.ts and reception-mobile-fixture.ts both
+  // build on it) — and seed() opens with teardown(). Serial execution is the
+  // only reason a second suite's seed() doesn't delete the first suite's
+  // still-running route. Raising this (or turning on fullyParallel) requires
+  // namespacing the fixtures first — otherwise the failure that shows up
+  // looks like app flakiness, not a config change.
   workers: 1,
   forbidOnly: true,
 
