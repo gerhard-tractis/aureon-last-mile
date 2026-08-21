@@ -2,8 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PickupRouteCrewStrip } from './PickupRouteCrewStrip';
 
+// Deliberately queries by ROLE, not by the data-testid the chips also carry.
+// Every test in this file counts through this helper, so going via testid
+// meant the whole suite passed if the <section>/<ul>/<li> collapsed into
+// <div>s — the semantics the strip's screen-reader behaviour rests on had
+// zero coverage. The testids stay for PickupMobileView.test.tsx, where a
+// composed tree makes getAllByRole ambiguous.
 function names() {
-  return screen.getAllByTestId('crew-member').map((n) => n.textContent ?? '');
+  return screen.getAllByRole('listitem').map((n) => n.textContent ?? '');
 }
 
 describe('PickupRouteCrewStrip', () => {
@@ -17,6 +23,9 @@ describe('PickupRouteCrewStrip', () => {
         ]}
       />,
     );
+    // The eyebrow IS the region's accessible name (aria-labelledby), so this
+    // fails if the section loses its label or the eyebrow loses its id.
+    expect(screen.getByRole('region', { name: /equipo/i })).toBeInTheDocument();
     const rendered = names();
     expect(rendered).toHaveLength(3);
     expect(rendered[0]).toContain('M. Rojas');
@@ -52,6 +61,27 @@ describe('PickupRouteCrewStrip', () => {
     expect(screen.getByText('EQUIPO · 3')).toBeInTheDocument();
   });
 
+  // The strip sits above the STATS grid and the "next load" hero on a 390px
+  // phone, and spec-61 caps crew size nowhere. Unbounded, nine chips wrap to
+  // ~4 rows and push the hero — the driver's primary action — off the fold.
+  it('stops growing past five chips, without lying about the headcount', () => {
+    render(
+      <PickupRouteCrewStrip
+        driverName="M. Rojas"
+        crew={Array.from({ length: 8 }, (_, i) => ({
+          user_id: `u${i}`,
+          full_name: `Crew ${i}`,
+        }))}
+      />,
+    );
+    expect(names()).toHaveLength(5);
+    expect(screen.getByText('+4 más')).toBeInTheDocument();
+    // The count is never what gets truncated.
+    expect(screen.getByText('EQUIPO · 9')).toBeInTheDocument();
+    // The overflow indicator is text, not a "show more" control (Decision 1).
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('renders nothing for a solo route rather than an empty header', () => {
     const { container } = render(<PickupRouteCrewStrip driverName="M. Rojas" crew={[]} />);
     expect(container).toBeEmptyDOMElement();
@@ -78,7 +108,7 @@ describe('PickupRouteCrewStrip', () => {
   // JOIN on `users` survives RLS's `deleted_at IS NULL` filter, so the seat
   // still comes back — with no name. That person is still on the trip and
   // must still occupy a chip.
-  it('keeps a soft-deleted member on the strip under a placeholder, never an id', () => {
+  it('keeps a soft-deleted member on the strip, named for why they have no name', () => {
     render(
       <PickupRouteCrewStrip
         driverName={null}
@@ -90,9 +120,8 @@ describe('PickupRouteCrewStrip', () => {
     );
     const rendered = names();
     expect(rendered).toHaveLength(3);
-    expect(rendered[0]).toContain('Sin nombre');
-    expect(rendered[1]).toContain('Sin nombre');
+    expect(rendered[0]).toContain('Cuenta eliminada');
+    expect(rendered[1]).toContain('Cuenta eliminada');
     expect(rendered[2]).toContain('Luis Soto');
-    expect(screen.queryByText('u1')).toBeNull();
   });
 });
