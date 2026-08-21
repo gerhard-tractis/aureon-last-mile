@@ -12,9 +12,9 @@ describe('finalizeRule', () => {
     expect(r).toEqual({ matched: 8, missing: 2, needsNote: true });
   });
 
-  // El caso que el conteo crudo esconde: cuadra en total, pero un paquete
-  // esperado no llegó y uno de otro camión sí. Es exactamente para lo que
-  // existe el reporte de discrepancia.
+  // The case the raw count hides: it checks out in total, but one expected
+  // package never arrived and one from another truck did. This is exactly
+  // what the discrepancy report exists to catch.
   it('pide nota cuando las cifras se compensan entre sí', () => {
     const r = finalizeRule({ expectedCount: 10, receivedCount: 10, unexpectedCount: 1 });
     expect(r.matched).toBe(9);
@@ -30,13 +30,13 @@ describe('finalizeRule', () => {
 });
 
 describe('la relación con el guard del servidor', () => {
-  // NO se testea paridad: complete_route_reception conserva el guard de
-  // spec-47 (received < expected) y la regla matched/unexpected quedó
-  // diferida a spec-56 — ver decisión 5 del spec y la PART 3 de
-  // 20260812000006_spec52_unexpected_count.sql. Lo que sí debe cumplirse
-  // siempre es la INCLUSIÓN: donde el servidor exige nota, la UI también.
-  // Si esto se rompe, la recepción queda sin poder cerrarse: el servidor
-  // levanta la excepción y la UI nunca abrió la hoja para escribir la nota.
+  // Parity is NOT what's under test here: complete_route_reception keeps the
+  // spec-47 guard (received < expected) and the matched/unexpected rule was
+  // deferred to spec-56 — see decision 5 of the spec and PART 3 of
+  // 20260812000006_spec52_unexpected_count.sql. What must always hold is
+  // INCLUSION: wherever the server requires a note, the UI does too. If this
+  // breaks, the reception can never close: the server raises the exception
+  // and the UI never opened the sheet to write the note.
   it('exige nota en todos los casos en que el servidor la exigiría', () => {
     for (let expectedCount = 0; expectedCount <= 6; expectedCount++) {
       for (let receivedCount = 0; receivedCount <= 6; receivedCount++) {

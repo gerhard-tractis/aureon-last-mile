@@ -19,7 +19,7 @@ interface FinalizeReceptionButtonProps {
   expectedCount: number;
   /**
    * Received packages with no verified pickup scan on this route
-   * (`route_receptions.unexpected_count`). Load-bearing — see `needsNotes`.
+   * (`route_receptions.unexpected_count`). Load-bearing — see `finalize-rule`.
    */
   unexpectedCount: number;
   isPending?: boolean;

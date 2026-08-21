@@ -1,28 +1,31 @@
 /**
- * Cuándo cerrar una recepción exige nota de discrepancia.
+ * When closing a reception requires a discrepancy note.
  *
- * Vivía dentro de FinalizeReceptionButton; se extrajo al aparecer el segundo
- * consumidor (la hoja móvil de spec-62). Una regla con dos consumidores no
- * puede estar escrita dos veces.
+ * This used to live inside FinalizeReceptionButton; it was extracted once a
+ * second consumer appeared (spec-62's mobile sheet). A rule with two
+ * consumers cannot be written twice.
  *
- * POR QUÉ NO ES received < expected. spec-52 acepta un paquete que llega sin
- * retiro verificado en esa ruta: incrementa received_count Y unexpected_count,
- * así que los dos errores se compensan y el conteo crudo cuadra:
+ * WHY IT IS NOT received < expected. spec-52 accepts a package that arrives
+ * with no verified pickup scan on this route: it increments received_count
+ * AND unexpected_count, so the two errors offset and the raw count checks
+ * out:
  *
- *   10 esperados · 10 recibidos · 1 ajeno
- *     -> cuadra, y sin embargo UN paquete esperado no llegó y UNO de otro
- *        camión sí. Comparar totales lo deja pasar en silencio.
+ *   10 expected · 10 received · 1 unexpected
+ *     -> checks out, and yet ONE expected package never arrived and ONE
+ *        package from another truck did. Comparing totals lets it through
+ *        silently.
  *
- * Separar las poblaciones no lo deja pasar:
+ * Separating the populations does not let it through:
  *   matched   := received - unexpected
  *   needsNote := matched !== expected || unexpected > 0
  *
- * ASIMETRÍA DELIBERADA CON EL SERVIDOR. complete_route_reception conserva el
- * guard de spec-47 (`received_count < expected_count`); la regla de arriba
- * quedó explícitamente diferida — ver PART 3 de
- * 20260812000006_spec52_unexpected_count.sql — y es trabajo de spec-56. La UI
- * pide nota en más casos que el servidor, nunca en menos: esa dirección es la
- * segura. La inversa dejaría la recepción sin poder cerrarse.
+ * DELIBERATE ASYMMETRY WITH THE SERVER. complete_route_reception keeps the
+ * spec-47 guard (`received_count < expected_count`); the rule above was
+ * explicitly deferred — see PART 3 of
+ * 20260812000006_spec52_unexpected_count.sql — and is spec-56's job. The UI
+ * asks for a note in more cases than the server, never in fewer: that
+ * direction is the safe one. The reverse would leave the reception unable to
+ * close.
  */
 export interface ReceptionCounts {
   expectedCount: number;
@@ -31,9 +34,9 @@ export interface ReceptionCounts {
 }
 
 export interface FinalizeDecision {
-  /** Esperados que efectivamente llegaron. */
+  /** Expected packages that actually arrived. */
   matched: number;
-  /** Esperados que no llegaron. Nunca negativo. */
+  /** Expected packages that never arrived. Never negative. */
   missing: number;
   needsNote: boolean;
 }
@@ -52,8 +55,8 @@ export function finalizeRule({
 }
 
 /**
- * Lo que el servidor exige HOY, ni más ni menos. Existe para que el test de
- * inclusión pueda nombrarlo; no lo uses para decidir en la UI.
+ * What the server requires TODAY, no more, no less. Exists so the inclusion
+ * test can name it; do not use it to decide anything in the UI.
  */
 export function serverRequiresNote({ expectedCount, receivedCount }: ReceptionCounts): boolean {
   return receivedCount < expectedCount;
