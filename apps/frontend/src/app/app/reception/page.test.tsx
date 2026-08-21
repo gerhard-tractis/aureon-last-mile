@@ -30,8 +30,12 @@ vi.mock('@/hooks/reception/useIncomingRoutes', () => ({
 vi.mock('@/hooks/reception/useOpenDiscrepancies', () => ({
   useOpenDiscrepancies: () => ({ data: mockDiscrepancies, isLoading: false }),
 }));
+let mockOperatorId: string | null = 'op-1';
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => ({ operatorId: 'op-1' }),
+  useOperatorId: () => ({ operatorId: mockOperatorId }),
+}));
+vi.mock('@/hooks/useCurrentUserName', () => ({
+  useCurrentUserName: () => ({ data: 'Marcela Rojas' }),
 }));
 vi.mock('@/components/reception/RouteQRScannerEntry', () => ({
   RouteQRScannerEntry: () => <div data-testid="route-qr-scanner" />,
@@ -42,7 +46,22 @@ vi.mock('./ReturnRouteList', () => ({
 vi.mock('./ReturnReceptionSession', () => ({
   ReturnReceptionSession: () => <div data-testid="return-reception-session" />,
 }));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const mockRouterPush = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mockRouterPush }) }));
+
+const mockUseIsBelowLg = vi.fn();
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => mockUseIsBelowLg(),
+}));
+
+// Mounted transitively by ReceptionMobileView's footer
+// (ReceiveWithoutQRSheet → ReceiveWithoutQRButton). Mocked exactly as in
+// ReceptionMobileView's own test, so a stray call fails loudly instead of
+// hitting a real Supabase client.
+const mockOpenRouteReceptionMutate = vi.fn();
+vi.mock('@/hooks/reception/useOpenRouteReception', () => ({
+  useOpenRouteReception: () => ({ mutate: mockOpenRouteReceptionMutate, isPending: false }),
+}));
 
 /** Reads the figure out of the StatTile carrying the given label. */
 function tile(label: string): HTMLElement {
@@ -55,6 +74,8 @@ describe('ReceptionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDiscrepancies = [];
+    mockOperatorId = 'op-1';
+    mockUseIsBelowLg.mockReturnValue(false);
     mockUseIncomingRoutes.mockImplementation((_op: string, status: string) => {
       if (status === 'in_progress') return { data: onTheRoad, isLoading: false };
       if (status === 'in_transit') return { data: inYard, isLoading: false };
@@ -161,6 +182,57 @@ describe('ReceptionPage', () => {
     it('keeps returns in their own tab, not in the arrivals table', () => {
       render(<ReceptionPage />);
       expect(screen.getByTestId('return-route-list')).toBeInTheDocument();
+    });
+
+    it('names the desktop tab Reingresos, matching the mobile eyebrow and labels.es.ts', () => {
+      render(<ReceptionPage />);
+      expect(screen.getByRole('tab', { name: /Reingresos/i })).toBeInTheDocument();
+    });
+  });
+
+  describe('viewport branching (spec-62 task 13)', () => {
+    it('below lg renders the mobile field tree, not the desktop arrivals table or StatTiles', () => {
+      mockUseIsBelowLg.mockReturnValue(true);
+      render(<ReceptionPage />);
+      // Only the mobile tree renders this header/avatar combo.
+      expect(screen.getByTestId('reception-mobile-avatar')).toBeInTheDocument();
+      // The desktop-only chrome must be entirely absent.
+      expect(screen.queryAllByTestId('arrival-row')).toHaveLength(0);
+      expect(screen.queryAllByTestId('stat-tile')).toHaveLength(0);
+      expect(screen.queryByText('Rutas esperadas hoy')).not.toBeInTheDocument();
+    });
+
+    it('at or above lg renders the desktop tree, not the mobile field header', () => {
+      mockUseIsBelowLg.mockReturnValue(false);
+      render(<ReceptionPage />);
+      expect(screen.getAllByTestId('arrival-row').length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId('stat-tile').length).toBeGreaterThan(0);
+      expect(screen.queryByTestId('reception-mobile-avatar')).not.toBeInTheDocument();
+    });
+
+    it('los reingresos siguen alcanzables en móvil', () => {
+      // ReturnRouteList and ReturnReceptionSession hang ONLY off this page.
+      // A mobile tree that does not mount them leaves reingresos
+      // unreachable below 1024px — and they were only just restyled for
+      // mobile (1k, #449).
+      mockUseIsBelowLg.mockReturnValue(true);
+      render(<ReceptionPage />);
+      expect(screen.getByText(/Reingresos/i)).toBeInTheDocument();
+      expect(screen.getByTestId('return-route-list')).toBeInTheDocument();
+    });
+
+    it('the QR scanner dialog opens from the mobile tree too', async () => {
+      mockUseIsBelowLg.mockReturnValue(true);
+      render(<ReceptionPage />);
+      expect(screen.queryByTestId('route-qr-scanner')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: /Escanear QR de ruta/i }));
+      expect(screen.getByTestId('route-qr-scanner')).toBeInTheDocument();
+    });
+
+    it('never calls open_route_reception on mount of either tree', () => {
+      mockUseIsBelowLg.mockReturnValue(true);
+      render(<ReceptionPage />);
+      expect(mockOpenRouteReceptionMutate).not.toHaveBeenCalled();
     });
   });
 });
