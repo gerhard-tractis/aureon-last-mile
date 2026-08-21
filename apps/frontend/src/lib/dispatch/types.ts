@@ -43,7 +43,7 @@ export type ScanResult = {
 } | {
   ok: false;
   message: string;
-  code: 'NOT_FOUND' | 'WRONG_STATUS' | 'ALREADY_IN_ROUTE';
+  code: 'NOT_FOUND' | 'WRONG_STATUS' | 'ALREADY_IN_ROUTE' | 'IN_CONSOLIDATION' | 'QUERY_FAILED';
 }
 
 // dispatches.status comes from dispatch_status_enum (DB-level). Keep these values verbatim.

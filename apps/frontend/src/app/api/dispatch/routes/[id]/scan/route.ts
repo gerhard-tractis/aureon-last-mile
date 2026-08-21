@@ -1,7 +1,7 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { validateScan } from '@/lib/dispatch/scan-validator';
+import { validateScan, DISPATCHABLE_STATUSES } from '@/lib/dispatch/scan-validator';
 
 const bodySchema = z.object({ code: z.string().min(1) });
 
@@ -26,7 +26,9 @@ export async function POST(
       return NextResponse.json({ code: 'VALIDATION_ERROR' }, { status: 400 });
     }
 
-    const validation = await validateScan({ code: parsed.data.code, routeId, operatorId });
+    // The handler's own client: validateScan used to build a browser client,
+    // which server-side has no session and is refused by RLS.
+    const validation = await validateScan(supabase, { code: parsed.data.code, routeId, operatorId });
     if (!validation.ok) {
       return NextResponse.json({ code: validation.code, message: validation.message }, { status: 422 });
     }
@@ -44,12 +46,15 @@ export async function POST(
       .single();
     if (dispatchError) throw dispatchError;
 
+    // Whatever state the validator accepted is what has to advance. Filtering
+    // on 'asignado' alone would leave a package that was scanned in from an
+    // andén sitting at 'sectorizado' while its dispatch row already existed.
     await supabase
       .from('packages')
       .update({ status: 'en_carga' })
       .eq('operator_id', operatorId)
       .eq('order_id', validation.package.order_id)
-      .eq('status', 'asignado');
+      .in('status', [...DISPATCHABLE_STATUSES]);
 
     // Increment planned_stops
     const { data: currentRoute } = await supabase
