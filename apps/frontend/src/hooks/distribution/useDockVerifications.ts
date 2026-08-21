@@ -1,16 +1,18 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import {
+  recordDockVerification,
+  type DockVerificationSource,
+} from '@/lib/distribution/record-dock-verification';
 import { playFeedback } from '@/lib/pickup/audio';
 
-export type DockVerificationSource = 'scan' | 'tap';
+export type { DockVerificationSource };
 
 export interface DockVerificationInput {
   packageId: string;
   source: DockVerificationSource;
 }
-
-const PG_UNIQUE_VIOLATION = '23505';
 
 /**
  * Returns a Set<package_id> of packages verified today (eyes-on) by this operator.
@@ -79,17 +81,7 @@ export function useDockVerificationMutation(operatorId: string, userId: string) 
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ packageId, source }: DockVerificationInput) => {
-      const supabase = createSPAClient();
-      const { error } = await supabase.from('dock_verifications').insert({
-        operator_id: operatorId,
-        package_id: packageId,
-        verified_by: userId,
-        source,
-        verified_at: new Date().toISOString(),
-      });
-      if (error && error.code !== PG_UNIQUE_VIOLATION) {
-        throw error;
-      }
+      await recordDockVerification({ operatorId, packageId, userId, source });
       playFeedback('verified');
       return { packageId, source };
     },

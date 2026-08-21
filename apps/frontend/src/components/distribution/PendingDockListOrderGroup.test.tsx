@@ -247,4 +247,58 @@ describe('PendingDockListOrderGroup', () => {
     expect(onManualAssign).toHaveBeenCalledWith('pkg-1', 'zone-a');
     expect(onManualAssign).not.toHaveBeenCalledWith('pkg-2', expect.anything());
   });
+
+  // spec-39 Addendum 4 — the rail and tint alone were read as "nothing
+  // happened" by crews working at arm's length from the screen.
+  describe('verificado chip', () => {
+    it('labels a verified row', () => {
+      render(
+        <PendingDockListOrderGroup
+          order={makeOrder()}
+          zoneCode="A1"
+          verifiedPackageIds={new Set(['pkg-1'])}
+          onTapVerify={() => {}}
+          activeZones={activeZones}
+          density="detallado"
+          today={TODAY}
+        />
+      );
+
+      const verifiedRow = screen.getByTestId('pending-row-pkg-1');
+      expect(verifiedRow.textContent).toContain('Verificado');
+    });
+
+    it('leaves an unverified row unlabelled', () => {
+      render(
+        <PendingDockListOrderGroup
+          order={makeOrder()}
+          zoneCode="A1"
+          verifiedPackageIds={new Set(['pkg-1'])}
+          onTapVerify={() => {}}
+          activeZones={activeZones}
+          density="detallado"
+          today={TODAY}
+        />
+      );
+
+      const pendingRow = screen.getByTestId('pending-row-pkg-2');
+      expect(pendingRow.textContent).not.toContain('Verificado');
+    });
+
+    it('keeps the chip in compacto density', () => {
+      render(
+        <PendingDockListOrderGroup
+          order={makeOrder()}
+          zoneCode="A1"
+          verifiedPackageIds={new Set(['pkg-1'])}
+          onTapVerify={() => {}}
+          activeZones={activeZones}
+          density="compacto"
+          today={TODAY}
+        />
+      );
+
+      expect(screen.getByTestId('pending-row-pkg-1').textContent).toContain('Verificado');
+    });
+  });
 });

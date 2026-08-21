@@ -449,3 +449,30 @@ already-verified row is a no-op, `⋯` hidden from warehouse staff and offered t
 managers. It is the page-level regression guard this route never had.
 
 Distribution suite 156 pass; `tsc --noEmit` and eslint clean.
+
+---
+
+## Addendum 4 — `source: 'scan'` was never written (2026-08-21)
+
+**Correction to this spec.** The design above says verification has two sources,
+`'scan'` and `'tap'`. The `dock_verifications` CHECK constraint allows both and
+`useDockVerificationMutation` accepts both — but **nothing ever wrote a `'scan'`
+row.** Scanning a package inserted into `dock_scans` only. Read as written, the
+spec implies scanning already verifies; it did not.
+
+The visible cost, reported from QA: in Modo Lote a scanned CTN stays in the
+pending list (`packages.status` only changes at batch close) and its row looked
+identical to one nobody had touched. The crew saw the package appear in
+`BatchDetailList` and nothing else change, which read as the scan not registering.
+
+**Now:** an accepted scan with a resolved `package_id` also records a
+`source: 'scan'` verification, via a shared `lib/distribution/record-dock-verification.ts`
+that both the tap mutation and the scan mutation call. The write is best-effort —
+`dock_scans` is the record that matters, so a failed verification costs the crew a
+chip, not the scan.
+
+The row's verified state also gained an explicit green **Verificado** chip beside
+the zone chip. The 3 px rail and background tint from Addendum 1 stayed, but on
+their own they were not read as state by crews working at arm's length.
+
+Rejected scans and barcodes that resolve to no package are not verified.
