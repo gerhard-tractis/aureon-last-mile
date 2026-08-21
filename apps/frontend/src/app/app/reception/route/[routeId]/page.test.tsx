@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import RouteReceptionPage from './page';
 import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
 
@@ -71,6 +71,16 @@ vi.mock('@/hooks/reception/useReopenRouteReception', () => ({
   useReopenRouteReception: () => ({ mutate: mockReopenMutate, isPending: false }),
 }));
 
+// spec-62 task 19 — the page branches its whole tree on this hook, exactly
+// like /app/reception/page.tsx already does. The global setup mocks
+// `window.matchMedia` with `matches: false` for every query (src/test/setup.ts),
+// so `useIsBelowLg()` is `false` unless stubbed here — that default is what
+// keeps every pre-existing test above rendering the desktop tree unmodified.
+const mockUseIsBelowLg = vi.fn(() => false);
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => mockUseIsBelowLg(),
+}));
+
 // NOT a hand-written literal any more. The previous inline `baseSnapshot` was
 // untyped, so it silently used keys the RPC did not return — these tests were
 // green for six months while the page threw TypeError on render in production.
@@ -82,6 +92,7 @@ describe('RouteReceptionPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSnapshot.mockReturnValue({ data: baseSnapshot, isLoading: false, error: null });
+    mockUseIsBelowLg.mockReturnValue(false);
   });
 
   it('renders the route header with code', () => {
@@ -162,5 +173,66 @@ describe('RouteReceptionPage', () => {
     });
     render(<RouteReceptionPage />);
     expect(screen.getByText('Ruta no encontrada')).toBeInTheDocument();
+  });
+
+  // Task 19 — the 3s auto-hide setTimeout in handleScan's onSuccess is gone.
+  // An operator who looks at the box and back at the screen must still see
+  // where the last read landed; the only way to prove that genuinely is fake
+  // timers advanced well past the old 3000ms window.
+  it('keeps the scan result on screen long past the old 3s auto-hide window', async () => {
+    vi.useFakeTimers();
+    mockScanMutate.mockImplementation((_vars, { onSuccess }) => {
+      onSuccess({ scanResult: 'received', packageId: 'p1', packageLabel: 'CL123' });
+    });
+    render(<RouteReceptionPage />);
+    // Flush the `supabase.auth.getUser()` microtask that resolves `userId`
+    // before scanning — `handleScan` no-ops silently while it is still null.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const input = screen.getByLabelText('Escáner de recepción');
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'CL123' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+    });
+    expect(screen.getByText('Paquete recibido')).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+    expect(screen.getByText('Paquete recibido')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  describe('below lg', () => {
+    beforeEach(() => {
+      mockUseIsBelowLg.mockReturnValue(true);
+    });
+
+    it('renders the mobile session tree instead of the desktop tree', async () => {
+      render(<RouteReceptionPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // Only ReceptionMobileSession renders the "Confirmar" footer button —
+      // the desktop tree's equivalent is FinalizeReceptionButton, whose
+      // label reads "finalizar recepción" (asserted absent below).
+      expect(screen.getByRole('button', { name: /^Confirmar/ })).toBeInTheDocument();
+    });
+
+    it('does not mount any of the desktop-only components', async () => {
+      render(<RouteReceptionPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // RouteSwitcherColumn, SyncQueuePanel, ReceptionCounts,
+      // ConsolidatedScanList, ReceptionScanner, FinalizeReceptionButton and
+      // ReopenRouteButton all hang off the desktop tree only.
+      expect(screen.queryByLabelText('Escáner de recepción')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /finalizar recepción/i }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /reabrir ruta/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Pedido #101')).not.toBeInTheDocument();
+    });
   });
 });
