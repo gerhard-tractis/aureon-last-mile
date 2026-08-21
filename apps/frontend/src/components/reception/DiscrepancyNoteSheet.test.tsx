@@ -123,6 +123,14 @@ describe('DiscrepancyNoteSheet', () => {
     expect(
       screen.getByText(/Describe el paquete ajeno para cerrar la recepción/),
     ).toBeInTheDocument();
+
+    // Same defect, one field down: the placeholder sits under the cursor,
+    // so it must not contradict the description above it by talking about
+    // "paquetes faltantes" that never happened.
+    expect(screen.getByRole('textbox')).not.toHaveAttribute(
+      'placeholder',
+      expect.stringContaining('faltantes'),
+    );
   });
 
   it('uses singular "falta" (not "faltan") when exactly one package is missing', () => {

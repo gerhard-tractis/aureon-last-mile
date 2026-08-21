@@ -53,6 +53,15 @@ export function DiscrepancyNoteSheet({
   // trace in `missing` — surface it separately rather than silently drop it.
   const surplus = Math.max(0, matched - expectedCount);
 
+  // Same defect class as the description sentence: a static placeholder
+  // would say "missing packages" under the operator's cursor even when
+  // missing === 0 and the sheet opened for an ajeno. Short hint text only —
+  // the full sentence already lives in the description above.
+  const placeholder =
+    missing > 0
+      ? 'Describe los paquetes faltantes y posibles causas...'
+      : 'Describe el paquete ajeno...';
+
   const trimmed = note.trim();
   // Empty text must not submit: the server rejects it, and more importantly
   // a note that says nothing is worse than none — it satisfies the check
@@ -110,7 +119,7 @@ export function DiscrepancyNoteSheet({
           value={note}
           onChange={(event) => setNote(event.target.value)}
           rows={5}
-          placeholder="Describe los paquetes faltantes y posibles causas..."
+          placeholder={placeholder}
           className="mt-4 flex-1 resize-none text-base"
         />
 
