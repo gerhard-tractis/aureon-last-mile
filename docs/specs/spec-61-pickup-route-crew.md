@@ -2536,7 +2536,8 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
 - [x] **Step 3: Minimal implementation**
 
       `PickupRouteCrewStrip.tsx` (~50 lines): an eyebrow `EQUIPO · N` — N counts the whole
-      trip, leader included, so it matches the number of chips below it — and a wrapped row
+      trip, leader included, so it matches the number of chips below it (see the collision
+      note below) — and a wrapped row
       of name chips, the leader's carrying a `LÍDER` marker, each `data-testid="crew-member"`;
       `full_name ?? 'Sin nombre'`; returns `null` when `crew.length === 0`. Read-only: no
       `<button>` anywhere.
@@ -2548,6 +2549,32 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
       where a chip must still stand for a person who is on the trip. The placeholder is a new
       choice for this component, not an existing precedent. (The "never show a raw id" rule
       does hold — nothing in `pickup/` renders a uuid.)
+
+      COLLISION WITH TASK 5 — unresolved, and whoever writes Task 5 must decide it
+      deliberately. Nothing in this spec settles whether `EQUIPO · N` counts the leader, and
+      the two places the label appears currently disagree:
+
+      - Here on `3h`, N is leader-INCLUSIVE (`crew.length + 1`), so it matches the chips
+        rendered beneath it — the strip's whole job is "who is on the trip", and the leader
+        is on the trip.
+      - Task 5's `CrewSelect` on `3j` (`:2331`) specifies "the header shows the count
+        (`EQUIPO · 2`)" over a candidate list that is leader-EXCLUSIVE by construction:
+        `useCrewCandidates` filters `u.id !== excludeUserId` (`:2316`), so the leader is
+        never a row and never counted.
+
+      As written, the identical label would read `EQUIPO · 2` on `3j` and `EQUIPO · 3` on
+      `3h` for the same trip, and the number would change under the driver as they navigate
+      between the two screens.
+
+      RECOMMENDED RESOLUTION (Task 6's author, holding the most context on it): do NOT
+      reconcile by changing either count — change Task 5's LABEL. A picker's counter must
+      count its own checked rows or it is lying about the control it sits on, and the leader
+      can never be one of those rows; conversely a roster that omits the person driving is
+      not "who is on the trip". Both counts are right for their own screen. What is wrong is
+      reusing one word for two different quantities. So `3j`'s picker should read
+      `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`) and `EQUIPO · N` should mean "everyone on
+      the trip" in exactly one place — this strip. That also survives a future crew-editing
+      screen, which would need both numbers on screen at once.
 
 - [x] **Step 4: Run it, verify it passes**
 
@@ -2568,9 +2595,16 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
       Add `crew: []` to the fixture as part of this step.
 
       Assert that with `activeRoute.crew = [{ user_id: 'u1', full_name: 'Ana Pérez' }]` the
-      name appears on the screen, and that the unmodified (solo) fixture renders no strip —
-      the second half is what proves the strip reads the route's own crew rather than a
-      hardcoded list. Run it, expect FAIL.
+      name appears on the screen, and that the unmodified (solo) fixture renders no strip.
+
+      Be precise about what each half buys, because an earlier draft of this note overstated
+      it: only the `'Ana Pérez'` half guards the wiring. The solo-route half does NOT prove
+      the strip reads the route's own crew — it passes identically whether the wiring exists
+      or is deleted, since an unrendered strip and a strip that returned `null` are
+      indistinguishable in the DOM. It is still worth keeping: it rules out a strip that
+      renders unconditionally, showing a lone `EQUIPO · 1` chip on every solo route.
+
+      Run it, expect FAIL.
 
 - [x] **Step 6: Implement**
 
