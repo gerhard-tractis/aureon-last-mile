@@ -1297,6 +1297,8 @@ git commit -m "feat(spec-62): entrada manual de código para etiqueta ilegible"
 
 Props: `{ open; onOpenChange; counts: ReceptionCounts; isPending: boolean; onConfirm: (note: string) => void }`.
 
+`ReceptionCounts` es el tipo de `@/lib/reception/finalize-rule` (task 1). Ojo con el nombre: existe además un componente `components/reception/ReceptionCounts.tsx`, que la página de sesión ya importa. Son cosas distintas.
+
 - [ ] **Step 1: Escribe el test que falla**
 
 ```tsx
@@ -1427,7 +1429,16 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implementa** — de arriba abajo: cabecera fija (código, conductor, `N / M` en `font-mono text-[26px]`, barra de 8px, chip de cola cuando `syncStatus !== 'online'`), `ScanField size="sm"` con `onFocusStateChange`, fila de estado del lector con el botón de código manual de 44px, `ReceptionScanFeedback`, historial de `snapshot.scans` con chips `AJENO` / `REPETIDO`, y pie fijo de dos botones de 56px. *Confirmar* consulta `finalizeRule` sobre `snapshot.route_reception`: si `needsNote` abre `DiscrepancyNoteSheet`, si no llama `onFinalize(null)`.
 
-  La hora del primer escaneo para el caso `duplicate` sale de `snapshot.scans` — busca el escaneo previo con el mismo `barcode` — y se pasa como `firstScanAt`.
+  **La hora del primer escaneo, con cuidado.** Para el caso `duplicate` sale de `snapshot.scans`, pero un `find` por `barcode` a secas devuelve el escaneo equivocado: la mutación invalida el snapshot, así que **la lectura duplicada ya es una fila más** con ese mismo `barcode` y `scan_result: 'duplicate'`. Mostrarías su propia hora como "hora del primero" — una mentira en pantalla, y los tests de la task 15 no la atrapan porque ahí `firstScanAt` se pasa a mano. Filtra por `scan_result === 'received'` y toma el `scanned_at` más antiguo:
+
+```ts
+const firstScanAt = snapshot.scans
+  .filter((s) => s.barcode === barcode && s.scan_result === 'received')
+  .map((s) => s.scanned_at)
+  .sort()[0] ?? null;
+```
+
+  Escribe un test de la sesión para esto: con dos filas del mismo `barcode` — una `received` a las 12:58 y una `duplicate` a las 13:04 — el bloque dice 12:58.
 
 - [ ] **Step 4: Corre los tests**
 
@@ -1467,7 +1478,7 @@ onSuccess: (result) => {
 },
 ```
 
-Y añade la rama móvil antes del `return` de escritorio, pasando `sync.status`, `sync.queuedCount` y las mutaciones ya existentes. El árbol móvil **no** monta `RouteSwitcherColumn`, `SyncQueuePanel`, `ReceptionCounts`, `ConsolidatedScanList` ni `ReopenRouteButton`: reabrir es una corrección de hub, no del andén.
+Y añade la rama móvil antes del `return` de escritorio, pasando `sync.status`, `sync.queuedCount` y las mutaciones ya existentes. El árbol móvil **no** monta `RouteSwitcherColumn`, `SyncQueuePanel`, `ReceptionCounts`, `ConsolidatedScanList`, `ReceptionScanner`, `FinalizeReceptionButton` ni `ReopenRouteButton` — la lista completa de lo que hoy cuelga del árbol de escritorio. `ReceptionMobileSession` trae sus propios equivalentes de escaneo y cierre; reabrir no tiene equivalente móvil a propósito, porque es una corrección de hub y no del andén. Construye el árbol móvil desde el mock, no restando piezas del JSX de escritorio.
 
 - [ ] **Step 4: Corre los tests**
 
@@ -1507,7 +1518,7 @@ it('las cuatro cifras salen de route_receptions, no de un recuento propio', () =
   expect(screen.getByTestId('acta-esperados')).toHaveTextContent('88');
   expect(screen.getByTestId('acta-recibidos')).toHaveTextContent('86');
   expect(screen.getByTestId('acta-faltantes')).toHaveTextContent('3');  // 86 - 1 ajeno vs 88
-  expect(screen.getByTestId('acta-sin-manifiesto')).toHaveTextContent('1');
+  expect(screen.getByTestId('acta-ajenos')).toHaveTextContent('1');  // unexpected_count
 });
 
 it('muestra la nota tal como quedó guardada', () => {
@@ -1571,7 +1582,7 @@ git commit -m "feat(spec-62): acta de la recepción cerrada (mock 3p)"
 Run: `npx vitest run "src/app/app/reception/route/[routeId]/completa/page.test.tsx"`
 Expected: FAIL — la ruta no existe.
 
-- [ ] **Step 3: Implementa** — `'use client'`, `useRouteReceptionSnapshot(routeId)`, y `useIncomingRoutes(operatorId, 'in_transit')` para la siguiente ruta en patio (excluyendo la actual, y tomando la que más espera). La página es la misma en móvil y escritorio: es un acta, no una herramienta de andén, y a 1440px se lee igual en una columna centrada.
+- [ ] **Step 3: Implementa** — `'use client'`, `useRouteReceptionSnapshot(routeId)`, y `useIncomingRoutes(operatorId, 'in_transit')` — con el `operatorId` de `useOperatorId`, como la página hermana — para la siguiente ruta en patio (excluyendo la actual, y tomando la que más espera). La página es la misma en móvil y escritorio: es un acta, no una herramienta de andén, y a 1440px se lee igual en una columna centrada.
 
 - [ ] **Step 4: Corre los tests**
 
@@ -1614,17 +1625,57 @@ git add "src/app/app/reception/route/[routeId]/page.tsx" "src/app/app/reception/
 git commit -m "feat(spec-62): cerrar una recepción termina en su acta"
 ```
 
-### Task 24: E2E contra QA a 390×844
+### Task 24: Hacer que el E2E móvil pueda siquiera correr
+
+**Lee esto antes de escribir una línea de test.** `playwright.qa.config.ts` no recoge un archivo nuevo ni abre un teléfono, y su suite no corre desde un laptop. Tres hechos del entorno, los tres verificados:
+
+1. **`testMatch: /spec52-.*\.spec\.ts$/`.** Está acotado a propósito — es la única suite con fixture de seed/teardown — y su comentario dice "widen this pattern as each grows a fixture". Un `e2e/reception-mobile.spec.ts` **no se recoge**: corre cero casos y reporta verde.
+2. **`use.viewport = { width: 1440, height: 900 }`**, un solo proyecto `chromium`. A 1440px `useIsBelowLg` es `false` y el árbol móvil que este test existe para ejercitar **nunca se monta**.
+3. **No corre localmente.** Apunta a `E2E_BASE_URL=http://localhost:3200` y el fixture necesita `E2E_DATABASE_URL` en `:5433`; ambos puertos son de localhost **en el VPS**. Lo ejecuta el job `e2e-qa` de `.github/workflows/deploy.yml` en el runner self-hosted, después del merge, y es `continue-on-error: true` — o sea, advisory.
 
 **Files:**
-- Create: `apps/frontend/e2e/reception-mobile.spec.ts` (sigue la convención de los specs de `e2e/` que ya existen)
+- Modify: `apps/frontend/playwright.qa.config.ts` (`testMatch`)
+- Modify: `apps/frontend/e2e/support/spec52-fixture.ts` (lo que falte del escenario)
 
-- [ ] **Step 1: Escribe el test** — proyecto con viewport `390×844`. Recorrido: entrar a `/app/reception` → el héroe es la ruta que más espera → *Iniciar conteo* → escanear tres códigos del seed, uno de ellos repetido → *Confirmar* → la hoja de nota aparece porque falta uno → escribir la nota → aterrizar en `/completa` → las cuatro cifras y la nota están ahí.
+- [ ] **Step 1: Ensancha `testMatch`**
 
-- [ ] **Step 2: Córrelo contra QA**
+```ts
+testMatch: /(spec52-.*|reception-mobile)\.spec\.ts$/,
+```
 
-Run: `npm run e2e:qa -- reception-mobile`
-Expected: PASS. Si el seed de QA no deja una ruta en patio, arregla el seed en el mismo PR — un E2E que depende de datos que el seed no garantiza es un test intermitente, no un test.
+Actualiza el comentario de arriba: ya no es "scoped to spec-52", es "las suites con fixture". Si no haces esto, todo lo demás de este chunk es decorativo.
+
+- [ ] **Step 2: Averigua qué le falta al escenario**
+
+El recorrido necesita, en la base de QA: una `pickup_routes` en `in_transit` con su `route_receptions` **abierta**, los códigos de barra de sus paquetes, y **al menos uno que no se escanee** para que el cierre pida nota. `e2e/support/spec52-fixture.ts` ya expone `seed`, `teardown`, `signIn`, `db` y `scanUntilStatus`, y su suite recorre una jornada completa de recogida + recepción, así que la mayor parte ya existe.
+
+Lee el fixture y responde por escrito, en el PR: ¿deja una ruta en patio al terminar, o hay que añadir un helper que la deje ahí? **No mires `packages/database/supabase/seed-qa.sql` ni `packages/database/seed-qa/`** para esto: el seed de QA es el estado inicial del ambiente, y un E2E que dependa de él es intermitente por construcción. El estado que este test necesita lo crea su fixture.
+
+- [ ] **Step 3: Extiende el fixture con lo que falte** y commitea eso solo, antes de escribir el test. Si resulta que no falta nada, dilo en el commit igual.
+
+```bash
+git add e2e/support/spec52-fixture.ts apps/frontend/playwright.qa.config.ts
+git commit -m "test(spec-62): el runner de QA recoge la suite móvil de recepción"
+```
+
+### Task 25: El E2E móvil, de patio a acta
+
+**Files:**
+- Create: `apps/frontend/e2e/reception-mobile.spec.ts`
+
+- [ ] **Step 1: Escribe el test**
+
+Empieza el archivo fijando el teléfono — es lo único que hace que el árbol correcto se monte:
+
+```ts
+test.use({ viewport: { width: 390, height: 844 } });
+```
+
+Recorrido, con el fixture de la task 24: `signIn` como receptor → `/app/reception` → el héroe es la ruta que más espera → *Iniciar conteo* → escanear tres códigos, uno repetido → el bloque de resultado muestra `YA ESCANEADO` y el conteo **no** sube con el repetido → *Confirmar* → la hoja de nota se abre porque falta un paquete → escribir la nota → aterrizar en `/completa` → las cuatro cifras y la nota están ahí. Cierra con `teardown`.
+
+- [ ] **Step 2: No lo corras localmente — no puede correr**
+
+`npm run e2e:qa` desde tu máquina falla por los puertos del VPS, no por tu test. Este test se ejecuta en el job `e2e-qa` tras el merge del PR. Revisa ahí su salida (`gh run view <id> --log`) y **no declares el E2E como pasando hasta haberla leído**: el job es `continue-on-error`, así que un PR verde no significa que este test haya pasado, ni siquiera que se haya recogido.
 
 - [ ] **Step 3: Commit**
 
@@ -1633,7 +1684,7 @@ git add e2e/reception-mobile.spec.ts
 git commit -m "test(spec-62): E2E móvil de patio a acta"
 ```
 
-### Task 25: Cierra el spec
+### Task 26: Cierra el spec
 
 - [ ] **Step 1: Verifica todo** — `npm run type-check && npm run lint && npm run test:run`, y la cobertura sobre 70% con `npm run test:coverage`.
 - [ ] **Step 2: PR con auto-merge** desde `feat/spec-62-chunk4-acta`, espera `gh pr checks` y confirma el merge con `gh pr view <N> --json state,mergedAt`.
