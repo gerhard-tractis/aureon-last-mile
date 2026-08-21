@@ -176,9 +176,17 @@ BEGIN
     RAISE EXCEPTION 'the unrouted load is missing from the result set entirely';
   END IF;
 
-  -- IS DISTINCT FROM, not <>: a NULL id (the pre-20260814000001 lazy-manifest
-  -- state, or a mis-wired column) makes `<>` evaluate to NULL and the IF never
-  -- fires — the assertion would pass on exactly the defect it exists to catch.
+  -- Both sides must be non-NULL BEFORE the comparison. v_manifest_id is read
+  -- from the same database as r.id, so if trg_ensure_manifest_for_order never
+  -- fired they are both NULL, `IS DISTINCT FROM` is FALSE, and the comparison
+  -- passes on exactly the state its comment claims to catch. Swapping `<>` for
+  -- `IS DISTINCT FROM` traded a NULL-swallows-the-comparison hole for a
+  -- NULL-equals-NULL one. The general rule, worth carrying past this line:
+  -- IS DISTINCT FROM is only sound when the EXPECTED side cannot be NULL, and
+  -- an expectation derived from the same source as the actual degrades with it.
+  IF v_manifest_id IS NULL OR r.id IS NULL THEN
+    RAISE EXCEPTION 'no manifests row for the load — trg_ensure_manifest_for_order did not fire (expected %, got %)', v_manifest_id, r.id;
+  END IF;
   IF r.id IS DISTINCT FROM v_manifest_id THEN
     RAISE EXCEPTION 'id must be the manifests row id for the load: expected %, got %', v_manifest_id, r.id;
   END IF;
@@ -191,6 +199,31 @@ BEGIN
   -- it fail. Real coverage would mean seeding a verified pickup_scan and
   -- asserting the count follows, which belongs to spec-53's tests, not to a
   -- test about which rows the exclusion predicate returns.
+END $$;
+
+-- ─── TEST 4 — cancelling a route returns its load to the pending list ──────
+-- The property the whole fix leans on. Excluding routed loads is only safe if
+-- there is a way back: otherwise every attach is permanent and a load can be
+-- hidden from every leader forever. spec47_cancel_route_detaches_manifests.sql
+-- covers the detachment, but nothing until now covered what the LIST does
+-- afterwards -- which is the half that matters to the person staring at an
+-- empty screen. trg_pickup_routes_set_manifest_reception_status
+-- (20260625000001:203-208) nulls pickup_route_id and reception_status together
+-- on 'cancelled', so the load must come back.
+UPDATE public.pickup_routes
+   SET status = 'cancelled'
+ WHERE id = '77777777-0000-4000-7000-000000000641';
+
+DO $$
+DECLARE loads TEXT[];
+BEGIN
+  SELECT array_agg(external_load_id ORDER BY external_load_id)
+    INTO loads FROM public.get_pending_manifests();
+  loads := COALESCE(loads, '{}');
+
+  IF NOT ('SPEC61-T7-ROUTED' = ANY(loads)) THEN
+    RAISE EXCEPTION 'cancelling the route must return its load to the pending list, otherwise the exclusion strands it: %', loads;
+  END IF;
 END $$;
 
 ROLLBACK;

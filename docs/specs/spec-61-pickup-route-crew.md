@@ -2836,6 +2836,37 @@ change the badge and the list legitimately differ; see Decision 9.
 
 ### Risks to carry
 
+**An abandoned `in_progress` route now strands its loads, with no in-app remedy.**
+Introduced by Task 7 and not present before it. Once a manifest is attached, the only
+things that detach it are a route status change to `cancelled` (which nulls
+`pickup_route_id` via `trg_pickup_routes_set_manifest_reception_status`,
+`20260625000001:203-208`) or the normal progression through `in_transit` to reception.
+Neither is reachable for a route nobody finishes:
+
+- `cancel_pickup_route` exists as an RPC and is typed in
+  `apps/frontend/src/lib/types.ts`, but a repo-wide grep across `apps/` returns **that
+  type entry and nothing else** — no component, hook or page calls it. There is no
+  cancel button.
+- `reconcile_abandoned_pickup_routes` is the sweep that would clear them, but
+  `20260812000004:105-106` revokes EXECUTE from `PUBLIC`, `anon` and `authenticated`
+  and grants it to nobody — deliberately, it is documented as "maintenance surface,
+  not an API". It runs only from psql as the owner, and nothing schedules it: the only
+  other reference in the repo is its own test.
+
+Before Task 7 an abandoned route was a nuisance for its own driver — the loads stayed
+visible and someone else could still claim them, hitting `add_manifest_to_route`'s
+rejection at worst. After Task 7 that route hides its loads from **every** leader,
+indefinitely, and the only fix is shell access to the database. The exclusion is still
+correct — two leaders collecting the same load is worse — but the missing exit is now
+load-bearing rather than cosmetic.
+
+Two candidate fixes, neither built here (Task 5 owns the leader screen):
+
+- Wire the **existing** `cancel_pickup_route` into the leader UI. Cheapest by far: the
+  RPC and its type already exist, so this is a button and a confirm, not new backend.
+- Schedule the existing sweep. Needs a caller with EXECUTE, which means revisiting a
+  grant that was locked down on purpose — the reason to prefer the first option.
+
 **A reopened route can strand its crew, permanently.** The restore branch of the
 route-status trigger skips any seat whose holder is active elsewhere — correct, because
 otherwise a receptionist's undo aborts on a 23505 — but nothing ever retries. That
