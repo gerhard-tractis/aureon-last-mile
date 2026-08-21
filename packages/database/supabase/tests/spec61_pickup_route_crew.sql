@@ -133,6 +133,30 @@ INSERT INTO public.pickup_route_crew (operator_id, pickup_route_id, user_id, add
 VALUES ('aaaaaaaa-0000-4000-a000-000000000610','77777777-0000-4000-7000-000000000611',
         'aaaaaaaa-0000-4000-a000-000000000612','aaaaaaaa-0000-4000-a000-000000000611');
 
+-- 3b. The migration comment's SECOND named attack (:146-153): UPDATE
+--     removed_at to free your own seat. Same shape as assertion 2, against
+--     the real row assertion 3 just created.
+DO $$
+DECLARE blocked BOOLEAN := false;
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0000-4000-a000-000000000611","operator_id":"aaaaaaaa-0000-4000-a000-000000000610","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+
+  BEGIN
+    UPDATE public.pickup_route_crew SET removed_at = NOW()
+     WHERE pickup_route_id = '77777777-0000-4000-7000-000000000611'
+       AND user_id = 'aaaaaaaa-0000-4000-a000-000000000612';
+  EXCEPTION WHEN insufficient_privilege THEN
+    blocked := true;
+  END;
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'authenticated should not be able to UPDATE removed_at to free their own seat';
+  END IF;
+  RESET role;
+END $$;
+
 -- 4. RLS, behaviourally: operator A's JWT sees operator A's crew row and
 --    cannot see operator B's, matching spec52_vehicles_rls.sql /
 --    spec47_pickup_routes_rls.sql.

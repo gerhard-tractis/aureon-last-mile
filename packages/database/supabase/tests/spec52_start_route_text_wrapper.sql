@@ -56,13 +56,13 @@ SELECT d.id, '00000000-0000-0000-0000-000000000000','authenticated','authenticat
 ON CONFLICT (id) DO NOTHING;
 
 -- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows.
-INSERT INTO public.users (id, operator_id, email, full_name, permissions)
-SELECT d.id, 'aaaaaaaa-0000-4000-a000-000000000862', d.email, d.full_name, ARRAY['pickup']
+-- All four `pickup_leader` -- each calls the wrapper below (why: spec-61-pickup-route-crew.md, Task 2 Step 5's correction).
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
+SELECT d.id, 'aaaaaaaa-0000-4000-a000-000000000862', 'pickup_leader', d.email, d.full_name, ARRAY['pickup']
   FROM spec52_wrap_drivers d
 ON CONFLICT (id) DO UPDATE
-  SET operator_id = EXCLUDED.operator_id,
-      full_name   = EXCLUDED.full_name,
-      permissions = EXCLUDED.permissions;
+  SET operator_id = EXCLUDED.operator_id, role = EXCLUDED.role,
+      full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
 
 INSERT INTO public.vehicles (id, operator_id, plate, vehicle_type, active)
 VALUES ('66666666-0000-4000-6000-000000000862','aaaaaaaa-0000-4000-a000-000000000862',

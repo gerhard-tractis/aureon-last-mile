@@ -13,8 +13,10 @@
 # (provider 'email') makes password login work on GoTrue v2.
 #
 # Roles (derived from the user_role enum: 20260216170542 + super_admin added
-# by 20260616000001_spec45_user_role_super_admin.sql):
-#   pickup_crew, warehouse_staff, loading_crew, operations_manager, admin
+# by 20260616000001_spec45_user_role_super_admin.sql, pickup_leader added by
+# 20260820000001_spec61_user_role_pickup_leader.sql):
+#   pickup_crew, pickup_leader, warehouse_staff, loading_crew,
+#   operations_manager, admin
 #     -> bound to the QA operator seeded by seed-qa.sql
 #        (00000000-0000-4000-8000-000000000001)
 #   super_admin
@@ -97,6 +99,7 @@ fi
 # --- Role table: role|operator_id|permissions (comma-separated) --------------
 # Fixed UUIDs so re-runs and QA scripts can reference the users directly.
 ROLE_ROWS="pickup_crew|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000201
+pickup_leader|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000207
 warehouse_staff|$QA_OPERATOR_ID|warehouse|00000000-0000-4000-8000-000000000202
 loading_crew|$QA_OPERATOR_ID|loading,dispatch|00000000-0000-4000-8000-000000000203
 operations_manager|$QA_OPERATOR_ID|operations,dispatch|00000000-0000-4000-8000-000000000204

@@ -41,13 +41,17 @@ ON CONFLICT (id) DO NOTHING;
 
 -- DO UPDATE, not DO NOTHING: handle_new_user() already created these rows.
 -- The driver holds 'pickup' and the receptionist 'reception' -- open_route_reception
--- enforces that separation of duties.
-INSERT INTO public.users (id, operator_id, email, full_name, permissions)
+-- enforces that separation of duties. The driver is `pickup_leader` (calls
+-- start_pickup_route directly below); the receptionist stays `pickup_crew`
+-- (never calls it, and open_route_reception checks a PERMISSION, not role).
+-- Why the driver needs promoting: docs/specs/spec-61-pickup-route-crew.md,
+-- Task 2 Step 5's correction.
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
 VALUES
-  ('aaaaaaaa-0000-4000-a000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','driver@snapcontract.test','Driver Contrato',ARRAY['pickup']),
-  ('bbbbbbbb-0000-4000-b000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','recepcion@snapcontract.test','Recepcionista Contrato',ARRAY['reception'])
+  ('aaaaaaaa-0000-4000-a000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','pickup_leader','driver@snapcontract.test','Driver Contrato',ARRAY['pickup']),
+  ('bbbbbbbb-0000-4000-b000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','pickup_crew','recepcion@snapcontract.test','Recepcionista Contrato',ARRAY['reception'])
 ON CONFLICT (id) DO UPDATE SET operator_id = EXCLUDED.operator_id,
-  full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
+  role = EXCLUDED.role, full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
 
 INSERT INTO public.vehicles (id, operator_id, plate, active)
 VALUES ('99999999-0000-4000-9000-000000000813','aaaaaaaa-0000-4000-a000-000000000813','SNAP-813', true)
