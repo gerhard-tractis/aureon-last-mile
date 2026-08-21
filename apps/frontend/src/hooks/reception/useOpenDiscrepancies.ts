@@ -16,6 +16,7 @@ import { createSPAClient } from '@/lib/supabase/client';
 
 export interface OpenDiscrepancy {
   id: string;
+  routeId: string;
   routeCode: string;
   expected: number;
   received: number;
@@ -29,6 +30,7 @@ interface Row {
   expected_count: number;
   received_count: number;
   completed_at: string | null;
+  pickup_route_id: string;
   pickup_routes: { code: string } | { code: string }[] | null;
 }
 
@@ -47,7 +49,9 @@ export function useOpenDiscrepancies(operatorId: string | null) {
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('route_receptions')
-        .select('id, expected_count, received_count, completed_at, pickup_routes(code)')
+        .select(
+          'id, expected_count, received_count, completed_at, pickup_route_id, pickup_routes(code)',
+        )
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)
         .not('completed_at', 'is', null)
@@ -59,6 +63,7 @@ export function useOpenDiscrepancies(operatorId: string | null) {
         .filter((row) => row.received_count !== row.expected_count)
         .map((row) => ({
           id: row.id,
+          routeId: row.pickup_route_id,
           routeCode: routeCode(row),
           expected: row.expected_count,
           received: row.received_count,
