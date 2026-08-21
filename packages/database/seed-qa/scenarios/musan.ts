@@ -85,8 +85,9 @@ export const MUSAN_QA = {
  * the manifest row, not on the orders:
  *
  *   get_pending_manifests     built FROM ORDERS; excludes any load whose
- *                             manifest has reception_status IS NOT NULL or
- *                             status = 'completed'
+ *                             manifest has reception_status IS NOT NULL,
+ *                             status = 'completed', or (spec-61 Task 7)
+ *                             pickup_route_id IS NOT NULL
  *   get_in_transit_manifests  manifest.reception_status IS NOT NULL
  *                             AND status <> 'completed'
  *   get_completed_manifests   manifest.status = 'completed'
@@ -383,7 +384,9 @@ export async function seedMusan(
              AND o.external_load_id NOT IN (
                SELECT m.external_load_id FROM manifests m
                 WHERE m.operator_id = $1 AND m.deleted_at IS NULL
-                  AND (m.status = 'completed' OR m.reception_status IS NOT NULL)
+                  AND (m.status = 'completed'
+                       OR m.reception_status IS NOT NULL
+                       OR m.pickup_route_id IS NOT NULL)
              )`,
     params: [operatorId],
     expected: 2,

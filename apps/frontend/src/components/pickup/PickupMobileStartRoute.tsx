@@ -34,16 +34,18 @@ import type { ManifestRow } from './ManifestTable';
  * literal "asignados a ti" claim needs one, which is out of scope here.
  *
  * Already-routed manifests (review round 2, item 2): `add_manifest_to_route`
- * rejects a manifest already linked to a DIFFERENT route, and
- * `get_pending_manifests` neither filters that case out nor exposes
- * `pickup_route_id` to detect it client-side. A prior draft added a
- * `routedElsewhereIds` prop + disabled/"Ya está en otra ruta" row for this,
- * but `page.tsx` never had data to populate it (always empty in
- * production), so it was dead UI that could never be exercised in QA — and
- * the failure IS already handled: `page.tsx`'s `handleCreateRoute` batches
+ * rejects a manifest already linked to a DIFFERENT route. This used to be
+ * visible only as a toast, because `get_pending_manifests` offered routed
+ * loads like any other. spec-61 Task 7 (migration 20260820000006) excludes
+ * them server-side, so the rows simply are not in `pendingRows` any more —
+ * no client-side filter and no `pickup_route_id` on the row shape is needed
+ * or wanted here. A prior draft added a `routedElsewhereIds` prop +
+ * disabled/"Ya está en otra ruta" row; `page.tsx` never had data to populate
+ * it, so it was dead UI, and after Task 7 it would be permanently dead.
+ * The race between two leaders loading the list at the same moment is still
+ * real and still ends at `page.tsx`'s `handleCreateRoute`, which batches
  * `add_manifest_to_route` calls and toasts "La ruta se creó, pero N de M
- * manifiestos no se pudieron agregar." on any rejection. Removed the dead
- * branch; that toast is the one real surface for this case today.
+ * manifiestos no se pudieron agregar." — that toast remains the last resort.
  */
 export interface PickupMobileStartRouteProps {
   operatorId: string | null;

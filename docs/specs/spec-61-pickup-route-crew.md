@@ -284,7 +284,8 @@ automated check that these migrations apply to a real database.
 | `20260820000001_spec61_user_role_pickup_leader.sql` | **Create.** One statement: `ALTER TYPE public.user_role ADD VALUE`. Nothing else may go in this file. |
 | `20260820000002_spec61_pickup_route_crew.sql` | **Create.** `pickup_route_crew` table, indexes, the partial unique index, RLS/grants/audit trigger, the route-status → `removed_at` trigger, and `handle_new_user` re-templated with the `pickup_leader` branch. |
 | `20260820000003_spec61_start_pickup_route_crew.sql` | **Create.** `DROP FUNCTION start_pickup_route(UUID)` and recreate it as `(p_vehicle_id UUID, p_crew_user_ids UUID[] DEFAULT '{}')` with the leader gate and the crew insert. |
-| `20260820000005_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. |
+| `20260820000004_spec61_pickup_route_crew_grant_fix.sql` | **Not in the original plan.** Shipped ahead of Task 4 and already on `main`; it took the `…0004` slot this table had reserved. |
+| `20260820000005_spec61_my_active_pickup_route.sql` | **Create.** `get_my_active_pickup_route()` — the route I lead or am active crew on, with plate, leader name and crew, in one round trip. Renumbered from `…0004` by Task 4. |
 | `20260820000006_spec61_pending_manifests_exclude_routed.sql` | **Create.** `get_pending_manifests()` re-templated with routed loads excluded. |
 
 **Database tests** — `packages/database/supabase/tests/` (all **create**)
@@ -2595,6 +2596,19 @@ change the badge and the list legitimately differ; see Decision 9.
       doc comments. If anything new appears, stop and re-read that caller before changing the
       predicate.
 
+      **CORRECTED DURING IMPLEMENTATION (2026-08-20).** The audit above says "no other
+      caller" and that is true of RPC callers, but the grep also hits
+      `packages/database/seed-qa/scenarios/musan.ts:373-388`, which **hand-copies the
+      exclusion predicate** into a QA assertion (`musan/pickup-pending`, expected 2).
+      That is not a caller but it is a duplicate of the thing being changed, and left
+      alone it silently stops mirroring the RPC. It was updated with the same `OR`. The
+      expected count stays 2 — no musan carga carries a `pickup_route_id`. Three
+      prose comments describing the old predicate were corrected in the same commit:
+      `seed-qa.sql:366-374` (which also still named `20260428000004` as the latest
+      definition — stale since spec-53), `musan.ts:86-89`, and
+      `PickupMobileStartRoute.tsx:36-47`, whose whole "routed manifests are invisible
+      to this screen, so the toast is the only surface" paragraph stops being true here.
+
 - [ ] **Step 2: Write the failing test**
 
       `packages/database/supabase/tests/spec61_pending_excludes_routed.sql`:
@@ -2630,10 +2644,30 @@ change the badge and the list legitimately differ; see Decision 9.
 
       -- Two CARGAs. trg_ensure_manifest_for_order (20260814000001) creates the
       -- manifests rows from these inserts -- do not insert manifests by hand.
-      INSERT INTO public.orders (id, operator_id, order_number, external_load_id, retailer_name, status)
-      VALUES
-        ('66666666-0000-4000-6000-000000000641','aaaaaaaa-0000-4000-a000-000000000640','ORD-641','LOAD-FREE','Cliente A','pendiente'),
-        ('66666666-0000-4000-6000-000000000642','aaaaaaaa-0000-4000-a000-000000000640','ORD-642','LOAD-ROUTED','Cliente A','pendiente');
+      --
+      -- CORRECTED DURING IMPLEMENTATION (2026-08-20). The draft below was
+      -- `(id, operator_id, order_number, external_load_id, retailer_name, status)`
+      -- with status 'pendiente'. It could never have run, for two reasons:
+      -- 'pendiente' is not a member of order_status_enum (its members are
+      -- ingresado/verificado/en_bodega/asignado/en_carga/listo/en_ruta/
+      -- entregado/cancelado, per 20260313000001), and customer_name,
+      -- customer_phone, delivery_address, comuna, delivery_date, raw_data,
+      -- imported_via and imported_at are all NOT NULL on public.orders
+      -- (20260217000003:50) and were all omitted. `status` itself DOES exist
+      -- (20260223000001:338, retyped by 20260313000001) and is NOT NULL
+      -- DEFAULT 'ingresado'; it is left out below because the default is
+      -- correct here, not because the column is missing.
+      INSERT INTO public.orders (
+        id, operator_id, order_number, customer_name, customer_phone,
+        delivery_address, comuna, delivery_date, external_load_id, retailer_name,
+        raw_data, imported_via, imported_at
+      ) VALUES
+        ('66666666-0000-4000-6000-000000000641','aaaaaaaa-0000-4000-a000-000000000640','ORD-641',
+         'Cliente Uno','+56900000641','Calle Falsa 641','Providencia',CURRENT_DATE,
+         'LOAD-FREE','Cliente A','{}'::jsonb,'MANUAL',NOW()),
+        ('66666666-0000-4000-6000-000000000642','aaaaaaaa-0000-4000-a000-000000000640','ORD-642',
+         'Cliente Dos','+56900000642','Calle Falsa 642','Providencia',CURRENT_DATE,
+         'LOAD-ROUTED','Cliente A','{}'::jsonb,'MANUAL',NOW());
 
       INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
       VALUES ('77777777-0000-4000-7000-000000000641','aaaaaaaa-0000-4000-a000-000000000640',
@@ -2672,6 +2706,35 @@ change the badge and the list legitimately differ; see Decision 9.
 
       ROLLBACK;
       ```
+
+      **CORRECTED DURING IMPLEMENTATION (2026-08-20)** — three weaknesses in the
+      draft above, all fixed in the file that shipped:
+
+      1. `r.verified_count <> 0` was **deleted, not repaired.** It looks like
+         this plan's trap #1 (`NULL <> 0` is NULL, so the `IF` never fires), but
+         repairing it to `IS DISTINCT FROM 0` would have been theatre:
+         `verified_count` is `COALESCE(…,0)::BIGINT` and so cannot be NULL, and
+         the fixture seeds no `pickup_scans`, so it cannot be anything but 0. No
+         plausible defect makes it fail either way. Real coverage means seeding a
+         verified scan and asserting the count follows — which belongs to
+         spec-53's tests. The id check, by contrast, was strengthened: it now
+         compares against the actual `manifests.id` for the load rather than
+         merely `IS NOT NULL`, and a `proargnames` check was added so that
+         templating on a pre-spec-53 definition — the one real hazard of this
+         migration — fails loudly instead of silently dropping three columns.
+      2. `SELECT * INTO r` with no `IF NOT FOUND` leaves every field NULL when the
+         row is absent, so the id assertion would have reported the wrong defect.
+         `IF NOT FOUND THEN RAISE` added.
+      3. A single-operator fixture cannot show that the function's
+         `o.operator_id = public.get_operator_id()` filter matters (trap #3). The
+         shipped file adds operator B with its own unrouted load and asserts it
+         does not leak, in the **owner** context — where RLS is bypassed, so the
+         function's own filter is the only thing under test — behind the
+         RLS-bypass guard from `rls_operators_test.sql:75-88`. A second block
+         repeats the core exclusion under `SET LOCAL role = 'authenticated'`,
+         the only way to catch the failure mode where RLS hides the routed
+         `manifests` row from a real caller and the `NOT IN` subquery therefore
+         excludes nothing.
 
 - [ ] **Step 3: Run it, verify it fails**
 
@@ -2749,7 +2812,7 @@ change the badge and the list legitimately differ; see Decision 9.
 - [ ] **Step 8: Commit**
 
       ```
-      git add packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql
+      git add packages/database/supabase/migrations/20260820000006_spec61_pending_manifests_exclude_routed.sql packages/database/supabase/tests/spec61_pending_excludes_routed.sql packages/database/supabase/seed-qa.sql packages/database/seed-qa/scenarios/musan.ts apps/frontend/src/components/pickup/PickupMobileStartRoute.tsx
       git commit -m "fix(spec-61): get_pending_manifests stops offering routed loads
 
       A load already attached to a route stayed in the Activos list, so a second
@@ -2772,6 +2835,37 @@ change the badge and the list legitimately differ; see Decision 9.
       leader-only flow and no leader.
 
 ### Risks to carry
+
+**An abandoned `in_progress` route now strands its loads, with no in-app remedy.**
+Introduced by Task 7 and not present before it. Once a manifest is attached, the only
+things that detach it are a route status change to `cancelled` (which nulls
+`pickup_route_id` via `trg_pickup_routes_set_manifest_reception_status`,
+`20260625000001:203-208`) or the normal progression through `in_transit` to reception.
+Neither is reachable for a route nobody finishes:
+
+- `cancel_pickup_route` exists as an RPC and is typed in
+  `apps/frontend/src/lib/types.ts`, but a repo-wide grep across `apps/` returns **that
+  type entry and nothing else** — no component, hook or page calls it. There is no
+  cancel button.
+- `reconcile_abandoned_pickup_routes` is the sweep that would clear them, but
+  `20260812000004:105-106` revokes EXECUTE from `PUBLIC`, `anon` and `authenticated`
+  and grants it to nobody — deliberately, it is documented as "maintenance surface,
+  not an API". It runs only from psql as the owner, and nothing schedules it: the only
+  other reference in the repo is its own test.
+
+Before Task 7 an abandoned route was a nuisance for its own driver — the loads stayed
+visible and someone else could still claim them, hitting `add_manifest_to_route`'s
+rejection at worst. After Task 7 that route hides its loads from **every** leader,
+indefinitely, and the only fix is shell access to the database. The exclusion is still
+correct — two leaders collecting the same load is worse — but the missing exit is now
+load-bearing rather than cosmetic.
+
+Two candidate fixes, neither built here (Task 5 owns the leader screen):
+
+- Wire the **existing** `cancel_pickup_route` into the leader UI. Cheapest by far: the
+  RPC and its type already exist, so this is a button and a confirm, not new backend.
+- Schedule the existing sweep. Needs a caller with EXECUTE, which means revisiting a
+  grant that was locked down on purpose — the reason to prefer the first option.
 
 **A reopened route can strand its crew, permanently.** The restore branch of the
 route-status trigger skips any seat whose holder is active elsewhere — correct, because
