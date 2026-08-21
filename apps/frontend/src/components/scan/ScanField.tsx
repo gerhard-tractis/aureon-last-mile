@@ -31,6 +31,13 @@ interface ScanFieldProps {
   ariaLabel?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * Reports when the field gains or loses focus. A scanner gun types into
+   * whatever is focused: without focus, the trigger fires and nothing is
+   * recorded. The screen passing this renders "Lector listo" or "Toca para
+   * reactivar el lector" (spec-62, mock 3q).
+   */
+  onFocusStateChange?: (focused: boolean) => void;
 }
 
 function BarcodeIcon({ className }: { className?: string }) {
@@ -49,6 +56,7 @@ export function ScanField({
   ariaLabel = 'Código de barras',
   disabled = false,
   className,
+  onFocusStateChange,
 }: ScanFieldProps) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -109,6 +117,8 @@ export function ScanField({
         placeholder={placeholder}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onFocus={() => onFocusStateChange?.(true)}
+        onBlur={() => onFocusStateChange?.(false)}
         // Native focus ring removed: the container already carries the accent
         // border and halo, so a second ring inside it reads as a defect.
         className={cn(

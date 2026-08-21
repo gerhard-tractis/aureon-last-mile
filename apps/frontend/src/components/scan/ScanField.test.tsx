@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ScanField } from './ScanField';
 
 afterEach(() => {
@@ -125,5 +126,26 @@ describe('ScanField', () => {
     fireEvent.change(input, { target: { value: 'CL1' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onScan).not.toHaveBeenCalled();
+  });
+
+  it('reports when it loses and regains focus', async () => {
+    const onFocusStateChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <>
+        <ScanField onScan={vi.fn()} onFocusStateChange={onFocusStateChange} />
+        <button type="button">steal focus</button>
+      </>,
+    );
+    // The mount effect focuses the input, so the first notification is `true`.
+    expect(onFocusStateChange).toHaveBeenLastCalledWith(true);
+
+    await user.click(screen.getByRole('button', { name: 'steal focus' }));
+    expect(onFocusStateChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('behaves exactly as before when the prop is omitted', () => {
+    // Not optional for convenience: the three current consumers don't pass it.
+    expect(() => render(<ScanField onScan={vi.fn()} />)).not.toThrow();
   });
 });
