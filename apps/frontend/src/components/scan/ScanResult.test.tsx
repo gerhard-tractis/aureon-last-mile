@@ -57,4 +57,15 @@ describe('ScanResult', () => {
     render(<ScanResult status="error" title="NO ESTÁ EN EL MANIFIESTO" />);
     expect(screen.queryByTestId('scan-result-code')).toBeNull();
   });
+
+  it('el tono warn cambia color e icono a la vez', () => {
+    // Misma regla que ya cubre ok/error: cada estado por dos canales. Un tercer
+    // tono que reusara el check de ok sería indistinguible en una foto en
+    // escala de grises.
+    render(<ScanResult status="warn" title="YA ESCANEADO" timestamp="12:58" />);
+    expect(screen.getByText('YA ESCANEADO')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-result-icon-warn')).toBeInTheDocument();
+    expect(screen.queryByTestId('scan-result-icon-ok')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('scan-result-icon-error')).not.toBeInTheDocument();
+  });
 });
