@@ -514,11 +514,23 @@ it('informa cuando pierde y recupera el foco', async () => {
   expect(onFocusStateChange).toHaveBeenLastCalledWith(false);
 });
 
-it('sin la prop se comporta igual que siempre', () => {
-  // No es opcional por comodidad: los tres consumidores actuales no la pasan.
-  expect(() => render(<ScanField onScan={vi.fn()} />)).not.toThrow();
-});
 ```
+
+> **Corrección tras la implementación.** Este paso pedía además un segundo test:
+> `expect(() => render(<ScanField onScan={vi.fn()} />)).not.toThrow()`, con el
+> comentario "los tres consumidores actuales no la pasan". Ambas cosas estaban mal
+> y se corrigieron al implementar la fase 1:
+>
+> - **Los consumidores son dos**, no tres: `QuickSortScanner.tsx` y
+>   `ReturnReceptionSession.tsx`.
+> - **El test era una tautología.** Pasaba antes de que `onFocusStateChange`
+>   existiera y ningún cambio salvo un crash podía ponerlo rojo. Parecía cobertura
+>   de compatibilidad hacia atrás sin garantizar nada, que es la clase de test
+>   peligrosa: invita a creer que hay una garantía donde no la hay. Se eliminó.
+>   Lo que sí cubre esa garantía son los 11 tests preexistentes que no pasan la
+>   prop, más `tsc --noEmit`.
+>
+> No lo reintroduzcas si vuelves a ejecutar esta tarea.
 
 `ScanField.test.tsx` hoy importa `render, screen, fireEvent, act`. Añade `import userEvent from '@testing-library/user-event'` — la dependencia ya está instalada.
 
