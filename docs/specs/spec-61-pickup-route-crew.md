@@ -4,7 +4,46 @@
 > [spec-56](spec-56-pickup-contract-phase.md) (per-vehicle uniqueness index),
 > [spec-54](spec-54-ui-rebrand.md) (screens `3j` / `3h`)
 
-**Status:** in progress
+**Status:** completed
+
+**Completed 2026-08-21.** All seven tasks merged and verified against QA's Postgres:
+`spec61_user_role_pickup_leader`, `spec61_pickup_route_crew`,
+`spec61_start_route_leader_gate`, `spec61_my_active_route`,
+`spec61_pending_excludes_routed` and `spec61_cancel_route_authz` all pass in the
+advisory suite (`pass=36 fail=0`).
+
+Three security defects were found and closed along the way, none of them in the
+original scope:
+
+- `pickup_route_crew` was INSERT-able by any authenticated user. The migration
+  issued `GRANT SELECT` without a preceding `REVOKE`, and Supabase's default
+  privileges had already granted more; the RLS policy was `FOR ALL` with a
+  `WITH CHECK`, so it actively permitted the write rather than staying silent.
+  Fixed in `20260820000004`.
+- `cancel_pickup_route` had **no caller authorisation at all** — it checked the
+  operator, the route's existence and its status, never who was asking, with
+  EXECUTE granted to `authenticated`. Any user in the operator could cancel any
+  open route. Live since spec-52. Fixed in `20260821000001`.
+- `get_active_routes_with_dispatches` had lost its cross-tenant guard on QA:
+  the pre-fix body from `20260310000004` had been re-applied over
+  `20260729000001` outside the migration pipeline. Production was unaffected —
+  verified directly. Fixed in `20260821000002`, plus
+  `definer_rpc_tenant_guards.sql`, which polices the whole class rather than
+  the two functions the original leak was found in.
+
+Carried forward, deliberately not done here:
+
+- A stranded crew member gets no signal — see the DECIDED note in the risks
+  section. The `removed_at` row is retained, so the signal stays cheap to add.
+- An abandoned `in_progress` route hides its loads from every leader; Task 5
+  wires up `cancel_pickup_route` as the in-app exit, but
+  `reconcile_abandoned_pickup_routes` remains unscheduled and its grant
+  deliberately revoked.
+- `start_pickup_route` carries the same inaccurate `operator_id` justification
+  comment that `20260821000001` corrects in its own header. Fixing it means
+  re-issuing the whole function, which is deploy risk taken for prose.
+- Contrast cases on the crew strip that jsdom cannot see; one 390px Playwright
+  screenshot is filed as the cheapest guard.
 
 _Date: 2026-08-20_
 
