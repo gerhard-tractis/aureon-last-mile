@@ -163,7 +163,10 @@ describe('PickupMobileStartRoute', () => {
     expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-2']);
   });
 
-  it('never offers the leader themselves as crew', () => {
+  // Threading only, like its twin in CrewSelect.test.tsx: the hook is mocked,
+  // so this proves currentUserId reaches it as the exclusion id, not that the
+  // leader is excluded. That is useCrewCandidates.test.ts's job.
+  it('passes the signed-in leader through as the exclusion id', () => {
     mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
     render(<PickupMobileStartRoute {...baseProps()} />);
     expect(mockUseCrewCandidates).toHaveBeenCalledWith('op-1', 'user-me');

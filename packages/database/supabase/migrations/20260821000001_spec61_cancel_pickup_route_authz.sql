@@ -103,10 +103,27 @@ BEGIN
     -- Role read from public.users, not from the JWT claim: the claim is
     -- minted at login, so a freshly promoted manager would still be carrying
     -- the old role. SECURITY DEFINER, so RLS does not hide the row.
-    -- operator_id IS scoped (not just id): without it, a JWT whose `sub`
-    -- belongs to operator X but whose operator_id claim says Y would be
-    -- authorised on X's role while acting on Y's route. That mismatch falls
-    -- into the refusal below for free, like any other unauthorised caller.
+    --
+    -- `operator_id = v_operator` is DEFENCE IN DEPTH, and only that. It
+    -- cannot currently fail: get_operator_id() (20260216170542:282) is
+    -- `SELECT operator_id FROM public.users WHERE id = auth.uid()`, and
+    -- auth.uid() IS `(auth.jwt() ->> 'sub')::uuid` -- the same value
+    -- v_caller holds. So v_operator is, by construction, the operator_id of
+    -- the very row this SELECT is about to find by `id = v_caller`, and the
+    -- clause is a tautology. There is no "JWT says operator Y while sub
+    -- belongs to operator X" case to catch: the operator_id claim is never
+    -- consulted by anything on this path. The clause is kept because it
+    -- costs nothing and keeps the statement true independently of how
+    -- v_operator is derived -- exactly the kind of assumption that changes
+    -- quietly.
+    --
+    -- start_pickup_route (20260820000003:132-137) carries this same clause
+    -- with the cross-claim justification that this comment corrects. Its
+    -- CODE is right; only its comment is wrong. Left as-is rather than
+    -- edited here: rewriting a comment inside another migration's function
+    -- body means re-issuing that whole function from this file, which is a
+    -- real deploy risk taken for a prose fix. Noted so the two do not read
+    -- as a deliberate divergence.
     SELECT role INTO v_role FROM public.users
      WHERE id = v_caller AND operator_id = v_operator AND deleted_at IS NULL;
 

@@ -2094,6 +2094,17 @@ Depends on Chunks 1 and 2. This is the only chunk a driver can see.
 
 ### Task 5: `3j` becomes the leader's screen, and crew get their own
 
+> **Every even-numbered step below is unticked on purpose, and stays unticked.** They are the
+> "run it, verify it fails / verify it passes" steps, and nothing can execute in the
+> implementation environment: vitest cannot spawn workers on that machine (Norton) and Docker
+> is down, so there is no pgTAP and no psql either. `tsc --noEmit` and `eslint` are the only
+> checks that were run, and both are clean. **CI is the execution of record for the vitest
+> suites, and the QA deploy (`deploy-qa.sh:375`) for the SQL tests.** The odd-numbered steps —
+> write the test, write the implementation — are ticked because they were done. Steps 10 and
+> 12 fold an implementation into a "run it" step: the implementation was written, the run was
+> not, so they stay unticked with the rest. Do not tick the even ones on this task's behalf;
+> if they are ever ticked it should be because someone watched them run.
+
 **Files:**
 - Create: `apps/frontend/src/hooks/pickup/useCrewCandidates.ts` + `.test.ts`
 - Create: `apps/frontend/src/components/pickup/CrewSelect.tsx` + `.test.tsx`
@@ -2554,9 +2565,17 @@ and the reasoning, decided rather than inferred:
 This deliberately does **not** reuse `ROUTE_LEADER_ROLES` (`lib/permissions.ts`) or
 `start_pickup_route`'s list. That list answers "who may OPEN a route", a different question
 from "who may cancel THIS one", and it contains `pickup_leader`, which must not appear here.
-The migration's header and its validation block both say so — the block fails the deploy if
-`pickup_leader` ever appears in the installed body — so a later "fix the inconsistency" edit
-cannot land quietly.
+The migration's header says so, and its validation block asserts it — but be precise about
+what that block can and cannot do. It is a `DO` block inside the migration, so it runs **once**,
+when this migration applies, and pins the state *at that moment*: it proves this file installed
+the body it claims to. A later `CREATE OR REPLACE` in a new migration would not re-run it and
+would not be caught by it.
+
+What actually catches a later "fix the inconsistency" edit is **TEST 2 in
+`spec61_cancel_route_authz.sql`** — a different `pickup_leader` in the same operator being
+refused — because the SQL tests run on **every QA deploy** (`deploy-qa.sh:375`), against
+whatever the function is by then. Put `pickup_leader` back on the list and that test fails on
+the next deploy. The migration's block is the one-time proof; the test is the standing guard.
 
 Proof: `packages/database/supabase/tests/spec61_cancel_route_authz.sql`, which runs on every
 QA deploy (`deploy-qa.sh:375`). It calls the RPC under `SET LOCAL ROLE authenticated` (the
@@ -2586,13 +2605,29 @@ reachable only in the moment `handleCreateRoute` pushes to it. A leader whose ma
 failed to attach navigates away once and can never get back: exactly the abandoned-route case
 the decision exists to fix. One shared `CancelRouteButton`, two call sites.
 
-##### Also fixed here (flagged by Task 4)
+##### Added to Task 5's scope by the coordinator: the failed-lookup branch
 
-`page.tsx` destructured only `{ data: activeRoute }` from `useActivePickupRoute`. After React
-Query exhausts its retries a failed lookup leaves `data` undefined, which this page read as
-"no route" — offering `3j` on a phone and the `1l` draft panel's start button on a laptop to a
-leader who already had a route open. Both surfaces now read `isError`: mobile offers a retry,
-and the draft panel says the route is unknown instead of offering to start one.
+**Not in any written version of Task 5.** Task 4 found this bug, deferred it, and the
+coordinator put it in Task 5's dispatch as an explicit in-scope item. Recording that plainly,
+because the code is larger than "a fix": it added a third mobile blank state and a new branch
+on the desktop draft panel, and nothing about `isError`, `Reintentar` or `No pudimos` appears
+anywhere in this spec on `origin/main`.
+
+The bug: `page.tsx` destructured only `{ data: activeRoute }` from `useActivePickupRoute`.
+After React Query exhausts its retries a failed lookup leaves `data` undefined, which this page
+read as "no route" — offering `3j` on a phone and the `1l` draft panel's start button on a
+laptop to a leader who already had a route open. Task 4 fixed the equivalent on
+`route/active/page.tsx` by reading `isError`; this is the same fix on the other screen.
+
+What it added, so the diff is not a surprise:
+- `PickupMobileView` — `routeUnknown` / `onRetryRoute` props and a third no-route branch
+  ("No pudimos cargar tu ruta." + *Reintentar*), checked **before** the leader/crew branch
+  because it is true for both. Mobile therefore now has three blank states, not two.
+- `PickupRouteDraftPanel` — a `routeUnknown` branch ahead of `activeRouteCode`, so `1l` says
+  the route is unknown instead of offering to start a second one. Threaded through
+  `PickupDesktopView`.
+- `page.tsx` — reads `isError` and `refetch` from the hook and passes both down.
+- Tests in `PickupMobileView.test.tsx`, `PickupRouteDraftPanel.test.tsx` and `page.test.tsx`.
 
 ### Task 6: `3h` shows who is on the trip
 

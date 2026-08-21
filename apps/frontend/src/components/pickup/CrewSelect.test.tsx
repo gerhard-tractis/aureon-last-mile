@@ -28,7 +28,13 @@ describe('CrewSelect', () => {
     mockUseCrewCandidates.mockReturnValue({ data: CANDIDATES, isLoading: false });
   });
 
-  it('asks only for this operator, and never for the leader themselves', () => {
+  // Threading only: this asserts the operator and the exclusion id REACH the
+  // hook, not that anyone is actually excluded -- the hook is mocked here, so
+  // it could not. The exclusion itself is tested against real rows in
+  // useCrewCandidates.test.ts ("never offers the signed-in user as their own
+  // crew"). Named for what it checks, so nobody reads coverage into it that
+  // is not here.
+  it('passes the operator and the exclusion id through to the hook', () => {
     render(<CrewSelect {...baseProps()} />);
     expect(mockUseCrewCandidates).toHaveBeenCalledWith('op-1', 'user-me');
   });
