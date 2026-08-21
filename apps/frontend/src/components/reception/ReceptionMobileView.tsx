@@ -42,6 +42,12 @@ export interface ReceptionMobileViewProps {
   discrepancies: OpenDiscrepancy[];
   isLoading: boolean;
   userName: string | null;
+  /**
+   * Fires both from the hero card's "Iniciar conteo" and from tapping any
+   * compact row — a row and the hero lead to the same place (the route's
+   * count), so they deliberately share this one callback rather than two
+   * names for one destination.
+   */
   onStartCount: (routeId: string) => void;
   onOpenQRScanner: () => void;
   onOpenDiscrepancy: (routeId: string) => void;
@@ -90,9 +96,25 @@ export function ReceptionMobileView({
       <ReceptionMobileHeader userName={userName} />
 
       {isLoading ? (
-        // Same height and radius as the hero card's own rounded-2xl shell —
-        // never a centred spinner (mock 3i field constraint).
-        <Skeleton className="h-[268px] w-full rounded-2xl" />
+        // Built from the hero card's OWN structural classes (rounded-2xl
+        // border-2 p-5, the h-16 button) with stacked inner Skeleton blocks
+        // standing in for its text lines — never a centred spinner (mock 3i
+        // field constraint). Deriving the shape this way means it cannot
+        // drift from the real card the way a hardcoded height constant
+        // would the next time ReceptionMobileYardCard's typography changes.
+        <div
+          data-testid="reception-yard-hero-skeleton"
+          className="rounded-2xl border-2 border-accent bg-accent-muted p-5"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-5 w-14" />
+          </div>
+          <Skeleton className="mt-2 h-[30px] w-40" />
+          <Skeleton className="mt-2 h-5 w-48" />
+          <Skeleton className="mt-3 h-4 w-36" />
+          <Skeleton className="mt-4 h-16 w-full rounded-[14px]" />
+        </div>
       ) : hero ? (
         <>
           <div data-testid="reception-yard-hero">

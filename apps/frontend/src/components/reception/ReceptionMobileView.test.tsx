@@ -99,6 +99,20 @@ describe('ReceptionMobileView', () => {
     expect(screen.getByText(esperaCorta.code)).toBeInTheDocument();
   });
 
+  it('muestra el eyebrow TAMBIÉN EN PATIO solo cuando hay filas ademas del héroe', () => {
+    const { rerender } = render(
+      <ReceptionMobileView {...baseProps} yardRoutes={[esperaCorta, esperaLarga]} />,
+    );
+    // A rename here would go unnoticed without this assertion — the other
+    // two eyebrows (DIFERENCIAS ABIERTAS, REINGRESOS) already have one.
+    expect(screen.getByText('TAMBIÉN EN PATIO')).toBeInTheDocument();
+
+    // With only the hero and no other yard routes, the eyebrow has nothing
+    // to introduce and must not render an empty section.
+    rerender(<ReceptionMobileView {...baseProps} yardRoutes={[esperaLarga]} />);
+    expect(screen.queryByText('TAMBIÉN EN PATIO')).not.toBeInTheDocument();
+  });
+
   it('sin camiones en patio muestra el vacío y conserva el pie', () => {
     render(<ReceptionMobileView {...baseProps} yardRoutes={[]} />);
     expect(screen.getByText(/Ningún camión en patio/i)).toBeInTheDocument();
@@ -107,12 +121,24 @@ describe('ReceptionMobileView', () => {
   });
 
   it('en carga muestra un esqueleto con la geometría de la tarjeta héroe, nunca un spinner', () => {
-    const { container } = render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
+    render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
     expect(screen.queryByTestId('reception-yard-hero')).not.toBeInTheDocument();
     expect(screen.queryByText(/Ningún camión en patio/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    const skeleton = container.querySelector('.rounded-2xl.animate-pulse');
-    expect(skeleton).not.toBeNull();
+    // Same structural shell as the real hero card (rounded-2xl, border-2,
+    // p-5), populated with animate-pulse blocks rather than a bare box —
+    // proves the skeleton is built from the card's own classes, not a
+    // disconnected placeholder.
+    const skeleton = screen.getByTestId('reception-yard-hero-skeleton');
+    expect(skeleton.className).toContain('rounded-2xl');
+    expect(skeleton.className).toContain('border-2');
+    expect(skeleton.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+  });
+
+  it('en carga el pie sigue montado — no hay un instante sin salida', () => {
+    render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
+    expect(screen.getByRole('button', { name: /Escanear QR de ruta/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Recibir sin QR/i })).toBeInTheDocument();
   });
 
   it('no monta KPIs ni conmutador de tema', () => {
