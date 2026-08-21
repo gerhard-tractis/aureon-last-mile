@@ -16,6 +16,12 @@ import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
  * from `finalizeRule` for that reason — see `@/lib/reception/finalize-rule`
  * for the worked example (88 expected · 86 received · 1 unexpected = 3
  * missing, not 2).
+ *
+ * Section titles ("NOTA DE DISCREPANCIA", "QUÉ PASA AHORA", "QUEDA 1 RUTA EN
+ * PATIO") are literal uppercase text, not a CSS `uppercase` transform — a
+ * transform lets the DOM text stay mixed-case while rendering uppercase, so
+ * a test asserting exact text silently stops asserting the moment someone
+ * edits the copy. Keep all three the same way.
  */
 export interface ReceptionReceiptProps {
   snapshot: RouteReceptionSnapshot;
@@ -78,6 +84,8 @@ export function ReceptionReceipt({
       </div>
 
       {discrepancy_notes && (
+        // data-testid kept even though no unit test here asserts it yet —
+        // Task 25's Playwright spec for the acta needs a stable selector.
         <div
           data-testid="acta-nota"
           className="rounded-lg border border-status-warning-border bg-status-warning-bg p-3"
@@ -91,12 +99,12 @@ export function ReceptionReceipt({
       )}
 
       <div className="rounded-lg border border-border bg-surface-raised p-3">
-        <p className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[.05em] text-text-secondary">
+        <p className="mb-1 flex items-center gap-2 text-xs font-semibold tracking-[.05em] text-text-secondary">
           <PackageCheck className="h-4 w-4" aria-hidden="true" />
-          Qué pasa ahora
+          QUÉ PASA AHORA
         </p>
         <p className="text-sm text-text">
-          {manifests.length} cargas cerradas, {matched} paquete{matched === 1 ? '' : 's'} pasan a
+          {manifests.length} carga{manifests.length === 1 ? '' : 's'} cerrada{manifests.length === 1 ? '' : 's'}, {matched} paquete{matched === 1 ? '' : 's'} pasan a
           clasificación.
           {reconciled
             ? ' El conteo cuadró: no quedan diferencias abiertas.'
@@ -105,13 +113,15 @@ export function ReceptionReceipt({
       </div>
 
       {nextYardRoute && (
+        // Same as acta-nota above: an unearned-looking testid reserved for
+        // Task 25's e2e spec, not dead weight.
         <div
           data-testid="acta-siguiente-ruta"
           className="flex items-center justify-between rounded-lg border border-border bg-surface p-3"
         >
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.05em] text-text-secondary">
-              Queda 1 ruta en patio
+            <p className="text-xs font-semibold tracking-[.05em] text-text-secondary">
+              QUEDA 1 RUTA EN PATIO
             </p>
             <p className="text-sm font-medium text-text">{nextYardRoute.code}</p>
           </div>

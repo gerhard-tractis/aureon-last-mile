@@ -8,8 +8,8 @@ import type { IncomingRoute } from '@/hooks/reception/useIncomingRoutes';
 // 88 expected · 86 received · 1 unexpected. finalizeRule's `matched` is
 // received - unexpected = 85, so `missing` is 88 - 85 = 3 — NOT the naive
 // 88 - 86 = 2 a bare subtraction would produce. This is the offsetting
-// fixture the brief calls out: with unexpectedCount at 0 the naive formula
-// and finalizeRule agree by accident and the test proves nothing.
+// fixture: with unexpectedCount at 0 the naive formula and finalizeRule
+// agree by accident and the test proves nothing.
 const snapshot: RouteReceptionSnapshot = {
   route: {
     id: 'r1',
@@ -51,6 +51,14 @@ const sinNota: RouteReceptionSnapshot = {
   },
 };
 
+// A single-manifest route is not an edge case — most receptions close one
+// load, not three. Agreement bugs ("1 cargas cerradas") hide behind a
+// fixture that always has more than one manifest.
+const unaCarga: RouteReceptionSnapshot = {
+  ...snapshot,
+  manifests: [snapshot.manifests[0]],
+};
+
 const otraRuta: IncomingRoute = {
   id: 'r2',
   code: 'PR-2026-0149',
@@ -71,43 +79,53 @@ const props = {
 };
 
 describe('ReceptionReceipt', () => {
-  it('las cuatro cifras salen de route_receptions, no de un recuento propio', () => {
+  it('the four figures come from route_receptions, not a recount', () => {
     render(<ReceptionReceipt {...props} />);
-    expect(screen.getByTestId('acta-esperados')).toHaveTextContent('88');
-    expect(screen.getByTestId('acta-recibidos')).toHaveTextContent('86');
-    expect(screen.getByTestId('acta-faltantes')).toHaveTextContent('3'); // 86 - 1 ajeno vs 88
-    expect(screen.getByTestId('acta-ajenos')).toHaveTextContent('1'); // unexpected_count
+    expect(screen.getByTestId('acta-esperados')).toHaveTextContent(/^Esperados88$/);
+    expect(screen.getByTestId('acta-recibidos')).toHaveTextContent(/^Recibidos86$/);
+    // Anchored, not a substring match — a loose 'toHaveTextContent(\'3\')'
+    // would also pass on 13 or 30. The naive-subtraction failure mode this
+    // fixture exists to catch produces 2, which this still rejects.
+    expect(screen.getByTestId('acta-faltantes')).toHaveTextContent(/^Faltantes3$/); // 86 - 1 ajeno vs 88
+    expect(screen.getByTestId('acta-ajenos')).toHaveTextContent(/^Ajenos a la ruta1$/); // unexpected_count
   });
 
-  it('muestra la nota tal como quedó guardada', () => {
+  it('shows the note exactly as it was saved', () => {
     render(<ReceptionReceipt {...props} />);
     expect(screen.getByText(/Faltan 2 paquetes de CARGA-99814/)).toBeInTheDocument();
   });
 
-  it('sin nota no dibuja el bloque de discrepancia', () => {
+  it('with no note, does not draw the discrepancy block', () => {
     // A reception that reconciled has no discrepancy_notes. An empty block
     // titled "NOTA DE DISCREPANCIA" would suggest a note existed and was lost.
     render(<ReceptionReceipt {...props} snapshot={sinNota} />);
     expect(screen.queryByText(/NOTA DE DISCREPANCIA/)).not.toBeInTheDocument();
   });
 
-  it('nombra lo que la recepción dejó hecho', () => {
+  it('names what the reception left done', () => {
     render(<ReceptionReceipt {...props} />);
     expect(screen.getByText(/3 cargas/)).toBeInTheDocument();
     expect(screen.getByText(/clasificación/i)).toBeInTheDocument();
   });
 
-  it('reincorpora al flujo cuando queda otro camión esperando', () => {
+  it('agrees in number: one closed manifest reads "1 carga cerrada", not "1 cargas cerradas"', () => {
+    render(<ReceptionReceipt {...props} snapshot={unaCarga} />);
+    expect(screen.getByText(/1 carga cerrada,/)).toBeInTheDocument();
+    expect(screen.queryByText(/1 cargas/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/carga cerradas/)).not.toBeInTheDocument();
+  });
+
+  it('re-enters the flow when another truck is still waiting', () => {
     render(<ReceptionReceipt {...props} nextYardRoute={otraRuta} />);
     expect(screen.getByText(otraRuta.code)).toBeInTheDocument();
   });
 
-  it('sin más camiones no inventa una siguiente ruta', () => {
+  it('with no more trucks, does not invent a next route', () => {
     render(<ReceptionReceipt {...props} nextYardRoute={null} />);
-    expect(screen.queryByText(/Queda 1 ruta en patio/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/QUEDA 1 RUTA EN PATIO/)).not.toBeInTheDocument();
   });
 
-  it('el botón primario vuelve a recepción y mide 60px', async () => {
+  it('the primary button returns to reception and measures 60px', async () => {
     const onBack = vi.fn();
     const user = userEvent.setup();
     render(<ReceptionReceipt {...props} onBack={onBack} />);
@@ -117,7 +135,7 @@ describe('ReceptionReceipt', () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it('el botón secundario abre el detalle de la ruta', async () => {
+  it('the secondary button opens the route detail', async () => {
     const onOpenRoute = vi.fn();
     const user = userEvent.setup();
     render(<ReceptionReceipt {...props} onOpenRoute={onOpenRoute} />);
