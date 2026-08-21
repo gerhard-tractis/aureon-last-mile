@@ -59,7 +59,7 @@ function buildSessionClient(overrides: {
 describe('POST /routes/[id]/dispatch — DT failure', () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.stubEnv('DT_API_KEY', 'test-token');
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
   });
 
   it('returns 401 when no session', async () => {
@@ -273,5 +273,94 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.code).toBe('EMPTY_ROUTE');
+  });
+});
+
+/**
+ * Which env var carries the DispatchTrack token. Every other consumer
+ * (scripts/*.mjs, the dispatchtrack-route-poll edge function) reads
+ * DISPATCHTRACK_API_KEY; this handler used to read DT_API_KEY alone, which
+ * nothing sets, so dispatching failed with "not configured" everywhere. The
+ * old name stays as a fallback in case a deployed environment still sets it.
+ */
+describe('POST /routes/[id]/dispatch — token resolution', () => {
+  function draftRouteClient() {
+    const routeChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        error: null,
+      }),
+    };
+    const dispatchesChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'd1',
+          order_id: 'o1',
+          orders: {
+            order_number: '4821',
+            customer_name: 'Mario',
+            delivery_address: 'Av Principal 1',
+            customer_phone: null,
+          },
+        }],
+        error: null,
+      }),
+    };
+    const updateChain = {
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
+    };
+    return buildSessionClient({
+      fromMock: vi.fn()
+        .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(dispatchesChain)
+        .mockReturnValue(updateChain),
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it('passes DISPATCHTRACK_API_KEY to the DT client', async () => {
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'canonical-token');
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    expect((createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBe('canonical-token');
+  });
+
+  it('falls back to DT_API_KEY when the canonical name is unset', async () => {
+    vi.stubEnv('DT_API_KEY', 'legacy-token');
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    expect((createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBe('legacy-token');
+  });
+
+  it('returns 502 and never calls DT when no token is configured', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(502);
+    expect(createDTRoute).not.toHaveBeenCalled();
   });
 });

@@ -8,8 +8,17 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock, back: vi.fn() }),
 }));
 
+const operatorIdMock = vi.fn();
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => ({ operatorId: 'op-1', role: 'driver', permissions: [] }),
+  useOperatorId: () => operatorIdMock(),
+}));
+
+// spec-61 Task 5 — the cancel affordance. Mocked so this file stays a test
+// of WHO is offered it; the RPC call itself is covered in
+// useCancelPickupRoute.test.ts.
+const cancelMutateAsync = vi.fn();
+vi.mock('@/hooks/pickup/useCancelPickupRoute', () => ({
+  useCancelPickupRoute: () => ({ mutateAsync: cancelMutateAsync, isPending: false }),
 }));
 
 // This page does not render PickupRouteCrewStrip today, so the missing
@@ -20,6 +29,9 @@ vi.mock('@/hooks/useOperatorId', () => ({
 const route = {
   id: 'route-1',
   code: 'PR-2026-0001',
+  // spec-61 Task 5: the leader of the route. `driver_id` is what the cancel
+  // affordance is gated on.
+  driver_id: 'leader-1',
   started_at: new Date().toISOString(),
   vehicle: { plate: 'AAA-111' },
   crew: [],
@@ -81,6 +93,15 @@ function wrap(ui: React.ReactNode) {
 describe('ActiveRoutePage', () => {
   beforeEach(() => {
     pushMock.mockReset();
+    operatorIdMock.mockReset();
+    operatorIdMock.mockReturnValue({
+      operatorId: 'op-1',
+      role: 'pickup_leader',
+      permissions: [],
+      userId: 'leader-1',
+    });
+    cancelMutateAsync.mockReset();
+    cancelMutateAsync.mockResolvedValue({ id: 'route-1', status: 'cancelled' });
     addMutate.mockReset();
     closeMutate.mockReset();
     activeRouteMock.mockReset();
@@ -244,5 +265,63 @@ describe('ActiveRoutePage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('route-map-placeholder')).toBeInTheDocument(),
     );
+  });
+
+  /**
+   * spec-61 Task 5 — abandoned routes had no exit. Task 7 stopped
+   * `get_pending_manifests` offering routed loads, so a route opened by
+   * mistake holds its manifests away from every other crew until someone
+   * opens psql.
+   */
+  describe('cancelling an abandoned route', () => {
+    it('offers the route leader a way out', async () => {
+      wrap(<Page />);
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /cancelar ruta/i })).toBeInTheDocument(),
+      );
+    });
+
+    it('does not offer it to a crew member riding the same route', async () => {
+      operatorIdMock.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'crew-9',
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /cancelar ruta/i })).toBeNull();
+      // The screen is otherwise intact — this is a missing control, not a
+      // blocked page.
+      expect(screen.getByTestId('close-route-button')).toBeInTheDocument();
+    });
+
+    // Both sides null must NOT read as "this is my route". A route row whose
+    // driver_id is null and a signed-out reader are not the same person.
+    it('does not offer it when nobody is signed in', async () => {
+      operatorIdMock.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_leader',
+        permissions: [],
+        userId: null,
+      });
+      activeRouteMock.mockReturnValue({
+        data: { ...route, driver_id: null },
+        isLoading: false,
+        isError: false,
+        refetch: refetchRoute,
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: /cancelar ruta/i })).toBeNull();
+    });
+
+    it('takes the leader back to Recogida once the route is really cancelled', async () => {
+      wrap(<Page />);
+      fireEvent.click(await screen.findByRole('button', { name: /cancelar ruta/i }));
+      fireEvent.click(await screen.findByRole('button', { name: /sí, cancelar la ruta/i }));
+      await waitFor(() => expect(cancelMutateAsync).toHaveBeenCalledWith({ routeId: 'route-1' }));
+      await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/pickup'));
+    });
   });
 });

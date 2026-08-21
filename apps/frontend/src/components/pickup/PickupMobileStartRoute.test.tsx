@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PickupMobileStartRoute } from './PickupMobileStartRoute';
@@ -16,7 +16,20 @@ vi.mock('@/hooks/pickup/useVehicles', async () => {
   };
 });
 
+// 3j now carries the crew picker (spec-61 Task 5). Mocked here so this file
+// stays a test of PickupMobileStartRoute's own wiring; CrewSelect's own
+// behaviour is covered in CrewSelect.test.tsx.
+const mockUseCrewCandidates = vi.fn();
+vi.mock('@/hooks/pickup/useCrewCandidates', () => ({
+  useCrewCandidates: (...args: unknown[]) => mockUseCrewCandidates(...args),
+}));
+
 const VEHICLES = [{ id: 'v-1', plate: 'JKLM-42', vehicle_type: 'camion', active: true }];
+
+const CREW = [
+  { id: 'crew-1', full_name: 'Ana Pérez', role: 'pickup_crew' },
+  { id: 'crew-2', full_name: 'Bruno Díaz', role: 'pickup_crew' },
+];
 
 const pendingRows: ManifestRow[] = [
   {
@@ -78,6 +91,7 @@ const FALABELLA_CHECKBOX = 'Seleccionar todos los manifiestos de Falabella';
 function baseProps() {
   return {
     operatorId: 'op-1',
+    currentUserId: 'user-me',
     pendingRows,
     selectedIds: new Set<string>(),
     onToggleSelect: vi.fn(),
@@ -88,6 +102,10 @@ function baseProps() {
 }
 
 describe('PickupMobileStartRoute', () => {
+  beforeEach(() => {
+    mockUseCrewCandidates.mockReturnValue({ data: CREW, isLoading: false });
+  });
+
   it('the "Iniciar ruta de recogida" button starts disabled until a vehicle is chosen', async () => {
     mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
     render(<PickupMobileStartRoute {...baseProps()} />);
@@ -108,7 +126,78 @@ describe('PickupMobileStartRoute', () => {
     await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
     await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
 
-    expect(onCreateRoute).toHaveBeenCalledWith('v-1');
+    // spec-61: the crew list rides in the SAME call as the vehicle, because
+    // start_pickup_route inserts both in one transaction. An empty array is
+    // a solo route, never "no argument".
+    expect(onCreateRoute).toHaveBeenCalledWith('v-1', []);
+  });
+
+  // spec-61 Task 5 — the leader names their crew on 3j and it reaches the
+  // RPC in the same call. Before this, onCreateRoute took a vehicle alone
+  // and every route opened solo.
+  it('passes the ticked crew to onCreateRoute alongside the vehicle', async () => {
+    mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
+    const onCreateRoute = vi.fn();
+    render(<PickupMobileStartRoute {...baseProps()} onCreateRoute={onCreateRoute} />);
+
+    await userEvent.click(screen.getByLabelText(/Vehículo/i));
+    await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
+
+    expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-1']);
+  });
+
+  it('unticking a crew member takes them back out before the route opens', async () => {
+    mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
+    const onCreateRoute = vi.fn();
+    render(<PickupMobileStartRoute {...baseProps()} onCreateRoute={onCreateRoute} />);
+
+    await userEvent.click(screen.getByLabelText(/Vehículo/i));
+    await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Bruno Díaz' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Ana Pérez' }));
+    await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
+
+    expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-2']);
+  });
+
+  /**
+   * spec-61 Task 5 — the crew picker sits between the vehicle select and the
+   * primary CTA, and useCrewCandidates has no limit, so a twenty-person
+   * operator pushed "Iniciar ruta de recogida" off the bottom of a 390px
+   * screen. This is the assertion at the surface that actually owns the
+   * button; CrewSelect.test.tsx pins the cap on the list itself.
+   */
+  it('keeps the start button on screen with a twenty-person crew list', async () => {
+    mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
+    mockUseCrewCandidates.mockReturnValue({
+      data: Array.from({ length: 20 }, (_, i) => ({
+        id: `crew-${i}`,
+        full_name: `Persona ${i}`,
+        role: 'pickup_crew',
+      })),
+      isLoading: false,
+    });
+    const onCreateRoute = vi.fn();
+    render(<PickupMobileStartRoute {...baseProps()} onCreateRoute={onCreateRoute} />);
+
+    // Reachable, and still WORKING -- not merely present in the DOM.
+    await userEvent.click(screen.getByLabelText(/Vehículo/i));
+    await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Persona 19' }));
+    await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
+    expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-19']);
+  });
+
+  // Threading only, like its twin in CrewSelect.test.tsx: the hook is mocked,
+  // so this proves currentUserId reaches it as the exclusion id, not that the
+  // leader is excluded. That is useCrewCandidates.test.ts's job.
+  it('passes the signed-in leader through as the exclusion id', () => {
+    mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
+    render(<PickupMobileStartRoute {...baseProps()} />);
+    expect(mockUseCrewCandidates).toHaveBeenCalledWith('op-1', 'user-me');
   });
 
   it('surfaces the one-active-route error readably', () => {

@@ -2,11 +2,10 @@
 
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Camera } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
 import { type ManifestRow } from '@/components/pickup/ManifestTable';
+import { PickupDesktopHeader } from '@/components/pickup/PickupDesktopHeader';
 import { PickupDesktopView, type TabKey } from '@/components/pickup/PickupDesktopView';
 import { PickupMobileView } from '@/components/pickup/PickupMobileView';
 import {
@@ -20,12 +19,17 @@ import { useStartPickupRoute } from '@/hooks/pickup/useStartPickupRoute';
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
 import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { canLeadPickupRoute } from '@/lib/permissions';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { ModuleKey } from '@/lib/modules/registry';
 import { createSPAClient } from '@/lib/supabase/client';
 import { openPendingManifest } from '@/lib/pickup/openPendingManifest';
-import { todayLabel, matchesSearchTerm } from '@/lib/pickup/pickupPageHelpers';
+import {
+  attachManifestsToRoute,
+  partialAttachMessage,
+} from '@/lib/pickup/attachManifestsToRoute';
+import { matchesSearchTerm, pendingToRows, totalsToRows } from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -56,7 +60,18 @@ function PickupPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { t } = useTranslation();
-  const { operatorId } = useOperatorId();
+  // spec-61 Task 5 — `role` decides 3j vs the crew screen, `userId` decides
+  // whose route this is (the cancel affordance) and keeps a leader out of
+  // their own crew picker.
+  const { operatorId, role, userId } = useOperatorId();
+  // spec-61 Task 5 — `role === null` means UNKNOWN, not "crew". GlobalContext
+  // sets operatorId/role/permissions in ONE setState pass once its async
+  // getUser() + getSession() resolve (GlobalContext.tsx:31-63), and
+  // _client-gate.tsx:19 deliberately paints children while permissions are
+  // still empty — so nothing blocks the render. `!operatorId` is therefore an
+  // exact "claims have not landed yet" signal, and the two branches that key
+  // off `canLead` must not fire a refusal during it.
+  const roleUnknown = !operatorId;
   const labelsEnabled = useModuleEnabled(operatorId, ModuleKey.PACKAGE_LABELS);
   // spec-54 mock 3h: below `lg` this screen swaps its whole body for the
   // phone card layout instead of squeezing the desktop table into 390px.
@@ -84,50 +99,24 @@ function PickupPageContent() {
   const { data: inTransit } = useInTransitManifests(operatorId, !isBelowLg);
   const { data: completed } = useCompletedManifests(operatorId);
 
-  const { data: activeRoute } = useActivePickupRoute(operatorId);
+  // spec-61 Task 5 — `isError` is read, not just `data`. After React Query
+  // exhausts its retries a FAILED lookup leaves `data` undefined, which is
+  // indistinguishable from "no route": this screen then told a leader who
+  // HAS an open route that they do not, and left "Iniciar ruta" enabled on
+  // both the mobile and the desktop path. Task 4 made the same fix on
+  // route/active/page.tsx.
+  const {
+    data: activeRoute,
+    isError: activeRouteUnknown,
+    refetch: refetchActiveRoute,
+  } = useActivePickupRoute(operatorId);
   const { data: activeManifests = [] } = useRouteManifests(activeRoute?.id ?? null, operatorId);
   const startMut = useStartPickupRoute(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
 
-  const pendingRows: ManifestRow[] = useMemo(
-    () =>
-      (pending ?? []).map((m) => ({
-        id: m.id,
-        externalLoadId: m.external_load_id,
-        pickupPoint: m.pickup_point,
-        retailerName: m.retailer_name,
-        orderCount: m.order_count ?? 0,
-        packageCount: m.package_count ?? 0,
-        verifiedCount: m.verified_count,
-      })),
-    [pending],
-  );
-
-  const inTransitRows: ManifestRow[] = useMemo(
-    () =>
-      (inTransit ?? []).map((m) => ({
-        id: m.id,
-        externalLoadId: m.external_load_id,
-        pickupPoint: m.pickup_point,
-        retailerName: m.retailer_name,
-        orderCount: m.total_orders ?? 0,
-        packageCount: m.total_packages ?? 0,
-      })),
-    [inTransit],
-  );
-
-  const completedRows: ManifestRow[] = useMemo(
-    () =>
-      (completed ?? []).map((m) => ({
-        id: m.id,
-        externalLoadId: m.external_load_id,
-        pickupPoint: m.pickup_point,
-        retailerName: m.retailer_name,
-        orderCount: m.total_orders ?? 0,
-        packageCount: m.total_packages ?? 0,
-      })),
-    [completed],
-  );
+  const pendingRows: ManifestRow[] = useMemo(() => pendingToRows(pending ?? []), [pending]);
+  const inTransitRows: ManifestRow[] = useMemo(() => totalsToRows(inTransit ?? []), [inTransit]);
+  const completedRows: ManifestRow[] = useMemo(() => totalsToRows(completed ?? []), [completed]);
 
   const totals = pendingTotals(pending ?? []);
   const closures = completedToday(completed ?? []);
@@ -180,31 +169,43 @@ function PickupPageContent() {
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
 
-  /** Creates the route, then attaches the ticked manifests to it. */
-  const handleCreateRoute = (vehicleId: string) => {
+  /**
+   * Creates the route, then attaches the ticked manifests to it.
+   *
+   * `crewIds` is DEFAULTED, and must stay defaulted: the desktop path calls
+   * this with one argument (PickupDesktopView -> PickupRouteDraftPanel ->
+   * StartRouteButton's `onStart(vehicleId)`), and `1l` has no crew picker.
+   * Making it required would be a tsc error on that prop type and, at
+   * runtime, would hand `undefined` to the RPC as the crew.
+   */
+  const handleCreateRoute = (vehicleId: string, crewIds: string[] = []) => {
     startMut.mutate(
-      { vehicleId },
+      { vehicleId, crewUserIds: crewIds },
       {
         onSuccess: async (route) => {
-          const ids = selectedManifests.map((m) => m.id!).filter(Boolean);
-          const results = await Promise.allSettled(
-            ids.map((manifestId) => addMut.mutateAsync({ routeId: route.id, manifestId })),
+          const { attempted, failedLoadIds } = await attachManifestsToRoute(
+            route.id,
+            selectedManifests,
+            addMut.mutateAsync,
           );
-          const failed = results.filter((r) => r.status === 'rejected').length;
-          if (failed > 0) {
-            // The route exists either way — say what did not make it rather
-            // than let the driver leave with a short load.
-            // KNOWN GAP (spec'd separately): if EVERY add fails, the driver
-            // still lands on 3h with an empty route, and the one-active-
-            // route index makes 3j unreachable — no cancel affordance here.
-            toast.error(
-              `La ruta se creó, pero ${failed} de ${ids.length} manifiestos no se pudieron agregar.`,
-            );
+          if (failedLoadIds.length > 0) {
+            // The route exists either way — name what did not make it rather
+            // than let the driver leave with a short load and no idea which
+            // one. If EVERY add fails the leader lands on 3h with an empty
+            // route; CancelRouteButton is their way out.
+            toast.error(partialAttachMessage(failedLoadIds, attempted));
           }
           setSelectedIds(new Set());
           router.push('/app/pickup/route/active');
         },
-        onError: (err) => toast.error(err.message),
+        // spec-61 Task 5 — ONE surface per screen, not two. Mobile renders
+        // this same message as a persistent role="alert" inside 3j, right
+        // under the button that failed (PickupMobileStartRoute), so a toast
+        // as well said it twice and the copy that survives is the one that
+        // does not auto-dismiss while the phone is in a pocket. Desktop's
+        // draft panel has no inline error line, so there the toast IS the
+        // surface.
+        onError: (err) => { if (!isBelowLg) toast.error(err.message); },
       },
     );
   };
@@ -215,22 +216,11 @@ function PickupPageContent() {
           PickupMobileView — both stacked on a 390px screen before this
           guard (found live in QA). */}
       {!isBelowLg && (
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h1 className="font-heading text-[26px] font-semibold leading-[1.1] tracking-[-.02em] text-text">
-              Recogida
-            </h1>
-            <p className="text-[12.5px] leading-none text-text-secondary">
-              {todayLabel(new Date())} ·{' '}
-              <span className="font-mono font-semibold text-text">{totals.manifests}</span>{' '}
-              {totals.manifests === 1 ? 'manifiesto por retirar' : 'manifiestos por retirar'}
-            </p>
-          </div>
-          <Button onClick={() => setIntakeOpen(true)} className="ml-auto gap-2">
-            <Camera className="h-4 w-4" />
-            {t('pickup.nuevo_manifiesto')}
-          </Button>
-        </div>
+        <PickupDesktopHeader
+          manifestCount={totals.manifests}
+          onNewManifest={() => setIntakeOpen(true)}
+          newManifestLabel={t('pickup.nuevo_manifiesto')}
+        />
       )}
 
       {isBelowLg && (
@@ -243,6 +233,12 @@ function PickupPageContent() {
           selectedManifests={selectedManifests}
           onOpenRouteManifest={(loadId) => { void handleRouteManifestOpen(loadId); }}
           operatorId={operatorId}
+          role={role}
+          currentUserId={userId}
+          roleUnknown={roleUnknown}
+          routeUnknown={activeRouteUnknown}
+          onRetryRoute={() => { void refetchActiveRoute(); }}
+          canCancelRoute={!!userId && activeRoute?.driver_id === userId}
           onCreateRoute={handleCreateRoute}
           isCreatingRoute={startMut.isPending || addMut.isPending}
           createRouteError={startMut.error?.message ?? null}
@@ -275,6 +271,9 @@ function PickupPageContent() {
           selectedManifests={selectedManifests}
           onCreateRoute={handleCreateRoute}
           isCreatingRoute={startMut.isPending || addMut.isPending}
+          canLead={canLeadPickupRoute(role)}
+          routeUnknown={activeRouteUnknown}
+          roleUnknown={roleUnknown}
         />
       )}
 

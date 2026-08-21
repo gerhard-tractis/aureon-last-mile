@@ -190,6 +190,14 @@ function PendingDockListRow({
         )}
       </div>
       <div className="flex items-start gap-1 self-center">
+        {/* Filled and solid-bordered against the zone chip's dashed outline: at
+            bench distance the crew reads the shape before the word. Uses the
+            shared success trio so it stays legible in both themes. */}
+        {verified && (
+          <span className="font-manifest text-[10px] uppercase tracking-[0.15em] bg-status-success-bg text-status-success-text border border-status-success-border rounded px-1.5 py-0.5 whitespace-nowrap">
+            Verificado
+          </span>
+        )}
         <span className="font-manifest text-[10px] uppercase tracking-[0.15em] text-muted-foreground border border-dashed border-border rounded px-1.5 py-0.5">
           {zoneCode}
         </span>

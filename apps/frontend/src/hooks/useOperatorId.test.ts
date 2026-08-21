@@ -15,6 +15,7 @@ describe('useOperatorId', () => {
       operatorId: 'op-abc',
       role: 'admin',
       permissions: ['read', 'write'],
+      user: { id: 'user-abc', email: 'a@b.c', registered_at: new Date() },
     });
 
     const { result } = renderHook(() => useOperatorId());
@@ -22,6 +23,9 @@ describe('useOperatorId', () => {
     expect(result.current.operatorId).toBe('op-abc');
     expect(result.current.role).toBe('admin');
     expect(result.current.permissions).toEqual(['read', 'write']);
+    // spec-61 Task 5 — auth.uid(), the same value pickup_routes.driver_id
+    // carries for a route's leader.
+    expect(result.current.userId).toBe('user-abc');
   });
 
   it('returns null operatorId when user is not authenticated', () => {
@@ -29,6 +33,7 @@ describe('useOperatorId', () => {
       operatorId: null,
       role: null,
       permissions: [],
+      user: null,
     });
 
     const { result } = renderHook(() => useOperatorId());
@@ -36,6 +41,10 @@ describe('useOperatorId', () => {
     expect(result.current.operatorId).toBeNull();
     expect(result.current.role).toBeNull();
     expect(result.current.permissions).toEqual([]);
+    // Never `undefined`: callers compare it against a route's driver_id, and
+    // `undefined === undefined` on a route row with no driver would read as
+    // "this is my route".
+    expect(result.current.userId).toBeNull();
   });
 
   it('reflects updated context values on re-render', () => {

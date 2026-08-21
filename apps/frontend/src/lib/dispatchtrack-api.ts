@@ -18,6 +18,24 @@ export interface DTRouteResult {
   external_route_id: string;
 }
 
+/**
+ * DispatchTrack is tenant-per-subdomain. Transportes Musan is the only tenant
+ * this product talks to, and it is the host scripts/sync-pending-orders.mjs and
+ * the dispatchtrack-route-poll edge function already use. This module posted to
+ * `activationcode.dispatchtrack.com` instead — the placeholder subdomain from
+ * DT's own API docs, which does not resolve, so dispatching could never have
+ * worked from here.
+ *
+ * Overridable so QA can be aimed at a sandbox tenant if one is ever issued.
+ * Read per call rather than at module load so the value tracks the environment.
+ */
+const DEFAULT_DT_BASE_URL = 'https://transportesmusan.dispatchtrack.com';
+
+function dtBaseUrl(): string {
+  const configured = process.env.DISPATCHTRACK_BASE_URL?.trim();
+  return (configured || DEFAULT_DT_BASE_URL).replace(/\/+$/, '');
+}
+
 function toDateDMY(isoDate: string): string {
   const [yyyy, mm, dd] = isoDate.split('-');
   return `${dd}-${mm}-${yyyy}`;
@@ -38,7 +56,7 @@ export async function createDTRoute(
   }
 
   const response = await fetch(
-    'https://activationcode.dispatchtrack.com/api/external/v1/routes',
+    `${dtBaseUrl()}/api/external/v1/routes`,
     {
       method: 'POST',
       headers: {

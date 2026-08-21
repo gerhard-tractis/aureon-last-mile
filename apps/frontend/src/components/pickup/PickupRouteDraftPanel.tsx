@@ -15,7 +15,9 @@ import type { ManifestRow } from './ManifestTable';
  *
  * When a route is already open the panel steps aside — the driver has one
  * active route at a time (start_pickup_route enforces it), so offering to
- * create a second is offering an error.
+ * create a second is offering an error. spec-61 adds two more reasons the
+ * button steps aside: the caller cannot lead a route, or we could not find
+ * out whether they already have one.
  */
 
 interface PickupRouteDraftPanelProps {
@@ -27,6 +29,15 @@ interface PickupRouteDraftPanelProps {
   isCreating?: boolean;
   /** Set when the driver already has a route open. */
   activeRouteCode?: string | null;
+  /** spec-61 — false for a pickup_crew user. Defaults to true so no
+   *  pre-spec-61 caller changes meaning. */
+  canLead?: boolean;
+  /** spec-61 — true when the active-route lookup FAILED. Distinct from
+   *  `activeRouteCode === null`, which means "asked, and there is none". */
+  routeUnknown?: boolean;
+  /** spec-61 — true while the JWT claims are still resolving. `canLead` is
+   *  false then, but because the role is UNKNOWN, not because it is crew. */
+  roleUnknown?: boolean;
 }
 
 export function PickupRouteDraftPanel({
@@ -36,6 +47,9 @@ export function PickupRouteDraftPanel({
   onCreate,
   isCreating = false,
   activeRouteCode = null,
+  canLead = true,
+  routeUnknown = false,
+  roleUnknown = false,
 }: PickupRouteDraftPanelProps) {
   const orders = selected.reduce((sum, m) => sum + m.orderCount, 0);
   const packages = selected.reduce((sum, m) => sum + m.packageCount, 0);
@@ -58,11 +72,35 @@ export function PickupRouteDraftPanel({
         </span>
       </header>
 
-      {activeRouteCode ? (
+      {/* spec-61 Task 5 — a FAILED active-route lookup leaves `activeRouteCode`
+          null, which used to read as "no route open" and offered the start
+          button to a leader who already had one. Say we do not know instead.
+          First, because it is true regardless of who is looking. */}
+      {routeUnknown ? (
+        <p className="px-4 py-8 text-center text-[12.5px] leading-normal text-text-secondary">
+          No pudimos cargar tu ruta. Actualiza la página antes de abrir otra.
+        </p>
+      ) : activeRouteCode ? (
         <p className="px-4 py-8 text-center text-[12.5px] leading-normal text-text-secondary">
           Ya tienes la ruta{' '}
           <span className="font-mono font-semibold text-text">{activeRouteCode}</span> en curso.
           Ciérrala antes de armar otra.
+        </p>
+      ) : !canLead && !roleUnknown ? (
+        // spec-61 Task 5 — `1l`'s own start affordance, gated the same way
+        // 3j is. Placed AHEAD of the empty-selection prompt on purpose: a
+        // crew member should learn they cannot open a route before they
+        // spend time ticking manifests for one, not after.
+        //
+        // `&& !roleUnknown`: while GlobalContext is still resolving the JWT
+        // claims, `role` is null and canLead is false — but it is false
+        // because the answer is UNKNOWN, not because the caller is crew.
+        // Without this a real leader read "Solo un líder de ruta puede abrir
+        // una ruta" for the whole auth round-trip on every cold load. Fall
+        // through to the selection prompt instead: it is true regardless of
+        // who is asking, so it can be shown before we know.
+        <p className="px-4 py-3 text-[12.5px] text-text-secondary">
+          Solo un líder de ruta puede abrir una ruta. Pídele que te agregue a la suya.
         </p>
       ) : selected.length === 0 ? (
         <p className="px-4 py-8 text-center text-[12.5px] leading-normal text-text-secondary">

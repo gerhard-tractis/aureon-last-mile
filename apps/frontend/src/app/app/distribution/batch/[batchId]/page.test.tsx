@@ -56,12 +56,14 @@ vi.mock('@/hooks/distribution/useDockZones', () => ({
   }),
 }));
 
+let mockPendingGroups: Array<Record<string, unknown>> = [];
 vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
-  usePendingSectorization: () => ({ data: [] }),
+  usePendingSectorization: () => ({ data: mockPendingGroups }),
 }));
 
+let mockVerifiedIds = new Set<string>();
 vi.mock('@/hooks/distribution/useDockVerifications', () => ({
-  useDockVerifications: () => ({ data: new Set<string>() }),
+  useDockVerifications: () => ({ data: mockVerifiedIds }),
   useDockVerificationMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -69,8 +71,54 @@ vi.mock('@/hooks/distribution/useManualDockAssignment', () => ({
   useManualDockAssignment: () => ({ mutateAsync: vi.fn(), canUse: false }),
 }));
 
+function pendingGroupForZoneA() {
+  return {
+    zone: {
+      id: 'zone-a',
+      name: 'Andén A',
+      code: 'A1',
+      is_consolidation: false,
+      is_active: true,
+      comunas: [],
+    },
+    matchResult: { matched: true },
+    orders: [
+      {
+        orderId: 'ord-1',
+        orderNumber: 'ORD-1',
+        deliveryDate: '2026-04-28',
+        comunaName: 'Maipú',
+        packages: [
+          {
+            id: 'pkg-1',
+            label: 'PKG-001',
+            order_id: 'ord-1',
+            orderNumber: 'ORD-1',
+            comunaId: 'c-1',
+            comunaName: 'Maipú',
+            delivery_date: '2026-04-28',
+            skuItems: [],
+          },
+          {
+            id: 'pkg-2',
+            label: 'PKG-002',
+            order_id: 'ord-1',
+            orderNumber: 'ORD-1',
+            comunaId: 'c-1',
+            comunaName: 'Maipú',
+            delivery_date: '2026-04-28',
+            skuItems: [],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockPendingGroups = [];
+  mockVerifiedIds = new Set<string>();
   mockScans.length = 0;
   mockScanMutateAsync.mockResolvedValue({
     scanResult: 'accepted',
@@ -128,6 +176,18 @@ describe('BatchScanPage', () => {
         consolidationZoneId: 'zone-cons',
       })
     );
+  });
+
+  // spec-39 Addendum 4 — the crew's complaint was that a scanned CTN looked
+  // untouched in the pending list. The page must thread the verified set down.
+  it('marks a verified CTN in the pending list and leaves the rest alone', () => {
+    mockPendingGroups = [pendingGroupForZoneA()];
+    mockVerifiedIds = new Set(['pkg-1']);
+
+    render(<BatchScanPage />);
+
+    expect(screen.getByTestId('pending-row-pkg-1').textContent).toContain('Verificado');
+    expect(screen.getByTestId('pending-row-pkg-2').textContent).not.toContain('Verificado');
   });
 
   it('does nothing on a CONS scan when no package has been accepted yet', async () => {
