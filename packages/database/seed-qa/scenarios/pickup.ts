@@ -56,11 +56,26 @@ export async function seedPickup(
   const manifestId = qaId(ScenarioGroup.PICKUP, 2);
   for (let i = 0; i < SCAN_RESULTS.length; i++) {
     await db.query(
+      // INSERT ... SELECT ... WHERE NOT EXISTS, not ON CONFLICT DO NOTHING.
+      // trg_pickup_scans_route_lock (20260812000005) is a BEFORE INSERT trigger
+      // that rejects a scan whose manifest sits on a route that has left
+      // 'in_progress'. A BEFORE trigger fires before the conflict is detected,
+      // so ON CONFLICT cannot save a re-run: once the block below attaches this
+      // manifest to QA-PR-001 (in_transit, deliberately), the second run of this
+      // seeder raised 'La ruta QA-PR-001 ya fue cerrada' and aborted.
+      //
+      // The lock is correct -- a collected load must not accept new scans -- and
+      // so is the fixture. The seeder simply must not attempt the insert twice.
+      // With NOT EXISTS the statement inserts zero rows on a re-run, and a
+      // trigger that never fires cannot object.
       `INSERT INTO public.pickup_scans (
          id, operator_id, manifest_id, barcode_scanned, scan_result, scanned_at,
          scanned_by_user_id
-       ) VALUES ($1, $2, $3, $4, $5::scan_result_enum, NOW(), $6)
-       ON CONFLICT (id) DO NOTHING`,
+       )
+       SELECT $1, $2, $3, $4, $5::scan_result_enum, NOW(), $6
+        WHERE NOT EXISTS (
+          SELECT 1 FROM public.pickup_scans WHERE id = $1
+        )`,
       [
         qaId(ScenarioGroup.PICKUP, 20 + i),
         operatorId,
