@@ -25,8 +25,10 @@ import {
   createLoginUser,
   createOrderWithPackages,
   resettleOrderStatus,
+  upsertCargaManifest,
 } from '../lib/factories';
 import { ScenarioGroup, qaId } from '../lib/ids';
+import { manifestStateForStage, type CargaStage } from '../lib/manifest-state';
 
 /**
  * Logins for Musan. Permissions are in the vocabulary the APPLICATION checks —
@@ -113,11 +115,14 @@ export const MUSAN_QA = {
  *   get_completed_manifests   manifest.status = 'completed'
  *
  * So a load awaiting collection must have NO manifest row, or one with a NULL
- * reception_status — as the RPC itself notes, "pending loads may not have a
- * manifest row until the operator opens the scan flow". Setting
- * reception_status on every carga hides all of them from the Pickup screen.
+ * reception_status AND no pickup_route_id — as the RPC itself notes, "pending
+ * loads may not have a manifest row until the operator opens the scan flow".
+ * Setting reception_status on every carga hides all of them from the Pickup
+ * screen; so does leaving them attached to a route.
+ *
+ * The stage -> columns -> tab mapping lives in lib/manifest-state.ts, where it
+ * is unit tested against these same predicates.
  */
-type CargaStage = 'pending' | 'scanning' | 'in_transit' | 'completed';
 
 interface Carga {
   /** external_load_id — how orders, packages and the manifest are tied together. */
@@ -274,37 +279,19 @@ export async function seedMusan(
     const carga = CARGAS[c];
     const totalPackages = carga.orders.reduce((sum, pkgs) => sum + pkgs.length, 0);
 
-    // 'pending' deliberately gets no manifest row — that is what puts a load
-    // on the pending tab.
-    if (carga.stage !== 'pending') {
-      const manifestStatus =
-        carga.stage === 'completed' ? 'completed'
-        : carga.stage === 'in_transit' ? 'in_progress'
-        : 'in_progress';
-      const receptionStatus =
-        carga.stage === 'completed' ? 'received'
-        : carga.stage === 'in_transit' ? 'awaiting_reception'
-        : null; // 'scanning' keeps it NULL so the load stays pending
-
-      await db.query(
-        `INSERT INTO public.manifests
-           (id, operator_id, external_load_id, retailer_name, pickup_location,
-            total_orders, total_packages, status, reception_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::manifest_status_enum, $9::reception_status_enum)
-         ON CONFLICT (id) DO NOTHING`,
-        [
-          qaId(ScenarioGroup.MUSAN, 10 + c),
-          operatorId,
-          carga.loadId,
-          carga.clientName,
-          carga.clientName === 'Easy' ? 'Easy Bodega Central' : 'Paris CD Norte',
-          carga.orders.length,
-          totalPackages,
-          manifestStatus,
-          receptionStatus,
-        ],
-      );
-    }
+    // Converge the manifest rather than insert-or-skip: the app creates its own
+    // row (random id) as soon as someone opens the scan flow, and the natural
+    // key is what the constraint guards. See upsertCargaManifest.
+    await upsertCargaManifest(db, {
+      id: qaId(ScenarioGroup.MUSAN, 10 + c),
+      operatorId,
+      loadId: carga.loadId,
+      retailerName: carga.clientName,
+      pickupLocation: carga.clientName === 'Easy' ? 'Easy Bodega Central' : 'Paris CD Norte',
+      totalOrders: carga.orders.length,
+      totalPackages,
+      state: manifestStateForStage(carga.stage),
+    });
 
     for (const packageStatuses of carga.orders) {
       orderSequence++;
@@ -346,15 +333,33 @@ export async function seedMusan(
     expected: 9,
   });
 
-  // Only non-pending cargas have a manifest row — a load awaiting collection
-  // deliberately has none, which is what puts it on the pending tab.
+  // Every non-pending carga has exactly one live manifest. This used to count
+  // ALL of Musan's manifests and expect only these, which made the assertion
+  // fail the moment someone opened the scan flow on a pending load — the app
+  // creates a row there, legitimately. What the seed can promise is that the
+  // loads it stages have a row; whether a pending load also has one is the
+  // product's business, and the tab assertions below cover the consequence.
   await assertCount(db, collector, {
     scenario: 'musan/cargas',
-    detail: 'manifest rows for Musan (pending cargas have none)',
+    detail: 'live manifest rows for the staged (non-pending) cargas',
     sql: `SELECT count(*) AS count FROM public.manifests
-           WHERE operator_id = $1 AND deleted_at IS NULL`,
-    params: [operatorId],
+           WHERE operator_id = $1 AND deleted_at IS NULL
+             AND external_load_id = ANY($2::text[])`,
+    params: [operatorId, CARGAS.filter((c) => c.stage !== 'pending').map((c) => c.loadId)],
     expected: CARGAS.filter((c) => c.stage !== 'pending').length,
+  });
+
+  // The drift that emptied every Pickup tab: spec-61 Task 7 excludes a load
+  // whose manifest carries a pickup_route_id, so manifests left attached to a
+  // hand-made route show on no tab at all. Seeding clears the link; assert it.
+  await assertCount(db, collector, {
+    scenario: 'musan/cargas-unrouted',
+    detail: 'Musan manifests still attached to a pickup route after seeding',
+    sql: `SELECT count(*) AS count FROM public.manifests
+           WHERE operator_id = $1 AND deleted_at IS NULL
+             AND pickup_route_id IS NOT NULL`,
+    params: [operatorId],
+    expected: 0,
   });
 
   // The point of a carga: every order in it carries the same external_load_id,

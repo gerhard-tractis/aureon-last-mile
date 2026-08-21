@@ -8,6 +8,7 @@
 
 import type { SeedClient } from './db';
 import { qaId, type ScenarioGroup } from './ids';
+import type { ManifestState } from './manifest-state';
 
 export interface OrderSpec {
   group: ScenarioGroup;
@@ -257,6 +258,86 @@ export async function createOperator(
     ],
   );
   return args.id;
+}
+
+/**
+ * Converge a carga's manifest onto the state its stage names.
+ *
+ * Keyed on (operator_id, external_load_id), NOT on the id the seed would like
+ * the row to have. That is the difference between working and not: manifests
+ * carry `unique_manifest_per_operator` on the natural key, and the app creates
+ * its own rows with gen_random_uuid() ids the moment someone opens the scan
+ * flow. An `ON CONFLICT (id) DO NOTHING` insert with a fixed id therefore does
+ * not skip that row — it collides with it, and the whole scenario aborts with
+ * "duplicate key value violates unique constraint". Every Musan carga hit this
+ * once the tenant was driven through the UI.
+ *
+ * DO UPDATE rather than DO NOTHING because the row the app left behind is the
+ * problem, not just its id: seeding has to put the load back on the tab the
+ * scenario claims it is on. pickup_route_id is cleared for the same reason —
+ * spec-61 Task 7 excludes routed loads from the pending tab, so a manifest
+ * still attached to a hand-made route shows on no tab at all.
+ *
+ * The row keeps whatever id it already had. Nothing joins manifests by seed id
+ * (orders tie to them through external_load_id), and inventing a second row for
+ * the same load is exactly what the constraint forbids.
+ */
+export async function upsertCargaManifest(
+  db: SeedClient,
+  args: {
+    id: string;
+    operatorId: string;
+    loadId: string;
+    retailerName: string;
+    pickupLocation: string;
+    totalOrders: number;
+    totalPackages: number;
+    state: ManifestState;
+  },
+): Promise<void> {
+  const { state } = args;
+
+  if (!state.createWhenMissing) {
+    // A load with no manifest row is already in the intended state — creating
+    // one would seed something the product never produces. Only an existing
+    // row needs correcting.
+    await db.query(
+      `UPDATE public.manifests
+          SET status = $3::manifest_status_enum,
+              reception_status = $4::reception_status_enum,
+              pickup_route_id = NULL
+        WHERE operator_id = $1 AND external_load_id = $2 AND deleted_at IS NULL`,
+      [args.operatorId, args.loadId, state.status, state.receptionStatus],
+    );
+    return;
+  }
+
+  await db.query(
+    `INSERT INTO public.manifests
+       (id, operator_id, external_load_id, retailer_name, pickup_location,
+        total_orders, total_packages, status, reception_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::manifest_status_enum, $9::reception_status_enum)
+     ON CONFLICT (operator_id, external_load_id) DO UPDATE
+       SET retailer_name    = EXCLUDED.retailer_name,
+           pickup_location  = EXCLUDED.pickup_location,
+           total_orders     = EXCLUDED.total_orders,
+           total_packages   = EXCLUDED.total_packages,
+           status           = EXCLUDED.status,
+           reception_status = EXCLUDED.reception_status,
+           pickup_route_id  = NULL,
+           deleted_at       = NULL`,
+    [
+      args.id,
+      args.operatorId,
+      args.loadId,
+      args.retailerName,
+      args.pickupLocation,
+      args.totalOrders,
+      args.totalPackages,
+      state.status,
+      state.receptionStatus,
+    ],
+  );
 }
 
 /**
