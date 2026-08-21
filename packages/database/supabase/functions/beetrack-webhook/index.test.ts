@@ -5,6 +5,8 @@
 import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 
 import {
+  handleDispatch,
+  packageStatusForDispatch,
   buildRouteUpsertRow,
   mergeDispatchRawData,
   resolveOperatorId,
@@ -179,4 +181,140 @@ Deno.test('resolveOperatorId fails loudly when the operator is absent', async ()
     assertExists(String(err).match(/transportes-musan/));
   }
   assertEquals(threw, true);
+});
+
+// ── handleDispatch: writes ───────────────────────────────────────────────────
+//
+// Two defects the first live delivery exposed.
+//
+// 1. Duplicate dispatch rows. Dispatching a route writes a `dispatches` row
+//    with no external_dispatch_id — DT's create-route response returns only a
+//    route_id. The webhook upserts on
+//    (operator_id, provider, external_dispatch_id), which can never match a
+//    NULL, so it inserted a second row for the same order on the same route.
+//
+// 2. orders.status is a DERIVED column. trg_recalculate_order_status recomputes
+//    it from the order's packages (MIN pipeline position) on every package
+//    status change. Writing it directly left the order 'entregado' while its
+//    packages sat at 'en_ruta', and the next package write would have reverted
+//    it. The webhook must move the packages and let the trigger derive.
+
+interface RecordedCall {
+  table: string;
+  op: string;
+  payload?: unknown;
+  filters: [string, unknown][];
+}
+
+function recordingClient(rows: Record<string, unknown[]>) {
+  const calls: RecordedCall[] = [];
+
+  function chainFor(table: string, op: string, payload?: unknown) {
+    const call: RecordedCall = { table, op, payload, filters: [] };
+    calls.push(call);
+    const result = { data: (rows[table] ?? [])[0] ?? null, error: null };
+    const chain = {
+      select: () => chain,
+      eq: (col: string, val: unknown) => { call.filters.push([col, val]); return chain; },
+      neq: (col: string, val: unknown) => { call.filters.push([`neq:${col}`, val]); return chain; },
+      is: (col: string, val: unknown) => { call.filters.push([`is:${col}`, val]); return chain; },
+      in: (col: string, val: unknown) => { call.filters.push([`in:${col}`, val]); return chain; },
+      limit: () => chain,
+      maybeSingle: () => Promise.resolve(result),
+      single: () => Promise.resolve(result),
+      then: (resolve: (r: typeof result) => unknown) => Promise.resolve(result).then(resolve),
+    };
+    return chain;
+  }
+
+  const client = {
+    from(table: string) {
+      return {
+        select: () => chainFor(table, 'select'),
+        upsert: (payload: unknown) => chainFor(table, 'upsert', payload),
+        update: (payload: unknown) => chainFor(table, 'update', payload),
+        insert: (payload: unknown) => chainFor(table, 'insert', payload),
+      };
+    },
+    // deno-lint-ignore no-explicit-any
+  } as any;
+
+  return { client, calls };
+}
+
+const DELIVERED_BODY = {
+  resource: 'dispatch',
+  event: 'update',
+  identifier: 'CARGA-PARIS-002-ORD-110',
+  route_id: 44181731,
+  dispatch_id: 999000111,
+  status: 2,
+};
+
+Deno.test('packageStatusForDispatch maps DT outcomes onto package states', () => {
+  // 'entregado' and 'retorno_hub' are what the trigger reads: retorno_hub is
+  // counted separately and yields en_retorno on the order.
+  assertEquals(packageStatusForDispatch('delivered'), 'entregado');
+  assertEquals(packageStatusForDispatch('failed'), 'retorno_hub');
+  // A partial delivery does not say WHICH packages came back, so nothing moves.
+  assertEquals(packageStatusForDispatch('partial'), null);
+  assertEquals(packageStatusForDispatch('pending'), null);
+});
+
+Deno.test('handleDispatch adopts the row our own dispatch created', async () => {
+  const { client, calls } = recordingClient({
+    orders: [{ id: 'order-1' }],
+    dispatches: [{ id: 'local-row', raw_data: {} }],
+    routes: [{ id: 'route-uuid' }],
+  });
+
+  await handleDispatch(client, DELIVERED_BODY, 'op-1');
+
+  const adoption = calls.find((c) =>
+    c.table === 'dispatches' && c.op === 'update' &&
+    (c.payload as Record<string, unknown>)?.external_dispatch_id === '999000111'
+  );
+  assertExists(adoption);
+  // Adoption stamps the id on the existing row; the upsert that follows then
+  // matches it on the conflict key instead of inserting a duplicate.
+  assertEquals(adoption!.filters.some(([col]) => col === 'id'), true);
+});
+
+Deno.test('handleDispatch advances the packages, not orders.status', async () => {
+  const { client, calls } = recordingClient({
+    orders: [{ id: 'order-1' }],
+    dispatches: [{ id: 'local-row', raw_data: {} }],
+    routes: [{ id: 'route-uuid' }],
+  });
+
+  await handleDispatch(client, DELIVERED_BODY, 'op-1');
+
+  const packageUpdate = calls.find((c) => c.table === 'packages' && c.op === 'update');
+  assertExists(packageUpdate);
+  assertEquals((packageUpdate!.payload as Record<string, unknown>).status, 'entregado');
+
+  const orderUpdates = calls.filter((c) => c.table === 'orders' && c.op === 'update');
+  for (const update of orderUpdates) {
+    // status_detail is the order's own column; status is derived from packages.
+    assertEquals('status' in (update.payload as Record<string, unknown>), false);
+  }
+});
+
+Deno.test('handleDispatch still records why the order ended where it did', async () => {
+  const { client, calls } = recordingClient({
+    orders: [{ id: 'order-1' }],
+    dispatches: [{ id: 'local-row', raw_data: {} }],
+    routes: [{ id: 'route-uuid' }],
+  });
+
+  await handleDispatch(client, DELIVERED_BODY, 'op-1');
+
+  const detail = calls.find((c) =>
+    c.table === 'orders' && c.op === 'update' &&
+    typeof (c.payload as Record<string, unknown>)?.status_detail === 'string'
+  );
+  assertExists(detail);
+  assertExists(
+    String((detail!.payload as Record<string, unknown>).status_detail).match(/999000111/),
+  );
 });

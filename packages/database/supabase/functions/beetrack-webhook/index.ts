@@ -183,8 +183,37 @@ Deno.serve(async (req: Request) => {
   }
 });
 
+/**
+ * The package state a terminal DispatchTrack outcome puts an order's packages
+ * into, or null when the outcome does not determine one.
+ *
+ * orders.status is DERIVED: trg_recalculate_order_status (latest def
+ * 20260810000001) recomputes it from the order's packages — MIN pipeline
+ * position for `status`, MAX for `leading_status` — on every package status
+ * change. This handler used to write orders.status directly, which left the
+ * order 'entregado' while its packages sat at 'en_ruta' and would have been
+ * undone by the next package write. Move the packages; let the trigger derive.
+ *
+ * 'retorno_hub' rather than a cancellation for a failed delivery: the trigger
+ * counts retorno_hub separately and yields 'en_retorno', which is what a
+ * package coming back to the hub means. The old direct write of 'cancelado'
+ * was not reachable through the trigger at all — that requires every package
+ * to be terminal — so it could never have survived a recalculation.
+ *
+ * A partial delivery moves nothing: DT reports the guide as partial without
+ * saying which packages came back, and guessing would corrupt the count the
+ * trigger reads.
+ */
+export function packageStatusForDispatch(
+  status: 'pending' | 'delivered' | 'failed' | 'partial',
+): 'entregado' | 'retorno_hub' | null {
+  if (status === 'delivered') return 'entregado';
+  if (status === 'failed') return 'retorno_hub';
+  return null;
+}
+
 // ── Dispatch Handler ─────────────────────────────────────────────────
-async function handleDispatch(
+export async function handleDispatch(
   supabase: ReturnType<typeof createClient>,
   body: Record<string, unknown>,
   operatorId: string,
@@ -269,6 +298,49 @@ async function handleDispatch(
     }
   }
 
+  // Adopt the row our own dispatch created, if there is one.
+  //
+  // Dispatching a route writes a `dispatches` row with no
+  // external_dispatch_id — DT's create-route response returns a route_id and
+  // nothing per guide. The upsert below conflicts on
+  // (operator_id, provider, external_dispatch_id), which can never match a
+  // NULL, so without this the webhook inserts a SECOND row for the same order
+  // on the same route: one ours and pending, one DT's and delivered, every
+  // count downstream doubled. Stamping the id here turns the upsert into the
+  // update it was always meant to be.
+  if (orderId) {
+    let adoptQuery = supabase
+      .from('dispatches')
+      .select('id')
+      .eq('operator_id', operatorId)
+      .eq('provider', PROVIDER)
+      .eq('order_id', orderId)
+      .is('external_dispatch_id', null)
+      .is('deleted_at', null);
+
+    // Prefer the row on this route when we resolved one — an order can be
+    // removed from a route and re-added, leaving more than one candidate.
+    if (parentRouteId) adoptQuery = adoptQuery.eq('route_id', parentRouteId);
+
+    const { data: adoptable, error: adoptLookupError } = await adoptQuery
+      .limit(1)
+      .maybeSingle();
+
+    if (adoptLookupError) {
+      console.warn('beetrack-webhook: adoption lookup failed', adoptLookupError);
+    } else if (adoptable?.id) {
+      const { error: adoptError } = await supabase
+        .from('dispatches')
+        .update({ external_dispatch_id: String(dispatchId) })
+        .eq('id', adoptable.id);
+      if (adoptError) {
+        console.warn('beetrack-webhook: adoption failed', adoptError);
+      } else {
+        console.log(`beetrack-webhook: adopted local dispatch row ${adoptable.id} as #${dispatchId}`);
+      }
+    }
+  }
+
   // Pre-fetch existing raw_data so we can preserve items[] across update
   // events. Same lookup shape we already use for the route id select; one
   // extra round-trip per dispatch event in exchange for never losing the
@@ -323,9 +395,12 @@ async function handleDispatch(
     return json({ ok: false, error: error.message }, 500);
   }
 
-  // Update order status for terminal dispatches (AC1-AC5)
+  // Record the outcome for terminal dispatches (AC1-AC5).
+  //
+  // The packages move; orders.status follows from them via
+  // trg_recalculate_order_status. status_detail is the order's own column —
+  // nothing derives it — so it is still written here.
   if (orderId && (status === 'delivered' || status === 'failed' || status === 'partial')) {
-    const orderStatus = status === 'delivered' ? 'entregado' : 'cancelado';
     let statusDetail: string;
     if (status === 'delivered') {
       statusDetail = `Delivered via DispatchTrack dispatch #${dispatchId}`;
@@ -335,17 +410,32 @@ async function handleDispatch(
       statusDetail = substatus || `Failed via DispatchTrack dispatch #${dispatchId}`;
     }
 
+    const packageStatus = packageStatusForDispatch(status);
+    if (packageStatus) {
+      // Only packages still on the road: one already delivered must not be
+      // dragged back by a later failed event for the same guide.
+      const { error: packageError } = await supabase
+        .from('packages')
+        .update({ status: packageStatus })
+        .eq('operator_id', operatorId)
+        .eq('order_id', orderId)
+        .in('status', ['en_ruta', 'en_carga', 'listo_para_despacho']);
+
+      if (packageError) {
+        console.warn(`beetrack-webhook: package status update failed for ${orderId}`, packageError);
+        // Non-blocking — dispatch is already saved
+      } else {
+        console.log(`beetrack-webhook: order ${orderId} packages → ${packageStatus}`);
+      }
+    }
+
     const { error: orderError } = await supabase
       .from('orders')
-      .update({ status: orderStatus, status_detail: statusDetail })
-      .eq('id', orderId)
-      .neq('status', 'entregado'); // Never downgrade from entregado
+      .update({ status_detail: statusDetail })
+      .eq('id', orderId);
 
     if (orderError) {
-      console.warn(`beetrack-webhook: order status update failed for ${orderId}`, orderError);
-      // Non-blocking — dispatch is already saved
-    } else {
-      console.log(`beetrack-webhook: order ${orderId} status → ${orderStatus}`);
+      console.warn(`beetrack-webhook: order status_detail update failed for ${orderId}`, orderError);
     }
   } else if (!orderId && identifier) {
     console.warn(`beetrack-webhook: no order found for identifier=${identifier}, skipping status update`);
