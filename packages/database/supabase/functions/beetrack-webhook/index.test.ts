@@ -4,25 +4,33 @@
 // This file is the manual regression seed for the dispatch→route upsert path.
 import { assertEquals, assertExists } from 'https://deno.land/std@0.224.0/assert/mod.ts';
 
-import { buildRouteUpsertRow, mergeDispatchRawData, MUSAN_OPERATOR_ID, PROVIDER } from './index.ts';
+import {
+  buildRouteUpsertRow,
+  mergeDispatchRawData,
+  resolveOperatorId,
+  MUSAN_SLUG,
+  PROVIDER,
+} from './index.ts';
+
+const OPERATOR_ID = '11111111-2222-4333-8444-555555555555';
 
 Deno.test('buildRouteUpsertRow stamps the (operator,provider,external_route_id) conflict key', () => {
-  const row = buildRouteUpsertRow(43886285, { truck_driver: 'CAMILO J.' });
+  const row = buildRouteUpsertRow(OPERATOR_ID, 43886285, { truck_driver: 'CAMILO J.' });
 
   // These three are the unique-conflict key for routes.upsert. Any drift here
   // means the upsert silently inserts duplicates instead of updating.
-  assertEquals(row.operator_id, MUSAN_OPERATOR_ID);
+  assertEquals(row.operator_id, OPERATOR_ID);
   assertEquals(row.provider, PROVIDER);
   assertEquals(row.external_route_id, '43886285');
 });
 
 Deno.test('buildRouteUpsertRow carries driver_name when present in payload', () => {
-  const row = buildRouteUpsertRow(99, { truck_driver: 'JANE DOE' });
+  const row = buildRouteUpsertRow(OPERATOR_ID, 99, { truck_driver: 'JANE DOE' });
   assertEquals(row.driver_name, 'JANE DOE');
 });
 
 Deno.test('buildRouteUpsertRow defaults driver_name to null when absent', () => {
-  const row = buildRouteUpsertRow(99, {});
+  const row = buildRouteUpsertRow(OPERATOR_ID, 99, {});
   assertEquals(row.driver_name, null);
 });
 
@@ -30,12 +38,12 @@ Deno.test('buildRouteUpsertRow sets status=in_progress on discovery', () => {
   // handleRoute will refine this to completed when the route resource webhook
   // fires with ended=true; discovery via dispatch event only knows the route
   // is live, so in_progress is the safe starting value.
-  const row = buildRouteUpsertRow(99, {});
+  const row = buildRouteUpsertRow(OPERATOR_ID, 99, {});
   assertEquals(row.status, 'in_progress');
 });
 
 Deno.test('buildRouteUpsertRow sets route_date to today (UTC, YYYY-MM-DD)', () => {
-  const row = buildRouteUpsertRow(99, {});
+  const row = buildRouteUpsertRow(OPERATOR_ID, 99, {});
   const today = new Date().toISOString().split('T')[0];
   assertEquals(row.route_date, today);
 });
@@ -43,7 +51,7 @@ Deno.test('buildRouteUpsertRow sets route_date to today (UTC, YYYY-MM-DD)', () =
 Deno.test('buildRouteUpsertRow tags raw_data with discovery source', () => {
   // Lets us tell apart routes ingested via dispatch discovery from routes
   // populated by a real route-resource webhook payload later on.
-  const row = buildRouteUpsertRow(99, {});
+  const row = buildRouteUpsertRow(OPERATOR_ID, 99, {});
   assertExists(row.raw_data);
   assertEquals((row.raw_data as Record<string, unknown>).discovered_via, 'dispatch_webhook');
 });
@@ -51,7 +59,7 @@ Deno.test('buildRouteUpsertRow tags raw_data with discovery source', () => {
 Deno.test('buildRouteUpsertRow coerces numeric DT route id to string', () => {
   // external_route_id is text in the schema; storing 43886285 as number would
   // break the dispatches.external_route_id ↔ routes.external_route_id join.
-  const row = buildRouteUpsertRow(43886285, {});
+  const row = buildRouteUpsertRow(OPERATOR_ID, 43886285, {});
   assertEquals(typeof row.external_route_id, 'string');
   assertEquals(row.external_route_id, '43886285');
 });
@@ -129,4 +137,46 @@ Deno.test('mergeDispatchRawData treats empty items array on incoming as "preserv
     1,
     'existing items survive an incoming empty items[]',
   );
+});
+
+
+// ── resolveOperatorId ────────────────────────────────────────────────────────
+//
+// The id used to be the literal production uuid. That row exists in production
+// and nowhere else, so every QA write died on
+// `23503 Key (operator_id)=(92dc5797-…) is not present in table "operators"`
+// and DispatchTrack got a 500 for a guide it had just delivered.
+
+function stubClient(row: { id: string } | null, error?: { message: string }) {
+  return {
+    from(_table: string) {
+      const chain = {
+        select: () => chain,
+        eq: () => chain,
+        is: () => chain,
+        maybeSingle: () => Promise.resolve({ data: row, error: error ?? null }),
+      };
+      return chain;
+    },
+    // deno-lint-ignore no-explicit-any
+  } as any;
+}
+
+Deno.test('resolveOperatorId looks the operator up by slug', async () => {
+  const id = await resolveOperatorId(stubClient({ id: 'qa-operator-id' }));
+  assertEquals(id, 'qa-operator-id');
+  assertEquals(MUSAN_SLUG, 'transportes-musan');
+});
+
+Deno.test('resolveOperatorId fails loudly when the operator is absent', async () => {
+  // Better a 500 naming the missing operator than a foreign-key violation on
+  // every table the handlers touch.
+  let threw = false;
+  try {
+    await resolveOperatorId(stubClient(null));
+  } catch (err) {
+    threw = true;
+    assertExists(String(err).match(/transportes-musan/));
+  }
+  assertEquals(threw, true);
 });
