@@ -1,7 +1,47 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createDTRoute, type DTDispatch } from '@/lib/dispatchtrack-api';
+import { createDTRoute, type DTDispatch, type DTItem } from '@/lib/dispatchtrack-api';
+
+interface SkuLine { sku?: unknown; description?: unknown; quantity?: unknown }
+interface PackageRow { label: string | null; sku_items: unknown; deleted_at: string | null }
+
+/**
+ * The guide's contents, as DispatchTrack shows them.
+ *
+ * One item per package rather than per SKU line: `code` is DT's only unique
+ * identifier slot on an item, and the package label is what the operator
+ * actually handles and scans, so that is what belongs there. A package holding
+ * several SKUs folds into one item — its codes and descriptions joined, its
+ * quantities summed — which keeps every code unique within the guide.
+ *
+ * A package with no SKU data still produces an item, so a guide always lists
+ * the packages it consists of.
+ */
+function buildItems(packages: PackageRow[] | null | undefined): DTItem[] {
+  return (packages ?? [])
+    .filter((p) => !p.deleted_at && p.label)
+    .map((p) => {
+      const lines: SkuLine[] = Array.isArray(p.sku_items) ? p.sku_items : [];
+      const names: string[] = [];
+      const descriptions: string[] = [];
+      let quantity = 0;
+
+      for (const line of lines) {
+        if (typeof line?.sku === 'string' && line.sku) names.push(line.sku);
+        if (typeof line?.description === 'string' && line.description) {
+          descriptions.push(line.description);
+        }
+        quantity += typeof line?.quantity === 'number' ? line.quantity : 1;
+      }
+
+      const item: DTItem = { code: p.label as string };
+      if (names.length) item.name = names.join(', ');
+      if (descriptions.length) item.description = descriptions.join(', ');
+      item.quantity = String(quantity || 1);
+      return item;
+    });
+}
 
 const bodySchema = z.object({
   truck_identifier: z.string().min(1),
@@ -37,10 +77,12 @@ export async function POST(
       return NextResponse.json({ code: 'INVALID_STATE' }, { status: 409 });
     }
 
-    // orders columns: customer_name, customer_phone, delivery_address (no contact_email)
+    // orders columns: customer_name, customer_phone, delivery_address (no contact_email).
+    // The nested packages embed feeds dispatches.items — the guide's contents.
+    // deleted_at comes along because a nested embed cannot be filtered from here.
     const { data: dispatches, error: dErr } = await supabase
       .from('dispatches')
-      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone)')
+      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone, packages(label, sku_items, deleted_at))')
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null);
@@ -95,6 +137,7 @@ export async function POST(
         contact_phone: ord?.customer_phone ?? null,
         contact_email: null,
         current_state: 1,
+        items: buildItems(ord?.packages as PackageRow[] | undefined),
       };
     });
 

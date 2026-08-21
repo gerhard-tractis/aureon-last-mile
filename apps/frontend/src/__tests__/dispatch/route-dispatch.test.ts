@@ -471,3 +471,116 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
     expect(createDTRoute).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * dispatches.items[] is what makes a guide show its contents in DispatchTrack.
+ * The first live dispatch reached Musan's tenant with the orders but no items,
+ * because the payload never carried any. One item per package: `code` is the
+ * package label — the physical thing the operator handles — with the SKU lines
+ * folded into name/description/quantity.
+ */
+describe('POST /routes/[id]/dispatch — items', () => {
+  function clientWithPackages(packages: unknown[]) {
+    const routeChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        error: null,
+      }),
+    };
+    const dispatchesChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'd0',
+          order_id: 'o0',
+          orders: {
+            order_number: '2916967493',
+            customer_name: 'Mario',
+            delivery_address: 'Av Principal 1',
+            customer_phone: null,
+            packages,
+          },
+        }],
+        error: null,
+      }),
+    };
+    const updateChain = {
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
+    };
+    return buildSessionClient({
+      fromMock: vi.fn()
+        .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(dispatchesChain)
+        .mockReturnValue(updateChain),
+    });
+  }
+
+  async function itemsFor(packages: unknown[]) {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages(packages));
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+    return (createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][0].dispatches[0].items;
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllEnvs();
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
+  });
+
+  it('sends one item per package, keyed by the package label', async () => {
+    const items = await itemsFor([
+      { label: 'CTN-1', sku_items: [{ sku: 'SKU-1', description: 'Caja QA', quantity: 1 }], deleted_at: null },
+      { label: 'CTN-2', sku_items: [{ sku: 'SKU-2', description: 'Caja QA', quantity: 2 }], deleted_at: null },
+    ]);
+    expect(items).toEqual([
+      { code: 'CTN-1', name: 'SKU-1', description: 'Caja QA', quantity: '1' },
+      { code: 'CTN-2', name: 'SKU-2', description: 'Caja QA', quantity: '2' },
+    ]);
+  });
+
+  it('folds a multi-SKU package into one item', async () => {
+    const items = await itemsFor([
+      {
+        label: 'CTN-3',
+        sku_items: [
+          { sku: 'SKU-A', description: 'Taladro', quantity: 1 },
+          { sku: 'SKU-B', description: 'Broca', quantity: 3 },
+        ],
+        deleted_at: null,
+      },
+    ]);
+    expect(items).toEqual([
+      { code: 'CTN-3', name: 'SKU-A, SKU-B', description: 'Taladro, Broca', quantity: '4' },
+    ]);
+  });
+
+  it('still lists a package that carries no SKU data', async () => {
+    const items = await itemsFor([{ label: 'CTN-4', sku_items: null, deleted_at: null }]);
+    expect(items).toEqual([{ code: 'CTN-4', quantity: '1' }]);
+  });
+
+  it('leaves soft-deleted packages out', async () => {
+    const items = await itemsFor([
+      { label: 'CTN-5', sku_items: [], deleted_at: '2026-08-01T00:00:00Z' },
+      { label: 'CTN-6', sku_items: [], deleted_at: null },
+    ]);
+    expect(items.map((i: { code: string }) => i.code)).toEqual(['CTN-6']);
+  });
+
+  it('sends no items for an order with no packages', async () => {
+    const items = await itemsFor([]);
+    expect(items).toEqual([]);
+  });
+});

@@ -151,3 +151,49 @@ describe('createDTRoute - body shape', () => {
     await expect(createDTRoute(payload, 'token')).rejects.toThrow(/route_id/i);
   });
 });
+
+describe('createDTRoute - items', () => {
+  it('sends the items array when the dispatch carries one', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute({
+      ...payload,
+      dispatches: [{
+        identifier: 4821,
+        contact_name: null,
+        contact_address: null,
+        contact_phone: null,
+        contact_email: null,
+        current_state: 1,
+        items: [{ code: 'CTN-1', name: 'SKU-1', description: 'Caja', quantity: '2' }],
+      }],
+    }, 'token');
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body).dispatches[0];
+    expect(sent.items).toEqual([
+      { code: 'CTN-1', name: 'SKU-1', description: 'Caja', quantity: '2' },
+    ]);
+  });
+
+  it('omits items entirely when there are none', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute({
+      ...payload,
+      dispatches: [{
+        identifier: 4821,
+        contact_name: null,
+        contact_address: null,
+        contact_phone: null,
+        contact_email: null,
+        current_state: 1,
+        items: [],
+      }],
+    }, 'token');
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body).dispatches[0];
+    expect('items' in sent).toBe(false);
+  });
+});

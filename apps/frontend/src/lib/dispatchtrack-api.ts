@@ -1,3 +1,16 @@
+/**
+ * One line of a guide's contents. DT types `quantity` as String and its own
+ * example sends it quoted, so it goes out as a string even though it counts
+ * things.
+ */
+export interface DTItem {
+  /** Unique code for the item. We put the package label here. */
+  code: string;
+  name?: string;
+  description?: string;
+  quantity?: string;
+}
+
 export interface DTDispatch {
   /**
    * Guide number — orders.order_number verbatim. Typed Integer in DT's docs,
@@ -10,6 +23,8 @@ export interface DTDispatch {
   contact_phone: string | null;
   contact_email: string | null;
   current_state: 0 | 1;         // 0=in_preparation, 1=ready_to_go
+  /** Guide contents. Omitted from the request when empty. */
+  items?: DTItem[];
 }
 
 export interface DTRoutePayload {
@@ -65,6 +80,7 @@ export async function createDTRoute(
       if (d.contact_address) dispatch.contact_address = d.contact_address;
       if (d.contact_phone) dispatch.contact_phone = d.contact_phone;
       if (d.contact_email) dispatch.contact_email = d.contact_email;
+      if (d.items?.length) dispatch.items = d.items;
       return dispatch;
     }),
   };
