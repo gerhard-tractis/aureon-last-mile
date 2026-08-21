@@ -55,6 +55,9 @@ const activeRoute: ActivePickupRoute = {
   started_at: new Date().toISOString(),
   vehicle: { plate: 'AB-CD-12' },
   driver: { full_name: 'M. Rojas' },
+  // spec-61 Task 4 made `crew` a required field on every active route;
+  // solo routes carry an empty array, not undefined.
+  crew: [],
 } as unknown as ActivePickupRoute;
 
 function byFullText(text: string) {
@@ -340,6 +343,33 @@ describe('PickupMobileView', () => {
       );
       await userEvent.click(screen.getByRole('button', { name: /Bodega Sur/ }));
       expect(onOpenRouteManifest).toHaveBeenCalledWith('CARGA-C');
+    });
+
+    // spec-61 Task 6 — 3h used to name only the driver, so a crew member
+    // riding the leader's route saw a screen that never acknowledged them.
+    it('names the crew riding along, not just the driver', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={{ ...activeRoute, crew: [{ user_id: 'u1', full_name: 'Ana Pérez' }] }}
+          activeManifests={activeManifests}
+        />,
+      );
+      expect(screen.getByText('Ana Pérez')).toBeInTheDocument();
+    });
+
+    // Guards the wiring specifically: the strip must read the route's own
+    // crew, so a solo route shows no team strip at all.
+    it('shows no team strip on a solo route', () => {
+      render(
+        <PickupMobileView
+          {...baseProps()}
+          activeRoute={activeRoute}
+          activeManifests={activeManifests}
+        />,
+      );
+      expect(screen.queryByText(/^EQUIPO/)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('crew-member')).not.toBeInTheDocument();
     });
 
     it('does not render the route draft panel while a route is already active', () => {

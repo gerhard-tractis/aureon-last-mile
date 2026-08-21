@@ -5,6 +5,7 @@ import { PackageSearch, CheckCircle2 } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { StatTile } from '@/components/StatTile';
 import { PickupMobileHeader } from './PickupMobileHeader';
+import { PickupRouteCrewStrip } from './PickupRouteCrewStrip';
 import { PickupMobileNextLoadCard } from './PickupMobileNextLoadCard';
 import { PickupMobileCompactRow } from './PickupMobileCompactRow';
 import { PickupMobileFooterActions } from './PickupMobileFooterActions';
@@ -80,6 +81,14 @@ export function PickupMobileActiveRoute({
       <PickupMobileHeader
         driverName={activeRoute.driver?.full_name ?? null}
         routeCode={activeRoute.code}
+      />
+
+      {/* spec-61 Task 6 — who is on the trip, not just who is driving.
+          No extra query: `crew` arrives in the same payload as the route
+          (get_my_active_pickup_route). Renders nothing on a solo route. */}
+      <PickupRouteCrewStrip
+        driverName={activeRoute.driver?.full_name ?? null}
+        crew={activeRoute.crew}
       />
 
       <div className="grid grid-cols-3 gap-2">
