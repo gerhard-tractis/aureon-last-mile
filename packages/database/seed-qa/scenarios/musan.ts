@@ -356,21 +356,33 @@ export async function seedMusan(
   await assertCount(db, collector, {
     scenario: 'musan/modules',
     detail: 'modules enabled for Musan (drives the sidebar)',
+    // Counts the nine core keys specifically, rather than every enabled row.
+    // A super_admin enabling a tenth module through the Modules UI is a normal
+    // thing to do in QA -- package_labels was switched on that way on
+    // 2026-08-14 -- and it does not mean the sidebar is broken. What would
+    // matter is one of the nine going missing, which this still catches.
     sql: `SELECT count(*) AS count FROM public.operator_enabled_modules
-           WHERE operator_id = $1 AND disabled_at IS NULL`,
+           WHERE operator_id = $1 AND disabled_at IS NULL
+             AND module_key IN ('ops_control','late_order_alerts','pickup','reception',
+                                'distribution','pre_route','dispatch','returns','conversations')`,
     params: [operatorId],
     expected: 9,
   });
 
-  // Only non-pending cargas have a manifest row — a load awaiting collection
-  // deliberately has none, which is what puts it on the pending tab.
+  // EVERY carga has a manifest row, pending included. This used to read "only
+  // non-pending cargas have one -- a load awaiting collection deliberately has
+  // none, which is what puts it on the pending tab", and that stopped being
+  // true when 20260814000001 added trg_ensure_manifest_for_order, which creates
+  // the row the moment an order carrying a new external_load_id is inserted.
+  // What puts a load on the pending tab is its manifest's status/reception_status
+  // and now its pickup_route_id -- never the absence of the row.
   await assertCount(db, collector, {
     scenario: 'musan/cargas',
     detail: 'manifest rows for Musan (pending cargas have none)',
     sql: `SELECT count(*) AS count FROM public.manifests
            WHERE operator_id = $1 AND deleted_at IS NULL`,
     params: [operatorId],
-    expected: CARGAS.filter((c) => c.stage !== 'pending').length,
+    expected: CARGAS.length,
   });
 
   // The point of a carga: every order in it carries the same external_load_id,
@@ -436,7 +448,19 @@ export async function seedMusan(
   // assert each tab has something rather than only that rows exist.
   await assertCount(db, collector, {
     scenario: 'musan/pickup-pending',
-    detail: 'loads on the Pickup PENDING tab (get_pending_manifests)',
+    detail: 'nothing already being collected shows on the Pickup PENDING tab',
+    // This used to assert a fixed count of 2 pending loads, which cannot hold in
+    // a shared QA stack: the moment a tester opens a route against a carga, that
+    // load is legitimately no longer pending. All four Musan cargas are
+    // currently attached to real app-created routes (PR-2026-0001..0003), so the
+    // old assertion read 0 and failed -- reporting correct behaviour as a defect.
+    //
+    // The invariant that actually matters is the one spec-61 Task 7 added: a
+    // load already on a route must never be offered again, or two crews collect
+    // it. That holds no matter how much testing has happened, so it is what is
+    // asserted here -- the count of routed loads still on the pending tab, which
+    // must be zero. The predicate mirrors get_pending_manifests' exclusion; keep
+    // the two in step (see also the comment on the in-transit assertion below).
     sql: `SELECT count(DISTINCT o.external_load_id) AS count
             FROM orders o
            WHERE o.operator_id = $1
@@ -448,9 +472,15 @@ export async function seedMusan(
                   AND (m.status = 'completed'
                        OR m.reception_status IS NOT NULL
                        OR m.pickup_route_id IS NOT NULL)
+             )
+             AND EXISTS (
+               SELECT 1 FROM manifests m2
+                WHERE m2.operator_id = $1 AND m2.deleted_at IS NULL
+                  AND m2.external_load_id = o.external_load_id
+                  AND m2.pickup_route_id IS NOT NULL
              )`,
     params: [operatorId],
-    expected: 2,
+    expected: 0,
   });
 
   await assertCount(db, collector, {

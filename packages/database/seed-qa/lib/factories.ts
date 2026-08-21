@@ -264,6 +264,23 @@ export async function createOperator(
  * orders.status. Package ids are allocated from the order's sequence so they
  * stay stable across runs.
  */
+/*
+ * DO UPDATE, not DO NOTHING, on the identifying columns.
+ *
+ * Order ids are deterministic -- qaId(group, sequence) -- and the sequence is
+ * allocated by walking a scenario's cargas in order. So editing a scenario's
+ * composition (moving one order from one carga to the next) re-points a
+ * sequence at a different load id, while the row already in the database keeps
+ * the old one. With DO NOTHING the edit never propagated and the scenario's own
+ * assertions failed against data they could not correct: Musan's PARIS cargas
+ * sat at a 3/2 split for weeks while the definition said 4/1.
+ *
+ * Only the fields a scenario definition owns are updated. Status is left alone
+ * -- it is derived from packages by trigger, and resettleOrderStatus() below is
+ * what re-derives it -- and so is anything a tester may have changed by using
+ * the app, which is the whole reason this seeder is idempotent rather than
+ * destructive.
+ */
 export async function createOrderWithPackages(
   db: SeedClient,
   spec: OrderSpec,
@@ -280,7 +297,13 @@ export async function createOrderWithPackages(
        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11::imported_via_enum, NOW(), $12,
        $13, $14, $15
      )
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO UPDATE SET
+       order_number     = EXCLUDED.order_number,
+       external_load_id = EXCLUDED.external_load_id,
+       retailer_name    = EXCLUDED.retailer_name,
+       tenant_client_id = EXCLUDED.tenant_client_id,
+       pickup_point_id  = EXCLUDED.pickup_point_id,
+       comuna           = EXCLUDED.comuna`,
     [
       orderId,
       spec.operatorId,
