@@ -3,22 +3,22 @@ import { render, screen } from '@testing-library/react';
 import { ReceptionMobileHeader } from './ReceptionMobileHeader';
 
 describe('ReceptionMobileHeader', () => {
-  it('muestra el título, el nombre del receptor y sus iniciales', () => {
+  it('shows the title, the receptionist name and their initials', () => {
     render(<ReceptionMobileHeader userName="Paulina Valdés" />);
     expect(screen.getByRole('heading', { name: 'Recepción' })).toBeInTheDocument();
     expect(screen.getByText(/Paulina Valdés/)).toBeInTheDocument();
-    expect(screen.getByTestId('reception-mobile-avatar')).toHaveTextContent('PV');
+    expect(screen.getByTestId('reception-mobile-avatar')).toHaveTextContent(/^PV$/);
   });
 
-  it('sin nombre no inventa turno ni andén', () => {
-    // El mock dice "Recepción · Andén 2 · turno AM": ninguno de los dos existe
-    // en el schema (ver la tabla de renuncias del spec). No se rellenan.
+  it('without a name, does not fabricate a shift or a dock', () => {
+    // The mock reads "Recepción · Andén 2 · turno AM": neither concept exists
+    // in the schema (see the renunciations table in the spec). Not filled in.
     render(<ReceptionMobileHeader userName={null} />);
     expect(screen.queryByText(/turno/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/andén/i)).not.toBeInTheDocument();
   });
 
-  it('sin nombre no deja separador huérfano ni "undefined" en el subtítulo', () => {
+  it('without a name, leaves no orphan separator or "undefined" in the subtitle', () => {
     render(<ReceptionMobileHeader userName={null} />);
     expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
     const subtitle = screen.getByTestId('reception-mobile-subtitle');
