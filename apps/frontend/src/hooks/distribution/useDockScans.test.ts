@@ -9,7 +9,10 @@ const mockOrder = vi.fn();
 const mockIs = vi.fn();
 const mockEq = vi.fn();
 const mockSelect = vi.fn();
+const mockInsert = vi.fn();
 const mockFrom = vi.fn();
+const mockValidateDockScan = vi.fn();
+const mockRecordDockVerification = vi.fn();
 
 const mockSupabase = { from: mockFrom };
 
@@ -18,7 +21,11 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 vi.mock('@/lib/distribution/dock-scan-validator', () => ({
-  validateDockScan: vi.fn(),
+  validateDockScan: (...args: unknown[]) => mockValidateDockScan(...args),
+}));
+
+vi.mock('@/lib/distribution/record-dock-verification', () => ({
+  recordDockVerification: (...args: unknown[]) => mockRecordDockVerification(...args),
 }));
 
 vi.mock('@/lib/pickup/audio', () => ({
@@ -83,5 +90,88 @@ describe('useDockScanMutation', () => {
       { wrapper }
     );
     expect(result.current.isPending).toBe(false);
+  });
+
+  // spec-39 Addendum 4. The scan was only ever writing dock_scans, so a scanned
+  // CTN stayed indistinguishable from an untouched one in the pending list.
+  describe('verification on scan', () => {
+    beforeEach(() => {
+      mockFrom.mockReturnValue({ select: mockSelect, insert: mockInsert });
+      mockInsert.mockResolvedValue({ error: null });
+      mockRecordDockVerification.mockResolvedValue(undefined);
+    });
+
+    it('records a scan-sourced verification when the scan is accepted', async () => {
+      mockValidateDockScan.mockResolvedValue({
+        scanResult: 'accepted',
+        packageId: 'pkg-1',
+        packageLabel: 'PKG-001',
+      });
+
+      const { result } = renderHook(
+        () => useDockScanMutation('op-1', 'batch-1', 'zone-1', 'user-1'),
+        { wrapper }
+      );
+      await result.current.mutateAsync({ barcode: 'PKG-001' });
+
+      expect(mockRecordDockVerification).toHaveBeenCalledWith({
+        operatorId: 'op-1',
+        packageId: 'pkg-1',
+        userId: 'user-1',
+        source: 'scan',
+      });
+    });
+
+    it('does not verify a rejected scan', async () => {
+      mockValidateDockScan.mockResolvedValue({
+        scanResult: 'wrong_zone',
+        packageId: 'pkg-1',
+        packageLabel: 'PKG-001',
+      });
+
+      const { result } = renderHook(
+        () => useDockScanMutation('op-1', 'batch-1', 'zone-1', 'user-1'),
+        { wrapper }
+      );
+      await result.current.mutateAsync({ barcode: 'PKG-001' });
+
+      expect(mockRecordDockVerification).not.toHaveBeenCalled();
+    });
+
+    it('does not verify when the barcode resolved to no package', async () => {
+      mockValidateDockScan.mockResolvedValue({
+        scanResult: 'accepted',
+        packageId: null,
+        packageLabel: null,
+      });
+
+      const { result } = renderHook(
+        () => useDockScanMutation('op-1', 'batch-1', 'zone-1', 'user-1'),
+        { wrapper }
+      );
+      await result.current.mutateAsync({ barcode: 'PKG-001' });
+
+      expect(mockRecordDockVerification).not.toHaveBeenCalled();
+    });
+
+    // The dock_scans row is the record that matters. A verification that fails
+    // should cost the crew a green chip, not the scan.
+    it('still resolves the scan when the verification write fails', async () => {
+      mockValidateDockScan.mockResolvedValue({
+        scanResult: 'accepted',
+        packageId: 'pkg-1',
+        packageLabel: 'PKG-001',
+      });
+      mockRecordDockVerification.mockRejectedValue(new Error('rls denied'));
+
+      const { result } = renderHook(
+        () => useDockScanMutation('op-1', 'batch-1', 'zone-1', 'user-1'),
+        { wrapper }
+      );
+
+      await expect(
+        result.current.mutateAsync({ barcode: 'PKG-001' })
+      ).resolves.toMatchObject({ scanResult: 'accepted' });
+    });
   });
 });
