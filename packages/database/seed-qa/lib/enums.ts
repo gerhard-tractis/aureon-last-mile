@@ -42,7 +42,10 @@ export const EXPECTED_ENUMS: Record<string, readonly string[]> = {
   fleet_type_enum: ['own', 'external'],
   driver_status_enum: ['active', 'inactive', 'suspended', 'terminated'],
   user_role: [
-    'pickup_crew', 'warehouse_staff', 'loading_crew',
+    // pickup_leader: added by migration 20260820000001 (spec-61). Every
+    // pre-existing pickup_crew account was promoted to it by 20260820000002,
+    // so QA can hold either.
+    'pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew',
     'operations_manager', 'admin', 'super_admin',
   ],
 };
