@@ -2,11 +2,10 @@
 
 import { Suspense, useMemo, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Camera } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CameraIntake } from '@/components/pickup/CameraIntake';
 import { type ManifestRow } from '@/components/pickup/ManifestTable';
+import { PickupDesktopHeader } from '@/components/pickup/PickupDesktopHeader';
 import { PickupDesktopView, type TabKey } from '@/components/pickup/PickupDesktopView';
 import { PickupMobileView } from '@/components/pickup/PickupMobileView';
 import {
@@ -26,13 +25,11 @@ import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { ModuleKey } from '@/lib/modules/registry';
 import { createSPAClient } from '@/lib/supabase/client';
 import { openPendingManifest } from '@/lib/pickup/openPendingManifest';
-import { attachManifestsToRoute } from '@/lib/pickup/attachManifestsToRoute';
 import {
-  todayLabel,
-  matchesSearchTerm,
-  pendingToRows,
-  totalsToRows,
-} from '@/lib/pickup/pickupPageHelpers';
+  attachManifestsToRoute,
+  partialAttachMessage,
+} from '@/lib/pickup/attachManifestsToRoute';
+import { matchesSearchTerm, pendingToRows, totalsToRows } from '@/lib/pickup/pickupPageHelpers';
 import { useTranslation } from '@/lib/i18n/useTranslation';
 import { toast } from 'sonner';
 
@@ -67,6 +64,14 @@ function PickupPageContent() {
   // whose route this is (the cancel affordance) and keeps a leader out of
   // their own crew picker.
   const { operatorId, role, userId } = useOperatorId();
+  // spec-61 Task 5 — `role === null` means UNKNOWN, not "crew". GlobalContext
+  // sets operatorId/role/permissions in ONE setState pass once its async
+  // getUser() + getSession() resolve (GlobalContext.tsx:31-63), and
+  // _client-gate.tsx:19 deliberately paints children while permissions are
+  // still empty — so nothing blocks the render. `!operatorId` is therefore an
+  // exact "claims have not landed yet" signal, and the two branches that key
+  // off `canLead` must not fire a refusal during it.
+  const roleUnknown = !operatorId;
   const labelsEnabled = useModuleEnabled(operatorId, ModuleKey.PACKAGE_LABELS);
   // spec-54 mock 3h: below `lg` this screen swaps its whole body for the
   // phone card layout instead of squeezing the desktop table into 390px.
@@ -178,22 +183,29 @@ function PickupPageContent() {
       { vehicleId, crewUserIds: crewIds },
       {
         onSuccess: async (route) => {
-          const ids = selectedManifests.map((m) => m.id!).filter(Boolean);
-          const { failed } = await attachManifestsToRoute(route.id, ids, addMut.mutateAsync);
-          if (failed > 0) {
-            // The route exists either way — say what did not make it rather
-            // than let the driver leave with a short load. If EVERY add
-            // fails the leader lands on 3h with an empty route; spec-61
-            // Task 5 gives them the way out (CancelRouteButton), which is
-            // why this no longer says the gap is unaddressed.
-            toast.error(
-              `La ruta se creó, pero ${failed} de ${ids.length} manifiestos no se pudieron agregar.`,
-            );
+          const { attempted, failedLoadIds } = await attachManifestsToRoute(
+            route.id,
+            selectedManifests,
+            addMut.mutateAsync,
+          );
+          if (failedLoadIds.length > 0) {
+            // The route exists either way — name what did not make it rather
+            // than let the driver leave with a short load and no idea which
+            // one. If EVERY add fails the leader lands on 3h with an empty
+            // route; CancelRouteButton is their way out.
+            toast.error(partialAttachMessage(failedLoadIds, attempted));
           }
           setSelectedIds(new Set());
           router.push('/app/pickup/route/active');
         },
-        onError: (err) => toast.error(err.message),
+        // spec-61 Task 5 — ONE surface per screen, not two. Mobile renders
+        // this same message as a persistent role="alert" inside 3j, right
+        // under the button that failed (PickupMobileStartRoute), so a toast
+        // as well said it twice and the copy that survives is the one that
+        // does not auto-dismiss while the phone is in a pocket. Desktop's
+        // draft panel has no inline error line, so there the toast IS the
+        // surface.
+        onError: (err) => { if (!isBelowLg) toast.error(err.message); },
       },
     );
   };
@@ -204,22 +216,11 @@ function PickupPageContent() {
           PickupMobileView — both stacked on a 390px screen before this
           guard (found live in QA). */}
       {!isBelowLg && (
-        <div className="flex flex-wrap items-end gap-4">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <h1 className="font-heading text-[26px] font-semibold leading-[1.1] tracking-[-.02em] text-text">
-              Recogida
-            </h1>
-            <p className="text-[12.5px] leading-none text-text-secondary">
-              {todayLabel(new Date())} ·{' '}
-              <span className="font-mono font-semibold text-text">{totals.manifests}</span>{' '}
-              {totals.manifests === 1 ? 'manifiesto por retirar' : 'manifiestos por retirar'}
-            </p>
-          </div>
-          <Button onClick={() => setIntakeOpen(true)} className="ml-auto gap-2">
-            <Camera className="h-4 w-4" />
-            {t('pickup.nuevo_manifiesto')}
-          </Button>
-        </div>
+        <PickupDesktopHeader
+          manifestCount={totals.manifests}
+          onNewManifest={() => setIntakeOpen(true)}
+          newManifestLabel={t('pickup.nuevo_manifiesto')}
+        />
       )}
 
       {isBelowLg && (
@@ -234,6 +235,7 @@ function PickupPageContent() {
           operatorId={operatorId}
           role={role}
           currentUserId={userId}
+          roleUnknown={roleUnknown}
           routeUnknown={activeRouteUnknown}
           onRetryRoute={() => { void refetchActiveRoute(); }}
           canCancelRoute={!!userId && activeRoute?.driver_id === userId}
@@ -271,6 +273,7 @@ function PickupPageContent() {
           isCreatingRoute={startMut.isPending || addMut.isPending}
           canLead={canLeadPickupRoute(role)}
           routeUnknown={activeRouteUnknown}
+          roleUnknown={roleUnknown}
         />
       )}
 

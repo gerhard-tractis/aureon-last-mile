@@ -101,6 +101,39 @@ describe('CrewSelect', () => {
     expect(screen.getByRole('checkbox', { name: 'Sin nombre' })).toBeInTheDocument();
   });
 
+  /**
+   * spec-61 Task 5 — the list renders inside PickupMobileStartRoute's accent
+   * card, ABOVE "Iniciar ruta de recogida", and useCrewCandidates fetches
+   * every non-deleted pickup_crew/pickup_leader in the operator with no
+   * limit. Twenty people is ~880px of rows, which pushed the primary CTA off
+   * the bottom of a 390px screen. Every other test here uses one or two
+   * rows, so nothing else in this file could have caught it.
+   *
+   * The assertion is on the CONTAINER's cap rather than on layout, because
+   * jsdom computes no geometry — it would report 0px for everything and pass
+   * against any implementation at all.
+   */
+  it('caps its own height instead of growing past the start button', () => {
+    mockUseCrewCandidates.mockReturnValue({
+      data: Array.from({ length: 20 }, (_, i) => ({
+        id: `crew-${i}`,
+        full_name: `Persona ${i}`,
+        role: 'pickup_crew',
+      })),
+      isLoading: false,
+    });
+    render(<CrewSelect {...baseProps()} />);
+
+    // All twenty are still present and reachable — the fix is scrolling, not
+    // hiding people from the leader.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(20);
+    expect(screen.getByRole('checkbox', { name: 'Persona 19' })).toBeInTheDocument();
+
+    const list = screen.getByRole('checkbox', { name: 'Persona 0' }).parentElement!;
+    expect(list.className).toContain('max-h-[45vh]');
+    expect(list.className).toContain('overflow-y-auto');
+  });
+
   it('says the roster is empty when nobody else is registered', () => {
     mockUseCrewCandidates.mockReturnValue({ data: [], isLoading: false });
     render(<CrewSelect {...baseProps()} />);

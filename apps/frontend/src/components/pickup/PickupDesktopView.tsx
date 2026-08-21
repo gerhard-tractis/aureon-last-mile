@@ -73,6 +73,8 @@ interface PickupDesktopViewProps {
   canLead?: boolean;
   /** spec-61 — true when the active-route lookup FAILED. */
   routeUnknown?: boolean;
+  /** spec-61 — true while the JWT claims are still resolving. */
+  roleUnknown?: boolean;
 }
 
 export function PickupDesktopView({
@@ -102,6 +104,7 @@ export function PickupDesktopView({
   isCreatingRoute,
   canLead = true,
   routeUnknown = false,
+  roleUnknown = false,
 }: PickupDesktopViewProps) {
   return (
     <div className="grid min-h-0 gap-4 xl:grid-cols-[1fr_340px]">
@@ -208,6 +211,7 @@ export function PickupDesktopView({
           activeRouteCode={activeRoute?.code ?? null}
           canLead={canLead}
           routeUnknown={routeUnknown}
+          roleUnknown={roleUnknown}
         />
         <TodayClosuresPanel rows={closures} />
       </aside>

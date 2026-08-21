@@ -2629,6 +2629,62 @@ What it added, so the diff is not a surprise:
 - `page.tsx` — reads `isError` and `refetch` from the hook and passes both down.
 - Tests in `PickupMobileView.test.tsx`, `PickupRouteDraftPanel.test.tsx` and `page.test.tsx`.
 
+##### Quality-review fixes (2026-08-21)
+
+Four change behaviour and belong in the record; the rest were styling.
+
+1. **`role === null` meant "crew" for the length of every cold load.**
+   `GlobalContext` resolves the JWT claims asynchronously (`GlobalContext.tsx:31-63`) and
+   `_client-gate.tsx:19` paints children while they are still empty, so nothing blocked the
+   render — and `canLeadPickupRoute(null)` is `false`. A real `pickup_leader` therefore read
+   *"No tienes una ruta activa. Pídele a tu líder que te agregue a su ruta."* on a phone, and
+   *"Solo un líder de ruta puede abrir una ruta"* on a laptop, for the whole auth round-trip:
+   a confident, wrong refusal telling a leader to ask someone else for permission they already
+   held, on exactly the cold warehouse connection where the round-trip is slowest. `role`
+   null means **unknown**, not crew. `page.tsx` now derives `roleUnknown = !operatorId` —
+   exact, because `GlobalContext` sets `operatorId` and `role` in one `setState` pass — and
+   threads it to both surfaces: `PickupMobileView` shows a neutral "Cargando tu perfil…"
+   ahead of the `!canLead` branch, and `PickupRouteDraftPanel` falls through to its selection
+   prompt (true regardless of who is asking) instead of the refusal. Tested on both surfaces,
+   each paired with a known-crew test so "never refuse" cannot be satisfied by deleting the
+   refusal.
+
+2. **The crew picker was unbounded.** `useCrewCandidates` fetches every non-deleted
+   `pickup_crew`/`pickup_leader` in the operator with no limit, and the list renders inside
+   3j's accent card *above* "Iniciar ruta de recogida" — twenty people is roughly 880px, so
+   the primary CTA left a 390px screen entirely. The list is now `max-h-[45vh]
+   overflow-y-auto`; the eyebrow still counts everyone, so the number is never what gets
+   truncated. Tested at twenty candidates, at the surface that owns the button, by driving the
+   button rather than asserting its presence.
+
+3. **A partial attach named a count, not the loads.** `handleCreateRoute` toasted "3 de 5
+   manifiestos no se pudieron agregar", then cleared the selection and navigated away — so the
+   driver could not find out *which* three short of hunting through `AddManifestSheet` on the
+   destination. `attachManifestsToRoute` now returns `failedLoadIds` (the `externalLoadId`s,
+   which are the codes printed on the load), and `partialAttachMessage` names them, capped at
+   five with "y N más" and pointing at the active route.
+
+4. **The whole success path was untested.** Everything after the route is created — the toast,
+   clearing the selection, the navigation — lives in `startMut.mutate`'s `onSuccess`, and
+   `page.test.tsx` mocked `mutate` as a bare `vi.fn()`, so the callback never ran.
+   `attachManifestsToRoute` was unit-tested thoroughly and its only consumer was not. The mock
+   now drives `onSuccess`, and the stubbed `StartRouteButton` actually calls `onStart`.
+
+Also: the start-route error was surfaced twice on mobile (a toast *and* 3j's persistent
+`role="alert"`); the toast is now desktop-only, where the draft panel has no inline line. Plus
+a clipped manifest list (`pb-24` → `pb-40`, since the fixed bar now carries two buttons), zero
+gap between the routine and destructive CTAs on `route/active` (`space-y-3` — 3h already had
+`gap-4`), two contrast failures in `CrewSelect` (the unchecked box at 1.23:1, the eyebrow at
+2.52:1 on the accent card), and `CancelRouteButton` turning brand-gold on hover because
+`variant="ghost"`'s `hover:text-accent-foreground` survived `twMerge`.
+
+**Found while fixing, not reported:** four tests written earlier in this task clicked
+`getAllByRole('checkbox')` on the DESKTOP path. The desktop table has no checkbox role at all —
+it selects by clicking the row (`ManifestTable.tsx:95`) — so all four would have thrown on
+first execution. They now click the row, the way this file's pre-existing tests already did.
+This is the cost of an environment where the suite cannot be run: `tsc` and `eslint` cannot
+see it.
+
 ### Task 6: `3h` shows who is on the trip
 
 **Files:**

@@ -134,8 +134,14 @@ export default function ActiveRoutePage() {
 
   const manifestListVisible = routeManifests.length === 0 || showAll;
 
+  // pb-40 (160px), not pb-24: the fixed bar at the foot of this screen now
+  // carries TWO 40px buttons plus p-4/sm:p-6 padding -- ~112px on a phone,
+  // ~128px at `sm`. pb-24 reserved 96px, so the leader (the only person who
+  // sees both buttons) had the last 16-32px of the manifest list permanently
+  // under the bar, on the exact screen where they check what is left to
+  // collect.
   return (
-    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-24">
+    <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-40">
       <RouteProgressHeader route={route} manifests={routeManifests} isLoading={rmLoading} />
 
       <RouteMapPlaceholder pickupLocation={nextManifest?.pickup_location ?? null} />
@@ -207,7 +213,13 @@ export default function ActiveRoutePage() {
       />
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
-        <div className="max-w-2xl mx-auto">
+        {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
+            the routine "Cerrar ruta y entregar". Flush, they are two
+            full-width 40px targets one thumb-width apart on a phone held
+            one-handed, with only the confirm dialog between a mis-tap and
+            detaching every manifest on the route. 3h already separates them
+            (`flex flex-col gap-4`); this surface did not. */}
+        <div className="max-w-2xl mx-auto space-y-3">
           <CloseRouteButton
             totalVerified={totalVerified}
             isSubmitting={closeMut.isPending}

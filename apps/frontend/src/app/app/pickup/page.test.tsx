@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, within, cleanup } from '@testing-library/react';
+import { render, screen, within, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
 import type { RouteCrewMember } from '@/hooks/pickup/useActivePickupRoute';
@@ -97,19 +97,27 @@ vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
     refetch: mockRefetchActiveRoute,
   }),
 }));
+// spec-61 Task 5: `mutate` is a hoisted spy rather than an inline vi.fn() so
+// a test can DRIVE its onSuccess callback. Everything the success path does
+// -- the partial-attach toast, clearing the selection, the navigation --
+// lives inside that callback, and with a bare vi.fn() it never ran, so none
+// of it was covered.
+const mockStartMutate = vi.fn();
 vi.mock('@/hooks/pickup/useStartPickupRoute', () => ({
-  useStartPickupRoute: () => ({ mutate: vi.fn(), isPending: false }),
+  useStartPickupRoute: () => ({ mutate: mockStartMutate, isPending: false, error: null }),
 }));
+const mockAddMutateAsync = vi.fn();
 vi.mock('@/hooks/pickup/useAddManifestToRoute', () => ({
-  useAddManifestToRoute: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddManifestToRoute: () => ({ mutateAsync: mockAddMutateAsync, isPending: false }),
 }));
 const mockUseRouteManifests = vi.fn();
 vi.mock('@/hooks/pickup/useRouteManifests', () => ({
   useRouteManifests: (...args: unknown[]) => mockUseRouteManifests(...args),
   useUnassignedManifests: () => ({ data: [], isLoading: false }),
 }));
+const mockToastError = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: (...args: unknown[]) => mockToastError(...args) },
 }));
 
 // PickupMobileStartRoute (3j) renders VehicleSelect, which needs a real
@@ -151,8 +159,15 @@ vi.mock('@/components/pickup/ClientFilter', () => ({
   ClientFilter: () => null,
 }));
 
+// Now actually wired: the real button pops a vehicle dialog, which this
+// file has no business driving, but a stub that never calls `onStart` made
+// the whole create-route path unreachable from here.
 vi.mock('@/components/pickup/StartRouteButton', () => ({
-  StartRouteButton: () => <button type="button">Crear ruta</button>,
+  StartRouteButton: ({ onStart }: { onStart: (vehicleId: string) => void }) => (
+    <button type="button" onClick={() => onStart('veh-1')}>
+      Crear ruta
+    </button>
+  ),
 }));
 
 const mockPush = vi.fn();
@@ -166,6 +181,10 @@ vi.mock('next/navigation', () => ({
 describe('PickupPage', () => {
   beforeEach(() => {
     mockPush.mockClear();
+    mockStartMutate.mockReset();
+    mockAddMutateAsync.mockReset();
+    mockAddMutateAsync.mockResolvedValue(undefined);
+    mockToastError.mockClear();
     mockSupabaseFrom.mockClear();
     mockActiveRoute = null;
     mockActiveRouteError = false;
@@ -537,8 +556,11 @@ describe('PickupPage', () => {
       mockBelowLg(false);
       render(<PickupPage />);
       // Tick a manifest — before this gate, a selection was all it took to
-      // put the start button on screen.
-      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      // put the start button on screen. Clicking the ROW, not a checkbox:
+      // the desktop table has no checkbox role (ManifestTable.tsx:95), which
+      // is how the existing "moves a ticked manifest into the draft panel"
+      // test does it too.
+      await userEvent.click(screen.getByText('Easy Vespucio'));
       expect(screen.getByText(/solo un líder de ruta puede abrir una ruta/i)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Crear ruta' })).toBeNull();
     });
@@ -553,7 +575,7 @@ describe('PickupPage', () => {
 
       mockBelowLg(false);
       render(<PickupPage />);
-      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      await userEvent.click(screen.getByText('Easy Vespucio'));
       expect(screen.getByRole('button', { name: 'Crear ruta' })).toBeInTheDocument();
     });
   });
@@ -605,9 +627,100 @@ describe('PickupPage', () => {
       mockActiveRouteError = true;
       mockBelowLg(false);
       render(<PickupPage />);
-      await userEvent.click(screen.getAllByRole('checkbox')[0]);
+      await userEvent.click(screen.getByText('Easy Vespucio'));
       expect(screen.getByText(/no pudimos cargar tu ruta/i)).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Crear ruta' })).toBeNull();
+    });
+  });
+
+  /**
+   * spec-61 Task 5 — everything the create-route success path does lives in
+   * `startMut.mutate`'s onSuccess callback, and this file mocked `mutate` as
+   * a bare vi.fn(), so the callback never ran and none of it was covered:
+   * not the partial-attach toast, not clearing the selection, not the
+   * navigation. attachManifestsToRoute was unit-tested thoroughly and its
+   * only consumer was not.
+   */
+  describe('spec-61 — after the route is created', () => {
+    const originalMatchMedia = window.matchMedia;
+    afterEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: originalMatchMedia,
+      });
+    });
+    function mockDesktop() {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    }
+
+    /** Ticks both pending manifests and fires the (stubbed) start button. */
+    async function createRouteWith(onSuccessRoute = { id: 'route-1' }) {
+      mockStartMutate.mockImplementation(
+        (_args: unknown, opts: { onSuccess: (r: unknown) => Promise<void> }) =>
+          opts.onSuccess(onSuccessRoute),
+      );
+      mockDesktop();
+      render(<PickupPage />);
+      // Row clicks: the desktop table has no checkbox role
+      // (ManifestTable.tsx:95). These are m1 (CARGA-001) and m2 (CARGA-002).
+      await userEvent.click(screen.getByText('Easy Vespucio'));
+      await userEvent.click(screen.getByText('Sodimac Puente Alto'));
+      await userEvent.click(screen.getByRole('button', { name: 'Crear ruta' }));
+    }
+
+    it('sends the ticked manifests to the new route, then navigates to it', async () => {
+      await createRouteWith();
+      // waitFor throughout this block: onSuccess is async and handleCreateRoute
+      // does not await it, so the attach round-trip resolves after the click.
+      await waitFor(() =>
+        expect(mockAddMutateAsync).toHaveBeenCalledWith({ routeId: 'route-1', manifestId: 'm1' }),
+      );
+      expect(mockAddMutateAsync).toHaveBeenCalledWith({ routeId: 'route-1', manifestId: 'm2' });
+      await waitFor(() => expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active'));
+    });
+
+    it('says nothing when every manifest attached', async () => {
+      await createRouteWith();
+      await waitFor(() => expect(mockPush).toHaveBeenCalled());
+      expect(mockToastError).not.toHaveBeenCalled();
+    });
+
+    // The defect the review found: a bare count. The selection is cleared and
+    // the screen navigates away immediately after, so "1 de 2" left the
+    // driver with no way to find out WHICH load they were short.
+    it('names the load that did not make it, not just how many', async () => {
+      mockAddMutateAsync.mockImplementation(({ manifestId }: { manifestId: string }) =>
+        manifestId === 'm2' ? Promise.reject(new Error('ya está en otra ruta')) : Promise.resolve(),
+      );
+      await createRouteWith();
+      await waitFor(() => expect(mockToastError).toHaveBeenCalled());
+      const msg = String(mockToastError.mock.calls[0][0]);
+      expect(msg).toContain('CARGA-002');
+      expect(msg).toContain('1 de 2');
+      // The route still exists — the message must not read as a total failure.
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
+    });
+
+    it('clears the selection so the next route does not inherit it', async () => {
+      await createRouteWith();
+      // The draft panel counts the selection; back at zero it shows the
+      // prompt again rather than listing the manifests just consumed.
+      await waitFor(() =>
+        expect(screen.getByText(/marca los manifiestos de la tabla/i)).toBeInTheDocument(),
+      );
+      expect(screen.queryAllByTestId('draft-manifest')).toHaveLength(0);
     });
   });
 });

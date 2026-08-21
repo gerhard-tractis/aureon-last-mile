@@ -67,6 +67,9 @@ interface PickupMobileViewProps {
   /** The signed-in user, so the leader is never offered to themselves as
    *  crew on 3j. */
   currentUserId: string | null;
+  /** True while the JWT claims are still resolving, so `role` is null
+   *  because it is UNKNOWN rather than because the caller is crew. */
+  roleUnknown?: boolean;
   /** True when `useActivePickupRoute` FAILED. Not the same as "no route":
    *  see the branch below. */
   routeUnknown?: boolean;
@@ -93,6 +96,7 @@ export function PickupMobileView({
   operatorId,
   role,
   currentUserId,
+  roleUnknown = false,
   routeUnknown = false,
   onRetryRoute,
   canCancelRoute = false,
@@ -155,6 +159,24 @@ export function PickupMobileView({
           >
             Reintentar
           </button>
+        </section>
+      ) : roleUnknown ? (
+        // spec-61 Task 5 — `role === null` means UNKNOWN, not "crew".
+        // GlobalContext resolves operatorId/role/permissions in one async
+        // pass (GlobalContext.tsx:31-63) and _client-gate.tsx:19 paints
+        // children while it is still running, so for the whole auth
+        // round-trip a real pickup_leader had `role === null` and
+        // canLeadPickupRoute(null) === false. They were shown "Pídele a tu
+        // líder que te agregue a su ruta" — a confident, wrong refusal
+        // telling a leader to go ask for permission they already hold, on
+        // exactly the cold warehouse connection where the round-trip is
+        // slowest. Say nothing until we know.
+        <section
+          data-testid="pickup-mobile-role-loading"
+          aria-busy="true"
+          className="rounded-[10px] border border-border bg-surface p-5 text-center"
+        >
+          <p className="text-[13px] text-text-secondary">Cargando tu perfil…</p>
         </section>
       ) : !canLead ? (
         <PickupMobileNoRoute />

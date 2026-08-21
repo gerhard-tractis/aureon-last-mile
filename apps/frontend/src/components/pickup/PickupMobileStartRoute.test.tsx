@@ -163,6 +163,34 @@ describe('PickupMobileStartRoute', () => {
     expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-2']);
   });
 
+  /**
+   * spec-61 Task 5 — the crew picker sits between the vehicle select and the
+   * primary CTA, and useCrewCandidates has no limit, so a twenty-person
+   * operator pushed "Iniciar ruta de recogida" off the bottom of a 390px
+   * screen. This is the assertion at the surface that actually owns the
+   * button; CrewSelect.test.tsx pins the cap on the list itself.
+   */
+  it('keeps the start button on screen with a twenty-person crew list', async () => {
+    mockUseVehicles.mockReturnValue({ data: VEHICLES, isLoading: false });
+    mockUseCrewCandidates.mockReturnValue({
+      data: Array.from({ length: 20 }, (_, i) => ({
+        id: `crew-${i}`,
+        full_name: `Persona ${i}`,
+        role: 'pickup_crew',
+      })),
+      isLoading: false,
+    });
+    const onCreateRoute = vi.fn();
+    render(<PickupMobileStartRoute {...baseProps()} onCreateRoute={onCreateRoute} />);
+
+    // Reachable, and still WORKING -- not merely present in the DOM.
+    await userEvent.click(screen.getByLabelText(/Vehículo/i));
+    await userEvent.click(screen.getByRole('option', { name: /JKLM-42/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Persona 19' }));
+    await userEvent.click(screen.getByRole('button', { name: /iniciar ruta de recogida/i }));
+    expect(onCreateRoute).toHaveBeenCalledWith('v-1', ['crew-19']);
+  });
+
   // Threading only, like its twin in CrewSelect.test.tsx: the hook is mocked,
   // so this proves currentUserId reaches it as the exclusion id, not that the
   // leader is excluded. That is useCrewCandidates.test.ts's job.

@@ -44,9 +44,15 @@ export function CrewSelect({ operatorId, excludeUserId, value, onChange }: CrewS
 
   return (
     <section aria-labelledby="crew-select-eyebrow" className="mt-3 flex flex-col gap-2">
+      {/* `text-text-secondary`, not the `text-text-muted` the neighbouring
+          eyebrow uses: this renders INSIDE PickupMobileStartRoute's accent
+          card, where text-muted on bg-accent-muted is 2.52:1 light / 4.49:1
+          dark at 10.5px. The sibling "NO TIENES RUTA ACTIVA" eyebrow fails
+          identically and is left alone -- it is pre-existing, and fixing it
+          here would smuggle an unrelated change into this task. */}
       <p
         id="crew-select-eyebrow"
-        className="font-mono text-[10.5px] font-semibold uppercase tracking-[.08em] text-text-muted"
+        className="font-mono text-[10.5px] font-semibold uppercase tracking-[.08em] text-text-secondary"
       >
         ACOMPAÑANTES · {value.length}
       </p>
@@ -56,7 +62,16 @@ export function CrewSelect({ operatorId, excludeUserId, value, onChange }: CrewS
       ) : rows.length === 0 ? (
         <p className="text-[12.5px] text-text-secondary">No hay compañeros registrados</p>
       ) : (
-        <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
+        // max-h-[45vh] + scroll, not an unbounded list. This renders inside
+        // PickupMobileStartRoute's accent card and ABOVE "Iniciar ruta de
+        // recogida", and useCrewCandidates fetches every non-deleted
+        // pickup_crew/pickup_leader in the operator with no limit -- so a
+        // twenty-person operator pushed ~880px of rows between the vehicle
+        // picker and the primary CTA, off the bottom of a 390px screen.
+        // Capping the LIST rather than the fetch keeps everyone reachable by
+        // scrolling; the eyebrow above still counts all of them, so the
+        // number is never what gets truncated.
+        <div className="max-h-[45vh] overflow-y-auto rounded-[10px] border border-border bg-surface">
           {rows.map((person) => {
             const checked = value.includes(person.id);
             return (
@@ -73,7 +88,14 @@ export function CrewSelect({ operatorId, excludeUserId, value, onChange }: CrewS
                   aria-hidden="true"
                   className={cn(
                     'grid h-[18px] w-[18px] flex-none place-items-center rounded-[5px] border',
-                    checked ? 'border-accent-light bg-accent-light' : 'border-border bg-surface',
+                    // `border-border-strong` unchecked, not `border-border`:
+                    // at 1.23:1 light / 1.11:1 dark against bg-surface the
+                    // box was invisible, and it is both a form-control
+                    // boundary (WCAG 1.4.11 wants 3:1) and the only cue an
+                    // unchecked row is tappable at all.
+                    checked
+                      ? 'border-accent-light bg-accent-light'
+                      : 'border-border-strong bg-surface',
                   )}
                 >
                   {checked && (

@@ -64,11 +64,16 @@ export function CancelRouteButton({ routeId, operatorId, onCancelled }: CancelRo
 
   return (
     <>
+      {/* The hover pair on `className` is NOT optional. `variant="ghost"`
+          carries `hover:bg-accent hover:text-accent-foreground`, and twMerge
+          keeps both it and `text-status-error-text` -- so on hover the one
+          destructive control on the screen turned brand-gold at 2.58:1 and
+          lost its red entirely, exactly when the pointer was on it. */}
       <Button
         type="button"
         variant="ghost"
         onClick={() => setOpen(true)}
-        className="w-full gap-2 text-status-error-text"
+        className="w-full gap-2 text-status-error-text hover:bg-status-error-bg hover:text-status-error-text"
         data-testid="cancel-route-button"
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />

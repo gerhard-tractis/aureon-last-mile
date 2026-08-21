@@ -69,6 +69,24 @@ describe('PickupRouteDraftPanel', () => {
   });
 
   /**
+   * spec-61 Task 5 — `canLead` is false while the JWT claims are still
+   * resolving, because the role is UNKNOWN, not because the caller is crew.
+   * A real leader read "Solo un líder de ruta puede abrir una ruta" on every
+   * cold load until this branch existed.
+   */
+  it('refuses nobody while the role is still unknown', () => {
+    render(<PickupRouteDraftPanel {...baseProps()} canLead={false} roleUnknown />);
+    expect(screen.queryByText(/solo un líder de ruta/i)).toBeNull();
+  });
+
+  it('still refuses crew once the role really is known', () => {
+    // The pair: without this, "never refuse while unknown" could be
+    // satisfied by deleting the refusal entirely.
+    render(<PickupRouteDraftPanel {...baseProps()} canLead={false} roleUnknown={false} />);
+    expect(screen.getByText(/solo un líder de ruta/i)).toBeInTheDocument();
+  });
+
+  /**
    * spec-61 Task 5 — a FAILED active-route lookup is not an empty one. With
    * `data` undefined, `activeRouteCode` is null and this panel used to offer
    * the start button to a leader who already had a route open.

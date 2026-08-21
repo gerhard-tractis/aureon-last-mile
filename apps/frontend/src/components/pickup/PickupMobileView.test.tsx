@@ -144,6 +144,37 @@ describe('PickupMobileView', () => {
       expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();
     });
 
+    /**
+     * spec-61 Task 5 — `role === null` means UNKNOWN, not "crew".
+     * GlobalContext resolves the JWT claims asynchronously and the client
+     * gate paints children meanwhile, so for the whole auth round-trip a
+     * real pickup_leader arrived here with `role === null`, and
+     * canLeadPickupRoute(null) is false. They were told to go ask their
+     * leader for permission they already held — on a cold warehouse
+     * connection, for as long as the round-trip took.
+     */
+    it('refuses nobody while the role is still unknown', () => {
+      render(<PickupMobileView {...baseProps()} role={null} roleUnknown />);
+      expect(screen.queryByText(/no tienes una ruta activa/i)).toBeNull();
+      expect(screen.queryByText(/pídele a tu líder/i)).toBeNull();
+      // ...and does not offer the start controls either: we do not know yet.
+      expect(screen.queryByRole('button', { name: /iniciar ruta/i })).toBeNull();
+      expect(screen.queryByTestId('pickup-mobile-start-route')).toBeNull();
+      // Something is on screen, and it says it is waiting rather than
+      // deciding. Asserted by its text, not its testid, so replacing the
+      // element with a <div> cannot quietly keep this green.
+      expect(screen.getByText(/cargando tu perfil/i)).toBeInTheDocument();
+    });
+
+    it('shows the crew screen once the role really is known to be crew', () => {
+      // Same null-ish situation, but the claims HAVE landed. Without this
+      // pair, "never refuse" could be satisfied by deleting the crew branch
+      // altogether.
+      render(<PickupMobileView {...baseProps()} role="pickup_crew" roleUnknown={false} />);
+      expect(screen.getByText(/no tienes una ruta activa/i)).toBeInTheDocument();
+      expect(screen.queryByText(/cargando tu perfil/i)).toBeNull();
+    });
+
     it('shows 3h, not the ask-your-leader screen, to a crew member who IS on a route', () => {
       render(
         <PickupMobileView

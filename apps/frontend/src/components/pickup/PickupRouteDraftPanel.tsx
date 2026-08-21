@@ -35,6 +35,9 @@ interface PickupRouteDraftPanelProps {
   /** spec-61 — true when the active-route lookup FAILED. Distinct from
    *  `activeRouteCode === null`, which means "asked, and there is none". */
   routeUnknown?: boolean;
+  /** spec-61 — true while the JWT claims are still resolving. `canLead` is
+   *  false then, but because the role is UNKNOWN, not because it is crew. */
+  roleUnknown?: boolean;
 }
 
 export function PickupRouteDraftPanel({
@@ -46,6 +49,7 @@ export function PickupRouteDraftPanel({
   activeRouteCode = null,
   canLead = true,
   routeUnknown = false,
+  roleUnknown = false,
 }: PickupRouteDraftPanelProps) {
   const orders = selected.reduce((sum, m) => sum + m.orderCount, 0);
   const packages = selected.reduce((sum, m) => sum + m.packageCount, 0);
@@ -82,11 +86,19 @@ export function PickupRouteDraftPanel({
           <span className="font-mono font-semibold text-text">{activeRouteCode}</span> en curso.
           Ciérrala antes de armar otra.
         </p>
-      ) : !canLead ? (
+      ) : !canLead && !roleUnknown ? (
         // spec-61 Task 5 — `1l`'s own start affordance, gated the same way
         // 3j is. Placed AHEAD of the empty-selection prompt on purpose: a
         // crew member should learn they cannot open a route before they
         // spend time ticking manifests for one, not after.
+        //
+        // `&& !roleUnknown`: while GlobalContext is still resolving the JWT
+        // claims, `role` is null and canLead is false — but it is false
+        // because the answer is UNKNOWN, not because the caller is crew.
+        // Without this a real leader read "Solo un líder de ruta puede abrir
+        // una ruta" for the whole auth round-trip on every cold load. Fall
+        // through to the selection prompt instead: it is true regardless of
+        // who is asking, so it can be shown before we know.
         <p className="px-4 py-3 text-[12.5px] text-text-secondary">
           Solo un líder de ruta puede abrir una ruta. Pídele que te agregue a la suya.
         </p>
