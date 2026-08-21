@@ -96,7 +96,7 @@ Cada renuncia con su motivo. Ninguna se rellena con un dato inventado.
 
 ### `3i` — Patio (`/app/reception` bajo `lg`)
 
-Datos: `useIncomingRoutes(operatorId, 'in_transit')` (patio), `'in_progress'` (en camino) y `useOpenDiscrepancies`. La espera sale de `buildArrivals` / `arrivals.ts`, que ya la deriva de `pickup_routes.in_transit_at` — se reutiliza, no se recalcula.
+Datos: `useIncomingRoutes(operatorId, 'in_transit')` (patio), `'in_progress'` (en camino) y `useOpenDiscrepancies`. La espera se deriva de `pickup_routes.in_transit_at` con `minutesSince`, el helper que hoy es privado dentro de `arrivals.ts` y que este spec mueve a `lib/reception/reception-mobile-helpers.ts` para que las dos pantallas lo compartan — se reutiliza, no se recalcula.
 
 - **Héroe** = la ruta en patio que más espera. Código `PR-…` en mono 30px, conductor y patente, `N paquetes esperados`, badge de espera en paleta error sobre `YARD_WAIT_WARNING_MINUTES`. Acción **Iniciar conteo**, 64px → `/app/reception/route/[id]`. Navega directo: una ruta `in_transit` ya tiene su recepción abierta.
   El héroe recibe el `IncomingRoute` crudo, **no** el `ArrivalRow`: `buildArrivals` no propaga `plate`, y la patente es lo que el receptor coteja contra el camión que tiene delante. `ArrivalRow` sigue alimentando la espera y el estado.
@@ -1046,6 +1046,8 @@ it('los reingresos siguen alcanzables en móvil', () => {
 });
 ```
 
+Mockea `useOperatorId` devolviendo un id no nulo. El bloque de reingresos está guardado por `operatorId && (...)`, así que con `null` no renderiza nada y el test se pone rojo por el motivo equivocado.
+
 - [ ] **Step 2: Córrelo y confirma que falla**
 
 Run: `npx vitest run src/app/app/reception/page.test.tsx`
@@ -1082,6 +1084,8 @@ Tres cosas que este paso tiene que resolver, y ninguna es opcional:
 1. **Importa `useRouter`** de `next/navigation`. La página **no** lo tiene hoy: navega solo a través de componentes hijos. Sin esto, `onStartCount` no compila.
 
 2. **Los reingresos tienen que seguir alcanzables.** `ReturnRouteList` y `ReturnReceptionSession` cuelgan únicamente de este archivo (líneas 15-16, 147-154 hoy). Extrae ese bloque — el que hoy vive dentro del `<Tabs value="returns">` — a una constante `returnsSlot`, y móntala en **los dos** árboles: en escritorio dentro de su pestaña, como hoy, y en móvil como sección propia de `ReceptionMobileView` (una prop `returnsSlot?: React.ReactNode`, bajo el bloque de diferencias, con el encabezado `REINGRESOS`). Si la rama móvil no la monta, los reingresos desaparecen bajo 1024px y la regresión no la ve nadie hasta que un operario la reporte desde el andén.
+
+   Aprovecha y renombra la pestaña de escritorio de **"Retornos" a "Reingresos"**: es el término de `labels.es.ts` y el que ya usa `ReturnReceptionSession` ("Reingreso {id}"). Dos nombres para lo mismo entre el escritorio y el teléfono es exactamente lo que las reglas de copy de spec-54 existen para evitar. Es una palabra, y va en este PR o no va.
 
 3. **El `<Dialog>` del escáner QR** también se extrae a una constante (`scannerDialog`) y lo montan los dos árboles: es el mismo flujo en ambos.
 
