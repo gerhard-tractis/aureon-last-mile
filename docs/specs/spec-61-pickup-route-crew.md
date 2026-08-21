@@ -2329,8 +2329,24 @@ point is that the message is *actionable*: it must say a route is not open and w
       list (mock `useCrewCandidates`) and assert:
       - every candidate renders as a toggleable row with an accessible name;
       - tapping one calls `onChange` with that id added; tapping again removes it;
-      - the header shows the count (`EQUIPO · 2`);
+      - the header shows the count — but SEE THE LABEL COLLISION BELOW before writing
+        `EQUIPO · 2`;
       - an empty candidate list renders "No hay compañeros registrados" and no checkboxes.
+
+      LABEL COLLISION WITH TASK 6 — decide this deliberately, it is not settled by the spec.
+      This header's count is leader-EXCLUSIVE by construction: `useCrewCandidates` filters
+      `u.id !== excludeUserId` (Step 10), so the leader is never a row and never counted.
+      Task 6's `PickupRouteCrewStrip` on `3h` uses the SAME label `EQUIPO · N` with N
+      leader-INCLUSIVE (`crew.length + 1`), so it matches the chips it sits over. As drafted,
+      one trip reads `EQUIPO · 2` on `3j` and `EQUIPO · 3` on `3h`, and the number changes
+      under the driver as they navigate between the two screens.
+
+      Task 6's author recommends fixing the LABEL here, not either count: a picker's counter
+      must count its own checked rows, and the leader can never be one of them; a roster that
+      omits the person driving is not "who is on the trip". Both numbers are right for their
+      own screen — the defect is one word standing for two quantities. So this header should
+      read `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`), leaving `EQUIPO · N` to mean
+      "everyone on the trip" in exactly one place. Full reasoning in Task 6, Step 3.
 
 - [ ] **Step 12: Run it, verify it fails, then implement**
 
@@ -2458,7 +2474,7 @@ No edit path, by Decision 1. The crew is fixed when the route opens, and
 someone" control here would need a second RPC, a second uniqueness path, and an answer to
 "what happens to the loads they already scanned", none of which this spec settles.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
       `apps/frontend/src/components/pickup/PickupRouteCrewStrip.test.tsx`:
 
@@ -2502,43 +2518,139 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
           expect(screen.queryByRole('button')).toBeNull();
         });
 
-        it('falls back to a placeholder rather than showing an id', () => {
+        // CORRECTED during implementation. As drafted this test asserted only
+        // `expect(screen.queryByText('u1')).toBeNull()`, which no implementation
+        // could ever fail -- the id is never a candidate for display, so the
+        // assertion passes even if the component renders the member as a blank
+        // chip or drops them from the strip entirely. It now asserts the
+        // placeholder IS rendered and the seat still occupies a chip, which
+        // fails against both of those wrong implementations.
+        it('keeps a soft-deleted member on the strip under a placeholder, never an id', () => {
           render(
             <PickupRouteCrewStrip
               driverName={null}
-              crew={[{ user_id: 'u1', full_name: null }]}
+              crew={[
+                { user_id: 'u1', full_name: null },
+                { user_id: 'u2', full_name: 'Luis Soto' },
+              ]}
             />,
           );
+          const rendered = screen.getAllByTestId('crew-member').map((n) => n.textContent ?? '');
+          expect(rendered).toHaveLength(3);
+          expect(rendered[0]).toContain('Sin nombre');
+          expect(rendered[1]).toContain('Sin nombre');
+          expect(rendered[2]).toContain('Luis Soto');
           expect(screen.queryByText('u1')).toBeNull();
         });
       });
       ```
 
-- [ ] **Step 2: Run it, verify it fails**
+- [x] **Step 2: Run it, verify it fails**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupRouteCrewStrip.test.tsx --maxWorkers=2`
       Expected: FAIL — `Failed to resolve import "./PickupRouteCrewStrip"`
 
-- [ ] **Step 3: Minimal implementation**
+- [x] **Step 3: Minimal implementation**
 
-      `PickupRouteCrewStrip.tsx` (~50 lines): an eyebrow `EQUIPO · N` and a wrapped row of
-      name chips, the leader's carrying a `LÍDER` marker, each `data-testid="crew-member"`;
-      `full_name ?? 'Sin nombre'` (the same choice `PickupMobileHeader` makes — never show a
-      raw id); returns `null` when `crew.length === 0`. Read-only: no `<button>` anywhere.
+      `PickupRouteCrewStrip.tsx` (~115 lines): an eyebrow `EQUIPO · N` — N counts the whole
+      trip, leader included, so it matches the number of chips below it (see the collision
+      note below) — and a wrapped `<ul>` of name chips, the leader's carrying a `LÍDER`
+      marker, each `data-testid="crew-member"`; returns `null` when `crew.length === 0`.
+      Read-only: no `<button>` anywhere.
 
-- [ ] **Step 4: Run it, verify it passes**
+      Four things the draft did not specify, settled during review:
+
+      - **Placeholder wording.** `full_name ?? 'Cuenta eliminada'`, not `'Sin nombre'`. The
+        null has exactly one cause — the member's account was soft-deleted mid-route, so
+        RLS hid the row the RPC LEFT JOINs. `'Sin nombre'` reads as *the record is
+        incomplete* and would send a leader chasing a data-entry problem that does not exist.
+      - **Contrast.** The `LÍDER` marker must be a bordered, tinted pill with
+        `text-text-secondary` — the shape every other inline marker in `pickup/` uses
+        (`PickupRouteDraftPanel.tsx:51`, `PickupMobileNextLoadCard.tsx:47`). Bare
+        `text-text-muted` at 9.5px is ~2.3:1 on light and is not large text, so the one
+        element the feature rests on was theme-dependent. Chips take StatTile's neutral pair
+        (`border-border bg-surface`) rather than `bg-surface-raised`, which is a 1.02:1 fill
+        against the page and left the chips with no boundary in light mode.
+      - **No `truncate` on names.** A phone has no hover and Decision 1 leaves no tap target,
+        so a clipped name is unrecoverable — the driver could not find out who is in their
+        van, which is the point of the strip. Names wrap; the `ul` already wraps.
+      - **A cap, which spec-61 sets nowhere.** Five chips (leader + four), remainder as plain
+        text `+N más` — text, not a control, so the no-affordance rule survives. Unbounded,
+        nine chips wrap to ~4 rows on a 390px phone and push the STATS grid and the "next
+        load" hero ~130px down. Capping rather than reordering: moving the strip below the
+        STATS grid protects the grid but not the hero, which sits below both either way. The
+        eyebrow keeps counting everyone, so the headcount is never what gets truncated.
+
+      Accessibility: `<section aria-labelledby>` pointing at the eyebrow, so the count becomes
+      the region's accessible name rather than competing with a second `aria-label` string;
+      the leader's `<li>` carries `aria-label="{name}, líder"` with the badge `aria-hidden`,
+      or a screen reader announces name and badge as one run.
+
+      CORRECTION: the draft justified its placeholder as "the same choice
+      `PickupMobileHeader` makes". It is not — `PickupMobileHeader` renders no placeholder at all: it omits the
+      name segment entirely (`{driverName && <>{driverName} · </>}`) and falls back to `'··'`
+      initials via `driverInitials()`. Omitting is fine for a subtitle segment but not here,
+      where a chip must still stand for a person who is on the trip. The placeholder is a new
+      choice for this component, not an existing precedent. (The "never show a raw id" rule
+      does hold — nothing in `pickup/` renders a uuid.)
+
+      COLLISION WITH TASK 5 — unresolved, and whoever writes Task 5 must decide it
+      deliberately. Nothing in this spec settles whether `EQUIPO · N` counts the leader, and
+      the two places the label appears currently disagree:
+
+      - Here on `3h`, N is leader-INCLUSIVE (`crew.length + 1`), so it matches the chips
+        rendered beneath it — the strip's whole job is "who is on the trip", and the leader
+        is on the trip.
+      - Task 5's `CrewSelect` on `3j` (`:2331`) specifies "the header shows the count
+        (`EQUIPO · 2`)" over a candidate list that is leader-EXCLUSIVE by construction:
+        `useCrewCandidates` filters `u.id !== excludeUserId` (`:2316`), so the leader is
+        never a row and never counted.
+
+      As written, the identical label would read `EQUIPO · 2` on `3j` and `EQUIPO · 3` on
+      `3h` for the same trip, and the number would change under the driver as they navigate
+      between the two screens.
+
+      RECOMMENDED RESOLUTION (Task 6's author, holding the most context on it): do NOT
+      reconcile by changing either count — change Task 5's LABEL. A picker's counter must
+      count its own checked rows or it is lying about the control it sits on, and the leader
+      can never be one of those rows; conversely a roster that omits the person driving is
+      not "who is on the trip". Both counts are right for their own screen. What is wrong is
+      reusing one word for two different quantities. So `3j`'s picker should read
+      `ACOMPAÑANTES · 2` (or `SELECCIONADOS · 2`) and `EQUIPO · N` should mean "everyone on
+      the trip" in exactly one place — this strip. That also survives a future crew-editing
+      screen, which would need both numbers on screen at once.
+
+- [x] **Step 4: Run it, verify it passes**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup/PickupRouteCrewStrip.test.tsx --maxWorkers=2`
       Expected: PASS
 
-- [ ] **Step 5: Render it on `3h` — failing test first**
+- [x] **Step 5: Render it on `3h` — failing test first**
 
-      In `PickupMobileActiveRoute`'s suite (or `PickupMobileView.test.tsx`, which already
-      renders the active-route branch), assert that with
-      `activeRoute.crew = [{ user_id: 'u1', full_name: 'Ana Pérez' }]` the name appears on the
-      screen. Run it, expect FAIL.
+      CORRECTION: there is no `PickupMobileActiveRoute.test.tsx` — the component has never
+      had its own suite. `PickupMobileView.test.tsx` is the only place the active-route branch
+      is rendered, so the test goes there.
 
-- [ ] **Step 6: Implement**
+      Also unmentioned in the draft and mandatory: that file's shared `activeRoute` fixture
+      (`:52-63`) predates Task 4 and has no `crew` key. It is cast
+      `as unknown as ActivePickupRoute`, so `tsc` will not catch it, but the moment Step 6
+      passes `activeRoute.crew` into the strip every one of the ~15 existing "active route —
+      3h redesign" tests throws `Cannot read properties of undefined (reading 'length')`.
+      Add `crew: []` to the fixture as part of this step.
+
+      Assert that with `activeRoute.crew = [{ user_id: 'u1', full_name: 'Ana Pérez' }]` the
+      name appears on the screen, and that the unmodified (solo) fixture renders no strip.
+
+      Be precise about what each half buys, because an earlier draft of this note overstated
+      it: only the `'Ana Pérez'` half guards the wiring. The solo-route half does NOT prove
+      the strip reads the route's own crew — it passes identically whether the wiring exists
+      or is deleted, since an unrendered strip and a strip that returned `null` are
+      indistinguishable in the DOM. It is still worth keeping: it rules out a strip that
+      renders unconditionally, showing a lone `EQUIPO · 1` chip on every solo route.
+
+      Run it, expect FAIL.
+
+- [x] **Step 6: Implement**
 
       In `PickupMobileActiveRoute.tsx`, directly under `<PickupMobileHeader …/>` (`:80-83`):
 
@@ -2551,12 +2663,12 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
 
       No new query: `activeRoute.crew` comes from `get_my_active_pickup_route` (Task 4).
 
-- [ ] **Step 7: Run it, verify it passes**
+- [x] **Step 7: Run it, verify it passes**
 
       Run: `cd apps/frontend && npx vitest run src/components/pickup --maxWorkers=2`
       Expected: all PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
       ```
       git add apps/frontend/src/components/pickup/PickupRouteCrewStrip.tsx apps/frontend/src/components/pickup/PickupRouteCrewStrip.test.tsx apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx apps/frontend/src/components/pickup/PickupMobileView.test.tsx
@@ -2566,6 +2678,13 @@ someone" control here would need a second RPC, a second uniqueness path, and an 
       route. No edit path: the crew is fixed when the route opens, which is what
       makes removed_at's single writer (the status trigger) safe."
       ```
+
+- **Follow-up, deliberately not built here:** the four things review caught on this strip —
+  badge legibility, chip boundaries, wrapping at eight members, an unrecoverable truncated
+  name — are all invisible to jsdom, so nothing in the vitest suite can guard them against
+  the next edit. The cheap guard is one 390px Playwright screenshot in `apps/frontend/e2e`
+  rendering a six-member crew with a ~30-character name, in both themes. Worth doing when
+  `pickup/` next gets e2e coverage; not worth standing up an e2e harness for on its own.
 
 ## Chunk 4 — `get_pending_manifests` stops offering routed loads
 

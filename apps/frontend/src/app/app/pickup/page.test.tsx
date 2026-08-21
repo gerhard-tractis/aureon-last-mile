@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PickupPage from './page';
+import type { RouteCrewMember } from '@/hooks/pickup/useActivePickupRoute';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 const mockPending = [
@@ -66,7 +67,18 @@ vi.mock('@/hooks/modules/useEnabledModules', () => ({
   useModuleEnabled: () => mockLabelsEnabled,
 }));
 
-let mockActiveRoute: { id: string; code: string; started_at: string } | null = null;
+// `crew` is REQUIRED on ActivePickupRoute (spec-61 Task 4) and is read
+// unguarded by PickupRouteCrewStrip, so it belongs in this fixture's type
+// rather than being optional: the vi.mock factory's return is `any`, so
+// leaving it off means tsc stays silent and the omission only surfaces as a
+// render-time TypeError. Naming it here makes the compiler enforce every
+// assignment below.
+let mockActiveRoute: {
+  id: string;
+  code: string;
+  started_at: string;
+  crew: RouteCrewMember[];
+} | null = null;
 vi.mock('@/hooks/pickup/useActivePickupRoute', () => ({
   useActivePickupRoute: () => ({ data: mockActiveRoute, isLoading: false }),
 }));
@@ -163,7 +175,7 @@ describe('PickupPage', () => {
     });
 
     it('passes the active route id through so the QR link points at that route', () => {
-      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString() };
+      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString(), crew: [] };
       render(<PickupPage />);
       // The code shows in the banner and again in the draft panel's
       // "already have a route open" notice.
@@ -225,7 +237,7 @@ describe('PickupPage', () => {
     it('refuses to assemble a second route while one is open', () => {
       // start_pickup_route enforces one active route per driver, so offering
       // to create another is offering an error.
-      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString() };
+      mockActiveRoute = { id: 'route-9', code: 'R-2492', started_at: new Date().toISOString(), crew: [] };
       render(<PickupPage />);
       expect(screen.getByText(/Ciérrala antes de armar otra/)).toBeInTheDocument();
     });
@@ -406,7 +418,7 @@ describe('PickupPage', () => {
           dispatchEvent: vi.fn(),
         })),
       });
-      mockActiveRoute = { id: 'route-9', code: 'PR-2026-0042', started_at: new Date().toISOString() };
+      mockActiveRoute = { id: 'route-9', code: 'PR-2026-0042', started_at: new Date().toISOString(), crew: [] };
       mockUseRouteManifests.mockReturnValue({
         data: [
           {
