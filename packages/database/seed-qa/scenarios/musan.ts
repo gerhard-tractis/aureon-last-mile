@@ -29,9 +29,18 @@ import {
 import { ScenarioGroup, qaId } from '../lib/ids';
 
 /**
- * Logins for Musan. Permissions mirror the role mapping in
- * create-qa-users.sh (from migrations 20260310100001 + 20260324000003) —
- * handle_new_user creates the public.users row with an empty array.
+ * Logins for Musan. Permissions are in the vocabulary the APPLICATION checks —
+ * pickup, reception, distribution, dispatch, customer_service, admin — which
+ * migration 20260811000001 made authoritative and handle_new_user now assigns
+ * per role (pickup_leader added to that CASE by 20260820000002).
+ *
+ * These used to carry the database's legacy tokens (warehouse / loading /
+ * operations). Nothing in the app reads those, so a user holding them could
+ * never see Recepción or Distribución. 20260811000001 translated the rows
+ * already in QA, but the values here were left behind — and createLoginUser
+ * repairs an existing login by overwriting permissions, so the next seed run
+ * would have written the legacy tokens straight back over the translation.
+ * Keeping this list in the app's vocabulary is what stops that regression.
  *
  * Password is the shared QA one: QaTest123!
  */
@@ -41,21 +50,32 @@ const MUSAN_LOGINS = [
     email: 'admin@musan.com',
     role: 'admin',
     fullName: 'Musan Admin',
-    permissions: ['pickup', 'warehouse', 'loading', 'operations', 'admin', 'dispatch'],
+    permissions: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service', 'admin'],
   },
   {
     seq: 21,
     email: 'operaciones@musan.com',
     role: 'operations_manager',
     fullName: 'Musan Operaciones',
-    permissions: ['operations', 'dispatch'],
+    permissions: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'],
   },
   {
     seq: 22,
     email: 'bodega@musan.com',
     role: 'warehouse_staff',
     fullName: 'Musan Bodega',
-    permissions: ['warehouse'],
+    permissions: ['reception', 'distribution'],
+  },
+  {
+    // spec-61 — Musan needs someone who can OPEN a pickup route, not just work
+    // one. start_pickup_route gates route creation by ROLE (ROUTE_LEADER_ROLES
+    // in lib/permissions.ts), never by a permission token, so the token set is
+    // deliberately identical to pickup_crew's: the role is what grants it.
+    seq: 23,
+    email: 'lider@musan.com',
+    role: 'pickup_leader',
+    fullName: 'Musan Líder de Recogida',
+    permissions: ['pickup'],
   },
 ] as const;
 
@@ -367,6 +387,31 @@ export async function seedMusan(
              AND role = 'admin'::user_role
              AND 'admin' = ANY(permissions)
              AND deleted_at IS NULL`,
+    expected: 1,
+  });
+
+  // spec-61 — the leader is only useful if the ROLE landed: start_pickup_route
+  // reads users.role, so a row carrying 'pickup' but the wrong role can open
+  // Recogida and still be unable to start a route.
+  await assertCount(db, collector, {
+    scenario: 'musan/pickup-leader',
+    detail: 'lider@musan.com can lead a pickup route',
+    sql: `SELECT count(*) AS count FROM public.users
+           WHERE email = 'lider@musan.com'
+             AND role = 'pickup_leader'::user_role
+             AND 'pickup' = ANY(permissions)
+             AND deleted_at IS NULL`,
+    expected: 1,
+  });
+
+  // A login is unusable without its auth.identities row — GoTrue v2 matches
+  // the password against the identity, not auth.users alone.
+  await assertCount(db, collector, {
+    scenario: 'musan/pickup-leader-identity',
+    detail: 'lider@musan.com has the email identity password login needs',
+    sql: `SELECT count(*) AS count FROM auth.identities i
+            JOIN auth.users au ON au.id = i.user_id
+           WHERE au.email = 'lider@musan.com' AND i.provider = 'email'`,
     expected: 1,
   });
 
