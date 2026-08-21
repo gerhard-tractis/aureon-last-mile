@@ -62,19 +62,16 @@ describe('PickupRouteCrewStrip', () => {
   // happens to the loads they already scanned". This is a guard against a
   // future edit path, not a test of present behaviour.
   it('offers no way to add or remove anyone', () => {
-    render(
+    const { container } = render(
       <PickupRouteCrewStrip
         driverName="M. Rojas"
         crew={[{ user_id: 'u1', full_name: 'Ana Pérez' }]}
       />,
     );
-    // Proves the strip actually rendered, so the absence checks below are
-    // about a rendered strip and not about an early return.
+    // Load-bearing: without it the affordance check below passes against an
+    // empty container, so it would hold even if the strip never rendered.
     expect(names()).toHaveLength(2);
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.queryByRole('link')).toBeNull();
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(container.querySelectorAll('button, a, input, select, textarea')).toHaveLength(0);
   });
 
   // `full_name` is null when the user row is soft-deleted: the RPC's LEFT
