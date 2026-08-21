@@ -9,11 +9,47 @@ const STATUS_MAP: Record<number, 'pending' | 'delivered' | 'failed' | 'partial'>
   4: 'partial',
 };
 
-// Musan operator_id (hardcoded — single operator account)
-// TODO(C6): derive the tenant from the request instead. Onboarding a second
-// operator while this is a constant lands their data in Musan's tenant.
-export const MUSAN_OPERATOR_ID = '92dc5797-047d-458d-bbdb-63f18c0dd1e7';
 export const PROVIDER = 'dispatchtrack' as const;
+
+/**
+ * The operator every webhook writes against.
+ *
+ * This was the literal '92dc5797-047d-458d-bbdb-63f18c0dd1e7' — production's
+ * Musan id. The row is created by migration 20260223000001 with
+ * gen_random_uuid(), so that id exists in production and nowhere else: in QA
+ * every write failed on
+ *
+ *   23503 Key (operator_id)=(92dc5797-…) is not present in table "operators"
+ *
+ * with a 500 returned to DispatchTrack, which is what a delivered guide looked
+ * like from the outside. Resolve by slug instead — the same lookup migrations
+ * 20260227000001 and 20260304000003 already use, and the pattern that works in
+ * any environment. MUSAN_OPERATOR_ID still overrides it if an environment ever
+ * needs to pin the id.
+ *
+ * TODO(C6): derive the tenant from the request instead. Onboarding a second
+ * operator while this resolves one slug lands their data in Musan's tenant.
+ */
+export const MUSAN_SLUG = 'transportes-musan';
+
+export async function resolveOperatorId(
+  supabase: ReturnType<typeof createClient>,
+): Promise<string> {
+  const override = Deno.env.get('MUSAN_OPERATOR_ID');
+  if (override) return override;
+
+  const { data, error } = await supabase
+    .from('operators')
+    .select('id')
+    .eq('slug', MUSAN_SLUG)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) throw new Error(`operator lookup failed: ${error.message}`);
+  if (!data?.id) throw new Error(`operator '${MUSAN_SLUG}' not found in this database`);
+
+  return data.id as string;
+}
 
 /** Constant-time string compare, so a shared secret can't be recovered by timing. */
 export function timingSafeEqual(a: string, b: string): boolean {
@@ -38,11 +74,12 @@ export function timingSafeEqual(a: string, b: string): boolean {
  * webhook fires next and falls into handleRoute's update path.
  */
 export function buildRouteUpsertRow(
+  operatorId: string,
   routeId: number | string,
   body: Record<string, unknown>,
 ): Record<string, unknown> {
   return {
-    operator_id: MUSAN_OPERATOR_ID,
+    operator_id: operatorId,
     provider: PROVIDER,
     external_route_id: String(routeId),
     status: 'in_progress',
@@ -118,11 +155,18 @@ Deno.serve(async (req: Request) => {
   );
 
   try {
+    // Resolved per request, and only for the two resources that write. One
+    // indexed lookup is cheaper than reasoning about stale state in an isolate
+    // that outlives a deploy.
+    const operatorId = resource === 'dispatch' || resource === 'route'
+      ? await resolveOperatorId(supabase)
+      : '';
+
     switch (resource) {
       case 'dispatch':
-        return await handleDispatch(supabase, body);
+        return await handleDispatch(supabase, body, operatorId);
       case 'route':
-        return await handleRoute(supabase, body);
+        return await handleRoute(supabase, body, operatorId);
       case 'dispatch_guide':
         console.log(`beetrack-webhook: dispatch_guide/${event} — skipping (no DB write)`);
         return json({ ok: true, skipped: 'dispatch_guide' });
@@ -143,6 +187,7 @@ Deno.serve(async (req: Request) => {
 async function handleDispatch(
   supabase: ReturnType<typeof createClient>,
   body: Record<string, unknown>,
+  operatorId: string,
 ) {
   const dispatchId = body.dispatch_id as number | undefined;
   const routeId = body.route_id as number | undefined;
@@ -165,7 +210,7 @@ async function handleDispatch(
   const truckType = body.truck_type as string | undefined;
   let vehicleId: string | null = null;
   if (truckIdentifier) {
-    vehicleId = await upsertFleetVehicle(supabase, truckIdentifier, truckType);
+    vehicleId = await upsertFleetVehicle(supabase, operatorId, truckIdentifier, truckType);
   }
 
   // Attempt order lookup (non-blocking)
@@ -175,7 +220,7 @@ async function handleDispatch(
       .from('orders')
       .select('id')
       .eq('order_number', identifier)
-      .eq('operator_id', MUSAN_OPERATOR_ID)
+      .eq('operator_id', operatorId)
       .maybeSingle();
     orderId = order?.id ?? null;
   }
@@ -200,7 +245,7 @@ async function handleDispatch(
     const externalRouteId = String(routeId);
     const { error: insertErr } = await supabase
       .from('routes')
-      .upsert(buildRouteUpsertRow(routeId, body), {
+      .upsert(buildRouteUpsertRow(operatorId, routeId, body), {
         onConflict: 'operator_id,provider,external_route_id',
         ignoreDuplicates: true,
       });
@@ -212,7 +257,7 @@ async function handleDispatch(
       const { data: routeRow, error: selectErr } = await supabase
         .from('routes')
         .select('id')
-        .eq('operator_id', MUSAN_OPERATOR_ID)
+        .eq('operator_id', operatorId)
         .eq('provider', PROVIDER)
         .eq('external_route_id', externalRouteId)
         .maybeSingle();
@@ -231,7 +276,7 @@ async function handleDispatch(
   const { data: existingDispatch } = await supabase
     .from('dispatches')
     .select('raw_data')
-    .eq('operator_id', MUSAN_OPERATOR_ID)
+    .eq('operator_id', operatorId)
     .eq('provider', PROVIDER)
     .eq('external_dispatch_id', String(dispatchId))
     .maybeSingle();
@@ -246,7 +291,7 @@ async function handleDispatch(
   const failureReason = status === 'failed' && substatus ? substatus : null;
 
   const dispatchRow = {
-    operator_id: MUSAN_OPERATOR_ID,
+    operator_id: operatorId,
     provider: PROVIDER,
     external_dispatch_id: String(dispatchId),
     external_route_id: routeId != null ? String(routeId) : null,
@@ -314,6 +359,7 @@ async function handleDispatch(
 async function handleRoute(
   supabase: ReturnType<typeof createClient>,
   body: Record<string, unknown>,
+  operatorId: string,
 ) {
   const routeIdRaw = body.route as number | undefined;
   if (!routeIdRaw) {
@@ -336,7 +382,7 @@ async function handleRoute(
   const truckDriver = body.truck_driver as string | undefined;
   let vehicleId: string | null = null;
   if (truck) {
-    vehicleId = await upsertFleetVehicle(supabase, truck, vehicleType, truckDriver);
+    vehicleId = await upsertFleetVehicle(supabase, operatorId, truck, vehicleType, truckDriver);
   }
 
   // Only update routes that originated in our system. Routes created directly
@@ -344,7 +390,7 @@ async function handleRoute(
   const { data: existingRoute } = await supabase
     .from('routes')
     .select('id')
-    .eq('operator_id', MUSAN_OPERATOR_ID)
+    .eq('operator_id', operatorId)
     .eq('provider', PROVIDER)
     .eq('external_route_id', externalRouteId)
     .is('deleted_at', null)
@@ -367,7 +413,7 @@ async function handleRoute(
       raw_data: body,
     })
     .eq('id', existingRoute.id)
-    .eq('operator_id', MUSAN_OPERATOR_ID);
+    .eq('operator_id', operatorId);
 
   if (error) {
     console.error(`beetrack-webhook: route update failed`, error);
@@ -381,7 +427,7 @@ async function handleRoute(
     const { error: backfillError } = await supabase
       .from('dispatches')
       .update({ route_id: upsertedRoute.id })
-      .eq('operator_id', MUSAN_OPERATOR_ID)
+      .eq('operator_id', operatorId)
       .eq('provider', PROVIDER)
       .eq('external_route_id', externalRouteId)
       .is('route_id', null);
@@ -398,12 +444,13 @@ async function handleRoute(
 // ── Fleet Vehicle Upsert ─────────────────────────────────────────────
 async function upsertFleetVehicle(
   supabase: ReturnType<typeof createClient>,
+  operatorId: string,
   externalVehicleId: string,
   vehicleType?: string | null,
   driverName?: string | null,
 ): Promise<string | null> {
   const vehicleRow: Record<string, unknown> = {
-    operator_id: MUSAN_OPERATOR_ID,
+    operator_id: operatorId,
     provider: PROVIDER,
     external_vehicle_id: externalVehicleId,
     vehicle_type: vehicleType ?? null,
