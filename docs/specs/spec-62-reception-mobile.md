@@ -1654,7 +1654,7 @@ Lee el fixture y responde por escrito, en el PR: ¿deja una ruta en patio al ter
 - [ ] **Step 3: Extiende el fixture con lo que falte** y commitea eso solo, antes de escribir el test. Si resulta que no falta nada, dilo en el commit igual.
 
 ```bash
-git add e2e/support/spec52-fixture.ts apps/frontend/playwright.qa.config.ts
+git add e2e/support/spec52-fixture.ts playwright.qa.config.ts
 git commit -m "test(spec-62): el runner de QA recoge la suite móvil de recepción"
 ```
 
@@ -1670,6 +1670,8 @@ Empieza el archivo fijando el teléfono — es lo único que hace que el árbol 
 ```ts
 test.use({ viewport: { width: 390, height: 844 } });
 ```
+
+**El nombre accesible del campo de escaneo.** El helper `scanBarcode(page, label, code)` del fixture resuelve el input con `getByLabel`, y la suite existente le pasa `'Escáner de recepción'`, que es el nombre del escáner de escritorio. `ScanField` usa su prop `ariaLabel`, que por defecto es `'Código de barras'`. Decide una de las dos y déjala escrita: o el `ScanField` de `ReceptionMobileSession` recibe `ariaLabel="Escáner de recepción"` y reusas la constante, o el test lleva la suya. Descubrir esto en el log de CI post-merge es el ciclo de feedback más lento que tiene este plan.
 
 Recorrido, con el fixture de la task 24: `signIn` como receptor → `/app/reception` → el héroe es la ruta que más espera → *Iniciar conteo* → escanear tres códigos, uno repetido → el bloque de resultado muestra `YA ESCANEADO` y el conteo **no** sube con el repetido → *Confirmar* → la hoja de nota se abre porque falta un paquete → escribir la nota → aterrizar en `/completa` → las cuatro cifras y la nota están ahí. Cierra con `teardown`.
 
