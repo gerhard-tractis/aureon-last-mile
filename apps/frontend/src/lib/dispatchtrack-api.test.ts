@@ -110,3 +110,44 @@ describe('createDTRoute — endpoint', () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe('createDTRoute - body shape', () => {
+  it('omits optional contact fields that are null', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute({
+      ...payload,
+      dispatches: [{
+        identifier: 4821,
+        contact_name: 'Mario',
+        contact_address: null,
+        contact_phone: null,
+        contact_email: null,
+        current_state: 1,
+      }],
+    }, 'token');
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body).dispatches[0];
+    expect(sent).toEqual({ identifier: 4821, contact_name: 'Mario', current_state: 1 });
+  });
+
+  it('keeps optional contact fields that carry a value', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute(payload, 'token');
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body).dispatches[0];
+    expect(sent.contact_address).toBe('Av. Providencia 1234');
+    expect(sent.contact_phone).toBe('+56912345678');
+  });
+
+  it('throws when the response carries no route_id', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'already reported', response: 'Route already exists' }),
+    });
+    await expect(createDTRoute(payload, 'token')).rejects.toThrow(/route_id/i);
+  });
+});

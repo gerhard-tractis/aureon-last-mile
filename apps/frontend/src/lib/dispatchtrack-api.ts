@@ -1,5 +1,10 @@
 export interface DTDispatch {
-  identifier: number;           // order number / guide number
+  /**
+   * Guide number — orders.order_number verbatim. Typed Integer in DT's docs,
+   * but its webhooks send it as a string and Musan's guide format follows the
+   * client, so it is not always numeric. Both forms go through as-is.
+   */
+  identifier: number | string;
   contact_name: string | null;
   contact_address: string | null;
   contact_phone: string | null;
@@ -45,10 +50,23 @@ export async function createDTRoute(
   payload: DTRoutePayload,
   apiToken: string,
 ): Promise<DTRouteResult> {
+  // Every contact_* field is optional in DT's Create Route contract, and its
+  // own request example simply leaves absent ones out. Sending explicit nulls
+  // is a guess about how DT treats them, so send only what we actually know.
   const body: Record<string, unknown> = {
     truck_identifier: payload.truck_identifier,
     date: toDateDMY(payload.route_date),
-    dispatches: payload.dispatches,
+    dispatches: payload.dispatches.map((d) => {
+      const dispatch: Record<string, unknown> = {
+        identifier: d.identifier,
+        current_state: d.current_state,
+      };
+      if (d.contact_name) dispatch.contact_name = d.contact_name;
+      if (d.contact_address) dispatch.contact_address = d.contact_address;
+      if (d.contact_phone) dispatch.contact_phone = d.contact_phone;
+      if (d.contact_email) dispatch.contact_email = d.contact_email;
+      return dispatch;
+    }),
   };
 
   if (payload.driver_identifier) {
@@ -76,5 +94,16 @@ export async function createDTRoute(
     throw new Error(message);
   }
 
-  return { external_route_id: String(json.response.route_id) };
+  // A 2xx is not proof of a created route: DT also answers 208 "already
+  // reported", and its error envelope puts a plain string in `response`.
+  // Without this check `String(undefined)` would be stored as the route's
+  // external_route_id and the route would look dispatched.
+  const routeId = json?.response?.route_id;
+  if (routeId === undefined || routeId === null) {
+    throw new Error(
+      `DT returned no route_id (status ${response.status}: ${JSON.stringify(json?.status ?? json)})`,
+    );
+  }
+
+  return { external_route_id: String(routeId) };
 }
