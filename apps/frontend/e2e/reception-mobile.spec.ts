@@ -22,7 +22,7 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import {
   seed, teardown, closeDb, packageStatus, routeReception, activeRoute,
-  scanBarcode, scanUntilStatus, COLLECTED, UNEXPECTED, LEFT_BEHIND,
+  scanBarcode, scanUntilStatus, COLLECTED, UNEXPECTED, LEFT_BEHIND, suppressCookieBanner,
 } from './support/spec52-fixture';
 import { openRouteForReception } from './support/reception-mobile-fixture';
 
@@ -95,6 +95,10 @@ test.describe('spec-62 mobile reception — yard to acta', () => {
     // whole file exists to exercise.
     driverCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     recepCtx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    // Before anything navigates: the cookie banner is fixed to the same
+    // bottom band as the screens' action bars and swallows their clicks.
+    await suppressCookieBanner(driverCtx);
+    await suppressCookieBanner(recepCtx);
     driver = await driverCtx.newPage();
     recep = await recepCtx.newPage();
   });
