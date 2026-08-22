@@ -14,7 +14,7 @@ import {
   seed, teardown, closeDb, db, signIn, scanUntilStatus,
   activeRoute, packageStatus, packageId, routeReception, manifestStates,
   DRIVER, RECEPTIONIST, PLATE, LOADS, COLLECTED, UNEXPECTED, LEFT_BEHIND,
-  OPERATOR_ID,
+  OPERATOR_ID, suppressCookieBanner,
 } from './support/spec52-fixture';
 
 const PICKUP_SCANNER = 'Barcode scanner input';
@@ -55,6 +55,10 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
     // one, because 3h is being redesigned and mobile selectors would churn.
     driverCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     recepCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    // Before anything navigates: the cookie banner is fixed to the same
+    // bottom band as the screens' action bars and swallows their clicks.
+    await suppressCookieBanner(driverCtx);
+    await suppressCookieBanner(recepCtx);
     driver = await driverCtx.newPage();
     recep = await recepCtx.newPage();
   });
@@ -268,7 +272,12 @@ test.describe('spec-52 pickup route and consolidated reception', () => {
 
       const before = Date.now();
       await recep.getByTestId('confirm-finalize').click();
-      await recep.waitForURL('**/app/reception');
+      // spec-62 changed where closing lands: the acta, not the arrivals list.
+      // Before, the record of what arrived and the note just written were
+      // saved and shown to nobody. This assertion moved with the behaviour —
+      // and stayed wrong for a while unnoticed, because this test was
+      // unreachable while the suite died at the leader gate.
+      await recep.waitForURL('**/app/reception/route/**/completa');
       const after = Date.now();
 
       const closed = await activeRoute();

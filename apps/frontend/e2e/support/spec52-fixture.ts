@@ -12,7 +12,7 @@
  * NEXT_PUBLIC_SUPABASE_URL, and Postgres reachable on E2E_DATABASE_URL.
  */
 import { Pool } from 'pg';
-import { expect, type Page } from '@playwright/test';
+import { expect, type BrowserContext, type Page } from '@playwright/test';
 
 export const DATABASE_URL =
   process.env.E2E_DATABASE_URL ??
@@ -298,12 +298,36 @@ export async function manifestStates(): Promise<
 
 // ── UI helpers ──────────────────────────────────────────────────────────────
 
+/**
+ * Suppress the cookie banner for a whole context, before anything navigates.
+ *
+ * `CookieConsent` renders `fixed bottom-0 … z-50` — the same band as the
+ * mobile screens' fixed footer — so while it is up it swallows clicks on the
+ * primary action. On QA it cost us a 5-minute timeout whose call log ended in
+ * "CookieConsent subtree intercepts pointer events".
+ *
+ * `signIn` used to dismiss it by clicking Accept, which races and usually
+ * loses: the banner is shown by a `setTimeout(…, 1000)` (`Cookies.tsx:17`), so
+ * an immediate `isVisible()` on `/auth/login` sees nothing, skips the click,
+ * and the banner then appears over the app a second later. Setting the cookie
+ * the component reads means it never renders at all — no timer, no race.
+ */
+export async function suppressCookieBanner(context: BrowserContext): Promise<void> {
+  await context.addCookies([{
+    name: 'cookie-accept',
+    value: 'accepted',
+    url: process.env.E2E_BASE_URL ?? 'http://localhost:3200',
+  }]);
+}
+
 export async function signIn(
   page: Page, user: { email: string; password: string },
 ): Promise<void> {
   await page.goto('/auth/login');
-  // The cookie banner is fixed to the bottom and swallows clicks on the
-  // fixed-footer CTAs later in the flow.
+  // Belt and braces: contexts should call suppressCookieBanner() first, but a
+  // context that did not still gets a chance here. This click races the
+  // banner's 1s timer and often finds nothing — which is exactly why it is a
+  // fallback and not the mechanism.
   const accept = page.getByRole('button', { name: 'Accept' });
   if (await accept.isVisible().catch(() => false)) await accept.click();
   await page.locator('input[name="email"]').fill(user.email);
