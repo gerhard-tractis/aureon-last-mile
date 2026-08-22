@@ -28,11 +28,30 @@ export const OPERATOR_ID = '00000000-0000-0000-0000-000000000001';
 /** Every seeded row carries this prefix so teardown can be exact. */
 export const PREFIX = 'E2E52';
 
+/**
+ * The driver opens the route, so under spec-61 they must be a `pickup_leader`.
+ *
+ * This was `pickup_crew` until spec-61 made route creation leader-only
+ * ("A leader opens the route and adds the crew. Crew cannot open a route.").
+ * Both the UI and the RPC enforce it: `PickupRouteDraftPanel` renders "Solo un
+ * líder de ruta puede abrir…" instead of the start button, and
+ * `start_pickup_route` refuses the call.
+ *
+ * Real accounts never broke, because `20260820000003` PART 1 backfilled every
+ * existing `pickup_crew` user to `pickup_leader` — and `create-qa-users.sh` was
+ * updated in the same commit. This fixture was missed because it does not use
+ * either path: it CREATES a fresh user on every run, after the backfill has
+ * already happened, so its driver was born as crew and refused.
+ *
+ * The failure was invisible for days: `e2e-qa` is `continue-on-error`, so three
+ * deploys reported success while both suites died here on a 2-minute timeout
+ * that surfaced as "Target page, context or browser has been closed".
+ */
 export const DRIVER = {
   email: 'e2e52-driver@aureon.test',
   password: 'e2e52-driver-pass',
   fullName: 'Rita Conductora',
-  role: 'pickup_crew',
+  role: 'pickup_leader',
 };
 export const RECEPTIONIST = {
   email: 'e2e52-recep@aureon.test',
