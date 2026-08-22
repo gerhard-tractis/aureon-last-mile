@@ -51,7 +51,7 @@ Implementar las tres pantallas de **Pedidos** del handoff de diseño **Aureon Re
 
 ### 1. La bitácora se alimenta de una tabla append-only nueva
 
-`3b` necesita el historial evento por evento con su payload, porque la rejilla de cuatro campos se **traduce** de los campos del webhook (`CONSIGNEE_ABSENT` → *Receptor ausente*, `accuracy_m: 12` → *a 42 m de la dirección*, `signature: null` → *firma no*).
+`3b` necesita el historial evento por evento con su payload, porque la rejilla de cuatro campos se **compone** de los campos del webhook: el motivo sale de `substatus` (que ya viene en español), `accuracy_m: 12` se formatea a *a 42 m de la dirección*, y `signature: null` a *firma no*.
 
 Hoy eso no se puede: `beetrack-webhook` hace **upsert** sobre `dispatches` con `onConflict: operator_id,provider,external_dispatch_id`. Hay una fila por parada, no por evento, y `raw_data` guarda el último payload fusionado (`mergeDispatchRawData`). Cada evento anterior se pisa.
 
@@ -91,7 +91,7 @@ La lista global de pedidos no es un módulo opcional: cualquier operador que ten
 
 Ambas responden la misma pregunta sobre los mismos datos, pero el mock de `3b` son tres columnas con panel de POD propio: no es el drawer ensanchado.
 
-**Decisión:** un hook `useOrderDossier(orderId)` y cinco componentes de presentación sin fetching (`OrderLifecycleTimeline`, `OrderPackageList`, `UnifiedEventLog`, `ProofOfDelivery`, `WhyLateBlock`). `1f` compone un subconjunto dentro del `Sheet`; `3b` los compone todos en la página. La tabla de traducción webhook → lenguaje llano vive en **un** módulo (`lib/orders/event-decoder.ts`) y ambas la usan.
+**Decisión:** un hook `useOrderDossier(orderId)` y cinco componentes de presentación sin fetching (`OrderLifecycleTimeline`, `OrderPackageList`, `UnifiedEventLog`, `ProofOfDelivery`, `WhyLateBlock`). `1f` compone un subconjunto dentro del `Sheet`; `3b` los compone todos en la página. El formateo webhook → lenguaje llano vive en **un** módulo (`lib/orders/event-decoder.ts`) y ambas lo usan.
 
 ---
 
@@ -261,13 +261,31 @@ El bloque más importante de `1f`. El texto se arma con: etapa donde está deten
 
 **Si la causa no se puede determinar, el bloque no se renderiza.** Nunca un texto genérico. Esto es requisito explícito del handoff y va como test.
 
-### `event-decoder.ts` — la tabla de traducción
+### `event-decoder.ts` — formateo, no traducción
 
-Un mapa de código de motivo → etiqueta en español (`CONSIGNEE_ABSENT` → *Receptor ausente*), más el formateo de `accuracy_m` a *"a N m de la dirección"* y de `signature: null` a *"firma no"*.
+**Corrección respecto de la primera versión de este spec (PR #507).** Ese texto decía que hacía falta un mapa de código → etiqueta en español, sembrado desde los valores observados en QA. Es falso, y la consecuencia era una dependencia inventada entre la fase 1 y la fase 4.
 
-**Este mapa se escribe desde cero.** Se revisó el repo buscando uno existente y no lo hay: `beetrack-webhook/index.ts` guarda `substatus` y `substatus_code` como texto libre de DispatchTrack sin traducirlos, y `beetrack-map.test.ts` no es lo que su nombre sugiere — es una reimplementación en TypeScript del nodo *Map & Validate* de n8n para la importación por Excel, sin relación con los motivos del webhook. Por eso el mapa se **siembra desde los valores reales observados en QA** una vez que la fase 1 esté acumulando, no desde una lista inventada de códigos.
+**DispatchTrack manda el motivo ya legible.** El webhook trae las dos cosas y las dos se guardan desde `20260306000001`:
 
-**Un código desconocido no se inventa:** se muestra el código crudo con el prefijo `sin traducir ·`, para que la falta se vea y se pueda añadir, en vez de esconderse tras una etiqueta plausible.
+| Campo | Tipo | Ejemplo real |
+|---|---|---|
+| `dispatches.substatus` | `VARCHAR(255)` | `Nadie en casa` · `Dirección incorrecta` · `Rechazado` |
+| `dispatches.substatus_code` | `VARCHAR(10)` | `07` · `12` · `05` |
+
+Los ejemplos salen de las fixtures de `ReturnsPanel.test.tsx`, que son la forma real del payload. spec-43 ya lleva ese par a `orders.return_reason` / `return_reason_code` vía `process_failed_delivery`, `ReturnsPanel.tsx` renderiza el código crudo en su columna mono, y existe el rollup `get_failure_reasons`.
+
+Es decir: **no hay tabla de traducción en el repo porque no hace falta ninguna.** La etiqueta viene en el payload.
+
+Lo que sí hace `event-decoder.ts`, y es todo lo que hace:
+
+- **MOTIVO** — `substatus` tal cual. `substatus_code` es la clave estable para agrupar y filtrar, no algo que traducir.
+- **UBICACIÓN** — `accuracy_m` → *"a N m de la dirección"*. Si el campo no viene, la fila no se renderiza.
+- **RESPALDO** — presencia de `photo_url` y de `signature` → *"Foto sí · firma no"*.
+- **INTENTO** — `attempt` cuando viene.
+
+Los códigos en inglés del mock (`CONSIGNEE_ABSENT`) son ilustrativos del diseñador, no nuestro contrato — ver *Desviaciones*.
+
+**Un motivo vacío no se inventa:** si `substatus` viene nulo, el campo MOTIVO muestra `sin motivo informado` y el `substatus_code` al lado, en vez de una etiqueta plausible.
 
 ---
 
@@ -283,13 +301,18 @@ Cada una es un dato que el schema no tiene. Ninguna se rellena con un placeholde
 | `3b` POD | "Descargar POD (PDF)" | No hay generador de PDF en el repo. Botón fuera de alcance. |
 | `3a` barra masiva | Reasignar ruta · Marcar excepción · Reintentar entrega · Notificar cliente | Sin mutación existente. Ver *Decisión 3*. |
 | `3a` cabecera | "+ Nueva vista" | Sin persistencia de vistas. Ver *Decisión 2*. |
+| `3b` bitácora / POD | Motivos en inglés (`CONSIGNEE_ABSENT`) | Ilustrativos del diseñador. DispatchTrack manda `substatus` en español (`Nadie en casa`) más `substatus_code` numérico (`07`). Se muestra lo que llega. |
 | `1f` pestañas | "Conversación (N)" | Se implementa, **gated** por `ModuleKey.CONVERSATIONS`. Si el módulo está apagado, la pestaña no existe (no aparece en cero). |
 
 ---
 
 ## Plan de implementación
 
-Cuatro PRs. El orden importa: la fase 1 tiene que estar desplegada y recibiendo antes de que la fase 3 tenga algo que mostrar.
+Cuatro PRs.
+
+**Dependencia real, ahora acotada.** La fase 4 necesita que la fase 1 esté desplegada y acumulando para que la bitácora tenga filas — pero **no** para saber qué vocabulario usar: el motivo llega legible en `substatus`, así que `event-decoder.ts` se puede escribir y testear sin esperar a ver eventos reales. Las fases 2 y 3 son independientes de la 1 y pueden ir en paralelo.
+
+**Dependencia externa, bloqueante para la fase 1.** El commit `58b3294` (`fix(webhook): adopt our own dispatch row, and move packages not orders.status`, rama `fix/webhook-dupes-and-packages`) no está en `main` ni tiene PR abierto, y toca `beetrack-webhook/index.ts` — el mismo archivo donde la fase 1 añade el `INSERT`. Tiene que mergear antes, o la fase 1 se escribe contra una versión obsoleta del handler.
 
 TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `project_vitest_cannot_run_locally`.
 
@@ -329,7 +352,7 @@ TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `proj
 
 **PR 4.**
 
-1. Tests de `event-decoder.ts`: código conocido traduce; código desconocido devuelve el prefijo `sin traducir ·`; `signature: null` → *firma no*; `accuracy_m` ausente → el campo UBICACIÓN no se renderiza.
+1. Tests de `event-decoder.ts`: `substatus` se muestra tal cual; `substatus` nulo → `sin motivo informado` más el código; `signature: null` → *firma no*; `accuracy_m` ausente → el campo UBICACIÓN no se renderiza.
 2. Tests de `WhyLateBlock`: con causa determinable compone la prosa nombrando etapa, motivo y tiempo; **sin causa determinable no renderiza nada**.
 3. Tests de `UnifiedEventLog`: mezcla ordenada por `occurred_at`, badge de origen correcto, `EmptyState` cuando no hay `webhook_events`, y "Ver datos técnicos" colapsado por defecto.
 4. Tests de `ProofOfDelivery`: firma ausente muestra el estado explícito nombrando el campo nulo, no un vacío.
