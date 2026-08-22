@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; `1f` quedó pendiente en su fase 4), [spec-42](spec-42-order-inspector.md) (Order Inspector original), [spec-49](spec-49-easy-webhook-dispatch-guide-url.md) (webhook de DispatchTrack), [spec-45](spec-45-module-activation-layer.md) (activación de módulos), `docs/architecture/phased-rollout-strategy.md`
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-22_
 
