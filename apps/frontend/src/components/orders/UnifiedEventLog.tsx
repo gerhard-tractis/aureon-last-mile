@@ -139,13 +139,58 @@ function formatEventTimestamp(timestamp: string): string {
   return format(new Date(timestamp), 'dd/MM HH:mm:ss');
 }
 
+/**
+ * spec-65 Task 9, controller-flagged Critical fix (round 3) — a single
+ * wording function shared by the zero-events early return AND the
+ * non-empty branch's inline notices, so "N hidden by the current filter"
+ * always reads the same regardless of which branch renders it. Named
+ * "el filtro actual" rather than the specific tab label (round 2's
+ * "el filtro Aureon" only read correctly because it happened to match the
+ * button text) — controller review, round 3.
+ */
+function hiddenByFilterMessage(count: number, source: 'courier' | 'aureon'): string {
+  const noun = source === 'courier' ? 'de courier' : 'de Aureon';
+  const ending = count === 1 ? 'oculto' : 'ocultos';
+  return `${count} evento${count === 1 ? '' : 's'} ${noun} ${ending} por el filtro actual.`;
+}
+
 export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const visibleAuditLogs = sourceFilter === 'dispatchtrack' ? [] : auditLogs;
   const visibleDispatches = sourceFilter === 'aureon' ? [] : dispatches;
   const events = buildEvents(visibleAuditLogs, visibleDispatches);
 
+  // Ground truth, always read off the real (unfiltered) props — "no
+  // courier/Aureon events exist" must never flip just because the active
+  // filter happens to be hiding them (see the class doc comment above).
+  const noCourierEventsExist = dispatches.length === 0;
+  const courierHiddenByFilter = sourceFilter === 'aureon' && dispatches.length > 0;
+  const aureonHiddenByFilter = sourceFilter === 'dispatchtrack' && auditLogs.length > 0;
+
   if (events.length === 0) {
+    // Controller-flagged Critical, round 3 — this branch used to return
+    // "Sin eventos registrados." off the FILTERED count alone, which lied
+    // in two reachable cases: 5 Aureon events + filter="DispatchTrack", or
+    // 1 courier event + filter="Aureon" — both drive `events` to empty
+    // while real events exist, merely hidden. Checking the hidden flags
+    // (computed off the REAL counts, above — not `events`) before falling
+    // back to the genuine-empty message fixes both; per the task brief's
+    // own data reality, the first case is the COMMON one for the
+    // DispatchTrack tab today, not a corner case.
+    if (courierHiddenByFilter) {
+      return (
+        <p className="px-4 py-6 text-center text-[12px] text-text-secondary" data-testid="event-log-hidden">
+          {hiddenByFilterMessage(dispatches.length, 'courier')}
+        </p>
+      );
+    }
+    if (aureonHiddenByFilter) {
+      return (
+        <p className="px-4 py-6 text-center text-[12px] text-text-secondary" data-testid="event-log-hidden">
+          {hiddenByFilterMessage(auditLogs.length, 'aureon')}
+        </p>
+      );
+    }
     return (
       <p className="px-4 py-6 text-center text-[12px] text-text-secondary" data-testid="event-log-empty">
         Sin eventos registrados.
@@ -162,12 +207,6 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
     });
   };
 
-  // Ground truth, always read off the real (unfiltered) `dispatches` prop —
-  // "no courier events exist" must never flip just because the current
-  // filter happens to be hiding them (see the class doc comment above).
-  const noCourierEventsExist = dispatches.length === 0;
-  const courierHiddenByFilter = sourceFilter === 'aureon' && dispatches.length > 0;
-
   return (
     <div className="flex flex-col gap-0" data-testid="unified-event-log">
       {noCourierEventsExist && (
@@ -175,7 +214,7 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
       )}
       {courierHiddenByFilter && (
         <p className="px-1 pb-3 text-[11.5px] text-text-secondary">
-          Eventos de courier ocultos por el filtro Aureon.
+          {hiddenByFilterMessage(dispatches.length, 'courier')}
         </p>
       )}
       {events.map((event) => {

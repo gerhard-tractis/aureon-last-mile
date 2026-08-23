@@ -86,4 +86,35 @@ describe('FichaCenterColumn', () => {
     expect(lastCall.auditLogs).toHaveLength(1);
     expect(lastCall.dispatches).toHaveLength(1);
   });
+
+  // Controller review, round 3 — every other ruled-out mock element has a
+  // negative test; this one only had a header-component regex covering a
+  // DIFFERENT component (FichaHeader). "Eventos recibidos N de M" implies
+  // an expected total that doesn't exist anywhere in the schema.
+  it('does not render an "eventos recibidos N de M" style counter', () => {
+    render(<FichaCenterColumn auditLogs={[auditEntry(), auditEntry({ id: 'a-2' })]} dispatches={[dispatch()]} />);
+    expect(screen.queryByText(/eventos recibidos/i)).toBeNull();
+    expect(screen.queryByText(/\d+\s+de\s+\d+/)).toBeNull();
+  });
+
+  describe('accessibility', () => {
+    it('groups the source filter buttons under a labelled role="group"', () => {
+      render(<FichaCenterColumn auditLogs={[]} dispatches={[]} />);
+      expect(screen.getByRole('group', { name: /fuente/i })).toBeInTheDocument();
+    });
+
+    it('marks the active filter button aria-pressed=true and the others false', async () => {
+      const user = userEvent.setup();
+      render(<FichaCenterColumn auditLogs={[]} dispatches={[]} />);
+      expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Aureon' })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: 'DispatchTrack' })).toHaveAttribute('aria-pressed', 'false');
+
+      await user.click(screen.getByRole('button', { name: 'Aureon' }));
+
+      expect(screen.getByRole('button', { name: 'Todo' })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: 'Aureon' })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'DispatchTrack' })).toHaveAttribute('aria-pressed', 'false');
+    });
+  });
 });

@@ -45,11 +45,16 @@ export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
       <div className="flex flex-none items-center gap-2.5 border-b border-border-subtle px-5 py-3">
         <h2 className="font-heading text-[12.5px] font-semibold text-text">Bitácora unificada</h2>
         <span className="font-mono text-[10.5px] text-text-muted">{totalEvents} eventos</span>
-        <div className="ml-auto flex gap-0.5 rounded-md border border-border bg-surface-raised p-0.5">
+        <div
+          role="group"
+          aria-label="Fuente de eventos"
+          className="ml-auto flex gap-0.5 rounded-md border border-border bg-surface-raised p-0.5"
+        >
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
+              aria-pressed={source === f.id}
               onClick={() => setSource(f.id)}
               className={cn(
                 'rounded px-2 py-1 text-[10.5px] font-medium transition-colors',

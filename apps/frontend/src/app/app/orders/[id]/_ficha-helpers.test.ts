@@ -24,6 +24,7 @@ function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
     external_route_id: null,
     driver_name: null,
     route_id: null,
+    external_dispatch_id: null,
     ...overrides,
   };
 }

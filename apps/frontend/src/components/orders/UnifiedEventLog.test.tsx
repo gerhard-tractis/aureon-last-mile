@@ -197,3 +197,34 @@ describe('UnifiedEventLog — sourceFilter', () => {
     expect(screen.queryByText(/oculto/i)).not.toBeInTheDocument();
   });
 });
+
+// Controller-flagged Critical, round 3 — the zero-events early return used
+// to fire off the FILTERED count alone, so it said "Sin eventos
+// registrados." even when real events existed and were merely hidden by
+// the active filter. Both reachable cases below have exactly ONE source
+// populated (unlike the describe block above, which always supplies both
+// sources and so never drove `events.length` to zero).
+describe('UnifiedEventLog — zero visible events under a filter (critical fix)', () => {
+  it('says Aureon events are hidden, not that none exist, when 5 Aureon events are filtered out under "DispatchTrack"', () => {
+    const logs = Array.from({ length: 5 }, (_, i) => auditEntry({ id: `audit-${i}` }));
+    render(<UnifiedEventLog auditLogs={logs} dispatches={[]} sourceFilter="dispatchtrack" />);
+    expect(screen.queryByText(/Sin eventos registrados/)).not.toBeInTheDocument();
+    expect(screen.getByText(/5 eventos de Aureon ocultos/i)).toBeInTheDocument();
+  });
+
+  it('says courier events are hidden, not that none exist, when 1 courier event is filtered out under "Aureon"', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[dispatchRow()]} sourceFilter="aureon" />);
+    expect(screen.queryByText(/Sin eventos registrados/)).not.toBeInTheDocument();
+    expect(screen.getByText(/1 evento de courier oculto/i)).toBeInTheDocument();
+  });
+
+  it('still says plainly that nothing is registered when both sources are genuinely empty, regardless of filter', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[]} sourceFilter="aureon" />);
+    expect(screen.getByText(/Sin eventos registrados/)).toBeInTheDocument();
+  });
+
+  it('does not render the event list container when the zero-events branch fires', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[dispatchRow()]} sourceFilter="aureon" />);
+    expect(screen.queryByTestId('unified-event-log')).not.toBeInTheDocument();
+  });
+});
