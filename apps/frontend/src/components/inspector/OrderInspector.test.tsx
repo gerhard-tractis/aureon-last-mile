@@ -79,6 +79,7 @@ function dispatch(overrides: Partial<OrderDossierData['dispatches'][number]> = {
     is_pickup: false,
     external_route_id: 'R-2481',
     driver_name: 'Juan Pérez',
+    route_id: 'route-uuid-1',
     ...overrides,
   };
 }
@@ -309,6 +310,38 @@ describe('OrderInspector', () => {
       tab.click();
       expect(screen.queryByTestId('conversation-thread')).toBeNull();
     });
+
+    // Controller ruling, round 2 — silently showing only the newest session
+    // in a panel built for reconstructing history is the failure mode to
+    // avoid; a visible line beats a silent pick.
+    it('says plainly that older sessions exist when there is more than one, with a link to the full list', async () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      mockUseOrderConversationSessions.mockReturnValue({
+        data: [{ id: 's-1' }, { id: 's-2' }],
+        isLoading: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      const tab = screen.getByRole('tab', { name: /Conversación \(2\)/ });
+      tab.click();
+      expect(await screen.findByText(/2 conversaciones/i)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Conversaciones/i })).toHaveAttribute(
+        'href',
+        '/app/conversations',
+      );
+    });
+
+    it('does not show the multi-session notice when there is exactly one session', async () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      mockUseOrderConversationSessions.mockReturnValue({
+        data: [{ id: 's-1' }],
+        isLoading: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      const tab = screen.getByRole('tab', { name: /Conversación/ });
+      tab.click();
+      await screen.findByTestId('conversation-thread');
+      expect(screen.queryByText(/conversaciones/i)).toBeNull();
+    });
   });
 
   it('renders the footer with esc·cerrar and a working Copiar ID button', async () => {
@@ -327,5 +360,33 @@ describe('OrderInspector', () => {
     const onClose = vi.fn();
     wrap(<OrderInspector orderId="o-1" onClose={onClose} />);
     expect(screen.getByTestId('order-inspector')).toBeInTheDocument();
+  });
+
+  describe('Abrir en ruta — controller ruling, round 2', () => {
+    it('links to the app-wide route detail path using routes.id, not external_route_id', () => {
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      const link = screen.getByRole('link', { name: /Abrir en ruta/i });
+      expect(link).toHaveAttribute('href', '/app/dispatch/route-uuid-1');
+    });
+
+    it('does not render the button when there is no non-pickup dispatch', () => {
+      mockUseOrderDossier.mockReturnValue({
+        data: { ...BASE_DATA, dispatches: [dispatch({ is_pickup: true, id: 'dp-pickup' })] },
+        isLoading: false,
+        isError: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      expect(screen.queryByRole('link', { name: /Abrir en ruta/i })).toBeNull();
+    });
+
+    it('does not render the button when the dispatch has no joined route — absent, not a dead link', () => {
+      mockUseOrderDossier.mockReturnValue({
+        data: { ...BASE_DATA, dispatches: [dispatch({ route_id: null })] },
+        isLoading: false,
+        isError: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      expect(screen.queryByRole('link', { name: /Abrir en ruta/i })).toBeNull();
+    });
   });
 });

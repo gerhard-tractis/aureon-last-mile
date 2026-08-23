@@ -20,6 +20,12 @@ export type DossierPackage = PackageDetail & {
  * courier's current state, not a per-event history — Fase 1
  * (`webhook_events`) is parked. `external_route_id` / `driver_name` come
  * from the joined `routes` row, not `dispatches`' own (stale) copy.
+ *
+ * `route_id` (spec-65 Task 8, controller ruling) is `routes.id` — the
+ * internal uuid `/app/dispatch/[routeId]` indexes by — kept distinct from
+ * `external_route_id`, which is DispatchTrack's own route identifier
+ * (`routes.external_route_id`, a different value). `1f`'s "Abrir en ruta"
+ * needs the former; only the latter existed here before.
  */
 export type DossierDispatch = {
   id: string;
@@ -36,6 +42,7 @@ export type DossierDispatch = {
   is_pickup: boolean;
   external_route_id: string | null;
   driver_name: string | null;
+  route_id: string | null;
 };
 
 export type OrderDossierData = Omit<OrderDetailData, 'packages'> & {
@@ -53,8 +60,8 @@ type DossierOrderRow = Omit<OrderDetailData, 'auditLogs' | 'manifestId' | 'packa
   })[];
 };
 
-type DossierDispatchRow = Omit<DossierDispatch, 'external_route_id' | 'driver_name'> & {
-  routes: { external_route_id: string; driver_name: string | null } | { external_route_id: string; driver_name: string | null }[] | null;
+type DossierDispatchRow = Omit<DossierDispatch, 'external_route_id' | 'driver_name' | 'route_id'> & {
+  routes: { id: string; external_route_id: string; driver_name: string | null } | { id: string; external_route_id: string; driver_name: string | null }[] | null;
 };
 
 function firstOf<T>(value: T | T[] | null): T | null {
@@ -119,7 +126,7 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: dispatchData, error: dispatchError } = await (client.from('dispatches') as any)
         .select(
-          'id, substatus, substatus_code, status, completed_at, arrived_at, estimated_at, failure_reason, latitude, longitude, raw_data, is_pickup, routes(external_route_id, driver_name)',
+          'id, substatus, substatus_code, status, completed_at, arrived_at, estimated_at, failure_reason, latitude, longitude, raw_data, is_pickup, routes(id, external_route_id, driver_name)',
         )
         .eq('order_id', orderId!)
         .eq('operator_id', operatorId!)
@@ -135,6 +142,7 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
             ...rest,
             external_route_id: route?.external_route_id ?? null,
             driver_name: route?.driver_name ?? null,
+            route_id: route?.id ?? null,
           };
         },
       );

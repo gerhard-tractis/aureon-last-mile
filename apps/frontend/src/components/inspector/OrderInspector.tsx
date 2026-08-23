@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import {
   Sheet,
   SheetContent,
@@ -34,14 +35,15 @@ interface Props {
 /**
  * spec-65 Task 8 — `1f`, recomposed from Task 7's dossier hook and blocks.
  *
- * "Abrir en ruta" from the `1f` mock is NOT implemented: the dossier's
- * dispatch join only carries `routes.external_route_id` /
- * `routes.driver_name` (see `useOrderDossier.ts`), never `routes.id` — the
- * uuid `/app/dispatch/[routeId]` actually needs. Adding it means editing
- * `useOrderDossier`, a Task 7 file this task was told not to modify.
- * Fabricating a link from `external_route_id` (a provider-supplied string,
- * not the internal uuid) would silently 404 or open the wrong route, so the
- * button is omitted rather than shipped broken. Flagged for the controller.
+ * "Abrir en ruta" links to `/app/dispatch/${route_id}` — the same path
+ * `/app/dispatch`'s own route tiles and "new route" flow navigate to
+ * (`router.push(`/app/dispatch/${route.id}`)`) — using `route_id`
+ * (`routes.id`, the dossier's dispatch-join uuid, added in this task per
+ * controller ruling), never `external_route_id` (a DispatchTrack-supplied
+ * string with no relationship to the internal id). The button is absent,
+ * not disabled, when there's no non-pickup dispatch or that dispatch has no
+ * joined route — same "absent, not a dead link" rule as everything else
+ * `1f` omits rather than fabricates.
  */
 function formatChipTime(iso: string): string {
   const d = new Date(iso);
@@ -128,6 +130,7 @@ function OrderInspectorBody({
   const lastUpdated = data.auditLogs[0]?.timestamp ?? null;
   const pod = deliveryDispatch(data.dispatches);
   const route = pod?.external_route_id ?? null;
+  const routeId = pod?.route_id ?? null;
   const historialCount = data.auditLogs.length + data.dispatches.length;
   const latestSession = sessions[0] ?? null;
 
@@ -224,7 +227,33 @@ function OrderInspectorBody({
         </TabsContent>
 
         {conversationsEnabled && (
-          <TabsContent forceMount value="conversacion" className="px-6 py-4 data-[state=inactive]:hidden">
+          <TabsContent
+            forceMount
+            value="conversacion"
+            className="px-6 py-4 flex flex-col gap-3 data-[state=inactive]:hidden"
+          >
+            {/*
+             * Deliberate scope, not an unfinished feature (controller
+             * ruling, spec-65 Task 8 round 2): `1f` answers "what happened
+             * to this order" without leaving the current screen. Replying
+             * to a customer is `/app/conversations`'s job, with its own
+             * permission gating (canReply there checks role/permissions;
+             * this tab never offers to reply, so it stays read-only for
+             * every viewer). Showing more than the most recent session
+             * inline would turn this tab into a second conversations
+             * list — the multi-session notice below exists so that a
+             * second session is *visible*, not silently dropped, without
+             * `1f` rebuilding that list itself.
+             */}
+            {sessions.length > 1 && (
+              <p className="text-xs text-text-muted">
+                Hay {sessions.length} conversaciones para este pedido — mostrando la más
+                reciente.{' '}
+                <Link href="/app/conversations" className="text-accent hover:underline">
+                  Ver todas en Conversaciones
+                </Link>
+              </p>
+            )}
             {latestSession ? (
               <ConversationThread session={latestSession} canReply={false} />
             ) : (
@@ -239,12 +268,22 @@ function OrderInspectorBody({
       {/* Footer */}
       <div className="px-6 py-3 border-t border-border flex justify-between items-center">
         <span className="text-xs text-text-faint font-mono">esc · cerrar</span>
-        <button
-          className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-elev transition-colors"
-          onClick={() => navigator.clipboard?.writeText(data.order_number)}
-        >
-          Copiar ID
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-elev transition-colors"
+            onClick={() => navigator.clipboard?.writeText(data.order_number)}
+          >
+            Copiar ID
+          </button>
+          {routeId && (
+            <Link
+              href={`/app/dispatch/${routeId}`}
+              className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-elev transition-colors"
+            >
+              Abrir en ruta
+            </Link>
+          )}
+        </div>
       </div>
     </>
   );

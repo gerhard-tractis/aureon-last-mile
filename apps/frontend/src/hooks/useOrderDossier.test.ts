@@ -69,7 +69,7 @@ const MOCK_DISPATCH_ROWS = [
     longitude: -70.66,
     raw_data: { attempt: 1 },
     is_pickup: false,
-    routes: { external_route_id: 'R-2481', driver_name: 'M. Rojas' },
+    routes: { id: 'route-uuid-1', external_route_id: 'R-2481', driver_name: 'M. Rojas' },
   },
 ];
 
@@ -141,7 +141,58 @@ describe('useOrderDossier', () => {
       substatus_code: '00',
       external_route_id: 'R-2481',
       driver_name: 'M. Rojas',
+      route_id: 'route-uuid-1',
     });
+  });
+
+  // spec-65 Task 8, controller ruling — "Abrir en ruta" needs routes.id (the
+  // uuid /app/dispatch/[routeId] indexes by), not external_route_id (a
+  // provider-supplied string). Asserted separately from the object above so
+  // a regression here fails on its own, named line, not buried in a
+  // toMatchObject with six other fields.
+  it('resolves route_id from the joined routes row, not from external_route_id', async () => {
+    mockFrom.mockImplementation(buildFromMock());
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.dispatches[0].route_id).toBe('route-uuid-1');
+  });
+
+  it('leaves route_id null when the dispatch has no joined route', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockResolvedValue({
+            data: [{ ...MOCK_DISPATCH_ROWS[0], routes: null }],
+            error: null,
+          }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.dispatches[0].route_id).toBeNull();
   });
 
   it('filters the dispatches query by operator_id and excludes soft-deleted rows', async () => {
