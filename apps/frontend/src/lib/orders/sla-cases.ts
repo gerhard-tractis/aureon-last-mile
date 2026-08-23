@@ -53,6 +53,15 @@ export interface SlaCase {
   order: SlaCaseOrder;
   expectedStatus: SlaStatus;
   expectedMinutesRemaining: number;
+  /**
+   * Overrides NOW_ISO for this one case. Only needed to exercise a bug
+   * class that a shared, seconds-free "now" can never see: seconds in a
+   * window-end column truncated on the TypeScript side (sla.ts:
+   * `time.slice(0, 5)`) but not on a naively-written SQL side. Reproducing
+   * that divergence requires "now" itself to carry seconds too — see the
+   * `seconds_in_window_end_are_truncated` case below.
+   */
+  nowISO?: string;
 }
 
 export const SLA_CASES: SlaCase[] = [
@@ -233,5 +242,28 @@ export const SLA_CASES: SlaCase[] = [
     },
     expectedStatus: 'late',
     expectedMinutesRemaining: -1620,
+  },
+  {
+    // Seconds in the window-end column must be truncated before comparing,
+    // exactly as `toISO` in sla.ts drops them via `time.slice(0, 5)`. A
+    // naive SQL implementation that compares the full TIME value (seconds
+    // included) computes a larger raw difference here — enough to cross the
+    // at_risk/ok boundary that `at_risk_boundary_exactly` sits on. Needs its
+    // own `nowISO` (also carrying seconds) to actually expose the bug: with
+    // a whole-minute "now", the sub-minute remainder never changes which
+    // minute the result floors to.
+    name: 'seconds_in_window_end_are_truncated',
+    order: {
+      delivery_date: '2026-08-22',
+      delivery_window_start: '17:01:58',
+      delivery_window_end: '18:01:58',
+      rescheduled_delivery_date: null,
+      rescheduled_window_start: null,
+      rescheduled_window_end: null,
+      delivered_at: null,
+    },
+    nowISO: '2026-08-22T12:00:02',
+    expectedStatus: 'at_risk',
+    expectedMinutesRemaining: 360,
   },
 ];

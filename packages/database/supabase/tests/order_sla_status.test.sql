@@ -8,18 +8,18 @@
 -- guard against the two implementations of the SLA rule drifting apart.
 --
 -- NOT run by CI (.github/workflows/ci.yml runs lint, type-check, vitest and
--- build only — no local Postgres). Run on demand from packages/database/:
+-- build only — no local Postgres). Run on demand against a live database,
+-- via psql — NOT `npx supabase test db` (that path drives pgTAP and expects
+-- TAP output; this file emits plain `RAISE NOTICE` / `RAISE EXCEPTION`):
 --
---   npx supabase test db
+--   psql "$DATABASE_URL" -f packages/database/supabase/tests/order_sla_status.test.sql
 --
 -- order_sla_status takes plain scalar columns, not a row, so this file needs
--- no orders/packages fixtures — each test is a single query against a fixed
--- "now" of 2026-08-22T12:00:00 (TIMESTAMP, no timezone — see the migration's
--- header comment), matching NOW_ISO in sla-cases.ts.
---
--- All tests run inside a transaction rolled back at the end, so nothing is
--- left behind. Each test uses SAVEPOINT / ROLLBACK TO so a failing assertion
--- (RAISE EXCEPTION) does not abort the tests that follow it.
+-- no orders/packages fixtures — most tests query against a fixed "now" of
+-- 2026-08-22 12:00:00 (TIMESTAMP, no timezone), matching NOW_ISO in
+-- sla-cases.ts. All tests run inside a transaction rolled back at the end,
+-- using SAVEPOINT / ROLLBACK TO so one failing assertion (RAISE EXCEPTION)
+-- does not abort the tests that follow it.
 -- =============================================================================
 
 BEGIN;
@@ -30,12 +30,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, NULL, NULL,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, NULL, NULL, NULL, NULL, NULL,
+    NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'none' AND v_minutes = 0 THEN
     RAISE NOTICE '✓ no_window PASSED';
   ELSE
@@ -50,12 +46,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
-    NULL, NULL, NULL,
-    '2020-01-01 09:30:00'::timestamp, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    NULL, NULL, NULL, '2020-01-01 09:30:00'::timestamp, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'none' AND v_minutes = 0 THEN
     RAISE NOTICE '✓ already_delivered PASSED';
   ELSE
@@ -70,12 +62,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '11:00:00'::time, '11:59:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '11:00:00'::time, '11:59:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'late' AND v_minutes = -1 THEN
     RAISE NOTICE '✓ late_by_one_minute PASSED';
   ELSE
@@ -90,12 +78,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '00:00:00'::time, '00:00:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '00:00:00'::time, '00:00:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'late' AND v_minutes = -720 THEN
     RAISE NOTICE '✓ late_by_large_margin PASSED';
   ELSE
@@ -110,12 +94,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-21'::date, '19:00:00'::time, '20:00:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-21'::date, '19:00:00'::time, '20:00:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'late' AND v_minutes = -960 THEN
     RAISE NOTICE '✓ late_from_previous_day PASSED';
   ELSE
@@ -124,19 +104,14 @@ BEGIN
 END $$;
 ROLLBACK TO test_late_from_previous_day;
 
--- TEST: at_risk_boundary_exactly — exactly 360 minutes remaining → at_risk
--- (the case that matters most: classifyRisk uses <=, not <)
+-- TEST: at_risk_boundary_exactly — exactly 360 min remaining → at_risk (<=, not <)
 SAVEPOINT test_at_risk_boundary_exactly;
 DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '17:00:00'::time, '18:00:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '17:00:00'::time, '18:00:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'at_risk' AND v_minutes = 360 THEN
     RAISE NOTICE '✓ at_risk_boundary_exactly PASSED';
   ELSE
@@ -145,18 +120,14 @@ BEGIN
 END $$;
 ROLLBACK TO test_at_risk_boundary_exactly;
 
--- TEST: one_minute_past_boundary — 361 minutes remaining → ok
+-- TEST: one_minute_past_boundary — 361 min remaining → ok
 SAVEPOINT test_one_minute_past_boundary;
 DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '17:01:00'::time, '18:01:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '17:01:00'::time, '18:01:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'ok' AND v_minutes = 361 THEN
     RAISE NOTICE '✓ one_minute_past_boundary PASSED';
   ELSE
@@ -171,12 +142,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '13:30:00'::time, '14:00:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '13:30:00'::time, '14:00:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'at_risk' AND v_minutes = 120 THEN
     RAISE NOTICE '✓ comfortably_at_risk PASSED';
   ELSE
@@ -191,12 +158,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-23'::date, '11:00:00'::time, '12:00:00'::time,
-    NULL, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-23'::date, '11:00:00'::time, '12:00:00'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'ok' AND v_minutes = 1440 THEN
     RAISE NOTICE '✓ comfortably_ok_tomorrow PASSED';
   ELSE
@@ -205,19 +168,15 @@ BEGIN
 END $$;
 ROLLBACK TO test_comfortably_ok_tomorrow;
 
--- TEST: complete_reschedule_overrides_original — a badly-late original
--- window is overridden by a complete reschedule
+-- TEST: complete_reschedule_overrides_original — a badly-late original window
+-- is overridden by a complete reschedule
 SAVEPOINT test_complete_reschedule_overrides_original;
 DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-20'::date, '07:00:00'::time, '08:00:00'::time,
-    '2026-08-22'::date, '13:00:00'::time, '14:00:00'::time,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-20'::date, '07:00:00'::time, '08:00:00'::time,
+    '2026-08-22'::date, '13:00:00'::time, '14:00:00'::time, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'at_risk' AND v_minutes = 120 THEN
     RAISE NOTICE '✓ complete_reschedule_overrides_original PASSED';
   ELSE
@@ -233,12 +192,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-22'::date, '13:30:00'::time, '14:00:00'::time,
-    '2026-08-25'::date, NULL, NULL,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-22'::date, '13:30:00'::time, '14:00:00'::time,
+    '2026-08-25'::date, NULL, NULL, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'at_risk' AND v_minutes = 120 THEN
     RAISE NOTICE '✓ partial_reschedule_ignored PASSED';
   ELSE
@@ -254,12 +209,8 @@ DO $$
 DECLARE v_status TEXT; v_minutes INT;
 BEGIN
   SELECT sla_status, minutes_remaining INTO v_status, v_minutes
-  FROM public.order_sla_status(
-    '2026-08-23'::date, '11:00:00'::time, '12:00:00'::time,
-    '2026-08-21'::date, '08:00:00'::time, '09:00:00'::time,
-    NULL, '2026-08-22 12:00:00'::timestamp
-  );
-
+  FROM public.order_sla_status('2026-08-23'::date, '11:00:00'::time, '12:00:00'::time,
+    '2026-08-21'::date, '08:00:00'::time, '09:00:00'::time, NULL, '2026-08-22 12:00:00'::timestamp);
   IF v_status = 'late' AND v_minutes = -1620 THEN
     RAISE NOTICE '✓ reschedule_itself_late PASSED';
   ELSE
@@ -268,13 +219,46 @@ BEGIN
 END $$;
 ROLLBACK TO test_reschedule_itself_late;
 
--- =============================================================================
--- Summary
--- =============================================================================
-DO $$ BEGIN
-  RAISE NOTICE '========================================';
-  RAISE NOTICE 'All order_sla_status tests passed!';
-  RAISE NOTICE '========================================';
+-- TEST: seconds_in_window_end_are_truncated — window end carries seconds
+-- (18:01:58); the effective end must truncate to the minute before
+-- comparing, exactly as sla.ts drops seconds from the TIME column. Uses its
+-- own "now" (also with seconds: 12:00:02) — a whole-minute "now" would never
+-- expose this, since the sub-minute remainder never changes which minute the
+-- result floors to.
+SAVEPOINT test_seconds_in_window_end_are_truncated;
+DO $$
+DECLARE v_status TEXT; v_minutes INT;
+BEGIN
+  SELECT sla_status, minutes_remaining INTO v_status, v_minutes
+  FROM public.order_sla_status('2026-08-22'::date, '17:01:58'::time, '18:01:58'::time,
+    NULL, NULL, NULL, NULL, '2026-08-22 12:00:02'::timestamp);
+  IF v_status = 'at_risk' AND v_minutes = 360 THEN
+    RAISE NOTICE '✓ seconds_in_window_end_are_truncated PASSED';
+  ELSE
+    RAISE EXCEPTION 'seconds_in_window_end_are_truncated FAILED: expected (at_risk, 360), got (%, %)', v_status, v_minutes;
+  END IF;
 END $$;
+ROLLBACK TO test_seconds_in_window_end_are_truncated;
+
+-- TEST: null_now_returns_none — no "now" to compare against cannot be
+-- SLA-classified. SQL-only path: classifyRisk's `now` parameter is a
+-- required, non-nullable Date, so this has no sla-cases.ts counterpart.
+SAVEPOINT test_null_now_returns_none;
+DO $$
+DECLARE v_status TEXT; v_minutes INT;
+BEGIN
+  SELECT sla_status, minutes_remaining INTO v_status, v_minutes
+  FROM public.order_sla_status('2026-08-22'::date, '13:30:00'::time, '14:00:00'::time,
+    NULL, NULL, NULL, NULL, NULL::timestamp);
+  IF v_status = 'none' AND v_minutes = 0 THEN
+    RAISE NOTICE '✓ null_now_returns_none PASSED';
+  ELSE
+    RAISE EXCEPTION 'null_now_returns_none FAILED: expected (none, 0), got (%, %)', v_status, v_minutes;
+  END IF;
+END $$;
+ROLLBACK TO test_null_now_returns_none;
+
+-- Summary
+DO $$ BEGIN RAISE NOTICE 'All order_sla_status tests passed!'; END $$;
 
 ROLLBACK;
