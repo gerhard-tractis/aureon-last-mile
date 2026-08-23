@@ -308,7 +308,7 @@ Devuelve `null` —y la tarjeta oculta la línea— cuando ningún ítem de la e
 
 **Ruta:** `/app/pickup` · **Mock:** `1l`
 
-Corrección al plan: la primera versión de este spec decía que Recogida no tenía mock. Sí lo tiene — `1l`, añadido al archivo de diseño después del handoff original. El plan de fase 4 lo omitía por error, igual que a `1f` (Order Inspector, todavía pendiente).
+Corrección al plan: la primera versión de este spec decía que Recogida no tenía mock. Sí lo tiene — `1l`, añadido al archivo de diseño después del handoff original. El plan de fase 4 lo omitía por error, igual que a `1f` (Order Inspector). **`1f` ya está entregado**, en [spec-65](spec-65-pedidos-tab.md) fase 4: `OrderInspector` se reconstruyó sobre `useOrderDossier` y los cinco bloques compartidos de `components/orders/`, y `OrderLifecycleRibbon` se eliminó al quedarse sin llamadores.
 
 Dos columnas (`1fr 340px`): los manifiestos por retirar a la izquierda, la ruta en armado y los cierres del día a la derecha. Bajo 1024px se apilan.
 

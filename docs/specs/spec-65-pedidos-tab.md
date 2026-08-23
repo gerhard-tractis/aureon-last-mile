@@ -107,7 +107,11 @@ Ambas responden la misma pregunta sobre los mismos datos, pero el mock de `3b` s
 
 Es decir: **`3b` se va a ver delgada en QA el día uno.** Eso es el dato, no la implementación. Se documenta aquí para que no se diagnostique como bug ni se re-depure (ver `project_qa_stale_bundle_pwa` como precedente del mismo tipo de falsa alarma).
 
-Mitigación en pantalla, no en datos: cuando una orden no tiene ningún `webhook_events`, la bitácora muestra un `EmptyState` explícito — *"Sin eventos de courier registrados. El registro de eventos empezó el DD/MM; las órdenes anteriores a esa fecha solo conservan su último estado."* — y no un vacío mudo.
+Mitigación en pantalla, no en datos: cuando una orden no tiene eventos de courier, la bitácora lo dice explícitamente en vez de mostrar un vacío mudo.
+
+> **Corrección (2026-08-23).** La fase 1 se **aparcó** y no se implementó — ver el aviso en *Plan de implementación · Fase 1*. Así que el riesgo descrito arriba no es transitorio: **es el estado permanente** mientras `webhook_events` no exista. La bitácora no "nace vacía y se llena"; se queda con la mitad Aureon más una entrada DispatchTrack.
+>
+> El texto que se renderiza es *"Sin eventos de courier registrados."*, sin la frase con fecha que este párrafo describía: sin tabla no hay fecha de inicio del registro que nombrar. `UnifiedEventLog` distingue además ese caso de *"eventos de courier ocultos por el filtro"*, que es una situación distinta y se redacta distinto.
 
 ---
 
@@ -313,6 +317,8 @@ Cada una es un dato que el schema no tiene. Ninguna se rellena con un placeholde
 | `3a` filtro ESTADO | Conteo por estado en el riel (318 · 23 · 96 · 904 · 12) | Mismo motivo que arriba. `OrderFilterRail.StatusFilterOption.count` es opcional (Task 6, ronda 2 — originalmente se pasó `count: 0`, que la revisión del controller correctamente rechazó por afirmar un dato falso); se omite por completo, sin badge vacío. |
 | `3a` filtro RUTA | Todas las rutas, históricas incluidas | `useActiveRoutes` solo cubre rutas con despachos hoy/en curso. Se usa igual (el shape encaja) pero con una leyenda visible bajo el select — "Solo rutas activas" — para que la ausencia de una ruta antigua se lea como límite de la vista, no como que la ruta no existe (Task 6, ronda 2). |
 | `3a` cabecera — "Exportar CSV" | Exporta el dataset filtrado completo (12.847 filas en el mock) | `get_orders_list` pagina en bloques de 50 y no existe un RPC de exportación completa. Construir uno (o un loop de páginas en el cliente) es lógica nueva, no wiring — fuera de alcance de Task 6. El botón se llama **"Exportar página (N)"**, con N = filas cargadas en pantalla, precisamente para no prometer más de lo que hace (Task 6, ronda 3 — la etiqueta original, "Exportar CSV", exportaba silenciosamente solo la página cargada junto a un subtítulo con el total real, un bug de confianza: el usuario lo descubre recién al abrir el archivo). Seguimiento recomendado: un RPC `export_orders_list_csv` sin `p_limit`/`p_offset` que reutilice los filtros de `get_orders_list` — se prefiere sobre un loop de páginas en el cliente porque un `totalCount` en los miles no debe bajar cada fila al navegador solo para reserializarla como texto. |
+| `3b` bitácora | Historial evento por evento del courier (14 eventos, cada uno expandible) | **La fase 1 se aparcó y no se implementó** — no existe `webhook_events`, y `beetrack-webhook` sigue haciendo `upsert` sobre `dispatches`, así que solo sobrevive el último payload por parada. La bitácora es `audit_logs` (AUREON) más, como mucho, **una** entrada DISPATCHTRACK. La rejilla de cuatro campos y *Ver datos técnicos* sí están construidos y funcionan sobre esa entrada. Criterios de aceptación 4 y 5 no alcanzables por esto. |
+| `1f` / `3b` "Por qué está atrasada" | Bloque con causa, motivo y acción sugerida | Se construyó y se monta en ambas pantallas, pero **nunca se renderiza en producción**: necesita `reason_flag`, que no devuelve `get_ops_control_snapshot` (19 claves, verificado contra QA) y que no define ninguna migración. Renderiza `null` por diseño en vez de inventar una causa. **Hallazgo colateral:** por la misma razón, la columna MOTIVO y los chips de filtro por motivo del `AtRiskPanel` de Torre de control (spec-54) están muertos hoy en producción — fuera del alcance de este spec, merece el suyo. |
 
 ---
 
@@ -326,9 +332,17 @@ Cuatro PRs.
 
 TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `project_vitest_cannot_run_locally`.
 
-### Fase 1 — `webhook_events` y el registro de eventos
+### Fase 1 — `webhook_events` y el registro de eventos — **APARCADA, no implementada**
 
-**PR 1.** Sin UI.
+> **Estado real (2026-08-23).** Esta fase **no se construyó**. Durante la implementación se decidió aparcar `webhook_events` y seguir con las fases 2-4, que no dependen de ella. Nada de lo que describe esta sección existe: no hay tabla, no hay `INSERT` en la Edge Function, y `beetrack-webhook` sigue haciendo `upsert` sobre `dispatches`, así que **no hay historial de eventos del courier por evento** — solo el último payload por parada.
+>
+> Consecuencia en pantalla, ya implementada: `UnifiedEventLog` construye la bitácora con `audit_logs` (AUREON) más, como mucho, **una** entrada DISPATCHTRACK derivada del `dispatches` vigente, y dice explícitamente cuándo no hay eventos de courier. El texto que renderiza es *"Sin eventos de courier registrados."* — no la variante con fecha que describe *Riesgo aceptado* más abajo, porque sin la tabla no hay fecha de inicio que nombrar.
+>
+> Los **criterios de aceptación 4 y 5** dependen de esta fase y por lo tanto **no son alcanzables** en el estado actual. Están marcados como tales.
+>
+> Retomar esta fase es un spec aparte. Su valor sigue en pie: sin ella, `3b` no puede reconstruir una disputa evento por evento, que es para lo que se diseñó.
+
+**PR 1 (no ejecutado).** Sin UI.
 
 1. Test de la migración: la tabla existe, RLS activa, `authenticated` puede `SELECT` solo su `operator_id`, no puede `INSERT`.
 2. Migración `2026XXXX_spec65_webhook_events.sql`.
@@ -376,8 +390,8 @@ TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `proj
 1. `/app/orders` lista órdenes de todas las etapas, filtra por los siete presets, y la URL resultante abierta en otra sesión reproduce la misma vista.
 2. El contador de Pedidos en la sidebar coincide con el total del preset "SLA en riesgo".
 3. `order_sla_status` y `classifyRisk` coinciden en toda la tabla de casos límite.
-4. Un evento de DispatchTrack en QA aparece en la bitácora de `3b` con su rejilla de cuatro campos traducida, y su JSON accesible bajo *Ver datos técnicos*.
-5. Un segundo evento sobre la misma parada aparece como **dos** líneas de bitácora, no una.
-6. Una orden sin causa determinable no muestra el bloque "Por qué está atrasada" — ni vacío ni genérico.
+4. ~~Un evento de DispatchTrack en QA aparece en la bitácora de `3b` con su rejilla de cuatro campos, y su JSON accesible bajo *Ver datos técnicos*.~~ **No alcanzable.** Depende de la fase 1, aparcada. La rejilla de cuatro campos y *Ver datos técnicos* **sí** están implementados y se alimentan del `dispatches` vigente; lo que no existe es el evento por evento.
+5. ~~Un segundo evento sobre la misma parada aparece como **dos** líneas de bitácora, no una.~~ **No alcanzable.** Requiere `webhook_events` — con el `upsert` actual sobre `dispatches` el segundo evento pisa al primero por definición. Este criterio es la razón por la que la fase 1 existe; queda como criterio del spec que la retome.
+6. Una orden sin causa determinable no muestra el bloque "Por qué está atrasada" — ni vacío ni genérico. *(Nota: hoy esto es **siempre** — `reason_flag` no lo produce ningún RPC ni migración, así que el bloque nunca se renderiza en producción. Verificado contra QA. Ver desviaciones.)*
 7. Una orden entregada sin firma muestra el estado explícito de POD nombrando el campo nulo.
 8. Ninguna consulta nueva sin `operator_id`; ningún archivo nuevo sobre 300 líneas.
