@@ -17,6 +17,22 @@ const STATUS_CONFIG: Record<string, { variant: BadgeVariant; label: string }> = 
   picked_up:  { variant: 'info',    label: 'Recogido' },
   pending:    { variant: 'neutral', label: 'Pendiente' },
   returned:   { variant: 'error',   label: 'Devuelto' },
+
+  // spec-65 Task 5 — orders.leading_status / order_status_enum (Pedidos,
+  // `/app/orders`). Feminine endings ("Entregada", not "Entregado") match
+  // the Aureon Rebrand mock's own badge text (ENTREGADA, REINGRESO) — the
+  // mock reads these as "la orden", even though the nav item is "Pedidos".
+  ingresado:              { variant: 'neutral', label: 'Ingresado' },
+  verificado:             { variant: 'neutral', label: 'Verificado' },
+  en_bodega:              { variant: 'neutral', label: 'En bodega' },
+  asignado:               { variant: 'info',    label: 'Asignado' },
+  en_carga:               { variant: 'info',    label: 'En carga' },
+  listo_para_despacho:    { variant: 'info',    label: 'Listo para despacho' },
+  en_ruta:                { variant: 'warning', label: 'En reparto' },
+  entregado:              { variant: 'success', label: 'Entregada' },
+  cancelado:              { variant: 'error',   label: 'Cancelada' },
+  en_retorno:             { variant: 'neutral', label: 'En retorno' },
+  parcialmente_entregado: { variant: 'warning', label: 'Parcialmente entregada' },
 };
 
 // spec-54: text now comes from the -text tokens rather than the base hue. The
@@ -29,6 +45,11 @@ const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   info:    'bg-status-info-bg text-status-info border-status-info-border',
   neutral: 'bg-surface-raised text-text-secondary border-border',
 };
+
+/** Same lookup StatusBadge uses internally — exposed for callers (e.g. filter chips) that need the label as plain text, not inside a badge. */
+export function getStatusLabel(status: string): string {
+  return STATUS_CONFIG[status]?.label ?? status;
+}
 
 export function StatusBadge({ status, variant, size = 'md', className }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status];

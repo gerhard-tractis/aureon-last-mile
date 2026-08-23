@@ -8,11 +8,19 @@
  * Decision 2, presets are a fixed set with no persisted custom views, so
  * the mock's "+ Nueva vista" is deliberately not rendered here.
  *
+ * Built on the shared Radix `Tabs`/`TabsList`/`TabsTrigger` (not plain
+ * `role="tab"` buttons) specifically for the keyboard contract those roles
+ * promise — arrow-key navigation and roving tabindex — which hand-rolled
+ * ARIA roles do not get for free. There is no `TabsContent`: the page owns
+ * what renders below these tabs, and Radix's tab/list roles work correctly
+ * without one.
+ *
  * Presentational: no fetching. The parent supplies each tab's result count
  * (or omits it while still loading) and owns which preset is active.
  */
 
 import { cn } from '@/lib/utils';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ORDER_VIEW_PRESETS, type OrderViewPresetId } from '@/lib/orders/order-view-presets';
 
 interface OrderViewTabsProps {
@@ -24,43 +32,42 @@ interface OrderViewTabsProps {
 
 export function OrderViewTabs({ activePreset, presetCounts, onSelectPreset }: OrderViewTabsProps) {
   return (
-    <div
-      role="tablist"
-      aria-label="Vistas de pedidos"
-      className="flex items-center gap-0.5 border-b border-border px-6"
+    <Tabs
+      value={activePreset}
+      onValueChange={(id) => onSelectPreset(id as OrderViewPresetId)}
     >
-      {ORDER_VIEW_PRESETS.map((preset) => {
-        const isActive = preset.id === activePreset;
-        const count = presetCounts[preset.id];
+      <TabsList
+        aria-label="Vistas de pedidos"
+        className="h-auto w-full justify-start gap-0.5 rounded-none border-b border-border bg-transparent p-0 px-6"
+      >
+        {ORDER_VIEW_PRESETS.map((preset) => {
+          const isActive = preset.id === activePreset;
+          const count = presetCounts[preset.id];
 
-        return (
-          <button
-            key={preset.id}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            onClick={() => onSelectPreset(preset.id)}
-            className={cn(
-              '-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs transition-colors',
-              isActive
-                ? 'border-accent font-semibold text-text'
-                : 'border-transparent font-medium text-text-secondary hover:text-text',
-            )}
-          >
-            {preset.label}
-            {count !== undefined && (
-              <span
-                className={cn(
-                  'rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-semibold',
-                  isActive ? 'text-text' : 'text-text-muted',
-                )}
-              >
-                {count}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
+          return (
+            <TabsTrigger
+              key={preset.id}
+              value={preset.id}
+              className={cn(
+                '-mb-px flex items-center gap-1.5 rounded-none border-b-2 border-transparent px-3 py-2.5 text-xs font-medium text-text-secondary shadow-none transition-colors hover:text-text',
+                'data-[state=active]:border-accent data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-text data-[state=active]:shadow-none',
+              )}
+            >
+              {preset.label}
+              {count !== undefined && (
+                <span
+                  className={cn(
+                    'rounded-sm px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+                    isActive ? 'text-text' : 'text-text-muted',
+                  )}
+                >
+                  {count}
+                </span>
+              )}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+    </Tabs>
   );
 }

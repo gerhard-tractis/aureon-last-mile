@@ -39,11 +39,11 @@ export function OrdersBulkBar({ selectedRows }: OrdersBulkBarProps) {
   if (selectedRows.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-3 border-t border-border bg-surface px-5.5 py-2.5">
+    <div className="flex items-center gap-3 border-t border-border bg-surface px-6 py-2.5">
       <span className="flex items-center gap-2 text-[11.5px] font-semibold text-text">
         <span className="font-mono text-accent">{selectedRows.length}</span> seleccionados
       </span>
-      <span className="h-4.5 w-px bg-border" />
+      <span className="h-4 w-px bg-border" />
       <Button variant="outline" size="sm" onClick={() => downloadCsv(selectedRows)}>
         <Download className="h-3 w-3" />
         Exportar

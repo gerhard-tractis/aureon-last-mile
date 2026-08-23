@@ -13,7 +13,7 @@
 
 import { X } from 'lucide-react';
 import type { OrdersListFilters } from '@/hooks/useOrdersList';
-import { displayForOrderStatus } from '@/lib/orders/order-status-display';
+import { getStatusLabel } from '@/components/StatusBadge';
 
 interface ActiveFilterChipsProps {
   filters: OrdersListFilters;
@@ -35,7 +35,7 @@ function buildChips(filters: OrdersListFilters): Chip[] {
   if (filters.statuses && filters.statuses.length > 0) {
     chips.push({
       key: 'estado',
-      label: `estado: ${filters.statuses.map((s) => displayForOrderStatus(s).label.toLowerCase()).join(', ')}`,
+      label: `estado: ${filters.statuses.map((s) => getStatusLabel(s).toLowerCase()).join(', ')}`,
       clear: { statuses: null },
     });
   }
@@ -94,7 +94,7 @@ export function ActiveFilterChips({
   const chips = buildChips(filters);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface px-5.5 py-2.5">
+    <div className="flex flex-wrap items-center gap-1.5 border-b border-border-subtle bg-surface px-6 py-2.5">
       {chips.length > 0 && (
         <span className="text-[10.5px] font-medium text-text-secondary">Filtros activos:</span>
       )}

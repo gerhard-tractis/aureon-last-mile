@@ -71,6 +71,11 @@ describe('OrdersDataTable', () => {
     expect(screen.getByText('−48m')).toBeInTheDocument();
   });
 
+  it('pads a sub-10-minute remainder when hours are present', () => {
+    renderTable({ rows: [makeRow({ sla_status: 'late', minutes_remaining: -65 })] });
+    expect(screen.getByText('−1h 05m')).toBeInTheDocument();
+  });
+
   it('formats an ok/at_risk SLA with the plus sign', () => {
     renderTable({ rows: [makeRow({ sla_status: 'at_risk', minutes_remaining: 45 })] });
     expect(screen.getByText('+45m')).toBeInTheDocument();
@@ -118,7 +123,14 @@ describe('OrdersDataTable', () => {
     expect(onToggleSelect).not.toHaveBeenCalled();
   });
 
-  it('clicking the row checkbox toggles selection, without opening the row', async () => {
+  it('clicking anywhere else in the row (a non-interactive cell) also opens it — a bigger pointer target than just the order number', async () => {
+    const user = userEvent.setup();
+    const { onRowClick } = renderTable();
+    await user.click(screen.getByText('Camila Fernández Soto'));
+    expect(onRowClick).toHaveBeenCalledWith('o-1');
+  });
+
+  it('clicking the row checkbox toggles selection, without opening the row (the click must not bubble to the row)', async () => {
     const user = userEvent.setup();
     const { onRowClick, onToggleSelect } = renderTable();
     await user.click(screen.getByRole('checkbox', { name: /seleccionar ord-48213/i }));

@@ -54,31 +54,51 @@ describe('OrderFilterRail', () => {
     expect(screen.getByText('904')).toBeInTheDocument();
   });
 
-  it('"Solo con prueba de entrega" toggled on sets hasPod: true, and off sets hasPod: null', async () => {
-    const user = userEvent.setup();
-    const { onFiltersChange, rerender } = renderRail();
-    const toggle = screen.getByRole('checkbox', { name: /solo con prueba de entrega/i });
-    await user.click(toggle);
-    expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasPod: true }));
+  describe('POD filter (three states: Todos / Con POD / Sin POD)', () => {
+    // A checkbox can only express two states, but the system produces three:
+    // null (no filter — the general case), true (Con POD), AND false (Sin
+    // POD — what the `pendientes-pod` preset itself sets). A checkbox bound
+    // to "hasPod === true" cannot represent the preset's own false state,
+    // so toggling it twice from there silently leaves "Pendientes de POD"
+    // for a different view than the tab still says is active. A segmented
+    // control with a real "Todos" option is the only shape that can't lose
+    // that state.
+    it('selects "Todos" when hasPod is null', () => {
+      renderRail({ filters: { ...baseFilters, hasPod: null } });
+      expect(screen.getByRole('radio', { name: 'Todos' })).toBeChecked();
+    });
 
-    onFiltersChange.mockClear();
-    rerender(
-      <OrderFilterRail
-        filters={{ ...baseFilters, hasPod: true }}
-        onFiltersChange={onFiltersChange}
-        statusOptions={statusOptions}
-        routeOptions={[]}
-        today="2026-08-22"
-      />,
-    );
-    await user.click(screen.getByRole('checkbox', { name: /solo con prueba de entrega/i }));
-    expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasPod: null }));
-  });
+    it('selects "Sin POD" when hasPod is false — distinct from null, never collapsed to "Todos"', () => {
+      renderRail({ filters: { ...baseFilters, hasPod: false } });
+      expect(screen.getByRole('radio', { name: 'Sin POD' })).toBeChecked();
+      expect(screen.getByRole('radio', { name: 'Todos' })).not.toBeChecked();
+    });
 
-  it('renders hasPod: false as UNCHECKED, distinct from null — it must not be read as falsy', () => {
-    renderRail({ filters: { ...baseFilters, hasPod: false } });
-    const toggle = screen.getByRole('checkbox', { name: /solo con prueba de entrega/i });
-    expect(toggle).not.toBeChecked();
+    it('selects "Con POD" when hasPod is true', () => {
+      renderRail({ filters: { ...baseFilters, hasPod: true } });
+      expect(screen.getByRole('radio', { name: 'Con POD' })).toBeChecked();
+    });
+
+    it('choosing "Con POD" sets hasPod: true', async () => {
+      const user = userEvent.setup();
+      const { onFiltersChange } = renderRail();
+      await user.click(screen.getByRole('radio', { name: 'Con POD' }));
+      expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasPod: true }));
+    });
+
+    it('choosing "Sin POD" sets hasPod: false, reachable directly — not by toggling a checkbox twice', async () => {
+      const user = userEvent.setup();
+      const { onFiltersChange } = renderRail();
+      await user.click(screen.getByRole('radio', { name: 'Sin POD' }));
+      expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasPod: false }));
+    });
+
+    it('choosing "Todos" from either POD state sets hasPod: null', async () => {
+      const user = userEvent.setup();
+      const { onFiltersChange } = renderRail({ filters: { ...baseFilters, hasPod: false } });
+      await user.click(screen.getByRole('radio', { name: 'Todos' }));
+      expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ hasPod: null }));
+    });
   });
 
   it('"2+ intentos de entrega" toggled on sets minAttempts: 2, and off sets minAttempts: null', async () => {
@@ -100,7 +120,7 @@ describe('OrderFilterRail', () => {
     expect(toggle).toBeChecked();
   });
 
-  it('clicking "Hoy" sets dateFrom = dateTo = today', async () => {
+  it('clicking a date-range preset (delegated to OrderDateRangeFilter) updates dateFrom/dateTo', async () => {
     const user = userEvent.setup();
     const { onFiltersChange } = renderRail();
     await user.click(screen.getByRole('button', { name: 'Hoy' }));
@@ -109,25 +129,7 @@ describe('OrderFilterRail', () => {
     );
   });
 
-  it('clicking "Rango" while already on "Hoy" reveals the two date inputs — not a same-value no-op', async () => {
-    const user = userEvent.setup();
-    renderRail({ filters: { ...baseFilters, dateFrom: '2026-08-22', dateTo: '2026-08-22' } });
-    expect(screen.queryByLabelText('Desde')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Rango' }));
-    expect(screen.getByLabelText('Desde')).toBeInTheDocument();
-    expect(screen.getByLabelText('Hasta')).toBeInTheDocument();
-  });
-
-  it('clicking "7d" sets a 7-day range ending today', async () => {
-    const user = userEvent.setup();
-    const { onFiltersChange } = renderRail();
-    await user.click(screen.getByRole('button', { name: '7d' }));
-    expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ dateFrom: '2026-08-16', dateTo: '2026-08-22' }),
-    );
-  });
-
-  it('changing the COURIER / CONDUCTOR field sets filters.driver', () => {
+  it('changing the COURIER / CONDUCTOR field sets filters.driver, preserving the raw (untrimmed) value', () => {
     const { onFiltersChange } = renderRail();
     const input = screen.getByLabelText(/courier.*conductor/i);
     fireEvent.change(input, { target: { value: 'DispatchTrack' } });
@@ -136,33 +138,30 @@ describe('OrderFilterRail', () => {
     );
   });
 
-  it('clearing the COURIER / CONDUCTOR field sets filters.driver to null', () => {
+  it('a leading space in COURIER / CONDUCTOR does not clear the field — only an entirely empty value does', () => {
+    const { onFiltersChange } = renderRail();
+    const input = screen.getByLabelText(/courier.*conductor/i);
+    fireEvent.change(input, { target: { value: ' ' } });
+    expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ driver: ' ' }));
+  });
+
+  it('clearing the COURIER / CONDUCTOR field to empty sets filters.driver to null', () => {
     const { onFiltersChange } = renderRail({ filters: { ...baseFilters, driver: 'DispatchTrack' } });
     const input = screen.getByLabelText(/courier.*conductor/i);
     fireEvent.change(input, { target: { value: '' } });
     expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ driver: null }));
   });
 
-  it('adding a comuna chip appends it, and clicking its × removes it', async () => {
+  it('changing CLIENTE / REMITENTE sets filters.client, and clearing it sets null', () => {
+    const { onFiltersChange } = renderRail({ filters: { ...baseFilters, client: 'Falabella' } });
+    const input = screen.getByLabelText(/cliente.*remitente/i);
+    fireEvent.change(input, { target: { value: '' } });
+    expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ client: null }));
+  });
+
+  it('adding a comuna chip (delegated to OrderComunaChipsFilter) updates filters.comunas', async () => {
     const user = userEvent.setup();
-    const { onFiltersChange, rerender } = renderRail({
-      filters: { ...baseFilters, comunas: ['La Florida'] },
-    });
-    expect(screen.getByText(/La Florida/)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /quitar la florida/i }));
-    expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ comunas: null }));
-
-    onFiltersChange.mockClear();
-    rerender(
-      <OrderFilterRail
-        filters={baseFilters}
-        onFiltersChange={onFiltersChange}
-        statusOptions={statusOptions}
-        routeOptions={[]}
-        today="2026-08-22"
-      />,
-    );
+    const { onFiltersChange } = renderRail();
     await user.click(screen.getByRole('button', { name: /añadir/i }));
     const addInput = screen.getByRole('textbox', { name: /nueva zona/i });
     await user.type(addInput, 'Ñuñoa{Enter}');

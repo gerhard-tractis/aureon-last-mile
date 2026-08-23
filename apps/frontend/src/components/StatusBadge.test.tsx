@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadge, getStatusLabel } from './StatusBadge';
 
 describe('StatusBadge', () => {
   it('renders the correct label for delivered status', () => {
@@ -62,5 +62,40 @@ describe('StatusBadge', () => {
   it('renders unknown status with neutral styling', () => {
     render(<StatusBadge status="some_custom_status" />);
     expect(screen.getByText('some_custom_status')).toBeInTheDocument();
+  });
+
+  it('renders spec-65 order_status_enum values in Spanish (Pedidos leading_status)', () => {
+    render(<StatusBadge status="en_ruta" />);
+    expect(screen.getByText('En reparto')).toBeInTheDocument();
+  });
+
+  it('renders entregado (order enum) as "Entregada" with the success variant', () => {
+    const { container } = render(<StatusBadge status="entregado" />);
+    expect(screen.getByText('Entregada')).toBeInTheDocument();
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-status-success-bg');
+  });
+
+  it('renders every order_status_enum value with a non-raw Spanish label', () => {
+    const enumValues = [
+      'ingresado', 'verificado', 'en_bodega', 'asignado', 'en_carga',
+      'listo_para_despacho', 'en_ruta', 'entregado', 'cancelado',
+      'en_retorno', 'parcialmente_entregado',
+    ];
+    for (const status of enumValues) {
+      const { unmount } = render(<StatusBadge status={status} />);
+      expect(screen.queryByText(status)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
+describe('getStatusLabel', () => {
+  it('returns the Spanish label for a known order_status_enum value', () => {
+    expect(getStatusLabel('en_ruta')).toBe('En reparto');
+  });
+
+  it('returns the raw string for an unknown status, never a placeholder', () => {
+    expect(getStatusLabel('some_future_status')).toBe('some_future_status');
   });
 });

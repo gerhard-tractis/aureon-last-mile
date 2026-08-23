@@ -54,4 +54,32 @@ describe('OrderViewTabs', () => {
     );
     expect(screen.queryByText(/nueva vista/i)).not.toBeInTheDocument();
   });
+
+  it('supports arrow-key navigation between tabs (roving tabindex) — a screen-reader user pressing Right must actually move focus', async () => {
+    const user = userEvent.setup();
+    render(
+      <OrderViewTabs activePreset="sla-en-riesgo" presetCounts={{}} onSelectPreset={vi.fn()} />,
+    );
+    const tabs = screen.getAllByRole('tab');
+    await user.click(tabs[0]);
+    expect(tabs[0]).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(tabs[1]).toHaveFocus();
+  });
+
+  it('Tab enters the tab strip once, at the active tab, and a second Tab leaves it — one tab stop total, not one per tab', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <button type="button">before</button>
+        <OrderViewTabs activePreset="en-reparto" presetCounts={{}} onSelectPreset={vi.fn()} />
+        <button type="button">after</button>
+      </div>,
+    );
+    screen.getByText('before').focus();
+    await user.tab();
+    expect(screen.getByRole('tab', { name: /en reparto/i })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByText('after')).toHaveFocus();
+  });
 });

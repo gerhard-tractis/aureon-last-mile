@@ -12,11 +12,13 @@
  * the default "SLA en riesgo" view legitimately renders zero rows. This
  * must read as "nothing matches this view", not an error.
  *
- * Row click vs. checkbox: the checkbox is a native `<input>` inside its own
- * cell (a real, independent tab stop), and opening the row is a `<button>`
- * around the order number (a second, separate tab stop) — never a
- * `<tr onClick>` that would swallow the checkbox's own click/keyboard
- * handling.
+ * Row click vs. checkbox: the `<tr>` itself opens the row (a bigger pointer
+ * target, matching the mock's whole-row link), but the checkbox's own
+ * `onClick` stops propagation so selecting never also opens the row. The
+ * order-number `<button>` is a second, independent tab stop for keyboard
+ * users, who never get a `<tr onClick>` at all — a bare `<tr>` isn't
+ * keyboard-focusable, and giving it a synthetic tabIndex/keydown handler
+ * would just re-invent what the button already does correctly.
  */
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,7 +27,6 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { cn } from '@/lib/utils';
 import { PackageSearch } from 'lucide-react';
 import type { OrdersListRow } from '@/hooks/useOrdersList';
-import { displayForOrderStatus } from '@/lib/orders/order-status-display';
 
 interface OrdersDataTableProps {
   rows: OrdersListRow[];
@@ -50,7 +51,11 @@ const SLA_BORDER_CLASS: Record<string, string> = {
   none: 'border-l-border',
 };
 
-/** Formats from the already-computed verdict — signed, hours omitted under 60 minutes. */
+/**
+ * Formats from the already-computed verdict — signed, hours omitted under
+ * 60 minutes. Minutes are zero-padded only when an hour segment is present
+ * ("1h 05m", not "1h 5m") — with no hour segment, "9m" is correct as-is.
+ */
 function formatSlaCell(slaStatus: string, minutesRemaining: number | null): string {
   if (slaStatus === 'none' || minutesRemaining === null) return '—';
   const sign = minutesRemaining < 0 ? '−' : '+';
@@ -77,7 +82,7 @@ function TableSkeleton() {
   return (
     <div data-testid="orders-table-skeleton" className="flex flex-col">
       {Array.from({ length: 10 }).map((_, i) => (
-        <Skeleton key={i} className="mx-5.5 my-1 h-[33px] rounded-sm" />
+        <Skeleton key={i} className="mx-6 my-1 h-[33px] rounded-sm" />
       ))}
     </div>
   );
@@ -111,7 +116,7 @@ export function OrdersDataTable({
     <table className="w-full border-collapse text-[11px]">
       <thead>
         <tr className="h-[34px] bg-surface-raised">
-          <th className="w-[30px] px-5.5">
+          <th className="w-[30px] px-6">
             <input
               type="checkbox"
               aria-label="Seleccionar todo"
@@ -134,7 +139,6 @@ export function OrdersDataTable({
       </thead>
       <tbody>
         {rows.map((row) => {
-          const status = displayForOrderStatus(row.leading_status);
           const isDelivered = row.leading_status === 'entregado';
           const routeDriver =
             row.route_label && row.driver_name
@@ -144,12 +148,13 @@ export function OrdersDataTable({
           return (
             <tr
               key={row.id}
+              onClick={() => onRowClick(row.id)}
               className={cn(
-                'h-[41px] border-b border-border-subtle border-l-[3px]',
+                'h-[41px] cursor-pointer border-b border-border-subtle border-l-[3px]',
                 SLA_BORDER_CLASS[row.sla_status] ?? SLA_BORDER_CLASS.none,
               )}
             >
-              <td className="px-5.5">
+              <td className="px-6" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   aria-label={`Seleccionar ${row.order_number}`}
@@ -161,7 +166,10 @@ export function OrdersDataTable({
                 <button
                   type="button"
                   aria-label={`Abrir pedido ${row.order_number}`}
-                  onClick={() => onRowClick(row.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRowClick(row.id);
+                  }}
                   className="font-mono font-semibold text-text hover:underline"
                 >
                   {row.order_number}
@@ -169,22 +177,24 @@ export function OrdersDataTable({
               </td>
               <td className="truncate px-1.5 text-text-body">{row.customer_name}</td>
               <td className="px-1.5">
-                <StatusBadge status={status.label} variant={status.variant} size="sm" />
+                <StatusBadge status={row.leading_status} size="sm" />
               </td>
               <td className="px-1.5 text-right font-mono text-text-secondary">{row.package_count}</td>
               <td className="truncate px-1.5 text-text-secondary">{routeDriver}</td>
               <td className={cn('px-1.5 font-mono font-semibold', SLA_TEXT_CLASS[row.sla_status] ?? SLA_TEXT_CLASS.none)}>
                 {formatSlaCell(row.sla_status, row.minutes_remaining)}
               </td>
-              <td className="flex items-center gap-1.5 truncate px-1.5 text-text-muted">
-                {formatLastEvent(row)}
-                {isDelivered && (
-                  <StatusBadge
-                    status={row.has_pod ? 'POD' : 'SIN POD'}
-                    variant={row.has_pod ? 'success' : 'warning'}
-                    size="sm"
-                  />
-                )}
+              <td className="px-1.5 text-text-muted">
+                <div className="flex items-center gap-1.5 truncate">
+                  {formatLastEvent(row)}
+                  {isDelivered && (
+                    <StatusBadge
+                      status={row.has_pod ? 'POD' : 'SIN POD'}
+                      variant={row.has_pod ? 'success' : 'warning'}
+                      size="sm"
+                    />
+                  )}
+                </div>
               </td>
             </tr>
           );
