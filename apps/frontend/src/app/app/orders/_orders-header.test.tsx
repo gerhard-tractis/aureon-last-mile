@@ -15,6 +15,19 @@ describe('OrdersPageHeader', () => {
     expect(screen.getByText(/47 pedidos/)).toBeInTheDocument();
   });
 
+  it('shows a loading placeholder, never "0 pedidos", while totalCount is not yet known', () => {
+    render(
+      <OrdersPageHeader
+        totalCount={null}
+        pageRowCount={0}
+        onExportCurrentPage={vi.fn()}
+        onCopyShareableUrl={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/0 pedidos/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pedidos/)).not.toBeInTheDocument();
+  });
+
   it('names the export action and how much it covers in the label itself — "Exportar página (N)" with the live loaded-row count', () => {
     render(
       <OrdersPageHeader

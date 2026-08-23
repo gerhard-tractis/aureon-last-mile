@@ -67,6 +67,8 @@ El mock muestra siete pestañas más "Guardar vista" y "+ Nueva vista". No exist
 
 Razón: compartir una vista sigue funcionando, que es el requisito real; una tabla nueva con RLS y CRUD por una pestaña personalizada no se paga sola en un spec que ya trae tres pantallas y una Edge Function.
 
+**Task 6, ronda 4 — un "Limpiar" compartido no sobrevivía al viaje.** Bug real, no una desviación de diseño: "Limpiar" en una pestaña que implica filtros (p. ej. "En reparto") producía `?vista=en-reparto`, idéntico byte a byte a un enlace que nadie tocó nunca. El destinatario abría ese enlace y veía los filtros de la pestaña reaplicados en silencio, justo lo que la regla "la URL es la única fuente de verdad" existe para evitar. Arreglado con un marcador propio de Task 6 fuera del esquema de Task 4 — `filtros=0` (`CLEARED_PARAM`, igual que `PAGE_PARAM`) — que `handleClearAll`/`handleFiltersChange` escriben cuando el resultado queda vacío, y que la fusión de filtros en `page.tsx` respeta para NO reaplicar los filtros del preset. Sin cambios en `filtersToSearchParams` ni en el contrato de Task 4.
+
 ### 3. La barra de acciones masivas solo ofrece lo que existe
 
 El mock lista Reasignar ruta · Marcar excepción · Reintentar entrega · Notificar cliente · Exportar. Solo la última no necesita backend.
@@ -80,6 +82,8 @@ La lista global de pedidos no es un módulo opcional: cualquier operador que ten
 **Decisión:** `isVisible` = `admin` · `operations_manager` · permiso `customer_service`. Sin `module`.
 
 **Task 6, ronda 1 — el gate NO vive en un `layout.tsx`.** `/app/orders/new` y `/app/orders/import` son rutas hermanas bajo el mismo segmento `orders/`, y ambas traen su propio gate inline (`ALLOWED_ROLES = ['admin', 'operations_manager']`), un conjunto **más estrecho** que el de arriba (que además admite `customer_service`). Un `layout.tsx` en `orders/` envolvería a las tres rutas y **ampliaría** quién llega a `/new` y `/import`, no la reduciría. Por eso `OrdersClientGate` se importa directo en `apps/frontend/src/app/app/orders/page.tsx`, sin `layout.tsx` de por medio. **No lo "prolijees" a un layout compartido** sin volver a comparar los dos conjuntos de permisos primero — hacerlo le daría acceso a `customer_service` a crear/importar pedidos, algo que hoy no puede hacer.
+
+**Task 6, ronda 4 — flash del gate mientras cargan los permisos, repo-wide, no propio.** `OrdersClientGate` usa `permissions.length > 0` como señal de "claims cargados" (igual que `DispatchClientGate`/`DistributionClientGate`, el patrón que este task debía copiar), no un flag real de carga — un usuario sin acceso ve la lista brevemente antes de la redirección. `useOperatorId()` no expone el `loading: boolean` que `GlobalContext` sí trae internamente (solo reexporta `operatorId`/`role`/`permissions`/`userId`). Arreglarlo de verdad implica extender `useOperatorId()` y tocar cada `*ClientGate` existente — fuera de alcance de Task 6. No se inventó un heurístico local (p. ej. tratar `operatorId` nulo como "cargando") porque puede confundir un usuario legítimo con cero permisos con uno aún cargando, y mostrarle una página en blanco es peor que el flash.
 
 ### 5. La clasificación SLA se duplica en SQL, con test de paridad
 

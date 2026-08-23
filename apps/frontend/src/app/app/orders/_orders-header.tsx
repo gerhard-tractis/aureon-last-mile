@@ -23,7 +23,15 @@ import { Download, Link as LinkIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface OrdersPageHeaderProps {
-  totalCount: number;
+  /**
+   * `null` while the query is still in flight — rendered as an ellipsis,
+   * never `0`. `presetCounts` on `OrderViewTabs` already guards this same
+   * way (`data ? { [preset]: totalCount } : {}`); this subtitle used to
+   * read "0 pedidos" during every load, the same fabricated-number problem
+   * the facet-count ruling was about, just smaller (controller review,
+   * round 4).
+   */
+  totalCount: number | null;
   /** Rows actually loaded for the current page — what "Exportar página" covers. */
   pageRowCount: number;
   onExportCurrentPage: () => void;
@@ -41,7 +49,7 @@ export function OrdersPageHeader({
       <div>
         <h1 className="font-heading text-lg font-semibold leading-none text-text">Pedidos</h1>
         <p className="mt-1 text-[11px] text-text-secondary">
-          Toda la operación en una sola tabla · {totalCount} pedidos
+          Toda la operación en una sola tabla{totalCount !== null ? ` · ${totalCount} pedidos` : ' · …'}
         </p>
       </div>
       <div className="flex items-center gap-2">

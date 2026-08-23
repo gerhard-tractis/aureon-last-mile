@@ -18,6 +18,24 @@
  * admits customer_service), so a layout.tsx here would widen who can reach
  * those two routes — not narrow it. Importing this gate directly into
  * `page.tsx` keeps it scoped to the page it was written for.
+ *
+ * Known flash, repo-wide (controller review, round 4): `permissions.length
+ * > 0` is a "claims loaded" proxy, not a real loading flag, so an
+ * unauthorized user briefly sees `children` render before the redirect
+ * fires. Checked `useOperatorId()` — it destructures only `operatorId`,
+ * `role`, `permissions` and `userId` off `useGlobal()`, dropping the
+ * `loading: boolean` that `GlobalContext` itself actually tracks
+ * (`lib/context/GlobalContext.tsx`). This gate faithfully copies
+ * `DispatchClientGate`/`DistributionClientGate`'s exact shape, which is
+ * what this task was told to follow, so the flash is pre-existing and
+ * repo-wide, not introduced here. Not fixed in this task: swapping in a
+ * heuristic here (e.g. treating a still-null `operatorId` as "loading")
+ * would diverge from the copied pattern and risks misreading a genuinely
+ * unauthenticated/zero-permission state as "still loading," which renders
+ * a blank page for a legitimate case instead of the flash. The real fix —
+ * exposing `loading` through `useOperatorId()` and having every
+ * `*ClientGate` render `null` on it — touches a shared hook and every
+ * existing gate, which is outside this task's scope.
  */
 
 import { useEffect } from 'react';

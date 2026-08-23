@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   isEmptyFilters,
+  isExplicitlyCleared,
   getPageFromParams,
   paginationLabel,
   buildQueryString,
+  clampPage,
   STATUS_OPTIONS,
 } from './_page-helpers';
 import { EMPTY_ORDERS_LIST_FILTERS, type OrdersListFilters } from '@/hooks/useOrdersList';
@@ -58,6 +60,47 @@ describe('buildQueryString', () => {
   it('appends pagina only when page > 0, after the filter params', () => {
     const filters: OrdersListFilters = { ...EMPTY_ORDERS_LIST_FILTERS, statuses: ['en_ruta'] };
     expect(buildQueryString('en-reparto', filters, 2)).toBe('vista=en-reparto&estado=en_ruta&pagina=2');
+  });
+
+  it('appends filtros=0 only when markCleared is passed', () => {
+    const filters: OrdersListFilters = { ...EMPTY_ORDERS_LIST_FILTERS };
+    expect(buildQueryString('en-reparto', filters, 0)).toBe('vista=en-reparto');
+    expect(buildQueryString('en-reparto', filters, 0, { markCleared: true })).toBe(
+      'vista=en-reparto&filtros=0',
+    );
+  });
+});
+
+describe('isExplicitlyCleared', () => {
+  it('is false for a URL with no filtros param', () => {
+    expect(isExplicitlyCleared(new URLSearchParams('vista=en-reparto'))).toBe(false);
+  });
+
+  it('is true only for filtros=0 exactly', () => {
+    expect(isExplicitlyCleared(new URLSearchParams('vista=en-reparto&filtros=0'))).toBe(true);
+    expect(isExplicitlyCleared(new URLSearchParams('vista=en-reparto&filtros=1'))).toBe(false);
+  });
+
+  it('round-trips through buildQueryString markCleared output', () => {
+    const params = new URLSearchParams(
+      buildQueryString('en-reparto', EMPTY_ORDERS_LIST_FILTERS, 0, { markCleared: true }),
+    );
+    expect(isExplicitlyCleared(params)).toBe(true);
+  });
+});
+
+describe('clampPage', () => {
+  it('leaves an in-range page untouched', () => {
+    expect(clampPage(1, 120)).toBe(1); // 3 pages of 50 -> pages 0,1,2 valid
+  });
+
+  it('clamps a page far beyond the last valid one down to the last valid page', () => {
+    expect(clampPage(999, 1)).toBe(0); // 1 result -> only page 0 exists
+    expect(clampPage(10, 120)).toBe(2); // 120 results -> pages 0..2, page 2 is last
+  });
+
+  it('clamps to page 0 when there are zero results', () => {
+    expect(clampPage(5, 0)).toBe(0);
   });
 });
 

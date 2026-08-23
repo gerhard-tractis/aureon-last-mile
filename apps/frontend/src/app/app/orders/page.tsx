@@ -44,10 +44,12 @@ import {
   STATUS_OPTIONS,
   ROUTE_OPTIONS_NOTE,
   isEmptyFilters,
+  isExplicitlyCleared,
   getPageFromParams,
   buildQueryString,
   paginationLabel,
   downloadCurrentPageCsv,
+  clampPage,
 } from './_page-helpers';
 import { OrderViewTabs } from './components/OrderViewTabs';
 import { OrderFilterRail, type RouteFilterOption } from './components/OrderFilterRail';
@@ -83,8 +85,18 @@ function OrdersPageContent() {
   // undoing the clear. Gating on a one-time ref makes the merge apply only
   // to the URL a person actually landed on, never to one this page produced
   // itself by clearing filters mid-session.
+  // `filtros=0` (CLEARED_PARAM) is the fix for a real bug the controller
+  // found: "Limpiar" on a preset that implies filters produces
+  // `?vista=en-reparto` — byte-identical to a URL nobody has touched.
+  // Without checking it here too, a shared "cleared" link would silently
+  // come back with the preset's own filters re-applied for the recipient,
+  // which is exactly what the URL-as-single-source-of-truth design exists
+  // to prevent. See `_page-helpers.ts` for the full reasoning and
+  // `handleClearAll`/`handleFiltersChange` for where it gets written.
+  const explicitlyCleared = isExplicitlyCleared(searchParams);
   const hasNormalized = useRef(false);
-  const useDefaultsForThisRender = !hasNormalized.current && isEmptyFilters(urlFilters);
+  const useDefaultsForThisRender =
+    !hasNormalized.current && isEmptyFilters(urlFilters) && !explicitlyCleared;
   const filters = useDefaultsForThisRender
     ? ({ ...EMPTY_ORDERS_LIST_FILTERS, ...resolvePreset(preset, today) } as OrdersListFilters)
     : urlFilters;
@@ -92,7 +104,7 @@ function OrdersPageContent() {
   useEffect(() => {
     if (hasNormalized.current) return;
     hasNormalized.current = true;
-    if (!isEmptyFilters(urlFilters)) return;
+    if (!isEmptyFilters(urlFilters) || explicitlyCleared) return;
     const resolved: OrdersListFilters = { ...EMPTY_ORDERS_LIST_FILTERS, ...resolvePreset(preset, today) };
     if (isEmptyFilters(resolved)) return; // preset implies nothing (e.g. "todas") — the bare URL is already canonical
     router.replace(`${pathname}?${buildQueryString(preset, resolved, page)}`);
@@ -108,14 +120,34 @@ function OrdersPageContent() {
   const totalCount = data?.totalCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / ORDERS_LIST_PAGE_SIZE));
 
+  // A stale shared link (or a hand-edited `pagina`) can point past the last
+  // page a filtered view actually has. `totalCount` is only known once
+  // `data` resolves, so this redirects to the last valid page right after
+  // — not a guess made before asking (controller review, round 4).
+  useEffect(() => {
+    if (!data) return;
+    const clamped = clampPage(page, data.totalCount);
+    if (clamped === page) return;
+    router.replace(`${pathname}?${buildQueryString(preset, filters, clamped)}`);
+    // Deliberately narrow deps: only re-check when the page or the answer
+    // to "how many results" changes, not on every filters/preset object
+    // identity change — those already reset page to 0 via `navigate`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.totalCount, page]);
+
   const routeOptions: RouteFilterOption[] = (activeRoutes ?? []).map((r) => ({
     id: r.id,
     label: r.external_route_id,
   }));
 
-  function navigate(nextPreset: OrderViewPresetId, nextFilters: OrdersListFilters, nextPage: number) {
+  function navigate(
+    nextPreset: OrderViewPresetId,
+    nextFilters: OrdersListFilters,
+    nextPage: number,
+    options?: { markCleared?: boolean },
+  ) {
     setSelectedIds([]);
-    router.replace(`${pathname}?${buildQueryString(nextPreset, nextFilters, nextPage)}`);
+    router.replace(`${pathname}?${buildQueryString(nextPreset, nextFilters, nextPage, options)}`);
   }
 
   const handleSelectPreset = (nextPreset: OrderViewPresetId) => {
@@ -123,11 +155,11 @@ function OrdersPageContent() {
   };
 
   const handleFiltersChange = (nextFilters: OrdersListFilters) => {
-    navigate(preset, nextFilters, 0);
+    navigate(preset, nextFilters, 0, { markCleared: isEmptyFilters(nextFilters) });
   };
 
   const handleClearAll = () => {
-    navigate(preset, EMPTY_ORDERS_LIST_FILTERS, 0);
+    navigate(preset, EMPTY_ORDERS_LIST_FILTERS, 0, { markCleared: true });
   };
 
   const handleCopyShareableUrl = () => {
@@ -169,7 +201,7 @@ function OrdersPageContent() {
   return (
     <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden">
       <OrdersPageHeader
-        totalCount={totalCount}
+        totalCount={data ? totalCount : null}
         pageRowCount={rows.length}
         onExportCurrentPage={() => downloadCurrentPageCsv(rows)}
         onCopyShareableUrl={handleCopyShareableUrl}

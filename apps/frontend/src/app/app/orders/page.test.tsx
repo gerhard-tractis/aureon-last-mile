@@ -91,18 +91,48 @@ describe('OrdersPage', () => {
     expect(screen.getByText('Solo rutas activas')).toBeInTheDocument();
   });
 
-  it('the header Exportar pagina exports the current page loaded rows, independent of selection', () => {
+  it('header never shows "0 pedidos" while the query is still loading (data undefined)', () => {
+    mockUseOrdersList.mockReturnValue({ data: undefined, isLoading: true });
     renderPage();
-    const clickSpy = vi.fn();
-    const originalCreateElement = document.createElement.bind(document);
-    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
-      const el = originalCreateElement(tag);
-      if (tag === 'a') el.click = clickSpy;
-      return el;
+    expect(screen.queryByText(/0 pedidos/)).not.toBeInTheDocument();
+  });
+
+  it('the header Exportar pagina exports every loaded row, not just the selection', async () => {
+    // Two rows, only one selected — if the handler were wired to
+    // selectedRows instead of the full loaded page, the CSV would be
+    // missing ORD-002 entirely. Capturing the real Blob content (not just
+    // "a click fired") is what actually catches that mistake.
+    const secondRow: OrdersListRow = {
+      ...SAMPLE_ROWS[0],
+      id: 'ord-2',
+      order_number: 'ORD-002',
+      customer_name: 'Ripley',
+    };
+    mockUseOrdersList.mockReturnValue({
+      data: { rows: [...SAMPLE_ROWS, secondRow], totalCount: 2 },
+      isLoading: false,
     });
+    if (!URL.createObjectURL) URL.createObjectURL = vi.fn(() => 'blob:mock-url');
+    if (!URL.revokeObjectURL) URL.revokeObjectURL = vi.fn();
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    renderPage();
+    // Select only ORD-001 — "independent of selection" is only actually
+    // exercised once a selection exists that is NOT the full row set.
+    fireEvent.click(screen.getByRole('checkbox', { name: /seleccionar ord-001/i }));
     fireEvent.click(screen.getByRole('button', { name: /exportar página/i }));
+
+    expect(createObjectURLSpy).toHaveBeenCalledTimes(1);
+    const blobArg = createObjectURLSpy.mock.calls[0][0] as Blob;
+    const buffer = await blobArg.arrayBuffer();
+    const text = new TextDecoder('utf-8').decode(buffer);
+    expect(text).toContain('ORD-001');
+    expect(text).toContain('ORD-002'); // not selected — proves the export isn't limited to the selection
     expect(clickSpy).toHaveBeenCalledTimes(1);
-    vi.restoreAllMocks();
+
+    createObjectURLSpy.mockRestore();
+    clickSpy.mockRestore();
   });
 
   it('the header Guardar vista also copies window.location.href (same behaviour as the chips bar copy)', () => {
@@ -155,11 +185,34 @@ describe('OrdersPage', () => {
     );
   });
 
-  it('"Limpiar" clears all filters but keeps the preset id in the URL', () => {
+  it('"Limpiar" clears all filters, keeps the preset id, and marks the clear explicit (filtros=0) so it survives being shared', () => {
     currentSearch = 'vista=en-reparto&estado=en_ruta&conductor=Juan';
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Limpiar' }));
-    expect(mockReplace).toHaveBeenLastCalledWith('/app/orders?vista=en-reparto');
+    expect(mockReplace).toHaveBeenLastCalledWith('/app/orders?vista=en-reparto&filtros=0');
+  });
+
+  it('a shared cleared-view URL (filtros=0) does not silently re-apply the preset own implied filters', () => {
+    // This is the exact bug the filtros=0 marker exists to prevent: without
+    // it, a bare `?vista=en-reparto` and a deliberately-cleared
+    // `?vista=en-reparto` are byte-identical, and the recipient of a shared
+    // "cleared" link would see the preset's filters silently reapplied.
+    currentSearch = 'vista=en-reparto&filtros=0';
+    renderPage();
+    expect(mockUseOrdersList).toHaveBeenCalledWith(
+      'op-1',
+      expect.objectContaining({ statuses: null }),
+      0,
+    );
+    // Nothing should get rewritten either — the URL is already canonical.
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('removing a chip via ActiveFilterChips keeps the preset id and drops only that filter (page-level wiring, not just the rail)', () => {
+    currentSearch = 'vista=en-reparto&estado=en_ruta&conductor=Juan';
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar estado' }));
+    expect(mockReplace).toHaveBeenLastCalledWith('/app/orders?vista=en-reparto&conductor=Juan');
   });
 
   it('"URL compartible" copies window.location.href rather than persisting anything', () => {
@@ -195,6 +248,22 @@ describe('OrdersPage', () => {
     mockUseOrdersList.mockReturnValue({ data: { rows: SAMPLE_ROWS, totalCount: 60 }, isLoading: false });
     renderPage();
     expect(screen.getByRole('button', { name: 'Anterior' })).toBeDisabled();
+  });
+
+  it('clamps an out-of-range pagina (a stale shared link) to the last valid page once totalCount is known', () => {
+    // Only 1 result exists, so pagina=999 is unreachable — the RPC returns
+    // zero rows for that offset while still reporting the real totalCount.
+    currentSearch = 'vista=en-reparto&estado=en_ruta&pagina=999';
+    mockUseOrdersList.mockReturnValue({ data: { rows: [], totalCount: 1 }, isLoading: false });
+    renderPage();
+    expect(mockReplace).toHaveBeenCalledWith('/app/orders?vista=en-reparto&estado=en_ruta');
+  });
+
+  it('does not touch the URL when pagina is already within range', () => {
+    currentSearch = 'vista=en-reparto&estado=en_ruta&pagina=1';
+    mockUseOrdersList.mockReturnValue({ data: { rows: SAMPLE_ROWS, totalCount: 60 }, isLoading: false });
+    renderPage();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it('row click is a stubbed no-op pending Task 8', () => {

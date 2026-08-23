@@ -56,8 +56,33 @@ export const ROUTE_OPTIONS_NOTE = 'Solo rutas activas';
 
 export const PAGE_PARAM = 'pagina';
 
+/**
+ * A page-owned marker, outside Task 4's `OrdersListFilters` schema
+ * entirely (same idea as `PAGE_PARAM`) — `filtros=0` on the URL.
+ *
+ * Why this needs to exist (controller review, round 4): Task 4's
+ * `searchParamsToState` returns all-null filters for a bare query string,
+ * and OrdersPage merges the active preset's own implied filters back in
+ * whenever the URL's filters are empty (see `page.tsx`'s one-time
+ * normalization). "Limpiar" also produces an all-null filter set — by
+ * design, it means "no filters, even the preset's own." Without this
+ * marker those two states are byte-identical on the wire
+ * (`?vista=en-reparto`), so a cleared view, once shared, silently comes
+ * back with the preset's filters re-applied for the recipient — exactly
+ * the bug the URL-as-single-source-of-truth design exists to prevent.
+ * `filtros=0` breaks the tie: present, it means "empty is deliberate,
+ * don't merge"; absent, an empty filter set is interpreted as "not yet
+ * decided," and the preset's own filters apply.
+ */
+export const CLEARED_PARAM = 'filtros';
+
 export function isEmptyFilters(filters: OrdersListFilters): boolean {
   return Object.values(filters).every((v) => v === null);
+}
+
+/** True only for the exact marker `buildQueryString(..., { markCleared: true })` writes. */
+export function isExplicitlyCleared(params: URLSearchParams): boolean {
+  return params.get(CLEARED_PARAM) === '0';
 }
 
 export function getPageFromParams(params: URLSearchParams): number {
@@ -70,9 +95,11 @@ export function buildQueryString(
   presetId: OrderViewPresetId,
   filters: OrdersListFilters,
   page: number,
+  options?: { markCleared?: boolean },
 ): string {
   const params = filtersToSearchParams(presetId, filters);
   if (page > 0) params.set(PAGE_PARAM, String(page));
+  if (options?.markCleared) params.set(CLEARED_PARAM, '0');
   return params.toString();
 }
 
@@ -81,6 +108,19 @@ export function paginationLabel(page: number, rowsCount: number, totalCount: num
   const start = page * ORDERS_LIST_PAGE_SIZE + 1;
   const end = start + rowsCount - 1;
   return `${start}–${end} de ${totalCount}`;
+}
+
+/**
+ * A stale shared link (or a manually edited `pagina`) can point past the
+ * last page a filtered view actually has — reachable in a feature built
+ * around shareable links, not hypothetical (controller review, round 4).
+ * `totalCount` is only known after the query returns, so the page
+ * component clamps and redirects once data is in, rather than trying to
+ * guess a valid page before asking.
+ */
+export function clampPage(page: number, totalCount: number): number {
+  const totalPages = Math.max(1, Math.ceil(totalCount / ORDERS_LIST_PAGE_SIZE));
+  return Math.min(page, totalPages - 1);
 }
 
 /**
