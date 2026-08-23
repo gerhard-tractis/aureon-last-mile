@@ -20,9 +20,19 @@
 -- whole order history. A plpgsql set-returning function is opaque to the
 -- planner and materializes a tuplestore per call; a `LANGUAGE sql` function
 -- with this same `RETURNS TABLE` shape is eligible for
--- `inline_set_returning_function`, so the planner folds the CASE ladder
--- straight into the calling query, and — since it is IMMUTABLE — it can even
--- be used in an index expression later.
+-- `inline_set_returning_function`, which removes the SPI round trip and the
+-- per-call tuplestore and makes the expression visible to the planner.
+--
+-- It does NOT flatten all the way into the caller: `is_simple_subquery`
+-- refuses to pull up a subquery carrying a cteList, and `effective` is
+-- referenced twice (by `minutes` and by the outer SELECT) so PG12+ CTE
+-- auto-inlining does not apply to it either — it stays a per-row lateral
+-- subquery scan. Rewriting the two CTEs as plain `FROM (SELECT …) e,
+-- LATERAL (SELECT …) m` would flatten fully with no semantic change; left
+-- as-is because nothing measures it until Task 2 exists.
+--
+-- Being IMMUTABLE does not make this usable in an index expression: it is
+-- set-returning (`proretset`), and that bars index use at any volatility.
 --
 -- Semantics, mirrored from `classifyRisk` exactly:
 --   - NULL p_now, delivered, or no effective delivery-window end → ('none', 0)
