@@ -13,6 +13,11 @@
  *
  * `useSearchParams` requires a Suspense boundary or the production build
  * fails at prerender — see `OrdersPage` at the bottom.
+ *
+ * Non-JSX helpers (URL param parsing, the CSV download, the static status
+ * option list) live in `_page-helpers.ts`, and the header block lives in
+ * `_orders-header.tsx` — both split out purely to keep this file under the
+ * project's 300-line limit.
  */
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,77 +35,25 @@ import {
 } from '@/hooks/useOrdersList';
 import {
   resolvePreset,
-  filtersToSearchParams,
   searchParamsToState,
   type OrderViewPresetId,
 } from '@/lib/orders/order-view-presets';
-import { getStatusLabel } from '@/components/StatusBadge';
 import OrdersClientGate from './_client-gate';
+import { OrdersPageHeader } from './_orders-header';
+import {
+  STATUS_OPTIONS,
+  ROUTE_OPTIONS_NOTE,
+  isEmptyFilters,
+  getPageFromParams,
+  buildQueryString,
+  paginationLabel,
+  downloadCurrentViewCsv,
+} from './_page-helpers';
 import { OrderViewTabs } from './components/OrderViewTabs';
-import { OrderFilterRail, type StatusFilterOption, type RouteFilterOption } from './components/OrderFilterRail';
+import { OrderFilterRail, type RouteFilterOption } from './components/OrderFilterRail';
 import { ActiveFilterChips } from './components/ActiveFilterChips';
 import { OrdersDataTable } from './components/OrdersDataTable';
 import { OrdersBulkBar } from './components/OrdersBulkBar';
-
-/** The eleven `order_status_enum` values (lib/types.ts) — not a facet count query, just the label list. */
-const ORDER_STATUS_ENUM_VALUES = [
-  'ingresado',
-  'verificado',
-  'en_bodega',
-  'asignado',
-  'en_carga',
-  'listo_para_despacho',
-  'en_ruta',
-  'entregado',
-  'cancelado',
-  'en_retorno',
-  'parcialmente_entregado',
-] as const;
-
-/**
- * No facet-count RPC produces a per-status total over the whole dataset
- * (spec-65 Task 6 ruling — getting all eleven would mean eleven queries per
- * page load). `count: 0` is a placeholder forced by OrderFilterRail's
- * `StatusFilterOption.count: number`, which is required and always
- * rendered — there is no "omit the count" path in that component the way
- * OrderViewTabs has one for `presetCounts`. This is a known, reported gap:
- * it reads as "zero of this status", not "unknown", which is exactly the
- * kind of wrong-not-absent number the brief calls out. See Task 6 report.
- */
-const STATUS_OPTIONS: StatusFilterOption[] = ORDER_STATUS_ENUM_VALUES.map((status) => ({
-  status,
-  label: getStatusLabel(status, 'order'),
-  count: 0,
-}));
-
-const PAGE_PARAM = 'pagina';
-
-function isEmptyFilters(filters: OrdersListFilters): boolean {
-  return Object.values(filters).every((v) => v === null);
-}
-
-function getPageFromParams(params: URLSearchParams): number {
-  const raw = params.get(PAGE_PARAM);
-  const parsed = raw ? Number(raw) : 0;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
-}
-
-function buildQueryString(
-  presetId: OrderViewPresetId,
-  filters: OrdersListFilters,
-  page: number,
-): string {
-  const params = filtersToSearchParams(presetId, filters);
-  if (page > 0) params.set(PAGE_PARAM, String(page));
-  return params.toString();
-}
-
-function paginationLabel(page: number, rowsCount: number, totalCount: number): string {
-  if (totalCount === 0) return '0 de 0';
-  const start = page * ORDERS_LIST_PAGE_SIZE + 1;
-  const end = start + rowsCount - 1;
-  return `${start}–${end} de ${totalCount}`;
-}
 
 function OrdersPageContent() {
   const router = useRouter();
@@ -215,6 +168,12 @@ function OrdersPageContent() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden">
+      <OrdersPageHeader
+        totalCount={totalCount}
+        onExportCurrentView={() => downloadCurrentViewCsv(rows)}
+        onCopyShareableUrl={handleCopyShareableUrl}
+      />
+
       <OrderViewTabs
         activePreset={preset}
         presetCounts={data ? { [preset]: totalCount } : {}}
@@ -227,6 +186,7 @@ function OrdersPageContent() {
           onFiltersChange={handleFiltersChange}
           statusOptions={STATUS_OPTIONS}
           routeOptions={routeOptions}
+          routeOptionsNote={ROUTE_OPTIONS_NOTE}
           today={today}
         />
 

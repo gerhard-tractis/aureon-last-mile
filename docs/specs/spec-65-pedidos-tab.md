@@ -79,6 +79,8 @@ La lista global de pedidos no es un módulo opcional: cualquier operador que ten
 
 **Decisión:** `isVisible` = `admin` · `operations_manager` · permiso `customer_service`. Sin `module`.
 
+**Task 6, ronda 1 — el gate NO vive en un `layout.tsx`.** `/app/orders/new` y `/app/orders/import` son rutas hermanas bajo el mismo segmento `orders/`, y ambas traen su propio gate inline (`ALLOWED_ROLES = ['admin', 'operations_manager']`), un conjunto **más estrecho** que el de arriba (que además admite `customer_service`). Un `layout.tsx` en `orders/` envolvería a las tres rutas y **ampliaría** quién llega a `/new` y `/import`, no la reduciría. Por eso `OrdersClientGate` se importa directo en `apps/frontend/src/app/app/orders/page.tsx`, sin `layout.tsx` de por medio. **No lo "prolijees" a un layout compartido** sin volver a comparar los dos conjuntos de permisos primero — hacerlo le daría acceso a `customer_service` a crear/importar pedidos, algo que hoy no puede hacer.
+
 ### 5. La clasificación SLA se duplica en SQL, con test de paridad
 
 `3a` filtra, ordena y cuenta por SLA. Hacerlo en el cliente obligaría a traer todas las órdenes; el mock habla de 12.847 en 30 días.
@@ -303,6 +305,9 @@ Cada una es un dato que el schema no tiene. Ninguna se rellena con un placeholde
 | `3a` cabecera | "+ Nueva vista" | Sin persistencia de vistas. Ver *Decisión 2*. |
 | `3b` bitácora / POD | Motivos en inglés (`CONSIGNEE_ABSENT`) | Ilustrativos del diseñador. DispatchTrack manda `substatus` en español (`Nadie en casa`) más `substatus_code` numérico (`07`). Se muestra lo que llega. |
 | `1f` pestañas | "Conversación (N)" | Se implementa, **gated** por `ModuleKey.CONVERSATIONS`. Si el módulo está apagado, la pestaña no existe (no aparece en cero). |
+| `3a` pestañas | Conteo en las siete pestañas (47 · 12.847 · 318 · 23 · 61 · 12 · 904) | No existe un RPC de conteo por faceta sobre todo el dataset — traerlos los siete costaría siete queries por carga de página. Solo la pestaña activa muestra su conteo (`total_count` de la query ya hecha); las inactivas no muestran número, ni cero, ni spinner (Task 6, ronda 1). |
+| `3a` filtro ESTADO | Conteo por estado en el riel (318 · 23 · 96 · 904 · 12) | Mismo motivo que arriba. `OrderFilterRail.StatusFilterOption.count` es opcional (Task 6, ronda 2 — originalmente se pasó `count: 0`, que la revisión del controller correctamente rechazó por afirmar un dato falso); se omite por completo, sin badge vacío. |
+| `3a` filtro RUTA | Todas las rutas, históricas incluidas | `useActiveRoutes` solo cubre rutas con despachos hoy/en curso. Se usa igual (el shape encaja) pero con una leyenda visible bajo el select — "Solo rutas activas" — para que la ausencia de una ruta antigua se lea como límite de la vista, no como que la ruta no existe (Task 6, ronda 2). |
 
 ---
 

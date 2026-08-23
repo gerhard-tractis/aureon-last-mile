@@ -84,6 +84,38 @@ describe('OrdersPage', () => {
     expect(screen.getByText('ORD-001')).toBeInTheDocument();
   });
 
+  it('header shows the real current-query total_count and a "Solo rutas activas" caption under RUTA', () => {
+    renderPage();
+    expect(screen.getByRole('heading', { name: 'Pedidos' })).toBeInTheDocument();
+    expect(screen.getByText(/1 pedidos/)).toBeInTheDocument();
+    expect(screen.getByText('Solo rutas activas')).toBeInTheDocument();
+  });
+
+  it('the header Exportar CSV exports the current view (loaded rows), independent of selection', () => {
+    renderPage();
+    const clickSpy = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = originalCreateElement(tag);
+      if (tag === 'a') el.click = clickSpy;
+      return el;
+    });
+    fireEvent.click(screen.getByRole('button', { name: /exportar csv/i }));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
+  it('the header Guardar vista also copies window.location.href (same behaviour as the chips bar copy)', () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /guardar vista/i }));
+    expect(writeText).toHaveBeenCalledWith(window.location.href);
+  });
+
   it('on a bare landing, queries with the default preset\'s resolved SLA filter and normalizes the URL', () => {
     renderPage();
     expect(mockUseOrdersList).toHaveBeenCalledWith(
@@ -144,7 +176,8 @@ describe('OrdersPage', () => {
   it('selecting a row surfaces it in OrdersBulkBar with a working Exportar button', () => {
     renderPage();
     fireEvent.click(screen.getByRole('checkbox', { name: /seleccionar ord-001/i }));
-    const exportButton = screen.getByRole('button', { name: /exportar/i });
+    // Exact name — the header's own "Exportar CSV" button also matches /exportar/i now.
+    const exportButton = screen.getByRole('button', { name: 'Exportar' });
     expect(exportButton).toBeInTheDocument();
     expect(within(exportButton.parentElement as HTMLElement).getByText('1')).toBeInTheDocument();
   });

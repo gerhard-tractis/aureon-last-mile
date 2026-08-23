@@ -54,6 +54,22 @@ describe('OrderFilterRail', () => {
     expect(screen.getByText('904')).toBeInTheDocument();
   });
 
+  it('renders only the label, with no count badge element at all, when statusOptions omit count', () => {
+    renderRail({
+      statusOptions: [
+        { status: 'en_ruta', label: 'En reparto' },
+        { status: 'entregado', label: 'Entregada' },
+      ],
+    });
+    const checkbox = screen.getByRole('checkbox', { name: 'En reparto' });
+    const row = checkbox.closest('label') as HTMLElement;
+    // Exactly two children — the checkbox and the label text span — never a
+    // third (empty or otherwise) count badge element.
+    expect(row.children).toHaveLength(2);
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+    expect(screen.queryByText('318')).not.toBeInTheDocument();
+  });
+
   describe('POD filter (three states: Todos / Con POD / Sin POD)', () => {
     // A checkbox can only express two states, but the system produces three:
     // null (no filter — the general case), true (Con POD), AND false (Sin
@@ -201,5 +217,17 @@ describe('OrderFilterRail', () => {
     onFiltersChange.mockClear();
     await user.selectOptions(select, '');
     expect(onFiltersChange).toHaveBeenCalledWith(expect.objectContaining({ routeIds: null }));
+  });
+
+  describe('routeOptionsNote', () => {
+    it('renders the caption under RUTA when supplied', () => {
+      renderRail({ routeOptionsNote: 'Solo rutas activas' });
+      expect(screen.getByText('Solo rutas activas')).toBeInTheDocument();
+    });
+
+    it('renders no caption at all when omitted', () => {
+      renderRail();
+      expect(screen.queryByText(/solo rutas/i)).not.toBeInTheDocument();
+    });
   });
 });

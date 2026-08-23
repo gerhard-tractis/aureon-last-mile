@@ -23,7 +23,13 @@ import { OrderComunaChipsFilter } from './OrderComunaChipsFilter';
 export interface StatusFilterOption {
   status: string;
   label: string;
-  count: number;
+  /**
+   * Omitted (not `0`) when no facet-count source exists for this status —
+   * e.g. `/app/orders` has no per-status RPC over the whole dataset. `0`
+   * would read as "zero orders of this status", which is false and worse
+   * than showing nothing (spec-65 Task 6 ruling).
+   */
+  count?: number;
 }
 
 export interface RouteFilterOption {
@@ -36,6 +42,8 @@ interface OrderFilterRailProps {
   onFiltersChange: (filters: OrdersListFilters) => void;
   statusOptions: StatusFilterOption[];
   routeOptions: RouteFilterOption[];
+  /** Short caption under the RUTA select for when `routeOptions` doesn't cover the whole route universe (e.g. "Solo rutas activas"). Omitted renders nothing. */
+  routeOptionsNote?: string;
   /** Injected like `resolvePreset`'s `today` param — testable, no clock disagreement. */
   today: string;
 }
@@ -58,6 +66,7 @@ export function OrderFilterRail({
   onFiltersChange,
   statusOptions,
   routeOptions,
+  routeOptionsNote,
   today,
 }: OrderFilterRailProps) {
   function patch(next: Partial<OrdersListFilters>) {
@@ -104,7 +113,9 @@ export function OrderFilterRail({
                 <span className={checked ? 'font-medium text-text' : 'text-text-secondary'}>
                   {opt.label}
                 </span>
-                <span className="ml-auto font-mono text-[10px] text-text-muted">{opt.count}</span>
+                {opt.count !== undefined && (
+                  <span className="ml-auto font-mono text-[10px] text-text-muted">{opt.count}</span>
+                )}
               </label>
             );
           })}
@@ -126,6 +137,9 @@ export function OrderFilterRail({
               <option key={r.id} value={r.id}>{r.label}</option>
             ))}
           </select>
+          {routeOptionsNote && (
+            <p className="font-mono text-[9.5px] text-text-muted">{routeOptionsNote}</p>
+          )}
         </section>
 
         {/* COURIER / CONDUCTOR */}
