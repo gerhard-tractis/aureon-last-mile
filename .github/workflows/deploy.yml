@@ -414,7 +414,23 @@ jobs:
       group: qa-deploy
       cancel-in-progress: false
     needs: [changes]
-    if: always() && !failure() && !cancelled() && needs.changes.result == 'success'
+    # Gate ONLY on this job's own dependency.
+    #
+    # This used to read `always() && !failure() && !cancelled() && …`. At job
+    # level those functions are evaluated against the workflow as a whole, not
+    # against `needs:` — so ANY failing job anywhere in the run took QA down
+    # with it. In practice `verify-production-migrations` failed (production is
+    # behind on migrations because production deploys wait at the approval
+    # gate), and QA stopped syncing entirely: two consecutive merges reported
+    # `Sync QA Environment: cancelled` and skipped the E2E.
+    #
+    # That inverts everything the block above says. QA has its own concurrency
+    # group precisely so "a run waiting at the production gate must never hold
+    # this one", and spec-57 made QA production's *precondition* — so a
+    # production-side check must never be able to block QA. Otherwise a
+    # production problem blocks the very environment used to qualify the fix
+    # for it, and the only way out is deploying to production unqualified.
+    if: always() && needs.changes.result == 'success'
     runs-on: [self-hosted, vps]
     timeout-minutes: 15
     steps:
