@@ -174,7 +174,7 @@ BEGIN
       '{}'::jsonb, 'MANUAL', now(), now()),
     ('e0000031-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
       'T65-ORD-PKG', 'Cliente Pkg', '+56900000031', 'Av. Pkg 1', 'Maipú', '2026-08-22'::date,
-      '{}'::jsonb, 'MANUAL', now());
+      '{}'::jsonb, 'MANUAL', now(), NULL);
 
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, deleted_at)
   VALUES
