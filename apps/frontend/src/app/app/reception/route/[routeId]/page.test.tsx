@@ -244,6 +244,46 @@ describe('RouteReceptionPage', () => {
       expect(screen.queryByRole('button', { name: /reabrir ruta/i })).not.toBeInTheDocument();
       expect(screen.queryByText('Pedido #101')).not.toBeInTheDocument();
     });
+
+    // Gap fix — loading below lg used to fall through to the desktop
+    // `max-w-2xl` skeleton because the mobile branch sat below the
+    // `isLoading` guard. It must now render the mobile-shaped skeleton
+    // instead, and never the desktop one.
+    it('renders the mobile-shaped skeleton while loading, not the desktop one', () => {
+      mockSnapshot.mockReturnValue({ data: undefined, isLoading: true, error: null });
+      const { container } = render(<RouteReceptionPage />);
+      expect(
+        container.querySelector('[data-testid="reception-mobile-loading-skeleton"]'),
+      ).toBeInTheDocument();
+      // The desktop loading branch wraps its skeletons in a centred
+      // `max-w-2xl` column — that shape must not appear on mobile.
+      expect(container.querySelector('.max-w-2xl')).not.toBeInTheDocument();
+    });
+
+    // Gap fix — error/null below lg used to fall through to the desktop
+    // centred card. The mobile card must state the failure and always offer
+    // a working way back to /app/reception with a touch target >= 44px.
+    it('renders a mobile-shaped error card with a working way back, not the desktop card', () => {
+      mockSnapshot.mockReturnValue({
+        data: undefined,
+        isLoading: false,
+        error: new Error('Ruta no encontrada'),
+      });
+      const { container } = render(<RouteReceptionPage />);
+      expect(
+        container.querySelector('[data-testid="reception-mobile-error"]'),
+      ).toBeInTheDocument();
+      expect(container.querySelector('.max-w-2xl')).not.toBeInTheDocument();
+      expect(screen.getByText('Ruta no encontrada')).toBeInTheDocument();
+
+      const backButton = screen.getByRole('button', { name: /volver a recepción/i });
+      // h-11 is Tailwind for 44px — the minimum touch target the operator
+      // needs to actually reach the exit under pressure.
+      expect(backButton.className).toMatch(/\bh-11\b/);
+
+      fireEvent.click(backButton);
+      expect(mockPush).toHaveBeenCalledWith('/app/reception');
+    });
   });
 
   // Task 23 — closing a reception used to push back to the list, throwing
