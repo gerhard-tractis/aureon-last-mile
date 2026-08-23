@@ -31,6 +31,7 @@ function dispatchRow(overrides: Partial<DossierDispatch> = {}): DossierDispatch 
     is_pickup: false,
     external_route_id: null,
     driver_name: null,
+    route_id: null,
     ...overrides,
   };
 }
