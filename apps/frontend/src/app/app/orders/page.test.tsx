@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import OrdersPage from './page';
@@ -91,7 +91,7 @@ describe('OrdersPage', () => {
     expect(screen.getByText('Solo rutas activas')).toBeInTheDocument();
   });
 
-  it('the header Exportar CSV exports the current view (loaded rows), independent of selection', () => {
+  it('the header Exportar pagina exports the current page loaded rows, independent of selection', () => {
     renderPage();
     const clickSpy = vi.fn();
     const originalCreateElement = document.createElement.bind(document);
@@ -100,7 +100,7 @@ describe('OrdersPage', () => {
       if (tag === 'a') el.click = clickSpy;
       return el;
     });
-    fireEvent.click(screen.getByRole('button', { name: /exportar csv/i }));
+    fireEvent.click(screen.getByRole('button', { name: /exportar página/i }));
     expect(clickSpy).toHaveBeenCalledTimes(1);
     vi.restoreAllMocks();
   });
@@ -173,13 +173,13 @@ describe('OrdersPage', () => {
     expect(writeText).toHaveBeenCalledWith(window.location.href);
   });
 
-  it('selecting a row surfaces it in OrdersBulkBar with a working Exportar button', () => {
+  it('selecting a row surfaces it in OrdersBulkBar with a working, self-describing Exportar button', () => {
     renderPage();
     fireEvent.click(screen.getByRole('checkbox', { name: /seleccionar ord-001/i }));
-    // Exact name — the header's own "Exportar CSV" button also matches /exportar/i now.
-    const exportButton = screen.getByRole('button', { name: 'Exportar' });
+    // Exact name — the bulk bar's own label now names its scope and count too,
+    // and the header's "Exportar página (N)" also matches a loose /exportar/i.
+    const exportButton = screen.getByRole('button', { name: 'Exportar seleccionados (1)' });
     expect(exportButton).toBeInTheDocument();
-    expect(within(exportButton.parentElement as HTMLElement).getByText('1')).toBeInTheDocument();
   });
 
   it('pagination "Siguiente" advances the page param without touching filters', () => {

@@ -5,11 +5,18 @@
  * (spec-65, mock `3a`). Split out of `page.tsx` to keep that file under the
  * project's 300-line limit.
  *
- * Two export-shaped actions live here on purpose, both calling `ordersToCsv`
- * but over different row sets — "Exportar CSV" (this component) exports the
- * *current filtered view*; `OrdersBulkBar`'s "Exportar" exports only the
- * *selected* rows. The `title` attributes spell out the difference so
- * nobody clicks the wrong one expecting the other's behaviour.
+ * Controller review, round 3: the export button used to read "Exportar
+ * CSV" while silently only covering the loaded page — a `12.847 pedidos`
+ * subtitle next to a button that exports 50 rows is a trust bug a user
+ * discovers only after opening the file, by which point they may already
+ * have sent it on. The label now names both what it does and how much:
+ * "Exportar página (N)" with the live `pageRowCount`, which also updates
+ * as the user pages, making the scope self-evident rather than asserted
+ * in a tooltip nobody reads. `OrdersBulkBar`'s own export got the same
+ * treatment ("Exportar seleccionados (N)") for the same reason. A
+ * full-dataset export (every row of `totalCount`, not just this page) is
+ * out of scope — see `_page-helpers.ts` / the Task 6 report for why and
+ * what it would take.
  */
 
 import { Download, Link as LinkIcon } from 'lucide-react';
@@ -17,13 +24,16 @@ import { Button } from '@/components/ui/button';
 
 interface OrdersPageHeaderProps {
   totalCount: number;
-  onExportCurrentView: () => void;
+  /** Rows actually loaded for the current page — what "Exportar página" covers. */
+  pageRowCount: number;
+  onExportCurrentPage: () => void;
   onCopyShareableUrl: () => void;
 }
 
 export function OrdersPageHeader({
   totalCount,
-  onExportCurrentView,
+  pageRowCount,
+  onExportCurrentPage,
   onCopyShareableUrl,
 }: OrdersPageHeaderProps) {
   return (
@@ -38,11 +48,11 @@ export function OrdersPageHeader({
         <Button
           variant="outline"
           size="sm"
-          title="Exporta los pedidos de la vista actual cargada en pantalla — usa Exportar en la barra de selección para exportar solo los pedidos marcados"
-          onClick={onExportCurrentView}
+          title="Exporta solo los pedidos cargados en esta página — no la vista filtrada completa"
+          onClick={onExportCurrentPage}
         >
           <Download className="h-3.5 w-3.5" />
-          Exportar CSV
+          Exportar página ({pageRowCount})
         </Button>
         <Button
           variant="outline"

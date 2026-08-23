@@ -91,12 +91,33 @@ export function paginationLabel(page: number, rowsCount: number, totalCount: num
  * (and round-trips through the URL/chips) for whatever wires it later —
  * e.g. the inspector's own search/palette — not for this page to fill in.
  *
- * `downloadCurrentViewCsv` mirrors `OrdersBulkBar`'s own CSV download
+ * `downloadCurrentPageCsv` mirrors `OrdersBulkBar`'s own CSV download
  * (Task 5), duplicated rather than imported because that one is private to
- * the bulk bar and this is a second, independent export of the *current
- * filtered view* (all loaded rows) rather than the *selected* rows.
+ * the bulk bar and this is a second, independent export — of the current
+ * *page's loaded rows* (up to `ORDERS_LIST_PAGE_SIZE`), not the *selected*
+ * rows and NOT every row of `totalCount`. The header button is labelled
+ * "Exportar página (N)" precisely so this scope is never implicit — a
+ * label promising more than a 50-row page while `totalCount` reads in the
+ * thousands is a trust bug a user only discovers after opening the file
+ * (controller review, round 3).
+ *
+ * A true full-dataset export (every row of `totalCount`, regardless of
+ * page) is real new logic, not wiring, and deliberately not built here.
+ * Two ways to get there, for whoever picks this up:
+ *   1. A server-side CSV RPC (e.g. `export_orders_list_csv` mirroring
+ *      `get_orders_list`'s filters but no `p_limit`/`p_offset`) that
+ *      streams/returns the formatted CSV directly from Postgres.
+ *   2. A client-side loop calling `useOrdersList`-shaped queries page by
+ *      page until `rows.length * pages >= totalCount`, concatenating.
+ * Pick (1): a `totalCount` in the thousands means (2) would pull every
+ * matching row's full row width across the network into the browser just
+ * to re-serialize it as text the browser already had the columns for —
+ * wasted bandwidth and a multi-second UI freeze on the client for
+ * something Postgres can format in one pass. (1) also composes with the
+ * existing RLS/`operator_id` scoping `get_orders_list` already has, where
+ * (2) would just be that same RPC called N times from the client.
  */
-export function downloadCurrentViewCsv(rows: OrdersListRow[]) {
+export function downloadCurrentPageCsv(rows: OrdersListRow[]) {
   const csv = ordersToCsv(rows);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

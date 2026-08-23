@@ -47,7 +47,7 @@ import {
   getPageFromParams,
   buildQueryString,
   paginationLabel,
-  downloadCurrentViewCsv,
+  downloadCurrentPageCsv,
 } from './_page-helpers';
 import { OrderViewTabs } from './components/OrderViewTabs';
 import { OrderFilterRail, type RouteFilterOption } from './components/OrderFilterRail';
@@ -170,7 +170,8 @@ function OrdersPageContent() {
     <div className="flex h-[calc(100vh-64px)] flex-col overflow-hidden">
       <OrdersPageHeader
         totalCount={totalCount}
-        onExportCurrentView={() => downloadCurrentViewCsv(rows)}
+        pageRowCount={rows.length}
+        onExportCurrentPage={() => downloadCurrentPageCsv(rows)}
         onCopyShareableUrl={handleCopyShareableUrl}
       />
 

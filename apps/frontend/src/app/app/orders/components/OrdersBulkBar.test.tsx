@@ -38,8 +38,19 @@ describe('OrdersBulkBar', () => {
 
   it('shows the selected count when rows are selected', () => {
     render(<OrdersBulkBar selectedRows={[makeRow(), makeRow({ id: 'o-2' })]} />);
-    expect(screen.getByText(/2/)).toBeInTheDocument();
-    expect(screen.getByText(/seleccionados/i)).toBeInTheDocument();
+    // Exact match on the standalone count span, and on the full "N
+    // seleccionados" label text — both "2" and "seleccionados" also appear
+    // inside the "Exportar seleccionados (2)" button label now, which a
+    // loose regex would also match.
+    expect(screen.getByText('2', { exact: true })).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) => element?.textContent?.trim() === '2 seleccionados'),
+    ).toBeInTheDocument();
+  });
+
+  it('names the export action and its live count in the button label itself — not just "Exportar"', () => {
+    render(<OrdersBulkBar selectedRows={[makeRow(), makeRow({ id: 'o-2' }), makeRow({ id: 'o-3' })]} />);
+    expect(screen.getByRole('button', { name: 'Exportar seleccionados (3)' })).toBeInTheDocument();
   });
 
   it('renders ONLY the Exportar action — the four unbacked bulk actions are absent (spec-65 Decision 3)', () => {

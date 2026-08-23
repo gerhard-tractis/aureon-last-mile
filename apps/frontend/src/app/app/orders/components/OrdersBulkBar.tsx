@@ -8,9 +8,14 @@
  * "Reintentar entrega" and "Notificar cliente" have no backing mutation and
  * are deliberately NOT rendered — not disabled, not tooltipped. A dead
  * control in an operations screen reads as broken, not "coming soon".
- * "Exportar" is the only action that ships: `ordersToCsv` (Task 4) returns
- * a string and never touches the DOM, so triggering the browser download
- * is this component's job.
+ * Export is the only action that ships: `ordersToCsv` (Task 4) returns a
+ * string and never touches the DOM, so triggering the browser download is
+ * this component's job.
+ *
+ * Labelled "Exportar seleccionados (N)", not bare "Exportar" (Task 6,
+ * controller review round 3) — the header's own, unrelated export
+ * ("Exportar página (N)", covering the loaded page rather than the
+ * selection) would otherwise be indistinguishable by label alone.
  */
 
 import { Download } from 'lucide-react';
@@ -44,9 +49,14 @@ export function OrdersBulkBar({ selectedRows }: OrdersBulkBarProps) {
         <span className="font-mono text-accent">{selectedRows.length}</span> seleccionados
       </span>
       <span className="h-4 w-px bg-border" />
-      <Button variant="outline" size="sm" onClick={() => downloadCsv(selectedRows)}>
+      <Button
+        variant="outline"
+        size="sm"
+        title="Exporta solo los pedidos marcados con la casilla"
+        onClick={() => downloadCsv(selectedRows)}
+      >
         <Download className="h-3 w-3" />
-        Exportar
+        Exportar seleccionados ({selectedRows.length})
       </Button>
     </div>
   );
