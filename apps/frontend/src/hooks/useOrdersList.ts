@@ -33,7 +33,11 @@ export interface OrdersListFilters {
   search: string | null;
 }
 
-export const EMPTY_ORDERS_LIST_FILTERS: OrdersListFilters = {
+// Frozen: this is a shared module-level object that callers pass straight into
+// the query key. A caller mutating it in place would silently poison every
+// other consumer's cache key rather than just their own — freezing turns that
+// into a thrown TypeError (strict mode) instead of a hard-to-trace cache bug.
+export const EMPTY_ORDERS_LIST_FILTERS: OrdersListFilters = Object.freeze({
   dateFrom: null,
   dateTo: null,
   statuses: null,
@@ -45,7 +49,7 @@ export const EMPTY_ORDERS_LIST_FILTERS: OrdersListFilters = {
   hasPod: null,
   minAttempts: null,
   search: null,
-};
+});
 
 export interface OrdersListRow {
   id: string;

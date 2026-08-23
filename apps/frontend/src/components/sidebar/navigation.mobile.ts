@@ -6,6 +6,12 @@
  * in the move.
  */
 
+// CIRCULAR-IMPORT CONSTRAINT: navigation.ts does `export * from './navigation.mobile'`,
+// so this file and navigation.ts import each other. Under ESM depth-first evaluation
+// this file's body runs BEFORE navigation.ts's own top-level code finishes, so
+// OPERATION_ITEMS may only be read inside function bodies (as buildMobileTabs does) —
+// never at module scope here. Reading it at module scope would hit the TDZ and throw
+// a ReferenceError at import time: a startup crash, not a test failure.
 import type { NavContext, NavItem } from './navigation';
 import { OPERATION_ITEMS } from './navigation';
 

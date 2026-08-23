@@ -6,6 +6,12 @@
  * in the move.
  */
 
+// CIRCULAR-IMPORT CONSTRAINT: navigation.ts does `export * from './navigation.breadcrumbs'`,
+// so this file and navigation.ts import each other. Under ESM depth-first evaluation
+// this file's body runs BEFORE navigation.ts's own top-level code finishes, so
+// NAV_SECTIONS may only be read inside function bodies (as breadcrumbForPath does) —
+// never at module scope here. Reading it at module scope would hit the TDZ and throw
+// a ReferenceError at import time: a startup crash, not a test failure.
 import { NAV_SECTIONS } from './navigation';
 
 /**
