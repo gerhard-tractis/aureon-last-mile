@@ -20,26 +20,26 @@
 -- delivery. get_nav_counts.orders (20260822000004) applies the identical
 -- filter for the identical reason; the two must never diverge on what
 -- "delivered" means. route_label/driver_name/has_pod come from that same
--- dispatch. p_route_ids, by contrast, matches every route the order's
--- dispatches ever touched, not just the latest, so a reattempt on a
--- different route doesn't fall out of a route filter.
+-- dispatch. p_route_ids matches every route the order's NON-PICKUP
+-- dispatches touched (same is_pickup = FALSE scope as delivered_at), not
+-- just the latest, so a reattempt on a different delivery route doesn't
+-- fall out of a route filter — but a route that only carried a pickup leg
+-- for this order is not matched.
 --
 -- p_client filters orders.retailer_name (free-text chips in the mock, "CLIENTE
--- / REMITENTE") — not tenant_client_id (FK to tenant_clients), which is the
--- column to switch to only if this filter needs to become authoritative
--- rather than textual, and not customer_name, a per-order (not per-client)
--- attribute. p_driver, unlike p_client, IS a partial ILIKE match — drivers
--- aren't a fixed chip list the way retailers are.
+-- / REMITENTE") — not tenant_client_id (switch to it only if this needs to
+-- become authoritative rather than textual), not customer_name (a per-order,
+-- not per-client, attribute). p_driver, unlike p_client, IS a partial ILIKE
+-- match — drivers aren't a fixed chip list the way retailers are.
 --
 -- p_sla is TEXT[], not TEXT: the default "SLA en riesgo" view and
 -- get_nav_counts.orders both need `sla_status IN ('late','at_risk')` in one
 -- call, which scalar equality can't express.
 --
 -- order_candidates narrows every orders-table-only filter FIRST; the
--- packages/dispatches/audit_logs CTEs below it correlate to that (usually
--- much smaller) set via `order_id IN (SELECT id FROM order_candidates)`
--- instead of aggregating the operator's entire history on every call
--- regardless of page or date range.
+-- packages/dispatches/audit_logs CTEs correlate to that (usually much
+-- smaller) set via order_id IN (SELECT ... FROM order_candidates),
+-- instead of aggregating the operator's entire history on every call.
 --
 -- p_date_from/p_date_to filter the SAME effective delivery date
 -- order_sla_status uses (rescheduled date only when all three reschedule
@@ -52,9 +52,8 @@
 -- p_search is escaped for ILIKE — a literal '%' or '_' must match itself,
 -- not act as a wildcard over every row.
 --
--- operator_id is filtered on every table touched directly — orders,
--- packages, dispatches, routes, audit_logs — never relied on transitively
--- through a join, per this project's tenant-isolation rule.
+-- operator_id is filtered on every table touched directly (orders, packages,
+-- dispatches, routes, audit_logs), never relied on transitively via a join.
 -- =============================================================================
 
 -- The previous definition on QA has p_sla as a scalar TEXT (position 5).
@@ -104,20 +103,25 @@ STABLE
 SECURITY INVOKER
 AS $$
   WITH params AS (
-    -- Escape existing '\', then '%' and '_', before wrapping in wildcards —
-    -- in that order, so escaping '%'/'_' does not get re-escaped by the '\'
-    -- pass. NULL stays NULL (replace() on NULL is NULL).
+    -- Escape existing backslashes, then % and _, before wrapping in
+    -- wildcards (that order, so escaping %/_ is not re-escaped). NULL stays NULL.
     SELECT
       replace(replace(replace(p_search, '\', '\\'), '%', '\%'), '_', '\_')
         AS search_escaped
   ),
   order_candidates AS (
-    -- Every filter that is SARGable directly against orders, applied before
-    -- any fan-out to packages/dispatches/audit_logs.
+    -- Every SARGable orders-only filter, applied before any fan-out.
     SELECT ocb.*
     FROM (
+      -- Projected explicitly, not o.* — referenced 3x below so Postgres
+      -- materializes this CTE; o.* would drag every order's full
+      -- raw_data/metadata JSONB along just to hand the fan-out CTEs a list
+      -- of ids. Only what this WHERE and the downstream candidates/SLA call use.
       SELECT
-        o.*,
+        o.id, o.order_number, o.customer_name, o.leading_status, o.comuna,
+        o.delivery_date, o.delivery_window_start, o.delivery_window_end,
+        o.rescheduled_delivery_date, o.rescheduled_window_start, o.rescheduled_window_end,
+        o.retailer_name, o.delivery_address,
         -- Same "all three reschedule columns or none" rule order_sla_status
         -- uses for its effective window end — see that function's header.
         CASE
@@ -150,18 +154,19 @@ AS $$
     FROM public.packages p
     WHERE p.operator_id = p_operator_id
       AND p.deleted_at IS NULL
-      AND p.order_id IN (SELECT id FROM order_candidates)
+      AND p.order_id IN (SELECT order_candidates.id FROM order_candidates)
     GROUP BY p.order_id
   ),
   order_dispatches AS (
-    -- Delivery-attempt stats folded over every non-pickup dispatch of each
-    -- candidate order, plus the id of the single most recent one (for
-    -- display) and the set of every route it ever touched (for filtering).
-    -- d.id DESC breaks ties when completed_at/created_at are equal, so which
-    -- dispatch is "latest" cannot vary between calls.
+    -- Delivery-attempt stats over each candidate's non-pickup dispatches,
+    -- plus the single most recent one (display) and every route touched
+    -- (filtering). d.id DESC (below) makes the "latest" tiebreak deterministic.
     SELECT
       d.order_id,
       COUNT(*) AS attempt_count,
+      -- A 'delivered' dispatch with a NULL completed_at (DispatchTrack can
+      -- send that shape) yields delivered_at = NULL, keeping a live SLA
+      -- verdict — considered, not missed: get_nav_counts does the same FILTER.
       MAX(d.completed_at) FILTER (WHERE d.status = 'delivered') AS delivered_at,
       (ARRAY_AGG(d.id ORDER BY COALESCE(d.completed_at, d.created_at) DESC, d.id DESC))[1]
         AS latest_dispatch_id,
@@ -170,7 +175,7 @@ AS $$
     WHERE d.operator_id = p_operator_id
       AND d.deleted_at IS NULL
       AND d.is_pickup = FALSE
-      AND d.order_id IN (SELECT id FROM order_candidates)
+      AND d.order_id IN (SELECT order_candidates.id FROM order_candidates)
     GROUP BY d.order_id
   ),
   order_latest_dispatch AS (
@@ -195,7 +200,8 @@ AS $$
      AND r.deleted_at IS NULL
   ),
   order_last_event AS (
-    -- Most recent audit_logs row per candidate order (resource_type='order').
+    -- Most recent audit_logs row per candidate order (resource_type='order');
+    -- al.id DESC breaks ties on timestamp (NOW(), transaction-constant).
     SELECT DISTINCT ON (al.resource_id)
       al.resource_id AS order_id,
       al.timestamp   AS last_event_at,
@@ -203,8 +209,8 @@ AS $$
     FROM public.audit_logs al
     WHERE al.operator_id = p_operator_id
       AND al.resource_type = 'order'
-      AND al.resource_id IN (SELECT id FROM order_candidates)
-    ORDER BY al.resource_id, al.timestamp DESC
+      AND al.resource_id IN (SELECT order_candidates.id FROM order_candidates)
+    ORDER BY al.resource_id, al.timestamp DESC, al.id DESC
   ),
   candidates AS (
     SELECT
@@ -256,23 +262,21 @@ AS $$
   FROM candidates c
   WHERE (p_sla IS NULL OR c.sla_status = ANY(p_sla))
     AND (p_route_ids IS NULL OR c.route_ids && p_route_ids)
-    AND (p_driver IS NULL OR c.driver_name ILIKE '%' || p_driver || '%')
+    -- Escaped like p_search (backslash, then %, then _); computed inline
+    -- since params isn't joined into this final query and p_driver isn't used elsewhere.
+    AND (p_driver IS NULL OR c.driver_name ILIKE '%' ||
+      replace(replace(replace(p_driver, '\', '\\'), '%', '\%'), '_', '\_')
+      || '%' ESCAPE '\')
     AND (p_has_pod IS NULL OR c.has_pod = p_has_pod)
-    -- attempt_count (order_dispatches CTE) counts non-pickup dispatches only
-    -- (is_pickup = FALSE): dispatches.is_pickup exists precisely to separate
-    -- collection movements from delivery attempts, and "2+ intentos de
-    -- entrega" in the design mock means delivery attempts. Do not fold
-    -- pickup movements back into this count.
+    -- attempt_count counts non-pickup dispatches only: is_pickup exists to
+    -- separate collection from delivery attempts, and "2+ intentos de
+    -- entrega" in the mock means delivery attempts — do not fold pickups in.
     AND (p_min_attempts IS NULL OR c.attempt_count >= p_min_attempts)
-  -- Default sort: most urgent first. sla_status is ranked explicitly
-  -- (late, at_risk, ok, none) rather than sorting on minutes_remaining alone —
-  -- order_sla_status returns minutes_remaining = 0 as a placeholder for
-  -- sla_status = 'none' (delivered, or no delivery window at all), which
-  -- would otherwise sort those rows ahead of genuinely at-risk orders that
-  -- have a small positive minutes_remaining. order_number is a final
-  -- deterministic tiebreaker: without one, two orders sharing a sort key can
-  -- swap between successive paginated requests, showing one row twice and
-  -- skipping another.
+  -- Most urgent first: sla_status ranked explicitly (late, at_risk, ok,
+  -- none) rather than sorting on minutes_remaining alone, since 'none' uses
+  -- 0 as a placeholder and would otherwise outrank genuinely at-risk orders.
+  -- order_number is a deterministic tiebreaker — without one, two orders
+  -- sharing a sort key can swap between paginated requests.
   ORDER BY
     CASE c.sla_status
       WHEN 'late'    THEN 0
@@ -288,7 +292,7 @@ $$;
 COMMENT ON FUNCTION public.get_orders_list(
   UUID, DATE, DATE, TEXT[], TEXT[], UUID[], TEXT, TEXT, TEXT[], BOOLEAN, INT, TEXT, INT, INT
 ) IS
-  'spec-65 Task 2 — one page of the full order history for /app/orders, with every filter the screen supports and total_count riding along via COUNT(*) OVER() so pagination costs one round trip. Calls order_sla_status (Task 1) per row; delivered_at is derived from the order''s most recent NON-PICKUP delivered dispatch (there is no orders.delivered_at) — matches get_nav_counts.orders exactly. route_label/driver_name/has_pod come from that same dispatch; p_route_ids matches against every route the order''s dispatches ever touched. p_sla is TEXT[] so callers can pass ARRAY[''late'',''at_risk''] in one call, matching the nav badge.';
+  'spec-65 Task 2 — one page of the full order history for /app/orders, with every filter the screen supports and total_count riding along via COUNT(*) OVER() so pagination costs one round trip. Calls order_sla_status (Task 1) per row; delivered_at is derived from the order''s most recent NON-PICKUP delivered dispatch (there is no orders.delivered_at) — matches get_nav_counts.orders exactly. route_label/driver_name/has_pod come from that same dispatch; p_route_ids matches against every route the order''s NON-PICKUP dispatches ever touched, not just the latest. p_sla is TEXT[] so callers can pass ARRAY[''late'',''at_risk''] in one call, matching the nav badge.';
 
 GRANT EXECUTE ON FUNCTION public.get_orders_list(
   UUID, DATE, DATE, TEXT[], TEXT[], UUID[], TEXT, TEXT, TEXT[], BOOLEAN, INT, TEXT, INT, INT
