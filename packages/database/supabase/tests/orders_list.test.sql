@@ -1,5 +1,6 @@
 -- =============================================================================
--- spec-65 Task 2: public.get_orders_list test suite
+-- spec-65 Task 2: public.get_orders_list and public.get_nav_counts.orders
+-- test suite
 --
 -- NOT run by CI (.github/workflows/ci.yml runs lint, type-check, vitest and
 -- build only — no local Postgres). Run on demand against a live database,
@@ -18,7 +19,8 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------------
--- Shared fixtures: two operators, so TEST 1 can prove tenant isolation.
+-- Shared fixtures: two operators, so TEST 1 and TEST 6 can prove tenant
+-- isolation.
 -- ---------------------------------------------------------------------------
 
 INSERT INTO public.operators (id, name, slug, country_code)
@@ -28,11 +30,17 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
--- TEST 1: tenant_isolation — operator A's call never returns operator B's rows
+-- TEST 1: tenant_isolation — operator A's call never returns operator B's
+-- orders, AND operator B's child rows (packages/dispatches/routes) attached
+-- to operator A's OWN order never leak into that order's aggregated columns.
+-- The second half is the case an operator_id-on-orders-only implementation
+-- would still pass.
 -- =============================================================================
 SAVEPOINT test_1;
 DO $$
-DECLARE v_count INT;
+DECLARE
+  v_b_count INT;
+  v_own_count INT; v_own_packages INT; v_own_route TEXT; v_own_driver TEXT;
 BEGIN
   INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
     delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
@@ -44,21 +52,55 @@ BEGIN
       'T65-ORD-B1', 'Cliente B1', '+56900000002', 'Calle B 1', 'Ñuñoa',
       '2026-08-22'::date, '{}'::jsonb, 'MANUAL', now());
 
-  SELECT COUNT(*) INTO v_count
+  -- Child rows owned by operator B, attached to operator A's OWN order
+  -- (e0000001). No FK ties a package's/dispatch's operator_id to the order
+  -- it points at, so this is a real shape the RPC must defend against, not
+  -- a hypothetical.
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data)
+  VALUES ('f0000001-0000-0000-0000-000000000065', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000065',
+    'e0000001-0000-0000-0000-000000000065', 'PKG-LEAK-B', '{}'::jsonb);
+
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, driver_name, raw_data)
+  VALUES ('a0000001-0000-0000-0000-000000000065', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000065',
+    'dispatchtrack', 'RUTA-LEAK-B', '2026-08-22'::date, 'Leaked Driver', '{}'::jsonb);
+
+  INSERT INTO public.dispatches (id, operator_id, order_id, route_id, provider, status, raw_data)
+  VALUES ('d0000001-0000-0000-0000-000000000065', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000065',
+    'e0000001-0000-0000-0000-000000000065', 'a0000001-0000-0000-0000-000000000065',
+    'dispatchtrack', 'pending', '{}'::jsonb);
+
+  -- Operator B's own order must not appear at all in A's call.
+  SELECT COUNT(*) INTO v_b_count
   FROM public.get_orders_list('aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
   WHERE order_number = 'T65-ORD-B1';
+  IF v_b_count != 0 THEN
+    RAISE EXCEPTION 'tenant_isolation FAILED: operator A''s call returned operator B''s order';
+  END IF;
 
-  IF v_count = 0 THEN
+  -- Operator A's own order must appear (positive assertion — an empty result
+  -- set would otherwise satisfy every check below vacuously), and its
+  -- package_count/route_label/driver_name must reflect NONE of operator B's
+  -- child rows attached to it.
+  SELECT COUNT(*), MAX(package_count), MAX(route_label), MAX(driver_name)
+    INTO v_own_count, v_own_packages, v_own_route, v_own_driver
+  FROM public.get_orders_list('aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
+  WHERE order_number = 'T65-ORD-A1';
+
+  IF v_own_count = 1 AND v_own_packages = 0 AND v_own_route IS NULL AND v_own_driver IS NULL THEN
     RAISE NOTICE '✓ tenant_isolation PASSED';
   ELSE
-    RAISE EXCEPTION 'tenant_isolation FAILED: operator A''s call returned operator B''s order';
+    RAISE EXCEPTION 'tenant_isolation FAILED: operator A''s own order returned count=%, package_count=%, route_label=%, driver_name=% (expected 1, 0, NULL, NULL — operator B''s child rows must not leak in)',
+      v_own_count, v_own_packages, v_own_route, v_own_driver;
   END IF;
 END $$;
 ROLLBACK TO test_1;
 
 -- =============================================================================
--- TEST 2: status/comuna/search/date filters each narrow the result set
+-- TEST 2: status/comuna/search/date/client filters each narrow the result
+-- set, and the date filter follows the SAME effective date order_sla_status
+-- uses (rescheduled date only when all three reschedule columns are set).
 -- =============================================================================
 SAVEPOINT test_2;
 DO $$
@@ -117,6 +159,34 @@ BEGIN
   WHERE order_number LIKE 'T65-ORD-F%';
   IF v_count != 1 THEN
     RAISE EXCEPTION 'p_client FAILED: expected 1 row, got %', v_count;
+  END IF;
+
+  -- Reschedule-aware date filter: a complete reschedule (all three columns
+  -- set) moves which date the filter matches on; a PARTIAL reschedule (one
+  -- column only) must be ignored, same rule as order_sla_status.
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, rescheduled_delivery_date,
+    rescheduled_window_start, rescheduled_window_end, raw_data, imported_via, imported_at)
+  VALUES
+    -- Original date is outside the filter window; complete reschedule moves
+    -- it inside — must be INCLUDED.
+    ('e0000012-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+      'T65-ORD-F3-RESCHED', 'Carla Soto', '+56900000012', 'Av. Tres 30', 'Providencia',
+      '2026-01-01'::date, '2026-08-25'::date, '10:00:00'::time, '11:00:00'::time,
+      '{}'::jsonb, 'MANUAL', now()),
+    -- Original date is outside the filter window; PARTIAL reschedule (date
+    -- only, no window) must be ignored — stays OUTSIDE, must be EXCLUDED.
+    ('e0000013-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+      'T65-ORD-F4-PARTIAL', 'Diego Vera', '+56900000013', 'Av. Cuatro 40', 'Providencia',
+      '2026-01-01'::date, '2026-08-25'::date, NULL, NULL,
+      '{}'::jsonb, 'MANUAL', now());
+
+  SELECT COUNT(*) INTO v_count FROM public.get_orders_list(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
+    '2026-08-24'::date, '2026-08-26'::date, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
+  WHERE order_number IN ('T65-ORD-F3-RESCHED', 'T65-ORD-F4-PARTIAL');
+  IF v_count != 1 THEN
+    RAISE EXCEPTION 'reschedule_aware_date_filter FAILED: expected only the complete reschedule to match, got % rows', v_count;
   END IF;
 
   RAISE NOTICE '✓ filters_narrow_result PASSED';
@@ -207,7 +277,11 @@ ROLLBACK TO test_4;
 -- TEST 5: an order with no dispatch still appears, with null route/driver;
 -- an order WITH a dispatch resolves route_label/driver_name/has_pod, and the
 -- p_route_ids / p_driver / p_has_pod / p_min_attempts / p_sla filters each
--- narrow correctly against it.
+-- narrow correctly against it. T65-ORD-NODISP is given a delivery window in
+-- the past so it is genuinely 'late' — without this, both fixtures resolve
+-- to sla_status = 'none' and the p_sla assertion would pass even if p_sla
+-- were ignored entirely (or if the six order_sla_status window arguments
+-- were transposed), because it never narrows anything.
 -- =============================================================================
 SAVEPOINT test_5;
 DO $$
@@ -215,22 +289,30 @@ DECLARE
   v_route TEXT; v_driver TEXT; v_has_pod BOOLEAN;
   v_count INT;
 BEGIN
-  -- Order with no dispatch at all
+  -- Order with no dispatch at all, and a delivery window well in the past —
+  -- genuinely 'late'.
   INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
-    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
+    delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
+    raw_data, imported_via, imported_at)
   VALUES ('e0000040-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
     'T65-ORD-NODISP', 'Cliente NoDisp', '+56900000040', 'Av. ND 1', 'Maipú',
-    '2026-08-22'::date, '{}'::jsonb, 'MANUAL', now());
+    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    '{}'::jsonb, 'MANUAL', now());
 
   SELECT route_label, driver_name INTO v_route, v_driver FROM public.get_orders_list(
     'aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
   WHERE order_number = 'T65-ORD-NODISP';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'no_dispatch FAILED: get_orders_list returned no row for T65-ORD-NODISP';
+  END IF;
   IF v_route IS NOT NULL OR v_driver IS NOT NULL THEN
     RAISE EXCEPTION 'no_dispatch FAILED: expected null route/driver, got (%, %)', v_route, v_driver;
   END IF;
 
-  -- Order WITH a dispatch/route, delivered, with a POD photo
+  -- Order WITH a dispatch/route, delivered, with a POD photo — sla_status
+  -- resolves to 'none' regardless of its (also past) window, because it has
+  -- a delivered_at.
   INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
     delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
     raw_data, imported_via, imported_at)
@@ -254,6 +336,9 @@ BEGIN
     'aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
   WHERE order_number = 'T65-ORD-DISP';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'has_dispatch FAILED: get_orders_list returned no row for T65-ORD-DISP';
+  END IF;
   IF v_route != 'RUTA-T65-041' OR v_driver != 'Juan Perez' OR v_has_pod IS NOT TRUE THEN
     RAISE EXCEPTION 'has_dispatch FAILED: got route=%, driver=%, has_pod=%', v_route, v_driver, v_has_pod;
   END IF;
@@ -295,20 +380,102 @@ BEGIN
     RAISE EXCEPTION 'p_min_attempts FAILED: expected 1 row, got %', v_count;
   END IF;
 
-  -- p_sla = 'none' matches the delivered order (delivered_at makes it 'none')
+  -- p_sla = ARRAY['late'] matches only the never-dispatched, past-window
+  -- order; the delivered order (sla_status = 'none') must be excluded.
   SELECT COUNT(*) INTO v_count FROM public.get_orders_list(
     'aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
-    NULL, NULL, NULL, 'none', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
-  WHERE order_number = 'T65-ORD-DISP';
+    NULL, NULL, NULL, ARRAY['late'], NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
+  WHERE order_number LIKE 'T65-ORD-%';
   IF v_count != 1 THEN
-    RAISE EXCEPTION 'p_sla FAILED: expected delivered order to be sla_status=none, got % rows', v_count;
+    RAISE EXCEPTION 'p_sla=late FAILED: expected 1 row (T65-ORD-NODISP only), got %', v_count;
+  END IF;
+
+  -- p_sla = ARRAY['none'] is the reverse: only the delivered order.
+  SELECT COUNT(*) INTO v_count FROM public.get_orders_list(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid,
+    NULL, NULL, NULL, ARRAY['none'], NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0)
+  WHERE order_number LIKE 'T65-ORD-%';
+  IF v_count != 1 THEN
+    RAISE EXCEPTION 'p_sla=none FAILED: expected 1 row (T65-ORD-DISP only), got %', v_count;
   END IF;
 
   RAISE NOTICE '✓ dispatch_route_and_filters PASSED';
 END $$;
 ROLLBACK TO test_5;
 
+-- =============================================================================
+-- TEST 6: get_nav_counts.orders — parity with get_orders_list's default "SLA
+-- en riesgo" view, and specifically a regression test for a completed PICKUP
+-- dispatch (status = 'delivered', is_pickup = TRUE) NOT being mistaken for an
+-- actual delivery. Also checked for tenant isolation on the counter itself.
+-- =============================================================================
+SAVEPOINT test_6;
+DO $$
+DECLARE v_orders_a BIGINT; v_orders_b BIGINT;
+BEGIN
+  -- O1 (operator A): late, no dispatch at all — must count.
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
+    raw_data, imported_via, imported_at)
+  VALUES ('e0000060-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+    'T65-ORD-NAV-LATE', 'Cliente NavLate', '+56900000060', 'Av. NL 1', 'Maipú',
+    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    '{}'::jsonb, 'MANUAL', now());
+
+  -- O2 (operator A): late window, but its only dispatch is a completed
+  -- PICKUP movement — must still count. This is the exact bug the review
+  -- caught: status = 'delivered' on a pickup must not read as "delivered".
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
+    raw_data, imported_via, imported_at)
+  VALUES ('e0000061-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+    'T65-ORD-NAV-PICKUP', 'Cliente NavPickup', '+56900000061', 'Av. NP 1', 'Maipú',
+    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    '{}'::jsonb, 'MANUAL', now());
+
+  INSERT INTO public.dispatches (id, operator_id, order_id, provider, status, is_pickup, completed_at, raw_data)
+  VALUES ('d0000061-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+    'e0000061-0000-0000-0000-000000000065', 'dispatchtrack', 'delivered', TRUE,
+    '2020-01-01 08:30:00-04'::timestamptz, '{}'::jsonb);
+
+  -- O3 (operator A): genuinely delivered via a non-pickup dispatch — must
+  -- NOT count.
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
+    raw_data, imported_via, imported_at)
+  VALUES ('e0000062-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+    'T65-ORD-NAV-DELIVERED', 'Cliente NavDelivered', '+56900000062', 'Av. NDv 1', 'Maipú',
+    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    '{}'::jsonb, 'MANUAL', now());
+
+  INSERT INTO public.dispatches (id, operator_id, order_id, provider, status, is_pickup, completed_at, raw_data)
+  VALUES ('d0000062-0000-0000-0000-000000000065', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000065',
+    'e0000062-0000-0000-0000-000000000065', 'dispatchtrack', 'delivered', FALSE,
+    '2020-01-01 08:30:00-04'::timestamptz, '{}'::jsonb);
+
+  -- Operator B: one late order of its own, to prove the counter is
+  -- tenant-scoped (not just summed globally).
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, delivery_window_start, delivery_window_end,
+    raw_data, imported_via, imported_at)
+  VALUES ('e0000063-0000-0000-0000-000000000065', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000065',
+    'T65-ORD-NAV-B-LATE', 'Cliente NavB', '+56900000063', 'Av. NB 1', 'Maipú',
+    '2020-01-01'::date, '08:00:00'::time, '09:00:00'::time,
+    '{}'::jsonb, 'MANUAL', now());
+
+  SELECT orders INTO v_orders_a FROM public.get_nav_counts('aaaaaaaa-aaaa-aaaa-aaaa-000000000065'::uuid);
+  SELECT orders INTO v_orders_b FROM public.get_nav_counts('bbbbbbbb-bbbb-bbbb-bbbb-000000000065'::uuid);
+
+  IF v_orders_a = 2 AND v_orders_b = 1 THEN
+    RAISE NOTICE '✓ nav_counts_orders PASSED';
+  ELSE
+    RAISE EXCEPTION 'nav_counts_orders FAILED: expected operator A orders=2 (late + pickup-delivered-but-not-really) and operator B orders=1, got A=%, B=%',
+      v_orders_a, v_orders_b;
+  END IF;
+END $$;
+ROLLBACK TO test_6;
+
 -- Summary
-DO $$ BEGIN RAISE NOTICE 'All get_orders_list tests passed!'; END $$;
+DO $$ BEGIN RAISE NOTICE 'All get_orders_list / get_nav_counts.orders tests passed!'; END $$;
 
 ROLLBACK;

@@ -69,10 +69,16 @@ AS $$
     ), 0)::BIGINT AS dispatch,
 
     -- spec-65: orders whose SLA verdict is late or at_risk right now — the
-    -- same set the default Pedidos view ("SLA en riesgo") leads with. Reuses
-    -- the same delivered_at derivation as get_orders_list: dispatches has no
-    -- per-order uniqueness guarantee, so this takes the most recent delivered
-    -- dispatch's completed_at, not orders.delivered_at (which does not exist).
+    -- same set the default Pedidos view ("SLA en riesgo") leads with, and the
+    -- IDENTICAL delivered_at derivation get_orders_list (20260822000003)
+    -- uses: the most recent NON-PICKUP dispatch's completed_at (there is no
+    -- orders.delivered_at). is_pickup = FALSE is required, not incidental —
+    -- a completed pickup movement also carries status = 'delivered' (same
+    -- enum, same webhook field), and without this filter an order whose only
+    -- "delivered" dispatch is a collection event would count as delivered
+    -- here while get_orders_list still shows it with a live SLA verdict —
+    -- exactly the nav-vs-screen mismatch this migration exists to prevent
+    -- (see 20260817000001:4-11).
     COALESCE((
       SELECT COUNT(*)
       FROM orders o
@@ -90,6 +96,7 @@ AS $$
             AND d.operator_id = p_operator_id
             AND d.deleted_at IS NULL
             AND d.status = 'delivered'
+            AND d.is_pickup = FALSE
         ),
         NOW() AT TIME ZONE 'America/Santiago'
       ) sla
