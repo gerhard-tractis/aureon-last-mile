@@ -1,4 +1,4 @@
-import { Image as ImageIcon, MapPin } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 import type { Json } from '@/lib/types';
 
@@ -9,6 +9,14 @@ import type { Json } from '@/lib/types';
  * it's opened — it has to read as informative, not broken. The rule here is
  * the mirror image of `WhyLateBlock`'s: a missing field is an EXPLICIT
  * statement naming the null field, never a blank.
+ *
+ * Review round 1 — missing photo and missing signature now use the same
+ * plain, informative style. The warning palette on the missing-signature
+ * message was inconsistent with the missing-photo message right above it
+ * (plain text) even though missing-photo is the far more common case (751
+ * of 751 QA rows) — warning is reserved for something actually actionable,
+ * and "DispatchTrack didn't send this field" isn't, on its own, one of
+ * those.
  */
 interface Props {
   dispatch: DossierDispatch | null;
@@ -25,6 +33,11 @@ function isPresent(value: unknown): boolean {
   return value !== null && value !== undefined && value !== '';
 }
 
+function readStringField(raw: Json, key: string): string | null {
+  const value = readRawField(raw, key);
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 export function ProofOfDelivery({ dispatch }: Props) {
   if (!dispatch) {
     return (
@@ -37,7 +50,7 @@ export function ProofOfDelivery({ dispatch }: Props) {
     );
   }
 
-  const hasPhoto = isPresent(readRawField(dispatch.raw_data, 'photo_url'));
+  const photoUrl = readStringField(dispatch.raw_data, 'photo_url');
   const hasSignature = isPresent(readRawField(dispatch.raw_data, 'signature'));
   const hasCoords = dispatch.latitude !== null && dispatch.longitude !== null;
 
@@ -47,11 +60,13 @@ export function ProofOfDelivery({ dispatch }: Props) {
 
       <div className="flex flex-col gap-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wide text-text-muted">Fotografía</span>
-        {hasPhoto ? (
-          <div className="flex h-24 items-center justify-center gap-2 rounded-md border border-border bg-surface-raised">
-            <ImageIcon className="h-4 w-4 text-text-muted" aria-hidden="true" />
-            <span className="text-[10.5px] text-text-secondary">foto del intento</span>
-          </div>
+        {photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photoUrl}
+            alt="Foto del intento de entrega"
+            className="h-24 w-full rounded-md border border-border object-cover"
+          />
         ) : (
           <p className="text-[10.5px] leading-relaxed text-text-secondary">
             DispatchTrack no envió fotografía. Campo{' '}
@@ -65,7 +80,7 @@ export function ProofOfDelivery({ dispatch }: Props) {
         {hasSignature ? (
           <p className="text-[10.5px] text-status-success-text">Firma recibida.</p>
         ) : (
-          <p className="rounded-md border border-dashed border-status-warning-border bg-status-warning-bg p-2.5 text-[10.5px] leading-relaxed text-status-warning-text">
+          <p className="text-[10.5px] leading-relaxed text-text-secondary">
             DispatchTrack no envió firma. Campo <code className="font-mono text-[10px]">signature</code>{' '}
             nulo en el webhook.
           </p>

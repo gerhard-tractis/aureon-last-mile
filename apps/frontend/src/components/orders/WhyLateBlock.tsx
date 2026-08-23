@@ -18,9 +18,19 @@ import { formatDurationSince } from '@/lib/orders/duration';
  * The three actions have no backing mutation (spec-65 Decision 3) — each is
  * an optional callback, and a button renders only when its callback prop is
  * supplied. Tasks 8 and 9 supply none today, so none render there.
+ *
+ * **This block is invisible in production today, by design, not by bug.**
+ * `reasonFlag` has no real source anywhere in the codebase yet — the closest
+ * candidate, `useAtRiskOrders`'s `reasonFlag` field, reads
+ * `order['reason_flag']` off the `get_ops_control_snapshot` RPC, and that
+ * RPC returns 19 keys with `reason_flag` in none of them (confirmed against
+ * live QA and against every migration that touches the snapshot). Tasks 8/9
+ * should not treat "nothing renders" here as a wiring bug on their end until
+ * something upstream actually computes `stage` + `reasonFlag` +
+ * `stuckSinceISO` for a real order.
  */
 interface Props {
-  stage: StageKey | string | null;
+  stage: StageKey | null;
   reasonFlag: string | null;
   /** ISO timestamp the order entered `stage`. Null when unknown. */
   stuckSinceISO: string | null;
@@ -39,7 +49,7 @@ export function WhyLateBlock({
   onReassignRoute,
   onNotifyClient,
 }: Props) {
-  const stageLabel = stage ? STAGE_LABELS[stage as StageKey] : undefined;
+  const stageLabel = stage ? STAGE_LABELS[stage] : undefined;
   const reasonLabel = reasonFlag ? REASON_LABELS[reasonFlag] : undefined;
 
   if (!stageLabel || !reasonLabel || !stuckSinceISO) return null;

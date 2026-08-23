@@ -79,6 +79,7 @@ function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
       return {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        is: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
       };
     }
@@ -151,6 +152,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
           single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
         };
       }
@@ -184,6 +186,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
           single: vi.fn().mockResolvedValue({
             data: {
               ...MOCK_ORDER_ROW,
@@ -227,5 +230,121 @@ describe('useOrderDossier', () => {
     expect(result.current.data!.packages[0].dock_zone_name).toBeNull();
     expect(result.current.data!.packages[0].declared_weight_kg).toBeNull();
     expect(result.current.data!.packages[0].verified_weight_kg).toBeNull();
+  });
+
+  // Review round 1 — the orders query had no deleted_at filter at all, which
+  // meant a soft-deleted order rendered a full dossier. manifests, dispatches
+  // and packages were already covered; only orders and audit_logs were not.
+  it('filters the orders query by operator_id and excludes soft-deleted orders', async () => {
+    const ordersEq = vi.fn().mockReturnThis();
+    const ordersIs = vi.fn().mockReturnThis();
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: ordersEq,
+          is: ordersIs,
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(ordersEq).toHaveBeenCalledWith('operator_id', 'op-42');
+    expect(ordersIs).toHaveBeenCalledWith('deleted_at', null);
+  });
+
+  it('filters the audit_logs query by operator_id', async () => {
+    const auditEq = vi.fn().mockReturnThis();
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: auditEq,
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(auditEq).toHaveBeenCalledWith('operator_id', 'op-42');
+  });
+
+  it('excludes a soft-deleted package from the returned dossier', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: {
+              ...MOCK_ORDER_ROW,
+              packages: [
+                { ...MOCK_ORDER_ROW.packages[0], id: 'pkg-live', deleted_at: null },
+                { ...MOCK_ORDER_ROW.packages[0], id: 'pkg-deleted', deleted_at: '2026-03-16T10:00:00' },
+              ],
+            },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.packages).toHaveLength(1);
+    expect(result.current.data!.packages[0].id).toBe('pkg-live');
   });
 });

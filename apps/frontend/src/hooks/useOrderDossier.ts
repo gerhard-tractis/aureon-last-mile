@@ -86,6 +86,7 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
         )
         .eq('id', orderId!)
         .eq('operator_id', operatorId!)
+        .is('deleted_at', null)
         .single();
 
       if (orderError) throw orderError;

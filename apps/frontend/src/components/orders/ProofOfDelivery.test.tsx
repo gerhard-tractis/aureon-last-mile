@@ -41,14 +41,26 @@ describe('ProofOfDelivery — the empty state is the default (0 of 751 QA dispat
     expect(screen.getByText(/signature/)).toBeInTheDocument();
   });
 
-  it('shows the photo is present when photo_url is set', () => {
+  it('renders the actual photo when photo_url is set, not just a caption', () => {
     render(<ProofOfDelivery dispatch={dispatch({ raw_data: { photo_url: 'https://x/y.jpg' } })} />);
     expect(screen.queryByText(/no envió fotografía/i)).not.toBeInTheDocument();
+    const img = screen.getByRole('img', { name: /foto del intento de entrega/i });
+    expect(img).toHaveAttribute('src', 'https://x/y.jpg');
   });
 
   it('shows a signature confirmation when signature is present', () => {
     render(<ProofOfDelivery dispatch={dispatch({ raw_data: { signature: 'data:image/png;base64,abc' } })} />);
     expect(screen.queryByText(/no envió firma/i)).not.toBeInTheDocument();
+  });
+
+  // Review round 1 — missing signature previously used the warning palette
+  // while missing photo (the common case: 751 of 751 QA rows) used plain
+  // text. Warning is reserved for something actionable; "the courier didn't
+  // send this field" isn't, on its own, one of those.
+  it('renders the missing-signature message in the same plain style as missing-photo, not a warning palette', () => {
+    render(<ProofOfDelivery dispatch={dispatch({ raw_data: {} })} />);
+    const message = screen.getByText(/no envió firma/i).closest('p')!;
+    expect(message.className).not.toMatch(/status-warning/);
   });
 
   it('renders the tokenized map placeholder with coordinates when lat/lng are present', () => {

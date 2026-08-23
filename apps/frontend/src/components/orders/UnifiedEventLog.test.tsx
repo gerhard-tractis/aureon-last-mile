@@ -106,4 +106,39 @@ describe('UnifiedEventLog — expansion', () => {
     await userEvent.click(screen.getByTestId('event-toggle-dp-1'));
     expect(screen.queryByText('INTENTO')).not.toBeInTheDocument();
   });
+
+  // Review round 1 — an audit entry's toggle rendered but did nothing: the
+  // body only ever checked `source === 'dispatchtrack'`. With Fase 1 parked,
+  // AUREON entries are the only entries for most orders, so this is the
+  // interaction users hit most.
+  it('expanding an AUREON entry reveals its changes_json behind "Ver datos técnicos"', async () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry({ id: 'audit-9', changes_json: { rows_imported: 7 } })]} dispatches={[]} />);
+    await userEvent.click(screen.getByTestId('event-toggle-audit-9'));
+    expect(screen.queryByText(/"rows_imported"/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText('Ver datos técnicos'));
+    expect(screen.getByText(/"rows_imported": 7/)).toBeInTheDocument();
+  });
+
+  it('marks each toggle with aria-expanded and aria-controls matching the disclosed panel', async () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[dispatchRow()]} />);
+    const toggle = screen.getByTestId('event-toggle-dp-1');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    const controlsId = toggle.getAttribute('aria-controls');
+    expect(controlsId).toBeTruthy();
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(controlsId!)).toBeInTheDocument();
+  });
+});
+
+describe('UnifiedEventLog — timestamps', () => {
+  it("shows each event's timestamp — 3b exists to reconstruct when things happened", () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry({ timestamp: '2026-08-12T17:40:00' })]} dispatches={[]} />);
+    expect(screen.getByText('12/08 17:40:00')).toBeInTheDocument();
+  });
+
+  it('omits the timestamp column entirely for an event with no timestamp — not a dash', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry({ timestamp: null })]} dispatches={[]} />);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
+  });
 });
