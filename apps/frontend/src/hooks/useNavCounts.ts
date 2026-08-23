@@ -27,6 +27,7 @@ const LOADING: NavCounts = {
   reception: null,
   distribution: null,
   dispatch: null,
+  orders: null,
 };
 
 interface NavCountsRow {
@@ -34,6 +35,7 @@ interface NavCountsRow {
   reception: number;
   distribution: number;
   dispatch: number;
+  orders: number;
 }
 
 export function useNavCounts(operatorId: string | null): NavCounts {
@@ -63,6 +65,7 @@ export function useNavCounts(operatorId: string | null): NavCounts {
     reception: data.reception,
     distribution: data.distribution,
     dispatch: data.dispatch,
+    orders: data.orders,
   };
 }
 

@@ -48,6 +48,7 @@ describe('nav structure', () => {
     const operacion = NAV_SECTIONS[0].items.map((i) => i.href);
     expect(operacion).toEqual([
       '/app/operations-control',
+      '/app/orders',
       '/app/pickup',
       '/app/reception',
       '/app/distribution',
@@ -64,9 +65,15 @@ describe('nav structure', () => {
     ]);
   });
 
+  it('positions Pedidos second, right after Torre de control — resolveLandingPath depends on this order', () => {
+    expect(OPERATION_ITEMS[0].href).toBe('/app/operations-control');
+    expect(OPERATION_ITEMS[1]).toMatchObject({ href: '/app/orders', label: 'Pedidos' });
+  });
+
   it('gives every OPERACIÓN item except the tower a queue counter', () => {
     // The tower is the overview — a count there would double-report the rest.
     expect(OPERATION_ITEMS.filter((i) => i.countKey).map((i) => i.countKey)).toEqual([
+      'orders',
       'pickup',
       'reception',
       'distribution',
@@ -75,6 +82,10 @@ describe('nav structure', () => {
     expect(
       OPERATION_ITEMS.find((i) => i.href === '/app/operations-control')?.countKey,
     ).toBeUndefined();
+  });
+
+  it('gives Pedidos no module — the cross-stage order list is not an optional module', () => {
+    expect(OPERATION_ITEMS.find((i) => i.href === '/app/orders')?.module).toBeUndefined();
   });
 
   it('defines a warning threshold for every counter', () => {
@@ -156,6 +167,22 @@ describe('buildNavSections — visibility rules are unchanged from the flat nav'
     const sections = buildNavSections({ role: 'driver', permissions: [], enabledModules: [] });
     expect(sections.map((s) => s.title)).not.toContain('OPERACIÓN');
   });
+
+  it('shows Pedidos to admin, operations_manager, and customer_service — no module gate', () => {
+    for (const role of ['admin', 'operations_manager']) {
+      expect(
+        labels(buildNavSections({ role, permissions: [], enabledModules: [] })),
+      ).toContain('Pedidos');
+    }
+    expect(
+      labels(
+        buildNavSections({ role: 'driver', permissions: ['customer_service'], enabledModules: [] }),
+      ),
+    ).toContain('Pedidos');
+    expect(
+      labels(buildNavSections({ role: 'driver', permissions: [], enabledModules: [] })),
+    ).not.toContain('Pedidos');
+  });
 });
 
 describe('breadcrumbForPath', () => {
@@ -213,6 +240,36 @@ describe('breadcrumbForPath — routes with no nav entry (spec-54)', () => {
   });
 });
 
+describe('breadcrumbForPath — Pedidos (spec-65) vs. its longer EXTRA_CRUMBS siblings', () => {
+  it('resolves the Pedidos list itself to the new nav item', () => {
+    expect(breadcrumbForPath('/app/orders')).toEqual({
+      section: 'Operación',
+      page: 'Pedidos',
+    });
+  });
+
+  it('still lets /app/orders/new beat the now-real /app/orders nav item', () => {
+    expect(breadcrumbForPath('/app/orders/new')).toEqual({
+      section: 'Gestión',
+      page: 'Nuevo pedido',
+    });
+  });
+
+  it('still lets /app/orders/import beat it too', () => {
+    expect(breadcrumbForPath('/app/orders/import')).toEqual({
+      section: 'Gestión',
+      page: 'Importar pedidos',
+    });
+  });
+
+  it('resolves an order detail route to Pedidos (Task 9)', () => {
+    expect(breadcrumbForPath('/app/orders/3fa85f64-5717-4562-b3fc-2c963f66afa6')).toEqual({
+      section: 'Operación',
+      page: 'Pedidos',
+    });
+  });
+});
+
 describe('resolveLandingPath (landing page removal)', () => {
   it('sends an admin to the control tower', () => {
     expect(
@@ -246,11 +303,24 @@ describe('resolveLandingPath (landing page removal)', () => {
     ).toBe('/app/reception');
   });
 
-  it('skips the tower when the ops-control module is off for the operator', () => {
+  it('skips the tower when the ops-control module is off for the operator, landing on Pedidos', () => {
+    // Pedidos (spec-65) carries no module gate, same as Dashboard ejecutivo,
+    // so it is the next visible OPERACIÓN item for admin/manager once the
+    // tower is unavailable — ahead of any module-gated queue.
     expect(
       resolveLandingPath({
         role: 'admin',
         permissions: ALL_PERMISSIONS,
+        enabledModules: [ModuleKey.PICKUP],
+      }),
+    ).toBe('/app/orders');
+  });
+
+  it('skips both the tower and Pedidos when neither applies, landing on the first module-gated queue', () => {
+    expect(
+      resolveLandingPath({
+        role: 'driver',
+        permissions: ['pickup'],
         enabledModules: [ModuleKey.PICKUP],
       }),
     ).toBe('/app/pickup');
@@ -321,6 +391,21 @@ describe('buildMobileTabs', () => {
       { href: '/app/dispatch', label: 'Despacho' },
     ]);
     expect(tabs.some((t) => t.href === '/app/operations-control')).toBe(false);
+  });
+
+  it('excludes Pedidos specifically, not merely "a fifth item" — a wrong exclusion would still pass a bare length check', () => {
+    const tabs = buildMobileTabs({
+      role: 'pickup_crew',
+      permissions: ALL_PERMISSIONS,
+      enabledModules: ALL_MODULES,
+    });
+    expect(tabs.map((t) => t.href)).toEqual([
+      '/app/pickup',
+      '/app/reception',
+      '/app/distribution',
+      '/app/dispatch',
+    ]);
+    expect(tabs.some((t) => t.href === '/app/orders')).toBe(false);
   });
 
   it('still shows all four tabs on a partial permission set, but marks the rest disabled', () => {

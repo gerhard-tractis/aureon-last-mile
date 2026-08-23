@@ -36,12 +36,13 @@ describe('useNavCounts', () => {
       reception: null,
       distribution: null,
       dispatch: null,
+      orders: null,
     });
   });
 
   it('reads the one row get_nav_counts returns', async () => {
     mockCallRpc.mockResolvedValue({
-      data: [{ pickup: 12, reception: 4, distribution: 318, dispatch: 27 }],
+      data: [{ pickup: 12, reception: 4, distribution: 318, dispatch: 27, orders: 47 }],
       error: null,
     });
     const { result } = renderHook(() => useNavCounts('op-1'), { wrapper: wrapper() });
@@ -52,12 +53,13 @@ describe('useNavCounts', () => {
       reception: 4,
       distribution: 318,
       dispatch: 27,
+      orders: 47,
     });
   });
 
   it('passes the operator through — these counts are per tenant', async () => {
     mockCallRpc.mockResolvedValue({
-      data: [{ pickup: 0, reception: 0, distribution: 0, dispatch: 0 }],
+      data: [{ pickup: 0, reception: 0, distribution: 0, dispatch: 0, orders: 0 }],
       error: null,
     });
     const { result } = renderHook(() => useNavCounts('op-9'), { wrapper: wrapper() });
@@ -67,7 +69,7 @@ describe('useNavCounts', () => {
 
   it('reports a genuine zero rather than hiding the badge', async () => {
     mockCallRpc.mockResolvedValue({
-      data: [{ pickup: 0, reception: 3, distribution: 0, dispatch: 0 }],
+      data: [{ pickup: 0, reception: 3, distribution: 0, dispatch: 0, orders: 0 }],
       error: null,
     });
     const { result } = renderHook(() => useNavCounts('op-1'), { wrapper: wrapper() });
@@ -95,6 +97,9 @@ describe('navCountTone', () => {
     expect(navCountTone('distribution', 250)).toBe('warning');
     expect(navCountTone('pickup', 50)).toBe('warning');
     expect(navCountTone('pickup', 49)).toBe('neutral');
+    // The mock shows 47 orders in a warning state — threshold is 40.
+    expect(navCountTone('orders', 47)).toBe('warning');
+    expect(navCountTone('orders', 39)).toBe('neutral');
   });
 
   it('is neutral when the count is unknown', () => {

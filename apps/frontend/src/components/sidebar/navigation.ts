@@ -17,6 +17,7 @@ import {
   FileText,
   LayoutDashboard,
   Layers,
+  List,
   MessageSquare,
   Radio,
   ShieldCheck,
@@ -26,7 +27,7 @@ import {
 import { ModuleKey } from '@/lib/modules/registry';
 
 /** Queue counters shown on OPERACIÓN items. Keyed to useNavCounts. */
-export type CountKey = 'pickup' | 'reception' | 'distribution' | 'dispatch';
+export type CountKey = 'pickup' | 'reception' | 'distribution' | 'dispatch' | 'orders';
 
 export interface NavItem {
   href: string;
@@ -68,6 +69,16 @@ export const OPERATION_ITEMS: NavItem[] = [
     icon: Radio,
     module: ModuleKey.OPS_CONTROL,
     isVisible: isAdminOrManager,
+  },
+  {
+    href: '/app/orders',
+    label: 'Pedidos',
+    icon: List,
+    countKey: 'orders',
+    // No `module`: the cross-stage order list is not an optional module —
+    // same as Dashboard ejecutivo. Every admin/manager/CS user sees it
+    // regardless of which spec-45 modules the operator has enabled.
+    isVisible: (ctx) => isAdminOrManager(ctx) || hasPermission('customer_service')(ctx),
   },
   {
     href: '/app/pickup',
@@ -154,6 +165,7 @@ export const countKeyThresholds: Record<CountKey, number> = {
   reception: 50,
   distribution: 250,
   dispatch: 80,
+  orders: 40,
 };
 
 /** Sections filtered to what this user may see. Empty sections are dropped. */
@@ -211,6 +223,11 @@ export interface MobileTab extends NavItem {
  * Recepción, Distribución, Despacho — taken straight from OPERATION_ITEMS so
  * the tab bar can never drift from the sidebar's icons/labels. `Torre de
  * control` is excluded: it's gated by `isAdminOrManager`, never true here.
+ * `/app/orders` (Pedidos, spec-65) is excluded for the same reason: it's a
+ * desktop screen for operations managers/admins/CS, and `isOperationsRole`
+ * never overlaps with `isAdminOrManager` — a van or floor role could never
+ * see it live anyway, so it would only ever render as a fifth, permanently
+ * disabled tab.
  *
  * Exactly four, always — never fewer, whatever the permission/module
  * state — marking `disabled` rather than omitting. The permission gate
@@ -218,9 +235,14 @@ export interface MobileTab extends NavItem {
  * into that one flag: an ops user sees the whole shape of the app, greyed
  * out wherever it isn't theirs, for either reason.
  */
+const MOBILE_TAB_EXCLUDED_HREFS: ReadonlySet<string> = new Set([
+  '/app/operations-control',
+  '/app/orders',
+]);
+
 export function buildMobileTabs(ctx: NavContext): MobileTab[] {
   if (!isOperationsRole(ctx.role)) return [];
-  return OPERATION_ITEMS.filter((item) => item.href !== '/app/operations-control').map((item) => ({
+  return OPERATION_ITEMS.filter((item) => !MOBILE_TAB_EXCLUDED_HREFS.has(item.href)).map((item) => ({
     ...item,
     disabled: !item.isVisible(ctx) || (item.module !== undefined && !ctx.enabledModules.includes(item.module)),
   }));
