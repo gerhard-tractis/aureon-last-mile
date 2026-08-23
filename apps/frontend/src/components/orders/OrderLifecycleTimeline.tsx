@@ -3,18 +3,17 @@ import { cn } from '@/lib/utils';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 
 /**
- * spec-65 Task 7 — replaces `OrderLifecycleRibbon`. That component derived
- * position from `orders.leading_status` alone; this one is sourced from
- * `auditLogs` per the brief, matched by keyword against `action` — the
- * generic `audit_trigger_func` writes `resource_type = 'orders'` (plural)
- * while `useOrderDetail`/`useOrderDossier` query `resource_type = 'order'`
- * (singular), so today only manually-inserted rows like `CSV_IMPORT` are
- * ever visible here. That mismatch predates this task and is out of scope
- * to fix; the honest behaviour is that most milestones show no evidence yet
- * (rendered as "future", no timestamp) rather than a fabricated position.
- *
- * `OrderLifecycleRibbon.tsx` is NOT deleted here — Task 8 removes it once
- * the last caller (`OrderInspector`) switches to this component.
+ * spec-65 Task 7 — replaced `OrderLifecycleRibbon` (deleted in Task 8, once
+ * `OrderInspector` — its last caller — switched to this component). That
+ * component derived position from `orders.leading_status` alone; this one
+ * is sourced from `auditLogs` per the brief, matched by keyword against
+ * `action` — the generic `audit_trigger_func` writes
+ * `resource_type = 'orders'` (plural) while `useOrderDetail`/
+ * `useOrderDossier` query `resource_type = 'order'` (singular), so today
+ * only manually-inserted rows like `CSV_IMPORT` are ever visible here. That
+ * mismatch predates this task and is out of scope to fix; the honest
+ * behaviour is that most milestones show no evidence yet (rendered as
+ * "future", no timestamp) rather than a fabricated position.
  */
 
 type MilestoneState = 'done' | 'current' | 'future';

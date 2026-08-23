@@ -73,6 +73,27 @@ const MOCK_DISPATCH_ROWS = [
   },
 ];
 
+/**
+ * spec-65 Task 8, controller ruling round 3 — the dispatches query now
+ * chains two `.order()` calls (completed_at desc, id desc tiebreak) before
+ * Supabase's real (thenable) query builder resolves. `mockResolvedValue` on
+ * a single method can't represent "resolves only after N chained calls", so
+ * this stands in for the real builder: every chainable method returns the
+ * same thenable object, and awaiting it resolves with the given result —
+ * regardless of how many `.order()`/`.eq()` calls precede the await.
+ */
+function dispatchesChain(data: unknown[], error: unknown = null) {
+  const chain: Record<string, unknown> = {
+    then: (resolve: (v: { data: unknown[]; error: unknown }) => void) =>
+      resolve({ data, error }),
+  };
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.is = vi.fn().mockReturnValue(chain);
+  chain.order = vi.fn().mockReturnValue(chain);
+  return chain;
+}
+
 function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
   return (table: string) => {
     if (table === 'orders') {
@@ -91,11 +112,7 @@ function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
       };
     }
     if (table === 'dispatches') {
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        is: vi.fn().mockResolvedValue({ data: MOCK_DISPATCH_ROWS, error: null }),
-      };
+      return dispatchesChain(MOCK_DISPATCH_ROWS);
     }
     if (table === 'manifests') {
       return {
@@ -177,14 +194,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockResolvedValue({
-            data: [{ ...MOCK_DISPATCH_ROWS[0], routes: null }],
-            error: null,
-          }),
-        };
+        return dispatchesChain([{ ...MOCK_DISPATCH_ROWS[0], routes: null }]);
       }
       return {};
     });
@@ -196,8 +206,7 @@ describe('useOrderDossier', () => {
   });
 
   it('filters the dispatches query by operator_id and excludes soft-deleted rows', async () => {
-    const dispatchesEq = vi.fn().mockReturnThis();
-    const dispatchesIs = vi.fn().mockResolvedValue({ data: [], error: null });
+    const chain = dispatchesChain([]);
     mockFrom.mockImplementation((table: string) => {
       if (table === 'orders') {
         return {
@@ -215,11 +224,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: dispatchesEq,
-          is: dispatchesIs,
-        };
+        return chain;
       }
       return {};
     });
@@ -227,8 +232,63 @@ describe('useOrderDossier', () => {
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(dispatchesEq).toHaveBeenCalledWith('operator_id', 'op-42');
-    expect(dispatchesIs).toHaveBeenCalledWith('deleted_at', null);
+    expect(chain.eq).toHaveBeenCalledWith('operator_id', 'op-42');
+    expect(chain.is).toHaveBeenCalledWith('deleted_at', null);
+  });
+
+  // Controller ruling, round 3 — dispatches.find(d => !d.is_pickup) picks
+  // whatever Postgres returns first. With no ORDER BY, a retried delivery
+  // (more than one non-pickup dispatch for the same order) resolves
+  // nondeterministically; ProofOfDelivery/the ruta chip/"Abrir en ruta" would
+  // then risk showing a superseded attempt's data. The query itself must
+  // order deterministically so every dossier consumer inherits it.
+  it('orders the dispatches query by completed_at desc, then id desc as a tiebreak', async () => {
+    const chain = dispatchesChain([]);
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') {
+        return chain;
+      }
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(chain.order).toHaveBeenNthCalledWith(1, 'completed_at', { ascending: false });
+    expect(chain.order).toHaveBeenNthCalledWith(2, 'id', { ascending: false });
+  });
+
+  it('returns a retried orders dispatches with the newest attempt first, per the query order', async () => {
+    const older = { ...MOCK_DISPATCH_ROWS[0], id: 'dp-older', completed_at: '2026-03-16T09:00:00', failure_reason: 'Nadie en casa' };
+    const newer = { ...MOCK_DISPATCH_ROWS[0], id: 'dp-newer', completed_at: '2026-03-16T11:00:00', failure_reason: null };
+    // The query orders completed_at DESC — the mock returns rows in that
+    // already-ordered shape, the same contract the real Postgres query makes.
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'dispatches') return dispatchesChain([newer, older]);
+      return buildFromMock()(table);
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.dispatches).toHaveLength(2);
+    expect(result.current.data!.dispatches[0].id).toBe('dp-newer');
+    expect(result.current.data!.dispatches[1].id).toBe('dp-older');
   });
 
   it('treats a package with no dock zone or weight as having those fields absent, not zero or dash', async () => {
@@ -266,11 +326,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockResolvedValue({ data: [], error: null }),
-        };
+        return dispatchesChain([]);
       }
       return {};
     });
@@ -306,11 +362,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockResolvedValue({ data: [], error: null }),
-        };
+        return dispatchesChain([]);
       }
       return {};
     });
@@ -341,11 +393,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockResolvedValue({ data: [], error: null }),
-        };
+        return dispatchesChain([]);
       }
       return {};
     });
@@ -383,11 +431,7 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          is: vi.fn().mockResolvedValue({ data: [], error: null }),
-        };
+        return dispatchesChain([]);
       }
       return {};
     });

@@ -130,7 +130,17 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
         )
         .eq('order_id', orderId!)
         .eq('operator_id', operatorId!)
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        // A retried delivery leaves more than one non-pickup dispatch row for
+        // the same order (`failure_reason` exists precisely for the
+        // superseded ones). With no order, Postgres returns whichever row it
+        // pleases, and `1f`'s ProofOfDelivery/route chip/"Abrir en ruta" would
+        // silently pick a stale attempt — worse than showing nothing. Newest
+        // completed_at first, `id` DESC as a stable tiebreak when
+        // completed_at ties or is null on both (same fix Task 2 applied for
+        // the same reason).
+        .order('completed_at', { ascending: false })
+        .order('id', { ascending: false });
 
       if (dispatchError) throw dispatchError;
 

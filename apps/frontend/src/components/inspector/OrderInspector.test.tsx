@@ -272,6 +272,42 @@ describe('OrderInspector', () => {
     expect(screen.getByTestId('proof-of-delivery')).toHaveTextContent('none');
   });
 
+  // Controller ruling, round 3 — a retried delivery leaves more than one
+  // non-pickup dispatch for the order (dispatches.failure_reason exists
+  // precisely for the superseded ones). useOrderDossier now orders that
+  // query newest-first; this asserts the component picks whichever dispatch
+  // comes FIRST in the array it's given, not last or some other one — the
+  // half of the fix that has to hold even though the query ordering itself
+  // is asserted separately in useOrderDossier.test.ts.
+  it('uses the first non-pickup dispatch (the newest, per the dossier query order) for POD, the ruta chip and Abrir en ruta — not a superseded attempt', () => {
+    const newer = dispatch({
+      id: 'dp-newer',
+      external_route_id: 'R-9999',
+      route_id: 'route-newer',
+      failure_reason: null,
+    });
+    const older = dispatch({
+      id: 'dp-older',
+      external_route_id: 'R-2481',
+      route_id: 'route-older',
+      failure_reason: 'Nadie en casa',
+    });
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, dispatches: [newer, older] },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+
+    expect(screen.getByTestId('proof-of-delivery')).toHaveTextContent('dp-newer');
+    expect(screen.getByText(/R-9999/)).toBeInTheDocument();
+    expect(screen.queryByText(/R-2481/)).toBeNull();
+    expect(screen.getByRole('link', { name: /Abrir en ruta/i })).toHaveAttribute(
+      'href',
+      '/app/dispatch/route-newer',
+    );
+  });
+
   describe('Conversación tab — gated on ModuleKey.CONVERSATIONS', () => {
     it('does not exist in the DOM at all when the module is off — not zero, absent', () => {
       mockUseModuleEnabled.mockReturnValue(false);

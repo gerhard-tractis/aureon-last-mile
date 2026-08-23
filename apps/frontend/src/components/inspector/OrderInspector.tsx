@@ -32,19 +32,6 @@ interface Props {
   packageLabelsEnabled?: boolean;
 }
 
-/**
- * spec-65 Task 8 — `1f`, recomposed from Task 7's dossier hook and blocks.
- *
- * "Abrir en ruta" links to `/app/dispatch/${route_id}` — the same path
- * `/app/dispatch`'s own route tiles and "new route" flow navigate to
- * (`router.push(`/app/dispatch/${route.id}`)`) — using `route_id`
- * (`routes.id`, the dossier's dispatch-join uuid, added in this task per
- * controller ruling), never `external_route_id` (a DispatchTrack-supplied
- * string with no relationship to the internal id). The button is absent,
- * not disabled, when there's no non-pickup dispatch or that dispatch has no
- * joined route — same "absent, not a dead link" rule as everything else
- * `1f` omits rather than fabricates.
- */
 function formatChipTime(iso: string): string {
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
@@ -67,6 +54,19 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * spec-65 Task 8 — `1f`, recomposed from Task 7's dossier hook and blocks.
+ *
+ * "Abrir en ruta" links to `/app/dispatch/${route_id}` — the same path
+ * `/app/dispatch`'s own route tiles and "new route" flow navigate to
+ * (`router.push(`/app/dispatch/${route.id}`)`) — using `route_id`
+ * (`routes.id`, the dossier's dispatch-join uuid, added in this task per
+ * controller ruling), never `external_route_id` (a DispatchTrack-supplied
+ * string with no relationship to the internal id). The button is absent,
+ * not disabled, when there's no non-pickup dispatch or that dispatch has no
+ * joined route — same "absent, not a dead link" rule as everything else
+ * `1f` omits rather than fabricates.
+ */
 export function OrderInspector({ orderId, onClose, packageLabelsEnabled = false }: Props) {
   const { operatorId } = useOperatorId();
   const { data, isLoading, isError } = useOrderDossier(orderId, operatorId);
@@ -270,7 +270,7 @@ function OrderInspectorBody({
         <span className="text-xs text-text-faint font-mono">esc · cerrar</span>
         <div className="flex gap-2">
           <button
-            className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-elev transition-colors"
+            className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-raised transition-colors"
             onClick={() => navigator.clipboard?.writeText(data.order_number)}
           >
             Copiar ID
@@ -278,7 +278,7 @@ function OrderInspectorBody({
           {routeId && (
             <Link
               href={`/app/dispatch/${routeId}`}
-              className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-elev transition-colors"
+              className="text-xs bg-surface-raised border border-border rounded px-3 py-1.5 text-text hover:bg-surface-raised transition-colors"
             >
               Abrir en ruta
             </Link>

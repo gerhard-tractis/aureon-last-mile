@@ -67,9 +67,11 @@ describe('pipeline types and constants', () => {
   // 'listo_para_despacho' in BOTH order_status_enum and package_status_enum.
   // The prod drift gate (verify-prod-migrations) confirms that migration is
   // applied, so the database never emits 'listo'. Components look stages up by
-  // exact string match — OrderLifecycleRibbon does
-  // PIPELINE_STAGES.find(s => s.status === leadingStatus) — so a stale literal
-  // silently renders no stage at all rather than failing loudly.
+  // exact string match — PipelineCard does
+  // PIPELINE_STAGES.find(s => s.status === stage.status) — so a stale literal
+  // silently renders no stage at all rather than failing loudly. (Previously
+  // OrderLifecycleRibbon did the same lookup; spec-65 Task 8 deleted it —
+  // PipelineCard is the live consumer this assertion now guards.)
 
   it('PIPELINE_STAGES uses the current DB literal listo_para_despacho', () => {
     const statuses = PIPELINE_STAGES.map((s) => s.status);
