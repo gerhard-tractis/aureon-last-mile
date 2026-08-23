@@ -30,7 +30,11 @@
 -- p_client filters on orders.retailer_name (the retailer that owns the
 -- order), not customer_name — customer_name is a per-order attribute (one
 -- person), retailer_name is the grouping that "client" means in this
--- multi-tenant, multi-retailer system.
+-- multi-tenant, multi-retailer system. orders also carries tenant_client_id
+-- (FK to tenant_clients), deliberately NOT used here: the design mock's
+-- "CLIENTE / REMITENTE" filter chips show retailer NAMES, i.e. free text,
+-- which is what retailer_name is. Switch this filter to tenant_client_id
+-- only if it ever needs to be authoritative (FK-joined) rather than textual.
 --
 -- operator_id is filtered on every table this touches directly — orders,
 -- packages, dispatches, routes, audit_logs — never relied on transitively
@@ -194,8 +198,30 @@ AS $$
     AND (p_route_ids IS NULL OR c.route_ids && p_route_ids)
     AND (p_driver IS NULL OR c.driver_name ILIKE '%' || p_driver || '%')
     AND (p_has_pod IS NULL OR c.has_pod = p_has_pod)
+    -- attempt_count (order_dispatches CTE) counts non-pickup dispatches only
+    -- (is_pickup = FALSE): dispatches.is_pickup exists precisely to separate
+    -- collection movements from delivery attempts, and "2+ intentos de
+    -- entrega" in the design mock means delivery attempts. Do not fold
+    -- pickup movements back into this count.
     AND (p_min_attempts IS NULL OR c.attempt_count >= p_min_attempts)
-  ORDER BY c.minutes_remaining ASC NULLS LAST, c.order_number ASC
+  -- Default sort: most urgent first. sla_status is ranked explicitly
+  -- (late, at_risk, ok, none) rather than sorting on minutes_remaining alone —
+  -- order_sla_status returns minutes_remaining = 0 as a placeholder for
+  -- sla_status = 'none' (delivered, or no delivery window at all), which
+  -- would otherwise sort those rows ahead of genuinely at-risk orders that
+  -- have a small positive minutes_remaining. order_number is a final
+  -- deterministic tiebreaker: without one, two orders sharing a sort key can
+  -- swap between successive paginated requests, showing one row twice and
+  -- skipping another.
+  ORDER BY
+    CASE c.sla_status
+      WHEN 'late'    THEN 0
+      WHEN 'at_risk' THEN 1
+      WHEN 'ok'      THEN 2
+      ELSE 3 -- 'none'
+    END,
+    c.minutes_remaining ASC NULLS LAST,
+    c.order_number ASC
   LIMIT p_limit OFFSET p_offset
 $$;
 

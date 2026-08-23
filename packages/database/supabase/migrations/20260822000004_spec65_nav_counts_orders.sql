@@ -5,7 +5,18 @@
 -- from the latest definition, 20260817000001_spec54_nav_counts.sql, per this
 -- project's CLAUDE.md rule to always build CREATE OR REPLACE from the newest
 -- migration, never the original.
+--
+-- DROP FUNCTION IF EXISTS is required here, not optional: CREATE OR REPLACE
+-- cannot change the row type of an existing RETURNS TABLE function, and this
+-- adds a fifth OUT column (`orders`) to the four the previous definition had.
+-- Postgres refuses with "cannot change return type of existing function" /
+-- "Row type defined by OUT parameters is different" otherwise. Same pattern
+-- as 20260820000006_spec61_pending_manifests_exclude_routed.sql. Dropping the
+-- function also drops its grants, which is why GRANT EXECUTE is repeated
+-- below, after the CREATE, in this same migration.
 -- =============================================================================
+
+DROP FUNCTION IF EXISTS public.get_nav_counts(UUID);
 
 CREATE OR REPLACE FUNCTION public.get_nav_counts(
   p_operator_id UUID
