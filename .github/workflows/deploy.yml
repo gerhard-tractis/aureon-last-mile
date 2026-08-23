@@ -7,12 +7,35 @@ name: Deploy Production
 #
 # Because the trigger is workflow_run, `github.sha` points at main's tip rather
 # than the commit that was tested. Every checkout and VPS sync below pins
-# `github.event.workflow_run.head_sha` explicitly. Do not remove those refs.
+# `github.event.workflow_run.head_sha` explicitly, falling back to `github.sha`
+# for a manual workflow_dispatch, where there is no workflow_run payload. Do
+# not remove those refs.
 on:
   workflow_run:
     workflows: ['CI']
     types: [completed]
     branches: [main]
+  # Manual re-run. Exists because the path filters below can leave production
+  # BEHIND the repo with no way to catch up: deploy-supabase only runs when a
+  # push touched migrations/**, so a migration deploy that was skipped (or that
+  # failed and was then buried under docs-only merges) stays unapplied until
+  # some unrelated commit happens to touch that path. On 2026-08-23 production
+  # was 13 migrations behind — including two spec-61 security fixes — and the
+  # only ways to recover were an unrelated dummy commit or a hand-run
+  # `supabase db push` outside the pipeline. Neither is acceptable, so the
+  # pipeline can now be asked directly.
+  #
+  # This does NOT bypass anything: dispatching still runs deploy-qa, still
+  # stops at approve-production for a human, and still ends at
+  # verify-prod-migrations. It only changes which commit is deployed (the tip
+  # of the branch you dispatch from) and, optionally, whether the migration
+  # job's path filter is overridden.
+  workflow_dispatch:
+    inputs:
+      force_db:
+        description: 'Apply pending Supabase migrations even if this commit touched none'
+        type: boolean
+        default: false
 
 # All deploy jobs run sequentially within their dependency chain — a failed
 # migration never reaches app deploys. Jobs are gated on path filters so a
@@ -41,7 +64,11 @@ on:
 # check-deploy-gating.sh enforces this shape.
 
 env:
-  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+  # On workflow_run this is the commit CI actually tested. On workflow_dispatch
+  # there is no workflow_run payload, so it falls back to github.sha — the tip
+  # of the branch the dispatch was made from. Every checkout and VPS reset below
+  # uses the same fallback; do not let the two forms drift apart.
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   # ─── 0. Detect what changed ──────────────────────────────────────────────────
@@ -51,9 +78,15 @@ jobs:
     # fires for pull_request CI runs and for the merge queue's merge_group
     # runs, neither of which must ever deploy. The queue's own merge into main
     # arrives separately as a push, and that is the one that ships.
+    #
+    # A manual dispatch is allowed through without those checks: there is no
+    # workflow_run payload to inspect, and the human doing the dispatching is
+    # the one deciding the commit is fit to ship. The production gate still
+    # applies either way.
     if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     outputs:
       database: ${{ steps.filter.outputs.database }}
@@ -66,7 +99,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # Full history: the diff below needs the parent commit. A shallow
           # clone silently produced an empty diff for multi-commit pushes,
           # which skipped the migration job on pushes that did contain
@@ -75,6 +108,8 @@ jobs:
 
       - name: Filter paths
         id: filter
+        env:
+          FORCE_DB: ${{ inputs.force_db }}
         run: |
           set -euo pipefail
           # main is squash-merge only, so HEAD^ is the previous main tip.
@@ -85,8 +120,19 @@ jobs:
 
           matches() { echo "$CHANGED" | grep -qE "$1" && echo true || echo false; }
 
+          # force_db overrides the database path filter only. It exists so a
+          # migration backlog can be applied without an unrelated commit that
+          # happens to touch migrations/**; `supabase db push --include-all`
+          # applies every pending migration, not just this commit's. Empty on
+          # workflow_run, so this is a no-op there.
+          DB=$(matches '^packages/database/supabase/(migrations/|seed\.sql|config\.toml)')
+          if [ "${FORCE_DB}" = "true" ]; then
+            echo "force_db: overriding database filter (was ${DB})"
+            DB=true
+          fi
+
           {
-            echo "database=$(matches '^packages/database/supabase/(migrations/|seed\.sql|config\.toml)')"
+            echo "database=${DB}"
             echo "edge_functions=$(matches '^packages/database/supabase/functions/')"
             echo "worker=$(matches '^apps/worker/')"
             echo "agents=$(matches '^apps/agents/')"
@@ -119,7 +165,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -176,7 +222,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -222,7 +268,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
@@ -262,7 +308,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Deploy to Vercel
         run: npx vercel@latest --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
@@ -520,7 +566,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Same guard as deploy-qa.sh: a host without QA provisioned must skip
       # rather than fail, so this job never invents a reason to look red.
@@ -563,7 +609,7 @@ jobs:
         if: always() && steps.qa.outputs.provisioned == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-qa-report-${{ github.event.workflow_run.head_sha }}
+          name: e2e-qa-report-${{ github.event.workflow_run.head_sha || github.sha }}
           path: apps/frontend/playwright-report-qa/
           retention-days: 14
           if-no-files-found: ignore
