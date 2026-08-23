@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; `1f` quedó pendiente en su fase 4), [spec-42](spec-42-order-inspector.md) (Order Inspector original), [spec-49](spec-49-easy-webhook-dispatch-guide-url.md) (webhook de DispatchTrack), [spec-45](spec-45-module-activation-layer.md) (activación de módulos), `docs/architecture/phased-rollout-strategy.md`
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-22_
 
@@ -67,6 +67,8 @@ El mock muestra siete pestañas más "Guardar vista" y "+ Nueva vista". No exist
 
 Razón: compartir una vista sigue funcionando, que es el requisito real; una tabla nueva con RLS y CRUD por una pestaña personalizada no se paga sola en un spec que ya trae tres pantallas y una Edge Function.
 
+**Task 6, ronda 4 — un "Limpiar" compartido no sobrevivía al viaje.** Bug real, no una desviación de diseño: "Limpiar" en una pestaña que implica filtros (p. ej. "En reparto") producía `?vista=en-reparto`, idéntico byte a byte a un enlace que nadie tocó nunca. El destinatario abría ese enlace y veía los filtros de la pestaña reaplicados en silencio, justo lo que la regla "la URL es la única fuente de verdad" existe para evitar. Arreglado con un marcador propio de Task 6 fuera del esquema de Task 4 — `filtros=0` (`CLEARED_PARAM`, igual que `PAGE_PARAM`) — que `handleClearAll`/`handleFiltersChange` escriben cuando el resultado queda vacío, y que la fusión de filtros en `page.tsx` respeta para NO reaplicar los filtros del preset. Sin cambios en `filtersToSearchParams` ni en el contrato de Task 4.
+
 ### 3. La barra de acciones masivas solo ofrece lo que existe
 
 El mock lista Reasignar ruta · Marcar excepción · Reintentar entrega · Notificar cliente · Exportar. Solo la última no necesita backend.
@@ -78,6 +80,10 @@ El mock lista Reasignar ruta · Marcar excepción · Reintentar entrega · Notif
 La lista global de pedidos no es un módulo opcional: cualquier operador que tenga órdenes la necesita. Sigue el patrón de `Dashboard ejecutivo` (sin `module`), con visibilidad por permiso.
 
 **Decisión:** `isVisible` = `admin` · `operations_manager` · permiso `customer_service`. Sin `module`.
+
+**Task 6, ronda 1 — el gate NO vive en un `layout.tsx`.** `/app/orders/new` y `/app/orders/import` son rutas hermanas bajo el mismo segmento `orders/`, y ambas traen su propio gate inline (`ALLOWED_ROLES = ['admin', 'operations_manager']`), un conjunto **más estrecho** que el de arriba (que además admite `customer_service`). Un `layout.tsx` en `orders/` envolvería a las tres rutas y **ampliaría** quién llega a `/new` y `/import`, no la reduciría. Por eso `OrdersClientGate` se importa directo en `apps/frontend/src/app/app/orders/page.tsx`, sin `layout.tsx` de por medio. **No lo "prolijees" a un layout compartido** sin volver a comparar los dos conjuntos de permisos primero — hacerlo le daría acceso a `customer_service` a crear/importar pedidos, algo que hoy no puede hacer.
+
+**Task 6, ronda 4 — flash del gate mientras cargan los permisos, repo-wide, no propio.** `OrdersClientGate` usa `permissions.length > 0` como señal de "claims cargados" (igual que `DispatchClientGate`/`DistributionClientGate`, el patrón que este task debía copiar), no un flag real de carga — un usuario sin acceso ve la lista brevemente antes de la redirección. `useOperatorId()` no expone el `loading: boolean` que `GlobalContext` sí trae internamente (solo reexporta `operatorId`/`role`/`permissions`/`userId`). Arreglarlo de verdad implica extender `useOperatorId()` y tocar cada `*ClientGate` existente — fuera de alcance de Task 6. No se inventó un heurístico local (p. ej. tratar `operatorId` nulo como "cargando") porque puede confundir un usuario legítimo con cero permisos con uno aún cargando, y mostrarle una página en blanco es peor que el flash.
 
 ### 5. La clasificación SLA se duplica en SQL, con test de paridad
 
@@ -101,7 +107,11 @@ Ambas responden la misma pregunta sobre los mismos datos, pero el mock de `3b` s
 
 Es decir: **`3b` se va a ver delgada en QA el día uno.** Eso es el dato, no la implementación. Se documenta aquí para que no se diagnostique como bug ni se re-depure (ver `project_qa_stale_bundle_pwa` como precedente del mismo tipo de falsa alarma).
 
-Mitigación en pantalla, no en datos: cuando una orden no tiene ningún `webhook_events`, la bitácora muestra un `EmptyState` explícito — *"Sin eventos de courier registrados. El registro de eventos empezó el DD/MM; las órdenes anteriores a esa fecha solo conservan su último estado."* — y no un vacío mudo.
+Mitigación en pantalla, no en datos: cuando una orden no tiene eventos de courier, la bitácora lo dice explícitamente en vez de mostrar un vacío mudo.
+
+> **Corrección (2026-08-23).** La fase 1 se **aparcó** y no se implementó — ver el aviso en *Plan de implementación · Fase 1*. Así que el riesgo descrito arriba no es transitorio: **es el estado permanente** mientras `webhook_events` no exista. La bitácora no "nace vacía y se llena"; se queda con la mitad Aureon más una entrada DispatchTrack.
+>
+> El texto que se renderiza es *"Sin eventos de courier registrados."*, sin la frase con fecha que este párrafo describía: sin tabla no hay fecha de inicio del registro que nombrar. `UnifiedEventLog` distingue además ese caso de *"eventos de courier ocultos por el filtro"*, que es una situación distinta y se redacta distinto.
 
 ---
 
@@ -303,6 +313,12 @@ Cada una es un dato que el schema no tiene. Ninguna se rellena con un placeholde
 | `3a` cabecera | "+ Nueva vista" | Sin persistencia de vistas. Ver *Decisión 2*. |
 | `3b` bitácora / POD | Motivos en inglés (`CONSIGNEE_ABSENT`) | Ilustrativos del diseñador. DispatchTrack manda `substatus` en español (`Nadie en casa`) más `substatus_code` numérico (`07`). Se muestra lo que llega. |
 | `1f` pestañas | "Conversación (N)" | Se implementa, **gated** por `ModuleKey.CONVERSATIONS`. Si el módulo está apagado, la pestaña no existe (no aparece en cero). |
+| `3a` pestañas | Conteo en las siete pestañas (47 · 12.847 · 318 · 23 · 61 · 12 · 904) | No existe un RPC de conteo por faceta sobre todo el dataset — traerlos los siete costaría siete queries por carga de página. Solo la pestaña activa muestra su conteo (`total_count` de la query ya hecha); las inactivas no muestran número, ni cero, ni spinner (Task 6, ronda 1). |
+| `3a` filtro ESTADO | Conteo por estado en el riel (318 · 23 · 96 · 904 · 12) | Mismo motivo que arriba. `OrderFilterRail.StatusFilterOption.count` es opcional (Task 6, ronda 2 — originalmente se pasó `count: 0`, que la revisión del controller correctamente rechazó por afirmar un dato falso); se omite por completo, sin badge vacío. |
+| `3a` filtro RUTA | Todas las rutas, históricas incluidas | `useActiveRoutes` solo cubre rutas con despachos hoy/en curso. Se usa igual (el shape encaja) pero con una leyenda visible bajo el select — "Solo rutas activas" — para que la ausencia de una ruta antigua se lea como límite de la vista, no como que la ruta no existe (Task 6, ronda 2). |
+| `3a` cabecera — "Exportar CSV" | Exporta el dataset filtrado completo (12.847 filas en el mock) | `get_orders_list` pagina en bloques de 50 y no existe un RPC de exportación completa. Construir uno (o un loop de páginas en el cliente) es lógica nueva, no wiring — fuera de alcance de Task 6. El botón se llama **"Exportar página (N)"**, con N = filas cargadas en pantalla, precisamente para no prometer más de lo que hace (Task 6, ronda 3 — la etiqueta original, "Exportar CSV", exportaba silenciosamente solo la página cargada junto a un subtítulo con el total real, un bug de confianza: el usuario lo descubre recién al abrir el archivo). Seguimiento recomendado: un RPC `export_orders_list_csv` sin `p_limit`/`p_offset` que reutilice los filtros de `get_orders_list` — se prefiere sobre un loop de páginas en el cliente porque un `totalCount` en los miles no debe bajar cada fila al navegador solo para reserializarla como texto. |
+| `3b` bitácora | Historial evento por evento del courier (14 eventos, cada uno expandible) | **La fase 1 se aparcó y no se implementó** — no existe `webhook_events`, y `beetrack-webhook` sigue haciendo `upsert` sobre `dispatches`, así que solo sobrevive el último payload por parada. La bitácora es `audit_logs` (AUREON) más, como mucho, **una** entrada DISPATCHTRACK. La rejilla de cuatro campos y *Ver datos técnicos* sí están construidos y funcionan sobre esa entrada. Criterios de aceptación 4 y 5 no alcanzables por esto. |
+| `1f` / `3b` "Por qué está atrasada" | Bloque con causa, motivo y acción sugerida | Se construyó y se monta en ambas pantallas, pero **nunca se renderiza en producción**: necesita `reason_flag`, que no devuelve `get_ops_control_snapshot` (19 claves, verificado contra QA) y que no define ninguna migración. Renderiza `null` por diseño en vez de inventar una causa. **Hallazgo colateral:** por la misma razón, la columna MOTIVO y los chips de filtro por motivo del `AtRiskPanel` de Torre de control (spec-54) están muertos hoy en producción — fuera del alcance de este spec, merece el suyo. |
 
 ---
 
@@ -316,9 +332,17 @@ Cuatro PRs.
 
 TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `project_vitest_cannot_run_locally`.
 
-### Fase 1 — `webhook_events` y el registro de eventos
+### Fase 1 — `webhook_events` y el registro de eventos — **APARCADA, no implementada**
 
-**PR 1.** Sin UI.
+> **Estado real (2026-08-23).** Esta fase **no se construyó**. Durante la implementación se decidió aparcar `webhook_events` y seguir con las fases 2-4, que no dependen de ella. Nada de lo que describe esta sección existe: no hay tabla, no hay `INSERT` en la Edge Function, y `beetrack-webhook` sigue haciendo `upsert` sobre `dispatches`, así que **no hay historial de eventos del courier por evento** — solo el último payload por parada.
+>
+> Consecuencia en pantalla, ya implementada: `UnifiedEventLog` construye la bitácora con `audit_logs` (AUREON) más, como mucho, **una** entrada DISPATCHTRACK derivada del `dispatches` vigente, y dice explícitamente cuándo no hay eventos de courier. El texto que renderiza es *"Sin eventos de courier registrados."* — no la variante con fecha que describe *Riesgo aceptado* más abajo, porque sin la tabla no hay fecha de inicio que nombrar.
+>
+> Los **criterios de aceptación 4 y 5** dependen de esta fase y por lo tanto **no son alcanzables** en el estado actual. Están marcados como tales.
+>
+> Retomar esta fase es un spec aparte. Su valor sigue en pie: sin ella, `3b` no puede reconstruir una disputa evento por evento, que es para lo que se diseñó.
+
+**PR 1 (no ejecutado).** Sin UI.
 
 1. Test de la migración: la tabla existe, RLS activa, `authenticated` puede `SELECT` solo su `operator_id`, no puede `INSERT`.
 2. Migración `2026XXXX_spec65_webhook_events.sql`.
@@ -366,8 +390,8 @@ TDD en todas. Vitest corre local (`npm run test -w apps/frontend`) — ver `proj
 1. `/app/orders` lista órdenes de todas las etapas, filtra por los siete presets, y la URL resultante abierta en otra sesión reproduce la misma vista.
 2. El contador de Pedidos en la sidebar coincide con el total del preset "SLA en riesgo".
 3. `order_sla_status` y `classifyRisk` coinciden en toda la tabla de casos límite.
-4. Un evento de DispatchTrack en QA aparece en la bitácora de `3b` con su rejilla de cuatro campos traducida, y su JSON accesible bajo *Ver datos técnicos*.
-5. Un segundo evento sobre la misma parada aparece como **dos** líneas de bitácora, no una.
-6. Una orden sin causa determinable no muestra el bloque "Por qué está atrasada" — ni vacío ni genérico.
+4. ~~Un evento de DispatchTrack en QA aparece en la bitácora de `3b` con su rejilla de cuatro campos, y su JSON accesible bajo *Ver datos técnicos*.~~ **No alcanzable.** Depende de la fase 1, aparcada. La rejilla de cuatro campos y *Ver datos técnicos* **sí** están implementados y se alimentan del `dispatches` vigente; lo que no existe es el evento por evento.
+5. ~~Un segundo evento sobre la misma parada aparece como **dos** líneas de bitácora, no una.~~ **No alcanzable.** Requiere `webhook_events` — con el `upsert` actual sobre `dispatches` el segundo evento pisa al primero por definición. Este criterio es la razón por la que la fase 1 existe; queda como criterio del spec que la retome.
+6. Una orden sin causa determinable no muestra el bloque "Por qué está atrasada" — ni vacío ni genérico. *(Nota: hoy esto es **siempre** — `reason_flag` no lo produce ningún RPC ni migración, así que el bloque nunca se renderiza en producción. Verificado contra QA. Ver desviaciones.)*
 7. Una orden entregada sin firma muestra el estado explícito de POD nombrando el campo nulo.
 8. Ninguna consulta nueva sin `operator_id`; ningún archivo nuevo sobre 300 líneas.

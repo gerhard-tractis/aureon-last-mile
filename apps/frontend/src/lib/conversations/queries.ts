@@ -44,6 +44,35 @@ export async function fetchSessions(
   })) as ConversationSession[];
 }
 
+/**
+ * spec-65 Task 8 — the sessions for one order, for `1f`'s Conversación tab.
+ * `fetchSessions` above scopes by operator + free-form filters for the
+ * conversations list screen; this scopes by operator + a specific order_id
+ * (present on `customer_sessions` per `src/lib/conversations/types.ts`),
+ * which `fetchSessions` has no filter for today.
+ */
+export async function fetchSessionsForOrder(
+  operatorId: string,
+  orderId: string,
+): Promise<ConversationSession[]> {
+  const supabase = createSPAClient() as unknown as UntypedClient;
+
+  const { data, error } = await supabase
+    .from('customer_sessions')
+    .select('*, orders!inner(order_number)')
+    .eq('operator_id', operatorId)
+    .eq('order_id', orderId)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    ...row,
+    order_number: (row.orders as { order_number: string })?.order_number ?? '',
+  })) as ConversationSession[];
+}
+
 export async function fetchMessages(sessionId: string): Promise<SessionMessage[]> {
   const supabase = createSPAClient() as unknown as UntypedClient;
   const { data, error } = await supabase

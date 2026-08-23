@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge } from './StatusBadge';
+import { StatusBadge, getStatusLabel } from './StatusBadge';
 
 describe('StatusBadge', () => {
   it('renders the correct label for delivered status', () => {
@@ -62,5 +62,100 @@ describe('StatusBadge', () => {
   it('renders unknown status with neutral styling', () => {
     render(<StatusBadge status="some_custom_status" />);
     expect(screen.getByText('some_custom_status')).toBeInTheDocument();
+  });
+
+  it('renders spec-65 order_status_enum values in Spanish (Pedidos leading_status)', () => {
+    render(<StatusBadge status="en_ruta" />);
+    expect(screen.getByText('En reparto')).toBeInTheDocument();
+  });
+
+  it('renders entregado (order enum) as "Entregada" with the success variant', () => {
+    const { container } = render(<StatusBadge status="entregado" />);
+    expect(screen.getByText('Entregada')).toBeInTheDocument();
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-status-success-bg');
+  });
+
+  it('renders every order_status_enum value with a non-raw Spanish label', () => {
+    const enumValues = [
+      'ingresado', 'verificado', 'en_bodega', 'asignado', 'en_carga',
+      'listo_para_despacho', 'en_ruta', 'entregado', 'cancelado',
+      'en_retorno', 'parcialmente_entregado',
+    ];
+    for (const status of enumValues) {
+      const { unmount } = render(<StatusBadge status={status} />);
+      expect(screen.queryByText(status)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
+describe('getStatusLabel', () => {
+  it('returns the Spanish label for a known order_status_enum value', () => {
+    expect(getStatusLabel('en_ruta')).toBe('En reparto');
+  });
+
+  it('returns the raw string for an unknown status, never a placeholder', () => {
+    expect(getStatusLabel('some_future_status')).toBe('some_future_status');
+  });
+
+  it('defaults to the order vocabulary — "entregado" is feminine ("Entregada")', () => {
+    expect(getStatusLabel('entregado')).toBe('Entregada');
+  });
+
+  it('resolves the package vocabulary when kind="package" — "entregado" is masculine ("Entregado")', () => {
+    expect(getStatusLabel('entregado', 'package')).toBe('Entregado');
+  });
+});
+
+describe('StatusBadge kind="order" vs kind="package" — two grammatically distinct vocabularies sharing one component', () => {
+  it('defaults to kind="order" when omitted, unchanged from before the package vocabulary existed', () => {
+    render(<StatusBadge status="entregado" />);
+    expect(screen.getByText('Entregada')).toBeInTheDocument();
+  });
+
+  it('renders "entregado" as "Entregada" (feminine, la orden) under kind="order"', () => {
+    render(<StatusBadge status="entregado" kind="order" />);
+    expect(screen.getByText('Entregada')).toBeInTheDocument();
+  });
+
+  it('renders "entregado" as "Entregado" (masculine, el paquete) under kind="package" — same enum value, different grammar', () => {
+    render(<StatusBadge status="entregado" kind="package" />);
+    expect(screen.getByText('Entregado')).toBeInTheDocument();
+  });
+
+  it('renders "cancelado" as "Cancelada" for kind="order" and "Cancelado" for kind="package"', () => {
+    const { unmount } = render(<StatusBadge status="cancelado" kind="order" />);
+    expect(screen.getByText('Cancelada')).toBeInTheDocument();
+    unmount();
+    render(<StatusBadge status="cancelado" kind="package" />);
+    expect(screen.getByText('Cancelado')).toBeInTheDocument();
+  });
+
+  it('covers every package_status_enum value with a non-raw Spanish label under kind="package", including the six values order_status_enum does not have', () => {
+    const packageOnlyValues = ['sectorizado', 'retenido', 'retorno_hub', 'devuelto', 'dañado', 'extraviado'];
+    for (const status of packageOnlyValues) {
+      const { unmount } = render(<StatusBadge status={status} kind="package" />);
+      expect(screen.queryByText(status)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('a package-only value falls back to the raw string under kind="order" — the two vocabularies do not share entries', () => {
+    render(<StatusBadge status="retenido" kind="order" />);
+    expect(screen.getByText('retenido')).toBeInTheDocument();
+  });
+
+  it('resolves "pending" (the PackageStatusBreakdown null-status fallback) under kind="package"', () => {
+    render(<StatusBadge status="pending" kind="package" />);
+    expect(screen.getByText('Pendiente')).toBeInTheDocument();
+  });
+});
+
+describe('StatusBadge label override', () => {
+  it('an explicit label prop wins over both the config lookup and the raw-status fallback', () => {
+    render(<StatusBadge status="draft" label="Borrador" variant="neutral" />);
+    expect(screen.getByText('Borrador')).toBeInTheDocument();
+    expect(screen.queryByText('draft')).not.toBeInTheDocument();
   });
 });

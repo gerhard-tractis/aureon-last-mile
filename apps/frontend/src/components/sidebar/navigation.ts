@@ -8,6 +8,13 @@
  * The rebrand groups the flat 10-item list into two sections because the
  * shift-paced work (what is queued right now) and the management work (what
  * happened, what is planned) are read at different rhythms.
+ *
+ * spec-65 Task 3: this file holds only the nav definition proper — sections,
+ * items, visibility, landing path. The mobile tab bar lives in
+ * navigation.mobile.ts and the breadcrumb in navigation.breadcrumbs.ts, both
+ * re-exported below, so this file stays under the project's 300-line
+ * guideline. No import site elsewhere needs to change: everything is still
+ * reachable from './navigation'.
  */
 
 import {
@@ -17,6 +24,7 @@ import {
   FileText,
   LayoutDashboard,
   Layers,
+  List,
   MessageSquare,
   Radio,
   ShieldCheck,
@@ -26,7 +34,7 @@ import {
 import { ModuleKey } from '@/lib/modules/registry';
 
 /** Queue counters shown on OPERACIÓN items. Keyed to useNavCounts. */
-export type CountKey = 'pickup' | 'reception' | 'distribution' | 'dispatch';
+export type CountKey = 'pickup' | 'reception' | 'distribution' | 'dispatch' | 'orders';
 
 export interface NavItem {
   href: string;
@@ -68,6 +76,16 @@ export const OPERATION_ITEMS: NavItem[] = [
     icon: Radio,
     module: ModuleKey.OPS_CONTROL,
     isVisible: isAdminOrManager,
+  },
+  {
+    href: '/app/orders',
+    label: 'Pedidos',
+    icon: List,
+    countKey: 'orders',
+    // No `module`: the cross-stage order list is not an optional module —
+    // same as Dashboard ejecutivo. Every admin/manager/CS user sees it
+    // regardless of which spec-45 modules the operator has enabled.
+    isVisible: (ctx) => isAdminOrManager(ctx) || hasPermission('customer_service')(ctx),
   },
   {
     href: '/app/pickup',
@@ -154,6 +172,7 @@ export const countKeyThresholds: Record<CountKey, number> = {
   reception: 50,
   distribution: 250,
   dispatch: 80,
+  orders: 40,
 };
 
 /** Sections filtered to what this user may see. Empty sections are dropped. */
@@ -168,148 +187,38 @@ export function buildNavSections(ctx: NavContext): NavSection[] {
 }
 
 /**
- * spec-54 — the mobile bottom tab bar.
- *
- * Floor and van roles only. `operations_manager` and `admin` do their work
- * on desktop; a phone in their hand is incidental, and a 4-tab driver bar
- * would hide most of the 9-item nav they actually need — they keep the
- * hamburger `Sheet` instead (see AppLayout).
- *
- * spec-61 — `pickup_leader` belongs here for the same reason `pickup_crew`
- * does: it is a van role. A role missing from this set gets NO tab bar
- * (`buildMobileTabs` returns `[]` below), which on a phone means no
- * navigation at all. Exported so navigation.test.ts can assert the set
- * rather than restate it.
- */
-export const OPERATIONS_ROLES = [
-  'pickup_crew',
-  'pickup_leader',
-  'warehouse_staff',
-  'loading_crew',
-] as const;
-
-const MOBILE_TAB_ROLES: ReadonlySet<string> = new Set(OPERATIONS_ROLES);
-
-export function isOperationsRole(role: string | null): boolean {
-  return role !== null && MOBILE_TAB_ROLES.has(role);
-}
-
-/** A mobile tab, plus whether the signed-in user may actually open it. */
-export interface MobileTab extends NavItem {
-  /**
-   * True when this user cannot open the tab right now — missing permission,
-   * or the operator hasn't enabled the module (spec-45). Renders either way
-   * (see MobileTab's consumer): a live link would be a fake destination in
-   * both cases — every module page bounces on the client
-   * (`_client-gate.tsx`) the instant a permission is missing.
-   */
-  disabled: boolean;
-}
-
-/**
- * Always the same four, same order, for every operations role — Recogida,
- * Recepción, Distribución, Despacho — taken straight from OPERATION_ITEMS so
- * the tab bar can never drift from the sidebar's icons/labels. `Torre de
- * control` is excluded: it's gated by `isAdminOrManager`, never true here.
- *
- * Exactly four, always — never fewer, whatever the permission/module
- * state — marking `disabled` rather than omitting. The permission gate
- * (`isVisible`) and the spec-45 module gate (`enabledModules`) both fold
- * into that one flag: an ops user sees the whole shape of the app, greyed
- * out wherever it isn't theirs, for either reason.
- */
-export function buildMobileTabs(ctx: NavContext): MobileTab[] {
-  if (!isOperationsRole(ctx.role)) return [];
-  return OPERATION_ITEMS.filter((item) => item.href !== '/app/operations-control').map((item) => ({
-    ...item,
-    disabled: !item.isVisible(ctx) || (item.module !== undefined && !ctx.enabledModules.includes(item.module)),
-  }));
-}
-
-/**
- * Screens that already own a fixed, full-width action bar pinned to the
- * viewport bottom (a 60px primary button, safe-area padding of their own).
- * Stacking the tab bar under/over one of these would either hide the
- * screen's own button or make the last list row unreachable — so the tab
- * bar (and AppLayout's compensating scroll padding) is suppressed here.
- * The hamburger reappears as the fallback way to leave the screen.
- *
- * `/app/pickup/route/active` is reachable from the Recogida tab (it is not
- * a tab destination itself) and carries the same fixed-footer pattern, so
- * it is listed alongside the two loadId-scoped flows.
- *
- * `/app/reception/route` covers the reception session and its completion
- * record, both of which own the same fixed footer — but not
- * `/app/reception` itself, which is the module-switching listing and needs
- * the tab bar to get anywhere else.
- */
-const MOBILE_IMMERSIVE_PREFIXES = [
-  '/app/pickup/scan',
-  '/app/pickup/review',
-  '/app/pickup/route/active',
-  '/app/reception/route',
-];
-
-export function isImmersiveMobileRoute(pathname: string): boolean {
-  return MOBILE_IMMERSIVE_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(prefix + '/'),
-  );
-}
-
-/**
  * Where a signed-in user starts. Used by `/app` now that the marketing landing
  * page no longer occupies `/`.
  *
- * This is deliberately the first item the sidebar would show rather than a
- * hardcoded route: OPERACIÓN leads with the control tower, so admins and
- * operations managers land there, while a warehouse or driver account — for
- * whom the tower is hidden and would render empty — lands on the first queue
- * it can actually work. Dashboard ejecutivo is visible to everyone, so the
- * fallback is only reached if the nav is ever emptied entirely.
+ * spec-65 review round (final, reverses the Task 3 ruling recorded below):
+ * prefer the first visible item that both (a) has a `module` and (b) has
+ * that module enabled — i.e. a real queue the operator is actually mid-rollout
+ * on — falling back to the plain first visible item only when none qualifies.
+ * `buildNavSections` has already dropped items whose module is disabled, so
+ * every item it returns already satisfies (b); this just needs to prefer the
+ * first one that also satisfies (a).
+ *
+ * Why: an admin activated on only one module (say PICKUP mid-rollout) landing
+ * on the ungated, cross-stage Pedidos list instead of the pickup queue they
+ * actually work is a regression, not a feature — `src/app/app/page.test.tsx`
+ * ("respects module activation over role") caught this. The original Task 3
+ * ruling below optimized for customer_service (who has no module-gated item
+ * at all, and for whom Pedidos genuinely *is* their queue) at the cost of
+ * every module-gated role. The rule above keeps both: customer_service still
+ * lands on Pedidos (nothing else qualifies for them), and a module-activated
+ * role lands on its own queue instead of skipping past it to Pedidos.
+ *
+ * Original Task 3 reasoning (superseded — kept for context, do not re-apply
+ * without re-litigating the case above): "Pedidos carries no module gate and
+ * sits second, right after the tower, so once the tower is unavailable
+ * Pedidos is the next visible item and becomes the landing target ahead of
+ * any module-gated queue like Recogida."
  */
 export function resolveLandingPath(ctx: NavContext): string {
-  const first = buildNavSections(ctx)[0]?.items[0];
-  return first?.href ?? '/app/dashboard';
+  const items = buildNavSections(ctx).flatMap((section) => section.items);
+  const moduleGated = items.find((item) => item.module !== undefined);
+  return (moduleGated ?? items[0])?.href ?? '/app/dashboard';
 }
 
-/**
- * Reachable pages that are deliberately not in the sidebar — you arrive at them
- * from a button or a menu, not from the nav. They still need a breadcrumb, and
- * it has to come from here: the topbar is the only place a crumb is rendered,
- * so a route missing from this table simply has no crumb at all.
- */
-const EXTRA_CRUMBS: { href: string; section: string; page: string }[] = [
-  { href: '/app/orders/new', section: 'Gestión', page: 'Nuevo pedido' },
-  { href: '/app/orders/import', section: 'Gestión', page: 'Importar pedidos' },
-  { href: '/app/user-settings', section: 'Gestión', page: 'Mi cuenta' },
-];
-
-/**
- * Breadcrumb for a pathname, from the same definition the sidebar uses, so the
- * two cannot disagree. Matches the longest href prefix, which is what keeps
- * `/admin/users` on Admin rather than on a shorter accidental match, and what
- * lets `/app/orders/new` beat a hypothetical `/app/orders` nav item.
- */
-export function breadcrumbForPath(pathname: string): { section: string; page: string } | null {
-  let best: { section: string; page: string; length: number } | null = null;
-
-  const candidates = [
-    ...NAV_SECTIONS.flatMap((section) =>
-      section.items.map((item) => ({
-        href: item.href,
-        section: section.crumb,
-        page: item.label,
-      })),
-    ),
-    ...EXTRA_CRUMBS,
-  ];
-
-  for (const candidate of candidates) {
-    const matches = pathname === candidate.href || pathname.startsWith(candidate.href + '/');
-    if (!matches) continue;
-    if (best && candidate.href.length <= best.length) continue;
-    best = { section: candidate.section, page: candidate.page, length: candidate.href.length };
-  }
-
-  return best ? { section: best.section, page: best.page } : null;
-}
+export * from './navigation.mobile';
+export * from './navigation.breadcrumbs';

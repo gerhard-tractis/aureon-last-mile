@@ -1,0 +1,54 @@
+'use client';
+
+/**
+ * OrdersBulkBar — the selection bar on `/app/orders` (spec-65, mock `3a`).
+ * Appears only once rows are selected.
+ *
+ * Spec-65 Decision 3: the mock's "Reasignar ruta", "Marcar excepción",
+ * "Reintentar entrega" and "Notificar cliente" have no backing mutation and
+ * are deliberately NOT rendered — not disabled, not tooltipped. A dead
+ * control in an operations screen reads as broken, not "coming soon".
+ * Export is the only action that ships: `ordersToCsv` (Task 4) returns a
+ * string and never touches the DOM, so triggering the browser download is
+ * this component's job.
+ *
+ * Labelled "Exportar seleccionados (N)", not bare "Exportar" (Task 6,
+ * controller review round 3) — the header's own, unrelated export
+ * ("Exportar página (N)", covering the loaded page rather than the
+ * selection) would otherwise be indistinguishable by label alone.
+ */
+
+import { Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { downloadOrdersCsv } from '@/lib/orders/download-orders-csv';
+import type { OrdersListRow } from '@/hooks/useOrdersList';
+
+interface OrdersBulkBarProps {
+  selectedRows: OrdersListRow[];
+}
+
+function downloadCsv(rows: OrdersListRow[]) {
+  downloadOrdersCsv(rows, `pedidos-${new Date().toISOString().slice(0, 10)}.csv`);
+}
+
+export function OrdersBulkBar({ selectedRows }: OrdersBulkBarProps) {
+  if (selectedRows.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-3 border-t border-border bg-surface px-6 py-2.5">
+      <span className="flex items-center gap-2 text-[11.5px] font-semibold text-text">
+        <span className="font-mono text-accent">{selectedRows.length}</span> seleccionados
+      </span>
+      <span className="h-4 w-px bg-border" />
+      <Button
+        variant="outline"
+        size="sm"
+        title="Exporta solo los pedidos marcados con la casilla"
+        onClick={() => downloadCsv(selectedRows)}
+      >
+        <Download className="h-3 w-3" />
+        Exportar seleccionados ({selectedRows.length})
+      </Button>
+    </div>
+  );
+}
