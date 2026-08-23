@@ -99,6 +99,19 @@ describe('resolvePreset', () => {
   it('falls back to todas for an unknown preset id', () => {
     expect(resolvePreset('nonsense' as OrderViewPresetId, '2026-08-22')).toEqual({});
   });
+
+  it('returns a fresh top-level object each call, not a reference into ORDER_VIEW_PRESETS', () => {
+    const first = resolvePreset('en-reparto', '2026-08-22') as { statuses: string[] };
+    first.statuses = ['mutated'];
+    const second = resolvePreset('en-reparto', '2026-08-22');
+    expect(second).toEqual({ statuses: ['en_ruta'] });
+  });
+
+  it('deep-freezes preset filters so an in-place array mutation throws instead of poisoning the shared table', () => {
+    const resolved = resolvePreset('en-reparto', '2026-08-22') as { statuses: string[] };
+    expect(() => resolved.statuses.push('mutated')).toThrow(TypeError);
+    expect(getPresetById('en-reparto').filters).toEqual({ statuses: ['en_ruta'] });
+  });
 });
 
 describe('filtersToSearchParams', () => {
@@ -127,6 +140,10 @@ describe('filtersToSearchParams', () => {
     expect(params.get('ruta')).toBe('r1,r2');
     // no repeated keys
     expect(params.getAll('estado')).toHaveLength(1);
+    // params.get() decodes — assert the actual wire encoding too, since
+    // that is the form a pasted URL carries and where a lossy join/escape
+    // scheme would actually break.
+    expect(params.toString()).toContain('comuna=%C3%91u%C3%B1oa%2CPe%C3%B1alol%C3%A9n');
   });
 
   it('serializes scalar filters under exact keys and omits null/default values', () => {
@@ -218,6 +235,19 @@ describe('round trip', () => {
         hasPod: true,
         minAttempts: 3,
         search: 'ORD-42',
+      },
+    ],
+    // A non-default preset id combined with extra filters — the two are
+    // serialized independently, so a bug specific to that interaction (e.g.
+    // `vista` accidentally swallowing or being swallowed by a filter key)
+    // would slip past a suite that only pairs presets with `{}` or pairs
+    // filters with `todas`.
+    [
+      'en-reparto',
+      {
+        driver: 'María López',
+        minAttempts: 2,
+        client: 'Acme, Inc.',
       },
     ],
   ];

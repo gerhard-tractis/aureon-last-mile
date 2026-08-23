@@ -65,6 +65,11 @@ describe('ordersToCsv', () => {
     expect(csv).toContain('"Line1\nLine2"');
   });
 
+  it('quotes a value containing a lone carriage return', () => {
+    const csv = ordersToCsv([baseRow({ customer_name: 'Line1\rLine2' })]);
+    expect(csv).toContain('"Line1\rLine2"');
+  });
+
   it('renders null fields as empty strings, not the text "null"', () => {
     const csv = ordersToCsv([
       baseRow({ route_label: null, driver_name: null, last_event_label: null }),

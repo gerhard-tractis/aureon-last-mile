@@ -44,7 +44,30 @@ export interface OrderViewPreset {
   isDateDependent?: boolean;
 }
 
-export const ORDER_VIEW_PRESETS: readonly OrderViewPreset[] = [
+/**
+ * Recursively freezes an object/array tree. `Object.freeze` alone is
+ * shallow — it would leave e.g. `filters.statuses` mutable even though the
+ * outer `filters` object is frozen. Used below so a caller mutating a
+ * preset's array filter in place (`.push(...)`) throws (strict mode)
+ * instead of silently poisoning the shared preset table for every other
+ * consumer — the same hazard EMPTY_ORDERS_LIST_FILTERS is frozen against
+ * in useOrdersList.ts.
+ */
+function deepFreeze<T>(value: T): T {
+  if (Array.isArray(value)) {
+    for (const item of value) deepFreeze(item);
+    return Object.freeze(value) as T;
+  }
+  if (value !== null && typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      deepFreeze((value as Record<string, unknown>)[key]);
+    }
+    return Object.freeze(value) as T;
+  }
+  return value;
+}
+
+export const ORDER_VIEW_PRESETS: readonly OrderViewPreset[] = deepFreeze([
   { id: 'sla-en-riesgo', label: 'SLA en riesgo', filters: { sla: ['late', 'at_risk'] } },
   { id: 'todas', label: 'Todas', filters: {} },
   { id: 'en-reparto', label: 'En reparto', filters: { statuses: ['en_ruta'] } },
@@ -65,7 +88,7 @@ export const ORDER_VIEW_PRESETS: readonly OrderViewPreset[] = [
     filters: { statuses: ['entregado'] },
     isDateDependent: true,
   },
-] as const;
+]);
 
 export const DEFAULT_ORDER_VIEW_PRESET_ID: OrderViewPresetId = 'sla-en-riesgo';
 
@@ -94,8 +117,13 @@ export function getPresetById(id: OrderViewPresetId): OrderViewPreset {
  */
 export function resolvePreset(id: OrderViewPresetId | string, today: string): PresetFilters {
   const preset = isPresetId(id) ? getPresetById(id) : getPresetById('todas');
+  // Always a fresh object, even for the six non-date presets: ORDER_VIEW_PRESETS
+  // is `as const`-typed but not frozen at runtime, so returning `preset.filters`
+  // by reference would let a caller's mutation poison the shared module
+  // constant for every other consumer — the same hazard EMPTY_ORDERS_LIST_FILTERS
+  // is frozen against in useOrdersList.ts.
   if (!preset.isDateDependent) {
-    return preset.filters;
+    return { ...preset.filters };
   }
   return { ...preset.filters, dateFrom: today, dateTo: today };
 }
@@ -120,6 +148,10 @@ const PARAM_KEYS = {
   search: 'q',
 } as const;
 
+// Comma-joined with no escaping: safe only because every element type here
+// is comma-free by construction (enum status/SLA values, UUID route ids,
+// Chilean comuna names). A future free-text array filter would need its own
+// delimiter or escaping scheme before joining this list.
 const ARRAY_FILTER_KEYS: ReadonlyArray<keyof OrdersListFilters> = [
   'statuses',
   'sla',
@@ -180,11 +212,17 @@ function parseBooleanParam(raw: string | null): boolean | null {
   return null;
 }
 
+// Strict: only an optional leading `-` followed by digits, no surrounding
+// whitespace, no exponent/decimal notation. `Number('1e3')` or
+// `Number(' 5 ')` would otherwise parse successfully — "unparseable" here
+// means "not what filtersToSearchParams ever writes", and it never writes
+// either of those forms.
+const STRICT_INTEGER = /^-?\d+$/;
+
 function parseIntParam(raw: string | null): number | null {
-  if (raw === null || raw.trim() === '') return null;
+  if (raw === null || !STRICT_INTEGER.test(raw)) return null;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return null;
-  return parsed;
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 /**
