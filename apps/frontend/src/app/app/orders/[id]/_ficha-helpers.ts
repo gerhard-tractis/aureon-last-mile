@@ -1,15 +1,18 @@
 /**
  * spec-65 Task 9 — pure helpers for `3b`, the order ficha page.
  *
- * These are deliberately NOT shared with `1f` (`OrderInspector`), which
- * keeps its own private `deliveryDispatch`. Both pick the same row for the
- * same reason (a retried delivery leaves more than one non-pickup dispatch
- * row, and `useOrderDossier` already orders them newest-completed-first,
- * `id` DESC as a tiebreak — see that hook's own comment), so this helper
- * only filters by `is_pickup`, never re-sorts.
+ * `deliveryDispatch` used to be a private duplicate of `1f`'s
+ * (`OrderInspector`) own copy — both pick the same row for the same reason
+ * (a retried delivery leaves more than one non-pickup dispatch row, and
+ * `useOrderDossier` already orders them newest-completed-first, `id` DESC
+ * as a tiebreak — see that hook's own comment). Final review round
+ * extracted it to `@/lib/orders/dossier-dispatch` and re-exports it here so
+ * every existing import site (this module's own tests included) keeps
+ * working unchanged.
  */
 
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
+export { deliveryDispatch } from '@/lib/orders/dossier-dispatch';
 
 /**
  * Note: the Todo/Aureon/DispatchTrack source filter used to live here as
@@ -50,9 +53,4 @@ export function lastWebhookTimestamp(dispatches: DossierDispatch[]): string | nu
     if (ts && (!latest || ts > latest)) latest = ts;
   }
   return latest;
-}
-
-/** The order's delivery attempt (as opposed to a pickup leg) — null when there is none. */
-export function deliveryDispatch(dispatches: DossierDispatch[]): DossierDispatch | null {
-  return dispatches.find((d) => !d.is_pickup) ?? null;
 }

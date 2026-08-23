@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { FichaCenterColumn } from './FichaCenterColumn';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
-import type { DossierDispatch } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture as dispatch } from '@/test/fixtures/dossierDispatch';
 
 const mockUnifiedEventLog = vi.fn();
 vi.mock('@/components/orders/UnifiedEventLog', () => ({
@@ -17,26 +17,6 @@ function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
   return { id: 'a-1', action: 'STATUS_CHANGED', timestamp: '2026-08-13T12:00:00', changes_json: null, ...overrides };
 }
 
-function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
-  return {
-    id: 'd-1',
-    substatus: null,
-    substatus_code: null,
-    status: 'en_ruta',
-    completed_at: null,
-    arrived_at: null,
-    estimated_at: null,
-    failure_reason: null,
-    latitude: null,
-    longitude: null,
-    raw_data: {},
-    is_pickup: false,
-    external_route_id: null,
-    driver_name: null,
-    route_id: null,
-    ...overrides,
-  };
-}
 
 describe('FichaCenterColumn', () => {
   it('shows the total event count across both sources, unaffected by the active filter', () => {
@@ -87,7 +67,7 @@ describe('FichaCenterColumn', () => {
     expect(lastCall.dispatches).toHaveLength(1);
   });
 
-  // Controller review, round 3 — every other ruled-out mock element has a
+  // Controller review, round 3 ï¿½ every other ruled-out mock element has a
   // negative test; this one only had a header-component regex covering a
   // DIFFERENT component (FichaHeader). "Eventos recibidos N de M" implies
   // an expected total that doesn't exist anywhere in the schema.

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { UnifiedEventLog } from './UnifiedEventLog';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture } from '@/test/fixtures/dossierDispatch';
 
 function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
   return {
@@ -16,24 +17,15 @@ function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
 }
 
 function dispatchRow(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
-  return {
+  return dossierDispatchFixture({
     id: 'dp-1',
     substatus: 'Recibido por cliente',
     substatus_code: '00',
     status: 'delivered',
     completed_at: '2026-08-13T12:41:08',
-    arrived_at: null,
-    estimated_at: null,
-    failure_reason: null,
-    latitude: null,
-    longitude: null,
     raw_data: { attempt: 1, accuracy_m: 42 },
-    is_pickup: false,
-    external_route_id: null,
-    driver_name: null,
-    route_id: null,
     ...overrides,
-  };
+  });
 }
 
 describe('UnifiedEventLog — empty states', () => {
@@ -74,6 +66,17 @@ describe('UnifiedEventLog — merging and ordering', () => {
     );
     expect(screen.getByText('AUREON')).toBeInTheDocument();
     expect(screen.getByText('DISPATCHTRACK')).toBeInTheDocument();
+  });
+
+  it('pairs the AUREON badge fill with the light-foreground text token, not the (white) default foreground', () => {
+    // `bg-accent-light` + `text-accent-foreground` fails contrast (~1.9:1,
+    // see globals.css) — every other `bg-accent-light` site in the repo
+    // pairs it with `text-accent-light-foreground`. This is the most common
+    // badge in the log, so a regression here is highly visible.
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[]} />);
+    const badge = screen.getByText('AUREON');
+    expect(badge.className).toContain('text-accent-light-foreground');
+    expect(badge.className).not.toContain('text-accent-foreground');
   });
 });
 

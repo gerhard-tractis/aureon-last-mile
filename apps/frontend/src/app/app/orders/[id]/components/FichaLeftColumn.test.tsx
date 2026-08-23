@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { FichaLeftColumn } from './FichaLeftColumn';
-import type { DossierPackage, DossierDispatch } from '@/hooks/useOrderDossier';
+import type { DossierPackage } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture as dispatch } from '@/test/fixtures/dossierDispatch';
 
 function pkg(overrides: Partial<DossierPackage> = {}): DossierPackage {
   return {

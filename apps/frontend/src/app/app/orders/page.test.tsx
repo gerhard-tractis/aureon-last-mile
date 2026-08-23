@@ -6,9 +6,10 @@ import OrdersPage from './page';
 import type { OrdersListRow } from '@/hooks/useOrdersList';
 
 const mockReplace = vi.fn();
+const mockPush = vi.fn();
 let currentSearch = '';
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   usePathname: () => '/app/orders',
   useSearchParams: () => new URLSearchParams(currentSearch),
 }));
@@ -64,6 +65,7 @@ describe('OrdersPage', () => {
   beforeEach(() => {
     currentSearch = '';
     mockReplace.mockClear();
+    mockPush.mockClear();
     mockUseOperatorId.mockReturnValue({
       operatorId: 'op-1',
       role: 'admin',
@@ -82,6 +84,20 @@ describe('OrdersPage', () => {
     expect(screen.getByRole('tab', { name: /sla en riesgo/i })).toBeInTheDocument();
     expect(screen.getByText('FILTROS')).toBeInTheDocument();
     expect(screen.getByText('ORD-001')).toBeInTheDocument();
+  });
+
+  it('clicking a row navigates to the ficha, carrying the current query string', () => {
+    currentSearch = 'vista=en-reparto&estado=en_ruta&pagina=2';
+    renderPage();
+    fireEvent.click(screen.getByText('ORD-001'));
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    const [calledWith] = mockPush.mock.calls[0] as [string];
+    const [path, qs] = calledWith.split('?');
+    expect(path).toBe('/app/orders/ord-1');
+    const params = new URLSearchParams(qs);
+    expect(params.get('vista')).toBe('en-reparto');
+    expect(params.get('estado')).toBe('en_ruta');
+    expect(params.get('pagina')).toBe('2');
   });
 
   it('header shows the real current-query total_count and a "Solo rutas activas" caption under RUTA', () => {

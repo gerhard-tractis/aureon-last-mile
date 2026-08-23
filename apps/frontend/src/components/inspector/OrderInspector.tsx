@@ -18,7 +18,8 @@ import { ProofOfDelivery } from '@/components/orders/ProofOfDelivery';
 import { WhyLateBlock } from '@/components/orders/WhyLateBlock';
 import { ConversationThread } from '@/components/conversations/ConversationThread';
 import { PackageReprintLinks } from './PackageReprintLinks';
-import { useOrderDossier, type OrderDossierData, type DossierDispatch } from '@/hooks/useOrderDossier';
+import { useOrderDossier, type OrderDossierData } from '@/hooks/useOrderDossier';
+import { deliveryDispatch } from '@/lib/orders/dossier-dispatch';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useModuleEnabled } from '@/hooks/modules/useEnabledModules';
 import { useOrderConversationSessions } from '@/hooks/conversations/useOrderConversationSessions';
@@ -40,10 +41,6 @@ function formatChipTime(iso: string): string {
 function formatDeliveryWindow(start: string | null, end: string | null): string | null {
   if (!start || !end) return null;
   return `${formatChipTime(start)}–${formatChipTime(end)}`;
-}
-
-function deliveryDispatch(dispatches: DossierDispatch[]): DossierDispatch | null {
-  return dispatches.find((d) => !d.is_pickup) ?? null;
 }
 
 function Chip({ children }: { children: React.ReactNode }) {
@@ -214,6 +211,10 @@ function OrderInspectorBody({
             manifestId={data.manifestId}
             labelsEnabled={packageLabelsEnabled}
           />
+          {/* Three literal nulls, provably unrenderable — deliberate, not
+              broken wiring. `reason_flag`/`stage`/`stuckSinceISO` have no
+              source anywhere in the schema yet; see WhyLateBlock's own doc
+              comment. */}
           <WhyLateBlock stage={null} reasonFlag={null} stuckSinceISO={null} />
         </TabsContent>
 

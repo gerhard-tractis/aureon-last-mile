@@ -246,7 +246,7 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
                   className={cn(
                     'rounded-sm border px-1.5 py-0.5 font-mono text-[8.5px] font-semibold tracking-wide',
                     event.source === 'aureon'
-                      ? 'border-accent bg-accent-light text-accent-foreground'
+                      ? 'border-accent bg-accent-light text-accent-light-foreground'
                       : 'border-border bg-surface-raised text-text-secondary',
                   )}
                 >

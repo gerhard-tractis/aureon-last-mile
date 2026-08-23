@@ -11,7 +11,7 @@
 import { ORDERS_LIST_PAGE_SIZE, type OrdersListFilters, type OrdersListRow } from '@/hooks/useOrdersList';
 import { filtersToSearchParams, type OrderViewPresetId } from '@/lib/orders/order-view-presets';
 import { getStatusLabel } from '@/components/StatusBadge';
-import { ordersToCsv } from '@/lib/orders/orders-csv';
+import { downloadOrdersCsv } from '@/lib/orders/download-orders-csv';
 import type { StatusFilterOption } from './components/OrderFilterRail';
 
 /** The eleven `order_status_enum` values (lib/types.ts) — not a facet count query, just the label list. */
@@ -131,9 +131,10 @@ export function clampPage(page: number, totalCount: number): number {
  * (and round-trips through the URL/chips) for whatever wires it later —
  * e.g. the inspector's own search/palette — not for this page to fill in.
  *
- * `downloadCurrentPageCsv` mirrors `OrdersBulkBar`'s own CSV download
- * (Task 5), duplicated rather than imported because that one is private to
- * the bulk bar and this is a second, independent export — of the current
+ * `downloadCurrentPageCsv` shares its Blob/anchor-click plumbing with
+ * `OrdersBulkBar`'s own CSV download via `@/lib/orders/download-orders-csv`
+ * (final review round — the two used to duplicate that logic byte-for-byte).
+ * What's independent here is the *scope*: this exports the current
  * *page's loaded rows* (up to `ORDERS_LIST_PAGE_SIZE`), not the *selected*
  * rows and NOT every row of `totalCount`. The header button is labelled
  * "Exportar página (N)" precisely so this scope is never implicit — a
@@ -158,14 +159,5 @@ export function clampPage(page: number, totalCount: number): number {
  * (2) would just be that same RPC called N times from the client.
  */
 export function downloadCurrentPageCsv(rows: OrdersListRow[]) {
-  const csv = ordersToCsv(rows);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `pedidos-vista-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadOrdersCsv(rows, `pedidos-vista-${new Date().toISOString().slice(0, 10)}.csv`);
 }

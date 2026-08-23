@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { OrderInspector } from './OrderInspector';
 import type { OrderDossierData } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture } from '@/test/fixtures/dossierDispatch';
 
 const mockUseOrderDossier = vi.fn();
 const mockUseOperatorId = vi.fn();
@@ -64,24 +65,16 @@ function pkg(overrides: Partial<OrderDossierData['packages'][number]> = {}) {
 }
 
 function dispatch(overrides: Partial<OrderDossierData['dispatches'][number]> = {}) {
-  return {
+  return dossierDispatchFixture({
     id: 'dp-1',
     substatus: 'En reparto',
-    substatus_code: null,
     status: 'en_ruta',
-    completed_at: null,
-    arrived_at: null,
     estimated_at: '2026-08-13T12:41:00',
-    failure_reason: null,
-    latitude: null,
-    longitude: null,
-    raw_data: {},
-    is_pickup: false,
     external_route_id: 'R-2481',
     driver_name: 'Juan Pérez',
     route_id: 'route-uuid-1',
     ...overrides,
-  };
+  });
 }
 
 const BASE_DATA: OrderDossierData = {
@@ -103,6 +96,11 @@ const BASE_DATA: OrderDossierData = {
   ],
   manifestId: 'm-1',
   dispatches: [dispatch()],
+  imported_via: 'CSV',
+  rescheduled_delivery_date: null,
+  rescheduled_window_start: null,
+  rescheduled_window_end: null,
+  delivered_at: null,
 };
 
 function wrap(ui: React.ReactElement) {

@@ -10,9 +10,17 @@
  * a retailer feed, and Chilean addresses/names routinely carry commas,
  * quotes, and accents. RFC 4180 rules: a field containing a comma, quote,
  * or line break is wrapped in double quotes, with embedded quotes doubled.
+ *
+ * ESTADO, SLA and ÚLTIMO EVENTO are formatted with the exact same functions
+ * the table uses (`getStatusLabel`, `formatSlaCell`/`formatLastEvent` from
+ * `./orders-list-format`), not the raw `leading_status`/`sla_status` enum
+ * values — this file is one an operator forwards to a client, and
+ * `en_ruta`/`late` mean nothing to them (final review round fix).
  */
 
 import type { OrdersListRow } from '@/hooks/useOrdersList';
+import { getStatusLabel } from '@/components/StatusBadge';
+import { formatSlaCell, formatLastEvent } from './orders-list-format';
 
 /** Excel on Windows — what these users have — mojibakes accented characters without this. */
 const UTF8_BOM = '﻿';
@@ -44,12 +52,12 @@ export function ordersToCsv(rows: OrdersListRow[]): string {
       rowToLine([
         row.order_number,
         row.customer_name,
-        row.leading_status,
+        getStatusLabel(row.leading_status, 'order'),
         row.package_count,
         row.route_label,
         row.driver_name,
-        row.sla_status,
-        row.last_event_label,
+        formatSlaCell(row.sla_status, row.minutes_remaining),
+        formatLastEvent(row),
       ]),
     ),
   ];

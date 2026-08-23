@@ -190,26 +190,34 @@ export function buildNavSections(ctx: NavContext): NavSection[] {
  * Where a signed-in user starts. Used by `/app` now that the marketing landing
  * page no longer occupies `/`.
  *
- * This is deliberately the first item the sidebar would show rather than a
- * hardcoded route: OPERACIÓN leads with the control tower, so admins and
- * operations managers land there, while a warehouse or driver account — for
- * whom the tower is hidden and would render empty — lands on the first queue
- * it can actually work. Dashboard ejecutivo is visible to everyone, so the
- * fallback is only reached if the nav is ever emptied entirely.
+ * spec-65 review round (final, reverses the Task 3 ruling recorded below):
+ * prefer the first visible item that both (a) has a `module` and (b) has
+ * that module enabled — i.e. a real queue the operator is actually mid-rollout
+ * on — falling back to the plain first visible item only when none qualifies.
+ * `buildNavSections` has already dropped items whose module is disabled, so
+ * every item it returns already satisfies (b); this just needs to prefer the
+ * first one that also satisfies (a).
  *
- * spec-65: Pedidos carries no module gate (see OPERATION_ITEMS above) and
- * sits second, right after the tower — so once the tower is unavailable
- * (hidden for the role, or its module disabled for the operator) Pedidos is
- * the next visible item and becomes the landing target ahead of any
- * module-gated queue like Recogida. That's a deliberate choice, not an
- * accident of ordering: the cross-stage order list is the base entity view,
- * meaningful to any operator that has orders at all, and a customer_service
- * user — who can never see the tower — lands there directly rather than on
- * the executive dashboard fallback.
+ * Why: an admin activated on only one module (say PICKUP mid-rollout) landing
+ * on the ungated, cross-stage Pedidos list instead of the pickup queue they
+ * actually work is a regression, not a feature — `src/app/app/page.test.tsx`
+ * ("respects module activation over role") caught this. The original Task 3
+ * ruling below optimized for customer_service (who has no module-gated item
+ * at all, and for whom Pedidos genuinely *is* their queue) at the cost of
+ * every module-gated role. The rule above keeps both: customer_service still
+ * lands on Pedidos (nothing else qualifies for them), and a module-activated
+ * role lands on its own queue instead of skipping past it to Pedidos.
+ *
+ * Original Task 3 reasoning (superseded — kept for context, do not re-apply
+ * without re-litigating the case above): "Pedidos carries no module gate and
+ * sits second, right after the tower, so once the tower is unavailable
+ * Pedidos is the next visible item and becomes the landing target ahead of
+ * any module-gated queue like Recogida."
  */
 export function resolveLandingPath(ctx: NavContext): string {
-  const first = buildNavSections(ctx)[0]?.items[0];
-  return first?.href ?? '/app/dashboard';
+  const items = buildNavSections(ctx).flatMap((section) => section.items);
+  const moduleGated = items.find((item) => item.module !== undefined);
+  return (moduleGated ?? items[0])?.href ?? '/app/dashboard';
 }
 
 export * from './navigation.mobile';

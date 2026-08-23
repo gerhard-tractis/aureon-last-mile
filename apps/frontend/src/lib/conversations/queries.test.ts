@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fetchSessionsForOrder } from './queries';
 
-let queryResponse: { data: unknown[]; error: unknown };
+let queryResponse: { data: unknown[] | null; error: unknown };
 
 function createChain() {
   const chain: Record<string, ReturnType<typeof vi.fn>> = {};

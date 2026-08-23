@@ -20,7 +20,7 @@
 
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ordersToCsv } from '@/lib/orders/orders-csv';
+import { downloadOrdersCsv } from '@/lib/orders/download-orders-csv';
 import type { OrdersListRow } from '@/hooks/useOrdersList';
 
 interface OrdersBulkBarProps {
@@ -28,16 +28,7 @@ interface OrdersBulkBarProps {
 }
 
 function downloadCsv(rows: OrdersListRow[]) {
-  const csv = ordersToCsv(rows);
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `pedidos-${new Date().toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadOrdersCsv(rows, `pedidos-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export function OrdersBulkBar({ selectedRows }: OrdersBulkBarProps) {

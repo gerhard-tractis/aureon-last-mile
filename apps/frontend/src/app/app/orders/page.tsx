@@ -172,11 +172,15 @@ function OrdersPageContent() {
       });
   };
 
-  // Task 8 attaches the Order Inspector to this. Left as a clearly-named
-  // no-op rather than navigating anywhere, so a row is visibly clickable
-  // without pretending to do something it doesn't yet.
-  const handleRowClick = (_orderId: string) => {
-    // TODO(Task 8): open the Order Inspector for this order id.
+  // Opens the ficha (`/app/orders/[id]`, Task 9), carrying the current
+  // view's query string so its breadcrumb (`breadcrumbHref` in
+  // `[id]/_ficha-helpers.ts`) can return the user to the exact list view
+  // they left — not the preset default. Built with the same
+  // `buildQueryString` the page's other navigations use, not hand-assembled,
+  // so it always matches what's actually on the URL (preset, filters, page).
+  const handleRowClick = (orderId: string) => {
+    const qs = buildQueryString(preset, filters, page);
+    router.push(`/app/orders/${orderId}${qs ? `?${qs}` : ''}`);
   };
 
   const handleToggleSelect = (id: string, selected: boolean) => {

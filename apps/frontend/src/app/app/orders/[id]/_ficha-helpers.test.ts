@@ -1,33 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { breadcrumbHref, lastWebhookTimestamp, deliveryDispatch } from './_ficha-helpers';
-import type { DossierDispatch } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture as dispatch } from '@/test/fixtures/dossierDispatch';
 
 // The Todo/Aureon/DispatchTrack source-filter helpers that used to live
 // here (`filterAuditLogsBySource`/`filterDispatchesBySource`) moved into
 // `UnifiedEventLog` itself — see that component's `sourceFilter` prop and
 // `_ficha-helpers.ts`'s own note.
-
-function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
-  return {
-    id: 'd-1',
-    substatus: null,
-    substatus_code: null,
-    status: 'en_ruta',
-    completed_at: null,
-    arrived_at: null,
-    estimated_at: null,
-    failure_reason: null,
-    latitude: null,
-    longitude: null,
-    raw_data: {},
-    is_pickup: false,
-    external_route_id: null,
-    driver_name: null,
-    route_id: null,
-    external_dispatch_id: null,
-    ...overrides,
-  };
-}
 
 describe('breadcrumbHref', () => {
   it('returns the plain orders path when the query string is empty', () => {

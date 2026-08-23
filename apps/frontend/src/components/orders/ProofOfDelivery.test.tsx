@@ -2,26 +2,19 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ProofOfDelivery } from './ProofOfDelivery';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture } from '@/test/fixtures/dossierDispatch';
 
 function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
-  return {
+  return dossierDispatchFixture({
     id: 'dp-1',
     substatus: 'Recibido por cliente',
     substatus_code: '00',
     status: 'delivered',
     completed_at: '2026-08-13T12:41:06',
-    arrived_at: null,
-    estimated_at: null,
-    failure_reason: null,
     latitude: -33.5228,
     longitude: -70.5981,
-    raw_data: {},
-    is_pickup: false,
-    external_route_id: null,
-    driver_name: null,
-    route_id: null,
     ...overrides,
-  };
+  });
 }
 
 describe('ProofOfDelivery — the empty state is the default (0 of 751 QA dispatches have a photo)', () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { OrdersListRow } from '@/hooks/useOrdersList';
 import { ordersToCsv } from './orders-csv';
+import { getStatusLabel } from '@/components/StatusBadge';
+import { formatSlaCell, formatLastEvent } from './orders-list-format';
 
 const BOM = '﻿';
 
@@ -37,9 +39,33 @@ describe('ordersToCsv', () => {
   });
 
   it('serializes a plain row with fields in the right order', () => {
-    const csv = ordersToCsv([baseRow()]);
+    const row = baseRow();
+    const csv = ordersToCsv([row]);
     const lines = csv.slice(BOM.length).split('\r\n');
-    expect(lines[1]).toBe('ORD-1,Juan Pérez,en_ruta,2,RUTA-01,María López,ok,En camino');
+    expect(lines[1]).toBe(
+      `ORD-1,Juan Pérez,${getStatusLabel(row.leading_status, 'order')},2,RUTA-01,María López,${formatSlaCell(row.sla_status, row.minutes_remaining)},${formatLastEvent(row)}`,
+    );
+  });
+
+  it('formats ESTADO, SLA and ÚLTIMO EVENTO with the same formatters the table uses — never the raw enum values', () => {
+    const row = baseRow();
+    const csv = ordersToCsv([row]);
+    const dataLine = csv.slice(BOM.length).split('\r\n')[1];
+
+    expect(dataLine).toContain(getStatusLabel(row.leading_status, 'order'));
+    expect(dataLine).toContain(formatSlaCell(row.sla_status, row.minutes_remaining));
+    expect(dataLine).toContain(formatLastEvent(row));
+
+    // The raw enum values themselves must not leak into the file.
+    expect(dataLine).not.toContain(',en_ruta,');
+    expect(dataLine).not.toContain(',ok,');
+  });
+
+  it('formats a late SLA with the signed hour/minute the table shows, not the raw "late" enum', () => {
+    const csv = ordersToCsv([baseRow({ sla_status: 'late', minutes_remaining: -65 })]);
+    const dataLine = csv.slice(BOM.length).split('\r\n')[1];
+    expect(dataLine).toContain('−1h 05m');
+    expect(dataLine).not.toContain(',late,');
   });
 
   it('preserves non-ASCII characters intact', () => {
@@ -71,11 +97,17 @@ describe('ordersToCsv', () => {
   });
 
   it('renders null fields as empty strings, not the text "null"', () => {
-    const csv = ordersToCsv([
-      baseRow({ route_label: null, driver_name: null, last_event_label: null }),
-    ]);
+    const row = baseRow({
+      route_label: null,
+      driver_name: null,
+      last_event_label: null,
+      last_event_at: null,
+    });
+    const csv = ordersToCsv([row]);
     const dataLine = csv.slice(BOM.length).split('\r\n')[1];
-    expect(dataLine).toBe('ORD-1,Juan Pérez,en_ruta,2,,,ok,');
+    expect(dataLine).toBe(
+      `ORD-1,Juan Pérez,${getStatusLabel(row.leading_status, 'order')},2,,,${formatSlaCell(row.sla_status, row.minutes_remaining)},${formatLastEvent(row)}`,
+    );
     expect(dataLine).not.toContain('null');
   });
 

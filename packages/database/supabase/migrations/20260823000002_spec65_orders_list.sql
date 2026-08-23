@@ -7,7 +7,7 @@
 -- `useAtRiskOrders`, which pages client-side over a snapshot, not viable at
 -- this scale), and every server-side filter the screen supports.
 --
--- Calls Task 1's public.order_sla_status (20260822000002) per row — LANGUAGE
+-- Calls Task 1's public.order_sla_status (20260823000001) per row — LANGUAGE
 -- sql / IMMUTABLE there so it inlines instead of running as an opaque
 -- per-row call. p_now = `NOW() AT TIME ZONE 'America/Santiago'`, a TIMESTAMP,
 -- per that function's contract.

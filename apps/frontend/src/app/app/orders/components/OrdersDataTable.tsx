@@ -27,6 +27,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { cn } from '@/lib/utils';
 import { PackageSearch } from 'lucide-react';
 import type { OrdersListRow } from '@/hooks/useOrdersList';
+import { formatSlaCell, formatLastEvent } from '@/lib/orders/orders-list-format';
 
 interface OrdersDataTableProps {
   rows: OrdersListRow[];
@@ -50,31 +51,6 @@ const SLA_BORDER_CLASS: Record<string, string> = {
   ok: 'border-l-status-success',
   none: 'border-l-border',
 };
-
-/**
- * Formats from the already-computed verdict — signed, hours omitted under
- * 60 minutes. Minutes are zero-padded only when an hour segment is present
- * ("1h 05m", not "1h 5m") — with no hour segment, "9m" is correct as-is.
- */
-function formatSlaCell(slaStatus: string, minutesRemaining: number | null): string {
-  if (slaStatus === 'none' || minutesRemaining === null) return '—';
-  const sign = minutesRemaining < 0 ? '−' : '+';
-  const abs = Math.abs(minutesRemaining);
-  const h = Math.floor(abs / 60);
-  const m = abs % 60;
-  return h > 0 ? `${sign}${h}h ${String(m).padStart(2, '0')}m` : `${sign}${m}m`;
-}
-
-function formatLastEvent(row: OrdersListRow): string {
-  if (!row.last_event_at) return row.last_event_label ?? '—';
-  const time = new Intl.DateTimeFormat('es-CL', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-    timeZone: 'America/Santiago',
-  }).format(new Date(row.last_event_at));
-  return row.last_event_label ? `${time} ${row.last_event_label}` : time;
-}
 
 const HEADERS = ['PEDIDO', 'CLIENTE', 'ESTADO', 'PQT', 'RUTA · CONDUCTOR', 'SLA', 'ÚLTIMO EVENTO'];
 

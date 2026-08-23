@@ -198,17 +198,20 @@ describe('resolveLandingPath (landing page removal)', () => {
     ).toBe('/app/reception');
   });
 
-  it('skips the tower when the ops-control module is off for the operator, landing on Pedidos', () => {
-    // Pedidos (spec-65) carries no module gate, same as Dashboard ejecutivo,
-    // so it is the next visible OPERACIÓN item for admin/manager once the
-    // tower is unavailable — ahead of any module-gated queue.
+  it('skips the tower AND Pedidos when a module-gated queue is enabled, landing on that queue', () => {
+    // Reversed ruling (final review round): a module-gated item the operator
+    // is actually activated on beats the ungated Pedidos list, even though
+    // Pedidos sits earlier in OPERATION_ITEMS. Pedidos has no `module`, so it
+    // never satisfies "first item with a module that's enabled" — landing an
+    // admin mid-rollout on only PICKUP should send them to their queue, not
+    // to the global order list.
     expect(
       resolveLandingPath({
         role: 'admin',
         permissions: ALL_PERMISSIONS,
         enabledModules: [ModuleKey.PICKUP],
       }),
-    ).toBe('/app/orders');
+    ).toBe('/app/pickup');
   });
 
   it('skips both the tower and Pedidos when neither applies, landing on the first module-gated queue', () => {
@@ -246,5 +249,41 @@ describe('resolveLandingPath (landing page removal)', () => {
     const ctx = { role: 'driver', permissions: ['pickup'], enabledModules: ALL_MODULES };
     const visible = buildNavSections(ctx).flatMap((s) => s.items.map((i) => i.href));
     expect(visible).toContain(resolveLandingPath(ctx));
+  });
+
+  describe('the rule directly: module-gated item wins over an earlier ungated one', () => {
+    it('prefers a later module-gated item (Recogida) over the earlier ungated Pedidos', () => {
+      expect(
+        resolveLandingPath({
+          role: 'admin',
+          permissions: ALL_PERMISSIONS,
+          enabledModules: [ModuleKey.PICKUP],
+        }),
+      ).toBe('/app/pickup');
+    });
+
+    it('falls back to the first visible item (Pedidos) when no visible item has an enabled module', () => {
+      // customer_service has no module-gated item visible here (Conversations
+      // is also customer_service-visible but its module is off) — Pedidos is
+      // the only thing visible, so it wins by the fallback, not the module
+      // rule.
+      expect(
+        resolveLandingPath({
+          role: 'driver',
+          permissions: ['customer_service'],
+          enabledModules: [],
+        }),
+      ).toBe('/app/orders');
+    });
+
+    it('falls back to the first visible item when enabledModules is empty entirely', () => {
+      expect(
+        resolveLandingPath({
+          role: 'admin',
+          permissions: ALL_PERMISSIONS,
+          enabledModules: [],
+        }),
+      ).toBe('/app/orders');
+    });
   });
 });

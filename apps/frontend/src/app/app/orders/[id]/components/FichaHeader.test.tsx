@@ -2,27 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { FichaHeader } from './FichaHeader';
 import type { OrderDossierData, DossierDispatch } from '@/hooks/useOrderDossier';
+import { dossierDispatchFixture } from '@/test/fixtures/dossierDispatch';
 
 function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
-  return {
-    id: 'd-1',
-    substatus: null,
-    substatus_code: null,
-    status: 'en_ruta',
-    completed_at: null,
-    arrived_at: null,
-    estimated_at: null,
-    failure_reason: null,
-    latitude: null,
-    longitude: null,
-    raw_data: {},
-    is_pickup: false,
+  return dossierDispatchFixture({
     external_route_id: 'R-2481',
     driver_name: 'M. Rojas',
     route_id: 'route-1',
     external_dispatch_id: 'DT-9910442',
     ...overrides,
-  };
+  });
 }
 
 const BASE_ORDER: OrderDossierData = {

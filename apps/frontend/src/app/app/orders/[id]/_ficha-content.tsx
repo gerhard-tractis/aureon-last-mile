@@ -75,6 +75,10 @@ export function OrderFichaContent({ orderId }: Props) {
 
         <div className="flex w-full flex-none flex-col gap-4 overflow-y-auto bg-surface p-4 lg:w-[330px] lg:border-l lg:border-border">
           <ProofOfDelivery dispatch={pod} />
+          {/* Three literal nulls, provably unrenderable — deliberate, not
+              broken wiring. `reason_flag`/`stage`/`stuckSinceISO` have no
+              source anywhere in the schema yet; see the file-level comment
+              above and WhyLateBlock's own doc comment. */}
           <WhyLateBlock stage={null} reasonFlag={null} stuckSinceISO={null} />
         </div>
       </div>
