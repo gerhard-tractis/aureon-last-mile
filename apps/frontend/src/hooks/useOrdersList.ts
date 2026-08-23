@@ -7,7 +7,7 @@ import { callRpc } from '@/lib/supabase/rpc';
 /**
  * spec-65 Task 3 — the Pedidos global order list.
  *
- * Wraps get_orders_list (20260822000003), which takes 14 positional
+ * Wraps get_orders_list (20260823000002), which takes 14 positional
  * parameters and returns a page plus `total_count` (a COUNT(*) OVER(), the
  * filtered/unpaginated total repeated on every row) in one round trip.
  *

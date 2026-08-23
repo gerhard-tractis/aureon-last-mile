@@ -70,7 +70,7 @@ AS $$
 
     -- spec-65: orders whose SLA verdict is late or at_risk right now — the
     -- same set the default Pedidos view ("SLA en riesgo") leads with, and the
-    -- IDENTICAL delivered_at derivation get_orders_list (20260822000003)
+    -- IDENTICAL delivered_at derivation get_orders_list (20260823000002)
     -- uses: the most recent NON-PICKUP dispatch's completed_at (there is no
     -- orders.delivered_at). is_pickup = FALSE is required, not incidental —
     -- a completed pickup movement also carries status = 'delivered' (same

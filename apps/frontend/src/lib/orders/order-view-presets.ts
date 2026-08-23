@@ -10,7 +10,7 @@
  * people paste these links to each other. Do not rename one.
  *
  * `sla-en-riesgo`'s filter is deliberately identical to what
- * `get_nav_counts.orders` counts (20260822000004) — the sidebar badge and
+ * `get_nav_counts.orders` counts (20260823000003) — the sidebar badge and
  * this tab's result count must never disagree. Do not change one without
  * the other.
  */

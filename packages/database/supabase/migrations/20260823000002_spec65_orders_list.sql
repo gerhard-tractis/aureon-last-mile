@@ -17,7 +17,7 @@
 -- optional — a completed pickup movement also carries status = 'delivered'
 -- (same enum, same webhook field), and would otherwise mark the order
 -- delivered (sla_status 'none') from a collection event, not an actual
--- delivery. get_nav_counts.orders (20260822000004) applies the identical
+-- delivery. get_nav_counts.orders (20260823000003) applies the identical
 -- filter for the identical reason; the two must never diverge on what
 -- "delivered" means. route_label/driver_name/has_pod come from that same
 -- dispatch. p_route_ids matches every route the order's NON-PICKUP
