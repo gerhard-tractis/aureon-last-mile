@@ -103,13 +103,32 @@ jobs:
     concurrency:
       group: production-deploy-supabase
       cancel-in-progress: false
-    needs: [changes, approve-production]
+    needs: [approve-production]
+    # DELIBERATELY NOT PATH-FILTERED, for the same reason verify-prod-migrations
+    # is not: the path filter WAS the drift bug.
+    #
+    # This used to also require `needs.changes.outputs.database == 'true'`, i.e.
+    # "the push that triggered this run touched migrations". That reads the
+    # wrong thing. Whether production needs migrations is a fact about
+    # PRODUCTION, not about the diff of whichever commit happens to arrive at
+    # the gate — and the two come apart constantly, because the gate is human
+    # and the merge stream is not. A migration merges, its run waits for
+    # approval, four docs-only merges land behind it, and the run someone
+    # finally approves is a docs commit whose diff touches no migration. The
+    # job skips, `verify-prod-migrations` goes red, and nobody is deploying
+    # anything wrong — the deploy simply never happens. Production sat 13
+    # migrations and 5 days behind exactly this way (2026-08-17 → 2026-08-22).
+    #
+    # Running unconditionally is safe and cheap: `supabase db push
+    # --include-all` applies only what is pending and is a no-op otherwise, so
+    # the cost on a docs deploy is one link plus one empty push. The gate still
+    # governs WHETHER we deploy; it just no longer also has to guess WHAT is
+    # pending.
+    #
     # The explicit result check matters here: unlike the app jobs below, this
     # `if:` has no `always()`, so it must state outright that a gate which did
     # not succeed stops the migration.
-    if: |
-      needs.approve-production.result == 'success' &&
-      needs.changes.outputs.database == 'true'
+    if: needs.approve-production.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     defaults:

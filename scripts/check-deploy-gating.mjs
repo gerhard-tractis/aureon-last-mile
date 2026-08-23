@@ -127,6 +127,27 @@ for (const job of PROD_JOBS) {
   }
 }
 
+// ── deploy-supabase must not be path-filtered ────────────────────────────────
+// Whether production needs migrations is a fact about PRODUCTION, not about the
+// diff of whichever commit reaches the gate. Those come apart whenever a
+// migration's run waits for approval while docs-only merges land behind it: the
+// run someone finally approves has no migration in its diff, the job skips, and
+// production silently drifts while every check stays green. It sat 13
+// migrations behind for 5 days this way (2026-08-17 → 2026-08-22).
+// `db push --include-all` is idempotent, so there is nothing to save by
+// guessing.
+if (jobs['deploy-supabase']) {
+  const cond = String(jobs['deploy-supabase'].if ?? '');
+  if (cond.includes('changes.outputs.database')) {
+    errors.push(
+      'deploy-supabase is path-filtered on changes.outputs.database — that filter ' +
+      'is the production-drift bug, not a safeguard. A migration approved behind ' +
+      'docs-only merges never deploys. db push --include-all is a no-op when ' +
+      'nothing is pending; let it run on every approved production deploy.'
+    );
+  }
+}
+
 // ── Concurrency: serialise production, never the QA sync ─────────────────────
 // A workflow-level concurrency group covers every job in the run, deploy-qa
 // included. A run paused at the gate keeps holding that group, so the NEXT

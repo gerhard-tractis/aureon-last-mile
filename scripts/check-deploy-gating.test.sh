@@ -423,6 +423,53 @@ ALWAYS_GATED='jobs:
 
 assert_exit 0 "accepts always() when the gate result is asserted" "$ALWAYS_GATED"
 
+# ── deploy-supabase path-filtered ────────────────────────────────────────────
+# The shape production actually drifted in: a migration's run waits at the gate,
+# docs-only merges land behind it, and the run that finally gets approved has no
+# migration in its diff — so the job skips and nothing deploys.
+PATH_FILTERED='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  approve-production:
+    needs: [changes, deploy-qa]
+    environment: production
+    runs-on: ubuntu-latest
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+    if: |
+      needs.approve-production.result == '"'"'success'"'"' &&
+      needs.changes.outputs.database == '"'"'true'"'"'
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when deploy-supabase is path-filtered" "$PATH_FILTERED"
+assert_contains "path-filtered on changes.outputs.database" \
+  "explains why the filter is the bug" "$PATH_FILTERED"
+
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then
   fail=$((fail + 1)); echo "  FAIL exits non-zero on a missing workflow file"
