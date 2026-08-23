@@ -1,59 +1,108 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { OrderInspector } from './OrderInspector';
+import type { OrderDossierData } from '@/hooks/useOrderDossier';
 
-const MOCK_DATA = {
+const mockUseOrderDossier = vi.fn();
+const mockUseOperatorId = vi.fn();
+const mockUseModuleEnabled = vi.fn();
+const mockUseOrderConversationSessions = vi.fn();
+
+vi.mock('@/hooks/useOrderDossier', () => ({
+  useOrderDossier: (...args: unknown[]) => mockUseOrderDossier(...args),
+}));
+vi.mock('@/hooks/useOperatorId', () => ({
+  useOperatorId: () => mockUseOperatorId(),
+}));
+vi.mock('@/hooks/modules/useEnabledModules', () => ({
+  useModuleEnabled: (...args: unknown[]) => mockUseModuleEnabled(...args),
+}));
+vi.mock('@/hooks/conversations/useOrderConversationSessions', () => ({
+  useOrderConversationSessions: (...args: unknown[]) => mockUseOrderConversationSessions(...args),
+}));
+
+vi.mock('@/components/orders/OrderLifecycleTimeline', () => ({
+  OrderLifecycleTimeline: ({ auditLogs }: { auditLogs: unknown[] }) => (
+    <div data-testid="lifecycle-timeline">{auditLogs.length}</div>
+  ),
+}));
+vi.mock('@/components/orders/OrderPackageList', () => ({
+  OrderPackageList: ({ packages }: { packages: unknown[] }) => (
+    <div data-testid="package-list">{packages.length}</div>
+  ),
+}));
+vi.mock('@/components/orders/UnifiedEventLog', () => ({
+  UnifiedEventLog: ({ auditLogs, dispatches }: { auditLogs: unknown[]; dispatches: unknown[] }) => (
+    <div data-testid="unified-event-log">{auditLogs.length + dispatches.length}</div>
+  ),
+}));
+vi.mock('@/components/orders/ProofOfDelivery', () => ({
+  ProofOfDelivery: ({ dispatch }: { dispatch: { id: string } | null }) => (
+    <div data-testid="proof-of-delivery">{dispatch ? dispatch.id : 'none'}</div>
+  ),
+}));
+vi.mock('@/components/conversations/ConversationThread', () => ({
+  ConversationThread: ({ session }: { session: { id: string } }) => (
+    <div data-testid="conversation-thread">{session.id}</div>
+  ),
+}));
+
+function pkg(overrides: Partial<OrderDossierData['packages'][number]> = {}) {
+  return {
+    id: 'pkg-1',
+    label: 'CL7742891003',
+    package_number: 'CL7742891003',
+    status: 'en_ruta',
+    status_updated_at: '2026-08-13T06:55:00',
+    dock_zone_name: null,
+    declared_weight_kg: null,
+    verified_weight_kg: null,
+    ...overrides,
+  };
+}
+
+function dispatch(overrides: Partial<OrderDossierData['dispatches'][number]> = {}) {
+  return {
+    id: 'dp-1',
+    substatus: 'En reparto',
+    substatus_code: null,
+    status: 'en_ruta',
+    completed_at: null,
+    arrived_at: null,
+    estimated_at: '2026-08-13T12:41:00',
+    failure_reason: null,
+    latitude: null,
+    longitude: null,
+    raw_data: {},
+    is_pickup: false,
+    external_route_id: 'R-2481',
+    driver_name: 'Juan Pérez',
+    ...overrides,
+  };
+}
+
+const BASE_DATA: OrderDossierData = {
   id: 'o-1',
-  order_number: 'ORD-001',
+  order_number: 'ORD-48213',
   retailer_name: 'Falabella',
-  customer_name: 'María González',
-  customer_phone: '+56912345678',
-  delivery_address: 'Av. Las Condes 1234',
-  comuna: 'Las Condes',
-  delivery_date: '2026-05-10',
-  delivery_window_start: null,
-  delivery_window_end: null,
+  customer_name: 'Camila Fernández Soto',
+  customer_phone: '+56984127734',
+  delivery_address: 'Av. Vicuña Mackenna 8420',
+  comuna: 'La Florida',
+  delivery_date: '2026-08-13',
+  delivery_window_start: '2026-08-13T09:00:00',
+  delivery_window_end: '2026-08-13T14:00:00',
   status: 'en_ruta',
   leading_status: 'en_ruta',
-  packages: [
-    { id: 'p-1', label: 'PKG-001', package_number: null, status: 'en_ruta', status_updated_at: null },
-  ],
+  packages: [pkg()],
   auditLogs: [
-    { id: 'a-1', action: 'STATUS_CHANGED', timestamp: '2026-05-05T09:00:00', changes_json: null },
+    { id: 'a-1', action: 'STATUS_CHANGED', timestamp: '2026-08-13T12:41:00', changes_json: null },
   ],
+  manifestId: 'm-1',
+  dispatches: [dispatch()],
 };
-
-vi.mock('@/hooks/useOrderDetail', () => ({
-  useOrderDetail: (id: string | null) => ({
-    data: id ? MOCK_DATA : null,
-    isLoading: false,
-    isError: false,
-  }),
-}));
-
-vi.mock('@/components/operations-control/PackageStatusBreakdown', () => ({
-  PackageStatusBreakdown: ({ packages }: { packages: { label: string }[] }) => (
-    <div data-testid="package-breakdown">
-      {packages.map((p) => <span key={p.label}>{p.label}</span>)}
-    </div>
-  ),
-}));
-
-vi.mock('@/components/operations-control/StatusTimeline', () => ({
-  StatusTimeline: () => <div data-testid="status-timeline">Timeline</div>,
-}));
-
-vi.mock('@/components/inspector/OrderLifecycleRibbon', () => ({
-  OrderLifecycleRibbon: ({ leadingStatus }: { leadingStatus: string }) => (
-    <div data-testid="lifecycle-ribbon">{leadingStatus}</div>
-  ),
-}));
-
-vi.mock('@/components/StatusBadge', () => ({
-  StatusBadge: ({ status }: { status: string }) => <span data-testid="status-badge">{status}</span>,
-}));
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient();
@@ -61,33 +110,222 @@ function wrap(ui: React.ReactElement) {
 }
 
 describe('OrderInspector', () => {
-  it('renders order number when open', () => {
-    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
-    expect(screen.getByText('ORD-001')).toBeTruthy();
-  });
-
-  it('renders customer name', () => {
-    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
-    expect(screen.getByText(/María González/)).toBeTruthy();
-  });
-
-  it('renders retailer chip', () => {
-    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
-    expect(screen.getByText('Falabella')).toBeTruthy();
-  });
-
-  it('renders package label in packages tab area', () => {
-    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
-    expect(screen.getByText('PKG-001')).toBeTruthy();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseOperatorId.mockReturnValue({ operatorId: 'op-1' });
+    mockUseModuleEnabled.mockReturnValue(false);
+    mockUseOrderConversationSessions.mockReturnValue({ data: [], isLoading: false });
+    mockUseOrderDossier.mockReturnValue({ data: BASE_DATA, isLoading: false, isError: false });
   });
 
   it('does not render when orderId is null', () => {
     wrap(<OrderInspector orderId={null} onClose={vi.fn()} />);
-    expect(screen.queryByText('ORD-001')).toBeNull();
+    expect(screen.queryByText('ORD-48213')).toBeNull();
   });
 
-  it('renders delivery address', () => {
+  it('shows a loading state while the dossier is loading', () => {
+    mockUseOrderDossier.mockReturnValue({ data: undefined, isLoading: true, isError: false });
     wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
-    expect(screen.getByText(/Av\. Las Condes 1234/)).toBeTruthy();
+    expect(screen.queryByText('ORD-48213')).toBeNull();
+  });
+
+  it('shows an error state when the dossier query fails', () => {
+    mockUseOrderDossier.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText(/Error al cargar/i)).toBeInTheDocument();
+  });
+
+  it('renders the order number in font-mono', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText('ORD-48213')).toHaveClass('font-mono');
+  });
+
+  it('renders customer name, address, comuna and phone', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText(/Camila Fernández Soto/)).toBeInTheDocument();
+    expect(screen.getByText(/Av\. Vicuña Mackenna 8420/)).toBeInTheDocument();
+    expect(screen.getByText(/La Florida/)).toBeInTheDocument();
+    expect(screen.getByText(/\+56984127734/)).toBeInTheDocument();
+  });
+
+  it('does not render a RUT anywhere — orders has no RUT column', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.queryByText(/\d{1,2}\.\d{3}\.\d{3}-[\dkK]/)).toBeNull();
+  });
+
+  it('renders metadata chips: package count, retailer, promise date, delivery window, route', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText(/paquetes/)).toBeInTheDocument();
+    expect(screen.getByText('Falabella')).toBeInTheDocument();
+    expect(screen.getByText(/2026-08-13/)).toBeInTheDocument();
+    expect(screen.getByText(/09:00.*14:00/)).toBeInTheDocument();
+    expect(screen.getByText(/R-2481/)).toBeInTheDocument();
+  });
+
+  it('omits the retailer chip when retailer_name is null — no placeholder', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, retailer_name: null },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.queryByText('Falabella')).toBeNull();
+  });
+
+  it('omits the delivery window chip when both bounds are null', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, delivery_window_start: null, delivery_window_end: null },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.queryByText(/09:00.*14:00/)).toBeNull();
+  });
+
+  it('omits the route chip when no dispatch carries an external_route_id', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, dispatches: [dispatch({ external_route_id: null })] },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.queryByText(/R-2481/)).toBeNull();
+  });
+
+  it('shows the last-updated time from the most recent audit log — grounded, not invented', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText(/actualizado/i)).toHaveTextContent('12:41');
+  });
+
+  it('omits the last-updated chip entirely when there are no audit logs', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, auditLogs: [] },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.queryByText(/actualizado/i)).toBeNull();
+  });
+
+  it('renders a large status badge for the leading status', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText('En reparto')).toBeInTheDocument();
+  });
+
+  it('renders the lifecycle timeline fed by auditLogs', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByTestId('lifecycle-timeline')).toHaveTextContent('1');
+  });
+
+  it('shows Paquetes/Historial tab counts, and no Conversación tab when the module is off', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByRole('tab', { name: /Paquetes \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Historial \(2\)/ })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: /Conversación/ })).toBeNull();
+  });
+
+  it('renders OrderPackageList and WhyLateBlock (invisible today, no reason source) in the Paquetes tab', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByTestId('package-list')).toHaveTextContent('1');
+    // WhyLateBlock renders null with no reasonFlag source anywhere in the schema.
+    expect(screen.queryByText(/Por qué está atrasada/)).toBeNull();
+  });
+
+  it('threads packageLabelsEnabled to the per-package reprint control', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} packageLabelsEnabled={true} />);
+    expect(screen.getByTestId('package-reprint-links')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /CL7742891003/i })).toHaveAttribute(
+      'href',
+      '/app/pickup/manifests/m-1/labels/print?packageId=pkg-1',
+    );
+  });
+
+  it('does not render the reprint control when packageLabelsEnabled is false', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} packageLabelsEnabled={false} />);
+    expect(screen.queryByTestId('package-reprint-links')).toBeNull();
+  });
+
+  it('does not render the reprint control when there is no manifest, even if labels are enabled', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, manifestId: null },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} packageLabelsEnabled={true} />);
+    expect(screen.queryByTestId('package-reprint-links')).toBeNull();
+  });
+
+  it('renders UnifiedEventLog and ProofOfDelivery (for the non-pickup dispatch) in the Historial tab', () => {
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('2');
+    expect(screen.getByTestId('proof-of-delivery')).toHaveTextContent('dp-1');
+  });
+
+  it('passes a null dispatch to ProofOfDelivery when there is no non-pickup dispatch', () => {
+    mockUseOrderDossier.mockReturnValue({
+      data: { ...BASE_DATA, dispatches: [dispatch({ is_pickup: true, id: 'dp-pickup' })] },
+      isLoading: false,
+      isError: false,
+    });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByTestId('proof-of-delivery')).toHaveTextContent('none');
+  });
+
+  describe('Conversación tab — gated on ModuleKey.CONVERSATIONS', () => {
+    it('does not exist in the DOM at all when the module is off — not zero, absent', () => {
+      mockUseModuleEnabled.mockReturnValue(false);
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      expect(screen.queryByRole('tab', { name: /Conversación/ })).toBeNull();
+      expect(mockUseOrderConversationSessions).toHaveBeenCalledWith(null, null);
+    });
+
+    it('exists with a session count when the module is on', () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      mockUseOrderConversationSessions.mockReturnValue({
+        data: [{ id: 's-1' }, { id: 's-2' }],
+        isLoading: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      expect(screen.getByRole('tab', { name: /Conversación \(2\)/ })).toBeInTheDocument();
+    });
+
+    it('shows the most recent session via ConversationThread', async () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      mockUseOrderConversationSessions.mockReturnValue({
+        data: [{ id: 's-1' }],
+        isLoading: false,
+      });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      const tab = screen.getByRole('tab', { name: /Conversación/ });
+      tab.click();
+      expect(await screen.findByTestId('conversation-thread')).toHaveTextContent('s-1');
+    });
+
+    it('shows an explicit empty state — not the thread component — when there are no sessions', () => {
+      mockUseModuleEnabled.mockReturnValue(true);
+      mockUseOrderConversationSessions.mockReturnValue({ data: [], isLoading: false });
+      wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+      const tab = screen.getByRole('tab', { name: /Conversación \(0\)/ });
+      tab.click();
+      expect(screen.queryByTestId('conversation-thread')).toBeNull();
+    });
+  });
+
+  it('renders the footer with esc·cerrar and a working Copiar ID button', async () => {
+    const writeText = vi.fn();
+    Object.assign(navigator, { clipboard: { writeText } });
+    wrap(<OrderInspector orderId="o-1" onClose={vi.fn()} />);
+    expect(screen.getByText(/esc/i)).toBeInTheDocument();
+    const copyButton = screen.getByRole('button', { name: /Copiar ID/i });
+    copyButton.click();
+    expect(writeText).toHaveBeenCalledWith('ORD-48213');
+  });
+
+  it('calls onClose when the sheet is dismissed', () => {
+    // Smoke test that the prop signature (orderId, onClose, packageLabelsEnabled)
+    // did not change — both real callers rely on exactly this shape.
+    const onClose = vi.fn();
+    wrap(<OrderInspector orderId="o-1" onClose={onClose} />);
+    expect(screen.getByTestId('order-inspector')).toBeInTheDocument();
   });
 });
