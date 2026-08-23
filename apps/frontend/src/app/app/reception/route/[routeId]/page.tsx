@@ -21,6 +21,8 @@ import { ConsolidatedScanList } from '@/components/reception/ConsolidatedScanLis
 import { FinalizeReceptionButton } from '@/components/reception/FinalizeReceptionButton';
 import { ReopenRouteButton } from '@/components/reception/ReopenRouteButton';
 import { ReceptionMobileSession } from '@/components/reception/ReceptionMobileSession';
+import { ReceptionMobileSessionSkeleton } from '@/components/reception/ReceptionMobileSessionSkeleton';
+import { ReceptionMobileErrorCard } from '@/components/reception/ReceptionMobileErrorCard';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import type { ReceptionScanValidationResult } from '@/lib/reception/reception-scan-validator';
 
@@ -106,6 +108,16 @@ export default function RouteReceptionPage() {
   );
 
   if (isLoading) {
+    // Gap fix (post spec-62 task 19) — this used to be a single desktop-shaped
+    // `max-w-2xl` skeleton reached even on a phone, because the mobile branch
+    // sat below these guards. Below `lg`, this is the state seen longest on a
+    // slow andén connection, so it now mirrors ReceptionMobileSession's own
+    // chrome (fixed header band, scan field, a couple of history rows) at the
+    // same heights and radii — never a centred spinner — so nothing jumps
+    // when the real data lands.
+    if (isBelowLg) {
+      return <ReceptionMobileSessionSkeleton />;
+    }
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
         <Skeleton className="h-24 w-full rounded-lg" />
@@ -116,6 +128,18 @@ export default function RouteReceptionPage() {
   }
 
   if (error || !snapshot) {
+    // Same gap: a route that fails to load is most likely to be seen by an
+    // andén operator with a truck in front of them. The mobile card states
+    // the failure in Spanish and always offers a 44px+ way back to the
+    // reception list — never a dead end.
+    if (isBelowLg) {
+      return (
+        <ReceptionMobileErrorCard
+          message={error?.message ?? 'No se pudo cargar la ruta'}
+          onBack={() => router.push('/app/reception')}
+        />
+      );
+    }
     return (
       <div className="max-w-2xl mx-auto p-4 sm:p-6 space-y-4">
         <Button variant="ghost" onClick={() => router.push('/app/reception')}>
