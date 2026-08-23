@@ -7,13 +7,9 @@ import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
 const mockUnifiedEventLog = vi.fn();
 vi.mock('@/components/orders/UnifiedEventLog', () => ({
-  UnifiedEventLog: (props: { auditLogs: unknown[]; dispatches: unknown[] }) => {
+  UnifiedEventLog: (props: { auditLogs: unknown[]; dispatches: unknown[]; sourceFilter?: string }) => {
     mockUnifiedEventLog(props);
-    return (
-      <div data-testid="unified-event-log">
-        audit:{props.auditLogs.length} dispatch:{props.dispatches.length}
-      </div>
-    );
+    return <div data-testid="unified-event-log">{props.sourceFilter}</div>;
   },
 }));
 
@@ -48,30 +44,46 @@ describe('FichaCenterColumn', () => {
     expect(screen.getByText(/3 eventos/)).toBeInTheDocument();
   });
 
-  it('passes every event through to UnifiedEventLog under the default "Todo" filter', () => {
+  it('passes the full, unfiltered auditLogs/dispatches through to UnifiedEventLog — filtering is its job now', () => {
     render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
-    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('audit:1 dispatch:1');
+    expect(mockUnifiedEventLog).toHaveBeenCalledWith(
+      expect.objectContaining({ auditLogs: [expect.objectContaining({ id: 'a-1' })], dispatches: [expect.objectContaining({ id: 'd-1' })] }),
+    );
   });
 
-  it('filters out DispatchTrack events when "Aureon" is selected', async () => {
+  it('defaults to sourceFilter "all"', () => {
+    render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
+    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('all');
+  });
+
+  it('passes sourceFilter "aureon" to UnifiedEventLog when "Aureon" is selected', async () => {
     const user = userEvent.setup();
     render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
     await user.click(screen.getByRole('button', { name: 'Aureon' }));
-    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('audit:1 dispatch:0');
+    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('aureon');
   });
 
-  it('filters out Aureon events when "DispatchTrack" is selected', async () => {
+  it('passes sourceFilter "dispatchtrack" to UnifiedEventLog when "DispatchTrack" is selected', async () => {
     const user = userEvent.setup();
     render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
     await user.click(screen.getByRole('button', { name: 'DispatchTrack' }));
-    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('audit:0 dispatch:1');
+    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('dispatchtrack');
   });
 
-  it('returns to showing every event when "Todo" is re-selected', async () => {
+  it('returns to sourceFilter "all" when "Todo" is re-selected', async () => {
     const user = userEvent.setup();
     render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
     await user.click(screen.getByRole('button', { name: 'DispatchTrack' }));
     await user.click(screen.getByRole('button', { name: 'Todo' }));
-    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('audit:1 dispatch:1');
+    expect(screen.getByTestId('unified-event-log')).toHaveTextContent('all');
+  });
+
+  it('keeps auditLogs/dispatches identical (unfiltered) across every filter selection', async () => {
+    const user = userEvent.setup();
+    render(<FichaCenterColumn auditLogs={[auditEntry()]} dispatches={[dispatch()]} />);
+    await user.click(screen.getByRole('button', { name: 'Aureon' }));
+    const lastCall = mockUnifiedEventLog.mock.calls.at(-1)![0];
+    expect(lastCall.auditLogs).toHaveLength(1);
+    expect(lastCall.dispatches).toHaveLength(1);
   });
 });

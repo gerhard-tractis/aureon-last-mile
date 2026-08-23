@@ -68,6 +68,7 @@ export function OrderFichaContent({ orderId }: Props) {
           customerPhone={data.customer_phone}
           packages={data.packages}
           dispatches={data.dispatches}
+          importedVia={data.imported_via}
         />
 
         <FichaCenterColumn auditLogs={data.auditLogs} dispatches={data.dispatches} />

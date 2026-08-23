@@ -70,8 +70,14 @@ const BASE_DATA: OrderDossierData = {
       external_route_id: 'R-2481',
       driver_name: 'M. Rojas',
       route_id: 'route-1',
+      external_dispatch_id: 'DT-9910442',
     },
   ],
+  imported_via: 'API',
+  rescheduled_delivery_date: null,
+  rescheduled_window_start: null,
+  rescheduled_window_end: null,
+  delivered_at: null,
 };
 
 function wrap(ui: React.ReactElement) {

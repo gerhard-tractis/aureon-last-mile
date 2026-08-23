@@ -20,6 +20,7 @@ function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
     external_route_id: 'R-2481',
     driver_name: 'M. Rojas',
     route_id: 'route-1',
+    external_dispatch_id: 'DT-9910442',
     ...overrides,
   };
 }
@@ -44,6 +45,11 @@ const BASE_ORDER: OrderDossierData = {
   auditLogs: [],
   manifestId: null,
   dispatches: [],
+  imported_via: 'API',
+  rescheduled_delivery_date: null,
+  rescheduled_window_start: null,
+  rescheduled_window_end: null,
+  delivered_at: null,
 };
 
 function renderHeader(overrides: Partial<Parameters<typeof FichaHeader>[0]> = {}) {
@@ -109,14 +115,63 @@ describe('FichaHeader', () => {
     expect(screen.queryByText(/actualizado/i)).toBeNull();
   });
 
-  it('does not render a courier guide number chip — not in the dossier query', () => {
+  it('renders the courier guide number chip from the delivery dispatch\'s external_dispatch_id', () => {
     renderHeader();
+    expect(screen.getByText(/DT-9910442/)).toBeInTheDocument();
+  });
+
+  it('omits the guide number chip when the delivery dispatch has no external_dispatch_id', () => {
+    renderHeader({ deliveryDispatch: dispatch({ external_dispatch_id: null }) });
+    expect(screen.queryByText(/DT-9910442/)).toBeNull();
+  });
+
+  it('omits the guide number chip when there is no delivery dispatch at all', () => {
+    renderHeader({ deliveryDispatch: null });
     expect(screen.queryByText(/guía courier/i)).toBeNull();
   });
 
-  it('does not render an SLA delta badge', () => {
-    renderHeader();
-    expect(screen.queryByText(/SLA/)).toBeNull();
+  describe('SLA delta badge', () => {
+    it('shows an "ATRASADO" delta when the delivery window has already passed', () => {
+      renderHeader({ now: new Date('2026-08-13T15:40:00') });
+      expect(screen.getByTestId('sla-delta-badge')).toHaveTextContent('ATRASADO 1h 40m');
+    });
+
+    it('shows a "restantes" delta when still within the at-risk window', () => {
+      renderHeader({ now: new Date('2026-08-13T10:00:00') });
+      expect(screen.getByTestId('sla-delta-badge')).toHaveTextContent('4h 0m restantes');
+    });
+
+    it('omits the badge entirely when the order has no delivery window', () => {
+      renderHeader({
+        order: { ...BASE_ORDER, delivery_window_start: null, delivery_window_end: null },
+        now: new Date('2026-08-13T15:40:00'),
+      });
+      expect(screen.queryByTestId('sla-delta-badge')).toBeNull();
+    });
+
+    it('omits the badge when the order is already delivered — classifyRisk returns "none"', () => {
+      renderHeader({
+        order: { ...BASE_ORDER, delivered_at: '2026-08-13T13:00:00' },
+        now: new Date('2026-08-13T15:40:00'),
+      });
+      expect(screen.queryByTestId('sla-delta-badge')).toBeNull();
+    });
+
+    it('uses the rescheduled window instead of the original one when all three reschedule columns are set', () => {
+      renderHeader({
+        order: {
+          ...BASE_ORDER,
+          rescheduled_delivery_date: '2026-08-14',
+          rescheduled_window_start: '09:00:00',
+          rescheduled_window_end: '10:00:00',
+        },
+        // Past the ORIGINAL window (13/08 14:00) but well before the
+        // rescheduled one (14/08 09:00–10:00) — if this showed "ATRASADO"
+        // the reschedule columns were ignored.
+        now: new Date('2026-08-13T20:00:00'),
+      });
+      expect(screen.getByTestId('sla-delta-badge')).not.toHaveTextContent('ATRASADO');
+    });
   });
 
   it('does not render a customer RUT anywhere', () => {

@@ -9,23 +9,19 @@
  * only filters by `is_pickup`, never re-sorts.
  */
 
-import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
-export type EventSourceFilter = 'todo' | 'aureon' | 'dispatchtrack';
-
-/** AUREON events come from `audit_logs` exclusively — filtering to "DispatchTrack" drops all of them. */
-export function filterAuditLogsBySource(auditLogs: AuditEntry[], source: EventSourceFilter): AuditEntry[] {
-  return source === 'dispatchtrack' ? [] : auditLogs;
-}
-
-/** DISPATCHTRACK events come from `dispatches` exclusively — filtering to "Aureon" drops all of them. */
-export function filterDispatchesBySource(
-  dispatches: DossierDispatch[],
-  source: EventSourceFilter,
-): DossierDispatch[] {
-  return source === 'aureon' ? [] : dispatches;
-}
+/**
+ * Note: the Todo/Aureon/DispatchTrack source filter used to live here as
+ * `filterAuditLogsBySource`/`filterDispatchesBySource`, applied by
+ * `FichaCenterColumn` to `UnifiedEventLog`'s inputs from the outside.
+ * Controller-authorized extension (round 2) moved that filtering INSIDE
+ * `UnifiedEventLog` itself, via its own `sourceFilter` prop — only that
+ * component can distinguish "no courier events exist" from "courier
+ * events exist but are hidden by the current filter", which filtering the
+ * inputs before they arrived could not. See `UnifiedEventLog.tsx` and
+ * `FichaCenterColumn.tsx`.
+ */
 
 /**
  * The breadcrumb's own return path. `3b` is reached with whatever query

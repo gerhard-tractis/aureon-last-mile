@@ -23,11 +23,25 @@ import type { DossierDispatch } from '@/hooks/useOrderDossier';
  * that. Each row now shows its timestamp (omitted, not dashed, when the
  * event has none) via `event.timestamp`, which was already being sorted
  * on but never rendered.
+ *
+ * spec-65 Task 9, controller-authorized extension — `sourceFilter` (the
+ * mock `3b`'s Todo/Aureon/DispatchTrack toggle) filters *internally*
+ * rather than being applied by the caller to `auditLogs`/`dispatches`
+ * before they arrive here. That distinction matters: only this component
+ * can tell "no courier events exist for this order" apart from "courier
+ * events exist but the Aureon filter is hiding them" — a caller filtering
+ * the inputs from outside collapses both into the same empty
+ * `dispatches` array, and the courier-absence message below would then
+ * say something false. `1f` (`OrderInspector`) passes nothing and keeps
+ * the pre-existing unfiltered behaviour.
  */
 interface Props {
   auditLogs: AuditEntry[];
   dispatches: DossierDispatch[];
+  sourceFilter?: EventSourceFilter;
 }
+
+export type EventSourceFilter = 'all' | 'aureon' | 'dispatchtrack';
 
 type UnifiedEvent =
   | { source: 'aureon'; id: string; timestamp: string | null; title: string; raw: unknown }
@@ -125,9 +139,11 @@ function formatEventTimestamp(timestamp: string): string {
   return format(new Date(timestamp), 'dd/MM HH:mm:ss');
 }
 
-export function UnifiedEventLog({ auditLogs, dispatches }: Props) {
+export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const events = buildEvents(auditLogs, dispatches);
+  const visibleAuditLogs = sourceFilter === 'dispatchtrack' ? [] : auditLogs;
+  const visibleDispatches = sourceFilter === 'aureon' ? [] : dispatches;
+  const events = buildEvents(visibleAuditLogs, visibleDispatches);
 
   if (events.length === 0) {
     return (
@@ -146,10 +162,21 @@ export function UnifiedEventLog({ auditLogs, dispatches }: Props) {
     });
   };
 
+  // Ground truth, always read off the real (unfiltered) `dispatches` prop —
+  // "no courier events exist" must never flip just because the current
+  // filter happens to be hiding them (see the class doc comment above).
+  const noCourierEventsExist = dispatches.length === 0;
+  const courierHiddenByFilter = sourceFilter === 'aureon' && dispatches.length > 0;
+
   return (
     <div className="flex flex-col gap-0" data-testid="unified-event-log">
-      {dispatches.length === 0 && (
+      {noCourierEventsExist && (
         <p className="px-1 pb-3 text-[11.5px] text-text-secondary">Sin eventos de courier registrados.</p>
+      )}
+      {courierHiddenByFilter && (
+        <p className="px-1 pb-3 text-[11.5px] text-text-secondary">
+          Eventos de courier ocultos por el filtro Aureon.
+        </p>
       )}
       {events.map((event) => {
         const isOpen = expanded.has(event.id);

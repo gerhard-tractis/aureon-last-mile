@@ -32,6 +32,10 @@ const MOCK_ORDER_ROW = {
   status: 'en_ruta',
   leading_status: 'en_ruta',
   external_load_id: null,
+  imported_via: 'API',
+  rescheduled_delivery_date: null,
+  rescheduled_window_start: null,
+  rescheduled_window_end: null,
   packages: [
     {
       id: 'pkg-1',
@@ -69,6 +73,7 @@ const MOCK_DISPATCH_ROWS = [
     longitude: -70.66,
     raw_data: { attempt: 1 },
     is_pickup: false,
+    external_dispatch_id: 'DT-9910442',
     routes: { id: 'route-uuid-1', external_route_id: 'R-2481', driver_name: 'M. Rojas' },
   },
 ];
@@ -159,7 +164,104 @@ describe('useOrderDossier', () => {
       external_route_id: 'R-2481',
       driver_name: 'M. Rojas',
       route_id: 'route-uuid-1',
+      external_dispatch_id: 'DT-9910442',
     });
+  });
+
+  // spec-65 Task 9, controller-authorized extension — 3b's header SLA-delta
+  // badge, ORIGEN DE LOS DATOS "Canal" line, and courier guide-number chip
+  // all need columns the dossier didn't select before. Asserted on their
+  // own line each so a regression on any one fails named, not buried.
+  it('selects orders.imported_via', async () => {
+    mockFrom.mockImplementation(buildFromMock());
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.imported_via).toBe('API');
+  });
+
+  it('selects the reschedule columns from orders', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: {
+              ...MOCK_ORDER_ROW,
+              rescheduled_delivery_date: '2026-03-20',
+              rescheduled_window_start: '13:00:00',
+              rescheduled_window_end: '14:00:00',
+            },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') return dispatchesChain([]);
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.rescheduled_delivery_date).toBe('2026-03-20');
+    expect(result.current.data!.rescheduled_window_start).toBe('13:00:00');
+    expect(result.current.data!.rescheduled_window_end).toBe('14:00:00');
+  });
+
+  it('selects external_dispatch_id on the dispatches query', async () => {
+    mockFrom.mockImplementation(buildFromMock());
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.dispatches[0].external_dispatch_id).toBe('DT-9910442');
+  });
+
+  it('derives delivered_at from the most recent NON-PICKUP delivered dispatch', async () => {
+    mockFrom.mockImplementation(buildFromMock());
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data!.delivered_at).toBe('2026-03-16T11:00:00');
+  });
+
+  // Controller ruling — a completed PICKUP leg also carries
+  // status = 'delivered'; counting it as the order's delivery was a real
+  // bug caught in Task 2's review of the SQL twin of this rule.
+  it('excludes a delivered PICKUP dispatch from the delivered_at derivation', async () => {
+    const pickupDelivered = {
+      ...MOCK_DISPATCH_ROWS[0],
+      id: 'dp-pickup',
+      is_pickup: true,
+      completed_at: '2026-03-16T23:00:00',
+    };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'dispatches') return dispatchesChain([pickupDelivered]);
+      return buildFromMock()(table);
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.delivered_at).toBeNull();
+  });
+
+  it('leaves delivered_at null when no dispatch has status = delivered', async () => {
+    const inTransit = { ...MOCK_DISPATCH_ROWS[0], status: 'in_transit' };
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'dispatches') return dispatchesChain([inTransit]);
+      return buildFromMock()(table);
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.delivered_at).toBeNull();
   });
 
   // spec-65 Task 8, controller ruling — "Abrir en ruta" needs routes.id (the

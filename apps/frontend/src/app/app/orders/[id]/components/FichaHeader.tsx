@@ -6,6 +6,8 @@ import { format } from 'date-fns';
 import { toast } from 'sonner';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { classifyRisk } from '@/app/app/operations-control/lib/sla';
 import type { OrderDossierData, DossierDispatch } from '@/hooks/useOrderDossier';
 
 /**
@@ -14,13 +16,20 @@ import type { OrderDossierData, DossierDispatch } from '@/hooks/useOrderDossier'
  * layout (a full identity row vs. a sheet title), per the task brief.
  *
  * Rulings this component follows without exception (spec-65 Task 9 brief):
- * no SLA-delta badge (the dossier query doesn't select the
- * `rescheduled_*`/`delivered_at` columns `classifyRisk` needs — see the
- * task report for the requested extension), no courier guide number chip
- * (`dispatches.external_dispatch_id` isn't selected either), no customer
- * RUT (`orders` has no such column), no "N de M" paginator, and none of
- * the three unbacked action buttons (no backing mutation — spec-65
+ * no customer RUT (`orders` has no such column), no "N de M" paginator, and
+ * none of the three unbacked action buttons (no backing mutation — spec-65
  * Decision 3).
+ *
+ * Controller-authorized extension, round 2 — the SLA-delta badge and the
+ * courier guide-number chip were omitted in round 1 because
+ * `useOrderDossier` didn't select the columns they need. Both now render:
+ * the badge imports `classifyRisk` (`operations-control/lib/sla.ts`) — the
+ * same client-side authority Torre de control uses — rather than
+ * re-deriving the rule, and is cast through `unknown` the same way
+ * `useAtRiskOrders` calls it, since `order`'s window fields are nullable
+ * here (`classifyRisk`'s own `effectiveWindow`/`toISO` already handle null
+ * gracefully). The guide-number chip reads
+ * `deliveryDispatch.external_dispatch_id`, now selected by the dossier.
  */
 interface Props {
   order: OrderDossierData;
@@ -29,6 +38,8 @@ interface Props {
   deliveryDispatch: DossierDispatch | null;
   /** `/app/orders`, plus the query string this page was reached with, if any. */
   breadcrumbHref: string;
+  /** Injectable for deterministic tests; defaults to the real clock. */
+  now?: Date;
 }
 
 function formatChipTime(iso: string): string {
@@ -48,9 +59,33 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function FichaHeader({ order, lastUpdated, deliveryDispatch, breadcrumbHref }: Props) {
+const SLA_BADGE_CLASSES: Record<'late' | 'at_risk' | 'ok', string> = {
+  late: 'border-status-error-border bg-status-error-bg text-status-error-text',
+  at_risk: 'border-status-warning-border bg-status-warning-bg text-status-warning-text',
+  ok: 'border-status-success-border bg-status-success-bg text-status-success-text',
+};
+
+function SlaDeltaBadge({ order, now }: { order: OrderDossierData; now: Date }) {
+  const risk = classifyRisk(order as unknown as Parameters<typeof classifyRisk>[0], now);
+  if (risk.status === 'none') return null;
+
+  return (
+    <span
+      data-testid="sla-delta-badge"
+      className={cn(
+        'rounded-md border px-2 py-1 font-mono text-[10px] font-semibold',
+        SLA_BADGE_CLASSES[risk.status],
+      )}
+    >
+      SLA {risk.label}
+    </span>
+  );
+}
+
+export function FichaHeader({ order, lastUpdated, deliveryDispatch, breadcrumbHref, now = new Date() }: Props) {
   const window_ = formatDeliveryWindow(order.delivery_window_start, order.delivery_window_end);
   const route = deliveryDispatch?.external_route_id ?? null;
+  const guideNumber = deliveryDispatch?.external_dispatch_id ?? null;
 
   const handleCopyLink = () => {
     navigator.clipboard
@@ -79,6 +114,7 @@ export function FichaHeader({ order, lastUpdated, deliveryDispatch, breadcrumbHr
           <div className="flex items-center gap-3">
             <h1 className="font-mono text-xl font-semibold tracking-tight text-text">{order.order_number}</h1>
             <StatusBadge status={order.leading_status} size="md" />
+            <SlaDeltaBadge order={order} now={now} />
             {lastUpdated && (
               <span className="font-mono text-[10px] text-text-muted">
                 actualizado {formatChipTime(lastUpdated)}
@@ -100,6 +136,11 @@ export function FichaHeader({ order, lastUpdated, deliveryDispatch, breadcrumbHr
               <Chip>
                 ruta <span className="font-semibold text-text">{route}</span>
                 {deliveryDispatch?.driver_name && <> · {deliveryDispatch.driver_name}</>}
+              </Chip>
+            )}
+            {guideNumber && (
+              <Chip>
+                guía courier <span className="font-semibold text-text">{guideNumber}</span>
               </Chip>
             )}
           </div>

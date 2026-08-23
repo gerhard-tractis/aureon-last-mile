@@ -143,3 +143,57 @@ describe('UnifiedEventLog — timestamps', () => {
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });
+
+describe('UnifiedEventLog — sourceFilter', () => {
+  it('defaults to showing every event when sourceFilter is omitted', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} />);
+    expect(screen.getByText('AUREON')).toBeInTheDocument();
+    expect(screen.getByText('DISPATCHTRACK')).toBeInTheDocument();
+  });
+
+  it('sourceFilter="all" shows both AUREON and DISPATCHTRACK entries', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="all" />);
+    expect(screen.getByText('AUREON')).toBeInTheDocument();
+    expect(screen.getByText('DISPATCHTRACK')).toBeInTheDocument();
+  });
+
+  it('sourceFilter="aureon" hides DISPATCHTRACK entries', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="aureon" />);
+    expect(screen.getByText('AUREON')).toBeInTheDocument();
+    expect(screen.queryByText('DISPATCHTRACK')).not.toBeInTheDocument();
+  });
+
+  it('sourceFilter="dispatchtrack" hides AUREON entries', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="dispatchtrack" />);
+    expect(screen.queryByText('AUREON')).not.toBeInTheDocument();
+    expect(screen.getByText('DISPATCHTRACK')).toBeInTheDocument();
+  });
+
+  // The bug the controller flagged: filtering the component's INPUTS from
+  // the outside made this message lie ("no courier events registered")
+  // when the truth was "the user filtered them away". Filtering internally
+  // means the component can tell the difference.
+  it('does not show the courier-absence message when courier events exist but are hidden by the Aureon filter', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="aureon" />);
+    expect(screen.queryByText(/Sin eventos de courier registrados/)).not.toBeInTheDocument();
+  });
+
+  it('still shows the courier-absence message under the Aureon filter when courier events genuinely do not exist', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[]} sourceFilter="aureon" />);
+    expect(screen.getByText(/Sin eventos de courier registrados/)).toBeInTheDocument();
+  });
+
+  it('says courier events are hidden by the filter, worded differently from genuine absence', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="aureon" />);
+    expect(screen.getByText(/oculto/i)).toBeInTheDocument();
+  });
+
+  it('does not show the courier-hidden-by-filter message under "all" or "dispatchtrack"', () => {
+    const { rerender } = render(
+      <UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="all" />,
+    );
+    expect(screen.queryByText(/oculto/i)).not.toBeInTheDocument();
+    rerender(<UnifiedEventLog auditLogs={[auditEntry()]} dispatches={[dispatchRow()]} sourceFilter="dispatchtrack" />);
+    expect(screen.queryByText(/oculto/i)).not.toBeInTheDocument();
+  });
+});

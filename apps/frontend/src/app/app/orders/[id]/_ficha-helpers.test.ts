@@ -1,17 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import {
-  filterAuditLogsBySource,
-  filterDispatchesBySource,
-  breadcrumbHref,
-  lastWebhookTimestamp,
-  deliveryDispatch,
-} from './_ficha-helpers';
-import type { AuditEntry } from '@/hooks/useOrderDetail';
+import { breadcrumbHref, lastWebhookTimestamp, deliveryDispatch } from './_ficha-helpers';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
-function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
-  return { id: 'a-1', action: 'STATUS_CHANGED', timestamp: '2026-08-13T12:00:00', changes_json: null, ...overrides };
-}
+// The Todo/Aureon/DispatchTrack source-filter helpers that used to live
+// here (`filterAuditLogsBySource`/`filterDispatchesBySource`) moved into
+// `UnifiedEventLog` itself — see that component's `sourceFilter` prop and
+// `_ficha-helpers.ts`'s own note.
 
 function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
   return {
@@ -33,38 +27,6 @@ function dispatch(overrides: Partial<DossierDispatch> = {}): DossierDispatch {
     ...overrides,
   };
 }
-
-describe('filterAuditLogsBySource', () => {
-  it('keeps audit logs for "todo"', () => {
-    const logs = [auditEntry()];
-    expect(filterAuditLogsBySource(logs, 'todo')).toEqual(logs);
-  });
-
-  it('keeps audit logs for "aureon"', () => {
-    const logs = [auditEntry()];
-    expect(filterAuditLogsBySource(logs, 'aureon')).toEqual(logs);
-  });
-
-  it('drops all audit logs for "dispatchtrack"', () => {
-    expect(filterAuditLogsBySource([auditEntry()], 'dispatchtrack')).toEqual([]);
-  });
-});
-
-describe('filterDispatchesBySource', () => {
-  it('keeps dispatches for "todo"', () => {
-    const dispatches = [dispatch()];
-    expect(filterDispatchesBySource(dispatches, 'todo')).toEqual(dispatches);
-  });
-
-  it('keeps dispatches for "dispatchtrack"', () => {
-    const dispatches = [dispatch()];
-    expect(filterDispatchesBySource(dispatches, 'dispatchtrack')).toEqual(dispatches);
-  });
-
-  it('drops all dispatches for "aureon"', () => {
-    expect(filterDispatchesBySource([dispatch()], 'aureon')).toEqual([]);
-  });
-});
 
 describe('breadcrumbHref', () => {
   it('returns the plain orders path when the query string is empty', () => {

@@ -2,26 +2,28 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { UnifiedEventLog } from '@/components/orders/UnifiedEventLog';
-import { filterAuditLogsBySource, filterDispatchesBySource, type EventSourceFilter } from '../_ficha-helpers';
+import { UnifiedEventLog, type EventSourceFilter } from '@/components/orders/UnifiedEventLog';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
 /**
  * spec-65 Task 9 — `3b`'s centre column: the mock's Todo / Aureon /
- * DispatchTrack source filter, wrapping `UnifiedEventLog` (Task 7)
- * unmodified. The filter lives here, not inside `UnifiedEventLog` — it's a
- * `3b`-only affordance `1f` never asked for, and Task 7's component stays a
- * pure presentational block over whatever `auditLogs`/`dispatches` it's
- * given.
+ * DispatchTrack source filter around `UnifiedEventLog` (Task 7).
+ *
+ * Controller-authorized extension, round 2 — the filter selection lives
+ * here (a `3b`-only affordance `1f` never asked for), but the actual
+ * filtering of `auditLogs`/`dispatches` now happens INSIDE
+ * `UnifiedEventLog` via its `sourceFilter` prop, not by this component
+ * pre-filtering the arrays before passing them down. This column always
+ * passes the full, real `auditLogs`/`dispatches` through — only
+ * `UnifiedEventLog` can tell "no courier events exist for this order"
+ * apart from "courier events exist but are hidden by the current filter",
+ * and wording each correctly requires seeing both the real data and the
+ * active filter at once.
  *
  * The total "N eventos" count is always the unfiltered total, matching the
  * mock: it answers "how much is in this bitácora", not "how much survived
- * the filter". `UnifiedEventLog`'s own "Sin eventos de courier
- * registrados." notice can read oddly while "Aureon" is selected on an
- * order that does have courier events — a known, accepted trade-off of
- * composing Task 7's block unmodified rather than teaching it about a
- * filter reason it was never given (see the task report).
+ * the filter".
  */
 interface Props {
   auditLogs: AuditEntry[];
@@ -29,13 +31,13 @@ interface Props {
 }
 
 const FILTERS: { id: EventSourceFilter; label: string }[] = [
-  { id: 'todo', label: 'Todo' },
+  { id: 'all', label: 'Todo' },
   { id: 'aureon', label: 'Aureon' },
   { id: 'dispatchtrack', label: 'DispatchTrack' },
 ];
 
 export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
-  const [source, setSource] = useState<EventSourceFilter>('todo');
+  const [source, setSource] = useState<EventSourceFilter>('all');
   const totalEvents = auditLogs.length + dispatches.length;
 
   return (
@@ -61,10 +63,7 @@ export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-3">
-        <UnifiedEventLog
-          auditLogs={filterAuditLogsBySource(auditLogs, source)}
-          dispatches={filterDispatchesBySource(dispatches, source)}
-        />
+        <UnifiedEventLog auditLogs={auditLogs} dispatches={dispatches} sourceFilter={source} />
       </div>
     </div>
   );

@@ -7,16 +7,20 @@ import type { DossierPackage, DossierDispatch } from '@/hooks/useOrderDossier';
  * spec-65 Task 9 — `3b`'s left column: delivery address, `OrderPackageList`
  * (Task 7, composed unmodified), and ORIGEN DE LOS DATOS.
  *
- * ORIGEN DE LOS DATOS shows two of the mock's three lines. "Canal" is
- * omitted — `useOrderDossier`'s query doesn't select `orders.imported_via`,
- * so there's no legitimate value to show (see the task report for the
- * requested extension). "Courier" is shown as a static "DispatchTrack"
- * label whenever at least one dispatch row exists — the same assumption
- * `UnifiedEventLog` already makes for every dispatch-sourced event, not a
- * new one introduced here. The mock's "Eventos recibidos 9 de 14" line is
- * omitted entirely per the task brief (no expected-event-total concept
- * exists), and "Sin conserjería registrada · 2 fallos previos" is omitted
- * per spec-65's own deviation table (no address intelligence exists).
+ * ORIGEN DE LOS DATOS shows all three of the mock's lines. "Canal" renders
+ * `orders.imported_via` verbatim (`API`/`EMAIL`/`MANUAL`/`CSV`, the enum's
+ * own values) rather than a translated label — no existing screen in the
+ * repo maps this enum to display copy, and "show what arrives" is the same
+ * rule `UnifiedEventLog` follows for DispatchTrack's own `substatus`
+ * strings (controller-authorized extension, round 2 — `imported_via` is
+ * now selected by `useOrderDossier`). "Courier" is shown as a static
+ * "DispatchTrack" label whenever at least one dispatch row exists — the
+ * same assumption `UnifiedEventLog` already makes for every
+ * dispatch-sourced event, not a new one introduced here. The mock's
+ * "Eventos recibidos 9 de 14" line is omitted entirely per the task brief
+ * (no expected-event-total concept exists), and "Sin conserjería
+ * registrada · 2 fallos previos" is omitted per spec-65's own deviation
+ * table (no address intelligence exists).
  */
 interface Props {
   deliveryAddress: string;
@@ -24,6 +28,7 @@ interface Props {
   customerPhone: string;
   packages: DossierPackage[];
   dispatches: DossierDispatch[];
+  importedVia: string;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -43,7 +48,14 @@ function DataRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function FichaLeftColumn({ deliveryAddress, comuna, customerPhone, packages, dispatches }: Props) {
+export function FichaLeftColumn({
+  deliveryAddress,
+  comuna,
+  customerPhone,
+  packages,
+  dispatches,
+  importedVia,
+}: Props) {
   const hasCourierData = dispatches.length > 0;
   const lastWebhook = lastWebhookTimestamp(dispatches);
 
@@ -64,13 +76,12 @@ export function FichaLeftColumn({ deliveryAddress, comuna, customerPhone, packag
         <OrderPackageList packages={packages} />
       </div>
 
-      {(hasCourierData || lastWebhook) && (
-        <div className="flex flex-col gap-1.5">
-          <SectionLabel>Origen de los datos</SectionLabel>
-          {hasCourierData && <DataRow label="Courier" value="DispatchTrack" />}
-          {lastWebhook && <DataRow label="Último webhook" value={format(new Date(lastWebhook), 'HH:mm:ss')} />}
-        </div>
-      )}
+      <div className="flex flex-col gap-1.5">
+        <SectionLabel>Origen de los datos</SectionLabel>
+        {importedVia && <DataRow label="Canal" value={importedVia} />}
+        {hasCourierData && <DataRow label="Courier" value="DispatchTrack" />}
+        {lastWebhook && <DataRow label="Último webhook" value={format(new Date(lastWebhook), 'HH:mm:ss')} />}
+      </div>
     </div>
   );
 }
