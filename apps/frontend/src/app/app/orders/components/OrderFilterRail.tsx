@@ -139,7 +139,7 @@ export function OrderFilterRail({
             value={filters.driver ?? ''}
             onChange={(e) => patch({ driver: e.target.value === '' ? null : e.target.value })}
             placeholder="Todos"
-            className="h-[30px] px-2 text-[11px]"
+            className="h-[30px] px-2 text-[11px] md:text-[11px]"
           />
         </section>
 
@@ -154,7 +154,7 @@ export function OrderFilterRail({
             value={filters.client ?? ''}
             onChange={(e) => patch({ client: e.target.value === '' ? null : e.target.value })}
             placeholder="Todos"
-            className="h-[30px] px-2 text-[11px]"
+            className="h-[30px] px-2 text-[11px] md:text-[11px]"
           />
         </section>
 

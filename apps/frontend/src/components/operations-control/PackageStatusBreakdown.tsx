@@ -58,6 +58,7 @@ export function PackageStatusBreakdown({ packages, manifestId = null, labelsEnab
                   <span data-testid={`pkg-status-badge-${pkg.id}`}>
                     <StatusBadge
                       status={pkg.status ?? 'pending'}
+                      kind="package"
                       size="sm"
                     />
                   </span>

@@ -159,6 +159,29 @@ describe('OrderFilterRail', () => {
     expect(onFiltersChange).toHaveBeenLastCalledWith(expect.objectContaining({ client: null }));
   });
 
+  describe('shared Input font size at desktop widths', () => {
+    // ui/input.tsx carries `text-base … md:text-sm` unconditionally. twMerge
+    // cancels an unmodified utility with another unmodified one, and a
+    // modifier-scoped one (`md:text-sm`) with another SAME-modifier one
+    // (`md:text-[11px]`) — but NOT a modifier-scoped class with an
+    // unmodified override. `text-[11px]` alone therefore leaves `md:text-sm`
+    // in the merged class list, and every viewport this 230px rail actually
+    // targets (>=768px) renders at 14px instead of 11px.
+    it('COURIER / CONDUCTOR does not carry the shared Input default md:text-sm', () => {
+      renderRail();
+      const input = screen.getByLabelText(/courier.*conductor/i);
+      expect(input.className).not.toContain('md:text-sm');
+      expect(input.className).toContain('md:text-[11px]');
+    });
+
+    it('CLIENTE / REMITENTE does not carry the shared Input default md:text-sm', () => {
+      renderRail();
+      const input = screen.getByLabelText(/cliente.*remitente/i);
+      expect(input.className).not.toContain('md:text-sm');
+      expect(input.className).toContain('md:text-[11px]');
+    });
+  });
+
   it('adding a comuna chip (delegated to OrderComunaChipsFilter) updates filters.comunas', async () => {
     const user = userEvent.setup();
     const { onFiltersChange } = renderRail();

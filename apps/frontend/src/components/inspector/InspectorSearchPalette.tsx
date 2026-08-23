@@ -92,7 +92,7 @@ export function InspectorSearchPalette({ isOpen, onClose, onSelectOrder }: Props
                       <span className="text-sm font-mono font-medium text-text">{p.label}</span>
                       <span className="ml-2 text-xs text-text-muted">→ {p.order_number}</span>
                     </div>
-                    <StatusBadge status={p.status} size="sm" />
+                    <StatusBadge status={p.status} kind="package" size="sm" />
                   </button>
                 ))}
               </>

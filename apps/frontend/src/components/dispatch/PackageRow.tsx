@@ -46,6 +46,7 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
       </div>
       <StatusBadge
         status={pkg.package_status}
+        kind="package"
         variant={statusConfig?.variant}
         size="sm"
       />

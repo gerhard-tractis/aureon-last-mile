@@ -67,6 +67,34 @@ describe('OrderViewTabs', () => {
     expect(tabs[1]).toHaveFocus();
   });
 
+  it('arrow-key focus movement does NOT fire onSelectPreset by itself (activationMode="manual") — each preset change drives a URL update and a refetch, so holding Right must not fire one per keypress', async () => {
+    const user = userEvent.setup();
+    const onSelectPreset = vi.fn();
+    render(
+      <OrderViewTabs activePreset="sla-en-riesgo" presetCounts={{}} onSelectPreset={onSelectPreset} />,
+    );
+    const tabs = screen.getAllByRole('tab');
+    await user.click(tabs[0]);
+    onSelectPreset.mockClear(); // clicking tabs[0] (already active) may itself call through
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}');
+    expect(tabs[3]).toHaveFocus();
+    expect(onSelectPreset).not.toHaveBeenCalled();
+  });
+
+  it('Enter activates whichever tab arrow keys moved focus to (manual activation)', async () => {
+    const user = userEvent.setup();
+    const onSelectPreset = vi.fn();
+    render(
+      <OrderViewTabs activePreset="sla-en-riesgo" presetCounts={{}} onSelectPreset={onSelectPreset} />,
+    );
+    const tabs = screen.getAllByRole('tab');
+    await user.click(tabs[0]);
+    await user.keyboard('{ArrowRight}');
+    expect(tabs[1]).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onSelectPreset).toHaveBeenCalledWith(ORDER_VIEW_PRESETS[1].id);
+  });
+
   it('Tab enters the tab strip once, at the active tab, and a second Tab leaves it — one tab stop total, not one per tab', async () => {
     const user = userEvent.setup();
     render(

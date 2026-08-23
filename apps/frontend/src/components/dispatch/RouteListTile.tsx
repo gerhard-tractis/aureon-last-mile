@@ -83,7 +83,8 @@ export function RouteListTile({ route, onClick, onDelete }: Props) {
         </span>
         <div className="flex items-center gap-1.5">
           <StatusBadge
-            status={statusConfig.label}
+            status={route.status}
+            label={statusConfig.label}
             variant={statusConfig.variant}
             size="sm"
           />

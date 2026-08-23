@@ -35,6 +35,12 @@ export function OrderViewTabs({ activePreset, presetCounts, onSelectPreset }: Or
     <Tabs
       value={activePreset}
       onValueChange={(id) => onSelectPreset(id as OrderViewPresetId)}
+      // Radix defaults to "automatic": arrow-key focus movement fires
+      // onValueChange on every keypress. Task 6 wires each preset change to
+      // a URL update and a refetch — holding Right Arrow would fire one
+      // fetch per tab. "manual" keeps arrow keys to focus movement only;
+      // Enter/Space (or a click) is what actually activates a tab.
+      activationMode="manual"
     >
       <TabsList
         aria-label="Vistas de pedidos"

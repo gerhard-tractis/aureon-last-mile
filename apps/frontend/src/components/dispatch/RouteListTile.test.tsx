@@ -4,10 +4,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { RouteListTile } from './RouteListTile';
 import type { DispatchRoute } from '@/lib/dispatch/types';
 
-// Mock StatusBadge to verify it receives correct props
+// Mock StatusBadge to verify it receives correct props. Mirrors the real
+// component's "label wins over status" precedence — RouteListTile passes
+// the raw route.status (not a duplicate config lookup) plus an explicit
+// label, exactly the "status in, label out" contract StatusBadge itself
+// implements.
 vi.mock('@/components/StatusBadge', () => ({
-  StatusBadge: ({ status, variant }: { status: string; variant?: string }) => (
-    <span data-testid="status-badge" data-variant={variant}>{status}</span>
+  StatusBadge: ({ status, label, variant }: { status: string; label?: string; variant?: string }) => (
+    <span data-testid="status-badge" data-variant={variant} data-status={status}>{label ?? status}</span>
   ),
 }));
 
@@ -55,6 +59,11 @@ describe('RouteListTile', () => {
     const badge = screen.getByTestId('status-badge');
     expect(badge).toHaveTextContent('Borrador');
     expect(badge).toHaveAttribute('data-variant', 'neutral');
+  });
+
+  it('passes the raw route status (not a pre-resolved label) as the status prop — status in, label out', () => {
+    render(<RouteListTile route={makeRoute({ status: 'draft' })} onClick={onClick} />);
+    expect(screen.getByTestId('status-badge')).toHaveAttribute('data-status', 'draft');
   });
 
   it('shows Spanish status label via StatusBadge for planned status', () => {
