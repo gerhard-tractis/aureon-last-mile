@@ -245,6 +245,36 @@ GRANT EXECUTE ON FUNCTION public.start_pickup_route(UUID, UUID[]) TO authenticat
 REVOKE ALL ON FUNCTION public.start_pickup_route(UUID, UUID[]) FROM anon;
 
 -- =============================================================================
+-- PART 2 — Backfill: no `pickup_crew` may survive this migration
+-- =============================================================================
+-- ADDED AFTER THE FACT. This file asserted in PART 3 that zero `pickup_crew`
+-- rows remain — "PART 1 did not run or its WHERE regressed" — but it never had
+-- a PART 1. The wording came from its template (20260820000003, spec-61), which
+-- did carry one. So the migration asserted a state it never established.
+--
+-- On production that would have passed by luck: spec-61's backfill already ran
+-- there and nothing has minted a `pickup_crew` since. On QA it fails every
+-- single deploy, deterministically:
+--
+--   * spec-61's `20260820000003` backfilled pickup_crew -> pickup_leader, and
+--     is recorded in schema_migrations, so it never re-runs;
+--   * QA's own seed then created `qa-pickup-crew@qa.test` (2026-08-11), after
+--     that backfill;
+--   * this migration then finds that row and refuses.
+--
+-- QA is the environment the whole pipeline qualifies releases in, and under
+-- spec-57 its sync is production's precondition — so this one missing UPDATE
+-- blocked QA syncs AND the production migration backlog behind them.
+--
+-- Idempotent and safe to replay: after the first run there is nothing left to
+-- match. `deleted_at IS NULL` mirrors the PART 3 predicate exactly — a soft
+-- deleted crew row is not a live grant and must not be silently promoted.
+UPDATE public.users
+   SET role = 'ops_leader'
+ WHERE role = 'pickup_crew'
+   AND deleted_at IS NULL;
+
+-- =============================================================================
 -- PART 3 — Validation (template: 20260812000003 PART 8)
 -- =============================================================================
 -- Migrations run once against production and pgTAP never touches production,
@@ -260,7 +290,7 @@ BEGIN
   SELECT COUNT(*) INTO v_leftover FROM public.users
    WHERE role = 'pickup_crew' AND deleted_at IS NULL;
   IF v_leftover <> 0 THEN
-    RAISE EXCEPTION '% pickup_crew row(s) survived the backfill -- PART 1 did not run or its WHERE regressed', v_leftover;
+    RAISE EXCEPTION '% pickup_crew row(s) survived the backfill -- PART 2 did not run or its WHERE regressed', v_leftover;
   END IF;
 
   SELECT COUNT(*) INTO v_two_arg FROM pg_proc p
