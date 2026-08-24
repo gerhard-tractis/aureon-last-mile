@@ -50,6 +50,10 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, readonly string[]> = {
   // creation is gated by ROLE in start_pickup_route, not by a permission
   // token, so the token set is deliberately identical to pickup_crew's.
   pickup_leader: ['pickup'],
+  // spec-66 — mirrors the handle_new_user CASE in migration 20260824000002.
+  // All four stations; no customer_service and no admin, because this is a
+  // floor role, not a management one.
+  ops_leader: ['pickup', 'reception', 'distribution', 'dispatch'],
   warehouse_staff: ['reception', 'distribution'],
   loading_crew: ['distribution', 'dispatch'],
   operations_manager: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'],
@@ -67,22 +71,32 @@ export function isValidPermission(value: string): value is Permission {
 /**
  * Roles that may open a pickup route (spec-61).
  *
- * The UI twin of the role gate that will land in `start_pickup_route`
- * (spec-61 Task 2, not yet written). The database is the enforcement — this
- * only decides whether to render a control — so it must never be more
- * permissive than the RPC. operations_manager / admin / super_admin are
- * here because they can start routes today and this spec is not about
- * taking that away.
+ * The UI twin of the role gate in `start_pickup_route`. The database is the
+ * enforcement — this only decides whether to render a control — so it must
+ * never be more permissive than the RPC. operations_manager / admin /
+ * super_admin are here because they can start routes today and spec-61 was
+ * not about taking that away.
+ *
+ * KEEP IDENTICAL to the NOT IN list in migration 20260824000003. If this list
+ * gains a role the RPC refuses, the UI offers a button that always errors.
+ *
+ * spec-66 — ops_leader leads routes as well as working the other three
+ * stations, so it is here too. It is deliberately NOT added to
+ * cancel_pickup_route's manager override: that function authorises the
+ * route's own driver_id, which already covers an ops_leader cancelling their
+ * own route, and leading routes is not authority over someone else's.
  *
  * NOTE: the caller's role comes from the JWT claim
- * (lib/context/GlobalContext.tsx:53), which is minted at login. A user just
- * promoted to pickup_leader keeps the old answer until their token refreshes.
+ * (lib/context/GlobalContext.tsx:58), which is minted at login. A user just
+ * promoted to pickup_leader or ops_leader keeps the old answer until their
+ * token refreshes — they must sign out and back in.
  *
  * Call sites (spec-61 Task 5): PickupMobileView picks 3j or the crew screen
  * with it, and app/app/pickup/page.tsx gates the desktop `1l` draft panel's
  * own start button the same way.
  */
 export const ROUTE_LEADER_ROLES = [
+  'ops_leader',
   'pickup_leader',
   'operations_manager',
   'admin',

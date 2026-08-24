@@ -526,6 +526,33 @@ describe('AppLayout — spec-54 mobile bottom tab bar (floor/van roles only)', (
     expect(screen.queryByRole('button', { name: 'Abrir barra lateral' })).toBeNull();
   });
 
+  // spec-66 — the end-to-end assertion for the whole role: shell choice and
+  // all four permissions together. getByRole('link') is load-bearing, not
+  // cosmetic: a tab the user cannot open renders as TabDisabled, which is a
+  // <span> with no href, so this fails if any one permission is missing.
+  it('gives an ops_leader four live tabs and no hamburger', () => {
+    mockRole = 'ops_leader';
+    mockPermissions = ['pickup', 'reception', 'distribution', 'dispatch'];
+    mockPathname = '/app/pickup';
+    render(
+      <AppLayout
+        enabledModules={[
+          ModuleKey.PICKUP,
+          ModuleKey.RECEPTION,
+          ModuleKey.DISTRIBUTION,
+          ModuleKey.DISPATCH,
+        ]}
+      >
+        <div>content</div>
+      </AppLayout>,
+    );
+    const tabBar = screen.getByRole('navigation', { name: /navegación principal/i });
+    for (const label of ['Recogida', 'Recepción', 'Distribución', 'Despacho']) {
+      expect(within(tabBar).getByRole('link', { name: label })).toBeTruthy();
+    }
+    expect(screen.queryByRole('button', { name: 'Abrir barra lateral' })).toBeNull();
+  });
+
   it('gives operations_manager the hamburger and no tab bar', () => {
     mockRole = 'operations_manager';
     mockPermissions = [];

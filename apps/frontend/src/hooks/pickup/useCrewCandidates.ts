@@ -33,7 +33,11 @@ export function useCrewCandidates(operatorId: string | null, excludeUserId: stri
       const { data, error } = await (supabase.from('users') as any)
         .select('id, full_name, role')
         .eq('operator_id', operatorId!)
-        .in('role', ['pickup_crew', 'pickup_leader'])
+        // spec-66 — an ops_leader both leads its own route and rides on
+        // someone else's, so it must appear here as well as in
+        // ROUTE_LEADER_ROLES. Omitting it would leave an ops_leader unable to
+        // lead OR join, which is the dead end spec-66 exists to remove.
+        .in('role', ['pickup_crew', 'pickup_leader', 'ops_leader'])
         .is('deleted_at', null)
         .order('full_name', { ascending: true });
       if (error) throw error;

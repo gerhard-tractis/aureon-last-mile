@@ -12,12 +12,27 @@ describe('ROLE_DEFAULT_PERMISSIONS', () => {
     );
   });
 
+  // spec-66 — the role this spec exists for. All four stations, and
+  // deliberately neither management token: an ops_leader works the floor, it
+  // does not answer customers or administer the operator.
+  it('gives an ops_leader all four stations and no management token', () => {
+    expect(ROLE_DEFAULT_PERMISSIONS.ops_leader).toEqual([
+      'pickup',
+      'reception',
+      'distribution',
+      'dispatch',
+    ]);
+    expect(ROLE_DEFAULT_PERMISSIONS.ops_leader).not.toContain('customer_service');
+    expect(ROLE_DEFAULT_PERMISSIONS.ops_leader).not.toContain('admin');
+  });
+
   it('covers every role the app can assign', () => {
     expect(Object.keys(ROLE_DEFAULT_PERMISSIONS).sort()).toEqual(
       [
         'admin',
         'loading_crew',
         'operations_manager',
+        'ops_leader',
         'pickup_crew',
         'pickup_leader',
         'super_admin',
@@ -33,8 +48,10 @@ describe('canLeadPickupRoute', () => {
   // must never be MORE permissive than the RPC.
   it('is true for the roles the RPC accepts', () => {
     expect([...ROUTE_LEADER_ROLES].sort()).toEqual(
-      ['admin', 'operations_manager', 'pickup_leader', 'super_admin'].sort(),
+      ['admin', 'operations_manager', 'ops_leader', 'pickup_leader', 'super_admin'].sort(),
     );
+    // spec-66 — matches migration 20260824000003's NOT IN list exactly.
+    expect(canLeadPickupRoute('ops_leader')).toBe(true);
     expect(canLeadPickupRoute('pickup_leader')).toBe(true);
     expect(canLeadPickupRoute('operations_manager')).toBe(true);
     expect(canLeadPickupRoute('admin')).toBe(true);
