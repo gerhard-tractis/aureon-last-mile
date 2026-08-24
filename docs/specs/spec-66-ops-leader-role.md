@@ -5,7 +5,7 @@
 > [spec-54](spec-54-ui-rebrand.md) (the mobile bottom tab bar and `OPERATIONS_ROLES`),
 > [spec-45](spec-45-module-activation-layer.md) (per-operator module activation)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-22_
 
@@ -149,7 +149,7 @@ OR v_role::text NOT IN ('ops_leader','pickup_leader','operations_manager','admin
 
 | File | Change |
 |---|---|
-| `components/sidebar/navigation.ts:184` | add `'ops_leader'` to `OPERATIONS_ROLES` → four-tab shell, hamburger suppressed |
+| `components/sidebar/navigation.mobile.ts:32` | add `'ops_leader'` to `OPERATIONS_ROLES` → four-tab shell, hamburger suppressed |
 | `lib/permissions.ts:85` | add to `ROUTE_LEADER_ROLES` → the start-route control renders |
 | `lib/permissions.ts:47` | add `ops_leader: ['pickup','reception','distribution','dispatch']` to `ROLE_DEFAULT_PERMISSIONS` (a reference copy of the SQL CASE with no runtime consumer; its test enforces parity) |
 | `hooks/pickup/useCrewCandidates.ts:36` | add to `.in('role', […])` → appears in a leader's crew picker |
@@ -170,7 +170,7 @@ shipping Tasks 1–4 in one PR satisfies this; splitting them across PRs does no
 
 ### Task 5 — tests (TDD, written before the change)
 
-- `components/sidebar/navigation.test.ts` — `buildMobileTabs` for `ops_leader` with
+- `components/sidebar/navigation.mobile.test.ts` — `buildMobileTabs` for `ops_leader` with
   all four permissions and all four modules enabled returns four tabs, none
   `disabled`; with a module disabled the corresponding tab is `disabled`, not absent
 - `components/AppLayout.test.tsx` — `ops_leader` renders no "Abrir barra lateral"
@@ -239,8 +239,14 @@ components.
 2. **CI does not run SQL tests** — only lint / type-check / `test:run` / build. The
    advisory suite is a local docker harness and must be run by hand (Task 4).
 3. **Three existing tests assert exact role sets** and go RED the moment the role is
-   added. That is the TDD entry point, not a breakage: `navigation.test.ts:277`,
-   `permissions.test.ts:16`, `permissions.test.ts:35`.
+   added. That is the TDD entry point, not a breakage:
+   `navigation.mobile.test.ts:18`, `permissions.test.ts:16`,
+   `permissions.test.ts:35`.
+6. **`navigation.ts` was split after this plan was written** (PR #520 era): the
+   mobile tab logic — `OPERATIONS_ROLES`, `isOperationsRole`, `buildMobileTabs`,
+   `isImmersiveMobileRoute` — now lives in `navigation.mobile.ts`, with
+   `navigation.breadcrumbs.ts` alongside it. File paths below are updated; the
+   symbols and their behaviour are unchanged.
 4. **`CREATE OR REPLACE` uses the latest definition as template** (CLAUDE.md).
    Named per task. Starting from an older body silently reverts everything since.
 5. Frontend tests: `cd apps/frontend && npx vitest run <path>`.
@@ -443,8 +449,8 @@ old set, so editing it to the new set turns it RED before any source change.
 
 ### Task 5: `OPERATIONS_ROLES` — the four-tab shell
 
-**Files:** Modify `apps/frontend/src/components/sidebar/navigation.ts:184-189`
-· Test `apps/frontend/src/components/sidebar/navigation.test.ts:276-291`
+**Files:** Modify `apps/frontend/src/components/sidebar/navigation.mobile.ts:32-37`
+· Test `apps/frontend/src/components/sidebar/navigation.mobile.test.ts:14-30`
 
 - [ ] **Step 1: Make the test fail** — add `'ops_leader'` to the expected set:
 
@@ -459,12 +465,12 @@ old set, so editing it to the new set turns it RED before any source change.
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-cd apps/frontend && npx vitest run src/components/sidebar/navigation.test.ts
+cd apps/frontend && npx vitest run src/components/sidebar/navigation.mobile.test.ts
 ```
 
 Expected: FAIL — received array lacks `ops_leader`.
 
-- [ ] **Step 3: Add the role** in `navigation.ts:184`:
+- [ ] **Step 3: Add the role** in `navigation.mobile.ts:32`:
 
 ```ts
 export const OPERATIONS_ROLES = [
@@ -485,7 +491,7 @@ four-tab bar" test (line 282) now covers `ops_leader` automatically.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add apps/frontend/src/components/sidebar/navigation.ts apps/frontend/src/components/sidebar/navigation.test.ts
+git add apps/frontend/src/components/sidebar/navigation.mobile.ts apps/frontend/src/components/sidebar/navigation.mobile.test.ts
 git commit -m "feat(spec-66): give ops_leader the four-tab mobile shell"
 ```
 

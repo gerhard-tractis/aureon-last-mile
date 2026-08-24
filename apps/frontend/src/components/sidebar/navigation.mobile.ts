@@ -26,12 +26,19 @@ import { OPERATION_ITEMS } from './navigation';
  * spec-61 — `pickup_leader` belongs here for the same reason `pickup_crew`
  * does: it is a van role. A role missing from this set gets NO tab bar
  * (`buildMobileTabs` returns `[]` below), which on a phone means no
- * navigation at all. Exported so navigation.test.ts can assert the set
+ * navigation at all. Exported so navigation.mobile.test.ts can assert the set
  * rather than restate it.
+ *
+ * spec-66 — `ops_leader` is the floor role that works all four stations. It
+ * belongs here and NOT with the desk roles above: the tab bar is the whole
+ * point of it. Being in this set is only half the story — the four tabs still
+ * render `disabled` without the matching permissions, which is why the role's
+ * defaults grant all four (migration 20260824000002).
  */
 export const OPERATIONS_ROLES = [
   'pickup_crew',
   'pickup_leader',
+  'ops_leader',
   'warehouse_staff',
   'loading_crew',
 ] as const;

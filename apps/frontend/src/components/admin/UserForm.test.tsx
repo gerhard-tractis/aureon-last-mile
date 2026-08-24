@@ -477,21 +477,24 @@ describe('UserForm', () => {
   });
 
   describe('Role Options', () => {
-    it('should render all 6 role options', () => {
+    it('should render all 7 role options', () => {
       render(<UserForm mode="create" />);
 
       const roleSelect = screen.getByLabelText(/Rol/);
       const options = roleSelect.querySelectorAll('option');
 
-      // 1 placeholder + 6 roles = 7 options
-      expect(options.length).toBe(7);
+      // 1 placeholder + 7 roles = 8 options. spec-66 added Ops Leader; an
+      // option here without its user_role enum value is a 500 on user
+      // creation (22P02), so this list and the migrations ship together.
+      expect(options.length).toBe(8);
       expect(options[0].textContent).toBe('Seleccionar rol');
       expect(options[1].textContent).toBe('Pickup Crew');
       expect(options[2].textContent).toBe('Pickup Leader');
-      expect(options[3].textContent).toBe('Warehouse Staff');
-      expect(options[4].textContent).toBe('Loading Crew');
-      expect(options[5].textContent).toBe('Operations Manager');
-      expect(options[6].textContent).toBe('Administrator');
+      expect(options[3].textContent).toBe('Ops Leader');
+      expect(options[4].textContent).toBe('Warehouse Staff');
+      expect(options[5].textContent).toBe('Loading Crew');
+      expect(options[6].textContent).toBe('Operations Manager');
+      expect(options[7].textContent).toBe('Administrator');
     });
   });
 

@@ -45,8 +45,10 @@ export const EXPECTED_ENUMS: Record<string, readonly string[]> = {
     // pickup_leader: added by migration 20260820000001 (spec-61). Every
     // pre-existing pickup_crew account was promoted to it by 20260820000002,
     // so QA can hold either.
-    'pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew',
-    'operations_manager', 'admin', 'super_admin',
+    // ops_leader: added by 20260824000001 (spec-66). No account is migrated
+    // onto it; it is assigned per user through /admin.
+    'pickup_crew', 'pickup_leader', 'ops_leader', 'warehouse_staff',
+    'loading_crew', 'operations_manager', 'admin', 'super_admin',
   ],
 };
 

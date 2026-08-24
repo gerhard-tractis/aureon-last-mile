@@ -68,10 +68,17 @@ describe('useCrewCandidates', () => {
     expect(mockEq).toHaveBeenCalledWith('operator_id', 'op-99');
   });
 
+  // spec-66 — ops_leader is here because it both leads its own route and
+  // rides on someone else's. Leaving it out would make an ops_leader unable
+  // to lead OR join, which is the dead end spec-66 exists to remove.
   it('narrows to the roles that ride a van', async () => {
     renderHook(() => useCrewCandidates('op-1', ME), { wrapper: createWrapper() });
     await waitFor(() => expect(mockIn).toHaveBeenCalled());
-    expect(mockIn).toHaveBeenCalledWith('role', ['pickup_crew', 'pickup_leader']);
+    expect(mockIn).toHaveBeenCalledWith('role', [
+      'pickup_crew',
+      'pickup_leader',
+      'ops_leader',
+    ]);
   });
 
   it('excludes soft-deleted users and orders by name', async () => {

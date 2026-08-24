@@ -35,7 +35,7 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfter?: number
 const createUserSchema = z.object({
   email: z.string().email('Invalid email format'),
   full_name: z.string().min(2, 'Name must be at least 2 characters'),
-  role: z.enum(['pickup_crew', 'pickup_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
+  role: z.enum(['pickup_crew', 'pickup_leader', 'ops_leader', 'warehouse_staff', 'loading_crew', 'operations_manager', 'admin'] as const, {
     message: 'Invalid role'
   }),
   permissions: z.array(z.enum(VALID_PERMISSIONS)).default([]),

@@ -12,10 +12,11 @@ import { ALL_MODULES, ALL_PERMISSIONS } from './navigation.test-helpers';
 describe('isOperationsRole', () => {
   // The trap this test exists for: buildMobileTabs returns [] for any role
   // outside the set, so a floor role missing here gets NO bottom tab bar --
-  // the only navigation a phone user has. spec-61 added pickup_leader.
+  // the only navigation a phone user has. spec-61 added pickup_leader,
+  // spec-66 added ops_leader.
   it('covers every floor role that works on a phone', () => {
     expect([...OPERATIONS_ROLES].sort()).toEqual(
-      ['loading_crew', 'pickup_crew', 'pickup_leader', 'warehouse_staff'].sort(),
+      ['loading_crew', 'ops_leader', 'pickup_crew', 'pickup_leader', 'warehouse_staff'].sort(),
     );
   });
 

@@ -1,0 +1,23 @@
+-- =============================================================================
+-- spec-66: ops_leader — one floor role that works all four stations
+-- =============================================================================
+-- ALTER TYPE ... ADD VALUE cannot be used in the same transaction that reads
+-- the new value, so this migration adds the value and nothing else. The
+-- handle_new_user CASE that uses it is 20260824000002; the start_pickup_route
+-- gate is 20260824000003. Same split spec-61 used for pickup_leader
+-- (20260820000001).
+--
+-- WHY THIS ROLE EXISTS
+--
+-- The four operational screens are gated by PERMISSIONS, but the shell a user
+-- gets — the mobile tab bar vs the hamburger — is chosen by ROLE, and pickup
+-- route authority is checked against ROLE too. So "one person who works all
+-- four stations" could not be expressed: granting a warehouse_staff user all
+-- four permissions gets the tab bar right but leaves Recogida a dead end,
+-- because start_pickup_route reads public.users.role directly and refuses
+-- them, and useCrewCandidates does not list them for any leader to add.
+--
+-- No user is migrated onto this role. Assignment is per-user through /admin.
+-- =============================================================================
+
+ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'ops_leader';

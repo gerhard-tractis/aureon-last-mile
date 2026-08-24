@@ -14,8 +14,9 @@
 #
 # Roles (derived from the user_role enum: 20260216170542 + super_admin added
 # by 20260616000001_spec45_user_role_super_admin.sql, pickup_leader added by
-# 20260820000001_spec61_user_role_pickup_leader.sql):
-#   pickup_crew, pickup_leader, warehouse_staff, loading_crew,
+# 20260820000001_spec61_user_role_pickup_leader.sql, ops_leader added by
+# 20260824000001_spec66_user_role_ops_leader.sql):
+#   pickup_crew, pickup_leader, ops_leader, warehouse_staff, loading_crew,
 #   operations_manager, admin
 #     -> bound to the QA operator seeded by seed-qa.sql
 #        (00000000-0000-4000-8000-000000000001)
@@ -98,8 +99,18 @@ fi
 
 # --- Role table: role|operator_id|permissions (comma-separated) --------------
 # Fixed UUIDs so re-runs and QA scripts can reference the users directly.
+#
+# NOTE ON THE PERMISSION TOKENS BELOW: the pre-existing rows still grant the
+# LEGACY vocabulary — warehouse / loading / operations — which migration
+# 20260811000001 retired because nothing in the app ever checked those names.
+# The app checks pickup / reception / distribution / dispatch /
+# customer_service. Those rows are left as they are (out of scope), but they
+# are why a QA user can have less access than their role implies. The
+# ops_leader row below deliberately uses the CURRENT vocabulary; do not
+# "correct" it to match its neighbours.
 ROLE_ROWS="pickup_crew|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000201
 pickup_leader|$QA_OPERATOR_ID|pickup|00000000-0000-4000-8000-000000000207
+ops_leader|$QA_OPERATOR_ID|pickup,reception,distribution,dispatch|00000000-0000-4000-8000-000000000208
 warehouse_staff|$QA_OPERATOR_ID|warehouse|00000000-0000-4000-8000-000000000202
 loading_crew|$QA_OPERATOR_ID|loading,dispatch|00000000-0000-4000-8000-000000000203
 operations_manager|$QA_OPERATOR_ID|operations,dispatch|00000000-0000-4000-8000-000000000204

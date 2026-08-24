@@ -1045,10 +1045,13 @@ export type Database = {
         | "CSV"
       user_role:
         | "pickup_crew"
+        | "pickup_leader"
+        | "ops_leader"
         | "warehouse_staff"
         | "loading_crew"
         | "operations_manager"
         | "admin"
+        | "super_admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1183,10 +1186,13 @@ export const Constants = {
       ],
       user_role: [
         "pickup_crew",
+        "pickup_leader",
+        "ops_leader",
         "warehouse_staff",
         "loading_crew",
         "operations_manager",
         "admin",
+        "super_admin",
       ],
     },
   },
