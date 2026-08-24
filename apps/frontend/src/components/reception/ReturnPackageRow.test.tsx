@@ -16,6 +16,18 @@ describe('ReturnPackageRow', () => {
     expect(screen.queryByTestId('pkg-pending')).toBeNull();
   });
 
+  it('paints the received chip with the spec-63 -chip token, not white on solid', () => {
+    // White on --color-status-success measured 2.54:1 in light theme and
+    // 1.74:1 in dark, under the 3:1 WCAG 1.4.11 needs for the glyph. The
+    // check IS the second channel spec-54 encodes state with, so a washed-out
+    // glyph collapses the pair back to colour alone.
+    render(<ReturnPackageRow {...BASE} received />);
+    const chip = screen.getByTestId('pkg-received');
+    expect(chip.className).toContain('bg-status-success-chip');
+    expect(chip.className).toContain('text-status-success-chip-fg');
+    expect(chip.className).not.toContain('text-white');
+  });
+
   it('pending package shows an empty box', () => {
     render(<ReturnPackageRow {...BASE} received={false} />);
     expect(screen.getByTestId('pkg-pending')).toBeInTheDocument();

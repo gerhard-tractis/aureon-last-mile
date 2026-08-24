@@ -31,17 +31,17 @@ interface ScanResultProps {
 const TONE = {
   ok: {
     box: 'bg-status-success-bg border-status-success-border',
-    icon: 'bg-status-success',
+    icon: 'bg-status-success-chip text-status-success-chip-fg',
     text: 'text-status-success-text',
   },
   warn: {
     box: 'bg-status-warning-bg border-status-warning-border',
-    icon: 'bg-status-warning',
+    icon: 'bg-status-warning-chip text-status-warning-chip-fg',
     text: 'text-status-warning-text',
   },
   error: {
     box: 'bg-status-error-bg border-status-error-border',
-    icon: 'bg-status-error',
+    icon: 'bg-status-error-chip text-status-error-chip-fg',
     text: 'text-status-error-text',
   },
 } as const;
@@ -52,7 +52,7 @@ function CheckIcon() {
       data-testid="scan-result-icon-ok"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#fff"
+      stroke="currentColor"
       strokeWidth="3"
       className="h-6 w-6"
       aria-hidden="true"
@@ -68,7 +68,7 @@ function CrossIcon() {
       data-testid="scan-result-icon-error"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#fff"
+      stroke="currentColor"
       strokeWidth="3"
       className="h-6 w-6"
       aria-hidden="true"
@@ -84,7 +84,7 @@ function WarnIcon() {
       data-testid="scan-result-icon-warn"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#fff"
+      stroke="currentColor"
       strokeWidth="3"
       className="h-6 w-6"
       aria-hidden="true"

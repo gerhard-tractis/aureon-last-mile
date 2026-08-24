@@ -71,4 +71,36 @@ describe('ScanResult', () => {
     expect(screen.queryByTestId('scan-result-icon-ok')).not.toBeInTheDocument();
     expect(screen.queryByTestId('scan-result-icon-error')).not.toBeInTheDocument();
   });
+
+  describe('spec-63 glyph contrast', () => {
+    // WCAG 1.4.11 wants 3:1 for the glyph against its own chip. The shipped
+    // solid tokens gave white 2.54:1 (success) and 2.15:1 (warning) in light
+    // theme, and failed on ALL FOUR in dark. The glyph is the second of the
+    // two channels spec-54 encodes every state with -- when it washes out,
+    // the operator is back to relying on colour alone under shed lighting.
+    it.each([
+      ['ok', 'success'],
+      ['warn', 'warning'],
+      ['error', 'error'],
+    ] as const)('paints the %s chip with the dedicated -chip token', (status, token) => {
+      render(<ScanResult status={status} title="X" />);
+      const chip = screen.getByTestId(`scan-result-icon-${status}`).parentElement!;
+      expect(chip.className).toContain(`bg-status-${token}-chip`);
+      expect(chip.className).toContain(`text-status-${token}-chip-fg`);
+    });
+
+    it.each(['ok', 'warn', 'error'] as const)(
+      'lets the %s glyph inherit its colour instead of hardcoding white',
+      (status) => {
+        // A literal #fff cannot respond to the theme -- in dark the chip keeps
+        // the bright hue and the glyph has to go dark. currentColor is what
+        // makes one component serve both.
+        const icon = screen.queryByTestId(`scan-result-icon-${status}`)
+          ?? render(<ScanResult status={status} title="X" />).container.querySelector(
+            `[data-testid="scan-result-icon-${status}"]`,
+          )!;
+        expect(icon.getAttribute('stroke')).toBe('currentColor');
+      },
+    );
+  });
 });
