@@ -40,3 +40,8 @@ docs/sprint-status.yaml
 playwright-report/
 playwright-report-qa/
 test-results/
+
+# Playwright MCP scratch output (page snapshots + screenshots the browser tool
+# drops mid-session). Never a deliberate artefact -- 78 of these had accumulated
+# untracked at the repo root by 2026-08.
+.playwright-mcp/
