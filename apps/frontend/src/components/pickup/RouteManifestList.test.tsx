@@ -170,4 +170,25 @@ describe('RouteManifestList', () => {
     expect(onClick).toHaveBeenCalledWith('LOAD-1');
     expect(onRemove).not.toHaveBeenCalled();
   });
+
+  // Every visibility test above uses a single-row list, so `canRemove` is
+  // never exercised per-row there. This pins the gate to each manifest,
+  // not hoisted out of the map from the first row.
+  it('gates the remove control per row in a mixed list, not from the first manifest', () => {
+    render(
+      <RouteManifestList
+        manifests={[
+          baseManifest({ id: 'm1', external_load_id: 'LOAD-1', verified_count: 0 }),
+          baseManifest({ id: 'm2', external_load_id: 'LOAD-2', verified_count: 2 }),
+        ]}
+        onManifestClick={() => {}}
+        onRemove={() => {}}
+      />
+    );
+    const removeButtons = screen.getAllByRole('button', {
+      name: /^Quitar LOAD-\d de la ruta en curso$/,
+    });
+    expect(removeButtons).toHaveLength(1);
+    expect(removeButtons[0]).toHaveAccessibleName('Quitar LOAD-1 de la ruta en curso');
+  });
 });

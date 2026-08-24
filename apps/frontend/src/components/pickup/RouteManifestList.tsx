@@ -92,7 +92,7 @@ export function RouteManifestList({
     <div className="space-y-3" data-testid="route-manifest-list">
       {manifests.map((m) => {
         const complete = isManifestComplete(m);
-        const canRemove = onRemove && m.verified_count === 0;
+        const canRemove = !!onRemove && m.verified_count === 0;
         return (
           <div
             key={m.id}
@@ -106,9 +106,9 @@ export function RouteManifestList({
             <button
               type="button"
               onClick={() => onManifestClick(m.external_load_id)}
-              className="w-full text-left p-4"
+              className="w-full text-left p-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <div className="flex items-center justify-between gap-3 pr-6">
+              <div className="flex items-center justify-between gap-3 pr-11">
                 <div className="min-w-0">
                   <h3 className="font-semibold text-text truncate">
                     {m.retailer_name ?? 'Retailer desconocido'}
@@ -140,7 +140,7 @@ export function RouteManifestList({
                   <button
                     type="button"
                     aria-label={`Quitar ${m.external_load_id} de la ruta en curso`}
-                    className="absolute right-3 top-3 rounded p-1 text-text-secondary hover:bg-status-error-bg hover:text-status-error-text"
+                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -155,7 +155,7 @@ export function RouteManifestList({
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => onRemove?.(m.id)}>
+                    <AlertDialogAction onClick={() => onRemove(m.id)}>
                       Quitar
                     </AlertDialogAction>
                   </AlertDialogFooter>
