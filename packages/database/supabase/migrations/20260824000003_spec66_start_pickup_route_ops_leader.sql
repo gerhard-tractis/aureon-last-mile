@@ -7,6 +7,18 @@
 -- the vehicle validation, the crew seeding and the Spanish refusal message are
 -- carried across byte-for-byte.
 --
+-- COPYING HAZARD, learned the hard way on 2026-08-24. This function ends with
+-- `END $$;`, NOT `$function$;` like handle_new_user. A sed range terminated on
+-- `^\$function\$;` never matches, silently runs to end of file, and drags in
+-- everything after the function -- in spec-61's case its COMMENT, its GRANT,
+-- its PART 3 validation block and a bare COMMIT. The validation block asserts
+-- that spec-61's ONE-TIME pickup_crew -> pickup_leader backfill left no
+-- pickup_crew rows, which is false in any environment that has since created
+-- one (QA has qa-pickup-crew@qa.test), so the migration failed on QA and left
+-- it drifted. Terminate on `^END \$\$;` and diff the extraction against the
+-- template's own extraction -- diffing a bad extraction against itself proves
+-- nothing.
+--
 -- Why the gate is on ROLE and not on a permission: spec-61 chose that
 -- deliberately. Restricting who may OPEN a route is what makes a forgotten
 -- crew member fail loudly (blocked, says so immediately) instead of silently
@@ -231,56 +243,17 @@ BEGIN
   RETURN v_row;
 END $$;
 
+-- Refreshed because spec-61's version still says only pickup_leader /
+-- operations_manager / admin / super_admin may lead.
 COMMENT ON FUNCTION public.start_pickup_route(UUID, UUID[])
   IS 'Open an in_progress pickup route on an active, operator-owned vehicle, with '
      'its crew, in one transaction (spec-61). Refuses a caller whose role cannot '
-     'lead (pickup_leader / operations_manager / admin / super_admin may), and '
-     'refuses a crew member already active on another route, naming it. Every '
-     'BUSINESS refusal message is Spanish and shown to the driver verbatim -- a '
-     'handful of internal/should-never-happen errors (malformed JWT, exhausted '
-     'code-allocation retries) stay in English, same as the template.';
+     'lead (ops_leader / pickup_leader / operations_manager / admin / super_admin '
+     'may -- spec-66 added the first), and refuses a crew member already active on '
+     'another route, naming it. Every BUSINESS refusal message is Spanish and shown '
+     'to the driver verbatim -- a handful of internal/should-never-happen errors '
+     '(malformed JWT, exhausted code-allocation retries) stay in English.';
 
--- DROP FUNCTION took the old grant with it.
-GRANT EXECUTE ON FUNCTION public.start_pickup_route(UUID, UUID[]) TO authenticated;
-REVOKE ALL ON FUNCTION public.start_pickup_route(UUID, UUID[]) FROM anon;
-
--- =============================================================================
--- PART 3 — Validation (template: 20260812000003 PART 8)
--- =============================================================================
--- Migrations run once against production and pgTAP never touches production,
--- so without this the backfill has no deploy-time proof it worked and the
--- DROP/CREATE has no proof it left exactly one overload. This is also the
--- honest answer to "does a test prove the backfill ran": a pgTAP test can
--- only re-execute a hand-copied duplicate of PART 1 against a fixture it
--- seeds itself (see spec61_start_route_leader_gate.sql) -- it cannot observe
--- PART 1's actual UPDATE against the actual rows. This block does.
-DO $$
-DECLARE v_leftover INT; v_two_arg INT; v_one_arg INT;
-BEGIN
-  SELECT COUNT(*) INTO v_leftover FROM public.users
-   WHERE role = 'pickup_crew' AND deleted_at IS NULL;
-  IF v_leftover <> 0 THEN
-    RAISE EXCEPTION '% pickup_crew row(s) survived the backfill -- PART 1 did not run or its WHERE regressed', v_leftover;
-  END IF;
-
-  SELECT COUNT(*) INTO v_two_arg FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
-     AND p.pronargs = 2 AND p.proargtypes[0] = 'uuid'::regtype
-     AND p.proargtypes[1] = 'uuid[]'::regtype;
-  IF v_two_arg <> 1 THEN
-    RAISE EXCEPTION 'expected exactly one start_pickup_route(UUID, UUID[]), found %', v_two_arg;
-  END IF;
-
-  SELECT COUNT(*) INTO v_one_arg FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public' AND p.proname = 'start_pickup_route'
-     AND p.pronargs = 1 AND p.proargtypes[0] = 'uuid'::regtype;
-  IF v_one_arg <> 0 THEN
-    RAISE EXCEPTION 'the one-argument start_pickup_route(UUID) survived the DROP -- it and the two-argument form together make start_pickup_route(p_vehicle_id => ...) ambiguous, found %', v_one_arg;
-  END IF;
-
-  RAISE NOTICE 'spec-61 Task 2 migration validation passed';
-END $$;
-
-COMMIT;
+-- No GRANT here on purpose. spec-61 re-granted because it did DROP + CREATE,
+-- which takes the old grant with it; CREATE OR REPLACE keeps the existing
+-- grants, so re-issuing them would be noise.
