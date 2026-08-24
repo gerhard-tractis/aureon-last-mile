@@ -5,7 +5,49 @@
 > [spec-54](spec-54-ui-rebrand.md) (the mobile bottom tab bar and `OPERATIONS_ROLES`),
 > [spec-45](spec-45-module-activation-layer.md) (per-operator module activation)
 
-**Status:** in progress
+**Status:** completed
+
+**Completed 2026-08-24**, confirmed by walking QA as `qa-ops-leader@qa.test`:
+all four screens reachable from the tab bar, and Recogida offers the vehicle
+plate and *acompañantes* pickers — the route-creation flow, which renders only
+when the role is in BOTH `ROUTE_LEADER_ROLES` (UI) and `start_pickup_route`'s
+role list (database). Those two agreeing is the thing most likely to be got
+wrong, so that screen is the end-to-end proof.
+
+Verified against QA's Postgres directly:
+
+- `spec66_ops_leader_route_authz.sql` passes — including the guard case, that a
+  `warehouse_staff` **holding the `pickup` permission** is still refused by
+  `start_pickup_route`. Permissions open screens; role decides what may be done
+  inside Recogida, and that separation survived.
+- `20260824000001/2/3` all recorded in `schema_migrations`.
+- `qa-ops-leader@qa.test` carries exactly
+  `{pickup,reception,distribution,dispatch}`.
+
+Shipped in three PRs, not one:
+
+- **#521** — the implementation.
+- **#524** — a defect in #521. The `start_pickup_route` migration was extracted
+  with a sed range terminated on `^\$function\$;`, which never matches (that
+  function ends `END \$\$;`), so it silently carried spec-61's `COMMENT`,
+  `GRANT`, PART 3 validation block and a bare `COMMIT`. That block asserts
+  spec-61's one-time `pickup_crew → pickup_leader` backfill left no
+  `pickup_crew` rows — false once QA re-created `qa-pickup-crew@qa.test` — so
+  the QA sync failed and QA drifted. The original "exactly one line differs"
+  check was worthless: it diffed the bad extraction against itself. The hazard
+  is now recorded in that migration's header.
+- **#526** — `create-qa-users.sh` ran only from `setup-qa.sh`, so
+  `qa-ops-leader@qa.test` never reached QA and the role could not be exercised
+  there at all. It now runs on every deploy, like the seed since #443.
+
+Two things found along the way, deliberately left alone:
+
+- `packages/database/src/database.types.ts` was missing `super_admin` and
+  `pickup_leader` as well as `ops_leader`; filled in here (nothing imports it,
+  so the drift was latent).
+- `create-qa-users.sh` still grants the retired `warehouse` / `loading` /
+  `operations` tokens to its other users, so those QA accounts see less than
+  their roles imply. Pre-existing; the new row uses the current vocabulary.
 
 _Date: 2026-08-22_
 
