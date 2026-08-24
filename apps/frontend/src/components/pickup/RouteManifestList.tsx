@@ -66,6 +66,15 @@ interface RouteManifestListProps {
    * refuses the removal, so offering the button then would be a lie.
    */
   onRemove?: (manifestId: string) => void;
+  /**
+   * spec-64 review fix 1(a) — true while a removal mutation is in flight.
+   * Disables the remove trigger so a driver's double-tap (the row and its
+   * X stay mounted until the invalidated `route-manifests` query refetches)
+   * cannot fire a second `mutate` for the same manifest and surface the
+   * server's guard-6 refusal. Optional and additive, same as `onRemove` —
+   * existing callers that omit it get an always-enabled trigger.
+   */
+  isRemoving?: boolean;
 }
 
 /**
@@ -77,6 +86,7 @@ export function RouteManifestList({
   manifests,
   onManifestClick,
   onRemove,
+  isRemoving = false,
 }: RouteManifestListProps) {
   if (manifests.length === 0) {
     return (
@@ -140,7 +150,8 @@ export function RouteManifestList({
                   <button
                     type="button"
                     aria-label={`Quitar ${m.external_load_id} de la ruta en curso`}
-                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    disabled={isRemoving}
+                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 disabled:pointer-events-none"
                   >
                     <X className="h-4 w-4" />
                   </button>

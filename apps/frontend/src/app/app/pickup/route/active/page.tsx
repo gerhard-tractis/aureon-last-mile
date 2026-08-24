@@ -191,6 +191,7 @@ export default function ActiveRoutePage() {
                 // would invalidate queries that match nothing (a trait it
                 // shares with useAddManifestToRoute / useCancelPickupRoute).
                 onRemove={operatorId ? handleRemove : undefined}
+                isRemoving={removeMut.isPending}
               />
             </div>
           )}

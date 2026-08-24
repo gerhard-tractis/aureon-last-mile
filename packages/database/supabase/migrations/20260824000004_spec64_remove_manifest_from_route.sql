@@ -170,8 +170,15 @@ BEGIN
   -- from a route it is not on is a caller bug, not a silent no-op --
   -- mirrors add_manifest_to_route's "already linked to another route"
   -- guard.
+  --
+  -- Spanish, no UUIDs -- same reasoning as guard 4's message: the frontend
+  -- hook rethrows this verbatim, and this is the one refusal actually
+  -- reachable from the mobile UI (a double-tap on the X control racing the
+  -- `route-manifests` query invalidation before the row unmounts). The
+  -- driver never typed a manifest ID, so showing them two back was raw
+  -- English with UUIDs on a phone in a Spanish-only flow.
   IF v_manifest.pickup_route_id IS DISTINCT FROM p_route_id THEN
-    RAISE EXCEPTION 'manifest % is not attached to route %', p_manifest_id, p_route_id;
+    RAISE EXCEPTION 'Esta carga ya no está en la ruta.';
   END IF;
 
   -- GUARD 7: no verified scan. `package_id IS NOT NULL` is not redundant

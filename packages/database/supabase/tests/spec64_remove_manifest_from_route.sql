@@ -278,7 +278,7 @@ BEGIN
   IF succeeded THEN
     RAISE EXCEPTION 'removing an already-detached manifest a second time must not silently succeed';
   END IF;
-  IF msg NOT LIKE '%is not attached to route%' THEN
+  IF msg NOT LIKE '%Esta carga ya no está en la ruta%' THEN
     RAISE EXCEPTION 'expected the "not attached to route" guard, got: %', msg;
   END IF;
 END $$;

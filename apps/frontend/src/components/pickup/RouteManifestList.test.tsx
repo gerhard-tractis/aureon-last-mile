@@ -191,4 +191,43 @@ describe('RouteManifestList', () => {
     expect(removeButtons).toHaveLength(1);
     expect(removeButtons[0]).toHaveAccessibleName('Quitar LOAD-1 de la ruta en curso');
   });
+
+  // spec-64 review fix 1(a) — a double-tap while the removal is in flight
+  // must not fire a second `mutate` for the same manifest: the row and its
+  // X stay in the DOM until `route-manifests` refetches, and the server's
+  // second refusal would otherwise surface as a raw guard-6 message.
+  it('disables the remove trigger while isRemoving is true', () => {
+    render(
+      <RouteManifestList
+        manifests={[baseManifest({ verified_count: 0 })]}
+        onManifestClick={() => {}}
+        onRemove={() => {}}
+        isRemoving
+      />
+    );
+    expect(screen.getByRole('button', { name: REMOVE_LABEL })).toBeDisabled();
+  });
+
+  it('does not disable the remove trigger when isRemoving is omitted', () => {
+    render(
+      <RouteManifestList
+        manifests={[baseManifest({ verified_count: 0 })]}
+        onManifestClick={() => {}}
+        onRemove={() => {}}
+      />
+    );
+    expect(screen.getByRole('button', { name: REMOVE_LABEL })).not.toBeDisabled();
+  });
+
+  // spec-64 review fix 2 — the spec names this case explicitly: removing the
+  // last manifest must leave the list's own EmptyState, not a broken
+  // routeComplete render. Correct by construction (manifests.length === 0
+  // above), but was never asserted directly for a list going TO zero.
+  it('renders EmptyState and no remove control when the manifest list is empty', () => {
+    render(
+      <RouteManifestList manifests={[]} onManifestClick={() => {}} onRemove={() => {}} />
+    );
+    expect(screen.getByText(/Sin manifiestos en la ruta/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Quitar .* de la ruta en curso$/ })).toBeNull();
+  });
 });
