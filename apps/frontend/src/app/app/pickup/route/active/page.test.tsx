@@ -56,6 +56,18 @@ const INCOMPLETE_MANIFEST = {
   total_packages: 2,
   verified_count: 1,
 };
+// spec-64 Task 4 — zero verified scans is the only state RouteManifestList
+// offers a remove control for (Task 3). Reusing INCOMPLETE_MANIFEST (which
+// has verified_count: 1) would never surface the X at all.
+const REMOVABLE_MANIFEST = {
+  id: 'm1',
+  external_load_id: 'LOAD-1',
+  retailer_name: 'A',
+  pickup_location: null,
+  total_orders: 1,
+  total_packages: 2,
+  verified_count: 0,
+};
 const COMPLETE_MANIFEST = {
   id: 'm2',
   external_load_id: 'LOAD-2',
@@ -74,14 +86,19 @@ vi.mock('@/hooks/pickup/useRouteManifests', () => ({
 
 const addMutate = vi.fn();
 const closeMutate = vi.fn();
+const removeMutate = vi.fn();
 vi.mock('@/hooks/pickup/useAddManifestToRoute', () => ({
   useAddManifestToRoute: () => ({ mutate: addMutate, isPending: false }),
 }));
 vi.mock('@/hooks/pickup/useClosePickupRoute', () => ({
   useClosePickupRoute: () => ({ mutate: closeMutate, isPending: false }),
 }));
+vi.mock('@/hooks/pickup/useRemoveManifestFromRoute', () => ({
+  useRemoveManifestFromRoute: () => ({ mutate: removeMutate, isPending: false }),
+}));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+import { toast } from 'sonner';
 
 import Page from './page';
 
@@ -106,6 +123,7 @@ describe('ActiveRoutePage', () => {
     closeMutate.mockReset();
     activeRouteMock.mockReset();
     refetchRoute.mockReset();
+    removeMutate.mockReset();
     activeRouteMock.mockReturnValue({
       data: route,
       isLoading: false,
@@ -322,6 +340,85 @@ describe('ActiveRoutePage', () => {
       fireEvent.click(await screen.findByRole('button', { name: /sí, cancelar la ruta/i }));
       await waitFor(() => expect(cancelMutateAsync).toHaveBeenCalledWith({ routeId: 'route-1' }));
       await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/pickup'));
+    });
+  });
+
+  // spec-64 Task 4 — wiring the remove control into the page. Drives the
+  // real RouteManifestList row UI (Task 3): reveal the collapsed list, tap
+  // the row's X (only rendered because verified_count is 0), confirm in the
+  // AlertDialog.
+  describe('removing a manifest from the route', () => {
+    beforeEach(() => {
+      routeManifestsMock.mockReturnValue({
+        data: [REMOVABLE_MANIFEST, COMPLETE_MANIFEST],
+        isLoading: false,
+      });
+    });
+
+    async function revealListAndConfirmRemove() {
+      fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Quitar LOAD-1 de la ruta en curso' }),
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Quitar' }));
+    }
+
+    it('passes onRemove to RouteManifestList and invoking it calls the remove mutation', async () => {
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      await revealListAndConfirmRemove();
+      expect(removeMutate).toHaveBeenCalledWith(
+        { routeId: 'route-1', manifestId: 'm1' },
+        expect.objectContaining({
+          onSuccess: expect.any(Function),
+          onError: expect.any(Function),
+        }),
+      );
+    });
+
+    it('shows a success toast when the removal succeeds', async () => {
+      removeMutate.mockImplementation((_args, { onSuccess }: { onSuccess: () => void }) => {
+        onSuccess();
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      await revealListAndConfirmRemove();
+      expect(toast.success).toHaveBeenCalledWith('Carga quitada de la ruta');
+    });
+
+    // The only enforced coverage of the refusal path anywhere in the stack —
+    // the SQL tests are advisory-only on QA deploy and gate nothing in CI.
+    // toast.error must receive the RPC's Spanish message verbatim: no
+    // wrapping, prefixing, or translating.
+    it('surfaces the RPC refusal message verbatim on failure', async () => {
+      const refusal = new Error('Solo la tripulación de esta ruta puede quitarle cargas.');
+      removeMutate.mockImplementation((_args, { onError }: { onError: (e: Error) => void }) => {
+        onError(refusal);
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      await revealListAndConfirmRemove();
+      expect(toast.error).toHaveBeenCalledWith(
+        'Solo la tripulación de esta ruta puede quitarle cargas.',
+      );
+    });
+
+    // Constraint 1 — the server, not the UI, decides who may remove. Crew can
+    // add manifests through the ungated AddManifestSheet, so gating removal
+    // to the driver would strand a crew member who mis-attached a carga.
+    it('offers the remove control even when the signed-in user is not the route driver', async () => {
+      operatorIdMock.mockReturnValue({
+        operatorId: 'op-1',
+        role: 'pickup_crew',
+        permissions: [],
+        userId: 'crew-9',
+      });
+      wrap(<Page />);
+      await waitFor(() => expect(screen.getByText('PR-2026-0001')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Ver los 2 manifiestos' }));
+      expect(
+        screen.getByRole('button', { name: 'Quitar LOAD-1 de la ruta en curso' }),
+      ).toBeInTheDocument();
     });
   });
 });

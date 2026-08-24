@@ -1,8 +1,19 @@
 'use client';
 
-import { Package, ShoppingCart } from 'lucide-react';
+import { Package, ShoppingCart, X } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { isManifestComplete, progressLabel } from '@/lib/pickup/manifestProgress';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 /** Mirrors `manifest_status_enum` (packages/database/supabase/migrations/
  *  20260310100000_create_pickup_verification_tables.sql:33). */
@@ -46,6 +57,24 @@ export interface RouteManifestRow {
 interface RouteManifestListProps {
   manifests: RouteManifestRow[];
   onManifestClick: (externalLoadId: string) => void;
+  /**
+   * spec-64 Task 3 — removes a carga from the open route. Optional and
+   * additive: when omitted, no remove control renders at all, so every
+   * existing caller is unaffected. Only offered per-row when
+   * `verified_count === 0` — one verified scan means the carga is
+   * physically on the truck and the server (`remove_manifest_from_route`)
+   * refuses the removal, so offering the button then would be a lie.
+   */
+  onRemove?: (manifestId: string) => void;
+  /**
+   * spec-64 review fix 1(a) — true while a removal mutation is in flight.
+   * Disables the remove trigger so a driver's double-tap (the row and its
+   * X stay mounted until the invalidated `route-manifests` query refetches)
+   * cannot fire a second `mutate` for the same manifest and surface the
+   * server's guard-6 refusal. Optional and additive, same as `onRemove` —
+   * existing callers that omit it get an always-enabled trigger.
+   */
+  isRemoving?: boolean;
 }
 
 /**
@@ -56,6 +85,8 @@ interface RouteManifestListProps {
 export function RouteManifestList({
   manifests,
   onManifestClick,
+  onRemove,
+  isRemoving = false,
 }: RouteManifestListProps) {
   if (manifests.length === 0) {
     return (
@@ -71,44 +102,78 @@ export function RouteManifestList({
     <div className="space-y-3" data-testid="route-manifest-list">
       {manifests.map((m) => {
         const complete = isManifestComplete(m);
+        const canRemove = !!onRemove && m.verified_count === 0;
         return (
-          <button
+          <div
             key={m.id}
-            type="button"
-            onClick={() => onManifestClick(m.external_load_id)}
             // hover:border-accent-light, not hover:border-accent/50: this
             // file's colour tokens are bare `var(--color-…)` values with no
             // <alpha-value> channel, so a Tailwind opacity modifier here
             // emits no CSS at all (same root cause as the map placeholder's
             // border fix). accent-light is a real, already-defined token.
-            className="w-full text-left rounded-lg border border-border bg-surface p-4 transition-colors hover:border-accent-light"
+            className="relative rounded-lg border border-border bg-surface transition-colors hover:border-accent-light"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h3 className="font-semibold text-text truncate">
-                  {m.retailer_name ?? 'Retailer desconocido'}
-                </h3>
-                <p className="font-mono text-xs text-text-secondary mt-0.5">
-                  {m.external_load_id}
+            <button
+              type="button"
+              onClick={() => onManifestClick(m.external_load_id)}
+              className="w-full text-left p-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <div className="flex items-center justify-between gap-3 pr-11">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-text truncate">
+                    {m.retailer_name ?? 'Retailer desconocido'}
+                  </h3>
+                  <p className="font-mono text-xs text-text-secondary mt-0.5">
+                    {m.external_load_id}
+                  </p>
+                </div>
+                <div className="flex gap-3 text-sm text-text-secondary shrink-0">
+                  <div className="flex items-center gap-1">
+                    <ShoppingCart className="h-4 w-4" />
+                    <span className="font-mono">{m.total_orders ?? 0}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Package className="h-4 w-4" />
+                    <span className="font-mono">{progressLabel(m)}</span>
+                  </div>
+                </div>
+              </div>
+              {complete && (
+                <p className="mt-2 text-xs font-medium text-status-success">
+                  Verificación completa
                 </p>
-              </div>
-              <div className="flex gap-3 text-sm text-text-secondary shrink-0">
-                <div className="flex items-center gap-1">
-                  <ShoppingCart className="h-4 w-4" />
-                  <span className="font-mono">{m.total_orders ?? 0}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Package className="h-4 w-4" />
-                  <span className="font-mono">{progressLabel(m)}</span>
-                </div>
-              </div>
-            </div>
-            {complete && (
-              <p className="mt-2 text-xs font-medium text-status-success">
-                Verificación completa
-              </p>
+              )}
+            </button>
+            {canRemove && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={`Quitar ${m.external_load_id} de la ruta en curso`}
+                    disabled={isRemoving}
+                    className="absolute right-1 top-1 grid h-11 w-11 place-items-center rounded text-text-secondary hover:bg-status-error-bg hover:text-status-error-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>¿Quitar esta carga de la ruta?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      {m.external_load_id} vuelve a la lista de cargas pendientes y puede
+                      agregarse de nuevo a esta u otra ruta.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => onRemove(m.id)}>
+                      Quitar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
-          </button>
+          </div>
         );
       })}
     </div>
