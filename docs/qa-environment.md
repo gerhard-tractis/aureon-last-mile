@@ -133,6 +133,7 @@ QA login users (created by `create-qa-users.sh`, password `QaTest123!` for all):
 | Email | Role | Operator |
 |-------|------|----------|
 | qa-pickup-crew@qa.test | pickup_crew | QA Test Operator |
+| qa-ops-leader@qa.test | ops_leader | QA Test Operator |
 | qa-pickup-leader@qa.test | pickup_leader | QA Test Operator |
 | qa-warehouse-staff@qa.test | warehouse_staff | QA Test Operator |
 | qa-loading-crew@qa.test | loading_crew | QA Test Operator |

@@ -5,7 +5,7 @@
 > [spec-54](spec-54-ui-rebrand.md) (the mobile bottom tab bar and `OPERATIONS_ROLES`),
 > [spec-45](spec-45-module-activation-layer.md) (per-operator module activation)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-22_
 
