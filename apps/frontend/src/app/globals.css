@@ -216,6 +216,25 @@ html.custom {
   /* Info is retained for modules outside the spec-54 rebrand. The redesigned
      operations screens do not use it: blue competed with both the gold accent
      and the error red. */
+  /* spec-63 -- the chip a status GLYPH sits inside.
+     Separate from --color-status-* because those also paint dots, bars and
+     progress fills, which are graphics measured against the PAGE background
+     (a different requirement, and one they already pass). Darkening those to
+     fix four glyphs would have recoloured 184 call sites.
+     The glyph is a token (-chip-fg) rather than a hardcoded #fff because in
+     dark theme a dark chip would disappear into its own container: each theme
+     picks the pair that satisfies BOTH the glyph contrast (WCAG 1.4.11, 3:1)
+     and the shape channel spec-54 depends on. Verified in
+     src/app/globals.contrast.test.ts -- change a value there and it fails. */
+  --color-status-success-chip:    #065f46;
+  --color-status-success-chip-fg: #ffffff;
+  --color-status-warning-chip:    #92400e;
+  --color-status-warning-chip-fg: #ffffff;
+  --color-status-error-chip:      #b91c1c;
+  --color-status-error-chip-fg:   #ffffff;
+  --color-status-info-chip:       #1d4ed8;
+  --color-status-info-chip-fg:    #ffffff;
+
   --color-status-info:           #3b82f6;
   --color-status-info-bg:        #dbeafe;
   --color-status-info-border:    #bfdbfe;
@@ -266,6 +285,17 @@ html.dark {
   --color-status-error-bg:       rgba(127, 29, 29, 0.27);
   --color-status-error-border:   #7f1d1d;
   --color-status-error-text:     #f87171;
+
+  /* spec-63 -- inverted against light: here the chip keeps the BRIGHT hue so it
+     still reads against the dark translucent tint, and the glyph goes dark. */
+  --color-status-success-chip:    #4ade80;
+  --color-status-success-chip-fg: #052e16;
+  --color-status-warning-chip:    #fbbf24;
+  --color-status-warning-chip-fg: #451a03;
+  --color-status-error-chip:      #f87171;
+  --color-status-error-chip-fg:   #450a0a;
+  --color-status-info-chip:       #60a5fa;
+  --color-status-info-chip-fg:    #172554;
 
   --color-status-info:           #60a5fa;
   --color-status-info-bg:        rgba(30, 64, 175, 0.27);

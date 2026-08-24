@@ -58,7 +58,7 @@ export function ReturnPackageRow({
         // styling gets regular real-world exposure.
         <span
           data-testid="pkg-received"
-          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-md bg-status-success text-white"
+          className="grid h-[26px] w-[26px] flex-none place-items-center rounded-md bg-status-success-chip text-status-success-chip-fg"
         >
           <Check className="h-4 w-4" strokeWidth={3} />
         </span>
