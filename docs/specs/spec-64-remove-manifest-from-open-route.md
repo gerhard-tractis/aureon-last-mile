@@ -8,7 +8,7 @@
 > (leader/crew model), [spec-66](spec-66-ops-leader-role.md) (`ops_leader`, which will need
 > adding to this function's role list if it lands)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-21. Reworked 2026-08-24 after review — see Revision history._
 
@@ -181,6 +181,12 @@ remove control sits two taps deep behind "Ver los N manifiestos", while the mis-
 visible on `NextManifestCard` with no way to act on it. Either accept that (the mistake is
 rare and the expand is one tap) or surface removal on the card too. **Decide explicitly rather
 than discovering it in QA.**
+
+**Decided 2026-08-24 during implementation: accepted as-is.** The control lives only in the
+expandable list; `manifestListVisible` is unchanged. Surfacing removal on `NextManifestCard`
+would have widened the change past the Files table, and the mis-add it recovers from is rare
+while the expand is one tap. Revisit if QA says otherwise — this is a placement decision, not
+a constraint.
 
 ## Tests (TDD — write first)
 
