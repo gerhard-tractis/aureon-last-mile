@@ -27,22 +27,54 @@
 -- give all three ops_leader together.
 --
 -- THE RACE THIS FUNCTION'S "FOR UPDATE" CLOSES
--- usePickupScans inserts into pickup_scans directly from the browser, and
--- trg_pickup_scans_enforce_route_lock (20260812000005) deliberately ALLOWS a
--- scan when the manifest has no route yet ("NO ROUTE -> ALLOW" -- most
--- manifests are scanned before being attached to a route). Once this
--- function has read "no verified scans" but before it clears
--- pickup_route_id, that predicate is still true (the manifest still has a
--- route, just not for much longer) -- UNLESS a scan commits in that gap and
--- lands under a route with zero verified scans one line before this UPDATE
--- clears it. `SELECT ... FOR UPDATE` on the manifest row serializes against
--- any concurrent writer that also takes a lock reachable from that row; the
--- verified-scan EXISTS check and the UPDATE that clears pickup_route_id then
--- happen atomically with respect to a racing scan insert on the same
--- manifest_id, because pickup_scans inserts for THIS manifest are the only
--- concurrent writes that can flip the guard-7 predicate, and they queue
--- behind this transaction's lock on the manifest row until it commits or
--- rolls back.
+-- usePickupScans inserts into pickup_scans directly from the browser.
+-- Two windows, two different reasons a scan is admitted:
+--   * BEFORE the manifest is ever attached to a route, pickup_route_id is
+--     NULL and trg_pickup_scans_enforce_route_lock's "NO ROUTE -> ALLOW"
+--     branch (20260812000005) lets the scan through -- that is the ordinary
+--     pre-attachment pickup flow and is not this race.
+--   * INSIDE this function's own window -- after it has read "no verified
+--     scans" but before it clears pickup_route_id -- the manifest STILL HAS
+--     its route (still `p_route_id`, still `in_progress`), so the racing
+--     scan is admitted by the trigger's `v_status = 'in_progress'` branch,
+--     not the no-route one.
+-- Without a lock, a scan committing in that second window defeats guard 7
+-- (the verified-scan check) even though it read clean.
+--
+-- `SELECT ... FOR UPDATE` on the manifest row closes it, and specifically
+-- because of `pickup_scans.manifest_id UUID NOT NULL REFERENCES
+-- public.manifests(id)` (20260310100000_create_pickup_verification_tables.sql:87,
+-- no ON DELETE clause, so no CASCADE lock quirks either way). A NOT NULL
+-- FK column forces Postgres to acquire a `FOR KEY SHARE` lock on the
+-- referenced parent row as part of the INSERT, to stop the parent being
+-- deleted or having its key changed underneath the new child row. `FOR KEY
+-- SHARE` conflicts with `FOR UPDATE`. So a concurrent `INSERT INTO
+-- pickup_scans (..., manifest_id) VALUES (..., p_manifest_id)` blocks on
+-- this transaction's `FOR UPDATE` until it commits or rolls back; the
+-- verified-scan EXISTS check and the UPDATE that clears pickup_route_id
+-- therefore run as one atomic step with respect to any scan racing this
+-- specific manifest_id. Dropping or `NOT VALID`-ing that FK removes the
+-- implicit `FOR KEY SHARE` and reopens this race silently -- `FOR UPDATE`
+-- alone locks nothing that pickup_scans' INSERT would ever contend for.
+--
+-- NOT LOCKED: pickup_routes. The `status = 'in_progress'` check below can be
+-- stale by the time the UPDATE runs (e.g. the route closes concurrently).
+-- Left unlocked on purpose: the consequence is small (the manifest still had
+-- zero verified scans at the moment this ran), and locking pickup_routes
+-- here risks a deadlock against open_route_reception / reopen_pickup_route,
+-- which take a lock on pickup_routes first and would then need one on
+-- manifests -- the reverse acquisition order from here.
+--
+-- KNOWN DIVERGENCE from cancel_pickup_route's detach (trg_pickup_routes_...
+-- cancellation path, 20260625000001:203-208): that trigger clears only
+-- `pickup_route_id` and `reception_status` on every manifest a cancelled
+-- route drops, leaving `status` and `started_at` untouched. This function
+-- also resets `status` to 'pending' and clears `started_at`, because a
+-- single manifest coming off an otherwise-still-open route needs to look
+-- exactly like a manifest that was never attached -- the bulk cancel-drop
+-- doesn't carry that requirement since the whole route is dying anyway.
+-- Recorded in the spec under "Known divergences"; recorded here too so the
+-- difference does not read as an oversight in either file.
 --
 -- Test: packages/database/supabase/tests/spec64_remove_manifest_from_route.sql
 -- =============================================================================
@@ -64,23 +96,31 @@ DECLARE
   v_route      public.pickup_routes;
   v_manifest   public.manifests;
 BEGIN
+  -- GUARD 1: operator present in the JWT.
   v_operator := public.get_operator_id();
   IF v_operator IS NULL THEN
     RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
   END IF;
 
+  -- GUARD 2: route exists, belongs to this operator, is not soft-deleted.
   SELECT * INTO v_route FROM public.pickup_routes
    WHERE id = p_route_id AND operator_id = v_operator AND deleted_at IS NULL;
   IF v_route.id IS NULL THEN
     RAISE EXCEPTION 'pickup route % not found', p_route_id;
   END IF;
+
+  -- GUARD 3: route is in_progress. See the header note above: this is read
+  -- without a lock on pickup_routes and can go stale before the UPDATE
+  -- below runs; accepted deliberately to avoid a deadlock with
+  -- open_route_reception / reopen_pickup_route's reverse lock order.
   IF v_route.status <> 'in_progress' THEN
     RAISE EXCEPTION 'pickup route % is not in_progress (status=%)', p_route_id, v_route.status;
   END IF;
 
-  -- ── AUTHORISATION -- identical shape to add_manifest_to_route's, on purpose
-  -- (see file header: same job, same list). Role read from public.users, not
-  -- the JWT claim -- the claim is minted at login and goes stale.
+  -- GUARD 4 (AUTHORISATION) -- identical shape to add_manifest_to_route's,
+  -- on purpose (see file header: same job, same list). Role read from
+  -- public.users, not the JWT claim -- the claim is minted at login and
+  -- goes stale.
   v_caller := NULLIF(auth.jwt() ->> 'sub','')::UUID;
   IF v_caller IS NULL THEN
     RAISE EXCEPTION 'no driver (sub) in JWT' USING ERRCODE = '42501';
@@ -107,9 +147,18 @@ BEGIN
     END IF;
   END IF;
 
-  -- FOR UPDATE is load-bearing -- see the file header's RACE section. It
-  -- locks the manifest row for the rest of this transaction so a pickup_scan
-  -- insert racing the verified-scan check below cannot land in the gap.
+  -- GUARD 5: manifest exists for this operator. FOR UPDATE is load-bearing
+  -- -- see the file header's RACE section. It locks the manifest row for
+  -- the rest of this transaction so a pickup_scan insert racing the
+  -- verified-scan check below cannot land in the gap (the lock works
+  -- because pickup_scans.manifest_id is a NOT NULL FK onto this row, which
+  -- forces its INSERT to take FOR KEY SHARE here).
+  --
+  -- No `deleted_at IS NULL` here, unlike the route lookup above -- this
+  -- matches add_manifest_to_route's manifest lookup exactly (same
+  -- asymmetry exists there too), not an oversight: a soft-deleted manifest
+  -- still attached to a route is exactly the state this function should be
+  -- able to clean up.
   SELECT * INTO v_manifest FROM public.manifests
    WHERE id = p_manifest_id AND operator_id = v_operator
    FOR UPDATE;
@@ -117,13 +166,21 @@ BEGIN
     RAISE EXCEPTION 'manifest % not found', p_manifest_id;
   END IF;
 
+  -- GUARD 6: the manifest must actually be on the given route. Removing
+  -- from a route it is not on is a caller bug, not a silent no-op --
+  -- mirrors add_manifest_to_route's "already linked to another route"
+  -- guard.
   IF v_manifest.pickup_route_id IS DISTINCT FROM p_route_id THEN
-    -- Removing from a route it is not on is a caller bug, not a silent
-    -- no-op -- mirrors add_manifest_to_route's "already linked to another
-    -- route" guard.
     RAISE EXCEPTION 'manifest % is not attached to route %', p_manifest_id, p_route_id;
   END IF;
 
+  -- GUARD 7: no verified scan. `package_id IS NOT NULL` is not redundant
+  -- with `scan_result = 'verified'` today (the only other populated result
+  -- in this codebase, 'not_found', always has package_id NULL by
+  -- construction) -- it is kept as an explicit belt-and-braces condition on
+  -- the actual thing that must never be true (a real package confirmed
+  -- present), rather than relying on scan_result alone staying disjoint
+  -- from package_id forever.
   IF EXISTS (
     SELECT 1 FROM public.pickup_scans
      WHERE manifest_id = p_manifest_id
@@ -134,30 +191,56 @@ BEGIN
     RAISE EXCEPTION 'manifest % has verified scans and cannot be removed', p_manifest_id;
   END IF;
 
+  -- Reset to "never attached" shape (see KNOWN DIVERGENCE note in the file
+  -- header for how this differs from the bulk cancel-drop trigger).
+  --
+  -- completed_at and the four signature columns are cleared too:
+  -- apps/frontend/.../pickup/complete/[loadId]/page.tsx can close a carga
+  -- out via the discrepancy path (every scan not_found) while it is still
+  -- attached to an in_progress route -- zero verified scans, so guard 7
+  -- lets it through. Left uncleared, the manifest would come back as
+  -- 'pending' but still carry completed_at and a signature, and
+  -- PickupMobileCompactRow renders "cerrada HH:MM" off completed_at alone
+  -- with no status check -- a pending carga would sit on the pending tab
+  -- looking closed, with someone's signature attached to a handover that
+  -- was just undone. Clearing these loses no evidence: audit_trigger_func
+  -- on public.manifests writes changes_json = {before: row_to_json(OLD),
+  -- after: row_to_json(NEW)} on every UPDATE, so the pre-clear values of
+  -- completed_at and every signature column are already preserved in
+  -- audit_logs. Do not "restore" these columns out of an audit worry.
   UPDATE public.manifests
-     SET pickup_route_id  = NULL,
-         reception_status = NULL,
-         status            = 'pending',
-         started_at        = NULL
+     SET pickup_route_id         = NULL,
+         reception_status        = NULL,
+         status                   = 'pending',
+         started_at               = NULL,
+         completed_at             = NULL,
+         signature_operator       = NULL,
+         signature_operator_name  = NULL,
+         signature_client         = NULL,
+         signature_client_name    = NULL
    WHERE id = p_manifest_id
   RETURNING * INTO v_manifest;
   RETURN v_manifest;
 END $$;
 
 COMMENT ON FUNCTION public.remove_manifest_from_route(UUID, UUID)
-  IS 'Detach a manifest from an in_progress pickup route while it has zero verified pickup scans (spec-64). Authorised callers: the route''s own driver_id, an active pickup_route_crew member of that route, or an operations_manager/admin/super_admin of the same operator -- the same list as add_manifest_to_route, deliberately not cancel_pickup_route''s driver-or-manager-only list.';
+  IS 'Detach a manifest from an in_progress pickup route while it has zero verified pickup scans (spec-64). Clears completed_at and the four signature columns too -- audit_trigger_func preserves the pre-clear values in audit_logs. Authorised callers: the route''s own driver_id, an active pickup_route_crew member of that route, or an operations_manager/admin/super_admin of the same operator -- the same list as add_manifest_to_route, deliberately not cancel_pickup_route''s driver-or-manager-only list.';
 
 GRANT EXECUTE ON FUNCTION public.remove_manifest_from_route(UUID, UUID) TO authenticated;
 
--- Post-condition: the gate and the verified-scan guard are present. Guards
--- against a future CREATE OR REPLACE templated on an older copy of this
--- function silently dropping either.
+-- ─── Verification ────────────────────────────────────────────────────────────
+-- Assert that every guard this migration exists to add is really in the
+-- installed body: the caller gate, the verified-scan guard, and the FOR
+-- UPDATE lock that makes the verified-scan guard race-safe. "The function
+-- exists" would stay green if a later CREATE OR REPLACE were templated on a
+-- stale copy that silently dropped any one of them.
 DO $$
 DECLARE v_src TEXT;
 BEGIN
-  SELECT prosrc INTO v_src FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public' AND p.proname = 'remove_manifest_from_route';
+  SELECT p.prosrc INTO v_src
+  FROM   pg_proc p
+  WHERE  p.oid = 'public.remove_manifest_from_route(uuid,uuid)'::regprocedure;
+
   IF v_src IS NULL THEN
     RAISE EXCEPTION 'remove_manifest_from_route(UUID, UUID) is missing';
   END IF;
@@ -165,6 +248,20 @@ BEGIN
      OR v_src NOT LIKE '%Solo la tripulación de esta ruta puede quitarle cargas%' THEN
     RAISE EXCEPTION 'remove_manifest_from_route lost its caller check!';
   END IF;
+  IF v_src NOT LIKE '%scan_result = ''verified''%' THEN
+    RAISE EXCEPTION 'remove_manifest_from_route lost its verified-scan guard!';
+  END IF;
+  IF v_src NOT LIKE '%FOR UPDATE%' THEN
+    RAISE EXCEPTION 'remove_manifest_from_route lost the FOR UPDATE lock -- the verified-scan guard is race-unsafe without it';
+  END IF;
+  -- ops_leader must NOT be in this list yet; see the header's "NOT ADDING
+  -- ops_leader HERE" note -- it should land on this function, add, and
+  -- cancel together, not one at a time.
+  IF v_src LIKE '%ops_leader%' THEN
+    RAISE EXCEPTION 'remove_manifest_from_route authorises ops_leader on its own -- add it to add_manifest_to_route and cancel_pickup_route in the same change';
+  END IF;
+
+  RAISE NOTICE '✓ remove_manifest_from_route: caller gate, verified-scan guard, and FOR UPDATE lock all installed';
 END $$;
 
 COMMIT;
