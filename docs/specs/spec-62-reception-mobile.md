@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; fases 4.5 Recepción escritorio y 4.8 móvil), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (`route_receptions`, recepción consolidada), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (`open_route_reception`, `unexpected_count`, bloqueo de escaneo de recogida), [spec-43](spec-43-failed-delivery-return-flow.md) (reingresos)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-20_
 
