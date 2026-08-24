@@ -56,24 +56,31 @@ describe('useRemoveManifestFromRoute', () => {
   });
 
   /**
-   * The RPC's refusal message is Spanish on purpose and the page toasts
-   * err.message verbatim -- wrapping or replacing it here would break that
-   * UX contract silently.
+   * The real `supabase.rpc()` rejects with a PostgrestError INSTANCE (it
+   * extends Error, and carries code/details/hint alongside message). The
+   * hook must rethrow that exact object -- `throw new Error(error.message)`
+   * would pass a message-only assertion while silently dropping `code`
+   * ('42501' for our authorisation refusal), `details` and `hint`. Asserting
+   * object identity (`.toBe`) plus `code` is what makes this test actually
+   * fail if the hook wraps instead of rethrows.
    */
-  it('rethrows the RPC error message intact, including the Spanish refusal', async () => {
-    mockRpc.mockResolvedValue({
-      data: null,
-      error: { message: 'Solo la tripulación de esta ruta puede quitarle cargas.' },
-    });
+  it('rethrows the RPC error object itself, unchanged -- not a rewrapped Error', async () => {
+    const rpcError = Object.assign(
+      new Error('Solo la tripulación de esta ruta puede quitarle cargas.'),
+      { code: '42501', details: null, hint: null, name: 'PostgrestError' }
+    );
+    mockRpc.mockResolvedValue({ data: null, error: rpcError });
     const { result } = renderHook(() => useRemoveManifestFromRoute('op-1'), {
       wrapper: wrapperFactory(newClient()),
     });
 
     result.current.mutate({ routeId: 'r1', manifestId: 'm1' });
     await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBe(rpcError);
     expect(result.current.error?.message).toBe(
       'Solo la tripulación de esta ruta puede quitarle cargas.'
     );
+    expect((result.current.error as typeof rpcError).code).toBe('42501');
   });
 
   it('invalidates route-manifests, unassigned-manifests, manifests and active-route on success', async () => {
@@ -97,7 +104,12 @@ describe('useRemoveManifestFromRoute', () => {
   it('does not invalidate any queries when the RPC errors', async () => {
     mockRpc.mockResolvedValue({
       data: null,
-      error: { message: 'manifest m1 is not attached to route r1' },
+      error: Object.assign(new Error('manifest m1 is not attached to route r1'), {
+        code: 'P0001',
+        details: null,
+        hint: null,
+        name: 'PostgrestError',
+      }),
     });
     const qc = newClient();
     const spy = vi.spyOn(qc, 'invalidateQueries');
