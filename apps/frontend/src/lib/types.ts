@@ -2014,6 +2014,13 @@ export type Database = {
         Args: { p_route_id: string; p_manifest_id: string }
         Returns: Database["public"]["Tables"]["manifests"]["Row"]
       }
+      // spec-64 Task 1 (20260824000004) — the counterpart to
+      // add_manifest_to_route above: detach a carga from an in_progress
+      // pickup route while it has zero verified pickup scans.
+      remove_manifest_from_route: {
+        Args: { p_route_id: string; p_manifest_id: string }
+        Returns: Database["public"]["Tables"]["manifests"]["Row"]
+      }
       close_pickup_route: {
         Args: { p_route_id: string }
         Returns: Database["public"]["Tables"]["route_receptions"]["Row"]
