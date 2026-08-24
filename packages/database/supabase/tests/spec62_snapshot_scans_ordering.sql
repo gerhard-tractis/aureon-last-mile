@@ -50,12 +50,23 @@ INSERT INTO auth.users (
   ('bbbbbbbb-0000-4000-b000-000000000900','00000000-0000-0000-0000-000000000000','authenticated','authenticated','recepcion@scanorder.test', crypt('x', gen_salt('bf')), NOW(), '{"operator_id":"aaaaaaaa-0000-4000-a000-000000000900"}'::jsonb, '{"full_name":"Recepcionista Orden"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO public.users (id, operator_id, email, full_name, permissions)
+-- The driver must be `pickup_leader`: spec-61 made route creation leader-only
+-- ("A leader opens the route and adds the crew"), and `start_pickup_route`
+-- raises "Solo un líder de ruta puede iniciar una ruta de retiro" for anyone
+-- else. Without the role this file died at that RAISE, before it ever reached
+-- the ordering it exists to assert — verified by running it against QA.
+--
+-- The receptionist deliberately stays non-leader: `open_route_reception`
+-- checks a PERMISSION, not a role, so leaving it unset keeps the separation of
+-- duties honest instead of over-privileging both users to make the test pass.
+-- Same split as `route_reception_snapshot_contract.sql`.
+INSERT INTO public.users (id, operator_id, role, email, full_name, permissions)
 VALUES
-  ('aaaaaaaa-0000-4000-a000-000000000900','aaaaaaaa-0000-4000-a000-000000000900','driver@scanorder.test','Driver Orden',ARRAY['pickup']),
-  ('bbbbbbbb-0000-4000-b000-000000000900','aaaaaaaa-0000-4000-a000-000000000900','recepcion@scanorder.test','Recepcionista Orden',ARRAY['reception'])
+  ('aaaaaaaa-0000-4000-a000-000000000900','aaaaaaaa-0000-4000-a000-000000000900','pickup_leader','driver@scanorder.test','Driver Orden',ARRAY['pickup']),
+  ('bbbbbbbb-0000-4000-b000-000000000900','aaaaaaaa-0000-4000-a000-000000000900','pickup_crew','recepcion@scanorder.test','Recepcionista Orden',ARRAY['reception'])
 ON CONFLICT (id) DO UPDATE SET operator_id = EXCLUDED.operator_id,
-  full_name = EXCLUDED.full_name, permissions = EXCLUDED.permissions;
+  role = EXCLUDED.role, full_name = EXCLUDED.full_name,
+  permissions = EXCLUDED.permissions;
 
 INSERT INTO public.vehicles (id, operator_id, plate, active)
 VALUES ('99999999-0000-4000-9000-000000000900','aaaaaaaa-0000-4000-a000-000000000900','ORD-900', true)
