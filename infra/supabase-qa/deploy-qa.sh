@@ -179,8 +179,22 @@ apply_migrations() {
 # spec-54 left Distribución showing "Sin andenes configurados" until someone
 # SSHed in. Seeding here removes the manual step.
 #
-# create-qa-users.sh deliberately stays in setup-qa.sh — it calls the GoTrue
-# admin API, the users already exist, and it is not needed to correct drift.
+# create-qa-users.sh used to stay in setup-qa.sh, on the reasoning that "it
+# calls the GoTrue admin API, the users already exist, and it is not needed to
+# correct drift". All three premises were wrong or have expired:
+#
+#   * it does NOT call GoTrue — it inserts into auth.users / auth.identities
+#     over psql on localhost:5433, exactly like the seed above;
+#   * "the users already exist" holds only until someone adds a NEW one.
+#     spec-66 added qa-ops-leader@qa.test and it never reached QA, so the role
+#     could not be exercised there at all — the same failure mode as the
+#     spec-54 dock zones that motivated seeding on every deploy (#443);
+#   * a missing QA user IS drift, of the same kind as a missing seed row.
+#
+# It is idempotent by construction: every user is existence-checked and
+# reported as Created or Skipped, so re-running it changes nothing once QA is
+# current. It carries its own production guard (refuses any env file naming
+# supabase.co) and pins the connection to localhost.
 # --------------------------------------------------------------------------
 apply_seed() {
   local pw; pw="$(env_get POSTGRES_PASSWORD)"
@@ -192,6 +206,22 @@ apply_seed() {
   # which would report a half-applied seed as a healthy deploy.
   PGPASSWORD="$pw" psql -h localhost -p 5433 -U postgres -d postgres \
     -v ON_ERROR_STOP=1 -q -f "$seed"
+}
+
+# Create any QA login user the repo declares but QA does not have yet. See the
+# block above for why this runs here and not only in setup-qa.sh.
+#
+# Runs AFTER apply_migrations on purpose: a user whose role is a brand-new enum
+# value cannot be inserted until the migration adding that value has applied,
+# or the ::user_role cast fails with 22P02.
+apply_qa_users() {
+  local script="${QA_CHECKOUT_DIR}/infra/supabase-qa/create-qa-users.sh"
+  if [ ! -f "$script" ]; then
+    err "create-qa-users.sh not found: $script"
+    return 1
+  fi
+  log "ensuring QA login users exist"
+  bash "$script" "$QA_ENV_FILE"
 }
 
 # --------------------------------------------------------------------------
@@ -495,6 +525,7 @@ main() {
 
   apply_migrations
   apply_seed
+  apply_qa_users
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
