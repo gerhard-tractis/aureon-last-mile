@@ -6,13 +6,13 @@
 export interface CreateUserInput {
   email: string;
   full_name: string;
-  role: 'pickup_crew' | 'pickup_leader' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
+  role: 'pickup_crew' | 'pickup_leader' | 'ops_leader' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
   permissions: string[];
 }
 
 export interface UpdateUserInput {
   full_name?: string;
-  role?: 'pickup_crew' | 'pickup_leader' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
+  role?: 'pickup_crew' | 'pickup_leader' | 'ops_leader' | 'warehouse_staff' | 'loading_crew' | 'operations_manager' | 'admin';
   permissions?: string[];
 }
 

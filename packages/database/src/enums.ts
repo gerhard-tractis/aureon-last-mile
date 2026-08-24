@@ -20,16 +20,18 @@ export const ORDER_STATUSES = [
 ] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-// user_role: 20260216170542, plus 'super_admin' from 20260616000001 (spec-45)
-// and 'pickup_leader' from 20260820000001 (spec-61).
+// user_role: 20260216170542, plus 'super_admin' from 20260616000001 (spec-45),
+// 'pickup_leader' from 20260820000001 (spec-61) and 'ops_leader' from
+// 20260824000001 (spec-66).
 //
-// Listed in a readable order, not the enum's physical one: both ADD VALUE
-// migrations append, so Postgres sorts pickup_leader last. Nothing here depends
-// on the order — packages/database/seed-qa/lib/enums.ts is the copy that is
-// compared against the live database, and it compares as a set.
+// Listed in a readable order, not the enum's physical one: every ADD VALUE
+// migration appends, so Postgres sorts these last in migration order. Nothing
+// here depends on the order — packages/database/seed-qa/lib/enums.ts is the
+// copy that is compared against the live database, and it compares as a set.
 export const USER_ROLES = [
   'pickup_crew',
   'pickup_leader',
+  'ops_leader',
   'warehouse_staff',
   'loading_crew',
   'operations_manager',

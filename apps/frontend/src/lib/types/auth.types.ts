@@ -19,6 +19,9 @@ export enum UserRole {
   /** Pickup route leaders — open the route and name its crew (spec-61) */
   PICKUP_LEADER = 'pickup_leader',
 
+  /** Works all four stations from the mobile tab bar, and leads routes (spec-66) */
+  OPS_LEADER = 'ops_leader',
+
   /** Warehouse workers - receive shipments, sort packages (Epic 4) */
   WAREHOUSE_STAFF = 'warehouse_staff',
 
@@ -201,6 +204,7 @@ export const RolePermissions = {
     const roleNames: Record<UserRole, string> = {
       [UserRole.PICKUP_CREW]: 'Pickup Crew',
       [UserRole.PICKUP_LEADER]: 'Pickup Leader',
+      [UserRole.OPS_LEADER]: 'Ops Leader',
       [UserRole.WAREHOUSE_STAFF]: 'Warehouse Staff',
       [UserRole.LOADING_CREW]: 'Loading Crew',
       [UserRole.OPERATIONS_MANAGER]: 'Operations Manager',
