@@ -228,6 +228,24 @@ describe('ReceptionPage', () => {
       expect(screen.getByTestId('route-qr-scanner')).toBeInTheDocument();
     });
 
+    it('mounts the mobile tree inside the page padding wrapper, flush to nothing', () => {
+      // Regression: this branch used to return ReceptionMobileView bare,
+      // escaping the `px-6 py-[22px]` wrapper the desktop branch (and
+      // /app/pickup's mobile view) sit inside. On a real phone the title,
+      // the avatar and every card ran into both screen edges, with the
+      // avatar clipped at the right. jsdom has no layout, so the assertion
+      // has to be on the wrapper itself.
+      mockUseIsBelowLg.mockReturnValue(true);
+      const { container } = render(<ReceptionPage />);
+
+      const padded = screen.getByTestId('reception-mobile-avatar').closest('.px-6');
+      expect(padded).not.toBeNull();
+      expect(padded).toHaveClass('py-[22px]');
+      // The padding must be on the OUTERMOST element, otherwise an
+      // unpadded ancestor would still put content against the edge.
+      expect(container.firstElementChild).toBe(padded);
+    });
+
     it('never calls open_route_reception on mount of the mobile tree', () => {
       mockUseIsBelowLg.mockReturnValue(true);
       render(<ReceptionPage />);

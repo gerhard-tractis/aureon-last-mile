@@ -104,7 +104,19 @@ export default function ReceptionPage() {
 
   if (isBelowLg) {
     return (
-      <>
+      // The SAME padded container the desktop branch below uses, and the same
+      // one `/app/pickup` keeps its mobile view inside.
+      //
+      // This branch used to return `ReceptionMobileView` bare, escaping the
+      // wrapper entirely — so on a real phone the title, the avatar and every
+      // card ran flush into both edges, with the avatar clipped at the right.
+      // Reported from a Redmi Note 15 Pro; jsdom has no layout, so nothing in
+      // the suite could have caught it.
+      //
+      // Bottom clearance for the tab bar is NOT added here: AppLayout already
+      // applies `pb-[var(--mobile-tabbar-h)]` (AppLayout.tsx:200), which is
+      // safe-area aware. Adding it twice would leave a dead band above the bar.
+      <div className="flex min-h-0 flex-col gap-[18px] px-6 py-[22px]">
         <ReceptionMobileView
           yardRoutes={yardRoutes}
           transitRoutes={incomingRoutes}
@@ -117,7 +129,7 @@ export default function ReceptionPage() {
           returnsSlot={returnsSlot}
         />
         {scannerDialog}
-      </>
+      </div>
     );
   }
 
