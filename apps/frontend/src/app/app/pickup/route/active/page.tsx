@@ -11,6 +11,7 @@ import {
   useUnassignedManifests,
 } from '@/hooks/pickup/useRouteManifests';
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
+import { useRemoveManifestFromRoute } from '@/hooks/pickup/useRemoveManifestFromRoute';
 import { useClosePickupRoute } from '@/hooks/pickup/useClosePickupRoute';
 import { isManifestComplete } from '@/lib/pickup/manifestProgress';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
@@ -45,6 +46,7 @@ export default function ActiveRoutePage() {
   const { data: unassigned = [], isLoading: unLoading } =
     useUnassignedManifests(operatorId);
   const addMut = useAddManifestToRoute(operatorId);
+  const removeMut = useRemoveManifestFromRoute(operatorId);
   const closeMut = useClosePickupRoute(operatorId);
 
   if (routeLoading) {
@@ -120,6 +122,23 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-64 Task 4 — the counterpart to handleAdd. Passed to
+  // RouteManifestList UNCONDITIONALLY (not gated on route.driver_id === userId
+  // like CancelRouteButton below): crew can add manifests through the
+  // ungated AddManifestSheet, so gating removal to the driver would let a
+  // crew member attach a carga and then be unable to detach the one they
+  // just mis-attached. The RPC's own authorisation block is the real gate —
+  // it deliberately admits crew too.
+  const handleRemove = (manifestId: string) => {
+    removeMut.mutate(
+      { routeId: route.id, manifestId },
+      {
+        onSuccess: () => toast.success('Carga quitada de la ruta'),
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  };
+
   const handleClose = () => {
     closeMut.mutate(
       { routeId: route.id },
@@ -164,7 +183,15 @@ export default function ActiveRoutePage() {
               <h2 className="text-sm font-semibold text-text mb-2">
                 Manifiestos en la ruta
               </h2>
-              <RouteManifestList manifests={routeManifests} onManifestClick={goToScan} />
+              <RouteManifestList
+                manifests={routeManifests}
+                onManifestClick={goToScan}
+                // Only wired once operatorId has resolved: useRemoveManifestFromRoute
+                // keys its cache invalidation off it, and a null operatorId
+                // would invalidate queries that match nothing (a trait it
+                // shares with useAddManifestToRoute / useCancelPickupRoute).
+                onRemove={operatorId ? handleRemove : undefined}
+              />
             </div>
           )}
 
