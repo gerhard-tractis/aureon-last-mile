@@ -224,7 +224,7 @@ describe('ReceptionPage', () => {
       mockUseIsBelowLg.mockReturnValue(true);
       render(<ReceptionPage />);
       expect(screen.queryByTestId('route-qr-scanner')).not.toBeInTheDocument();
-      await userEvent.click(screen.getByRole('button', { name: /Escanear QR de ruta/i }));
+      await userEvent.click(screen.getByRole('button', { name: /Escanear QR/i }));
       expect(screen.getByTestId('route-qr-scanner')).toBeInTheDocument();
     });
 

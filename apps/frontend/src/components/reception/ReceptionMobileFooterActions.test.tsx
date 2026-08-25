@@ -9,7 +9,7 @@ describe('ReceptionMobileFooterActions', () => {
   it('calls onScanQR from the QR button', async () => {
     const onScanQR = vi.fn();
     render(<ReceptionMobileFooterActions {...props} onScanQR={onScanQR} />);
-    await userEvent.click(screen.getByRole('button', { name: /Escanear QR de ruta/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Escanear QR/i }));
     expect(onScanQR).toHaveBeenCalledTimes(1);
   });
 
@@ -26,11 +26,20 @@ describe('ReceptionMobileFooterActions', () => {
     // leaving the text and the QR glyph touching the button edges.
     // Reported from a Redmi Note 15 Pro.
     it.each([
-      [/Escanear QR de ruta/i],
+      [/Escanear QR/i],
       [/Recibir sin QR/i],
     ])('keeps the label off the edges of %s', (name) => {
       render(<ReceptionMobileFooterActions {...props} />);
       expect(screen.getByRole('button', { name }).className).toContain('px-3');
+    });
+
+    it('labels the QR button exactly "Escanear QR", not the long form', () => {
+      // The regex lookups elsewhere in this file match "Escanear QR de ruta"
+      // as a substring, so they would NOT catch a revert to the long label.
+      // A string matcher in Testing Library is exact, which is the point here:
+      // the shorter label is what keeps the button off two lines at ~167px.
+      render(<ReceptionMobileFooterActions {...props} />);
+      expect(screen.getByRole('button', { name: 'Escanear QR' })).toBeInTheDocument();
     });
 
     it('lets the label shrink instead of overflowing once padding is added', () => {
@@ -38,7 +47,7 @@ describe('ReceptionMobileFooterActions', () => {
       // flex child must be allowed to shrink below its content size --
       // min-w-0 is what makes that legal in a flex row.
       render(<ReceptionMobileFooterActions {...props} />);
-      expect(screen.getByRole('button', { name: /Escanear QR de ruta/i }).className).toContain(
+      expect(screen.getByRole('button', { name: /Escanear QR/i }).className).toContain(
         'min-w-0',
       );
     });

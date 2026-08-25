@@ -35,7 +35,7 @@ export function ReceptionMobileFooterActions({
         className="flex h-[52px] min-w-0 flex-1 items-center justify-center gap-2 rounded-[14px] bg-accent-light px-3 text-center text-[14px] font-semibold leading-[1.15] text-accent-light-foreground transition-opacity hover:opacity-90"
       >
         <QrCode className="h-5 w-5 flex-none" aria-hidden="true" />
-        Escanear QR de ruta
+        Escanear QR
       </button>
       <button
         type="button"
