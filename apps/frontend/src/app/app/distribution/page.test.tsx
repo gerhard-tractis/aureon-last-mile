@@ -43,6 +43,15 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+let mockIsBelowLg = false;
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => mockIsBelowLg,
+}));
+
+vi.mock('@/hooks/useCurrentUserName', () => ({
+  useCurrentUserName: () => ({ data: 'Marcela Rojas' }),
+}));
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) => (
     <a href={href} {...props}>{children}</a>
@@ -55,6 +64,7 @@ function tile(label: string): HTMLElement {
 
 describe('DistributionPage', () => {
   beforeEach(() => {
+    mockIsBelowLg = false;
     mockUnmatched = [];
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
@@ -149,6 +159,40 @@ describe('DistributionPage', () => {
       });
       render(<DistributionPage />);
       expect(screen.getByText('Nadie está escaneando en este momento.')).toBeInTheDocument();
+    });
+  });
+
+  // spec-68 Fase 2 (Decisión 1) — `useIsBelowLg` picks exactly one tree.
+  // Regression guard for the bug that has already shipped twice (spec-62,
+  // spec-54 3h): both headers must never mount together at 390px.
+  describe('mobile tree (useIsBelowLg)', () => {
+    it('above lg (desktop) renders the desktop header and KPI grid, never the mobile greeting', () => {
+      mockIsBelowLg = false;
+      render(<DistributionPage />);
+      expect(screen.getByRole('heading', { name: 'Distribución' })).toBeInTheDocument();
+      expect(screen.getByTestId('outbound-dock')).toBeInTheDocument();
+      expect(screen.queryByText('Hola, Marcela')).not.toBeInTheDocument();
+      expect(screen.queryByText('TU TAREA AHORA')).not.toBeInTheDocument();
+    });
+
+    it('below lg renders the mobile greeting and never the desktop header or panels', () => {
+      mockIsBelowLg = true;
+      render(<DistributionPage />);
+      expect(screen.getByText('Hola, Marcela')).toBeInTheDocument();
+      expect(screen.getByText('TU TAREA AHORA')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('outbound-dock')).not.toBeInTheDocument();
+      expect(screen.queryByText('Andenes de salida')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sin paquetes en consolidación')).not.toBeInTheDocument();
+    });
+
+    it('below lg links PROCESOS DE LA NAVE to the pendientes, consolidación and andenes routes', () => {
+      mockIsBelowLg = true;
+      render(<DistributionPage />);
+      expect(screen.getByRole('link', { name: /pendientes de sectorizar/i })).toHaveAttribute(
+        'href',
+        '/app/distribution/pendientes',
+      );
     });
   });
 });

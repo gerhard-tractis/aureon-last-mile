@@ -14,7 +14,10 @@ import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
 import { useUnmatchedComunas } from '@/hooks/distribution/useUnmatchedComunas';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useCurrentUserName } from '@/hooks/useCurrentUserName';
+import { useIsBelowLg } from '@/hooks/useViewport';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DistributionMobileView } from '@/components/distribution/DistributionMobileView';
 
 /**
  * spec-54 mock 3d — Distribución, estado inicial del módulo.
@@ -28,6 +31,14 @@ import { Skeleton } from '@/components/ui/skeleton';
  * (DockZoneForm) shipped in spec-68 Fase 1, but this screen still isn't
  * wired to lib/distribution/dock-capacity.ts / DockCapacityBar — that's a
  * follow-up, not a schema gap.
+ *
+ * spec-68 Fase 2 (Decisión 1) — below `lg` (1024px) this swaps entirely for
+ * `DistributionMobileView`'s phone card layout (mock 4c) instead of
+ * squeezing the KPI grid / OutboundDockGrid / ActiveSortersPanel /
+ * ConsolidationPanel above into 390px. `useIsBelowLg` picks exactly one of
+ * the two trees, and the desktop `<h1>` + panels sit behind `!isBelowLg` —
+ * the same bug (two headers stacked on one phone screen) has already
+ * shipped twice, in spec-54's 3h and in spec-62.
  */
 
 function timeLabel(iso: string | null): string | null {
@@ -39,9 +50,11 @@ function timeLabel(iso: string | null): string | null {
 
 export default function DistributionPage() {
   const { operatorId } = useOperatorId();
+  const isBelowLg = useIsBelowLg();
+  const { data: userName = null } = useCurrentUserName();
   const { data: kpis, isLoading: kpisLoading } = useDistributionKPIs(operatorId);
   const { data: overview, isLoading: overviewLoading } = useDistributionOverview(operatorId);
-  const { data: consolidationPackages } = useConsolidation(operatorId);
+  const { data: consolidationPackages = [] } = useConsolidation(operatorId);
   const { data: zones } = useDockZones(operatorId);
   const { data: sectorizedCounts } = useSectorizedByZone(operatorId);
   const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
@@ -68,6 +81,25 @@ export default function DistributionPage() {
   const pending = kpis?.pending ?? 0;
   const totalTouched = sortedToday + pending;
   const sortedPct = totalTouched > 0 ? Math.round((sortedToday / totalTouched) * 100) : null;
+
+  // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
+  // branch below uses. Returned early, not folded into a ternary inside one
+  // tree: `DistributionMobileView` must not mount alongside the desktop
+  // `<h1>`/KPI grid/OutboundDockGrid/ActiveSortersPanel/ConsolidationPanel —
+  // this is the bug that already shipped twice (spec-54 3h, spec-62).
+  if (isBelowLg) {
+    return (
+      <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
+        <DistributionMobileView
+          userName={userName}
+          kpis={kpis}
+          consolidationPackages={consolidationPackages}
+          unmatchedComunas={unmatched}
+          isLoading={kpisLoading}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
