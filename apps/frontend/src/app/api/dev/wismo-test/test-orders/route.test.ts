@@ -61,7 +61,7 @@ describe('GET /api/dev/wismo-test/test-orders', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 401 when role is not admin/maintainer', async () => {
+  it('returns 401 when role is not admin', async () => {
     mockGetSession.mockResolvedValue({
       data: { session: { user: { id: 'u1', app_metadata: { claims: { role: 'pickup_crew' } } } } },
       error: null,

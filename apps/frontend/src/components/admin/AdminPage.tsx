@@ -65,6 +65,47 @@ export const AdminPage = ({ userRole }: AdminPageProps) => {
             <PickupPointManagement userRole={userRole} />
           </TabsContent>
         </Tabs>
+
+        {/*
+          spec-67: the internal diagnostic tools used to sit on unlinked /app
+          routes. They belong here, not in an operator's sidebar — a test
+          bench in the primary nav reads as product.
+
+          Rendered for `admin` only. `operations_manager` and `super_admin`
+          also reach /admin (see app/admin/page.tsx), but both tool pages are
+          admin-gated, so showing them the links would offer destinations that
+          bounce them straight back out.
+        */}
+        {userRole === 'admin' && (
+          <section className="mt-10 border-t border-border pt-6" data-testid="admin-tools">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Herramientas
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Bancos de prueba internos. No forman parte de la operación diaria.
+            </p>
+            <ul className="mt-4 flex flex-col gap-2">
+              <li>
+                <Link
+                  href="/admin/tools/ocr"
+                  data-testid="tools-ocr-link"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  OCR de manifiestos
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/admin/tools/wismo"
+                  data-testid="tools-wismo-link"
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Simulador WISMO
+                </Link>
+              </li>
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );

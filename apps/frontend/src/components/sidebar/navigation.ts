@@ -5,9 +5,14 @@
  * the sidebar, the topbar breadcrumb, and the tests. Before this, the
  * breadcrumb was hand-written per page and could drift from the nav.
  *
- * The rebrand groups the flat 10-item list into two sections because the
- * shift-paced work (what is queued right now) and the management work (what
- * happened, what is planned) are read at different rhythms.
+ * spec-67 cuts the nav into THREE sections by reading rhythm, not by object
+ * type. SEGUIMIENTO is transversal and live (the whole operation, then one
+ * order, then one customer); OPERACION is the shift's four stations in
+ * physical flow order; GESTION is what is planned and what is accounted for.
+ *
+ * The membership rule for OPERACION is one-directional and testable: every
+ * item there has BOTH `module` and `countKey`. The converse is deliberately
+ * NOT true -- `Pedidos` keeps `countKey: 'orders'` from inside SEGUIMIENTO.
  *
  * spec-65 Task 3: this file holds only the nav definition proper — sections,
  * items, visibility, landing path. The mobile tab bar lives in
@@ -69,7 +74,12 @@ const hasPermission =
   ({ permissions }: NavContext) =>
     any.some((p) => permissions.includes(p));
 
-export const OPERATION_ITEMS: NavItem[] = [
+/**
+ * SEGUIMIENTO — read-first, transversal, "what is happening right now".
+ * Ordered by zoom level: the whole operation, then one order, then one
+ * customer. None of these is a station: no scanner, no shift queue.
+ */
+export const TRACKING_ITEMS: NavItem[] = [
   {
     href: '/app/operations-control',
     label: 'Torre de control',
@@ -87,6 +97,24 @@ export const OPERATION_ITEMS: NavItem[] = [
     // regardless of which spec-45 modules the operator has enabled.
     isVisible: (ctx) => isAdminOrManager(ctx) || hasPermission('customer_service')(ctx),
   },
+  {
+    href: '/app/conversations',
+    label: 'Conversaciones',
+    icon: MessageSquare,
+    module: ModuleKey.CONVERSATIONS,
+    // Same predicate as Pedidos: customer service's daily loop is the two of
+    // them together, which is why spec-67 stopped splitting them across a
+    // section divider.
+    isVisible: (ctx) => isAdminOrManager(ctx) || hasPermission('customer_service')(ctx),
+  },
+];
+
+/**
+ * OPERACIÓN — the shift's four stations, in the order a package physically
+ * moves through them. Every item here has a `module`, a permission, a
+ * `countKey` and a scanner screen; nothing else in the nav does.
+ */
+export const OPERATION_ITEMS: NavItem[] = [
   {
     href: '/app/pickup',
     label: 'Recogida',
@@ -135,13 +163,6 @@ export const MANAGEMENT_ITEMS: NavItem[] = [
     isVisible: isAdminOrManager,
   },
   {
-    href: '/app/conversations',
-    label: 'Conversaciones',
-    icon: MessageSquare,
-    module: ModuleKey.CONVERSATIONS,
-    isVisible: (ctx) => isAdminOrManager(ctx) || hasPermission('customer_service')(ctx),
-  },
-  {
     href: '/app/audit-logs',
     label: 'Auditoría',
     icon: FileText,
@@ -156,6 +177,7 @@ export const MANAGEMENT_ITEMS: NavItem[] = [
 ];
 
 export const NAV_SECTIONS: NavSection[] = [
+  { title: 'SEGUIMIENTO', crumb: 'Seguimiento', items: TRACKING_ITEMS },
   { title: 'OPERACIÓN', crumb: 'Operación', items: OPERATION_ITEMS },
   { title: 'GESTIÓN', crumb: 'Gestión', items: MANAGEMENT_ITEMS },
 ];
@@ -179,45 +201,79 @@ export const countKeyThresholds: Record<CountKey, number> = {
 export function buildNavSections(ctx: NavContext): NavSection[] {
   return NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter(
-      (item) =>
-        item.isVisible(ctx) && (item.module === undefined || ctx.enabledModules.includes(item.module)),
-    ),
+    items: section.items.filter((item) => isReachable(item, ctx)),
   })).filter((section) => section.items.length > 0);
 }
+
+/** True when this user can actually open the item right now. */
+function isReachable(item: NavItem, ctx: NavContext): boolean {
+  return (
+    item.isVisible(ctx) &&
+    (item.module === undefined || ctx.enabledModules.includes(item.module))
+  );
+}
+
+/**
+ * Landing precedence — deliberately NOT the display order.
+ *
+ * This list is, item for item, the order `buildNavSections` flattened to
+ * BEFORE spec-67 split the nav into three sections: OPERATION_ITEMS then
+ * MANAGEMENT_ITEMS. Freezing it here is what makes the regrouping provably
+ * neutral for every role instead of neutral-by-lucky-coincidence.
+ *
+ * DO NOT "tidy" this to match the new sidebar order. Its only job is to
+ * preserve today's precedence; re-sorting it to look like the sidebar would
+ * silently move where people land, which is exactly the coupling spec-67
+ * removed. Adding a nav item? Append it here too — an item missing from this
+ * list is invisible to both passes below.
+ */
+const LANDING_SCAN_ORDER: NavItem[] = [
+  TRACKING_ITEMS[0], // Torre de control
+  TRACKING_ITEMS[1], // Pedidos
+  ...OPERATION_ITEMS, // Recogida · Recepción · Distribución · Despacho
+  MANAGEMENT_ITEMS[0], // Dashboard ejecutivo
+  MANAGEMENT_ITEMS[1], // Capacidad
+  TRACKING_ITEMS[2], // Conversaciones
+  MANAGEMENT_ITEMS[2], // Auditoría
+  MANAGEMENT_ITEMS[3], // Admin
+];
 
 /**
  * Where a signed-in user starts. Used by `/app` now that the marketing landing
  * page no longer occupies `/`.
  *
- * spec-65 review round (final, reverses the Task 3 ruling recorded below):
- * prefer the first visible item that both (a) has a `module` and (b) has
- * that module enabled — i.e. a real queue the operator is actually mid-rollout
- * on — falling back to the plain first visible item only when none qualifies.
- * `buildNavSections` has already dropped items whose module is disabled, so
- * every item it returns already satisfies (b); this just needs to prefer the
- * first one that also satisfies (a).
+ * Prefer the first reachable item that has a `module` — a real queue the
+ * operator is actually mid-rollout on — falling back to the first reachable
+ * item when none qualifies. Both passes walk `LANDING_SCAN_ORDER`, never
+ * `NAV_SECTIONS`.
  *
- * Why: an admin activated on only one module (say PICKUP mid-rollout) landing
- * on the ungated, cross-stage Pedidos list instead of the pickup queue they
- * actually work is a regression, not a feature — `src/app/app/page.test.tsx`
- * ("respects module activation over role") caught this. The original Task 3
- * ruling below optimized for customer_service (who has no module-gated item
- * at all, and for whom Pedidos genuinely *is* their queue) at the cost of
- * every module-gated role. The rule above keeps both: customer_service still
- * lands on Pedidos (nothing else qualifies for them), and a module-activated
- * role lands on its own queue instead of skipping past it to Pedidos.
+ * ── History, so the same ground is not re-litigated a fourth time ──
  *
- * Original Task 3 reasoning (superseded — kept for context, do not re-apply
- * without re-litigating the case above): "Pedidos carries no module gate and
- * sits second, right after the tower, so once the tower is unavailable
- * Pedidos is the next visible item and becomes the landing target ahead of
- * any module-gated queue like Recogida."
+ * Round 1 (spec-65 Task 3): preferred the plain first visible item, reasoning
+ * that Pedidos sits second and is ungated so it makes a good universal start.
+ *
+ * Round 2 (spec-65 review): reversed it. An admin activated on only PICKUP
+ * mid-rollout landing on the cross-stage Pedidos list instead of their pickup
+ * queue is a regression — `src/app/app/page.test.tsx` ("respects module
+ * activation over role") caught it. Hence the `module` preference.
+ *
+ * Round 3 (spec-67): the scan itself was the bug. It read `NAV_SECTIONS` in
+ * order, so landing was a side effect of DISPLAY order — regrouping the
+ * sidebar moved it. Moving Conversaciones (which carries a `module`) into the
+ * first section jumped it ahead of all four stations, sending an ops manager
+ * without OPS_CONTROL to Conversaciones instead of their station. The fix is
+ * the explicit list above, not a new preference rule: the rule is unchanged,
+ * only the sequence it walks is now pinned.
+ *
+ * A rejected round-3 candidate, recorded so it is not retried: "prefer the
+ * first reachable OPERATION_ITEMS entry". It breaks the tower — Torre de
+ * control lives in TRACKING_ITEMS now, so it would stop being a candidate and
+ * every fully-enabled admin would land on /app/pickup.
  */
 export function resolveLandingPath(ctx: NavContext): string {
-  const items = buildNavSections(ctx).flatMap((section) => section.items);
-  const moduleGated = items.find((item) => item.module !== undefined);
-  return (moduleGated ?? items[0])?.href ?? '/app/dashboard';
+  const reachable = LANDING_SCAN_ORDER.filter((item) => isReachable(item, ctx));
+  const moduleGated = reachable.find((item) => item.module !== undefined);
+  return (moduleGated ?? reachable[0])?.href ?? '/app/dashboard';
 }
 
 export * from './navigation.mobile';

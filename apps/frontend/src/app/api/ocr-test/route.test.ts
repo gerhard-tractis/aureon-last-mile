@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 // This route is a dev tool that spends money on OpenRouter. It is not covered
 // by middleware.ts (which only guards /app/**), so it enforces an admin or
-// maintainer session itself. Every test below therefore needs a session.
+// admin session itself. Every test below therefore needs a session.
 const mockGetSession = vi.fn();
 vi.mock('@/lib/supabase/server', () => ({
   createSSRClient: vi.fn(async () => ({
@@ -154,16 +154,10 @@ describe('POST /api/ocr-test', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 403 for a signed-in user without admin or maintainer role', async () => {
+  it('returns 403 for a signed-in user without the admin role', async () => {
     mockGetSession.mockResolvedValue(sessionAs('driver'));
     const res = await POST(makeReq([fakeJpeg()]));
     expect(res.status).toBe(403);
   });
 
-  it('allows a maintainer', async () => {
-    // Auth passes, so it proceeds far enough to reject the empty image list.
-    mockGetSession.mockResolvedValue(sessionAs('maintainer'));
-    const res = await POST(makeReq([]));
-    expect(res.status).toBe(400);
-  });
 });

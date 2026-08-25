@@ -20,8 +20,8 @@ import { OPERATION_ITEMS } from './navigation';
  *
  * Floor and van roles only. `operations_manager` and `admin` do their work
  * on desktop; a phone in their hand is incidental, and a 4-tab driver bar
- * would hide most of the 9-item nav they actually need — they keep the
- * hamburger `Sheet` instead (see AppLayout).
+ * would hide most of the three-section nav they actually need — they keep
+ * the hamburger `Sheet` instead (see AppLayout).
  *
  * spec-61 — `pickup_leader` belongs here for the same reason `pickup_crew`
  * does: it is a van role. A role missing from this set gets NO tab bar
@@ -64,13 +64,14 @@ export interface MobileTab extends NavItem {
 /**
  * Always the same four, same order, for every operations role — Recogida,
  * Recepción, Distribución, Despacho — taken straight from OPERATION_ITEMS so
- * the tab bar can never drift from the sidebar's icons/labels. `Torre de
- * control` is excluded: it's gated by `isAdminOrManager`, never true here.
- * `/app/orders` (Pedidos, spec-65) is excluded for the same reason: it's a
- * desktop screen for operations managers/admins/CS, and `isOperationsRole`
- * never overlaps with `isAdminOrManager` — a van or floor role could never
- * see it live anyway, so it would only ever render as a fifth, permanently
- * disabled tab.
+ * the tab bar can never drift from the sidebar's icons/labels.
+ *
+ * spec-67: this used to need a hand-maintained exclusion list, because
+ * OPERATION_ITEMS also held `Torre de control` and `Pedidos` — neither of
+ * which is a driver tab. Now that OPERACIÓN *is* exactly the four stations,
+ * mapping the whole array says the same thing structurally, and the list is
+ * gone. If a fifth tab ever appears here, the section gained a non-station
+ * item and THAT is the bug to fix.
  *
  * Exactly four, always — never fewer, whatever the permission/module
  * state — marking `disabled` rather than omitting. The permission gate
@@ -78,14 +79,9 @@ export interface MobileTab extends NavItem {
  * into that one flag: an ops user sees the whole shape of the app, greyed
  * out wherever it isn't theirs, for either reason.
  */
-const MOBILE_TAB_EXCLUDED_HREFS: ReadonlySet<string> = new Set([
-  '/app/operations-control',
-  '/app/orders',
-]);
-
 export function buildMobileTabs(ctx: NavContext): MobileTab[] {
   if (!isOperationsRole(ctx.role)) return [];
-  return OPERATION_ITEMS.filter((item) => !MOBILE_TAB_EXCLUDED_HREFS.has(item.href)).map((item) => ({
+  return OPERATION_ITEMS.map((item) => ({
     ...item,
     disabled: !item.isVisible(ctx) || (item.module !== undefined && !ctx.enabledModules.includes(item.module)),
   }));

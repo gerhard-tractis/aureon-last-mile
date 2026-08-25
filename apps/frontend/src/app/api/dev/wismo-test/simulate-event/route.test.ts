@@ -50,7 +50,7 @@ describe('POST /api/dev/wismo-test/simulate-event', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 401 when role is not admin/maintainer', async () => {
+  it('returns 401 when role is not admin', async () => {
     mockGetSession.mockResolvedValue({
       data: { session: { user: { id: 'u1', app_metadata: { claims: { role: 'pickup_crew' } } } } },
       error: null,
@@ -98,10 +98,10 @@ describe('POST /api/dev/wismo-test/simulate-event', () => {
     expect(text).not.toContain('tok');
   });
 
-  it('allows maintainer role', async () => {
+  it('allows admin role', async () => {
     mockGetSession.mockResolvedValue({
       data: {
-        session: { user: { id: 'u1', app_metadata: { claims: { role: 'maintainer', operator_id: 'op-1' } } } },
+        session: { user: { id: 'u1', app_metadata: { claims: { role: 'admin', operator_id: 'op-1' } } } },
       },
       error: null,
     });

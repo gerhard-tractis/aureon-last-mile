@@ -76,26 +76,16 @@ describe('proxyToAgents', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 401 when role is not admin or maintainer', async () => {
+  it('returns 401 when role is not admin', async () => {
     mockGetSession.mockResolvedValue(sessionFor('operations_manager'));
     const res = await proxyToAgents(makeRequest(), { path: '/dev/test-orders', method: 'GET' });
     expect(res.status).toBe(401);
     const body = await res.json() as { error: string };
-    expect(body.error).toMatch(/admin or maintainer/);
+    expect(body.error).toMatch(/admin role required/);
   });
 
   it('allows role admin', async () => {
     mockGetSession.mockResolvedValue(sessionFor('admin'));
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      status: 200,
-      text: async () => '[]',
-    }));
-    const res = await proxyToAgents(makeRequest(), { path: '/dev/test-orders', method: 'GET' });
-    expect(res.status).toBe(200);
-  });
-
-  it('allows role maintainer', async () => {
-    mockGetSession.mockResolvedValue(sessionFor('maintainer'));
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       status: 200,
       text: async () => '[]',

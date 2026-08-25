@@ -4,7 +4,7 @@ import { createSSRClient } from '@/lib/supabase/server';
 
 export const maxDuration = 60; // Gemini can be slow on multi-page manifests
 
-const ALLOWED_ROLES = ['admin', 'maintainer'] as const;
+const ALLOWED_ROLES = ['admin'] as const;
 
 const EXTRACTION_PROMPT = `Eres un sistema de extraccion de datos logisticos chilenos.
 
@@ -47,7 +47,7 @@ const MODEL = 'google/gemini-2.5-flash';
 export async function POST(req: NextRequest): Promise<NextResponse> {
   // middleware.ts only guards /app/**, so this route was reachable by anyone on
   // the internet and drove unbounded Gemini spend on OPENROUTER_API_KEY. It is
-  // a dev tool: require an authenticated admin/maintainer session, matching
+  // a dev tool: require an authenticated admin session, matching
   // /api/dev/wismo-test/_proxy.ts.
   const supabase = await createSSRClient();
   const {
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const role: string | undefined = session.user.app_metadata?.claims?.role;
   if (!ALLOWED_ROLES.includes(role as (typeof ALLOWED_ROLES)[number])) {
     return NextResponse.json(
-      { error: 'Forbidden: admin or maintainer role required' },
+      { error: 'Forbidden: admin role required' },
       { status: 403 },
     );
   }

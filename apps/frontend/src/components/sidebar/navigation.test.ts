@@ -3,6 +3,8 @@ import { ModuleKey } from '@/lib/modules/registry';
 import {
   NAV_SECTIONS,
   OPERATION_ITEMS,
+  TRACKING_ITEMS,
+  MANAGEMENT_ITEMS,
   buildNavSections,
   countKeyThresholds,
   resolveLandingPath,
@@ -10,8 +12,12 @@ import {
 import { ALL_MODULES, ALL_PERMISSIONS, labels } from './navigation.test-helpers';
 
 describe('nav structure', () => {
-  it('groups into exactly two sections, OPERACIÓN then GESTIÓN', () => {
-    expect(NAV_SECTIONS.map((s) => s.title)).toEqual(['OPERACIÓN', 'GESTIÓN']);
+  it('groups into exactly three sections, SEGUIMIENTO then OPERACIÓN then GESTIÓN', () => {
+    expect(NAV_SECTIONS.map((s) => s.title)).toEqual([
+      'SEGUIMIENTO',
+      'OPERACIÓN',
+      'GESTIÓN',
+    ]);
   });
 
   it('renames Ops Control to "Torre de control" and Pickup to "Recogida"', () => {
@@ -24,52 +30,79 @@ describe('nav structure', () => {
     expect(all.map((i) => i.label)).not.toContain('Pickup');
   });
 
-  it('puts the shift-paced modules in OPERACIÓN and the rest in GESTIÓN', () => {
-    const operacion = NAV_SECTIONS[0].items.map((i) => i.href);
-    expect(operacion).toEqual([
+  it('cuts the three sections by reading rhythm (spec-67)', () => {
+    // SEGUIMIENTO descends by zoom: whole operation, one order, one customer.
+    expect(NAV_SECTIONS[0].items.map((i) => i.href)).toEqual([
       '/app/operations-control',
       '/app/orders',
+      '/app/conversations',
+    ]);
+
+    // OPERACIÓN is the four stations in physical flow order — nothing else.
+    expect(NAV_SECTIONS[1].items.map((i) => i.href)).toEqual([
       '/app/pickup',
       '/app/reception',
       '/app/distribution',
       '/app/dispatch',
     ]);
 
-    const gestion = NAV_SECTIONS[1].items.map((i) => i.href);
-    expect(gestion).toEqual([
+    expect(NAV_SECTIONS[2].items.map((i) => i.href)).toEqual([
       '/app/dashboard',
       '/app/capacity-planning',
-      '/app/conversations',
       '/app/audit-logs',
       '/admin',
     ]);
   });
 
-  it('positions Pedidos second, right after Torre de control — resolveLandingPath depends on this order', () => {
-    expect(OPERATION_ITEMS[0].href).toBe('/app/operations-control');
-    expect(OPERATION_ITEMS[1]).toMatchObject({ href: '/app/orders', label: 'Pedidos' });
+  it('gives every OPERACIÓN item a module AND a countKey (spec-67 Invariante A)', () => {
+    for (const item of OPERATION_ITEMS) {
+      expect(item.module, `${item.label} needs a module`).toBeDefined();
+      expect(item.countKey, `${item.label} needs a countKey`).toBeDefined();
+    }
   });
 
-  it('gives every OPERACIÓN item except the tower a queue counter', () => {
-    // The tower is the overview — a count there would double-report the rest.
-    expect(OPERATION_ITEMS.filter((i) => i.countKey).map((i) => i.countKey)).toEqual([
-      'orders',
+  it('does NOT claim the converse — Pedidos keeps its counter from SEGUIMIENTO', () => {
+    // The invariant is one-directional on purpose. Asserting "nothing outside
+    // OPERACIÓN has a countKey" would force deleting the Pedidos badge, which
+    // spec-67 explicitly preserves.
+    const pedidos = TRACKING_ITEMS.find((i) => i.href === '/app/orders');
+    expect(pedidos?.countKey).toBe('orders');
+  });
+
+  it('positions Pedidos second in SEGUIMIENTO — display order only, landing no longer depends on it', () => {
+    // Before spec-67 this test's name ended "resolveLandingPath depends on
+    // this order". It no longer does: landing walks LANDING_SCAN_ORDER, so
+    // the sidebar can be re-sorted without moving anyone's start page.
+    expect(TRACKING_ITEMS[0].href).toBe('/app/operations-control');
+    expect(TRACKING_ITEMS[1]).toMatchObject({ href: '/app/orders', label: 'Pedidos' });
+  });
+
+  it('gives every OPERACIÓN station a queue counter', () => {
+    expect(OPERATION_ITEMS.map((i) => i.countKey)).toEqual([
       'pickup',
       'reception',
       'distribution',
       'dispatch',
     ]);
+    // The tower is the overview — a count there would double-report the rest.
     expect(
-      OPERATION_ITEMS.find((i) => i.href === '/app/operations-control')?.countKey,
+      TRACKING_ITEMS.find((i) => i.href === '/app/operations-control')?.countKey,
     ).toBeUndefined();
   });
 
   it('gives Pedidos no module — the cross-stage order list is not an optional module', () => {
-    expect(OPERATION_ITEMS.find((i) => i.href === '/app/orders')?.module).toBeUndefined();
+    // Look it up in TRACKING_ITEMS and assert it was FOUND first. Querying
+    // OPERATION_ITEMS here would pass vacuously after spec-67 moved Pedidos:
+    // `find` returns undefined and `undefined?.module` is undefined too, so
+    // the test would stay green while testing nothing.
+    const pedidos = TRACKING_ITEMS.find((i) => i.href === '/app/orders');
+    expect(pedidos).toBeDefined();
+    expect(pedidos?.module).toBeUndefined();
+    expect(OPERATION_ITEMS.map((i) => i.href)).not.toContain('/app/orders');
   });
 
   it('defines a warning threshold for every counter', () => {
-    for (const item of OPERATION_ITEMS) {
+    for (const item of [...TRACKING_ITEMS, ...OPERATION_ITEMS, ...MANAGEMENT_ITEMS]) {
       if (!item.countKey) continue;
       expect(countKeyThresholds[item.countKey]).toBeGreaterThan(0);
     }

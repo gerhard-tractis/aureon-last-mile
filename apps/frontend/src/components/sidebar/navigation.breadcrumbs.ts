@@ -21,9 +21,20 @@ import { NAV_SECTIONS } from './navigation';
  * so a route missing from this table simply has no crumb at all.
  */
 const EXTRA_CRUMBS: { href: string; section: string; page: string }[] = [
-  { href: '/app/orders/new', section: 'Gestión', page: 'Nuevo pedido' },
-  { href: '/app/orders/import', section: 'Gestión', page: 'Importar pedidos' },
+  // spec-67: these two are CHILDREN of the Pedidos nav item, so their section
+  // has to track it. Leaving them on 'Gestión' after Pedidos moved would
+  // render `Seguimiento › Pedidos` for the list and `Gestión › Nuevo pedido`
+  // for its own child — a crumb contradicting its parent.
+  { href: '/app/orders/new', section: 'Seguimiento', page: 'Nuevo pedido' },
+  { href: '/app/orders/import', section: 'Seguimiento', page: 'Importar pedidos' },
+  // Deliberately still 'Gestión': "Mi cuenta" is not a child of any nav item
+  // (it hangs off the avatar menu), so its section is a free label rather
+  // than a claim about the tree — see spec-67 Decisión 7.
   { href: '/app/user-settings', section: 'Gestión', page: 'Mi cuenta' },
+  // spec-67: the internal tools moved under /admin. Without these they would
+  // match the `/admin` nav item by prefix and both render as plain "Admin".
+  { href: '/admin/tools/ocr', section: 'Gestión', page: 'Herramientas · OCR' },
+  { href: '/admin/tools/wismo', section: 'Gestión', page: 'Herramientas · WISMO' },
 ];
 
 /**
