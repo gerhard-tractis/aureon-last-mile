@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { ConsolidationPageContent } from './page';
+import { ConsolidationPageContent } from './ConsolidationPageContent';
 
 // spec-68 Fase 4 review (finding #5) — the page threads `now` the same
 // way ConsolidationMobileView's own tests do, so nothing here depends on
