@@ -39,6 +39,9 @@ describe('SiteAnalytics', () => {
     // Cookies.tsx delays showing the banner by 1s to avoid a first-paint
     // flash; fake timers let tests fast-forward past that delay.
     vi.useFakeTimers();
+    // window is shared across tests in this file; clear any disable flag a
+    // previous test may have left behind so each test starts from a clean slate.
+    delete (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
   });
 
   afterEach(() => {
@@ -48,6 +51,9 @@ describe('SiteAnalytics', () => {
   it('renders nothing on an internal /app route: no banner, no GA', () => {
     mockPathname = '/app/reception';
     render(<SiteAnalytics gaId={GA_ID} />);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
 
     expect(screen.queryByTestId('ga')).not.toBeInTheDocument();
     expect(screen.queryByTestId('vercel-analytics')).not.toBeInTheDocument();
@@ -57,6 +63,9 @@ describe('SiteAnalytics', () => {
   it('renders nothing on an internal /admin route: no banner, no GA', () => {
     mockPathname = '/admin/tools';
     render(<SiteAnalytics gaId={GA_ID} />);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
 
     expect(screen.queryByTestId('ga')).not.toBeInTheDocument();
     expect(screen.queryByTestId('vercel-analytics')).not.toBeInTheDocument();
@@ -121,5 +130,92 @@ describe('SiteAnalytics', () => {
     // that this route is NOT treated as internal, so GA is allowed to render.
     expect(screen.getByTestId('vercel-analytics')).toBeInTheDocument();
     expect(screen.getByTestId('ga')).toBeInTheDocument();
+  });
+
+  it('does not render GA when gaId is not configured, even with accepted consent on a public route', () => {
+    mockPathname = '/legal';
+    mockConsentCookie = 'accepted';
+    render(<SiteAnalytics />);
+
+    expect(screen.queryByTestId('ga')).not.toBeInTheDocument();
+  });
+
+  describe('GA opt-out flag (window["ga-disable-<id>"])', () => {
+    // gtag.js has no unmount cleanup, so unmounting <GoogleAnalytics> alone
+    // does not stop already-loaded GA from reporting client-side navigations.
+    // Google's documented kill switch is this window flag, which gtag.js
+    // checks before sending any hit.
+    const disableFlag = () =>
+      (window as unknown as Record<string, unknown>)[`ga-disable-${GA_ID}`];
+
+    it('sets the flag to true on an internal route', () => {
+      mockPathname = '/app/reception';
+      mockConsentCookie = 'accepted';
+      render(<SiteAnalytics gaId={GA_ID} />);
+
+      expect(disableFlag()).toBe(true);
+    });
+
+    it('sets the flag to false on a public route with accepted consent', () => {
+      mockPathname = '/legal';
+      mockConsentCookie = 'accepted';
+      render(<SiteAnalytics gaId={GA_ID} />);
+
+      expect(disableFlag()).toBe(false);
+    });
+
+    it('sets the flag to true on a public route with declined consent', () => {
+      mockPathname = '/legal';
+      mockConsentCookie = 'declined';
+      render(<SiteAnalytics gaId={GA_ID} />);
+
+      expect(disableFlag()).toBe(true);
+    });
+
+    it('flips the flag to true when navigating from a public route to an internal one', () => {
+      mockPathname = '/legal';
+      mockConsentCookie = 'accepted';
+      const { rerender } = render(<SiteAnalytics gaId={GA_ID} />);
+      expect(disableFlag()).toBe(false);
+
+      mockPathname = '/app/reception';
+      rerender(<SiteAnalytics gaId={GA_ID} />);
+
+      expect(disableFlag()).toBe(true);
+    });
+
+    it('flips the flag to false the instant Accept is clicked, without a reload', () => {
+      // Consent is in-memory state, not a page reload: this proves the flag
+      // reacts to a live decision made through the banner (not just to the
+      // cookie value read once at mount), which is the same mechanism that
+      // must apply if the user were to later revoke consent.
+      mockPathname = '/legal';
+      mockConsentCookie = undefined;
+      render(<SiteAnalytics gaId={GA_ID} />);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(disableFlag()).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: /accept/i }));
+
+      expect(disableFlag()).toBe(false);
+      expect(screen.getByTestId('ga')).toBeInTheDocument();
+    });
+
+    it('sets the flag to true when the user declines through the banner (no prior cookie)', () => {
+      mockPathname = '/legal';
+      mockConsentCookie = undefined;
+      render(<SiteAnalytics gaId={GA_ID} />);
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(disableFlag()).toBe(true);
+
+      fireEvent.click(screen.getByRole('button', { name: /decline/i }));
+
+      expect(disableFlag()).toBe(true);
+      expect(screen.queryByTestId('ga')).not.toBeInTheDocument();
+    });
   });
 });

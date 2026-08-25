@@ -5,7 +5,7 @@ import { Shield, X } from 'lucide-react';
 import { setCookie, getCookie } from 'cookies-next/client';
 import Link from 'next/link';
 
-const COOKIE_CONSENT_KEY = 'cookie-accept';
+export const COOKIE_CONSENT_KEY = 'cookie-accept';
 const COOKIE_EXPIRY_DAYS = 365;
 
 interface CookieConsentProps {
@@ -13,7 +13,7 @@ interface CookieConsentProps {
     onDecision?: (value: 'accepted' | 'declined') => void;
 }
 
-const CookieConsent = ({ onDecision }: CookieConsentProps = {}) => {
+const CookieConsent = ({ onDecision }: CookieConsentProps) => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {

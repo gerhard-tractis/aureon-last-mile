@@ -1,10 +1,10 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Analytics } from '@vercel/analytics/next';
 import { GoogleAnalytics } from '@next/third-parties/google';
 import { getCookie } from 'cookies-next/client';
-import CookieConsent from '@/components/Cookies';
+import CookieConsent, { COOKIE_CONSENT_KEY } from '@/components/Cookies';
 
 // Authenticated internal areas: no analytics, no consent banner. The banner
 // used to overlay primary action buttons on /app/* for warehouse crew on
@@ -16,6 +16,8 @@ function isInternalRoute(pathname: string): boolean {
         (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
     );
 }
+
+type ConsentValue = 'accepted' | 'declined';
 
 interface SiteAnalyticsProps {
     gaId?: string;
@@ -29,27 +31,41 @@ interface SiteAnalyticsProps {
  */
 const SiteAnalytics = ({ gaId }: SiteAnalyticsProps) => {
     const pathname = usePathname();
+    const internalRoute = isInternalRoute(pathname);
 
-    // Consent must live in state (not just read once at mount) so that
-    // clicking Accept can flip GA on immediately, in the same render pass,
-    // without requiring a page reload to re-read the cookie.
-    const [consent, setConsent] = useState<string | undefined>(() => {
-        const value = getCookie('cookie-accept');
-        return typeof value === 'string' ? value : undefined;
+    // Consent lives in state (not just read once at mount) so that clicking
+    // Accept can flip GA on immediately, in the same render pass, without
+    // requiring a page reload to re-read the cookie.
+    const [consent, setConsent] = useState<ConsentValue | undefined>(() => {
+        const value = getCookie(COOKIE_CONSENT_KEY);
+        return value === 'accepted' || value === 'declined' ? value : undefined;
     });
 
-    if (isInternalRoute(pathname)) {
+    // next/script never tears gtag.js down on unmount (no cleanup registered
+    // for the script element or window.dataLayer), so once GA has loaded on
+    // a public route, merely unmounting <GoogleAnalytics> on a later internal
+    // route does NOT stop it — GA4's default enhanced measurement keeps
+    // reporting client-side navigations (e.g. router.push('/app') after
+    // login) for the rest of the session. window['ga-disable-<id>'] is
+    // Google's documented kill switch: gtag.js checks it before sending any
+    // hit, so this must be kept in sync with route + consent on every
+    // render, not just set once.
+    useEffect(() => {
+        if (!gaId) return;
+        const disabled = internalRoute || consent !== 'accepted';
+        (window as unknown as Record<string, boolean>)[`ga-disable-${gaId}`] = disabled;
+    }, [gaId, internalRoute, consent]);
+
+    if (internalRoute) {
         return null;
     }
-
-    const shouldRenderGA = Boolean(gaId) && consent === 'accepted';
 
     return (
         <>
             {/* Vercel Web Analytics is cookieless — it stays on regardless of consent. */}
             <Analytics />
             <CookieConsent onDecision={setConsent} />
-            {shouldRenderGA && <GoogleAnalytics gaId={gaId as string} />}
+            {gaId && consent === 'accepted' && <GoogleAnalytics gaId={gaId} />}
         </>
     );
 };
