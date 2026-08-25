@@ -205,4 +205,33 @@ describe('SendToDockSheet (4e)', () => {
     expect(other.className).not.toBe(suggested.className);
     expect(other.className).toMatch(/border-accent/);
   });
+
+  // spec-68 Fase 4 review (finding #2) — a caller can bundle packages
+  // whose comunas resolve to different andenes; `suggestedZone` then only
+  // reflects the FIRST match. `mixedComunaBatch` stops the sheet from
+  // claiming that pre-selection is comuna-justified for the whole batch.
+  describe('mixedComunaBatch', () => {
+    it('replaces the "sugerido X por comuna" subtitle with an explicit warning', () => {
+      render(<SendToDockSheet {...baseProps} mixedComunaBatch />);
+      expect(screen.queryByText(/sugerido A1 por comuna/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/comunas distintas/i)).toBeInTheDocument();
+    });
+
+    it('suppresses the SUGERIDO badge on the pre-selected zone', () => {
+      render(<SendToDockSheet {...baseProps} mixedComunaBatch />);
+      expect(screen.queryByText('SUGERIDO')).not.toBeInTheDocument();
+    });
+
+    it('still pre-selects the suggested zone as the default pick, just without the SUGERIDO framing', () => {
+      render(<SendToDockSheet {...baseProps} mixedComunaBatch />);
+      expect(screen.getByTestId('send-to-dock-option-zone-a1')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: 'Enviar a A1' })).toBeInTheDocument();
+    });
+
+    it('defaults to false — the ordinary single-comuna flow is unaffected', () => {
+      render(<SendToDockSheet {...baseProps} />);
+      expect(screen.getByText(/sugerido A1 por comuna/i)).toBeInTheDocument();
+      expect(screen.getByText('SUGERIDO')).toBeInTheDocument();
+    });
+  });
 });

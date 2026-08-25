@@ -26,6 +26,19 @@ export interface SendToDockSheetProps {
   sectorizedCounts: Record<string, number>;
   canUse: boolean;
   /**
+   * spec-68 Fase 4 review (finding #2) — true when `request` bundles
+   * packages whose comunas resolve to MORE THAN ONE andén, so
+   * `suggestedZone` reflects only the first matching package, not the
+   * whole batch. Confirming as-is would silently sectorize every OTHER
+   * package onto a zone that isn't actually theirs. Suppresses the
+   * SUGERIDO badge and swaps the "sugerido {code} por comuna" subtitle
+   * for an explicit warning — the caller must not tell the operator a
+   * pre-selected zone is comuna-justified when it demonstrably isn't for
+   * part of the batch. Defaults to `false`; the single-package (`4e`) and
+   * single-comuna call sites are unaffected.
+   */
+  mixedComunaBatch?: boolean;
+  /**
    * Fase 3 review (finding #4) — hands back the whole selected zone, not
    * just its id. Callers read `is_consolidation` straight off what the
    * user actually picked instead of re-looking it up in a filtered
@@ -42,6 +55,7 @@ export function SendToDockSheet({
   activeZones,
   sectorizedCounts,
   canUse,
+  mixedComunaBatch = false,
   onConfirm,
 }: SendToDockSheetProps) {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(
@@ -88,8 +102,9 @@ export function SendToDockSheet({
         <SheetHeader className="text-left">
           <SheetTitle>Enviar {request.code} a</SheetTitle>
           <SheetDescription>
-            {request.comunaName ? `${request.comunaName} · ` : ''}
-            sugerido {request.suggestedZone.code} por comuna
+            {mixedComunaBatch
+              ? 'El lote abarca comunas distintas — revisa el andén de cada bulto antes de enviar.'
+              : `${request.comunaName ? `${request.comunaName} · ` : ''}sugerido ${request.suggestedZone.code} por comuna`}
           </SheetDescription>
         </SheetHeader>
 
@@ -98,7 +113,7 @@ export function SendToDockSheet({
             <ZoneOption
               key={zone.id}
               zone={zone}
-              isSuggested={zone.id === suggestedId}
+              isSuggested={zone.id === suggestedId && !mixedComunaBatch}
               isSelected={zone.id === selectedZone.id}
               count={sectorizedCounts[zone.id] ?? 0}
               onSelect={() => setSelectedZoneId(zone.id)}

@@ -128,7 +128,7 @@ La acción primaria de `4f` es una asignación manual a la zona elegida: `useMan
 
 *Liberar a sectorización* es `useReleaseFromConsolidation`, que ya existe.
 
-**A verificar antes de escribir la UI** (paso 0 del plan): que la transición `retenido → sectorizado` la haga el trigger tal como está. El cuerpo del trigger decide por `is_consolidation` de la zona destino, no por el estado previo del paquete, así que debería funcionar — pero es una suposición sobre SQL que no se lee entera en este documento, y se comprueba con un test contra la base antes de construir encima.
+**Verificado en QA el 2026-08-25** (paso 0 del plan): se insertó una fila en `dock_scans` con `manual_override = TRUE` y `dock_zone_id` de una zona no-consolidación sobre un paquete en `retenido`. Resultado: `before=retenido after=sectorizado zone_moved=t` — el trigger promueve el paquete a `sectorizado` y apunta `dock_zone_id` a la zona elegida, sin guarda sobre el estado previo. Confirma la lectura del cuerpo del trigger: decide por `is_consolidation` de la zona destino, no por el estado previo del paquete. *Mover a andén* en `4f` reutiliza `useManualDockAssignment` — no hace falta mutación ni RPC nueva.
 
 ### 8. Componentes propios del módulo, no primitivos compartidos nuevos
 
@@ -188,7 +188,7 @@ Cada fase es un PR revisable por separado, con auto-merge.
 
 ### Fase 0 — Verificación previa (sin código de UI)
 
-**0.1** Test de integración contra la base: insertar `dock_scans` con `manual_override = true` y `dock_zone_id` de una zona no-consolidación, sobre un paquete en `retenido`, y afirmar que queda en `sectorizado` con `dock_zone_id` puesto. Si el trigger no lo hace, la decisión 7 cambia y `4f` necesita mutación propia — **este resultado es una compuerta, no un trámite**.
+**0.1** ✅ Verificado en QA el 2026-08-25: insertar `dock_scans` con `manual_override = true` y `dock_zone_id` de una zona no-consolidación, sobre un paquete en `retenido`, deja el paquete en `sectorizado` con `dock_zone_id` puesto (`before=retenido after=sectorizado zone_moved=t`). Decisión 7 queda confirmada tal como estaba escrita — `4f` no necesita mutación propia.
 
 ### Fase 1 — Capacidad de andén
 

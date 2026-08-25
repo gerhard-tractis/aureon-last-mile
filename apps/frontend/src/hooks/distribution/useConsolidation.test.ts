@@ -99,4 +99,45 @@ describe('useConsolidation', () => {
       delivery_date: '2026-03-19',
     });
   });
+
+  // spec-68 Fase 4 — `4f` needs "comuna → andén" per row, which the query
+  // didn't select before. Extends the existing join (`orders!inner(...)`),
+  // not a second query.
+  it('carries the order comuna through, for the "comuna → andén" line on 4f', async () => {
+    const rawPackages = [
+      {
+        id: 'p1',
+        label: 'PKG-001',
+        dock_zone_id: 'z1',
+        order_id: 'o1',
+        orders: { delivery_date: '2026-03-19', comuna_id: 'c-1', chile_comunas: { nombre: 'Quilicura' } },
+      },
+    ];
+    mockFromFn = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockReturnValue(makeChain(rawPackages, null)),
+    }));
+
+    const { result } = renderHook(() => useConsolidation('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data![0]).toMatchObject({ comunaId: 'c-1', comunaName: 'Quilicura' });
+  });
+
+  it('falls back to null comuna fields when the order has no mapped comuna', async () => {
+    const rawPackages = [
+      {
+        id: 'p1',
+        label: 'PKG-001',
+        dock_zone_id: 'z1',
+        order_id: 'o1',
+        orders: { delivery_date: '2026-03-19', comuna_id: null, chile_comunas: null },
+      },
+    ];
+    mockFromFn = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockReturnValue(makeChain(rawPackages, null)),
+    }));
+
+    const { result } = renderHook(() => useConsolidation('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data![0]).toMatchObject({ comunaId: null, comunaName: null });
+  });
 });
