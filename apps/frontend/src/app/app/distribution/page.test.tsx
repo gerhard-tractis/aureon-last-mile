@@ -186,13 +186,27 @@ describe('DistributionPage', () => {
       expect(screen.queryByText('Sin paquetes en consolidación')).not.toBeInTheDocument();
     });
 
-    it('below lg the PROCESOS DE LA NAVE rows render — non-navigable, their routes do not exist yet', () => {
-      // spec-68 review fix (finding 1) — /pendientes, /consolidacion and
-      // /andenes are Fases 3/4/6, not this one; a live Link would 404.
+    it('below lg a PROCESOS DE LA NAVE row is navigable only once its route exists', () => {
+      // spec-68 Fase 2 review fix (finding 1): a row whose route does not
+      // exist yet renders non-navigable rather than as a Link that 404s.
+      // Each later phase turns exactly one row on by supplying its href.
+      // Fase 3 shipped /app/distribution/pendientes, so that row is a real
+      // link now, while /consolidacion (Fase 4) and /andenes (Fase 6) stay
+      // inert. Expect to move one row down here as each phase lands — that
+      // churn is the point: it is what proves a row never links to a route
+      // that does not exist.
       mockIsBelowLg = true;
       render(<DistributionPage />);
-      expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: /pendientes de sectorizar/i })).not.toBeInTheDocument();
+
+      expect(screen.getByRole('link', { name: /pendientes de sectorizar/i })).toHaveAttribute(
+        'href',
+        '/app/distribution/pendientes',
+      );
+
+      expect(screen.getByText('Consolidación')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /consolidación/i })).not.toBeInTheDocument();
+      expect(screen.getByText('Andenes')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /andenes/i })).not.toBeInTheDocument();
     });
 
     // spec-68 review fix (finding 2) — page.tsx used to return the DESKTOP

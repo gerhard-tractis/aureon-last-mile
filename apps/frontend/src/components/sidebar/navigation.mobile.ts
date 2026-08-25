@@ -103,12 +103,19 @@ export function buildMobileTabs(ctx: NavContext): MobileTab[] {
  * record, both of which own the same fixed footer — but not
  * `/app/reception` itself, which is the module-switching listing and needs
  * the tab bar to get anywhere else.
+ *
+ * spec-68 Fase 3 (Decisión 2) — `/app/distribution/pendientes` gets the
+ * same treatment: it owns a fixed bottom action bar (Escanear + selección).
+ * `/app/distribution` itself stays OUT — it's the screen the crew
+ * navigates from, so it keeps the tab bar. `/consolidacion` and
+ * `/quicksort` join this list in Fases 4/5, not here.
  */
 const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/scan',
   '/app/pickup/review',
   '/app/pickup/route/active',
   '/app/reception/route',
+  '/app/distribution/pendientes',
 ];
 
 export function isImmersiveMobileRoute(pathname: string): boolean {

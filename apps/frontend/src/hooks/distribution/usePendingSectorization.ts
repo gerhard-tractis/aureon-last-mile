@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import { useDockZones } from './useDockZones';
+import type { DockZoneRecord } from './useDockZones';
 import { determineDockZone } from '@/lib/distribution/sectorization-engine';
-import type { DockZone, ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
+import type { ZoneMatchResult } from '@/lib/distribution/sectorization-engine';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 export interface SkuItem {
   sku: string;
@@ -30,7 +32,16 @@ export interface OrderGroup {
 }
 
 export interface ZoneGroup {
-  zone: DockZone;
+  /**
+   * spec-68 Fase 3 review — this is a `DockZoneRecord` (from useDockZones),
+   * not the narrower `DockZone` the sectorization engine's own params use.
+   * It was mistyped as `DockZone` before, which silently dropped
+   * `operator_id`/`capacity` from the type even though the runtime object
+   * always carries them (`zones.find(...)` below reads straight off
+   * useDockZones's data) — consumers that need `capacity` (SendToDockSheet)
+   * were forced into an unsound cast to get it.
+   */
+  zone: DockZoneRecord;
   matchResult: ZoneMatchResult;
   orders: OrderGroup[];
 }
@@ -52,14 +63,31 @@ function normalizeSkuItems(raw: unknown): SkuItem[] {
     }));
 }
 
-export function usePendingSectorization(operatorId: string | null) {
+export function usePendingSectorization(operatorId: string | null, now: Date = new Date()) {
   const { data: zones } = useDockZones(operatorId);
 
   return useQuery({
     queryKey: ['distribution', 'pending-sectorization', operatorId],
     queryFn: async (): Promise<ZoneGroup[]> => {
       const supabase = createSPAClient();
-      const today = new Date().toISOString().split('T')[0];
+      // spec-68 Fase 3 review — this was the UTC date, the same bug
+      // Fase 2 fixed in DistributionMobileView's todayISOFrom. Pre-existing
+      // here (predates this branch), fixed in passing because it directly
+      // degrades the pendientes screen this branch ships.
+      //
+      // Direction, worked through against isDeliveryDateActive: Santiago
+      // is UTC-4/-3, so it is never AHEAD of UTC — the UTC calendar date
+      // can only equal or lead the Santiago one, never trail it. So the
+      // old `today` could only be advanced relative to the real Santiago
+      // "today", never behind it, which can only make the `delivery <=
+      // tomorrow` active-window cutoff MORE permissive, never less. Net
+      // effect: during the Santiago evening rollover window, a delivery
+      // genuinely two-plus days out (which should read `future_date` and
+      // stay in consolidation) fell inside the artificially-advanced
+      // window and got routed to a live andén a day early — packages
+      // escaping consolidation too soon, not being pushed into it. See
+      // the regression test below.
+      const today = todayISOInTimezone(now);
 
       const { data, error } = await supabase
         .from('packages')
@@ -75,7 +103,7 @@ export function usePendingSectorization(operatorId: string | null) {
       if (!data || !zones || zones.length === 0) return [];
 
       // Pass 1: group packages into zone buckets
-      const zoneMap = new Map<string, { zone: DockZone; matchResult: ZoneMatchResult; orderMap: Map<string, OrderGroup> }>();
+      const zoneMap = new Map<string, { zone: DockZoneRecord; matchResult: ZoneMatchResult; orderMap: Map<string, OrderGroup> }>();
 
       for (const pkg of data) {
         const order = pkg.orders as {
