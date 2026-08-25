@@ -5,10 +5,15 @@ import { Shield, X } from 'lucide-react';
 import { setCookie, getCookie } from 'cookies-next/client';
 import Link from 'next/link';
 
-const COOKIE_CONSENT_KEY = 'cookie-accept';
+export const COOKIE_CONSENT_KEY = 'cookie-accept';
 const COOKIE_EXPIRY_DAYS = 365;
 
-const CookieConsent = () => {
+interface CookieConsentProps {
+    /** Notifies the parent of the user's decision so it can react without a reload (e.g. toggle GA). */
+    onDecision?: (value: 'accepted' | 'declined') => void;
+}
+
+const CookieConsent = ({ onDecision }: CookieConsentProps) => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
@@ -29,6 +34,7 @@ const CookieConsent = () => {
             path: '/'
         });
         setIsVisible(false);
+        onDecision?.('accepted');
     };
 
     const handleDecline = () => {
@@ -39,6 +45,7 @@ const CookieConsent = () => {
             path: '/'
         });
         setIsVisible(false);
+        onDecision?.('declined');
     };
 
     if (!isVisible) return null;

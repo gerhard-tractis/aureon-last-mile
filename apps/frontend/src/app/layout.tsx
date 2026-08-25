@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Archivo, Fraunces, IBM_Plex_Mono, Inter, JetBrains_Mono } from "next/font/google";
-import { Analytics } from '@vercel/analytics/next';
-import CookieConsent from "@/components/Cookies";
-import { GoogleAnalytics } from '@next/third-parties/google';
+import SiteAnalytics from "@/components/SiteAnalytics";
 import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 import SentryUserProvider from "@/components/SentryUserProvider";
 
@@ -94,12 +92,7 @@ export default function RootLayout({
       <SentryUserProvider />
       <ServiceWorkerRegistration />
       {children}
-      <Analytics />
-      <CookieConsent />
-      { gaID && (
-          <GoogleAnalytics gaId={gaID}/>
-      )}
-
+      <SiteAnalytics gaId={gaID} />
     </body>
     </html>
   );

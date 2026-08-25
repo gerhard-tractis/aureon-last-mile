@@ -312,6 +312,11 @@ export async function manifestStates(): Promise<
  * and the banner then appears over the app a second later. Setting the cookie
  * the component reads means it never renders at all — no timer, no race.
  */
+// Still required after spec-69, for a DIFFERENT reason than it was written for.
+// spec-69 stopped the banner rendering on /app/*, so it no longer covers the
+// mobile action bar. But signIn() below goes through /auth/login, and `auth` is
+// a PUBLIC route where the banner still appears on its 1s timer — the race this
+// helper exists to avoid. Do not delete it as "no longer needed".
 export async function suppressCookieBanner(context: BrowserContext): Promise<void> {
   await context.addCookies([{
     name: 'cookie-accept',
