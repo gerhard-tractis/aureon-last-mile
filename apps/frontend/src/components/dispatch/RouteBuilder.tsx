@@ -25,9 +25,15 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [routeClosed, setRouteClosed] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [sealError, setSealError] = useState<string | null>(null);
 
   const { data: packages = [], refetch } = useRoutePackages(routeId, operatorId);
   const scanMutation = useScanPackage(routeId);
+
+  // spec-70 decision 4: shown live while loading, not just discovered when
+  // /seal refuses — the cutoff is the worst possible moment to find out a
+  // stop was never scanned.
+  const pendingCount = packages.filter((p) => p.stage === 'planned').length;
 
   const handleScan = async (code: string) => {
     setScanError(null);
@@ -46,8 +52,18 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   };
 
   const handleClose = async () => {
-    const res = await fetch(`/api/dispatch/routes/${routeId}/close`, { method: 'POST' });
-    if (res.ok) { setRouteClosed(true); await refetch(); }
+    setSealError(null);
+    // /seal, not the deprecated /close alias — spec-70 phase 3.
+    const res = await fetch(`/api/dispatch/routes/${routeId}/seal`, { method: 'POST' });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setRouteClosed(true);
+      await refetch();
+    } else {
+      // A refusal (e.g. UNSEALED_STOPS) used to be swallowed here, so the
+      // button looked like it did nothing — this is the fix.
+      setSealError(json.message ?? 'No se pudo cerrar la ruta');
+    }
   };
 
   const handleDispatch = async () => {
@@ -110,10 +126,23 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
           <span className="text-[11px] text-text-muted uppercase tracking-[0.06em]">
             Paquetes escaneados
           </span>
-          <strong className="font-mono text-[13px] text-accent">
-            {packages.length}
-          </strong>
+          <span className="flex items-center gap-3">
+            {pendingCount > 0 && (
+              <span className="text-[11px] font-semibold text-status-warning-text">
+                Faltan {pendingCount} por estibar
+              </span>
+            )}
+            <strong className="font-mono text-[13px] text-accent">
+              {packages.length}
+            </strong>
+          </span>
         </div>
+
+        {sealError && (
+          <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
+            ⚠ {sealError}
+          </div>
+        )}
 
         {/* Package list */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2">

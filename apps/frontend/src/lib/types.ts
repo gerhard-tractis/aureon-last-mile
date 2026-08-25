@@ -1889,7 +1889,23 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      // spec-70 phase 1 (20260825000002). The first view in this project —
+      // hand-added because nothing here has ever regenerated this file
+      // against a view before. Row shape matches the SELECT in the
+      // migration: route_id nullable (dispatches.route_id is), operator_id
+      // not (dispatches.operator_id is NOT NULL, the tenant column), the four
+      // counts are COUNT(*)/COUNT(*) FILTER, never null.
+      route_stop_counts: {
+        Row: {
+          route_id: string | null
+          operator_id: string
+          total_stops: number
+          pending_stops: number
+          staged_stops: number
+          adopted_stops: number
+        }
+        Relationships: []
+      }
     }
     Functions: {
       archive_old_audit_logs: { Args: never; Returns: undefined }

@@ -197,6 +197,10 @@ export async function validateScan(
     contact_address: order?.delivery_address ?? null,
     contact_phone: order?.customer_phone ?? null,
     package_status: 'en_carga',
+    // Placeholder — the scan handler (route.ts) overwrites this in its
+    // response once it knows whether `action` resolved to stage or adopt.
+    // Validation itself hasn't happened yet, so 'planned' is what's true here.
+    stage: 'planned',
   };
 
   return { ok: true, package: pkg, action };

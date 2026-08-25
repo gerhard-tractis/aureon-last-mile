@@ -17,22 +17,34 @@ function buildRequest(body: Record<string, unknown> = { truck_identifier: 'ZALDU
 }
 
 /**
- * Dispatch route handler call order (happy path):
- *  1. supabase.from('routes').select().eq().eq().is().single()
- *  2. supabase.from('dispatches').select().eq().eq().is()
- *  3. Promise.all([
- *       supabase.from('routes').update().eq().eq(),
+ * Dispatch route handler call order (happy path, spec-70 phase 3):
+ *  1. supabase.from('routes').select().eq().eq().is().single()          — status must be 'loaded'
+ *  2. supabase.from('fleet_vehicles').select().eq().eq().is().maybeSingle() — resolve truck_identifier
+ *  3. supabase.from('dispatches').select().eq().eq().is()
+ *  4. supabase.rpc('transition_route_status', {..., p_to_status: 'dispatched'})
+ *  5. Promise.all([
+ *       supabase.from('routes').update({external_route_id, vehicle_id, driver_name}).eq().eq(),
  *       supabase.from('packages').update().eq().in(),
  *     ])
- *  4. supabase.from('audit_logs').insert()
+ *  6. supabase.from('audit_logs').insert()
  *
  * Error path: createSSRClient() is called a SECOND time inside the catch block
  * for the error audit log. That second client also needs auth.getSession + from('audit_logs').
  */
 
+function fleetVehicleChain(id: string | null = 'fv-1') {
+  return {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: id ? { id } : null, error: null }),
+  };
+}
+
 function buildSessionClient(overrides: {
   fromMock?: ReturnType<typeof vi.fn>;
   auditInsert?: ReturnType<typeof vi.fn>;
+  rpcMock?: ReturnType<typeof vi.fn>;
 } = {}) {
   const auditInsert = overrides.auditInsert ?? vi.fn().mockResolvedValue({ error: null });
   const fromMock = overrides.fromMock ?? vi.fn().mockReturnValue({
@@ -53,6 +65,7 @@ function buildSessionClient(overrides: {
       }),
     },
     from: fromMock,
+    rpc: overrides.rpcMock ?? vi.fn().mockResolvedValue({ data: 'dispatched', error: null }),
   };
 }
 
@@ -90,7 +103,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -119,8 +132,9 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     const packageUpdateSpy = vi.fn().mockReturnThis();
 
     const primaryFromMock = vi.fn()
-      .mockReturnValueOnce(routeChain)      // routes select
-      .mockReturnValueOnce(dispatchesChain) // dispatches select
+      .mockReturnValueOnce(routeChain)         // routes select
+      .mockReturnValueOnce(fleetVehicleChain()) // fleet_vehicles select
+      .mockReturnValueOnce(dispatchesChain)    // dispatches select
       // If DT throws before Promise.all, these won't be called:
       .mockReturnValue({ update: packageUpdateSpy, eq: vi.fn().mockReturnThis(), in: vi.fn().mockResolvedValue({ error: null }) });
 
@@ -156,7 +170,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -206,13 +220,15 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     const auditLogsChain = { insert: auditInsertSpy };
 
     const successFromMock = vi.fn()
-      .mockReturnValueOnce(routeChain)         // routes select
-      .mockReturnValueOnce(dispatchesChain)    // dispatches select
-      .mockReturnValueOnce(routeUpdateChain)   // routes update (Promise.all[0])
+      .mockReturnValueOnce(routeChain)          // routes select
+      .mockReturnValueOnce(fleetVehicleChain()) // fleet_vehicles select
+      .mockReturnValueOnce(dispatchesChain)     // dispatches select
+      .mockReturnValueOnce(routeUpdateChain)    // routes update (Promise.all[0])
       .mockReturnValueOnce(packagesUpdateChain) // packages update (Promise.all[1])
-      .mockReturnValueOnce(auditLogsChain);    // audit_logs insert
+      .mockReturnValueOnce(auditLogsChain);     // audit_logs insert
 
-    const client = buildSessionClient({ fromMock: successFromMock });
+    const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
+    const client = buildSessionClient({ fromMock: successFromMock, rpcMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -225,9 +241,21 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(body.ok).toBe(true);
     expect(body.external_route_id).toBe(99999);
     expect(body.packages_dispatched).toBe(1);
+
+    // The status change went through the RPC, not a raw UPDATE.
+    expect(rpcMock).toHaveBeenCalledWith('transition_route_status', {
+      p_route_id: 'r1',
+      p_operator_id: 'op-1',
+      p_to_status: 'dispatched',
+    });
+
+    // Vehicle and driver were persisted, not left only in React state.
+    expect(routeUpdateChain.update).toHaveBeenCalledWith(
+      expect.objectContaining({ vehicle_id: 'fv-1', driver_name: null }),
+    );
   });
 
-  it('returns 409 when route status is not draft', async () => {
+  it('returns 409 when route status is not loaded', async () => {
     const routeChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
@@ -246,13 +274,37 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(res.status).toBe(409);
   });
 
+  it('returns 422 when the truck_identifier does not resolve to a fleet vehicle', async () => {
+    const routeChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
+        error: null,
+      }),
+    };
+
+    const primaryFromMock = vi.fn()
+      .mockReturnValueOnce(routeChain)
+      .mockReturnValueOnce(fleetVehicleChain(null)); // no vehicle found
+    const client = buildSessionClient({ fromMock: primaryFromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('VEHICLE_NOT_FOUND');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
   it('returns 422 when route has no dispatches', async () => {
     const routeChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -265,6 +317,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
 
     const primaryFromMock = vi.fn()
       .mockReturnValueOnce(routeChain)
+      .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain);
     const client = buildSessionClient({ fromMock: primaryFromMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
@@ -284,13 +337,13 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
  * old name stays as a fallback in case a deployed environment still sets it.
  */
 describe('POST /routes/[id]/dispatch — token resolution', () => {
-  function draftRouteClient() {
+  function loadedRouteClient() {
     const routeChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -323,6 +376,7 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
     return buildSessionClient({
       fromMock: vi.fn()
         .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(fleetVehicleChain())
         .mockReturnValueOnce(dispatchesChain)
         .mockReturnValue(updateChain),
     });
@@ -335,7 +389,7 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
 
   it('passes DISPATCHTRACK_API_KEY to the DT client', async () => {
     vi.stubEnv('DISPATCHTRACK_API_KEY', 'canonical-token');
-    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(loadedRouteClient());
     (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
@@ -346,7 +400,7 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
 
   it('falls back to DT_API_KEY when the canonical name is unset', async () => {
     vi.stubEnv('DT_API_KEY', 'legacy-token');
-    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(loadedRouteClient());
     (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
@@ -356,7 +410,7 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
   });
 
   it('returns 502 and never calls DT when no token is configured', async () => {
-    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(draftRouteClient());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(loadedRouteClient());
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
 
@@ -379,7 +433,7 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -412,6 +466,7 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
     return buildSessionClient({
       fromMock: vi.fn()
         .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(fleetVehicleChain())
         .mockReturnValueOnce(dispatchesChain)
         .mockReturnValue(updateChain),
     });
@@ -486,7 +541,7 @@ describe('POST /routes/[id]/dispatch — items', () => {
       eq: vi.fn().mockReturnThis(),
       is: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({
-        data: { id: 'r1', status: 'draft', route_date: '2026-03-24' },
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24' },
         error: null,
       }),
     };
@@ -520,6 +575,7 @@ describe('POST /routes/[id]/dispatch — items', () => {
     return buildSessionClient({
       fromMock: vi.fn()
         .mockReturnValueOnce(routeChain)
+        .mockReturnValueOnce(fleetVehicleChain())
         .mockReturnValueOnce(dispatchesChain)
         .mockReturnValue(updateChain),
     });

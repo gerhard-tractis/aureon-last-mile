@@ -27,9 +27,17 @@ const PACKAGE_STATUS_CONFIG: Record<
 
 export function PackageRow({ index, pkg, onRemove }: Props) {
   const statusConfig = PACKAGE_STATUS_CONFIG[pkg.package_status];
+  // spec-70 decision 4: the gap between the plan and the load has to be
+  // visible on the row while loading is still happening — the seal refusal
+  // is the worst possible moment to find out a stop was never scanned.
+  const unstaged = pkg.stage === 'planned';
 
   return (
-    <div className="flex items-center gap-3.5 bg-surface border border-border rounded-[10px] px-3.5 min-h-[60px] mb-2">
+    <div
+      className={`flex items-center gap-3.5 bg-surface border rounded-[10px] px-3.5 min-h-[60px] mb-2 ${
+        unstaged ? 'border-status-warning' : 'border-border'
+      }`}
+    >
       <span className="font-mono text-[11px] text-text-muted w-5.5 text-right shrink-0">
         {index}
       </span>
@@ -43,6 +51,11 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
         <div className="text-xs text-text-muted truncate">
           {pkg.contact_address ?? '—'}
         </div>
+        {unstaged && (
+          <div className="text-[11px] font-semibold text-status-warning-text mt-0.5">
+            Sin estibar
+          </div>
+        )}
       </div>
       <StatusBadge
         status={pkg.package_status}

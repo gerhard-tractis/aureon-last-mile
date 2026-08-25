@@ -1,5 +1,6 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types';
 
 export async function DELETE(
   _request: NextRequest,
@@ -26,9 +27,14 @@ export async function DELETE(
 
     if (!route) return NextResponse.json({ code: 'NOT_FOUND' }, { status: 404 });
 
-    if (route.status !== 'draft' && route.status !== 'planned') {
+    // spec-70 decision 6: release is a one-way door. Once a route is
+    // `dispatched` DispatchTrack already has it, and undoing that needs a
+    // compensating cancel there — out of scope for this spec — not a local
+    // soft-delete that lets the two sides silently diverge. OPEN_ROUTE_STATUSES
+    // is `draft`/`planned`/`loading`/`loaded`; everything past it is refused.
+    if (!(OPEN_ROUTE_STATUSES as readonly string[]).includes(route.status)) {
       return NextResponse.json(
-        { code: 'ALREADY_DISPATCHED', message: 'Solo se pueden eliminar rutas en borrador o planificadas.' },
+        { code: 'ALREADY_DISPATCHED', message: 'Solo se pueden eliminar rutas que no han sido despachadas.' },
         { status: 403 },
       );
     }
@@ -50,12 +56,15 @@ export async function DELETE(
         .in('id', dispatchIds)
         .eq('operator_id', operatorId);
 
-      // 3. Reset packages back to 'asignado'
+      // 3. Reset packages back to 'sectorizado' — breakage #9. Nothing writes
+      // 'asignado' any more; the dock-scan trigger (see scan-validator.ts's
+      // header comment) is what puts a package on an andén, and that is the
+      // state it should return to once its route is gone.
       const orderIds = dispatches.map((d) => d.order_id).filter((id): id is string => id != null);
       if (orderIds.length > 0) {
         await supabase
           .from('packages')
-          .update({ status: 'asignado' })
+          .update({ status: 'sectorizado' })
           .in('order_id', orderIds)
           .eq('operator_id', operatorId)
           .eq('status', 'en_carga');
