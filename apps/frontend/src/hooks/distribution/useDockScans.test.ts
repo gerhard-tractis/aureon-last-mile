@@ -173,5 +173,35 @@ describe('useDockScanMutation', () => {
         result.current.mutateAsync({ barcode: 'PKG-001' })
       ).resolves.toMatchObject({ scanResult: 'accepted' });
     });
+
+    // spec-68 Fase 5 review (finding #7) — DockCapacityBar reads
+    // useSectorizedByZone, which has its own 15s staleTime/30s
+    // refetchInterval and was never invalidated by this mutation. An
+    // operator sorting a run of packages into a nearly-full dock could see
+    // "Quedan N espacios" frozen for up to 30s while pushing it past
+    // capacity — the exact warning Fase 1 exists to give. Applies to
+    // desktop too (DockCard reads the same hook), not just mobile.
+    it('invalidates sectorized-by-zone on a successful scan so capacity/count reads refresh immediately', async () => {
+      mockValidateDockScan.mockResolvedValue({
+        scanResult: 'accepted',
+        packageId: 'pkg-1',
+        packageLabel: 'PKG-001',
+      });
+
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const localWrapper = ({ children }: { children: React.ReactNode }) =>
+        React.createElement(QueryClientProvider, { client: queryClient }, children);
+
+      const { result } = renderHook(
+        () => useDockScanMutation('op-1', 'batch-1', 'zone-1', 'user-1'),
+        { wrapper: localWrapper },
+      );
+      await result.current.mutateAsync({ barcode: 'PKG-001' });
+
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: ['distribution', 'sectorized-by-zone', 'op-1'] }),
+      );
+    });
   });
 });

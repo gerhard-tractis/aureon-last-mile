@@ -29,6 +29,15 @@ vi.mock('@/components/distribution/QuickSortScanner', () => ({
   QuickSortScanner: () => <div data-testid='quicksort-scanner' />,
 }));
 
+let belowLg = false;
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => belowLg,
+}));
+
+vi.mock('@/components/distribution/QuickSortMobileView', () => ({
+  QuickSortMobileView: () => <div data-testid="quicksort-mobile-view" />,
+}));
+
 vi.mock('@/hooks/distribution/useDockZones', () => ({
   useDockZones: () => ({
     data: [
@@ -127,6 +136,7 @@ beforeEach(() => {
   pendingGroups = [zoneGroup()];
   verifiedIds = new Set<string>();
   managerCanAssign = false;
+  belowLg = false;
 });
 
 describe('QuickSortPage — pending list (spec-39 regression)', () => {
@@ -182,5 +192,23 @@ describe('QuickSortPage — pending list (spec-39 regression)', () => {
     expect(
       screen.getAllByLabelText(/asignar manualmente/i).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+// spec-68 Fase 5.5 — below `lg` this route renders QuickSortMobileView
+// instead of the desktop tree above; the desktop tree must not also mount.
+describe('QuickSortPage — isBelowLg branch', () => {
+  it('renders the desktop tree at/above lg', () => {
+    belowLg = false;
+    render(<QuickSortPage />);
+    expect(screen.getByTestId('quicksort-scanner')).toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-mobile-view')).not.toBeInTheDocument();
+  });
+
+  it('renders QuickSortMobileView below lg, and NOT the desktop tree', () => {
+    belowLg = true;
+    render(<QuickSortPage />);
+    expect(screen.getByTestId('quicksort-mobile-view')).toBeInTheDocument();
+    expect(screen.queryByTestId('quicksort-scanner')).not.toBeInTheDocument();
   });
 });

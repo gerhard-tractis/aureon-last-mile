@@ -101,6 +101,14 @@ export function useDockScanMutation(
       queryClient.invalidateQueries({
         queryKey: ['distribution', 'dock-verifications', operatorId],
       });
+      // spec-68 Fase 5 review (finding #7) — useSectorizedByZone has its
+      // own staleTime/refetchInterval and was never invalidated by this
+      // mutation, so DockCapacityBar (mobile step 2, desktop DockCard)
+      // could read a stale count/percentage for up to 30s after a scan
+      // that just changed it.
+      queryClient.invalidateQueries({
+        queryKey: ['distribution', 'sectorized-by-zone', operatorId],
+      });
     },
   });
 }

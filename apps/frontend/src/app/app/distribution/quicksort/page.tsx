@@ -7,11 +7,13 @@ import {
   QuickSortScanner,
   type QuickSortScanEvent,
 } from '@/components/distribution/QuickSortScanner';
+import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
 import { DockCard } from '@/components/distribution/DockCard';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useGlobal } from '@/lib/context/GlobalContext';
+import { useIsBelowLg } from '@/hooks/useViewport';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
 import { useDistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
@@ -25,6 +27,7 @@ import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssig
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 /**
  * spec-54 phase 4.3 — Distribución / modo rápido (mock 1d).
@@ -40,6 +43,13 @@ import { cn } from '@/lib/utils';
  * sight of the pile they are working through — along with tap-verify and the
  * manager's manual assign. It is restored here, in the space the mock left
  * empty; spec-39 is still in progress, so the mock never superseded it.
+ *
+ * spec-68 Fase 5.5 — below `lg` this route renders `QuickSortMobileView`
+ * (`4g`/`4h`/`4i`/`4j`) instead of the tree below. Deliberately a branch
+ * inside this single default export rather than a second exported
+ * component: Next type-checks every export of a page module against its
+ * Page contract, so `QuickSortDesktopContent` below stays unexported, the
+ * same shape `KpiTile` already used before this change.
  */
 
 function KpiTile({
@@ -81,6 +91,12 @@ function KpiTile({
 }
 
 export default function QuickSortPage() {
+  const isBelowLg = useIsBelowLg();
+  if (isBelowLg) return <QuickSortMobileView />;
+  return <QuickSortDesktopContent />;
+}
+
+function QuickSortDesktopContent() {
   const router = useRouter();
   const { operatorId } = useOperatorId();
   const { user } = useGlobal();
@@ -89,7 +105,7 @@ export default function QuickSortPage() {
   const { data: kpis } = useDistributionKPIs(operatorId);
   const { data: unmatched } = useUnmatchedComunas(operatorId);
   const { data: pendingGroups } = usePendingSectorization(operatorId);
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayISOInTimezone();
   const { data: verifiedSet } = useDockVerifications(operatorId, today);
   const verifyMutation = useDockVerificationMutation(operatorId ?? '', user?.id ?? '');
   const manualAssign = useManualDockAssignment(operatorId ?? '', user?.id ?? '');

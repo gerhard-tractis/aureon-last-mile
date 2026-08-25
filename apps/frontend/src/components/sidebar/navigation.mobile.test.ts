@@ -208,4 +208,11 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/distribution/consolidacion')).toBe(true);
     expect(isImmersiveMobileRoute('/app/distribution/consolidacion/anything')).toBe(true);
   });
+
+  // spec-68 Fase 5 (Decisión 2) — /quicksort's step 1 and step 2 each own a
+  // fixed bottom action bar too (QuickSortMobile / QuickSortMobileDock).
+  it('the distribution quicksort screen is immersive too', () => {
+    expect(isImmersiveMobileRoute('/app/distribution/quicksort')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/distribution/quicksort/anything')).toBe(true);
+  });
 });
