@@ -107,8 +107,11 @@ export function buildMobileTabs(ctx: NavContext): MobileTab[] {
  * spec-68 Fase 3 (Decisión 2) — `/app/distribution/pendientes` gets the
  * same treatment: it owns a fixed bottom action bar (Escanear + selección).
  * `/app/distribution` itself stays OUT — it's the screen the crew
- * navigates from, so it keeps the tab bar. `/consolidacion` and
- * `/quicksort` join this list in Fases 4/5, not here.
+ * navigates from, so it keeps the tab bar. `/quicksort` joins this list in
+ * Fase 5, not here.
+ *
+ * spec-68 Fase 4 — `/app/distribution/consolidacion` joins for the same
+ * reason: its footer carries Mover a andén / Liberar a sectorización.
  */
 const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/scan',
@@ -116,6 +119,7 @@ const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/route/active',
   '/app/reception/route',
   '/app/distribution/pendientes',
+  '/app/distribution/consolidacion',
 ];
 
 export function isImmersiveMobileRoute(pathname: string): boolean {

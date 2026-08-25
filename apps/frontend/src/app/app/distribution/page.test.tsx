@@ -190,11 +190,11 @@ describe('DistributionPage', () => {
       // spec-68 Fase 2 review fix (finding 1): a row whose route does not
       // exist yet renders non-navigable rather than as a Link that 404s.
       // Each later phase turns exactly one row on by supplying its href.
-      // Fase 3 shipped /app/distribution/pendientes, so that row is a real
-      // link now, while /consolidacion (Fase 4) and /andenes (Fase 6) stay
-      // inert. Expect to move one row down here as each phase lands — that
-      // churn is the point: it is what proves a row never links to a route
-      // that does not exist.
+      // Fase 3 shipped /app/distribution/pendientes and Fase 4 shipped
+      // /app/distribution/consolidacion, so both are real links now, while
+      // /andenes (Fase 6) stays inert. Expect to move this assertion again
+      // when Fase 6 lands — that churn is the point: it is what proves a
+      // row never links to a route that does not exist.
       mockIsBelowLg = true;
       render(<DistributionPage />);
 
@@ -203,8 +203,11 @@ describe('DistributionPage', () => {
         '/app/distribution/pendientes',
       );
 
-      expect(screen.getByText('Consolidación')).toBeInTheDocument();
-      expect(screen.queryByRole('link', { name: /consolidación/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /consolidación/i })).toHaveAttribute(
+        'href',
+        '/app/distribution/consolidacion',
+      );
+
       expect(screen.getByText('Andenes')).toBeInTheDocument();
       expect(screen.queryByRole('link', { name: /andenes/i })).not.toBeInTheDocument();
     });

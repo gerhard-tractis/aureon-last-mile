@@ -201,4 +201,11 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/distribution/pendientes')).toBe(true);
     expect(isImmersiveMobileRoute('/app/distribution/pendientes/anything')).toBe(true);
   });
+
+  // spec-68 Fase 4 (Decisión 2) — /consolidacion owns the same fixed
+  // bottom action bar shape (Mover a andén / Liberar a sectorización).
+  it('the distribution consolidación screen is immersive too', () => {
+    expect(isImmersiveMobileRoute('/app/distribution/consolidacion')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/distribution/consolidacion/anything')).toBe(true);
+  });
 });

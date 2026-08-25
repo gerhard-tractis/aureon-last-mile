@@ -143,15 +143,13 @@ describe('DistributionMobileView (4c)', () => {
     expect(salenYa).toHaveTextContent('0');
   });
 
-  // Review fix (finding 1) — Consolidación/Andenes still have no route
-  // (Fases 4/6), so those two must render non-navigable: no link role, no
-  // dead href, but the label and count stay.
-  it('renders Consolidación and Andenes rows as non-navigable — their routes do not exist yet', () => {
+  // Review fix (finding 1) — Andenes still has no route (Fase 6), so it
+  // must render non-navigable: no link role, no dead href, but the label
+  // and count stay.
+  it('renders Andenes as non-navigable — its route does not exist yet', () => {
     render(<DistributionMobileView {...baseProps} />);
     expect(screen.getByText('PROCESOS DE LA NAVE')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /consolidaci/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /andenes/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-row-consolidacion')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByTestId('process-row-andenes')).toHaveAttribute('aria-disabled', 'true');
   });
 
@@ -162,6 +160,15 @@ describe('DistributionMobileView (4c)', () => {
     const link = screen.getByRole('link', { name: /pendientes de sectorizar/i });
     expect(link).toHaveAttribute('href', '/app/distribution/pendientes');
     expect(screen.getByTestId('process-row-pendientes')).not.toHaveAttribute('aria-disabled');
+  });
+
+  // spec-68 Fase 4 — /app/distribution/consolidacion ships this phase, so
+  // its row moves from inert to a real link, same as pendientes did.
+  it('Consolidación is a real link now that /consolidacion exists', () => {
+    render(<DistributionMobileView {...baseProps} />);
+    const link = screen.getByRole('link', { name: /consolidaci/i });
+    expect(link).toHaveAttribute('href', '/app/distribution/consolidacion');
+    expect(screen.getByTestId('process-row-consolidacion')).not.toHaveAttribute('aria-disabled');
   });
 
   it('every process row meets the 60px touch floor', () => {
