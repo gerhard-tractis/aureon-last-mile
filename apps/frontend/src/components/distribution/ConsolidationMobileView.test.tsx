@@ -74,7 +74,7 @@ describe('ConsolidationMobileView (4f)', () => {
       ],
     });
     const urgentes = screen.getByTestId('consolidation-section-urgentes');
-    expect(within(urgentes).getByText('URGENTES · HOY Y MAÑANA')).toBeInTheDocument();
+    expect(within(urgentes).getByText('URGENTES')).toBeInTheDocument();
     expect(within(urgentes).getByText('2')).toBeInTheDocument();
 
     const proximos = screen.getByTestId('consolidation-section-proximos');
@@ -86,6 +86,16 @@ describe('ConsolidationMobileView (4f)', () => {
     renderView({ packages: [pkg({ id: 'a', delivery_date: '2026-08-20' })] });
     expect(screen.getByTestId('consolidation-section-urgentes')).toBeInTheDocument();
     expect(screen.queryByTestId('consolidation-section-proximos')).not.toBeInTheDocument();
+  });
+
+  // Fase 4 review (finding 6) — the label used to hard-code "HOY Y
+  // MAÑANA", which is wrong once an overdue-only package lands in this
+  // section (its own row tag reads AYER, contradicting the header).
+  it('labels the section bare URGENTES even when it holds only an overdue package', () => {
+    renderView({ packages: [pkg({ id: 'a', delivery_date: '2026-08-20' })] });
+    const urgentes = screen.getByTestId('consolidation-section-urgentes');
+    expect(within(urgentes).getByText('URGENTES')).toBeInTheDocument();
+    expect(screen.queryByText(/HOY Y MAÑANA/)).not.toBeInTheDocument();
   });
 
   it('omits a section entirely when it has no packages', () => {

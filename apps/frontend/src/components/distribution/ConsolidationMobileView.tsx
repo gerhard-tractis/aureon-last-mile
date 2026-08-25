@@ -5,6 +5,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { cn } from '@/lib/utils';
 import { isLeavingSoon } from '@/lib/distribution/leaving-soon';
 import { formatRelativeDeliveryDate } from '@/lib/distribution/relative-date';
+import { matchZoneByComuna } from '@/lib/distribution/consolidation-zone-match';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
 import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
@@ -12,8 +13,14 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 /**
  * spec-68 Fase 4 — `4f`, consolidación, below `lg`.
  *
- * Two sections — URGENTES (hoy/mañana/vencidos, `isLeavingSoon` from Fase
- * 2) and PRÓXIMOS — each package a multi-select row. The header
+ * Two sections — URGENTES and PRÓXIMOS — each package a multi-select row.
+ * URGENTES uses `isLeavingSoon` from Fase 2, which is deliberately
+ * hoy/mañana/VENCIDOS too (review fix — a consolidation zone holding only
+ * late packages must not read "Salen ya: 0"). Fase 4 review (finding 6) —
+ * the section label used to read "URGENTES · HOY Y MAÑANA", which was
+ * simply wrong for an overdue package sitting in that same section with
+ * an AYER row tag. Bare "URGENTES" doesn't over-promise a window, the
+ * same way PRÓXIMOS is one word with no qualifier. The header
  * ("Consolidación", "N bultos retenidos · zona CNS", "N SALEN YA" chip)
  * and the fixed action footer live in the route (mirrors `pendientes`'s
  * page.tsx/PendingMobileList split), not here — this component owns the
@@ -36,13 +43,6 @@ export interface ConsolidationMobileViewProps {
   onToggleSelect: (id: string) => void;
   /** Injectable for tests; defaults to now. */
   now?: Date;
-}
-
-function matchZoneByComuna(comunaId: string | null, zones: DockZoneRecord[]): DockZoneRecord | null {
-  if (!comunaId) return null;
-  return (
-    zones.find((z) => !z.is_consolidation && z.is_active && z.comunas.some((c) => c.id === comunaId)) ?? null
-  );
 }
 
 export function ConsolidationMobileView({
@@ -83,7 +83,7 @@ export function ConsolidationMobileView({
       {urgent.length > 0 && (
         <Section
           testId="consolidation-section-urgentes"
-          label="URGENTES · HOY Y MAÑANA"
+          label="URGENTES"
           count={urgent.length}
           tone="warning"
           packages={urgent}
