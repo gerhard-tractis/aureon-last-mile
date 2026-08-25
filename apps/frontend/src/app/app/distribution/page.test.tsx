@@ -43,6 +43,15 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+let mockIsBelowLg = false;
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => mockIsBelowLg,
+}));
+
+vi.mock('@/hooks/useCurrentUserName', () => ({
+  useCurrentUserName: () => ({ data: 'Marcela Rojas' }),
+}));
+
 vi.mock('next/link', () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) => (
     <a href={href} {...props}>{children}</a>
@@ -55,6 +64,7 @@ function tile(label: string): HTMLElement {
 
 describe('DistributionPage', () => {
   beforeEach(() => {
+    mockIsBelowLg = false;
     mockUnmatched = [];
     mockUseDistributionKPIs.mockReturnValue({ data: mockKpis, isLoading: false });
     mockUseDockZones.mockReturnValue({ data: mockZones });
@@ -149,6 +159,63 @@ describe('DistributionPage', () => {
       });
       render(<DistributionPage />);
       expect(screen.getByText('Nadie está escaneando en este momento.')).toBeInTheDocument();
+    });
+  });
+
+  // spec-68 Fase 2 (Decisión 1) — `useIsBelowLg` picks exactly one tree.
+  // Regression guard for the bug that has already shipped twice (spec-62,
+  // spec-54 3h): both headers must never mount together at 390px.
+  describe('mobile tree (useIsBelowLg)', () => {
+    it('above lg (desktop) renders the desktop header and KPI grid, never the mobile greeting', () => {
+      mockIsBelowLg = false;
+      render(<DistributionPage />);
+      expect(screen.getByRole('heading', { name: 'Distribución' })).toBeInTheDocument();
+      expect(screen.getByTestId('outbound-dock')).toBeInTheDocument();
+      expect(screen.queryByText('Hola, Marcela')).not.toBeInTheDocument();
+      expect(screen.queryByText('TU TAREA AHORA')).not.toBeInTheDocument();
+    });
+
+    it('below lg renders the mobile greeting and never the desktop header or panels', () => {
+      mockIsBelowLg = true;
+      render(<DistributionPage />);
+      expect(screen.getByText('Hola, Marcela')).toBeInTheDocument();
+      expect(screen.getByText('TU TAREA AHORA')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
+      expect(screen.queryByTestId('outbound-dock')).not.toBeInTheDocument();
+      expect(screen.queryByText('Andenes de salida')).not.toBeInTheDocument();
+      expect(screen.queryByText('Sin paquetes en consolidación')).not.toBeInTheDocument();
+    });
+
+    it('below lg the PROCESOS DE LA NAVE rows render — non-navigable, their routes do not exist yet', () => {
+      // spec-68 review fix (finding 1) — /pendientes, /consolidacion and
+      // /andenes are Fases 3/4/6, not this one; a live Link would 404.
+      mockIsBelowLg = true;
+      render(<DistributionPage />);
+      expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /pendientes de sectorizar/i })).not.toBeInTheDocument();
+    });
+
+    // spec-68 review fix (finding 2) — page.tsx used to return the DESKTOP
+    // skeleton before the isBelowLg branch, so DistributionMobileView's own
+    // loading state (and its distribution-mobile-hero-skeleton testid) was
+    // unreachable in the real app: a loading phone showed desktop skeleton
+    // bars instead. This test fails against the old ordering because
+    // isBelowLg was checked AFTER the `!operatorId || kpisLoading` early
+    // return.
+    it('below lg, while loading, shows the mobile skeleton — not the desktop one', () => {
+      mockIsBelowLg = true;
+      mockUseDistributionKPIs.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('distribution-mobile-hero-skeleton')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
+    });
+
+    it('above lg, while loading, still shows the desktop skeleton', () => {
+      mockIsBelowLg = false;
+      mockUseDistributionKPIs.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.queryByTestId('distribution-mobile-hero-skeleton')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
     });
   });
 });
