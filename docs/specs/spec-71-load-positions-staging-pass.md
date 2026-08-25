@@ -73,12 +73,14 @@ is stated explicitly in Decision 1 so the second step is a config change, not a 
   component; see Decision 3.
 
 - **`dispatches.stage` already exists and already means "physically confirmed."** spec-70 phase 1
-  added `stage TEXT CHECK (stage IN ('planned','staged','adopted'))` with `staged_at`/`staged_by`,
-  and phase 2 (merged, `20260825000002_spec70_dispatch_stage.sql` remap and the rewritten
-  `validateScan`) made the first stage scan on a route flip a `dispatches` row from `planned` to
-  `staged`. That is precisely the semantics of "this package is now confirmed onto this truck's
-  load" — the vocabulary spec-71 needs already shipped one spec ago. This spec must reuse it, not
-  invent a parallel `load_positions`-side status.
+  added `stage TEXT CHECK (stage IN ('planned','staged','adopted'))` with `staged_at`/`staged_by`
+  across two migrations (`20260825000001` adds the enum labels; `20260825000002`, per its own
+  header, is "phase 1 (2 of 2)" — the column/remap migration, not phase 2). Phase 2's application
+  code (merged separately: the rewritten `validateScan` and the scan handler) is what makes the
+  first stage scan on a route flip a `dispatches` row from `planned` to `staged`. That is precisely
+  the semantics of "this package is now confirmed onto this truck's load" — the vocabulary spec-71
+  needs already shipped one spec ago. This spec must reuse it, not invent a parallel
+  `load_positions`-side status.
 
 ---
 
@@ -146,23 +148,28 @@ CREATE TABLE public.load_positions (
   is_active    BOOLEAN NOT NULL DEFAULT true,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  deleted_at   TIMESTAMPTZ,
-  CONSTRAINT unique_load_position_code_per_operator UNIQUE (operator_id, code)
+  deleted_at   TIMESTAMPTZ
 );
+
+-- Partial unique index, not a table-level UNIQUE constraint — the repo
+-- convention for soft-deleted tables (see idx_dock_zones_operator_code,
+-- uniq_vehicles_operator_plate). A table-level UNIQUE would refuse to let an
+-- operator soft-delete a position and later reuse its code for a new one.
+CREATE UNIQUE INDEX unique_load_position_code_per_operator
+  ON public.load_positions (operator_id, code) WHERE deleted_at IS NULL;
 
 -- routes: which position (if any) this route's load currently occupies
 ALTER TABLE public.routes
   ADD COLUMN IF NOT EXISTS load_position_id UUID REFERENCES public.load_positions(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS load_position_assigned_at UUID; -- placeholder name only; see note below
+  ADD COLUMN IF NOT EXISTS load_position_assigned_at TIMESTAMPTZ;
 ```
 
-**Note on the second `routes` column above:** the assignment timestamp should be `TIMESTAMPTZ`, not
-`UUID` — flagged here rather than silently "fixed" because the exact column set (assigned_at,
-assigned_by, released_at) needs to be settled against spec-70 phase 3's audit pattern
-(`removal_reason` + `audit_logs`) during implementation, not guessed here. The implementing PR picks
-the final shape and writes it into the migration; this spec fixes the *decision* (assignment/release
-are tracked facts, not derived) and leaves the column list to be finalized alongside spec-70 phase 3,
-which lands the audit-log convention this should match.
+**Note on the second `routes` column above:** the exact column set (assigned_at, assigned_by,
+released_at) needs to be settled against spec-70 phase 3's audit pattern (`removal_reason` +
+`audit_logs`) during implementation, not guessed here. The implementing PR picks the final shape and
+writes it into the migration; this spec fixes the *decision* (assignment/release are tracked facts,
+not derived) and leaves the column list to be finalized alongside spec-70 phase 3, which lands the
+audit-log convention this should match.
 
 RLS: `operator_id = public.get_operator_id()`, matching every other table in this schema (e.g.
 `dock_zones`, `vehicles` in `20260812000001_spec52_vehicles_table.sql`). Soft delete via

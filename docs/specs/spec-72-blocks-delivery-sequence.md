@@ -33,7 +33,7 @@ this spec protects it (territory stability) rather than discarding it.
 - Stop-level (order-level) manual sequencing. The unit is the block (comuna within a route), not the
   individual delivery — see Decision 1.
 - Load positions / the physical staging pass — spec-71. This spec and spec-71 are siblings: LIFO
-  block order (Decision 4 here) is what makes spec-71's staging useful, but neither spec's data
+  block order (Decision 5 here) is what makes spec-71's staging useful, but neither spec's data
   model depends on the other shipping first.
 - Vehicle capacity, fill rate, or top-up — spec-73.
 - Changing what DispatchTrack receives or how routes are dispatched to it. This spec is about local
@@ -61,16 +61,24 @@ this spec protects it (territory stability) rather than discarding it.
   route — an order of magnitude fewer than the ~40 individual stops on a typical route, and the
   right granularity for a manager to review in seconds rather than author stop-by-stop.
 
-- **The route builder has no notion of "who drove this territory last."** `RouteBuilder.tsx`
+- **The route builder has no notion of "who drove this territory last" before dispatch, and only
+  a partial, after-the-fact record once a route is dispatched.** `RouteBuilder.tsx`
   (`apps/frontend/src/components/dispatch/RouteBuilder.tsx`) and the dispatch handler
   (`apps/frontend/src/app/api/dispatch/routes/[id]/dispatch/route.ts`) take `driver_name` as free
   text in the dispatch request body and send it straight to DispatchTrack
-  (`truck_identifier`/`driver_identifier` in the POST body, line 61 of `RouteBuilder.tsx`) — it is
-  never read back from, or matched against, anything. `routes.driver_name` and `routes.vehicle_id`
-  exist as columns (`20260306000001_add_routes_dispatches_fleet_tables.sql:84-85`) but the dispatch
-  handler never writes either locally; this is exactly breakage #10 from spec-70, still open on
-  `main` as of this writing (spec-70 phase 3, which would fix it, is not yet merged). So there is
-  today no record for "which driver usually runs Comuna X" to be built from or checked against.
+  (`truck_identifier`/`driver_identifier` in the POST body, line 61 of `RouteBuilder.tsx`) — the
+  dispatch handler itself never writes it to `routes.driver_name` locally; this is exactly breakage
+  #10 from spec-70, still open on `main` as of this writing (spec-70 phase 3, which would fix it, is
+  not yet merged). `routes.driver_name` and `routes.vehicle_id` do exist as columns
+  (`20260306000001_add_routes_dispatches_fleet_tables.sql:84-85`), and the DispatchTrack route
+  webhook (`apps/worker/n8n/workflows/paris-dispatchtrack-webhook.json`, the `route` case) does
+  `PATCH` `routes.driver_name` from `body.truck_driver` — so a route that has already been dispatched
+  and picked up by DispatchTrack does get a driver name written back, eventually. That record is
+  provider-sourced and arrives after the fact, which is too late for a manager planning *this*
+  route's assignment; it is not a record a manager can look up while planning, only a receipt after
+  the truck already left. Territory stability (Decision 6) needs the earlier, locally-written record
+  spec-70 phase 3 provides, so the dependency stands even though the DT webhook means the data isn't
+  entirely absent from the system today.
 
 ---
 
@@ -91,17 +99,28 @@ this spec protects it (territory stability) rather than discarding it.
    what's wrong, confirm. The column exists now specifically so that day never requires a schema
    change or a UI rewrite, only a new writer.
 
-3. **`dispatches.planned_sequence` is reused for the plan's stop order, not replaced.** It already
-   exists, is already the column the webhook expects to send DispatchTrack a sequence, and already
-   means "planned position" per its own migration comment. This spec adds sequence **at block
-   level**, alongside it: a new ordering fact on the route's block list, not a duplicate of the
-   existing per-stop column. `planned_sequence` continues to hold (or receive, once this spec's
-   local planning writes it before dispatch rather than only after) the stop-level order within a
-   route; the block sequence is the coarser structure a manager actually edits. Reusing the same
-   column for two granularities — block index and stop index — would make it ambiguous which one a
-   given row means without joining back through the block table, which is exactly the
-   "two vocabularies, one column" trap spec-70's Decision 1 already named and rejected once in this
-   codebase.
+3. **`dispatches.planned_sequence` is reused for the plan's stop order, not replaced — but it is
+   read-only from DispatchTrack today, and this spec does not make it writable.** The column already
+   exists and already means "planned position," but the direction is inbound only: the webhook sync
+   writes `planned_sequence: body.position || null` (DT → us, per the problem section above), and
+   `DTRoutePayload` in `apps/frontend/src/lib/dispatchtrack-api.ts` — the shape the dispatch handler
+   actually POSTs to DispatchTrack — carries `truck_identifier`, `route_date`, `driver_identifier`,
+   and `dispatches[]`, with no sequence field anywhere in it or in `DTDispatch`/`DTItem`. So there is
+   today no outbound path for a locally-planned stop order to reach DispatchTrack at all; a manager
+   sequencing blocks before dispatch has nothing that pushes that order back to the provider. This
+   spec adds sequence **at block level**, alongside the existing column: a new ordering fact on the
+   route's block list, not a duplicate of the existing per-stop column, and not a promise that
+   `planned_sequence` becomes writable by implication. `planned_sequence` continues to hold whatever
+   DispatchTrack reports back after dispatch, as it does today; the block sequence is the coarser,
+   locally-authored structure a manager actually edits before that point. Reusing the same column for
+   two granularities — block index and stop index — would make it ambiguous which one a given row
+   means without joining back through the block table, which is exactly the "two vocabularies, one
+   column" trap spec-70's Decision 1 already named and rejected once in this codebase. **Building an
+   outbound stop-sequence push to DispatchTrack (extending `DTRoutePayload`/`DTDispatch` and the
+   dispatch handler) is explicit, unlisted work this spec does not do** — without it, a manager's
+   block-level plan stays a local artifact and never reaches the driver's DispatchTrack app as a
+   stop order, which limits what territory stability and LIFO loading (Decisions 5-6) can achieve
+   until that push exists.
 
 4. **The driver's actual delivery order lands in a separate field and never overwrites the plan.**
    DispatchTrack's dispatch-event webhook already reports arrival timing per stop
@@ -156,9 +175,15 @@ CREATE TABLE public.route_blocks (
                      CHECK (sequence_source IN ('default','manual','optimizer')),
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-  deleted_at       TIMESTAMPTZ,
-  CONSTRAINT unique_route_comuna_block UNIQUE (route_id, comuna_id)
+  deleted_at       TIMESTAMPTZ
 );
+
+-- Partial unique index, not a table-level UNIQUE constraint -- the repo
+-- convention for soft-deleted tables (see idx_dock_zones_operator_code,
+-- uniq_vehicles_operator_plate). A table-level UNIQUE would refuse to let a
+-- soft-deleted block's comuna be reused by a new block on the same route.
+CREATE UNIQUE INDEX unique_route_comuna_block
+  ON public.route_blocks (route_id, comuna_id) WHERE deleted_at IS NULL;
 
 -- dispatches: derived actual-arrival sequence, separate from the provider's
 -- planned figure so neither writer ever overwrites the other's meaning.
@@ -172,16 +197,23 @@ COMMENT ON COLUMN public.dispatches.actual_sequence IS
 ```
 
 `route_blocks` is operator-scoped RLS exactly like every other table in this schema
-(`operator_id = public.get_operator_id()`), soft-deleted like the rest, and `sequence_index` is
-`INTEGER` rather than an enum for the same reason spec-70 chose `TEXT` + `CHECK` for `stage`: this
-value set is expected to be re-derived by an optimiser later and re-ordering a plain integer column
-is a normal `UPDATE`, not a migration.
+(`operator_id = public.get_operator_id()`), soft-deleted like the rest, and `sequence_index` is a
+plain `INTEGER` -- reordering blocks is a normal `UPDATE` of that column, not a migration.
 
 **No table for "which orders are in this block."** A block's membership is exactly "the dispatches
 on this route whose order's `comuna_id` matches this block's `comuna_id`" — fully derivable from
 `dispatches → orders → comuna_id`, so it is a join, not a stored list. Storing it separately would
 create the same class of drift spec-70 built `route_stop_counts` to avoid (Decision 5 there: "Counts
 are derived, never incremented").
+
+**`orders.comuna_id` is nullable** (`ADD COLUMN IF NOT EXISTS comuna_id UUID REFERENCES
+public.chile_comunas(id)`, no `NOT NULL`, in `20260321000001_chile_comunas_normalization.sql:455`) —
+`normalize_comuna_id` can fail to match a raw comuna string and leave it `NULL`. An order in that
+state cannot join into any `route_blocks` row, which means it must not silently vanish from the
+sequenced route the way orders have silently disappeared elsewhere in this project before. Any order
+on the route whose `orders.comuna_id IS NULL` is surfaced as an explicit "sin comuna — no
+secuenciado" row outside the block list, not folded into any block and not dropped from the route's
+manifest or its counts.
 
 ---
 
@@ -197,9 +229,10 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
   populate `route_blocks` from the route's comuna composition in whatever order they were added,
   `sequence_source = 'default'`. This is the day-one behaviour the manager reviews against.
 - **Phase 3 — Manager review UI.** A screen/section on the route builder listing blocks in order
-  (comuna name, order/package counts, drag-or-buttons reorder), writing `sequence_index` +
-  `sequence_source = 'manual'` on any change. Read-only block list is available as soon as phase 2
-  ships; the editing UI is this phase.
+  (comuna name, order/package counts, move-up/move-down buttons to reorder — no drag-and-drop,
+  consistent with this spec's Non-Goals), writing `sequence_index` + `sequence_source = 'manual'` on
+  any change. Read-only block list is available as soon as phase 2 ships; the editing UI is this
+  phase.
 - **Phase 4 — Territory stability.** The last-driver lookup and the reassignment warning (Decision
   6). Depends on `routes.driver_name` actually being persisted locally, which is spec-70 phase 3 —
   call this phase blocked on that phase merging, not just on spec-70's docs status.

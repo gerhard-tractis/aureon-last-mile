@@ -42,6 +42,30 @@ interleaved, capped, always a scan-confirmed second touch) and a **max-drops** c
   Whether/how those columns get filled is a connector-config question (see the problem section) that
   this spec deliberately leaves open rather than deciding as a side effect of capacity work.
 
+## Dependencies this spec is not fully independent of
+
+Every one of specs 71/72/73 is written to depend only on spec-70, not on each other, and that holds
+for this spec's data model and its Tier 0/1 fill-bar work (Phases 1–2, 6). It does **not** fully hold
+for the top-up feature:
+
+- **Decisions 5.2, 5.3, and 5.5 (whole-block moves, end-of-route append, the scan-confirmed move
+  task) lean directly on spec-72's block concept and spec-71's staging-scan mechanism.** Phase 4
+  below is written so it can ship before either of those specs lands — a "block" can start as an
+  ad-hoc comuna grouping computed on the fly rather than a `route_blocks` row, and the move task can
+  start as a manual checklist entry rather than a wired staging scan — but a top-up feature shipped
+  that way, alone, is thin: no first-class block structure to move as a unit, no load-position
+  destination for the move to land in, no LIFO payoff. The full value of Phase 4 is realized once
+  spec-71 and spec-72 exist, even though this spec does not require either to be built first.
+- **Phases 2 and 6 need a vehicle known before dispatch, which spec-70 phase 3 is what provides.**
+  `routes.vehicle_id` is not written locally today — `RouteBuilder.tsx` holds the selected vehicle in
+  `useState` and only DispatchTrack's webhook back-fills `fleet_vehicles`/`routes.vehicle_id` after
+  the fact (see the problem section's evidence on `RouteBuilder.tsx` and the dispatch handler). A fill
+  bar that needs "this route's vehicle" before the route is dispatched, and a `vehicle_load_samples`
+  row that needs a `vehicle_id` at seal time (before dispatch, per spec-70's state machine), both
+  depend on spec-70 phase 3 (still unmerged as of this writing) actually persisting the vehicle
+  assignment locally. Without it, Phase 2's fill bar and Phase 6's learned samples have no vehicle to
+  key against until the route is already gone.
+
 ---
 
 ## The problem, with evidence
@@ -55,8 +79,8 @@ interleaved, capped, always a scan-confirmed second touch) and a **max-drops** c
 
 - **`orders.total_volume_m3` and `orders.total_weight_kg` exist and are effectively unpopulated.**
   Both columns were added by `20260223000001_create_automation_worker_schema.sql:328-333`
-  (`DECIMAL(10,3)` / `DECIMAL(10,6)`, both nullable, both commented "from manifest, may be
-  inaccurate"). The Easy connector's `column_map` seed in that same migration maps
+  (`total_volume_m3` is `DECIMAL(10,6)`, `total_weight_kg` is `DECIMAL(10,3)`, both nullable, both
+  commented "from manifest, may be inaccurate"). The Easy connector's `column_map` seed in that same migration maps
   `"total_weight_kg": "PESO KG"` — so *if* a retailer's manifest carries a weight column and the
   ingestion pipeline is wired to read it, weight could arrive today — but `total_volume_m3` has no
   column mapped for any seeded connector, and a repo-wide search outside migrations and the pgTAP
@@ -115,29 +139,43 @@ interleaved, capped, always a scan-confirmed second touch) and a **max-drops** c
    `lib/distribution/dock-capacity.ts`'s shape and signature style) is the single place that turns a
    route's package/volume/weight totals and a vehicle's tier-1/tier-2 numbers into fill percentage,
    tone, and top-up suggestion sizing. Every screen that renders truck fill reads this module;
-   nothing recomputes the arithmetic locally, for the same reason spec-68 gave: "cuatro pantallas la
-   leen; escrita cuatro veces se desincroniza a la primera."
+   nothing recomputes the arithmetic locally — spec-68's own spec doc gives the reason for the
+   equivalent module one level down: four screens read `dock-capacity.ts`, and writing the same
+   arithmetic four times is how it drifts (`docs/specs/spec-68-distribution-mobile.md`, Decision 5).
+   `dock-capacity.ts`'s own header comment in the codebase makes the same point in English.
 
-4. **Capacity is also learned, not only typed.** Every time a route is sealed (spec-70's `/seal`,
-   entered when zero dispatches remain `planned`), the loaded package count (and, where tier-2 data
-   is present, volume/weight) for that vehicle is recorded. A rolling empirical p90 across a
-   vehicle's sealed loads is computed and shown alongside the manager's typed `capacity_packages` —
-   not in place of it. This does not replace tier 1; a manager's typed number is still what drives
-   the fill bar and the blocking-free top-up suggestions, because the p90 needs sealed history to
-   exist at all and a new or rarely-used vehicle has none. The p90 is a second, quieter number: "you
-   said 200, your last 12 loads averaged 174" is exactly the signal that lets a manager correct a
-   guessed capacity without a new measurement device.
+4. **A demand signal is also learned from sealed loads — it is not a learned capacity, and the
+   copy must not claim otherwise.** Every time a route is sealed (spec-70's `/seal`, entered when
+   zero dispatches remain `planned`), the loaded package count (and, where tier-2 data is present,
+   volume/weight) for that vehicle is recorded. A route can seal well under a vehicle's true ceiling
+   — a light day, a half-empty wave, an operator choosing not to top it up — so an empirical p90
+   across a vehicle's sealed loads measures **what this vehicle has actually been asked to carry**,
+   not what it can carry. Showing it as "your last 12 loads averaged 174" next to a manager's typed
+   200 reads as a correction toward the truck's true limit, which it is not entitled to claim: a
+   vehicle that could carry 220 but has only ever been loaded to a comfortable 174 would show exactly
+   the same p90 as one whose real ceiling is 174. The UI copy has to say what the number is —
+   observed load history, a demand/utilization figure — not "measured capacity," and it is shown
+   alongside the manager's typed `capacity_packages` as a second, separate number, never in place of
+   it and never as a suggested replacement value. Tier 1's typed number stays what drives the fill
+   bar and the blocking-free top-up suggestions; the p90 needs sealed history to exist at all and a
+   new or rarely-used vehicle has none.
 
-5. **Top-up rules — all five required, none optional:**
+5. **Top-up rules — all six required, none optional:**
 
    1. **Adjacent andenes only.** Adjacency is a one-time, manually configured table —
       `dock_zone_adjacency`, listing which andén pairs are geographically next to each other. Santiago
       comuna geography is static, so this table is populated once by an operator and rarely touched
-      again. It is deliberately **not** derived from geocoding or coordinates — there is no lat/lng
-      anywhere on `dock_zones` or `chile_comunas` (`chile_comunas` carries `codigo_cut`, `nombre`,
-      `provincia`, `region`, `region_num` — no coordinates; see
-      `20260321000001_chile_comunas_normalization.sql`), so adjacency has to be a fact someone states,
-      not one the system derives.
+      again. It is deliberately **not** derived from geocoding or coordinates. `dock_zones` has no
+      lat/lng. `chile_comunas` does carry a `geometry GEOMETRY(MultiPolygon, 4326)` column — the
+      table is PostGIS-backed (`CREATE EXTENSION IF NOT EXISTS postgis`,
+      `20260321000001_chile_comunas_normalization.sql:5-17`) alongside `codigo_cut`, `nombre`,
+      `provincia`, `region`, `region_num` — but that column has never been populated: the same
+      migration's seed data only inserts the five text columns, and a repo-wide search finds no
+      writer of `chile_comunas.geometry` anywhere. So the conclusion holds — there is no usable
+      coordinate data to derive adjacency from today — but the column itself is not absent, only
+      empty. Deriving adjacency from `geometry` instead of a manual table is a real future option if
+      that column is ever populated; this spec does not assume or depend on that happening, and until
+      it does, adjacency has to be a fact someone states, not one the system derives.
    2. **Whole comuna blocks move, never loose orders.** A top-up candidate is one of spec-72's blocks
       in its entirety — this preserves the block model, the LIFO load order spec-72 defines, and the
       driver's mental map of "which comuna am I delivering in." Splitting a block for top-up would
@@ -155,6 +193,17 @@ interleaved, capped, always a scan-confirmed second touch) and a **max-drops** c
       the accepting route's load position, one scan each, sealed like any other move. A top-up that
       only updates `route_id` in the database without a physical confirmation is how packages go
       missing; this spec refuses that shortcut even though it would be the smaller diff.
+   6. **The donor side is a manager-only removal, exactly as spec-70 already requires, and a donor
+      route that is `loaded` or beyond cannot be raided.** Moving a block onto another route means
+      those dispatches leave the donor route's plan. spec-70 already makes any such removal a
+      manager-only action (`admin`/`ops_leader`) requiring a `removal_reason` and an `audit_logs`
+      entry (spec-70 Decision 3, and the `DELETE /routes/[id]/packages/[pkgId]` endpoint it
+      describes) — top-up reuses that exact mechanism rather than a top-up-specific removal path, so
+      there is one audited way to take an order off a route's plan, not two. A route that has already
+      reached spec-70's `loaded` state (zero dispatches left `planned` — its manifest is sealed) is
+      not a valid donor: raiding a sealed manifest for a top-up would reopen a route the seal step
+      exists to close, and would mean a donor route's own load could come up short after the fact
+      with no scan to explain the gap. A donor may only be a route still `planned` or `loading`.
 
 6. **Fill rate is a cost metric; cost-per-drop is the real one — so max-drops is a second hard
    constraint, not a nice-to-have.** A full truck making 11 hours of stops costs more than two
@@ -207,9 +256,16 @@ CREATE TABLE public.dock_zone_adjacency (
   adjacent_zone_id  UUID NOT NULL REFERENCES public.dock_zones(id) ON DELETE CASCADE,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at        TIMESTAMPTZ,
-  CONSTRAINT dock_zone_adjacency_not_self CHECK (dock_zone_id <> adjacent_zone_id),
-  CONSTRAINT unique_dock_zone_adjacency_pair UNIQUE (operator_id, dock_zone_id, adjacent_zone_id)
+  CONSTRAINT dock_zone_adjacency_not_self CHECK (dock_zone_id <> adjacent_zone_id)
 );
+
+-- Partial unique index, not a table-level UNIQUE constraint -- the repo
+-- convention for soft-deleted tables (see idx_dock_zones_operator_code,
+-- uniq_vehicles_operator_plate). A table-level UNIQUE would refuse to let a
+-- soft-deleted adjacency pair be reconfigured later under the same zones.
+CREATE UNIQUE INDEX unique_dock_zone_adjacency_pair
+  ON public.dock_zone_adjacency (operator_id, dock_zone_id, adjacent_zone_id)
+  WHERE deleted_at IS NULL;
 
 -- learned capacity: one row per sealed route, feeding the empirical p90
 CREATE TABLE public.vehicle_load_samples (
