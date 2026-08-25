@@ -1,4 +1,4 @@
-# Spec-68: El banner de cookies tapa la barra de acciones móvil
+# Spec-69: El banner de cookies tapa la barra de acciones móvil
 
 > **Related:** [spec-62](spec-62-reception-mobile.md) (donde se detectó), [spec-61](spec-61-pickup-route-crew.md) (rutas `/app/*`)
 
