@@ -112,6 +112,13 @@ export function buildMobileTabs(ctx: NavContext): MobileTab[] {
  *
  * spec-68 Fase 4 — `/app/distribution/consolidacion` joins for the same
  * reason: its footer carries Mover a andén / Liberar a sectorización.
+ *
+ * spec-68 Fase 5 — `/app/distribution/quicksort` joins too: both step 1
+ * and step 2 own a fixed bottom action bar of their own (Ingresar código /
+ * Cerrar lote, or Enviar a consolidación / Cancelar — see
+ * `QuickSortMobile`/`QuickSortMobileDock`). The desktop tree at this same
+ * route keeps its own header instead — this list only gates the GLOBAL
+ * `MobileTabBar`, which never renders above `lg` anyway.
  */
 const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/scan',
@@ -120,6 +127,7 @@ const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/reception/route',
   '/app/distribution/pendientes',
   '/app/distribution/consolidacion',
+  '/app/distribution/quicksort',
 ];
 
 export function isImmersiveMobileRoute(pathname: string): boolean {
