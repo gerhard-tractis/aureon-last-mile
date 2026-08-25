@@ -201,13 +201,25 @@ manejadores. No cambia el aspecto del banner.
 Quitar los tres montajes y dejar `<SiteAnalytics gaId={gaID} />`. El layout es
 un servidor; `SiteAnalytics` es cliente porque necesita `usePathname`.
 
-### Task 4 — E2E: retirar el parche
+### Task 4 — E2E: **no** retirar el parche (premisa corregida)
 
-**Files:** `apps/frontend/e2e/support/spec52-fixture.ts`
+**Files:** `apps/frontend/e2e/support/spec52-fixture.ts` — sin cambios de código.
 
-`suppressCookieBanner()` existía porque el banner tapaba la barra de acciones en
-`/app/*`. Si el banner ya no se renderiza ahí, el helper deja de tener sentido y
-se retira; si algún test público lo necesita, se conserva sólo ahí.
+Este task se escribió suponiendo que, al dejar de renderizarse el banner en
+`/app/*`, `suppressCookieBanner()` quedaba sin motivo. **La suposición era
+falsa.** `signIn()` navega a `/auth/login` (`spec52-fixture.ts:326`), y `auth`
+es una ruta **pública**: el banner sigue apareciendo ahí, con su temporizador de
+1 s, que es exactamente la carrera que el helper existe para evitar.
+
+Lo que sí cambió es el motivo por el que importa:
+
+- **Antes:** el banner tapaba la barra de acciones en `/app/*`.
+- **Ahora:** en `/app/*` ya no se renderiza; el helper sigue siendo necesario
+  por la **pantalla de login**, que es pública.
+
+Retirarlo habría reintroducido la intermitencia en el login. Se conserva, y se
+documenta el porqué en el propio fixture para que nadie lo borre por "ya no hace
+falta".
 
 ### Verificación
 
