@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (creó las dos secciones actuales), [spec-65](spec-65-pedidos-tab.md) (añadió Pedidos a OPERACIÓN y litigó `resolveLandingPath`), [spec-45](spec-45-module-activation-layer.md) (activación de módulos), [spec-66](spec-66-ops-leader-role.md) (`ops_leader` y la barra de pestañas móvil), [spec-60](spec-60-control-tower-fleet-map.md) (Torre de control)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-24_
 
