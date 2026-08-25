@@ -360,4 +360,13 @@ describe('ConsolidationPage (route: /app/distribution/consolidacion)', () => {
       expect(mockRelease).toHaveBeenCalledWith(['pkg-1'], expect.anything());
     });
   });
+
+  // spec-68 Fase 6 accessibility sweep (6.3) — regression guard: this
+  // route's only heading used to be DistributionMobileHeader's <h2>, so it
+  // shipped with zero <h1>s. Fixed by promoting the titled variant's title
+  // to <h1> (Fase 6).
+  it('carries exactly one top-level heading', () => {
+    render(<ConsolidationPage />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
 });

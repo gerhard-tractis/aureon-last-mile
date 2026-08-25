@@ -74,11 +74,13 @@ describe('DistributionMobileHeader — titled variant (later phases)', () => {
         statusChip={{ label: 'EN LÍNEA', tone: 'success' }}
       />,
     );
-    // Deliberately h2, not h1 — the titled variant belongs to a sub-route
-    // (Fases 3/4/5), each of which will carry its own top-level heading;
-    // it must not compete with the greeting variant's <h1> for that role.
+    // spec-68 Fase 6 accessibility sweep (6.3) — <h1>, not h2: the titled
+    // variant is always its own route (Fases 3/4/5/6), never mounted next
+    // to the greeting variant's <h1>, which only ever renders on
+    // `/app/distribution` itself. A titled route needs exactly one
+    // top-level heading, and this is it.
     expect(
-      screen.getByRole('heading', { level: 2, name: 'Pendientes de sectorizar' }),
+      screen.getByRole('heading', { level: 1, name: 'Pendientes de sectorizar' }),
     ).toBeInTheDocument();
     expect(screen.getByText('42 paquetes')).toBeInTheDocument();
     expect(screen.getByText('EN LÍNEA')).toBeInTheDocument();

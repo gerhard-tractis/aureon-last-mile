@@ -80,6 +80,17 @@ export function QuickSortMobileDock({
 
   return (
     <div className="flex min-h-0 flex-col gap-5 px-5 py-[22px] pb-[104px]">
+      {/* spec-68 Fase 6 accessibility sweep (6.3) — visually hidden: this
+          screen has no visible title by design (Decisión 4), but it is
+          `/app/distribution/quicksort`'s ONLY content whenever step 2 is
+          showing (step 1's <h1> unmounts), so the route still needs
+          exactly one top-level heading here. */}
+      <h1 className="sr-only">
+        {rejected
+          ? `Andén incorrecto — se esperaba ${destination.zone_code}`
+          : `Escanear andén — llevar a ${destination.zone_code}`}
+      </h1>
+
       <DestinationCard
         destination={destination}
         currentPackage={currentPackage}

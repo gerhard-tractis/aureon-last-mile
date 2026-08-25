@@ -216,4 +216,13 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
     await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
     expect(toast.success).not.toHaveBeenCalled();
   });
+
+  // spec-68 Fase 6 accessibility sweep (6.3) — regression guard: this
+  // route's only heading used to be DistributionMobileHeader's <h2>, so it
+  // shipped with zero <h1>s. Fixed by promoting the titled variant's title
+  // to <h1> (Fase 6).
+  it('carries exactly one top-level heading', () => {
+    render(<PendingSectorizationPage />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
 });

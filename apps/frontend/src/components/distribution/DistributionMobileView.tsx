@@ -29,12 +29,14 @@ import type { UnmatchedComunaRow } from '@/hooks/distribution/useUnmatchedComuna
  * so this component renders nothing below the last section and the page
  * shell supplies navigation.
  *
- * Decisión 3 / review fix (finding 1) — `/andenes` still doesn't exist
- * (Fase 6), so that `DistributionProcessRow` keeps `href={null}` on
- * purpose: a `<Link>` to a route that 404s is a live regression on the
- * only distribution screen a phone gets, not just an unfinished link. It
- * still shows its label and count — see DistributionProcessRow.tsx.
- * `/pendientes` (Fase 3) and `/consolidacion` (Fase 4) are real links now.
+ * Decisión 3 — `/andenes` shipped in Fase 6 (`DockListMobile`), so all
+ * three PROCESOS DE LA NAVE rows are real links now: `/pendientes` (Fase
+ * 3), `/consolidacion` (Fase 4), `/andenes` (Fase 6). See
+ * `DistributionProcessRow.tsx` for why `href` stays `string | null` on the
+ * shared row component even though nothing here passes `null` anymore —
+ * a `<Link>` to a route that doesn't exist yet is a live regression on the
+ * only distribution screen a phone gets, and the next new row (if any)
+ * will need that guard again.
  *
  * Decisión 9 — no "turno 14:00" anywhere (see DistributionMobileHeader) and
  * SALEN YA is computed here, client-side, from `consolidationPackages` —
@@ -145,7 +147,7 @@ export function DistributionMobileView({
         {/* Distinct icon from Consolidación (finding 6) — with gloves on,
             the glyph is the fastest discriminator between adjacent rows. */}
         <DistributionProcessRow
-          href={null}
+          href="/app/distribution/andenes"
           icon={Warehouse}
           title="Andenes"
           subtitle="Ocupación por zona"

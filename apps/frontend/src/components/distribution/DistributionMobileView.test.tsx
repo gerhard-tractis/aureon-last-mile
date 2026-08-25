@@ -143,14 +143,15 @@ describe('DistributionMobileView (4c)', () => {
     expect(salenYa).toHaveTextContent('0');
   });
 
-  // Review fix (finding 1) — Andenes still has no route (Fase 6), so it
-  // must render non-navigable: no link role, no dead href, but the label
-  // and count stay.
-  it('renders Andenes as non-navigable — its route does not exist yet', () => {
+  // spec-68 Fase 6 — /app/distribution/andenes ships this phase, so
+  // Andenes moves from inert to a real link: the last of the three rows,
+  // and the "still inert" group this test used to describe is now empty.
+  it('Andenes is a real link now that /andenes exists', () => {
     render(<DistributionMobileView {...baseProps} />);
     expect(screen.getByText('PROCESOS DE LA NAVE')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /andenes/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId('process-row-andenes')).toHaveAttribute('aria-disabled', 'true');
+    const link = screen.getByRole('link', { name: /andenes/i });
+    expect(link).toHaveAttribute('href', '/app/distribution/andenes');
+    expect(screen.getByTestId('process-row-andenes')).not.toHaveAttribute('aria-disabled');
   });
 
   // spec-68 Fase 3 — /app/distribution/pendientes ships this phase, so its

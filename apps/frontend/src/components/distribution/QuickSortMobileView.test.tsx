@@ -110,6 +110,22 @@ describe('QuickSortMobileView', () => {
     expect(screen.getByText('169 / 180')).toBeInTheDocument();
   });
 
+  // spec-68 Fase 6 accessibility sweep (6.3) — regression guard: step 2
+  // (QuickSortMobileDock) used to render with no heading at all, so this
+  // route dropped from one <h1> to zero the instant a package scan
+  // advanced it past step 1.
+  it('carries exactly one top-level heading in both step 1 and step 2', async () => {
+    render(<QuickSortMobileView />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+
+    const input = screen.getByLabelText(/escanear paquete/i);
+    fireEvent.change(input, { target: { value: 'PKG-001' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await screen.findByText('DOCK-001');
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+  });
+
   it('back arrow and Cerrar lote both return to /app/distribution', () => {
     render(<QuickSortMobileView />);
     fireEvent.click(screen.getByText('Cerrar lote'));

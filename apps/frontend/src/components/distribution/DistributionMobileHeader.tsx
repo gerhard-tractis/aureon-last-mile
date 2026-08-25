@@ -133,9 +133,17 @@ export function DistributionMobileHeader({
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate font-heading text-[18px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
+          {/* spec-68 Fase 6 accessibility sweep (6.3) — was <h2>. Every
+              titled-variant caller (pendientes, consolidación, quicksort
+              step 1, andenes) is its OWN route, mounted on its own page —
+              never alongside the greeting variant's <h1>, which only ever
+              renders on `/app/distribution` itself. The old h2 left every
+              one of those routes with zero top-level heading at all; this
+              is that route's <h1>, not a second one competing with
+              anything. */}
+          <h1 className="truncate font-heading text-[18px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
             {title}
-          </h2>
+          </h1>
           {subtitle && (
             <p className="mt-0.5 truncate text-[12.5px] text-text-secondary">{subtitle}</p>
           )}
