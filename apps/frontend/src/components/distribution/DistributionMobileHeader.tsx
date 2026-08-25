@@ -149,15 +149,27 @@ export function DistributionMobileHeader({
     );
   }
 
-  const firstName = userName?.trim().split(/\s+/)[0];
+  // Review fix (finding 4) -- useCurrentUserName falls back to the auth
+  // email when full_name is null (see useCurrentUserName.ts), so this
+  // greeting could otherwise read "Hola, gerhard@tractis.ai" and overflow a
+  // 390px screen. An email-shaped value is rejected outright rather than
+  // trimmed to its local part -- a mangled fragment of someone's email is
+  // no friendlier than the address itself.
+  const trimmedName = userName?.trim();
+  const isEmailShaped = !!trimmedName && trimmedName.includes('@');
+  const firstName = !isEmailShaped ? trimmedName?.split(/\s+/)[0] : undefined;
 
   return (
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <DistributionIsotype />
-        <h2 className="mt-2 font-heading text-[22px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
+        {/* Review fix (finding 7) -- this is the mobile route's ONLY
+            top-level heading: the desktop <h1>Distribucion</h1> is gated
+            to !isBelowLg in page.tsx, so without this the route had no
+            h1 at all for screen readers. */}
+        <h1 className="mt-2 font-heading text-[22px] font-semibold leading-[1.1] tracking-[-.01em] text-text">
           {firstName ? `Hola, ${firstName}` : 'Hola'}
-        </h2>
+        </h1>
         <p className="mt-1 text-[12.5px] text-text-secondary">Distribución</p>
       </div>
       <ConnectionChip isOnline={isOnline} />

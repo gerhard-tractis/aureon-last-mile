@@ -42,6 +42,23 @@ describe('DistributionMobileHeader — greeting variant (4c)', () => {
     render(<DistributionMobileHeader userName="Marcela Rojas" />);
     expect(screen.queryByRole('button', { name: /volver|atrás/i })).not.toBeInTheDocument();
   });
+
+  // Review fix (finding 4) — useCurrentUserName falls back to the auth
+  // email when full_name is null, so the greeting could read
+  // "Hola, gerhard@tractis.ai" and overflow a 390px screen.
+  it('rejects an email-shaped name and greets plainly instead', () => {
+    render(<DistributionMobileHeader userName="gerhard@tractis.ai" />);
+    expect(screen.getByText('Hola')).toBeInTheDocument();
+    expect(screen.queryByText(/@/)).not.toBeInTheDocument();
+  });
+
+  // Review fix (finding 7) — the mobile route had no top-level heading:
+  // the greeting was an <h2> and the desktop <h1> is skipped below `lg`.
+  it('the greeting is the top-level heading for the route', () => {
+    render(<DistributionMobileHeader userName="Marcela Rojas" />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent('Hola, Marcela');
+  });
 });
 
 describe('DistributionMobileHeader — titled variant (later phases)', () => {
@@ -57,7 +74,12 @@ describe('DistributionMobileHeader — titled variant (later phases)', () => {
         statusChip={{ label: 'EN LÍNEA', tone: 'success' }}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'Pendientes de sectorizar' })).toBeInTheDocument();
+    // Deliberately h2, not h1 — the titled variant belongs to a sub-route
+    // (Fases 3/4/5), each of which will carry its own top-level heading;
+    // it must not compete with the greeting variant's <h1> for that role.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Pendientes de sectorizar' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('42 paquetes')).toBeInTheDocument();
     expect(screen.getByText('EN LÍNEA')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /volver/i }));

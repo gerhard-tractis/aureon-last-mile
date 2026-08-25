@@ -186,13 +186,36 @@ describe('DistributionPage', () => {
       expect(screen.queryByText('Sin paquetes en consolidación')).not.toBeInTheDocument();
     });
 
-    it('below lg links PROCESOS DE LA NAVE to the pendientes, consolidación and andenes routes', () => {
+    it('below lg the PROCESOS DE LA NAVE rows render — non-navigable, their routes do not exist yet', () => {
+      // spec-68 review fix (finding 1) — /pendientes, /consolidacion and
+      // /andenes are Fases 3/4/6, not this one; a live Link would 404.
       mockIsBelowLg = true;
       render(<DistributionPage />);
-      expect(screen.getByRole('link', { name: /pendientes de sectorizar/i })).toHaveAttribute(
-        'href',
-        '/app/distribution/pendientes',
-      );
+      expect(screen.getByText('Pendientes de sectorizar')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /pendientes de sectorizar/i })).not.toBeInTheDocument();
+    });
+
+    // spec-68 review fix (finding 2) — page.tsx used to return the DESKTOP
+    // skeleton before the isBelowLg branch, so DistributionMobileView's own
+    // loading state (and its distribution-mobile-hero-skeleton testid) was
+    // unreachable in the real app: a loading phone showed desktop skeleton
+    // bars instead. This test fails against the old ordering because
+    // isBelowLg was checked AFTER the `!operatorId || kpisLoading` early
+    // return.
+    it('below lg, while loading, shows the mobile skeleton — not the desktop one', () => {
+      mockIsBelowLg = true;
+      mockUseDistributionKPIs.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.getByTestId('distribution-mobile-hero-skeleton')).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
+    });
+
+    it('above lg, while loading, still shows the desktop skeleton', () => {
+      mockIsBelowLg = false;
+      mockUseDistributionKPIs.mockReturnValue({ data: undefined, isLoading: true });
+      render(<DistributionPage />);
+      expect(screen.queryByTestId('distribution-mobile-hero-skeleton')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Distribución' })).not.toBeInTheDocument();
     });
   });
 });

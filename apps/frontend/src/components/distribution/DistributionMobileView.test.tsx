@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { DistributionMobileView, type DistributionMobileViewProps } from './DistributionMobileView';
+import {
+  DistributionMobileView,
+  todayISOFrom,
+  type DistributionMobileViewProps,
+} from './DistributionMobileView';
 import type { DistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
 import type { UnmatchedComunaRow } from '@/hooks/distribution/useUnmatchedComunas';
@@ -33,10 +37,30 @@ const baseProps: DistributionMobileViewProps = {
   now: new Date('2026-08-24T12:00:00.000Z'),
 };
 
+describe('todayISOFrom', () => {
+  // Review fix (finding 3) — regression guard for the UTC-date bug. This
+  // instant is 2026-08-25T01:00:00Z: already "tomorrow" in UTC, but still
+  // the evening of 2026-08-24 in America/Santiago (UTC-3/-4). The old
+  // now.toISOString().split('T')[0] implementation would have returned
+  // '2026-08-25' here.
+  it('reads the Santiago civil date, not the UTC date', () => {
+    expect(todayISOFrom(new Date('2026-08-25T01:00:00.000Z'))).toBe('2026-08-24');
+  });
+
+  it('matches the UTC date away from the day boundary, so the common case is unaffected', () => {
+    expect(todayISOFrom(new Date('2026-08-24T15:00:00.000Z'))).toBe('2026-08-24');
+  });
+});
+
 describe('DistributionMobileView (4c)', () => {
   it('renders the greeting header', () => {
     render(<DistributionMobileView {...baseProps} />);
     expect(screen.getByText('Hola, Marcela')).toBeInTheDocument();
+  });
+
+  it('carries a top-level heading for the route (finding 7 — mobile had none)', () => {
+    render(<DistributionMobileView {...baseProps} />);
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
   });
 
   it('the hero task card headlines the pending count and links to quicksort', () => {
@@ -82,35 +106,78 @@ describe('DistributionMobileView (4c)', () => {
     expect(salenYa).toHaveTextContent('2');
   });
 
-  it('renders the three PROCESOS DE LA NAVE rows linking to their eventual routes', () => {
+  // Review fix (finding 5) — overdue packages must count too: excluding
+  // them made a consolidation zone holding only late packages read
+  // "Salen ya: 0", the opposite of the truth.
+  it('also counts overdue packages in SALEN YA', () => {
+    render(
+      <DistributionMobileView
+        {...baseProps}
+        consolidationPackages={[
+          pkg({ id: 'a', delivery_date: '2026-08-20' }), // overdue
+          pkg({ id: 'b', delivery_date: '2026-09-01' }), // later — excluded
+        ]}
+      />,
+    );
+    const tiles = screen.getAllByTestId('stat-tile');
+    const salenYa = tiles.find((t) => t.textContent?.includes('Salen ya'))!;
+    expect(salenYa).toHaveTextContent('1');
+  });
+
+  // Review fix (finding 3) — isolates the timezone bug from the overdue
+  // fix above. At this instant Santiago is still on 2026-08-24 evening
+  // while UTC already reads 2026-08-25. A package due 2026-08-26 is two
+  // days out from the TRUE (Santiago) today, so it must NOT count. The old
+  // UTC-based todayISOFrom would have read today as '2026-08-25' and
+  // wrongly counted this package as "mañana".
+  it('does not miscount a day-after-tomorrow package during the Chile evening UTC-date rollover', () => {
+    render(
+      <DistributionMobileView
+        {...baseProps}
+        now={new Date('2026-08-25T01:00:00.000Z')}
+        consolidationPackages={[pkg({ id: 'a', delivery_date: '2026-08-26' })]}
+      />,
+    );
+    const tiles = screen.getAllByTestId('stat-tile');
+    const salenYa = tiles.find((t) => t.textContent?.includes('Salen ya'))!;
+    expect(salenYa).toHaveTextContent('0');
+  });
+
+  // Review fix (finding 1) — none of the three destinations exist yet
+  // (Fases 3/4/6), so every row must render non-navigable: no link role,
+  // no dead href, but the label and count stay.
+  it('renders all three PROCESOS DE LA NAVE rows as non-navigable — their routes do not exist yet', () => {
     render(<DistributionMobileView {...baseProps} />);
     expect(screen.getByText('PROCESOS DE LA NAVE')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /pendientes de sectorizar/i })).toHaveAttribute(
-      'href',
-      '/app/distribution/pendientes',
-    );
-    expect(screen.getByRole('link', { name: /consolidaci/i })).toHaveAttribute(
-      'href',
-      '/app/distribution/consolidacion',
-    );
-    expect(screen.getByRole('link', { name: /andenes/i })).toHaveAttribute(
-      'href',
-      '/app/distribution/andenes',
-    );
+    expect(screen.queryByRole('link', { name: /pendientes de sectorizar/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /consolidaci/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /andenes/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId('process-row-pendientes')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('process-row-consolidacion')).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('process-row-andenes')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('every process row meets the 60px touch floor', () => {
     render(<DistributionMobileView {...baseProps} />);
-    for (const name of [/pendientes de sectorizar/i, /consolidaci/i, /andenes/i]) {
-      const link = screen.getByRole('link', { name });
-      expect(link.className).toMatch(/min-h-\[?(6\d|[7-9]\d)/);
+    for (const testId of ['process-row-pendientes', 'process-row-consolidacion', 'process-row-andenes']) {
+      const row = screen.getByTestId(testId);
+      expect(row.className).toMatch(/min-h-\[?(6\d|[7-9]\d)/);
     }
   });
 
-  it('process rows show the counts they link to', () => {
+  it('process rows show the counts even though they are not navigable yet', () => {
     render(<DistributionMobileView {...baseProps} />);
-    expect(screen.getByRole('link', { name: /pendientes de sectorizar/i })).toHaveTextContent('12');
-    expect(screen.getByRole('link', { name: /consolidaci/i })).toHaveTextContent('4');
+    expect(screen.getByTestId('process-row-pendientes')).toHaveTextContent('12');
+    expect(screen.getByTestId('process-row-consolidacion')).toHaveTextContent('4');
+  });
+
+  // Review fix (finding 6) — Consolidación and Andenes must not share a
+  // glyph; with gloves on, the icon is the fastest discriminator.
+  it('gives Consolidación and Andenes visually distinct icons', () => {
+    render(<DistributionMobileView {...baseProps} />);
+    const consolidacionIcon = screen.getByTestId('process-row-consolidacion').querySelector('svg')!;
+    const andenesIcon = screen.getByTestId('process-row-andenes').querySelector('svg')!;
+    expect(consolidacionIcon.getAttribute('class')).not.toBe(andenesIcon.getAttribute('class'));
   });
 
   it('shows the unmatched-comunas warning banner only when there is at least one', () => {

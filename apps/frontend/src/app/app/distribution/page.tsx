@@ -60,6 +60,34 @@ export default function DistributionPage() {
   const { data: unmatched = [] } = useUnmatchedComunas(operatorId);
   const releaseFromConsolidation = useReleaseFromConsolidation(operatorId ?? '');
 
+  // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
+  // branch below uses. Returned early, not folded into a ternary inside one
+  // tree: `DistributionMobileView` must not mount alongside the desktop
+  // `<h1>`/KPI grid/OutboundDockGrid/ActiveSortersPanel/ConsolidationPanel —
+  // this is the bug that already shipped twice (spec-54 3h, spec-62).
+  //
+  // Review fix (finding 2) — this branch MUST come before the
+  // `!operatorId || kpisLoading` early return below. It used to sit after
+  // it, so the desktop skeleton always rendered first and
+  // DistributionMobileView's own `isLoading` prop (and its
+  // distribution-mobile-hero-skeleton testid) was unreachable in the real
+  // app — a loading phone showed desktop skeleton bars. The mobile view
+  // owns its own loading state; `!operatorId` counts as loading too, since
+  // every query below is gated on operatorId being resolved.
+  if (isBelowLg) {
+    return (
+      <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
+        <DistributionMobileView
+          userName={userName}
+          kpis={kpis}
+          consolidationPackages={consolidationPackages}
+          unmatchedComunas={unmatched}
+          isLoading={!operatorId || kpisLoading}
+        />
+      </div>
+    );
+  }
+
   if (!operatorId || kpisLoading) {
     return (
       <div className="flex flex-col gap-4 p-6">
@@ -81,25 +109,6 @@ export default function DistributionPage() {
   const pending = kpis?.pending ?? 0;
   const totalTouched = sortedToday + pending;
   const sortedPct = totalTouched > 0 ? Math.round((sortedToday / totalTouched) * 100) : null;
-
-  // spec-68 Fase 2 (Decisión 1) — the SAME padded container the desktop
-  // branch below uses. Returned early, not folded into a ternary inside one
-  // tree: `DistributionMobileView` must not mount alongside the desktop
-  // `<h1>`/KPI grid/OutboundDockGrid/ActiveSortersPanel/ConsolidationPanel —
-  // this is the bug that already shipped twice (spec-54 3h, spec-62).
-  if (isBelowLg) {
-    return (
-      <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">
-        <DistributionMobileView
-          userName={userName}
-          kpis={kpis}
-          consolidationPackages={consolidationPackages}
-          unmatchedComunas={unmatched}
-          isLoading={kpisLoading}
-        />
-      </div>
-    );
-  }
 
   return (
     <div className="flex min-h-0 flex-col gap-4 px-6 py-[22px]">

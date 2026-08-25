@@ -17,8 +17,18 @@ describe('isLeavingSoon', () => {
     expect(isLeavingSoon('2026-08-26', TODAY)).toBe(false);
   });
 
-  it('is false when delivery_date is in the past', () => {
-    expect(isLeavingSoon('2026-08-23', TODAY)).toBe(false);
+  // Review fix (finding 5) — a package overdue by a day is not "on
+  // schedule for later", it is MORE urgent than "sale mañana". Excluding
+  // 'overdue' made a consolidation zone holding only late packages read
+  // "Salen ya: 0" — the opposite of the truth. `formatRelativeDeliveryDate`
+  // already exists to tell today/tomorrow/overdue/neutral apart; this
+  // reuses it rather than re-deriving the day offset.
+  it('is true when delivery_date is one day overdue', () => {
+    expect(isLeavingSoon('2026-08-23', TODAY)).toBe(true);
+  });
+
+  it('is true when delivery_date is many days overdue', () => {
+    expect(isLeavingSoon('2026-07-01', TODAY)).toBe(true);
   });
 
   it('is false when delivery_date is null', () => {
@@ -33,7 +43,10 @@ describe('isLeavingSoon', () => {
   // YYYY-MM-DD strings (via formatRelativeDeliveryDate's UTC-midnight
   // arithmetic) — it never reads the caller's local clock, so a package
   // due at the very edge of the calendar day is never miscounted by
-  // whatever timezone the browser happens to run in.
+  // whatever timezone the browser happens to run in. (The caller is
+  // responsible for handing in a `todayISO` that is itself correct for
+  // the operator's local calendar day — see DistributionMobileView's
+  // `todayISOFrom`.)
   it('does not shift across a UTC midnight boundary', () => {
     expect(isLeavingSoon('2026-12-31', '2026-12-31')).toBe(true);
     expect(isLeavingSoon('2027-01-01', '2026-12-31')).toBe(true);
@@ -42,14 +55,15 @@ describe('isLeavingSoon', () => {
 });
 
 describe('countLeavingSoon', () => {
-  it('counts only packages leaving today or tomorrow', () => {
+  it('counts overdue, today and tomorrow — excludes only later and missing dates', () => {
     const packages = [
+      { delivery_date: '2026-08-20' }, // overdue
       { delivery_date: '2026-08-24' }, // hoy
       { delivery_date: '2026-08-25' }, // mañana
       { delivery_date: '2026-08-30' }, // later
       { delivery_date: null }, // missing
     ];
-    expect(countLeavingSoon(packages, TODAY)).toBe(2);
+    expect(countLeavingSoon(packages, TODAY)).toBe(3);
   });
 
   it('is 0 for an empty list', () => {

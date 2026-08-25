@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { ChevronRight, Layers, PackageSearch, ScanLine, TriangleAlert } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { PackageSearch, ScanLine, TriangleAlert, Warehouse, Layers } from 'lucide-react';
 import { StatTile } from '@/components/StatTile';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DistributionMobileHeader } from './DistributionMobileHeader';
+import { DistributionProcessRow } from './DistributionProcessRow';
 import { countLeavingSoon } from '@/lib/distribution/leaving-soon';
+import { TIMEZONE } from '@/lib/utils/dateFormat';
 import type { DistributionKPIs } from '@/hooks/distribution/useDistributionKPIs';
 import type { ConsolidationPackage } from '@/hooks/distribution/useConsolidation';
 import type { UnmatchedComunaRow } from '@/hooks/distribution/useUnmatchedComunas';
@@ -28,9 +29,13 @@ import type { UnmatchedComunaRow } from '@/hooks/distribution/useUnmatchedComuna
  * so this component renders nothing below the last section and the page
  * shell supplies navigation.
  *
- * Decisión 3 — "Andenes" in PROCESOS DE LA NAVE links to
- * `/app/distribution/andenes`, a route this phase does not build. The row
- * exists now so the destination can land later without touching this file.
+ * Decisión 3 / review fix (finding 1) — none of `/pendientes`,
+ * `/consolidacion` or `/andenes` exist yet (Fases 3/4/6). Every
+ * `DistributionProcessRow` below is passed `href={null}` on purpose: a
+ * `<Link>` to a route that 404s is a live regression on the only
+ * distribution screen a phone gets, not just an unfinished link. The row
+ * still shows its label and count — see DistributionProcessRow.tsx. Each
+ * later phase turns exactly one row on by supplying its real href.
  *
  * Decisión 9 — no "turno 14:00" anywhere (see DistributionMobileHeader) and
  * SALEN YA is computed here, client-side, from `consolidationPackages` —
@@ -46,8 +51,27 @@ export interface DistributionMobileViewProps {
   now?: Date;
 }
 
-function todayISOFrom(now: Date): string {
-  return now.toISOString().split('T')[0];
+/**
+ * "Today" as the operator's local calendar date in the nave's timezone
+ * (`America/Santiago`, via the shared `TIMEZONE` constant) — deliberately
+ * NOT `now.toISOString()`'s UTC date.
+ *
+ * Review fix (finding 3) — Chile sits at UTC-3/-4, so from roughly 20:00
+ * local the UTC calendar date has already rolled over to tomorrow. The old
+ * `now.toISOString().split('T')[0]` version scored a package genuinely due
+ * TODAY as 'overdue' (dropping it out of SALEN YA) while wrongly counting
+ * a package due the day after tomorrow as "mañana" — exactly during the
+ * evening shift when this KPI matters most. `Intl.DateTimeFormat` with an
+ * explicit `timeZone` reads the correct civil date regardless of the
+ * machine's own local timezone; `'en-CA'` formats as `YYYY-MM-DD` directly.
+ */
+export function todayISOFrom(now: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
 }
 
 export function DistributionMobileView({
@@ -103,25 +127,30 @@ export function DistributionMobileView({
       <section className="flex flex-col gap-2">
         <p className="font-mono text-xs tracking-[.1em] text-text-secondary">PROCESOS DE LA NAVE</p>
 
-        <ProcessRow
-          href="/app/distribution/pendientes"
+        <DistributionProcessRow
+          href={null}
           icon={PackageSearch}
           title="Pendientes de sectorizar"
           subtitle="Agrupados por andén"
           count={pending}
+          testId="process-row-pendientes"
         />
-        <ProcessRow
-          href="/app/distribution/consolidacion"
+        <DistributionProcessRow
+          href={null}
           icon={Layers}
           title="Consolidación"
           subtitle="Selección múltiple"
           count={consolidation}
+          testId="process-row-consolidacion"
         />
-        <ProcessRow
-          href="/app/distribution/andenes"
-          icon={Layers}
+        {/* Distinct icon from Consolidación (finding 6) — with gloves on,
+            the glyph is the fastest discriminator between adjacent rows. */}
+        <DistributionProcessRow
+          href={null}
+          icon={Warehouse}
           title="Andenes"
           subtitle="Ocupación por zona"
+          testId="process-row-andenes"
         />
       </section>
 
@@ -137,37 +166,5 @@ export function DistributionMobileView({
         </section>
       )}
     </div>
-  );
-}
-
-interface ProcessRowProps {
-  href: string;
-  icon: typeof Layers;
-  title: string;
-  subtitle: string;
-  count?: number;
-}
-
-function ProcessRow({ href, icon: Icon, title, subtitle, count }: ProcessRowProps) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'flex min-h-[64px] items-center gap-3 rounded-xl border border-border bg-surface px-3.5 py-2.5',
-        'transition-colors active:bg-surface-raised',
-      )}
-    >
-      <span className="grid h-10 w-10 flex-none place-items-center rounded-full bg-surface-raised">
-        <Icon className="h-[18px] w-[18px] text-text-secondary" aria-hidden="true" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-semibold text-text">{title}</span>
-        <span className="block truncate text-[12px] text-text-secondary">{subtitle}</span>
-      </span>
-      {count !== undefined && (
-        <span className="flex-none font-mono text-[15px] font-bold text-text">{count}</span>
-      )}
-      <ChevronRight className="h-4 w-4 flex-none text-text-muted" aria-hidden="true" />
-    </Link>
   );
 }
