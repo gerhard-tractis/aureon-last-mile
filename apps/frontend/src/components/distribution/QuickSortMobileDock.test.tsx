@@ -202,4 +202,22 @@ describe('QuickSortMobileDock — accessibility floor', () => {
     render(<QuickSortMobileDock {...baseProps()} scans={scans} />);
     expect(screen.getByTestId('quicksort-recent-scan').className).toMatch(/min-h-\[44px\]/);
   });
+
+  // spec-68 Fase 6 accessibility sweep (6.3) — this component renders with
+  // no `DistributionMobileHeader` at all (Decisión 4's geometry has none),
+  // so `/app/distribution/quicksort` had ZERO top-level headings whenever
+  // step 2 (this component) was the one on screen — QuickSortMobile (step
+  // 1) carries the route's only <h1>, and the two states are mutually
+  // exclusive within `QuickSortMobileView`. A visually-hidden <h1> keeps
+  // Decisión 4's visual geometry untouched while giving the route exactly
+  // one top-level heading in every state.
+  it('carries exactly one visually-hidden <h1> naming the current state, in both the normal and rejected variants', () => {
+    const { rerender } = render(<QuickSortMobileDock {...baseProps()} />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/A3/);
+
+    rerender(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/incorrecto/i);
+  });
 });

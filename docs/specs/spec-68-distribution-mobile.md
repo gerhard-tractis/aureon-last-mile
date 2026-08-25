@@ -230,9 +230,10 @@ Verificación: correr la migración contra QA y confirmar que la columna existe.
 
 ### Fase 6 — Lista de andenes y cierre
 
-**6.1** `DockListMobile` + ruta `/app/distribution/andenes` + test.
-**6.2** Repaso de accesibilidad sobre las ocho pantallas: sin zona táctil bajo 44px, sin texto informativo bajo 11px.
-**6.3** Verificación en QA con hardware real de escáner. Recordatorios del repo: el lector de QA **no** emite Enter — usar `ScanField` / `useScannerAutoSubmit`, nunca un submit propio — y el layout US/ES corrompe guiones. Si un arreglo "no funciona" en QA, descartar primero un bundle PWA rancio antes de volver a depurar.
+**6.1** ✅ `DockListMobile` + ruta `/app/distribution/andenes` + test. Una fila por andén activo (código, zona, conteo, barra de capacidad solo si está configurada), la zona de consolidación incluida y marcada como tal, `EmptyState` sin andenes configurados. Sin ruta inmersiva — conserva `MobileTabBar`.
+**6.2** ✅ `DistributionMobileView`: la fila *Andenes* enciende su `href` a `/app/distribution/andenes` — las tres filas de PROCESOS DE LA NAVE quedan navegables.
+**6.3** ✅ Repaso de accesibilidad sobre las ocho pantallas: sin zona táctil bajo 44px, sin texto informativo bajo 11px. Hallazgo real: `pendientes`, `consolidación`, ambos pasos de `quicksort` y (recién construida) `andenes` no tenían **ningún** `<h1>` — la variante `titled` de `DistributionMobileHeader` renderizaba `<h2>` a propósito, dejando cada una de esas rutas sin encabezado de nivel superior. Corregido: la variante `titled` ahora es `<h1>` (cada una es su propia ruta, nunca compite con el `<h1>` de la variante `greeting`), y `QuickSortMobileDock` — que no tiene cabecera visible por diseño (Decisión 4) — suma un `<h1>` `sr-only` describiendo el estado. El resto del repaso (objetivos táctiles, tamaños de texto, nombres accesibles en controles solo-ícono) ya cumplía en las ocho pantallas; no se encontró nada más que corregir.
+**6.4** ⏳ Pendiente — verificación en QA con hardware real de escáner. Recordatorios del repo: el lector de QA **no** emite Enter — usar `ScanField` / `useScannerAutoSubmit`, nunca un submit propio — y el layout US/ES corrompe guiones. Si un arreglo "no funciona" en QA, descartar primero un bundle PWA rancio antes de volver a depurar. Requiere el lector Zebra físico; no se puede completar desde aquí.
 
 ## Cobertura
 

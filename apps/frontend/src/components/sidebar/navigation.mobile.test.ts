@@ -215,4 +215,12 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/distribution/quicksort')).toBe(true);
     expect(isImmersiveMobileRoute('/app/distribution/quicksort/anything')).toBe(true);
   });
+
+  // spec-68 Fase 6 (Decisión 3) — /andenes is a plain scrolling list with
+  // NO fixed footer, unlike its three siblings above. It keeps the global
+  // MobileTabBar and must NOT join MOBILE_IMMERSIVE_PREFIXES.
+  it('the distribution andenes screen is NOT immersive', () => {
+    expect(isImmersiveMobileRoute('/app/distribution/andenes')).toBe(false);
+    expect(isImmersiveMobileRoute('/app/distribution/andenes/anything')).toBe(false);
+  });
 });
