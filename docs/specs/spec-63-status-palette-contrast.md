@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (define la paleta y la regla de dos canales), [spec-62](spec-62-reception-mobile.md) (donde se detectó)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-21_
 
