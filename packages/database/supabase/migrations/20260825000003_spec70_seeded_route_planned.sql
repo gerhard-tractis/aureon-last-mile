@@ -18,6 +18,18 @@
 --    tomorrow's lists. NULL still means today, so an omitted argument behaves
 --    as before.
 --
+-- 3. The order ids are cast to uuid. THIS FUNCTION HAS NEVER WORKED. The
+--    parameter is text[] and dispatches.order_id is uuid, and PostgreSQL does
+--    not coerce text to uuid in an INSERT ... SELECT target list:
+--
+--      ERROR: column "order_id" is of type uuid but expression is of type text
+--
+--    So every call has thrown since 20260423000003 shipped, the API layer
+--    caught it as INTERNAL_ERROR, and Pre-ruta's "Armar ruta" has produced a
+--    500 rather than a route for its entire life. Found by running the function
+--    against a real database rather than reading it. spec70_seeded_route.test.sql
+--    asserts it, so it cannot regress silently again.
+--
 -- DROP first: adding a parameter creates an overload rather than replacing the
 -- function, and existing two-argument callers would keep silently resolving to
 -- the old definition.
@@ -68,7 +80,7 @@ BEGIN
   INSERT INTO dispatches (route_id, order_id, operator_id, status, provider)
   SELECT
     v_route_id,
-    order_id,
+    order_id::uuid,
     p_operator_id,
     'pending',
     'dispatchtrack'
