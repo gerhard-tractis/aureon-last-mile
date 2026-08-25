@@ -7,10 +7,13 @@
 // desktop `DockCard`) — writing the arithmetic four times is how it drifts.
 //
 // Capacity is nullable in the schema on purpose (see migration
-// 20260824000005): a zone nobody configured must render with no bar and no
-// threshold, never a bar pinned at 0%. This module treats `0` and negative
-// capacity the same as `null` — a defensive floor, since the schema has no
-// CHECK constraint enforcing positivity.
+// 20260824000005): a zone nobody configured must get no fill bar and no
+// threshold from this module's consumers (DockCapacityBar) — never a bar
+// pinned at 0%. The raw package count is still shown by whatever screen
+// embeds the bar; `configured: false` only tells the bar itself to render
+// nothing. This module treats `0` and negative capacity the same as `null`
+// — a defensive floor, since the schema has no CHECK constraint enforcing
+// positivity.
 
 export type DockCapacityTone = 'neutral' | 'warning' | 'error';
 

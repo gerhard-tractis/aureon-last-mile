@@ -15,7 +15,9 @@
 -- (spec-68 Fase 1.2) is the single place that turns capacity + count into a
 -- fill percentage, a tone and the "quedan N espacios" copy; NULL (and, as a
 -- defensive belt for hand-typed data, 0 or negative) is the signal it uses to
--- tell every consumer to render nothing.
+-- tell every consumer that. The consuming screen still renders the raw count
+-- on its own — only the *bar* (DockCapacityBar, Fase 1.5) disappears; there
+-- is no state where the count itself goes unrendered.
 --
 -- NO CHECK CONSTRAINT for positivity. Decided against one, deliberately:
 --   * dock-capacity.ts already treats 0/negative the same as NULL (no bar,
@@ -23,8 +25,10 @@
 --     harmless miskeyed "-1" into a hard insert/update failure instead of a
 --     value the UI already knows how to ignore.
 --   * DockZoneForm (Fase 1.4) is the only write path from the app and never
---     submits <= 0 — empty input persists as NULL, not 0 — so the constraint
---     would guard against a class of write the UI cannot produce.
+--     submits <= 0 — empty input persists as NULL, not 0, and a zone whose
+--     capacity was already <= 0 (a hand-edit) is normalized back to empty
+--     the moment its edit dialog opens, so re-saving the form without
+--     touching the field cannot echo a stale <= 0 value back either.
 --   * The one path that bypasses the form is a DBA/support hand-edit, and for
 --     that a soft floor (dock-capacity.ts) beats a hard rejection.
 -- =============================================================================
@@ -36,11 +40,13 @@ ALTER TABLE public.dock_zones
 
 COMMENT ON COLUMN public.dock_zones.capacity IS
   'Max packages this dock/zone can hold, in units of packages. NULL means '
-  '"not configured": every consumer (lib/distribution/dock-capacity.ts and '
-  'everything built on it) must render the raw count with no fill bar and no '
-  'threshold — never a bar at 0%, which would read as broken rather than '
-  'unset. Zero or negative values are treated the same as NULL by that '
-  'module; there is deliberately no CHECK constraint here (see migration '
-  'header) since the only app write path (DockZoneForm) never produces them.';
+  '"not configured": lib/distribution/dock-capacity.ts and everything built '
+  'on it (DockCapacityBar) render no fill bar and no threshold for it — '
+  'never a bar at 0%, which would read as broken rather than unset. The '
+  'raw count is still shown by the consuming screen; only the bar '
+  'disappears. Zero or negative values are treated the same as NULL by '
+  'that module; there is deliberately no CHECK constraint here (see '
+  'migration header) since the only app write path (DockZoneForm) never '
+  'produces or persists them.';
 
 COMMIT;

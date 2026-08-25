@@ -22,7 +22,7 @@ interface DockCapacityBarProps {
 }
 
 const FILL_TONE_CLASS: Record<DockCapacityTone, string> = {
-  neutral: 'bg-map-line',
+  neutral: 'bg-text-secondary',
   warning: 'bg-status-warning',
   error: 'bg-status-error',
 };

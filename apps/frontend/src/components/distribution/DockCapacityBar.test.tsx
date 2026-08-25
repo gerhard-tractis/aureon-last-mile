@@ -24,23 +24,31 @@ describe('DockCapacityBar', () => {
     expect(screen.getByText('Quedan 11 espacios')).toBeInTheDocument();
   });
 
-  it('applies a neutral tone under 90% fill', () => {
+  it('applies the neutral fill token (bg-text-secondary) under 90% fill', () => {
+    // Regression test: bg-map-line on bg-surface-raised in dark mode is
+    // 1.59:1, under spec-63's 3:1 non-text floor, and map-line is a map
+    // stroke token anyway — not a fill token. bg-accent is also disallowed:
+    // the handoff's colour rule reserves gold for brand/selection, never a
+    // state readout. Asserted as the exact class, not an alternation, so a
+    // regression to either wrong token fails this test.
     render(<DockCapacityBar count={50} capacity={100} />);
     const bar = screen.getByTestId('dock-capacity-fill');
-    expect(bar.className).toMatch(/map-line|accent/);
-    expect(bar.className).not.toMatch(/status-warning|status-error/);
+    expect(bar.className).toContain('bg-text-secondary');
+    expect(bar.className).not.toMatch(/bg-map-line|bg-accent|status-warning|status-error/);
   });
 
-  it('applies a warning tone at 90% fill or above', () => {
+  it('applies the warning fill token at 90% fill or above', () => {
     render(<DockCapacityBar count={90} capacity={100} />);
     const bar = screen.getByTestId('dock-capacity-fill');
-    expect(bar.className).toMatch(/status-warning/);
+    expect(bar.className).toContain('bg-status-warning');
+    expect(bar.className).not.toContain('bg-status-warning-bg');
   });
 
-  it('applies an error tone at 100% fill or above', () => {
+  it('applies the error fill token at 100% fill or above', () => {
     render(<DockCapacityBar count={100} capacity={100} />);
     const bar = screen.getByTestId('dock-capacity-fill');
-    expect(bar.className).toMatch(/status-error/);
+    expect(bar.className).toContain('bg-status-error');
+    expect(bar.className).not.toContain('bg-status-error-bg');
   });
 
   it('never uses raw hex colours', () => {

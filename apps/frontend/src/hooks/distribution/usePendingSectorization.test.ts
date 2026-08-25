@@ -44,6 +44,7 @@ const ZONE_ANDEN: DockZoneRecord = {
   comunas: [{ id: 'comuna-lc', nombre: 'Las Condes' }],
   is_active: true,
   operator_id: 'op-1',
+  capacity: null,
 };
 
 const ZONE_CONSOL: DockZoneRecord = {
@@ -54,6 +55,7 @@ const ZONE_CONSOL: DockZoneRecord = {
   comunas: [],
   is_active: true,
   operator_id: 'op-1',
+  capacity: null,
 };
 
 describe('usePendingSectorization', () => {

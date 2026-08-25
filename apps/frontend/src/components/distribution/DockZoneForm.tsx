@@ -40,7 +40,16 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
       setName(editingZone.name);
       setCode(editingZone.code);
       setSelectedIds(editingZone.comunas.map(c => c.id));
-      setCapacityInput(editingZone.capacity == null ? '' : String(editingZone.capacity));
+      // <= 0 normalizes to empty, same as dock-capacity.ts treats it as
+      // "not configured". Without this, opening the edit dialog on a zone a
+      // DBA set to 0/-1 pre-populates that value verbatim; combined with the
+      // field's min={1} that blocks *every* field's submission via native
+      // rangeUnderflow, not just capacity.
+      setCapacityInput(
+        editingZone.capacity == null || editingZone.capacity <= 0
+          ? ''
+          : String(editingZone.capacity)
+      );
     } else {
       setName('');
       setCode('');
@@ -67,6 +76,11 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const mutationError = createMutation.isError
+    ? createMutation.error
+    : updateMutation.isError
+      ? updateMutation.error
+      : null;
   const selectedComunas = allComunas.filter(c => selectedIds.includes(c.id));
 
   return (
@@ -137,12 +151,18 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
           id="zone-capacity"
           type="number"
           min={1}
+          max={2147483647}
           inputMode="numeric"
           value={capacityInput}
           onChange={e => setCapacityInput(e.target.value)}
           placeholder="Opcional"
         />
       </div>
+      {mutationError && (
+        <p role="alert" className="text-sm text-status-error-text">
+          No se pudo guardar: {mutationError instanceof Error ? mutationError.message : 'intenta de nuevo.'}
+        </p>
+      )}
       <div className="flex gap-2">
         <Button type="submit" disabled={isPending}>
           {isPending ? 'Guardando...' : 'Guardar'}

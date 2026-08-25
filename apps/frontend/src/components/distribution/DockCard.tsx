@@ -18,8 +18,10 @@ interface DockCardProps {
   comunas?: string[];
   packageCount: number;
   routeCount?: number;
-  /** 0–100, clamped. Omit to hide the bar — dock zones carry no capacity
-   *  field, so an always-0% track would read as a rendering fault. */
+  /** 0–100, clamped. Omit to hide the bar. `dock_zones.capacity` exists
+   *  (spec-68 Fase 1) but this card is not wired to it yet — callers still
+   *  pass `occupancyPct` (or nothing) directly; an always-0% track would
+   *  read as a rendering fault. */
   occupancyPct?: number;
   /** Destination of the most recent scan. */
   active?: boolean;

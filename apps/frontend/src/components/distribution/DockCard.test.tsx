@@ -51,8 +51,9 @@ describe('DockCard', () => {
   });
 
   it('hides the bar entirely when there is no occupancy to show', () => {
-    // Dock zones carry no capacity field, so a permanently-0% track would
-    // read as a rendering fault rather than as "no data".
+    // This card is not wired to dock_zones.capacity yet (spec-68 Fase 1);
+    // callers pass occupancyPct directly, and omitting it must hide the bar
+    // — a permanently-0% track would read as a rendering fault, not "no data".
     render(<DockCard {...BASE} occupancyPct={undefined} />);
     expect(screen.queryByTestId('dock-occupancy')).toBeNull();
   });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { DockZoneForm } from './DockZoneForm';
+import { useCreateDockZone, useUpdateDockZone } from '@/hooks/distribution/useDockZones';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
@@ -9,8 +10,8 @@ const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 
 vi.mock('@/hooks/distribution/useDockZones', () => ({
-  useCreateDockZone: vi.fn(() => ({ mutate: mockCreate, isPending: false })),
-  useUpdateDockZone: vi.fn(() => ({ mutate: mockUpdate, isPending: false })),
+  useCreateDockZone: vi.fn(),
+  useUpdateDockZone: vi.fn(),
 }));
 
 // Mock useChileComunas
@@ -32,6 +33,12 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(useCreateDockZone).mockReturnValue({
+    mutate: mockCreate, isPending: false, isError: false, error: null,
+  } as unknown as ReturnType<typeof useCreateDockZone>);
+  vi.mocked(useUpdateDockZone).mockReturnValue({
+    mutate: mockUpdate, isPending: false, isError: false, error: null,
+  } as unknown as ReturnType<typeof useUpdateDockZone>);
 });
 
 describe('DockZoneForm', () => {
@@ -198,5 +205,69 @@ describe('DockZoneForm', () => {
     render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
     const field = screen.getByLabelText(/capacidad \(paquetes\)/i) as HTMLInputElement;
     expect(field.value).toBe('');
+  });
+
+  // Regression: capacity 0/negative pre-populated verbatim, combined with the
+  // field's min={1}, made the WHOLE form unsubmittable via native
+  // rangeUnderflow — a DBA-set 0/-1 zone couldn't even be renamed. The form
+  // must normalize <= 0 to empty on load, same as dock-capacity.ts treats it.
+  it('normalizes a zone with capacity 0 to an empty field on edit (not "0")', () => {
+    const editingZone = {
+      id: 'z1', name: 'Andén 1', code: 'DOCK-001',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: 0,
+      comunas: [],
+    };
+    render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
+    const field = screen.getByLabelText(/capacidad \(paquetes\)/i) as HTMLInputElement;
+    expect(field.value).toBe('');
+  });
+
+  it('normalizes a zone with negative capacity to an empty field on edit', () => {
+    const editingZone = {
+      id: 'z1', name: 'Andén 1', code: 'DOCK-001',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: -1,
+      comunas: [],
+    };
+    render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
+    const field = screen.getByLabelText(/capacidad \(paquetes\)/i) as HTMLInputElement;
+    expect(field.value).toBe('');
+  });
+
+  it('caps the capacity field at a Postgres int4 (2147483647)', () => {
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    const field = screen.getByLabelText(/capacidad \(paquetes\)/i) as HTMLInputElement;
+    expect(field.max).toBe('2147483647');
+  });
+
+  it('shows an inline error when the create mutation fails (e.g. out-of-range capacity)', () => {
+    vi.mocked(useCreateDockZone).mockReturnValue({
+      mutate: mockCreate,
+      isPending: false,
+      isError: true,
+      error: new Error('El valor está fuera de rango'),
+    } as unknown as ReturnType<typeof useCreateDockZone>);
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    expect(screen.getByText(/no se pudo guardar/i)).toBeInTheDocument();
+  });
+
+  it('shows an inline error when the update mutation fails', () => {
+    vi.mocked(useUpdateDockZone).mockReturnValue({
+      mutate: mockUpdate,
+      isPending: false,
+      isError: true,
+      error: new Error('El valor está fuera de rango'),
+    } as unknown as ReturnType<typeof useUpdateDockZone>);
+    const editingZone = {
+      id: 'z1', name: 'Andén 1', code: 'DOCK-001',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: null,
+      comunas: [],
+    };
+    render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
+    expect(screen.getByText(/no se pudo guardar/i)).toBeInTheDocument();
+  });
+
+  it('shows no inline error when neither mutation is in an error state', () => {
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    expect(screen.queryByText(/no se pudo guardar/i)).not.toBeInTheDocument();
   });
 });

@@ -11,10 +11,11 @@ import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
  * send people, so the code is 15px mono rather than 30px display.
  *
  * The mock shows a capacity denominator ("168 / 180 paq."), a fill bar and a
- * CASI LLENO badge. dock_zones has no capacity column, so the count is shown
- * without a denominator and the bar is omitted — the same choice DockCard
- * makes. Adding `dock_zones.capacity` is what would unlock all three, and it
- * needs an admin surface to set it, so it is a follow-up rather than a guess.
+ * CASI LLENO badge. `dock_zones.capacity` exists (spec-68 Fase 1) and
+ * DockZoneForm can set it, but this grid is not wired to it yet — the count
+ * still renders without a denominator and the bar is still omitted, the same
+ * choice DockCard makes. Consuming lib/distribution/dock-capacity.ts and
+ * DockCapacityBar here is a follow-up, not a schema gap.
  */
 
 interface OutboundDockGridProps {
