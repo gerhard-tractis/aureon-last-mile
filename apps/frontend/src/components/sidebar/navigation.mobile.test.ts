@@ -192,4 +192,13 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/reception/route/abc-123')).toBe(true);
     expect(isImmersiveMobileRoute('/app/reception/route/abc-123/completa')).toBe(true);
   });
+
+  // spec-68 Fase 3 (Decisión 2) — pendientes/consolidación/quicksort each
+  // own a fixed bottom action bar; /app/distribution is the screen you
+  // navigate FROM and keeps the tab bar.
+  it('the distribution pendientes screen is immersive, the module home is not', () => {
+    expect(isImmersiveMobileRoute('/app/distribution')).toBe(false);
+    expect(isImmersiveMobileRoute('/app/distribution/pendientes')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/distribution/pendientes/anything')).toBe(true);
+  });
 });

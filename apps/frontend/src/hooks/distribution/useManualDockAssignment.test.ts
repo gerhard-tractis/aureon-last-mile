@@ -78,6 +78,18 @@ describe('useManualDockAssignment.canUse', () => {
     );
     expect(result.current.canUse).toBe(true);
   });
+
+  // spec-68 Decisión 6 — ops_leader gets the manual-assign emergency exit
+  // too (it's the floor role that works all four stations). warehouse_staff
+  // stays out on purpose: see the 'is false for warehouse_staff' case above.
+  it('is true for ops_leader', () => {
+    mockRole = UserRole.OPS_LEADER;
+    const { result } = renderHook(
+      () => useManualDockAssignment('op-1', 'user-1'),
+      { wrapper }
+    );
+    expect(result.current.canUse).toBe(true);
+  });
 });
 
 describe('useManualDockAssignment.mutateAsync', () => {

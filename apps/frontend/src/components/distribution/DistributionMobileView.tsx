@@ -29,13 +29,13 @@ import type { UnmatchedComunaRow } from '@/hooks/distribution/useUnmatchedComuna
  * so this component renders nothing below the last section and the page
  * shell supplies navigation.
  *
- * Decisión 3 / review fix (finding 1) — none of `/pendientes`,
- * `/consolidacion` or `/andenes` exist yet (Fases 3/4/6). Every
- * `DistributionProcessRow` below is passed `href={null}` on purpose: a
- * `<Link>` to a route that 404s is a live regression on the only
- * distribution screen a phone gets, not just an unfinished link. The row
- * still shows its label and count — see DistributionProcessRow.tsx. Each
- * later phase turns exactly one row on by supplying its real href.
+ * Decisión 3 / review fix (finding 1) — `/consolidacion` and `/andenes`
+ * still don't exist (Fases 4/6), so those two `DistributionProcessRow`s
+ * keep `href={null}` on purpose: a `<Link>` to a route that 404s is a live
+ * regression on the only distribution screen a phone gets, not just an
+ * unfinished link. Each still shows its label and count — see
+ * DistributionProcessRow.tsx. `/pendientes` shipped in Fase 3, so its row
+ * is the first to carry a real href.
  *
  * Decisión 9 — no "turno 14:00" anywhere (see DistributionMobileHeader) and
  * SALEN YA is computed here, client-side, from `consolidationPackages` —
@@ -128,7 +128,7 @@ export function DistributionMobileView({
         <p className="font-mono text-xs tracking-[.1em] text-text-secondary">PROCESOS DE LA NAVE</p>
 
         <DistributionProcessRow
-          href={null}
+          href="/app/distribution/pendientes"
           icon={PackageSearch}
           title="Pendientes de sectorizar"
           subtitle="Agrupados por andén"
