@@ -46,7 +46,7 @@ export function devTokenGuard(req: Request, res: Response, next: NextFunction): 
  * There is deliberately NO NODE_ENV check. The agents service runs with
  * NODE_ENV=production on the VPS, and the frontend's wismo-test UI reaches
  * these routes in that environment via /api/dev/wismo-test/* — which itself
- * requires an admin or maintainer session. A NODE_ENV guard here would break
+ * requires an admin session. A NODE_ENV guard here would break
  * that tool, not secure it.
  *
  * What actually protects these routes at request time is devTokenGuard: every

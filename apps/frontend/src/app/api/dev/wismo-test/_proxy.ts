@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSSRClient } from '@/lib/supabase/server';
 
-const ALLOWED_ROLES = ['admin', 'maintainer'] as const;
+const ALLOWED_ROLES = ['admin'] as const;
 
 export interface ProxyOptions {
   /** Path under AGENTS_BASE_URL, e.g. "/dev/test-orders" */
@@ -16,7 +16,7 @@ export interface ProxyOptions {
  *
  * Auth flow:
  *  1. Require authenticated session → 401 if missing
- *  2. Require role admin or maintainer → 401 if not
+ *  2. Require role admin → 401 if not
  *  3. Require AGENTS_DEV_TOKEN + AGENTS_BASE_URL env vars → 500 if missing
  *  4. Forward request to agents server with X-Dev-Token + X-Operator-Id headers
  *  5. Stream response body and status back to caller
@@ -41,7 +41,7 @@ export async function proxyToAgents(
 
   const role: string | undefined = session.user.app_metadata?.claims?.role;
   if (!ALLOWED_ROLES.includes(role as (typeof ALLOWED_ROLES)[number])) {
-    return NextResponse.json({ error: 'Forbidden: admin or maintainer role required' }, { status: 401 });
+    return NextResponse.json({ error: 'Forbidden: admin role required' }, { status: 401 });
   }
 
   const operatorId: string | undefined = session.user.app_metadata?.claims?.operator_id;

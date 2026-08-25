@@ -63,7 +63,7 @@ describe('WismoTestPage', () => {
     expect(mockRedirect).toHaveBeenCalledWith('/auth/login');
   });
 
-  it('returns 404 when role is not admin or maintainer', async () => {
+  it('returns 404 when role is not admin', async () => {
     mockGetSession.mockResolvedValue(sessionWithRole('operator'));
     await expect(WismoTestPage()).rejects.toThrow('NEXT_NOT_FOUND');
     expect(mockNotFound).toHaveBeenCalled();
@@ -76,10 +76,4 @@ describe('WismoTestPage', () => {
     expect(getByTestId('wismo-test-client')).toBeInTheDocument();
   });
 
-  it('renders WismoTestClient when role is maintainer', async () => {
-    mockGetSession.mockResolvedValue(sessionWithRole('maintainer'));
-    const element = await WismoTestPage();
-    const { getByTestId } = render(element as React.ReactElement);
-    expect(getByTestId('wismo-test-client')).toBeInTheDocument();
-  });
 });

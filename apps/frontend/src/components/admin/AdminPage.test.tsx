@@ -43,4 +43,28 @@ describe('AdminPage', () => {
     render(<AdminPage userRole="super_admin" />);
     expect(screen.getByTestId('modules-tab-link')).toBeDefined();
   });
+
+  describe('Herramientas block (spec-67)', () => {
+    it('shows both internal tools to an admin', () => {
+      render(<AdminPage userRole="admin" />);
+      expect(screen.getByTestId('admin-tools')).toBeDefined();
+      expect(screen.getByTestId('tools-ocr-link').getAttribute('href')).toBe('/admin/tools/ocr');
+      expect(screen.getByTestId('tools-wismo-link').getAttribute('href')).toBe(
+        '/admin/tools/wismo',
+      );
+    });
+
+    // Both tool pages are admin-gated, but operations_manager and super_admin
+    // both reach /admin. Rendering the links for them would offer destinations
+    // that bounce them straight back out.
+    it.each(['operations_manager', 'super_admin'])(
+      'hides the whole block from %s, who can reach /admin but not the tools',
+      (role) => {
+        render(<AdminPage userRole={role} />);
+        expect(screen.queryByTestId('admin-tools')).toBeNull();
+        expect(screen.queryByTestId('tools-ocr-link')).toBeNull();
+        expect(screen.queryByTestId('tools-wismo-link')).toBeNull();
+      },
+    );
+  });
 });

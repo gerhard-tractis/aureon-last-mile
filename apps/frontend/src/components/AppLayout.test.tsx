@@ -411,11 +411,12 @@ describe('AppLayout — Order Inspector trigger', () => {
 });
 
 describe('AppLayout — grouped navigation (spec-54)', () => {
-  it('renders both section headings when the sidebar is pinned', () => {
+  it('renders all three section headings when the sidebar is pinned', () => {
     localStorage.setItem('aureon-sidebar-pinned', 'true');
     mockRole = 'admin';
     mockPermissions = ['pickup'];
     render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.getByText('SEGUIMIENTO')).toBeTruthy();
     expect(screen.getByText('OPERACIÓN')).toBeTruthy();
     expect(screen.getByText('GESTIÓN')).toBeTruthy();
     localStorage.clear();
@@ -426,6 +427,7 @@ describe('AppLayout — grouped navigation (spec-54)', () => {
     localStorage.clear();
     mockRole = 'admin';
     render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
+    expect(screen.queryByText('SEGUIMIENTO')).toBeNull();
     expect(screen.queryByText('OPERACIÓN')).toBeNull();
   });
 
@@ -434,6 +436,9 @@ describe('AppLayout — grouped navigation (spec-54)', () => {
     mockRole = 'driver';
     mockPermissions = [];
     render(<AppLayout enabledModules={[]}><div>content</div></AppLayout>);
+    // A driver with no permissions and no modules keeps only GESTIÓN, which
+    // Dashboard ejecutivo (isVisible: () => true) floors at one item.
+    expect(screen.queryByText('SEGUIMIENTO')).toBeNull();
     expect(screen.queryByText('OPERACIÓN')).toBeNull();
     expect(screen.getByText('GESTIÓN')).toBeTruthy();
     localStorage.clear();
@@ -482,7 +487,7 @@ describe('AppLayout — topbar (spec-54)', () => {
     mockRole = 'admin';
     render(<AppLayout enabledModules={ALL_MODULES}><div>content</div></AppLayout>);
     const crumb = screen.getByRole('navigation', { name: 'Ruta' });
-    expect(crumb.textContent).toContain('Operación');
+    expect(crumb.textContent).toContain('Seguimiento');
     expect(crumb.textContent).toContain('Torre de control');
   });
 

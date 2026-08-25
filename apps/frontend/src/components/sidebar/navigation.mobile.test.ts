@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ModuleKey } from '@/lib/modules/registry';
 import {
   OPERATIONS_ROLES,
+  OPERATION_ITEMS,
   buildMobileTabs,
   isImmersiveMobileRoute,
   isOperationsRole,
@@ -62,6 +63,19 @@ describe('buildMobileTabs', () => {
       { href: '/app/dispatch', label: 'Despacho' },
     ]);
     expect(tabs.some((t) => t.href === '/app/operations-control')).toBe(false);
+  });
+
+  it('derives the tab bar from an OPERATION_ITEMS that is exactly the four stations (spec-67)', () => {
+    // Before spec-67 this guarantee needed a hand-maintained exclusion list,
+    // because OPERATION_ITEMS also held Torre de control and Pedidos. Now the
+    // section IS the four stations, so the tab bar cannot drift without this
+    // assertion failing first.
+    expect(OPERATION_ITEMS.map((i) => i.href)).toEqual([
+      '/app/pickup',
+      '/app/reception',
+      '/app/distribution',
+      '/app/dispatch',
+    ]);
   });
 
   it('excludes Pedidos specifically, not merely "a fifth item" — a wrong exclusion would still pass a bare length check', () => {
