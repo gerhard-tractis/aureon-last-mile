@@ -7,7 +7,7 @@
 > [spec-66](spec-66-ops-leader-role.md) (`ops_leader`, the floor role referenced below),
 > [spec-68](spec-68-distribution-mobile.md) (`dock_zones.capacity` — the nullable-capacity pattern spec-73 will copy)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-25_
 
@@ -119,8 +119,8 @@ writer breaks mid-migration.
 `('planned','in_progress','completed','cancelled')` and spec-15's migration added `draft` with a
 bare `ADD VALUE IF NOT EXISTS` — **no `BEFORE 'planned'`**, contrary to what spec-15's text claims.
 So `draft` currently sorts *last*. Any new value added here inherits the same hazard. Never
-`ORDER BY status`; order by an explicit `CASE` or a lookup, and add a pgTAP test asserting the
-sort is not relied upon.
+`ORDER BY status`; order by an explicit `CASE` or a lookup. The suite asserts the current
+(non-lifecycle) ordering so that anyone who "fixes" it finds out in tests rather than in production.
 
 ### Dispatch stages
 
@@ -165,17 +165,26 @@ transaction with other DDL in this project's migration runner, and the value set
 to move (spec-72 may add a block-level stage). The project already uses this shape for
 `orders.geocode_status` in spec-58.
 
-**Backfill.** Every existing non-deleted `dispatches` row on a route in `draft` predates the
-distinction and cannot be classified retroactively. They are backfilled to `staged` with
-`staged_at = created_at`, which is the safe direction: it treats historical rows as already
-confirmed rather than blocking seals on routes nobody can now verify. Recorded in the migration
-header. Routes already at `planned`/`in_progress`/`completed` are untouched — the enum remap below
-handles them.
+**Two migration files, not one.** PostgreSQL refuses to *use* an enum value in the transaction that
+added it (`unsafe use of new value ... of enum type`), and the Supabase CLI wraps each migration
+file in its own transaction. So `20260825000001` adds the four labels and does nothing else, and
+`20260825000002` — which remaps rows onto them — runs afterwards. Merging them back into one file
+fails at deploy time, not at review time. Both files say so in their headers.
 
-**Enum remap.** Existing `planned` routes mean *"sent to DT"* under the old vocabulary and
-`dispatched` under the new one. The migration remaps them in the same transaction as the enum
-extension. This is the one irreversible step in the spec and needs the count logged before and
-after.
+**Backfill.** Every pre-existing `dispatches` row predates the distinction and cannot be classified
+retroactively, so all of them go to `staged` with `staged_at = created_at`. That is the safe
+direction: it reads history as already confirmed rather than leaving rows at `planned`, which would
+make the phase-3 seal guard refuse to close routes nobody can now go and verify. Soft-deleted rows
+are backfilled too — they are off every plan already, and leaving them at the column default would
+make them the only rows in the table whose `stage` means something different from every other row's.
+
+**Enum remap.** Existing `planned` routes mean *"sent to DT"* under the old vocabulary — it is what
+`/dispatch` writes after DT returns, and it is also the table default the DT webhooks land on — and
+`dispatched` under the new one. This is the one irreversible step in the spec. The migration logs
+the count before and after and **raises if any row is left behind**; that assertion lives in the
+migration rather than the test suite, because it is meaningful exactly once, against the
+pre-migration population. Once phase 2 ships, `planned` is a legitimate local state again and a
+standing "no routes at planned" test would be wrong.
 
 ### New view — `route_stop_counts`
 
@@ -225,9 +234,14 @@ label becomes "Órdenes en la ruta" with a separate staged counter. Closes #8.
 
 ## Testing
 
-TDD throughout. pgTAP for the database, Vitest for handlers and hooks.
+TDD throughout. Vitest for handlers and hooks; for the database, the repo's own SQL suite style —
+`BEGIN`, fixtures, `DO $$` blocks that `RAISE` on failure, `ROLLBACK` — matching
+`pre_route_snapshot.test.sql`. Not literal pgTAP: nothing in this repo uses `plan()`/`ok()`, and
+these files run two ways, via `npx supabase test db` locally and as an **advisory** post-check on
+every QA deploy (`sql_tests_check` in `infra/supabase-qa/deploy-qa.sh`). Advisory means they report
+but cannot fail the deploy — CI never runs them at all.
 
-**pgTAP**
+**SQL suite** — `packages/database/supabase/tests/spec70_dispatch_stage.test.sql`
 - every legal transition succeeds; a representative illegal set is rejected with the typed error
 - seal refuses while any dispatch is `planned`; succeeds at zero; is idempotent
 - `route_stop_counts` matches hand-built fixtures including soft-deleted and adopted rows
@@ -254,7 +268,7 @@ TDD throughout. pgTAP for the database, Vitest for handlers and hooks.
 Each phase is one PR with auto-merge, per `CLAUDE.md`.
 
 - **Phase 1 — Database.** Migration (columns, CHECKs, enum values, backfill, remap), the view,
-  `transition_route_status`, pgTAP suite. Nothing reads it yet; ships green on its own.
+  `transition_route_status`, SQL suite. Nothing reads it yet; ships green on its own.
 - **Phase 2 — Scan and stage.** Rewrite `validateScan` and the scan handler. Adoption path. This is
   the phase that makes Pre-ruta output loadable.
 - **Phase 3 — Seal, dispatch, delete.** `/seal`, the guarded `/dispatch` and `DELETE`, manager-only
