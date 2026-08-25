@@ -25,12 +25,29 @@ const MANAGER_ROLES: ReadonlySet<string> = new Set([
   UserRole.OPS_LEADER,
 ]);
 
+export interface UseManualDockAssignmentOptions {
+  /**
+   * spec-68 Fase 3 review (finding #6) — suppresses this hook's own
+   * `onError` toast. A batch caller invoking `mutateAsync` N times in
+   * parallel (Promise.allSettled over a multi-bulto request) needs ONE
+   * summary toast naming what succeeded/failed, not N identical "Error al
+   * asignar manualmente" toasts. Default stays `false`: the other call
+   * sites (batch/[batchId]/page.tsx, quicksort/page.tsx) each represent
+   * one distinct real-time scan, where the per-call toast is correct.
+   */
+  silentErrors?: boolean;
+}
+
 /**
  * Manager/ops_leader fallback for dock assignment when the scanner is
  * broken. Writes a dock_scans row with manual_override = true so the audit
  * trail separates UI assignments from real scans.
  */
-export function useManualDockAssignment(operatorId: string, userId: string) {
+export function useManualDockAssignment(
+  operatorId: string,
+  userId: string,
+  options?: UseManualDockAssignmentOptions,
+) {
   const { role } = useGlobal();
   const canUse = role !== null && MANAGER_ROLES.has(role);
   const queryClient = useQueryClient();
@@ -66,7 +83,9 @@ export function useManualDockAssignment(operatorId: string, userId: string) {
       });
     },
     onError: () => {
-      toast.error('Error al asignar manualmente. Intente de nuevo.');
+      if (!options?.silentErrors) {
+        toast.error('Error al asignar manualmente. Intente de nuevo.');
+      }
     },
   });
 

@@ -25,7 +25,14 @@ export interface SendToDockSheetProps {
   activeZones: DockZoneRecord[];
   sectorizedCounts: Record<string, number>;
   canUse: boolean;
-  onConfirm: (zoneId: string) => void;
+  /**
+   * Fase 3 review (finding #4) — hands back the whole selected zone, not
+   * just its id. Callers read `is_consolidation` straight off what the
+   * user actually picked instead of re-looking it up in a filtered
+   * `activeZones` array that can miss it (see finding #3: the suggested
+   * zone can be inactive and absent from that array).
+   */
+  onConfirm: (zone: DockZoneRecord) => void;
 }
 
 export function SendToDockSheet({
@@ -51,15 +58,27 @@ export function SendToDockSheet({
   if (!canUse || !request) return null;
 
   const suggestedId = request.suggestedZone.id;
-  const consolidation = activeZones.find((z) => z.is_consolidation);
+  // Finding #2 — every unmapped-comuna or future-dated package suggests
+  // consolidación itself, so the suggested zone CAN already be
+  // consolidación. Exclude suggestedId here the same way `andens` already
+  // does, or consolidación would be appended a second time: duplicate key,
+  // duplicate testid, both rows reading as selected.
+  const consolidation = activeZones.find((z) => z.is_consolidation && z.id !== suggestedId);
   const andens = activeZones.filter((z) => !z.is_consolidation && z.id !== suggestedId);
+  // Finding #3 — `request.suggestedZone` is a `DockZoneRecord` end to end
+  // now (ZoneGroup.zone was mistyped as the narrower `DockZone` before),
+  // so this fallback no longer widens to a union missing
+  // capacity/operator_id. It stays reachable on purpose: determineDockZone
+  // doesn't filter its consolidation fallback on `is_active`, so the
+  // suggested zone can be inactive and absent from `activeZones` — the
+  // sheet still needs to show it.
   const suggested = activeZones.find((z) => z.id === suggestedId) ?? request.suggestedZone;
 
   const orderedZones = [suggested, ...andens, ...(consolidation ? [consolidation] : [])];
   const selectedZone = orderedZones.find((z) => z.id === selectedZoneId) ?? suggested;
 
   const handleConfirm = () => {
-    onConfirm(selectedZone.id);
+    onConfirm(selectedZone);
     onOpenChange(false);
   };
 
@@ -131,11 +150,17 @@ function ZoneOption({
       data-testid={`send-to-dock-option-${zone.id}`}
       onClick={onSelect}
       aria-pressed={isSelected}
+      // Finding #7 (Fase 3 review) — isSelected is checked FIRST. Before,
+      // isSuggested took precedence, so after picking a different andén
+      // the suggested row kept its selected-looking accent fill and both
+      // rows read as "chosen" at a glance. The SUGERIDO badge already
+      // marks the suggestion independent of this — a lighter border here
+      // is enough once it's no longer the pick.
       className={`flex min-h-[56px] flex-col gap-1.5 rounded-xl border-2 px-3.5 py-2.5 text-left transition-colors ${
-        isSuggested
-          ? 'border-accent bg-accent-muted'
-          : isSelected
-            ? 'border-accent bg-surface-raised'
+        isSelected
+          ? 'border-accent bg-surface-raised'
+          : isSuggested
+            ? 'border-accent/50 bg-surface'
             : 'border-border bg-surface'
       }`}
     >

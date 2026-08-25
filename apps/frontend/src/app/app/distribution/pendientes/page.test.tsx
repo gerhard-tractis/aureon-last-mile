@@ -20,6 +20,10 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1', userId: 'user-1', role: 'ops_leader' }),
 }));
 
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 const zoneA = {
   id: 'zone-a1',
   name: 'Zona Norte',
@@ -61,6 +65,28 @@ const pkg = {
   skuItems: [],
 };
 
+const pkg2 = {
+  id: 'pkg-2',
+  label: 'BULTO-2',
+  order_id: 'order-2',
+  orderNumber: '1002',
+  comunaId: 'c-1',
+  comunaName: 'Quilicura',
+  delivery_date: '2026-08-24',
+  skuItems: [],
+};
+
+const pkg3 = {
+  id: 'pkg-3',
+  label: 'BULTO-3',
+  order_id: 'order-2',
+  orderNumber: '1002',
+  comunaId: 'c-1',
+  comunaName: 'Quilicura',
+  delivery_date: '2026-08-24',
+  skuItems: [],
+};
+
 const mockGroups: Array<Record<string, unknown>> = [
   {
     zone: zoneA,
@@ -80,6 +106,15 @@ const mockGroups: Array<Record<string, unknown>> = [
         comunaName: 'Quilicura',
         packages: [pkg],
       },
+      // A genuine multi-bulto order — needed to exercise a partial
+      // failure WITHIN one send-to-dock confirmation (finding #6).
+      {
+        orderId: 'order-2',
+        orderNumber: '1002',
+        deliveryDate: '2026-08-24',
+        comunaName: 'Quilicura',
+        packages: [pkg2, pkg3],
+      },
     ],
   },
 ];
@@ -89,15 +124,20 @@ vi.mock('@/hooks/distribution/usePendingSectorization', () => ({
 }));
 
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
-let mockCanUse = true;
+const mockUseManualDockAssignment = vi.fn(() => ({ canUse: true, mutateAsync: mockMutateAsync }));
 vi.mock('@/hooks/distribution/useManualDockAssignment', () => ({
-  useManualDockAssignment: () => ({ canUse: mockCanUse, mutateAsync: mockMutateAsync }),
+  useManualDockAssignment: (...args: unknown[]) => mockUseManualDockAssignment(...args),
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   mockPush.mockClear();
   mockMutateAsync.mockClear();
-  mockCanUse = true;
+  mockMutateAsync.mockResolvedValue(undefined);
+  mockUseManualDockAssignment.mockClear();
+  mockUseManualDockAssignment.mockImplementation(() => ({ canUse: true, mutateAsync: mockMutateAsync }));
+  const { toast } = await import('sonner');
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
 });
 
 describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () => {
@@ -123,18 +163,57 @@ describe('PendingSectorizationPage (route: /app/distribution/pendientes)', () =>
 
   it('tapping the ⋯ affordance opens the send-to-dock sheet, and confirming assigns the package', async () => {
     const user = userEvent.setup();
+    const { toast } = await import('sonner');
     render(<PendingSectorizationPage />);
     await user.click(screen.getByRole('button', { name: /enviar bulto-1 a andén/i }));
     expect(screen.getByText('Enviar BULTO-1 a')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Enviar a A1' }));
     expect(mockMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({ packageId: 'pkg-1', zoneId: 'zone-a1', isConsolidation: false }),
+      expect.objectContaining({
+        packageId: 'pkg-1',
+        zoneId: 'zone-a1',
+        barcode: 'BULTO-1',
+        isConsolidation: false,
+      }),
     );
+    await vi.waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('never shows the ⋯ affordance or the sheet when canUse is false', () => {
-    mockCanUse = false;
+    mockUseManualDockAssignment.mockImplementation(() => ({ canUse: false, mutateAsync: mockMutateAsync }));
     render(<PendingSectorizationPage />);
     expect(screen.queryByRole('button', { name: /enviar/i })).not.toBeInTheDocument();
+  });
+
+  // Finding #6 (Fase 3 review) — passes silentErrors so the hook's own
+  // per-mutation toast never fires; the page is solely responsible for
+  // the one summary toast asserted below.
+  it('opts the shared hook into silentErrors so only the page summary toast fires', () => {
+    render(<PendingSectorizationPage />);
+    expect(mockUseManualDockAssignment).toHaveBeenCalledWith('op-1', 'user-1', { silentErrors: true });
+  });
+
+  // Finding #6 — a multi-package request (order-level "enviar todo") with
+  // a partial failure must summarize once, naming both outcomes, not fire
+  // one toast per package. Drives order-2's real two-bulto "enviar todo"
+  // affordance so both mutateAsync calls belong to the SAME confirmation.
+  it('summarizes a partially-failed multi-package send in one toast, not one per package', async () => {
+    const user = userEvent.setup();
+    const { toast } = await import('sonner');
+    mockMutateAsync
+      .mockResolvedValueOnce(undefined) // pkg-2 succeeds
+      .mockRejectedValueOnce(new Error('network blip')); // pkg-3 fails
+
+    render(<PendingSectorizationPage />);
+    await user.click(screen.getByRole('button', { name: /enviar pedido 1002 a andén/i }));
+    await user.click(screen.getByRole('button', { name: 'Enviar a A1' }));
+
+    await vi.waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(2));
+    // Exactly ONE toast for this whole confirmation, not one per package —
+    // and it must be the failure-summary toast, since one of the two
+    // packages didn't make it.
+    await vi.waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

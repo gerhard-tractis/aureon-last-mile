@@ -5,8 +5,9 @@ import {
   formatRelativeDeliveryDate,
   type DeliveryDateTone,
 } from '@/lib/distribution/relative-date';
-import type { DockZone } from '@/lib/distribution/sectorization-engine';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 import type { OrderGroup, PendingPackage } from '@/hooks/distribution/usePendingSectorization';
+import type { DockZoneRecord } from '@/hooks/distribution/useDockZones';
 import type { SendToDockRequest } from './PendingMobileList';
 
 const TONE_CLASS: Record<DeliveryDateTone, string> = {
@@ -19,7 +20,7 @@ const TONE_CLASS: Record<DeliveryDateTone, string> = {
 export interface PendingMobileOrderGroupProps {
   order: OrderGroup;
   canManualAssign: boolean;
-  suggestedZone: DockZone;
+  suggestedZone: DockZoneRecord;
   onRequestSend: (request: SendToDockRequest) => void;
 }
 
@@ -43,7 +44,12 @@ export function PendingMobileOrderGroup({
   suggestedZone,
   onRequestSend,
 }: PendingMobileOrderGroupProps) {
-  const today = new Date().toISOString().split('T')[0];
+  // spec-68 Fase 3 review (finding #8) — was the UTC date via
+  // `new Date().toISOString().split('T')[0]`, the same bug Fase 2 fixed in
+  // DistributionMobileView's todayISOFrom: past ~20:00 in Santiago the UTC
+  // calendar date has already rolled to tomorrow, mis-scoring a same-day
+  // delivery as overdue.
+  const today = todayISOInTimezone();
   const date = formatRelativeDeliveryDate(order.deliveryDate, today);
 
   if (order.packages.length === 1) {
@@ -147,7 +153,7 @@ function PendingMobilePackageRow({
 }: {
   pkg: PendingPackage;
   canManualAssign: boolean;
-  suggestedZone: DockZone;
+  suggestedZone: DockZoneRecord;
   onRequestSend: (request: SendToDockRequest) => void;
   today: string;
 }) {
@@ -171,6 +177,7 @@ function PendingMobilePackageRow({
           onClick={() =>
             onRequestSend({
               packageIds: [pkg.id],
+              packageLabels: [pkg.label],
               code: pkg.label,
               comunaName: pkg.comunaName,
               suggestedZone,

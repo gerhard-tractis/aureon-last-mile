@@ -10,7 +10,7 @@ import { PendingMobileList, type SendToDockRequest } from '@/components/distribu
 import { SendToDockSheet } from '@/components/distribution/SendToDockSheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePendingSectorization } from '@/hooks/distribution/usePendingSectorization';
-import { useDockZones } from '@/hooks/distribution/useDockZones';
+import { useDockZones, type DockZoneRecord } from '@/hooks/distribution/useDockZones';
 import { useSectorizedByZone } from '@/hooks/distribution/useSectorizedByZone';
 import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssignment';
 import { useOperatorId } from '@/hooks/useOperatorId';
@@ -34,7 +34,11 @@ export default function PendingSectorizationPage() {
   const { data: groups = [], isLoading } = usePendingSectorization(operatorId);
   const { data: zones = [] } = useDockZones(operatorId);
   const { data: sectorizedCounts = {} } = useSectorizedByZone(operatorId);
-  const manualAssign = useManualDockAssignment(operatorId ?? '', userId ?? '');
+  // Fase 3 review (finding #6) — silentErrors: true. This screen batches
+  // N mutateAsync calls per confirmation (one per bulto) and builds its
+  // own single summary toast below; the hook's default per-call toast
+  // would otherwise fire once per bulto on a network blip.
+  const manualAssign = useManualDockAssignment(operatorId ?? '', userId ?? '', { silentErrors: true });
 
   const [sendRequest, setSendRequest] = useState<SendToDockRequest | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -50,23 +54,45 @@ export default function PendingSectorizationPage() {
     setSheetOpen(true);
   };
 
-  const handleConfirm = async (zoneId: string) => {
+  // Fase 3 review (finding #4) — reads `zone.is_consolidation` off the
+  // zone SendToDockSheet says was actually picked, rather than
+  // re-looking it up in `activeZones` (which can miss an inactive
+  // consolidation zone — see SendToDockSheet's own finding #3 note — and
+  // would then silently default isConsolidation to false, writing a
+  // retention to dock_scans without its redirect_reason).
+  //
+  // Fase 3 review (finding #6) — Promise.allSettled, not Promise.all: a
+  // partial failure must not leave the caller unsure which bultos made it,
+  // and must summarize once, not toast once per bulto.
+  const handleConfirm = async (zone: DockZoneRecord) => {
     if (!sendRequest) return;
-    const isConsolidation = activeZones.find((z) => z.id === zoneId)?.is_consolidation ?? false;
-    try {
-      await Promise.all(
-        sendRequest.packageIds.map((packageId, idx) =>
-          manualAssign.mutateAsync({
-            packageId,
-            zoneId,
-            barcode: sendRequest.packageLabels[idx] ?? sendRequest.code,
-            isConsolidation,
-          }),
-        ),
+    const results = await Promise.allSettled(
+      sendRequest.packageIds.map((packageId, idx) =>
+        manualAssign.mutateAsync({
+          packageId,
+          zoneId: zone.id,
+          barcode: sendRequest.packageLabels[idx] ?? sendRequest.code,
+          isConsolidation: zone.is_consolidation,
+        }),
+      ),
+    );
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - succeeded;
+
+    if (failed === 0) {
+      toast.success(
+        succeeded === 1
+          ? `${sendRequest.code} enviado a ${zone.code}`
+          : `${succeeded} bultos enviados a ${zone.code}`,
       );
-      toast.success('Envío manual registrado');
-    } catch {
-      // useManualDockAssignment's own onError already toasts the failure.
+    } else if (succeeded === 0) {
+      toast.error(`No se pudo enviar ${sendRequest.code} a ${zone.code}. Intenta de nuevo.`);
+    } else {
+      toast.error(
+        `${succeeded} de ${results.length} bultos enviados a ${zone.code}; ${failed} ${
+          failed === 1 ? 'falló' : 'fallaron'
+        }. Revisa cuáles antes de reintentar.`,
+      );
     }
   };
 
@@ -84,6 +110,7 @@ export default function PendingSectorizationPage() {
       ) : (
         <PendingMobileList
           groups={groups}
+          zones={zones}
           canManualAssign={manualAssign.canUse}
           onRequestSend={handleRequestSend}
         />

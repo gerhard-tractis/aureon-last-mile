@@ -337,4 +337,47 @@ describe('usePendingSectorization', () => {
     expect(pkg.comunaName).toBeNull();
     expect(pkg.skuItems).toEqual([]);
   });
+
+  // spec-68 Fase 3 review — pre-existing UTC-date bug, fixed in passing
+  // because it directly degrades the pendientes screen this branch ships.
+  // The instant below is 2026-08-25T01:00:00Z, already "tomorrow" in UTC
+  // but still the evening of 2026-08-24 in America/Santiago (UTC-4 in
+  // August). A package due 2026-08-26 is genuinely two days out from the
+  // real Santiago "today" (2026-08-24) and must stay routed to
+  // consolidation (future_date) — the old `new Date().toISOString()`
+  // UTC-based "today" read as 2026-08-25, which let the delivery date
+  // slip inside the (now artificially advanced) active window one day
+  // early and routed it to the matching andén instead.
+  it('does not let a two-days-out delivery escape consolidation a day early during the Santiago evening UTC-date-rollover window', async () => {
+    const { useDockZones } = await import('@/hooks/distribution/useDockZones');
+    vi.mocked(useDockZones).mockReturnValue({
+      data: [ZONE_ANDEN, ZONE_CONSOL],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useDockZones>);
+
+    mockOrder.mockResolvedValue({
+      data: [
+        {
+          id: 'pkg-future', label: 'PKG-0099', order_id: 'ord-future', sku_items: [],
+          orders: {
+            order_number: '#1099',
+            comuna_id: 'comuna-lc',
+            delivery_date: '2026-08-26',
+            chile_comunas: { nombre: 'Las Condes' },
+          },
+        },
+      ],
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => usePendingSectorization('op-1', new Date('2026-08-25T01:00:00.000Z')),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data![0].zone.id).toBe('consol');
+    expect(result.current.data![0].matchResult.reason).toBe('future_date');
+  });
 });

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { useManualDockAssignment } from './useManualDockAssignment';
 import { UserRole } from '@/lib/types/auth.types';
+import { toast } from 'sonner';
 
 const mockInsert = vi.fn();
 const mockFrom = vi.fn();
@@ -11,6 +12,10 @@ const mockSupabase = { from: mockFrom };
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: vi.fn(() => mockSupabase),
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: vi.fn(), success: vi.fn() },
 }));
 
 let mockRole: string | null = UserRole.WAREHOUSE_STAFF;
@@ -143,5 +148,49 @@ describe('useManualDockAssignment.mutateAsync', () => {
         redirect_reason: 'manual_consolidation',
       })
     );
+  });
+});
+
+// spec-68 Fase 3 review (finding #6) — batch-confirming N packages
+// (Promise.allSettled in pendientes/page.tsx) must not fire N identical
+// per-mutation toasts; the caller builds one summary toast instead. This
+// hook's own onError toast is still the right default for its other
+// call sites (batch/[batchId]/page.tsx, quicksort/page.tsx), which each
+// represent one distinct real-time scan.
+describe('useManualDockAssignment error toast', () => {
+  beforeEach(() => {
+    mockRole = UserRole.OPERATIONS_MANAGER;
+    mockInsert.mockResolvedValue({ data: null, error: { message: 'boom' } });
+  });
+
+  it('toasts by default when the insert fails', async () => {
+    const { result } = renderHook(() => useManualDockAssignment('op-1', 'user-1'), { wrapper });
+    await expect(
+      result.current.mutateAsync({
+        packageId: 'pkg-1',
+        zoneId: 'zone-anden',
+        barcode: 'PKG-001',
+        isConsolidation: false,
+      }),
+    ).rejects.toThrow();
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not toast when silentErrors is true, so a batch caller can show one summary instead', async () => {
+    const { result } = renderHook(
+      () => useManualDockAssignment('op-1', 'user-1', { silentErrors: true }),
+      { wrapper },
+    );
+    await expect(
+      result.current.mutateAsync({
+        packageId: 'pkg-1',
+        zoneId: 'zone-anden',
+        barcode: 'PKG-001',
+        isConsolidation: false,
+      }),
+    ).rejects.toThrow();
+    // Give the mutation's onError a tick to have fired if it was going to.
+    await new Promise((r) => setTimeout(r, 0));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

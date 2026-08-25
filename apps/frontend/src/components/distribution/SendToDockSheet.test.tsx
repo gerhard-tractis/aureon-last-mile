@@ -92,14 +92,19 @@ describe('SendToDockSheet (4e)', () => {
     expect(screen.getByRole('button', { name: 'Enviar a A1' })).toBeInTheDocument();
   });
 
-  it('selecting another andén updates the confirm button and calls onConfirm with its id', async () => {
+  // Finding #4 (Fase 3 review) — onConfirm now hands back the whole
+  // selected zone object, not just its id, so callers read
+  // `zone.is_consolidation` off what the user actually picked instead of
+  // re-looking it up in a filtered zones array that might miss it (see the
+  // inactive-consolidation-zone case finding #3 covers).
+  it('selecting another andén updates the confirm button and calls onConfirm with that full zone', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();
     render(<SendToDockSheet {...baseProps} onConfirm={onConfirm} />);
     await user.click(screen.getByTestId('send-to-dock-option-zone-b2'));
     const confirmBtn = screen.getByRole('button', { name: 'Enviar a B2' });
     await user.click(confirmBtn);
-    expect(onConfirm).toHaveBeenCalledWith('zone-b2');
+    expect(onConfirm).toHaveBeenCalledWith(otherZone);
   });
 
   it('Cancelar closes the sheet without confirming', async () => {
@@ -130,5 +135,74 @@ describe('SendToDockSheet (4e)', () => {
     }
     const confirm = screen.getByRole('button', { name: 'Enviar a A1' });
     expect(confirm.className).toMatch(/h-\[?(5[6-9]|60)/);
+  });
+
+  // Finding #2 (Fase 3 review) — every unmapped-comuna or future-dated
+  // package suggests consolidación itself (determineDockZone's fallback).
+  // Before the fix, orderedZones appended consolidación again
+  // unconditionally, producing a duplicate zone-cons row/key/testid, both
+  // reading as selected.
+  it('does not list consolidación twice when consolidación IS the suggested zone', () => {
+    const consolidationRequest: SendToDockRequest = {
+      packageIds: ['pkg-2'],
+      packageLabels: ['BULTO-2'],
+      code: 'BULTO-2',
+      comunaName: null,
+      suggestedZone: consolidationZone,
+    };
+    render(<SendToDockSheet {...baseProps} request={consolidationRequest} />);
+    const matches = screen.getAllByTestId('send-to-dock-option-zone-cons');
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toHaveTextContent('SUGERIDO');
+  });
+
+  // Finding #3 (Fase 3 review) — the suggested zone can be inactive (the
+  // sectorization engine's consolidation fallback doesn't filter on
+  // is_active), so it may be absent from `activeZones`. The sheet must
+  // still render it (from `request.suggestedZone`, now typed
+  // DockZoneRecord end-to-end — no cast, no missing capacity/operator_id).
+  it('still shows the suggested zone even when it is missing from activeZones (inactive consolidation case)', () => {
+    const inactiveConsolidation = makeZone({
+      id: 'zone-cons-inactive',
+      code: 'CONS2',
+      name: 'Consolidación Antigua',
+      is_consolidation: true,
+      is_active: false,
+      capacity: null,
+    });
+    const req: SendToDockRequest = {
+      packageIds: ['pkg-3'],
+      packageLabels: ['BULTO-3'],
+      code: 'BULTO-3',
+      comunaName: null,
+      suggestedZone: inactiveConsolidation,
+    };
+    // activeZones deliberately does NOT include inactiveConsolidation.
+    render(<SendToDockSheet {...baseProps} request={req} activeZones={[suggestedZone, otherZone]} />);
+    const suggested = screen.getByTestId('send-to-dock-option-zone-cons-inactive');
+    expect(suggested).toHaveTextContent('SUGERIDO');
+    expect(screen.getByRole('button', { name: 'Enviar a CONS2' })).toBeInTheDocument();
+  });
+
+  // Finding #7 (Fase 3 review) — isSuggested's className branch used to be
+  // checked before isSelected, so after picking a different andén the
+  // suggested row kept its accent border/fill and both rows read as chosen
+  // at a glance. aria-pressed was already correct; this is the visible
+  // affordance.
+  it('once another andén is picked, only that row carries the selected styling — the suggested row reverts', async () => {
+    const user = userEvent.setup();
+    render(<SendToDockSheet {...baseProps} />);
+    const suggested = screen.getByTestId('send-to-dock-option-zone-a1');
+    const other = screen.getByTestId('send-to-dock-option-zone-b2');
+
+    expect(suggested).toHaveAttribute('aria-pressed', 'true');
+    await user.click(other);
+
+    expect(other).toHaveAttribute('aria-pressed', 'true');
+    expect(suggested).toHaveAttribute('aria-pressed', 'false');
+    // The suggested row keeps its SUGERIDO badge/accent treatment (it IS
+    // still the suggestion) but must not also read as selected.
+    expect(other.className).not.toBe(suggested.className);
+    expect(other.className).toMatch(/border-accent/);
   });
 });
