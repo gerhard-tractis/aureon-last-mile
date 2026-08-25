@@ -13,8 +13,8 @@ vi.mock('bwip-js/browser', () => ({
 }));
 
 const zones: DockZoneRecord[] = [
-  { id: 'consol', name: 'Consolidación', code: 'CONSOL', is_consolidation: true, comunas: [], is_active: true, operator_id: 'op-1' },
-  { id: 'zone-1', name: 'Andén 1', code: 'DOCK-001', is_consolidation: false, comunas: ['las condes', 'vitacura'], is_active: true, operator_id: 'op-1' },
+  { id: 'consol', name: 'Consolidación', code: 'CONSOL', is_consolidation: true, comunas: [], is_active: true, operator_id: 'op-1', capacity: null },
+  { id: 'zone-1', name: 'Andén 1', code: 'DOCK-001', is_consolidation: false, comunas: ['las condes', 'vitacura'], is_active: true, operator_id: 'op-1', capacity: null },
 ];
 
 describe('DockZoneList', () => {

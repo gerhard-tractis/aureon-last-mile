@@ -23,10 +23,11 @@ import { Skeleton } from '@/components/ui/skeleton';
  * how fast it is moving, which andenes are filling, and who is on the floor.
  * The primary action is entering Modo rápido (1d), where the work happens.
  *
- * Not rendered, because dock_zones has no capacity column: the mock's
- * "168 / 180 paq." denominator, its fill bar and the CASI LLENO badge. Adding
- * that column needs an admin surface to set it, so it is a follow-up rather
- * than a number invented here.
+ * Not rendered yet: the mock's "168 / 180 paq." denominator, its fill bar
+ * and the CASI LLENO badge. `dock_zones.capacity` and its admin surface
+ * (DockZoneForm) shipped in spec-68 Fase 1, but this screen still isn't
+ * wired to lib/distribution/dock-capacity.ts / DockCapacityBar — that's a
+ * follow-up, not a schema gap.
  */
 
 function timeLabel(iso: string | null): string | null {

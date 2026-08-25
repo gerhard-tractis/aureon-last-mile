@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; fase 4.3 modo rápido de escritorio), [spec-62](spec-62-reception-mobile.md) (precedente móvil: rama de árbol completo bajo `lg`), [spec-39](spec-39-distribution-pending-list.md) / [spec-41](spec-41-pending-list-order-grouping.md) (pendientes por sectorizar), [spec-40](spec-40-dock-zone-barcode-labels.md) (etiquetas de andén), [spec-66](spec-66-ops-leader-role.md) (`ops_leader`), [spec-67](spec-67-sidebar-information-architecture.md) (`MobileTabBar`, secciones de nav)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-24_
 

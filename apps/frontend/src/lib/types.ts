@@ -685,6 +685,7 @@ export type Database = {
           code: string
           is_consolidation: boolean
           is_active: boolean
+          capacity: number | null
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -696,6 +697,7 @@ export type Database = {
           code: string
           is_consolidation?: boolean
           is_active?: boolean
+          capacity?: number | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -707,6 +709,7 @@ export type Database = {
           code?: string
           is_consolidation?: boolean
           is_active?: boolean
+          capacity?: number | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
