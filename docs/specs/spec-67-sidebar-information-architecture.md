@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (creó las dos secciones actuales), [spec-65](spec-65-pedidos-tab.md) (añadió Pedidos a OPERACIÓN y litigó `resolveLandingPath`), [spec-45](spec-45-module-activation-layer.md) (activación de módulos), [spec-66](spec-66-ops-leader-role.md) (`ops_leader` y la barra de pestañas móvil), [spec-60](spec-60-control-tower-fleet-map.md) (Torre de control)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-24_
 
@@ -445,3 +445,39 @@ Criterio de aceptación: la suite pasa antes de que exista ningún cambio de nav
 - [ ] Ningún test afirma el acceso de un rol inexistente; la cobertura de camino negativo de las rutas de API **sigue intacta** — solo cambian nombres de test y el texto de error afirmado en `_proxy.test.ts:84`.
 - [ ] `/app/table`, `/app/storage` y los ocho métodos de `unified.ts` ya no existen; cero referencias colgantes.
 - [ ] Suite completa del frontend en verde con `--pool=forks`.
+
+---
+
+## Cierre
+
+Implementado y mergeado en **PR #535** (2026-08-25). CI verde en los dos jobs
+`Lint, Type-Check, Test, Build`. Confirmado sobre `origin/main`:
+`TRACKING_ITEMS` y `LANDING_SCAN_ORDER` presentes, las seis rutas borradas
+fuera del árbol, y las herramientas internas bajo `app/admin/tools/`.
+
+**Lo que sí se verificó.** Cada archivo tocado y sus consumidores, en verde en
+local: navegación 80/80 · `AppLayout` + `admin` 110/110 · herramientas movidas
+y rutas de API de wismo/ocr 122 · `lib/supabase` 17/17. Y lo más importante:
+**la matriz de aterrizaje de Task 1 pasa sin editar contra la estructura
+anterior y la nueva**, que era la prueba de neutralidad que exigía el
+*Riesgo 1*.
+
+**Lo que NO se hizo, y queda pendiente de verdad:**
+
+| Task 7 | Estado |
+|---|---|
+| Suite completa en local | **No se logró.** La máquina no arranca suficientes workers de vitest (una corrida registró 421 errores *"failed to start forks worker"*, ejecutó solo 27 archivos y aun así salió con código 0). La cobertura completa vino de CI, no de local. |
+| Mutation testing sobre los tres archivos de navegación | **No se ejecutó.** |
+| Recorrido manual de `/admin/tools/*` en QA | **No se ejecutó.** Las páginas compilan y sus tests pasan, pero nadie las abrió en un navegador. |
+
+Dos fallos que aparecieron durante el trabajo se persiguieron hasta el final y
+resultaron ambientales, no regresiones: `PickupManifestTabs` (timeout de 30s
+dentro de la corrida con inanición de workers; pasa 19/19 en aislamiento) y
+`no-detached-rpc` (escaneo de fuentes que hace `statSync` sobre todo `src`,
+corriendo mientras se borraba un directorio; pasa en dos reintentos limpios).
+
+**Trabajo derivado, sin tocar:** las dos implementaciones de auditoría
+(`/app/audit-logs` vs `/admin/audit-logs`), y `lib/types.ts:2366`, que mantiene
+a mano una copia del enum `user_role` y ya está desactualizada — le falta
+`super_admin` de la migración `20260616000001`. Es la misma clase de deriva que
+produjo el rol fantasma de la *Decisión 9*.
