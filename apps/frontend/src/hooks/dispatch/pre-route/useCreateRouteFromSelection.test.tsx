@@ -34,7 +34,7 @@ describe('useCreateRouteFromSelection', () => {
     expect(mockFetch).toHaveBeenCalledWith('/api/dispatch/routes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_ids: ['ord-1', 'ord-2'] }),
+      body: JSON.stringify({ order_ids: ['ord-1', 'ord-2'], route_date: null }),
     });
   });
 
@@ -113,7 +113,32 @@ describe('useCreateRouteFromSelection', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith('/api/dispatch/routes', expect.objectContaining({
-      body: JSON.stringify({ order_ids: [] }),
+      body: JSON.stringify({ order_ids: [], route_date: null }),
+    }));
+  });
+});
+
+/**
+ * spec-70: create_seeded_route used to hardcode CURRENT_DATE, so planning
+ * tomorrow's wave produced a route dated today and it then failed to appear in
+ * tomorrow's lists. The board's filter date is the route's date.
+ */
+describe('useCreateRouteFromSelection — wave date', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('sends the wave date when the caller supplies one', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'r-1', status: 'planned', route_date: '2026-09-01', created_at: 'x' }),
+    });
+
+    const { result } = renderHook(() => useCreateRouteFromSelection(), { wrapper: createWrapper() });
+    await act(async () => {
+      await result.current.mutateAsync({ orderIds: ['ord-1'], routeDate: '2026-09-01' });
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith('/api/dispatch/routes', expect.objectContaining({
+      body: JSON.stringify({ order_ids: ['ord-1'], route_date: '2026-09-01' }),
     }));
   });
 });

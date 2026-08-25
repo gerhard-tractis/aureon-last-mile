@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
-import type { ScanResult, RoutePackage } from './types';
+import { ACTIVE_ROUTE_STATUSES, type ScanResult, type RoutePackage, type ScanAction, type DispatchStage } from './types';
 
 interface ScanInput {
   code: string;
@@ -46,6 +46,32 @@ interface PackageRow {
   status: string;
   order_id: string;
   orders: OrderRow | OrderRow[] | null;
+}
+
+interface DispatchRow {
+  id: string;
+  route_id: string | null;
+  stage: DispatchStage;
+  route: { status: string } | { status: string }[] | null;
+}
+
+const ACTIVE = new Set<string>(ACTIVE_ROUTE_STATUSES);
+
+/**
+ * Whether a dispatch row still owns its order, so the order may not be loaded
+ * onto a different route.
+ *
+ * A row with no route_id owns nothing. A row on a completed or cancelled route
+ * is history — that is what lets a package returned through `retorno_hub`
+ * (spec-43) go out again. Anything else blocks, *including a row whose route
+ * cannot be resolved*: guessing permissively there would re-open
+ * double-routing, and a package on two trucks is a lost package.
+ */
+function ownsTheOrder(row: DispatchRow): boolean {
+  if (row.route_id == null) return false;
+  const route = Array.isArray(row.route) ? row.route[0] : row.route;
+  if (!route?.status) return true;
+  return ACTIVE.has(route.status);
 }
 
 /**
@@ -117,23 +143,46 @@ export async function validateScan(
     };
   }
 
-  // 4. Check not already dispatched in another active route.
-  const { data: existing, error: existingError } = await supabase
+  // 4. Decide what this scan does to the plan.
+  //
+  //    This used to ask "does a dispatch row exist for this order?" and refuse
+  //    if one did — without filtering by route_id. Pre-ruta's
+  //    create_seeded_route creates exactly such a row when it seeds a route, so
+  //    every scan of a correctly pre-routed package was refused with
+  //    "Paquete ya asignado a otra ruta activa". The plan made the load
+  //    impossible, which is the defect spec-70 exists to fix.
+  const { data: rows, error: rowsError } = await supabase
     .from('dispatches')
-    .select('id, route_id')
+    .select('id, route_id, stage, route:routes!dispatches_route_id_fkey(status)')
     .eq('operator_id', operatorId)
     .eq('order_id', found.order_id)
     .is('deleted_at', null)
-    .limit(1);
+    .limit(50);
 
-  if (existingError) return queryFailed(existingError.message);
+  if (rowsError) return queryFailed(rowsError.message);
 
-  if (existing && existing.length > 0) {
+  const dispatches = (rows ?? []) as DispatchRow[];
+  const onThisRoute = dispatches.find((d) => d.route_id === input.routeId);
+
+  let action: ScanAction;
+
+  if (onThisRoute) {
+    if (onThisRoute.stage !== 'planned') {
+      return {
+        ok: false,
+        message: 'Paquete ya cargado en esta ruta',
+        code: 'ALREADY_STAGED',
+      };
+    }
+    action = { kind: 'stage', dispatchId: onThisRoute.id };
+  } else if (dispatches.some(ownsTheOrder)) {
     return {
       ok: false,
       message: 'Paquete ya asignado a otra ruta activa',
       code: 'ALREADY_IN_ROUTE',
     };
+  } else {
+    action = { kind: 'adopt' };
   }
 
   const order = Array.isArray(found.orders) ? found.orders[0] : found.orders;
@@ -150,7 +199,7 @@ export async function validateScan(
     package_status: 'en_carga',
   };
 
-  return { ok: true, package: pkg };
+  return { ok: true, package: pkg, action };
 }
 
 function queryFailed(message: string): ScanResult {

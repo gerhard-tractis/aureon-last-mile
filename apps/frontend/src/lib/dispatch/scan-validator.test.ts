@@ -160,3 +160,100 @@ describe('validateScan — membership', () => {
     if (!result.ok) expect(result.code).toBe('ALREADY_IN_ROUTE');
   });
 });
+
+/**
+ * spec-70 phase 2 — the plan/load axis.
+ *
+ * The membership check used to ask "does a dispatch row exist for this order?"
+ * and refuse if so. Pre-ruta creates exactly such a row when it seeds a route,
+ * so every scan of a pre-routed package was refused with "Paquete ya asignado a
+ * otra ruta activa" — the plan made the load impossible. The question is now
+ * "is this order planned on THIS route and not yet staged?".
+ */
+describe('validateScan — spec-70 stage decisions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const PKG = { data: [{ id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW }], error: null };
+
+  it('stages the row Pre-ruta seeded on THIS route — the regression test for the block', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'planned', route: { status: 'planned' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1' });
+  });
+
+  it('adopts a package that was never planned onto this route', async () => {
+    const { client } = buildClient([PKG, { data: [], error: null }]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'adopt' });
+  });
+
+  it('refuses a second scan of a stop already staged on this route', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'staged', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('ALREADY_STAGED');
+  });
+
+  it('refuses an order planned on a different, still-active route', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd9', route_id: 'route-2', stage: 'planned', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('ALREADY_IN_ROUTE');
+  });
+
+  /**
+   * spec-43 sends a failed delivery back to the hub at `en_bodega` "so the
+   * pipeline restarts", but the dispatch row on the old route is never deleted.
+   * Under the old rule that row blocked the re-scan permanently, so a returned
+   * package could never go out again.
+   */
+  it.each(['completed', 'cancelled'])(
+    'lets an order be re-routed when its only history is a %s route',
+    async (status) => {
+      const { client } = buildClient([
+        PKG,
+        { data: [{ id: 'd-old', route_id: 'route-old', stage: 'staged', route: { status } }], error: null },
+      ]);
+      const result = await validateScan(client, input);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.action).toEqual({ kind: 'adopt' });
+    },
+  );
+
+  /**
+   * A row whose route cannot be resolved is treated as blocking. Guessing the
+   * permissive way here would re-open double-routing, which is the more
+   * expensive mistake: a package on two trucks is a lost package.
+   */
+  it('treats a dispatch row with an unresolvable route as blocking', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd9', route_id: 'route-2', stage: 'planned', route: null }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('ALREADY_IN_ROUTE');
+  });
+
+  it('queries dispatches with the stage column and the route status it needs', async () => {
+    const { client, calls } = buildClient([PKG, { data: [], error: null }]);
+    await validateScan(client, input);
+    const dispatchCall = calls.find((c) => c.table === 'dispatches');
+    expect(dispatchCall?.select).toContain('stage');
+    expect(dispatchCall?.select).toContain('route_id');
+    expect(dispatchCall?.select).toMatch(/routes/);
+    expect(dispatchCall?.filters).toContainEqual(['order_id', 'o1']);
+    expect(dispatchCall?.filters).toContainEqual(['operator_id', 'op-1']);
+  });
+});

@@ -178,3 +178,82 @@ describe('POST /api/dispatch/routes', () => {
     expect(mockRpc).toHaveBeenCalledWith('create_seeded_route', expect.any(Object));
   });
 });
+
+/**
+ * spec-70 phase 2.
+ *
+ * The route the wave produced has to carry the wave's date, and the
+ * already-routed guard has to know about the lifecycle states phase 1 added —
+ * otherwise an order sitting on a route that is mid-load or already at
+ * DispatchTrack could be planned onto a second one.
+ */
+describe('POST /api/dispatch/routes — spec-70', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function seedOk() {
+    mockGetSession.mockResolvedValue(authedSession('op-1'));
+    mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [], error: null }));
+    mockRpc.mockResolvedValue({ data: DRAFT_ROUTE, error: null });
+  }
+
+  it('passes the wave date through to the RPC', async () => {
+    seedOk();
+    await POST(makePost({ order_ids: ['ord-1'], route_date: '2026-09-01' }));
+    expect(mockRpc).toHaveBeenCalledWith('create_seeded_route', expect.objectContaining({
+      p_route_date: '2026-09-01',
+    }));
+  });
+
+  it('sends a null date when the caller gave none, so the DB decides', async () => {
+    seedOk();
+    await POST(makePost({ order_ids: ['ord-1'] }));
+    expect(mockRpc).toHaveBeenCalledWith('create_seeded_route', expect.objectContaining({
+      p_route_date: null,
+    }));
+  });
+
+  it('rejects a malformed date rather than passing it to the DB', async () => {
+    mockGetSession.mockResolvedValue(authedSession('op-1'));
+    const res = await POST(makePost({ order_ids: ['ord-1'], route_date: '01-09-2026' }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('VALIDATION_ERROR');
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it.each(['loading', 'loaded', 'dispatched', 'in_transit'])(
+    'refuses to re-plan an order already on a %s route',
+    async (status) => {
+      mockGetSession.mockResolvedValue(authedSession('op-1'));
+      mockFrom
+        .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
+        .mockReturnValueOnce(
+          makeChain({ data: [{ order_id: 'ord-1', route: { status } }], error: null }),
+        );
+
+      const res = await POST(makePost({ order_ids: ['ord-1'] }));
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('ORDERS_ALREADY_ROUTED');
+      expect(mockRpc).not.toHaveBeenCalled();
+    },
+  );
+
+  /** spec-43: a returned order's only history is a finished route. */
+  it.each(['completed', 'cancelled'])(
+    'lets an order whose only route is %s be planned again',
+    async (status) => {
+      mockGetSession.mockResolvedValue(authedSession('op-1'));
+      mockFrom
+        .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
+        .mockReturnValueOnce(
+          makeChain({ data: [{ order_id: 'ord-1', route: { status } }], error: null }),
+        );
+      mockRpc.mockResolvedValue({ data: DRAFT_ROUTE, error: null });
+
+      const res = await POST(makePost({ order_ids: ['ord-1'] }));
+      expect(res.status).toBe(201);
+      expect(mockRpc).toHaveBeenCalled();
+    },
+  );
+});
