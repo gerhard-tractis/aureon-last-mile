@@ -27,6 +27,9 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Text, not number: an empty numeric input reports NaN/"" inconsistently
+  // across browsers, and empty must persist as null, never 0.
+  const [capacityInput, setCapacityInput] = useState('');
 
   const { data: allComunas = [] } = useChileComunas();
   const createMutation = useCreateDockZone(operatorId);
@@ -37,10 +40,12 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
       setName(editingZone.name);
       setCode(editingZone.code);
       setSelectedIds(editingZone.comunas.map(c => c.id));
+      setCapacityInput(editingZone.capacity == null ? '' : String(editingZone.capacity));
     } else {
       setName('');
       setCode('');
       setSelectedIds([]);
+      setCapacityInput('');
     }
   }, [editingZone]);
 
@@ -52,10 +57,12 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const trimmed = capacityInput.trim();
+    const capacity = trimmed === '' ? null : Number(trimmed);
     if (editingZone) {
-      updateMutation.mutate({ id: editingZone.id, name, code, comunaIds: selectedIds }, { onSuccess });
+      updateMutation.mutate({ id: editingZone.id, name, code, comunaIds: selectedIds, capacity }, { onSuccess });
     } else {
-      createMutation.mutate({ name, code, comunaIds: selectedIds }, { onSuccess });
+      createMutation.mutate({ name, code, comunaIds: selectedIds, capacity }, { onSuccess });
     }
   };
 
@@ -121,6 +128,20 @@ export function DockZoneForm({ operatorId, onSuccess, onCancel, editingZone }: D
             </CommandGroup>
           </CommandList>
         </Command>
+      </div>
+      <div>
+        <label htmlFor="zone-capacity" className="block text-sm font-medium mb-1">
+          Capacidad (paquetes)
+        </label>
+        <Input
+          id="zone-capacity"
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={capacityInput}
+          onChange={e => setCapacityInput(e.target.value)}
+          placeholder="Opcional"
+        />
       </div>
       <div className="flex gap-2">
         <Button type="submit" disabled={isPending}>

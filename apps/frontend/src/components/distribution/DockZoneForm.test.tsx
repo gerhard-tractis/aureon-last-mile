@@ -109,7 +109,7 @@ describe('DockZoneForm', () => {
   it('in edit mode, pre-populates selected communes from editingZone.comunas[].id', async () => {
     const editingZone = {
       id: 'z1', name: 'Andén Existing', code: 'EX-001',
-      is_consolidation: false, is_active: true, operator_id: 'op1',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: null,
       comunas: [{ id: 'c2', nombre: 'Providencia' }],
     };
     render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
@@ -121,7 +121,7 @@ describe('DockZoneForm', () => {
   it('populates name and code when editing existing zone', () => {
     const editingZone = {
       id: 'z1', name: 'Andén 1', code: 'DOCK-001',
-      is_consolidation: false, is_active: true, operator_id: 'op1',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: null,
       comunas: [],
     };
     render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
@@ -132,7 +132,7 @@ describe('DockZoneForm', () => {
   it('calls updateMutation with comunaIds in edit mode', async () => {
     const editingZone = {
       id: 'z1', name: 'Andén Existing', code: 'EX-001',
-      is_consolidation: false, is_active: true, operator_id: 'op1',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: null,
       comunas: [{ id: 'c2', nombre: 'Providencia' }],
     };
     render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
@@ -143,5 +143,60 @@ describe('DockZoneForm', () => {
         expect.anything()
       );
     });
+  });
+
+  it('renders an optional capacity field labelled "Capacidad (paquetes)"', () => {
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    const field = screen.getByLabelText(/capacidad \(paquetes\)/i);
+    expect(field).toBeInTheDocument();
+    expect(field).not.toBeRequired();
+  });
+
+  it('submits capacity null when the capacity field is left empty', async () => {
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    fireEvent.change(screen.getByLabelText(/nombre/i), { target: { value: 'Andén 1' } });
+    fireEvent.change(screen.getByLabelText(/código/i), { target: { value: 'DOCK-001' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }));
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ capacity: null }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('submits the entered numeric capacity', async () => {
+    render(<DockZoneForm operatorId="op1" />, { wrapper });
+    fireEvent.change(screen.getByLabelText(/nombre/i), { target: { value: 'Andén 1' } });
+    fireEvent.change(screen.getByLabelText(/código/i), { target: { value: 'DOCK-001' } });
+    fireEvent.change(screen.getByLabelText(/capacidad \(paquetes\)/i), { target: { value: '180' } });
+    fireEvent.click(screen.getByRole('button', { name: /guardar/i }));
+    await waitFor(() => {
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ capacity: 180 }),
+        expect.anything()
+      );
+    });
+  });
+
+  it('pre-populates capacity when editing an existing zone that has one', () => {
+    const editingZone = {
+      id: 'z1', name: 'Andén 1', code: 'DOCK-001',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: 180,
+      comunas: [],
+    };
+    render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
+    expect(screen.getByDisplayValue('180')).toBeInTheDocument();
+  });
+
+  it('leaves the capacity field empty when editing a zone with no capacity configured', () => {
+    const editingZone = {
+      id: 'z1', name: 'Andén 1', code: 'DOCK-001',
+      is_consolidation: false, is_active: true, operator_id: 'op1', capacity: null,
+      comunas: [],
+    };
+    render(<DockZoneForm operatorId="op1" editingZone={editingZone} />, { wrapper });
+    const field = screen.getByLabelText(/capacidad \(paquetes\)/i) as HTMLInputElement;
+    expect(field.value).toBe('');
   });
 });

@@ -95,6 +95,7 @@ describe('useDockZones', () => {
         is_consolidation: false,
         is_active: true,
         operator_id: 'op-1',
+        capacity: 180,
         dock_zone_comunas: [{ chile_comunas: { id: 'c1', nombre: 'Las Condes' } }],
       },
       {
@@ -104,6 +105,7 @@ describe('useDockZones', () => {
         is_consolidation: true,
         is_active: true,
         operator_id: 'op-1',
+        capacity: null,
         dock_zone_comunas: [],
       },
     ];
@@ -113,6 +115,43 @@ describe('useDockZones', () => {
     expect(result.current.data).toHaveLength(2);
     expect(result.current.data![0].comunas).toEqual([{ id: 'c1', nombre: 'Las Condes' }]);
     expect(result.current.data![1].comunas).toEqual([]);
+  });
+
+  it('includes capacity (nullable) on each returned zone', async () => {
+    const zones = [
+      {
+        id: 'zone-1',
+        name: 'Andén 1',
+        code: 'DOCK-001',
+        is_consolidation: false,
+        is_active: true,
+        operator_id: 'op-1',
+        capacity: 180,
+        dock_zone_comunas: [],
+      },
+      {
+        id: 'zone-2',
+        name: 'Andén 2',
+        code: 'DOCK-002',
+        is_consolidation: false,
+        is_active: true,
+        operator_id: 'op-1',
+        capacity: null,
+        dock_zone_comunas: [],
+      },
+    ];
+    mockQueryResult = { data: zones, error: null };
+    const { result } = renderHook(() => useDockZones('op-1'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data![0].capacity).toBe(180);
+    expect(result.current.data![1].capacity).toBeNull();
+  });
+
+  it('selects the capacity column', async () => {
+    renderHook(() => useDockZones('op-1'), { wrapper });
+    await waitFor(() => expect(lastChain).not.toBeNull());
+    const selectArg = lastChain!.select.mock.calls[0]?.[0] as string;
+    expect(selectArg).toMatch(/capacity/);
   });
 
   it('orders by name (alphabetical), with consolidation pinned first — sort_order is no longer used', async () => {
@@ -169,6 +208,24 @@ describe('useCreateDockZone', () => {
     });
     expect(dockZonesInsertCall).not.toHaveProperty('comunas');
   });
+
+  it('inserts null capacity when not provided', async () => {
+    const { result } = renderHook(() => useCreateDockZone('op-1'), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ name: 'Zona Norte', code: 'ZN', comunaIds: [] });
+    });
+    const dockZonesInsertCall = mockInsertFn.mock.calls[0]?.[0];
+    expect(dockZonesInsertCall.capacity).toBeNull();
+  });
+
+  it('inserts the given capacity when provided', async () => {
+    const { result } = renderHook(() => useCreateDockZone('op-1'), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ name: 'Zona Norte', code: 'ZN', comunaIds: [], capacity: 180 });
+    });
+    const dockZonesInsertCall = mockInsertFn.mock.calls[0]?.[0];
+    expect(dockZonesInsertCall.capacity).toBe(180);
+  });
 });
 
 describe('useUpdateDockZone', () => {
@@ -178,6 +235,19 @@ describe('useUpdateDockZone', () => {
       await result.current.mutateAsync({ id: 'zone-1', name: 'Updated', is_active: false });
     });
     expect(mockUpdateFn).toHaveBeenCalledWith({ name: 'Updated', is_active: false });
+  });
+
+  it('updates capacity field, including setting it back to null', async () => {
+    const { result } = renderHook(() => useUpdateDockZone('op-1'), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync({ id: 'zone-1', capacity: 200 });
+    });
+    expect(mockUpdateFn).toHaveBeenCalledWith({ capacity: 200 });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 'zone-1', capacity: null });
+    });
+    expect(mockUpdateFn).toHaveBeenCalledWith({ capacity: null });
   });
 
   it('accepts comunaIds instead of comunas strings', async () => {

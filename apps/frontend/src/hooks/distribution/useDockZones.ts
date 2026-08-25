@@ -10,6 +10,9 @@ export interface DockZoneRecord {
   comunas: { id: string; nombre: string }[];
   is_active: boolean;
   operator_id: string;
+  /** Max packages this zone can hold. Null when not configured — spec-68
+   *  Fase 1 (Decisión 5); consumers use lib/distribution/dock-capacity.ts. */
+  capacity: number | null;
 }
 
 const DOCK_ZONES_QUERY_OPTIONS = {
@@ -23,6 +26,7 @@ interface DockZoneJoinRow {
   is_consolidation: boolean;
   is_active: boolean;
   operator_id: string;
+  capacity: number | null;
   dock_zone_comunas: { chile_comunas: { id: string; nombre: string } | null }[];
 }
 
@@ -33,7 +37,7 @@ export function useDockZones(operatorId: string | null) {
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('dock_zones')
-        .select(`id, name, code, is_consolidation, is_active, operator_id,
+        .select(`id, name, code, is_consolidation, is_active, operator_id, capacity,
                  dock_zone_comunas(chile_comunas(id, nombre))`)
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)
@@ -47,6 +51,7 @@ export function useDockZones(operatorId: string | null) {
         is_consolidation: z.is_consolidation,
         is_active: z.is_active,
         operator_id: z.operator_id,
+        capacity: z.capacity,
         comunas: z.dock_zone_comunas
           .map(r => r.chile_comunas)
           .filter((c): c is { id: string; nombre: string } => c !== null),
@@ -60,7 +65,7 @@ export function useDockZones(operatorId: string | null) {
 export function useCreateDockZone(operatorId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (values: { name: string; code: string; comunaIds: string[] }) => {
+    mutationFn: async (values: { name: string; code: string; comunaIds: string[]; capacity?: number | null }) => {
       const supabase = createSPAClient();
       const { data: zone, error } = await supabase.from('dock_zones').insert({
         operator_id: operatorId!,
@@ -68,6 +73,7 @@ export function useCreateDockZone(operatorId: string | null) {
         code: values.code,
         is_consolidation: false,
         is_active: true,
+        capacity: values.capacity ?? null,
       }).select('id').single();
       if (error) throw error;
       if (values.comunaIds.length > 0) {
@@ -86,7 +92,7 @@ export function useCreateDockZone(operatorId: string | null) {
 export function useUpdateDockZone(operatorId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (values: { id: string; name?: string; code?: string; comunaIds?: string[]; is_active?: boolean }) => {
+    mutationFn: async (values: { id: string; name?: string; code?: string; comunaIds?: string[]; is_active?: boolean; capacity?: number | null }) => {
       const { id, comunaIds, ...updates } = values;
       const supabase = createSPAClient();
       if (Object.keys(updates).length > 0) {
