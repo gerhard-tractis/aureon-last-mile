@@ -44,6 +44,10 @@ export interface QuickSortMobileDockProps {
   /** `4i` footer — "Marcar excepción y seguir". */
   onMarkException: () => void;
   isMarkingException: boolean;
+  /** Review fix (finding #1) — set when `markException`'s write itself
+   *  failed (RLS, a bad FK). Surfaced so the operator knows the exception
+   *  was NOT recorded, rather than silently landing back on step 1. */
+  exceptionError: string | null;
   /** Footer — "Enviar a consolidación" jumps straight to scanning the
    *  consolidation code; kept as a convenience alongside the physical
    *  scan, not a replacement for it. */
@@ -67,6 +71,7 @@ export function QuickSortMobileDock({
   onScanAnden,
   onMarkException,
   isMarkingException,
+  exceptionError,
   onSendToConsolidation,
   onCancel,
 }: QuickSortMobileDockProps) {
@@ -81,6 +86,18 @@ export function QuickSortMobileDock({
         rejected={rejected}
         rejectedCode={rejectedCode}
       />
+
+      {/* Review fix (finding #4) — desktop's QuickSortScanner shows this
+          same banner when the comuna has no andén match (determineDockZone
+          falls back to consolidación, flagged=true). Mobile was dropping
+          it, so an unmapped-comuna package rendered identically to a
+          correctly-routed consolidation package and the data problem
+          never reached anyone on the floor. */}
+      {destination.flagged && (
+        <p className="rounded-lg border border-status-warning-border bg-status-warning-bg px-4 py-2.5 text-[12.5px] leading-[1.4] text-status-warning-text">
+          Comuna sin andén asignado — redirigiendo a Consolidación
+        </p>
+      )}
 
       {siblingsPending > 0 && (
         <p className="rounded-lg border border-status-warning-border bg-status-warning-bg px-4 py-2.5 text-[12.5px] leading-[1.4] text-status-warning-text">
@@ -156,6 +173,15 @@ export function QuickSortMobileDock({
           </div>
         )}
       </section>
+
+      {exceptionError && (
+        <p
+          data-testid="quicksort-exception-error"
+          className="rounded-lg border border-status-error-border bg-status-error-bg px-4 py-2.5 text-[12.5px] leading-[1.4] text-status-error-text"
+        >
+          {exceptionError}
+        </p>
+      )}
 
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-surface px-4 py-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))]">
         {rejected ? (

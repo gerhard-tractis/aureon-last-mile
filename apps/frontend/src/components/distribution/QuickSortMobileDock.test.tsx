@@ -34,6 +34,7 @@ function baseProps() {
     onScanAnden: vi.fn(),
     onMarkException: vi.fn(),
     isMarkingException: false,
+    exceptionError: null as string | null,
     onSendToConsolidation: vi.fn(),
     onCancel: vi.fn(),
   };
@@ -105,6 +106,24 @@ describe('QuickSortMobileDock — 4h/4j normal destination', () => {
   });
 });
 
+describe('QuickSortMobileDock — unmapped comuna (flagged)', () => {
+  // Review fix (finding #4) — desktop shows this same banner
+  // (QuickSortScanner.tsx) when destination.flagged; mobile was dropping
+  // it entirely.
+  it('shows the redirecting-to-consolidación banner when the destination is flagged', () => {
+    const flagged = { ...destination, zone_code: 'CONSOL', zone_name: 'Consolidación', flagged: true };
+    render(<QuickSortMobileDock {...baseProps()} destination={flagged} />);
+    expect(
+      screen.getByText('Comuna sin andén asignado — redirigiendo a Consolidación'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no banner when the destination is not flagged', () => {
+    render(<QuickSortMobileDock {...baseProps()} />);
+    expect(screen.queryByText(/redirigiendo a Consolidación/)).not.toBeInTheDocument();
+  });
+});
+
 describe('QuickSortMobileDock — 4i rejected andén', () => {
   it('flips the destination card to the error palette with struck-through scanned code', () => {
     render(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
@@ -137,6 +156,26 @@ describe('QuickSortMobileDock — 4i rejected andén', () => {
     fireEvent.click(screen.getByText('Marcar excepción y seguir'));
     expect(props.onMarkException).toHaveBeenCalled();
     expect(screen.queryByText('Enviar a consolidación')).not.toBeInTheDocument();
+  });
+
+  // Review fix (finding #1) — a failed exception write must be visible,
+  // not silently treated as though it succeeded.
+  it('shows the exception-write error banner when markException failed', () => {
+    render(
+      <QuickSortMobileDock
+        {...baseProps()}
+        rejectedCode="B7"
+        exceptionError="No se pudo registrar la excepción — intenta de nuevo"
+      />,
+    );
+    expect(screen.getByTestId('quicksort-exception-error')).toHaveTextContent(
+      'No se pudo registrar la excepción — intenta de nuevo',
+    );
+  });
+
+  it('shows no exception-error banner when nothing has failed', () => {
+    render(<QuickSortMobileDock {...baseProps()} rejectedCode="B7" />);
+    expect(screen.queryByTestId('quicksort-exception-error')).not.toBeInTheDocument();
   });
 });
 

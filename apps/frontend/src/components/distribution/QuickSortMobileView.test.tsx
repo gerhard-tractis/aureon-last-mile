@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QuickSortMobileView } from './QuickSortMobileView';
 
 /** spec-68 Fase 5.2–5.5 — the mobile quicksort container wiring. */
@@ -17,13 +17,18 @@ vi.mock('@/hooks/useCurrentUserName', () => ({
   useCurrentUserName: () => ({ data: 'Marcela R.' }),
 }));
 
-const zones = [
+let zones = [
   { id: 'zone-1', name: 'Andén 1', code: 'DOCK-001', is_consolidation: false, is_active: true, comunas: [{ id: 'com-1', nombre: 'Las Condes' }], operator_id: 'op-1', capacity: 180 },
   { id: 'consol', name: 'Consolidación', code: 'CONSOL', is_consolidation: true, is_active: true, comunas: [], operator_id: 'op-1', capacity: null },
 ];
 
 vi.mock('@/hooks/distribution/useDockZones', () => ({
   useDockZones: () => ({ data: zones }),
+}));
+
+const mockToastError = vi.fn();
+vi.mock('sonner', () => ({
+  toast: { error: (...args: unknown[]) => mockToastError(...args) },
 }));
 
 vi.mock('@/hooks/distribution/useSectorizedByZone', () => ({
@@ -54,12 +59,18 @@ vi.mock('@/hooks/distribution/useDockScans', () => ({
   })),
 }));
 
+const mockUpdateBatchZone = vi.fn().mockResolvedValue({ error: null });
 vi.mock('@/lib/distribution/batch-zone', () => ({
-  updateBatchDockZone: vi.fn().mockResolvedValue({ error: null }),
+  updateBatchDockZone: (...args: unknown[]) => mockUpdateBatchZone(...args),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
+  zones = [
+    { id: 'zone-1', name: 'Andén 1', code: 'DOCK-001', is_consolidation: false, is_active: true, comunas: [{ id: 'com-1', nombre: 'Las Condes' }], operator_id: 'op-1', capacity: 180 },
+    { id: 'consol', name: 'Consolidación', code: 'CONSOL', is_consolidation: true, is_active: true, comunas: [], operator_id: 'op-1', capacity: null },
+  ];
+  mockUpdateBatchZone.mockResolvedValue({ error: null });
   mockFrom.mockReturnValue({ select: mockSelect });
   mockSelect.mockReturnValue({ eq: mockEq });
   mockEq.mockReturnValue({ eq: mockEq, is: mockIs, neq: mockNeq });
@@ -103,5 +114,36 @@ describe('QuickSortMobileView', () => {
     render(<QuickSortMobileView />);
     fireEvent.click(screen.getByText('Cerrar lote'));
     expect(mockPush).toHaveBeenCalledWith('/app/distribution');
+  });
+
+  // Review fix (finding #5) — "Enviar a consolidación" must require an
+  // ACTIVE consolidation zone, and must give feedback instead of doing
+  // nothing when there isn't one.
+  describe('"Enviar a consolidación" (review fix #5)', () => {
+    async function advanceToStep2() {
+      render(<QuickSortMobileView />);
+      const input = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(input, { target: { value: 'PKG-001' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await screen.findByText('Enviar a consolidación');
+    }
+
+    it('scans the active consolidation zone code, switching the batch zone', async () => {
+      await advanceToStep2();
+      fireEvent.click(screen.getByText('Enviar a consolidación'));
+      await waitFor(() =>
+        expect(mockUpdateBatchZone).toHaveBeenCalledWith(
+          expect.objectContaining({ zoneId: 'consol' }),
+        ),
+      );
+    });
+
+    it('does not feed a deactivated consolidation zone code, and gives feedback instead of nothing', async () => {
+      zones = zones.map((z) => (z.id === 'consol' ? { ...z, is_active: false } : z));
+      await advanceToStep2();
+      fireEvent.click(screen.getByText('Enviar a consolidación'));
+      expect(mockToastError).toHaveBeenCalledWith('No hay zona de consolidación activa configurada');
+      expect(mockUpdateBatchZone).not.toHaveBeenCalled();
+    });
   });
 });

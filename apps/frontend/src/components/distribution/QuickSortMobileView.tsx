@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { QuickSortMobile } from './QuickSortMobile';
 import { QuickSortMobileDock } from './QuickSortMobileDock';
 import { useQuickSortFlow, type QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
@@ -53,7 +54,13 @@ export function QuickSortMobileView() {
   const goToDistribution = () => router.push('/app/distribution');
 
   if (flow.state === 'scan_anden' && flow.destination) {
-    const consolidationCode = zones.find((z) => z.is_consolidation)?.code;
+    // Review fix (finding #5) — `validateDockDestination` only accepts a
+    // consolidación zone that is BOTH `is_consolidation` AND `is_active`
+    // (same as desktop's own `activeZones` filter). Missing `is_active`
+    // here meant a deactivated consolidation zone fed a code the
+    // validator rejects as `rejected_wrong_dock` — the screen flipped to
+    // the red `4i` state blaming the operator for a scan they never made.
+    const activeConsolidation = zones.find((z) => z.is_consolidation && z.is_active);
     const zoneCount = sectorizedByZone?.[flow.destination.zone_id] ?? 0;
     const zoneCapacity = zones.find((z) => z.id === flow.destination!.zone_id)?.capacity ?? null;
 
@@ -69,8 +76,15 @@ export function QuickSortMobileView() {
         onScanAnden={(code) => { void flow.handleAndenScan(code); }}
         onMarkException={() => { void flow.markException(); }}
         isMarkingException={flow.isMarkingException}
+        exceptionError={flow.exceptionError}
         onSendToConsolidation={() => {
-          if (consolidationCode) void flow.handleAndenScan(consolidationCode);
+          // Review fix (finding #5) — a dead button gave no feedback at
+          // all when no active consolidation zone existed.
+          if (!activeConsolidation) {
+            toast.error('No hay zona de consolidación activa configurada');
+            return;
+          }
+          void flow.handleAndenScan(activeConsolidation.code);
         }}
         onCancel={flow.cancelStep2}
       />

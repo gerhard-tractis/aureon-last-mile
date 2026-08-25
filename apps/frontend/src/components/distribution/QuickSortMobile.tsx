@@ -1,7 +1,7 @@
 'use client';
 
 import { ScanLine } from 'lucide-react';
-import { DistributionMobileHeader } from './DistributionMobileHeader';
+import { DistributionMobileHeader, useIsOnline } from './DistributionMobileHeader';
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,9 @@ export interface QuickSortMobileProps {
   error: string | null;
   onScan: (code: string) => void;
   onBack: () => void;
+  /** Injectable for tests; defaults to `navigator.onLine` via
+   *  `useIsOnline` (review fix #3 — was a hardcoded 'EN LÍNEA'). */
+  isOnline?: boolean;
   /** Footer "Ingresar código" — focuses the scan field for manual keyboard
    *  entry (the field IS a text input; scanning it into the DOM is what a
    *  scanner gun already does). No separate keypad in this codebase. */
@@ -48,7 +51,9 @@ export function QuickSortMobile({
   onBack,
   onEnterCode,
   onCloseBatch,
+  isOnline: isOnlineOverride,
 }: QuickSortMobileProps) {
+  const isOnline = useIsOnline(isOnlineOverride);
   return (
     <div className="flex min-h-0 flex-col gap-5 px-5 py-[22px] pb-[104px]">
       <DistributionMobileHeader
@@ -56,7 +61,11 @@ export function QuickSortMobile({
         title="Clasificación en andén"
         subtitle={`${operatorName ?? 'Operario'} · paso 1 de 2 · ${sessionCount} escaneos hoy`}
         onBack={onBack}
-        statusChip={{ label: 'EN LÍNEA', tone: 'success' }}
+        statusChip={
+          isOnline
+            ? { label: 'EN LÍNEA', tone: 'success' }
+            : { label: 'SIN CONEXIÓN', tone: 'error' }
+        }
       />
 
       <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-muted px-5 py-8 text-center">

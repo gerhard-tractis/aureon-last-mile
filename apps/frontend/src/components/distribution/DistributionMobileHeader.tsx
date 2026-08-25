@@ -82,7 +82,15 @@ export interface DistributionMobileHeaderProps {
   statusChip?: DistributionStatusChip;
 }
 
-function useIsOnline(override?: boolean): boolean {
+/**
+ * Exported (spec-68 Fase 5 review, finding #3) — `QuickSortMobile`'s
+ * titled-variant connection chip used to be a hardcoded 'EN LÍNEA'
+ * literal, which kept asserting the device was online while
+ * `navigator.onLine` had actually gone false and `handlePackageScan` was
+ * failing every scan with "Error de red". Reusing this hook instead of a
+ * second copy keeps the real-vs-fake state in one place.
+ */
+export function useIsOnline(override?: boolean): boolean {
   const [online, setOnline] = useState(override ?? true);
 
   useEffect(() => {

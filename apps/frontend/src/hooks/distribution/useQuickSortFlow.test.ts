@@ -52,6 +52,11 @@ vi.mock('@/lib/distribution/batch-zone', () => ({
   updateBatchDockZone: (...args: unknown[]) => mockUpdateBatchZone(...args),
 }));
 
+const mockRecordException = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/lib/distribution/quicksort-exception', () => ({
+  recordQuickSortException: (...args: unknown[]) => mockRecordException(...args),
+}));
+
 /** packages select chain (package lookup, and the sibling count-only select) */
 function packagesChain(packageResult: { data: unknown; error: unknown }, siblingCount = 0) {
   const lookupIs = vi.fn().mockResolvedValue(packageResult);
@@ -74,6 +79,7 @@ beforeEach(() => {
   });
   mockUpdateBatchZone.mockResolvedValue({ error: null });
   mockInsert.mockResolvedValue({ error: null });
+  mockRecordException.mockResolvedValue(undefined);
 
   mockFrom.mockReturnValue({ select: mockSelect, insert: mockInsert });
   mockSelect.mockReturnValue({ eq: mockEq });
@@ -201,7 +207,7 @@ describe('useQuickSortFlow', () => {
   });
 
   describe('markException (4i — "Marcar excepción y seguir")', () => {
-    it('records a wrong_zone dock_scans row without touching package status, then returns to step 1', async () => {
+    it('delegates to recordQuickSortException with the rejected code, then returns to step 1', async () => {
       const { result } = setup();
       await act(async () => {
         await result.current.handlePackageScan('PKG-001');
@@ -215,19 +221,20 @@ describe('useQuickSortFlow', () => {
         await result.current.markException();
       });
 
-      expect(mockInsert).toHaveBeenCalledWith(
+      expect(mockRecordException).toHaveBeenCalledWith(
         expect.objectContaining({
-          operator_id: 'op-1',
-          batch_id: 'batch-1',
-          package_id: 'pkg-1',
-          barcode: 'PKG-001',
-          scan_result: 'wrong_zone',
-          scanned_by: 'user-1',
+          operatorId: 'op-1',
+          batchId: 'batch-1',
+          packageId: 'pkg-1',
+          packageLabel: 'PKG-001',
+          rejectedCode: 'WRONG-CODE',
+          userId: 'user-1',
         }),
       );
       expect(result.current.state).toBe('scan_package');
       expect(result.current.destination).toBeNull();
       expect(result.current.rejectedCode).toBeNull();
+      expect(result.current.exceptionError).toBeNull();
     });
 
     it('is a no-op without a pending rejection', async () => {
@@ -235,7 +242,32 @@ describe('useQuickSortFlow', () => {
       await act(async () => {
         await result.current.markException();
       });
-      expect(mockInsert).not.toHaveBeenCalled();
+      expect(mockRecordException).not.toHaveBeenCalled();
+    });
+
+    // Review fix (finding #1) — a rejected write must not be swallowed and
+    // treated as success: the flow stays in the rejected state (batch
+    // still open, field still armed) and surfaces exceptionError, instead
+    // of closing the batch and returning to step 1 as though the record
+    // had been written.
+    it('surfaces a failed write via exceptionError and stays in the rejected state', async () => {
+      mockRecordException.mockRejectedValueOnce(new Error('permission denied'));
+      const { result } = setup();
+      await act(async () => {
+        await result.current.handlePackageScan('PKG-001');
+      });
+      await act(async () => {
+        await result.current.handleAndenScan('WRONG-CODE');
+      });
+
+      await act(async () => {
+        await result.current.markException();
+      });
+
+      expect(result.current.exceptionError).toBe('No se pudo registrar la excepción — intenta de nuevo');
+      expect(result.current.state).toBe('scan_anden');
+      expect(result.current.rejectedCode).toBe('WRONG-CODE');
+      expect(result.current.isMarkingException).toBe(false);
     });
   });
 

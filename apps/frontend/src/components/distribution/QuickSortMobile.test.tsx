@@ -26,6 +26,15 @@ describe('QuickSortMobile', () => {
     expect(screen.getByText('EN LÍNEA')).toBeInTheDocument();
   });
 
+  // Review fix (finding #3) — the chip must reflect real connectivity, not
+  // a hardcoded 'EN LÍNEA' literal that keeps lying once the device drops
+  // Wi-Fi mid-loop and every scan starts failing with "Error de red".
+  it('shows SIN CONEXIÓN when offline, not a hardcoded EN LÍNEA', () => {
+    render(<QuickSortMobile {...baseProps()} isOnline={false} />);
+    expect(screen.getByText('SIN CONEXIÓN')).toBeInTheDocument();
+    expect(screen.queryByText('EN LÍNEA')).not.toBeInTheDocument();
+  });
+
   it('renders the armed scan field with its eyebrow and helper copy', () => {
     render(<QuickSortMobile {...baseProps()} />);
     expect(screen.getByText('PASO 1 · PAQUETE')).toBeInTheDocument();

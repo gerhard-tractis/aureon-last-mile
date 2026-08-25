@@ -9,6 +9,7 @@ import { useCreateDockBatch, useCloseDockBatch } from '@/hooks/distribution/useD
 import { useDockScanMutation } from '@/hooks/distribution/useDockScans';
 import { validateDockDestination } from '@/lib/distribution/dock-scan-validator';
 import { updateBatchDockZone } from '@/lib/distribution/batch-zone';
+import { recordQuickSortException } from '@/lib/distribution/quicksort-exception';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
 export interface QuickSortScanEvent {
@@ -43,25 +44,16 @@ export interface UseQuickSortFlowArgs {
 
 /**
  * spec-68 Fase 5.1 — the quicksort state machine, extracted out of
- * `QuickSortScanner` so the mobile (`4g`/`4h`/`4i`/`4j`) and desktop
- * presentations share one implementation instead of two that drift.
- * Behaviour is unchanged from the pre-extraction component; see that
- * component's own history for the two-step contract this preserves
- * (package scan → destination + armed andén field → andén scan).
+ * `QuickSortScanner` so mobile (`4g`/`4h`/`4i`/`4j`) and desktop share one
+ * implementation instead of two that drift (package scan → destination +
+ * armed andén field → andén scan).
  *
- * Two additions beyond the pre-extraction behaviour, both needed by the
- * mobile step-2 screen (spec-68 §5.3/§5.4) and inert for desktop:
- *
- * - `siblingsPending` — count of the scanned package's order siblings still
- *   `en_bodega` (unsorted), read via one extra count-only query right after
- *   the package lookup. Feeds the "Falta N paquete(s) de esta orden" notice.
- * - `rejectedCode` / `markException` — `4i`'s "Marcar excepción y seguir".
- *   A **conservative** reading, called out explicitly in the spec: it
- *   records the rejected andén scan in `dock_scans` with the existing
- *   `scan_result` enum value `wrong_zone` (no new enum value) and returns
- *   to step 1. It does not touch `packages` — no status change, no
- *   `dock_zone_id` write — and it does not create an incident. The package
- *   stays exactly where `determineDockZone` already had it.
+ * Two additions beyond the pre-extraction component, both mobile-only:
+ * `siblingsPending` (one extra count-only read after the package lookup,
+ * feeding "Falta N paquete(s) de esta orden") and `rejectedCode` /
+ * `markException` — `4i`'s "Marcar excepción y seguir", which records the
+ * rejection in `dock_scans` (`lib/distribution/quicksort-exception.ts`)
+ * without touching `packages` or creating an incident.
  */
 export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: UseQuickSortFlowArgs) {
   const [state, setState] = useState<QuickSortFlowState>('scan_package');
@@ -73,6 +65,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
   const [siblingsPending, setSiblingsPending] = useState(0);
   const [rejectedCode, setRejectedCode] = useState<string | null>(null);
   const [isMarkingException, setIsMarkingException] = useState(false);
+  const [exceptionError, setExceptionError] = useState<string | null>(null);
 
   const createBatch = useCreateDockBatch();
   const closeBatch = useCloseDockBatch();
@@ -93,6 +86,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
     setError(null);
     setRejectedCode(null);
     setSiblingsPending(0);
+    setExceptionError(null);
     setState('scan_package');
   }
 
@@ -150,27 +144,37 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
         created_by: userId,
       });
 
-      // Fase 5.3 — "Falta N paquete(s) de esta orden" on the step-2 screen.
-      // One extra read, scoped to this operator and this order, counting
-      // siblings still `en_bodega` (not yet sectorized) — not a new hook,
-      // not a new table, and read-only.
-      const { count: siblingCount } = await supabase
-        .from('packages')
-        .select('id', { count: 'exact', head: true })
-        .eq('operator_id', operatorId)
-        .eq('order_id', pkg.order_id)
-        .eq('status', 'en_bodega')
-        .neq('id', pkg.id)
-        .is('deleted_at', null);
-
+      // Review fix #6 — set BEFORE the sibling-count read below, which
+      // used to run first and could throw, leaving currentBatchId null and
+      // orphaning an open dock_batches row nothing would ever close.
       setCurrentBatchId(batch.id);
+
+      // Fase 5.3 — "Falta N paquete(s) de esta orden". Siblings still
+      // `en_bodega`, scoped to this operator/order — not a new hook or
+      // table. Own try/catch (review fix #6): informational only, must
+      // not abort the destination the operator already earned.
+      let siblingCount = 0;
+      try {
+        const { count } = await supabase
+          .from('packages')
+          .select('id', { count: 'exact', head: true })
+          .eq('operator_id', operatorId)
+          .eq('order_id', pkg.order_id)
+          .eq('status', 'en_bodega')
+          .neq('id', pkg.id)
+          .is('deleted_at', null);
+        siblingCount = count ?? 0;
+      } catch {
+        // best-effort; the incomplete-order notice just won't show this time
+      }
+
       setCurrentPackage({
         id: pkg.id,
         label: pkg.label,
         orderNumber: order.order_number,
         comunaName: order.chile_comunas?.nombre ?? null,
       });
-      setSiblingsPending(siblingCount ?? 0);
+      setSiblingsPending(siblingCount);
       setDestination(matchResult);
       setRejectedCode(null);
       setState('scan_anden');
@@ -181,11 +185,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
 
   const handleAndenScan = async (scannedCode: string) => {
     if (!destination || !currentBatchId) return;
-
-    const outcome = validateDockDestination(scannedCode, {
-      suggestedZoneCode: destination.zone_code,
-      zones,
-    });
+    const outcome = validateDockDestination(scannedCode, { suggestedZoneCode: destination.zone_code, zones });
 
     if (outcome.kind === 'rejected_wrong_dock') {
       setError(
@@ -233,13 +233,9 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
     resetToStepOne();
   };
 
-  /**
-   * Mobile step-2 footer — "Cancelar y volver al paso 1". No record of any
-   * kind (not even `wrong_zone`; the operator hasn't scanned the andén at
-   * all here, correctly or not). Still closes the dangling batch that
-   * `handlePackageScan` opened, so a cancelled package doesn't leave an
-   * `open` `dock_batches` row with zero scans in it forever.
-   */
+  /** Mobile step-2 footer — "Cancelar y volver al paso 1". No record of
+   *  any kind; still closes the dangling batch so it doesn't stay open
+   *  forever with zero scans. */
   const cancelStep2 = () => {
     if (currentBatchId) {
       closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
@@ -247,29 +243,39 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
     resetToStepOne();
   };
 
-  /** `4i` — "Marcar excepción y seguir". See the module doc above. */
+  /**
+   * `4i` — "Marcar excepción y seguir". See the module doc above and
+   * `lib/distribution/quicksort-exception.ts` for the row shape and the
+   * review fixes (findings #1/#2: throws instead of swallowing a
+   * PostgREST `{ error }`, and resolves `rejectedCode` to `dock_zone_id`).
+   * A failure here is surfaced via `exceptionError` and leaves the flow in
+   * the rejected state (batch left open, field still armed) rather than
+   * pretending the record was written.
+   */
   const markException = async () => {
     if (!currentBatchId || !currentPackage || !rejectedCode) return;
     setIsMarkingException(true);
+    setExceptionError(null);
+
     try {
-      const supabase = createSPAClient();
-      await supabase.from('dock_scans').insert({
-        operator_id: operatorId,
-        batch_id: currentBatchId,
-        package_id: currentPackage.id,
-        barcode: currentPackage.label,
-        scan_result: 'wrong_zone',
-        scanned_by: userId,
-        scanned_at: new Date().toISOString(),
+      await recordQuickSortException({
+        operatorId,
+        batchId: currentBatchId,
+        packageId: currentPackage.id,
+        packageLabel: currentPackage.label,
+        rejectedCode,
+        zones,
+        userId,
       });
     } catch {
-      // Best-effort record — the operator still needs to get back to step 1
-      // even if this write failed; nothing downstream depends on it.
-    } finally {
-      closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
-      resetToStepOne();
+      setExceptionError('No se pudo registrar la excepción — intenta de nuevo');
       setIsMarkingException(false);
+      return;
     }
+
+    closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
+    resetToStepOne();
+    setIsMarkingException(false);
   };
 
   return {
@@ -281,6 +287,7 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
     siblingsPending,
     rejectedCode,
     isMarkingException,
+    exceptionError,
     handlePackageScan,
     handleAndenScan,
     markException,
