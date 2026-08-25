@@ -13,6 +13,7 @@ import { PreRouteBoard } from '@/components/dispatch/pre-route/PreRouteBoard';
 import { DispatchInProgressTab } from '@/components/dispatch/DispatchInProgressTab';
 import { useDispatchKPIs } from '@/hooks/dispatch/useDispatchKPIs';
 import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
+import { OPEN_ROUTE_STATUSES, FINISHED_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
@@ -42,7 +43,7 @@ function DispatchOpenTab({
   onNavigate: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
-  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, ['draft', 'planned']);
+  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, [...OPEN_ROUTE_STATUSES]);
   if (isLoading) return <RouteSkeleton />;
   if (!routes?.length) {
     return (
@@ -77,7 +78,7 @@ function DispatchCompletedTab({
 }) {
   const { data: routes, isLoading } = useDispatchRoutesByStatus(
     operatorId,
-    ['completed', 'cancelled'],
+    [...FINISHED_ROUTE_STATUSES],
     sinceDateStr,
   );
   if (isLoading) return <RouteSkeleton />;
@@ -134,9 +135,9 @@ function DispatchPageContent() {
     }
   };
 
-  const handleCreateRoute = async (orderIds: string[]) => {
+  const handleCreateRoute = async (orderIds: string[], routeDate: string) => {
     try {
-      const route = await createRouteMutation.mutateAsync({ orderIds });
+      const route = await createRouteMutation.mutateAsync({ orderIds, routeDate });
       router.push(`/app/dispatch/${route.id}`);
     } catch (err) {
       console.error('[dispatch/page] handleCreateRoute failed', err);

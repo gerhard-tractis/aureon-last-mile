@@ -2,7 +2,7 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/StatusBadge';
 import type { BadgeVariant } from '@/components/StatusBadge';
-import type { DispatchRoute, RouteStatus } from '@/lib/dispatch/types';
+import { OPEN_ROUTE_STATUSES, type DispatchRoute, type RouteStatus } from '@/lib/dispatch/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,16 +21,24 @@ interface Props {
   onDelete?: () => void;
 }
 
+// Exhaustive over RouteStatus by construction: a status added to the enum
+// without a chip here is a type error, not a blank badge on the tile.
 const ROUTE_STATUS_CONFIG: Record<RouteStatus, { label: string; variant: BadgeVariant }> = {
   draft:       { label: 'Borrador',    variant: 'neutral' },
   planned:     { label: 'Planificada', variant: 'info' },
+  loading:     { label: 'Cargando',    variant: 'info' },
+  loaded:      { label: 'Cargada',     variant: 'info' },
+  dispatched:  { label: 'Despachada',  variant: 'warning' },
+  in_transit:  { label: 'En ruta',     variant: 'warning' },
   in_progress: { label: 'En ruta',     variant: 'warning' },
   completed:   { label: 'Completada',  variant: 'success' },
   cancelled:   { label: 'Cancelada',   variant: 'error' },
 };
 
 function isOverdue(routeDate: string, status: RouteStatus): boolean {
-  if (status !== 'draft' && status !== 'planned') return false;
+  // Any route still on the dock past its date is late. Before spec-70 this
+  // listed draft/planned, which were the only pre-release states that existed.
+  if (!(OPEN_ROUTE_STATUSES as readonly RouteStatus[]).includes(status)) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const date = new Date(routeDate + 'T00:00:00');

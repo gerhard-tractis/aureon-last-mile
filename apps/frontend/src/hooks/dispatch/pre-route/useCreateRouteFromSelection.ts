@@ -16,12 +16,15 @@ export type CreatedRoute = {
 export function useCreateRouteFromSelection() {
   const queryClient = useQueryClient();
 
-  return useMutation<CreatedRoute, CreateRouteApiError, { orderIds: string[] }>({
-    mutationFn: async ({ orderIds }) => {
+  // routeDate is the date the wave was planned under. Omitting it lets the
+  // database fall back to today; passing it is what stops tomorrow's wave from
+  // producing routes dated today (spec-70).
+  return useMutation<CreatedRoute, CreateRouteApiError, { orderIds: string[]; routeDate?: string }>({
+    mutationFn: async ({ orderIds, routeDate }) => {
       const res = await fetch('/api/dispatch/routes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ order_ids: orderIds }),
+        body: JSON.stringify({ order_ids: orderIds, route_date: routeDate ?? null }),
       });
       const data = await res.json();
       if (!res.ok) throw data as CreateRouteApiError;

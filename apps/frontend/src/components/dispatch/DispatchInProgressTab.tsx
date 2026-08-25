@@ -5,6 +5,7 @@ import { Truck } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
+import { ON_ROAD_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { RouteActivityRow } from './RouteActivityRow';
 
 function RouteSkeleton() {
@@ -19,7 +20,7 @@ function RouteSkeleton() {
 
 export function DispatchInProgressTab({ operatorId }: { operatorId: string }) {
   const [openRouteId, setOpenRouteId] = useState<string | null>(null);
-  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, ['in_progress']);
+  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, [...ON_ROAD_ROUTE_STATUSES]);
 
   if (isLoading) return <RouteSkeleton />;
   if (!routes?.length) {

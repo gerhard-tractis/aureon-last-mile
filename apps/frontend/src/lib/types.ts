@@ -1568,12 +1568,22 @@ export type Database = {
           created_at: string
           updated_at: string
           deleted_at: string | null
+          stage: Database["public"]["Enums"]["dispatch_stage"]
+          staged_at: string | null
+          staged_by: string | null
+          adopted_reason: string | null
+          removal_reason: string | null
         }
         Insert: {
           id?: string
           operator_id: string
           route_id?: string | null
           order_id?: string | null
+          stage?: Database["public"]["Enums"]["dispatch_stage"]
+          staged_at?: string | null
+          staged_by?: string | null
+          adopted_reason?: string | null
+          removal_reason?: string | null
           provider: Database["public"]["Enums"]["routing_provider_enum"]
           external_dispatch_id?: string | null
           external_route_id?: string | null
@@ -1599,6 +1609,11 @@ export type Database = {
           operator_id?: string
           route_id?: string | null
           order_id?: string | null
+          stage?: Database["public"]["Enums"]["dispatch_stage"]
+          staged_at?: string | null
+          staged_by?: string | null
+          adopted_reason?: string | null
+          removal_reason?: string | null
           provider?: Database["public"]["Enums"]["routing_provider_enum"]
           external_dispatch_id?: string | null
           external_route_id?: string | null
@@ -2063,8 +2078,17 @@ export type Database = {
         Args: {
           p_operator_id: string
           p_order_ids: string[]
+          p_route_date?: string | null
         }
         Returns: Json
+      }
+      transition_route_status: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_to_status: Database["public"]["Enums"]["route_status_enum"]
+        }
+        Returns: Database["public"]["Enums"]["route_status_enum"]
       }
       process_failed_delivery: {
         Args: {
@@ -2102,9 +2126,17 @@ export type Database = {
       route_status_enum:
         | "draft"
         | "planned"
+        | "loading"
+        | "loaded"
+        | "dispatched"
+        | "in_transit"
         | "in_progress"
         | "completed"
         | "cancelled"
+      dispatch_stage:
+        | "planned"
+        | "staged"
+        | "adopted"
       dispatch_status_enum:
         | "pending"
         | "delivered"

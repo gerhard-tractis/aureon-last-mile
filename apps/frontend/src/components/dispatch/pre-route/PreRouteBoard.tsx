@@ -33,7 +33,7 @@ const WINDOW_TIME_MAP: Record<string, { start: string; end: string } | null> = {
 };
 
 interface PreRouteBoardProps {
-  onCreateRoute: (orderIds: string[]) => void;
+  onCreateRoute: (orderIds: string[], routeDate: string) => void;
   isCreating?: boolean;
 }
 
@@ -80,7 +80,9 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
   function buildRoute() {
     if (summary.orderIds.length === 0) return;
-    onCreateRoute(summary.orderIds);
+    // The date the board is filtered by IS the route's date. Reading it from the
+    // server clock instead is what dated tomorrow's wave today.
+    onCreateRoute(summary.orderIds, date);
   }
 
   if (isLoading) {

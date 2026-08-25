@@ -1,5 +1,9 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { ACTIVE_ROUTE_STATUSES } from '@/lib/dispatch/types';
+
+/** ISO calendar date, the shape `routes.route_date` stores. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export async function POST(req: Request) {
   try {
@@ -14,11 +18,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ code: 'NO_OPERATOR' }, { status: 403 });
     }
 
-    // Parse body — order_ids is optional
+    // Parse body — order_ids and route_date are both optional
     let orderIds: string[] = [];
+    let routeDate: string | null = null;
     try {
       const body = await req.json();
       if (Array.isArray(body?.order_ids)) orderIds = body.order_ids as string[];
+      if (body?.route_date != null) {
+        // Validated here rather than trusted: an unparseable date reaching the
+        // DB is a 500, and a plausible-but-wrong one (01-09-2026) would create
+        // a route dated in the past without complaint.
+        if (typeof body.route_date !== 'string' || !ISO_DATE.test(body.route_date)) {
+          return NextResponse.json({ code: 'VALIDATION_ERROR', field: 'route_date' }, { status: 400 });
+        }
+        routeDate = body.route_date;
+      }
     } catch {
       // empty or non-JSON body — treat as no order_ids
     }
@@ -52,7 +66,11 @@ export async function POST(req: Request) {
 
     if (checkErr) throw checkErr;
 
-    const ACTIVE = new Set(['draft', 'planned', 'in_progress']);
+    // spec-70 widened the lifecycle. This set previously held only
+    // draft/planned/in_progress, so an order on a route that was mid-load or
+    // already at DispatchTrack passed the guard and could be planned onto a
+    // second truck.
+    const ACTIVE = new Set<string>(ACTIVE_ROUTE_STATUSES);
     const routedIds = (dispatches ?? [])
       .filter((d) => d.route != null && ACTIVE.has(d.route.status))
       .map((d) => d.order_id)
@@ -66,6 +84,9 @@ export async function POST(req: Request) {
     const { data: route, error: createErr } = await supabase.rpc('create_seeded_route', {
       p_operator_id: operatorId,
       p_order_ids: orderIds,
+      // NULL means "today", decided by the database rather than by whichever
+      // timezone the server happens to be in.
+      p_route_date: routeDate,
     });
 
     if (createErr) throw createErr;

@@ -53,6 +53,7 @@ writes one to mean *"physically scanned onto this truck"*. Nothing distinguishes
 | 7 | **Route date is always today.** `create_seeded_route` hardcodes `CURRENT_DATE`, ignoring Pre-ruta's date filter. Planning tomorrow's wave silently produces a route dated today. | `create_seeded_route.sql` |
 | 8 | **Status vocabularies collide.** `useRoutePackages` reads `dispatches.status` (`pending`/`delivered`/`failed`/`partial`) into a field typed `PackageStatus`, and the UI labels the count "Paquetes escaneados" — while the rows are orders, and none were scanned. spec-38 named this and declined to fix it. | `useRoutePackages.ts` |
 | 9 | **Reset-to-`asignado` is wrong.** Removals revert packages to `asignado`, but nothing writes that status any more — the dock-scan trigger writes `sectorizado`. `scan-validator.ts`'s own header comment says so. | `[id]/route.ts:58`, `packages/[pkgId]/route.ts` |
+| 11 | **`create_seeded_route` has never worked.** Its parameter is `text[]`; `dispatches.order_id` is `uuid`; PostgreSQL does not coerce text to uuid in an `INSERT ... SELECT` target list. Every call raised `column "order_id" is of type uuid but expression is of type text`, which the API reported as a generic `INTERNAL_ERROR` — so Pre-ruta's *"Armar ruta"* has returned a 500 rather than a route since it shipped in April. Found in phase 2 by *running* the function; reading it did not reveal it. | `20260423000003_create_seeded_route.sql:53` |
 | 10 | **Assignment is ephemeral.** `routes.vehicle_id` and `routes.driver_name` **already exist** (`20260306000001:84-85`) and the dispatch flow never writes either — vehicle and driver live in React state and go straight to DT. No record of who drove. | `RouteBuilder.tsx`, `dispatch/route.ts` |
 
 ---
@@ -269,8 +270,10 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
 
 - **Phase 1 — Database.** Migration (columns, CHECKs, enum values, backfill, remap), the view,
   `transition_route_status`, SQL suite. Nothing reads it yet; ships green on its own.
-- **Phase 2 — Scan and stage.** Rewrite `validateScan` and the scan handler. Adoption path. This is
-  the phase that makes Pre-ruta output loadable.
+- **Phase 2 — Scan and stage.** Rewrite `validateScan` and the scan handler. Adoption path. Seeded
+  routes created at `planned` and dated by the wave. This is the phase that makes Pre-ruta output
+  loadable — and it is where breakage #11 was found, which had made it unreachable in a second,
+  independent way.
 - **Phase 3 — Seal, dispatch, delete.** `/seal`, the guarded `/dispatch` and `DELETE`, manager-only
   removal with audit.
 - **Phase 4 — UI truth.** Tab statuses corrected (`Abiertas` = `planned`+`loading`+`loaded`,
