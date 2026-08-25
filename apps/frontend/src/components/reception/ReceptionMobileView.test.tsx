@@ -116,7 +116,7 @@ describe('ReceptionMobileView', () => {
   it('with no trucks in the yard shows the empty state and keeps the footer', () => {
     render(<ReceptionMobileView {...baseProps} yardRoutes={[]} />);
     expect(screen.getByText(/Ningún camión en patio/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Escanear QR de ruta/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Escanear QR/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Recibir sin QR/i })).toBeInTheDocument();
   });
 
@@ -137,7 +137,7 @@ describe('ReceptionMobileView', () => {
 
   it('while loading the footer stays mounted — there is never a moment with no way out', () => {
     render(<ReceptionMobileView {...baseProps} isLoading yardRoutes={[]} />);
-    expect(screen.getByRole('button', { name: /Escanear QR de ruta/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Escanear QR/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Recibir sin QR/i })).toBeInTheDocument();
   });
 
@@ -205,11 +205,11 @@ describe('ReceptionMobileView', () => {
     expect(onStartCount).toHaveBeenCalledWith(esperaLarga.id);
   });
 
-  it('the Escanear QR de ruta button calls onOpenQRScanner', async () => {
+  it('the Escanear QR button calls onOpenQRScanner', async () => {
     const onOpenQRScanner = vi.fn();
     const user = userEvent.setup();
     render(<ReceptionMobileView {...baseProps} onOpenQRScanner={onOpenQRScanner} />);
-    await user.click(screen.getByRole('button', { name: /Escanear QR de ruta/i }));
+    await user.click(screen.getByRole('button', { name: /Escanear QR/i }));
     expect(onOpenQRScanner).toHaveBeenCalledTimes(1);
   });
 
