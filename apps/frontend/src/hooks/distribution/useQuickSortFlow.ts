@@ -274,6 +274,26 @@ export function useQuickSortFlow({ operatorId, userId, zones, onScanEvent }: Use
     }
 
     closeBatch.mutate({ id: currentBatchId, operator_id: operatorId });
+
+    // E2E finding (QA, 2026-08-25). Emitted only AFTER the write succeeded,
+    // so the history never claims a record that does not exist — the same
+    // rule the failure branch above follows by returning early.
+    //
+    // Without this the exception vanished from the operator's view the
+    // instant it was marked: the row reached `dock_scans`, the red
+    // rejection card was replaced by step 1, and "ÚLTIMOS ESCANEOS" still
+    // showed its empty state. On a screen whose entire job is to say what
+    // just happened, that reads as "nothing happened" — and the natural
+    // response is to mark it again.
+    onScanEvent?.({
+      code: currentPackage.label,
+      zoneCode: null,
+      zoneName: null,
+      at: new Date(),
+      status: 'error',
+      reason: `EXCEPCIÓN · ${rejectedCode}`,
+    });
+
     resetToStepOne();
     setIsMarkingException(false);
   };

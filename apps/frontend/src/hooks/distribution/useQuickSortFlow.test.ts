@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { useQuickSortFlow } from './useQuickSortFlow';
+import { useQuickSortFlow, type QuickSortScanEvent } from './useQuickSortFlow';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
 
 const LC_ID = 'comuna-las-condes';
@@ -109,9 +109,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(overrides: Partial<{ zones: DockZone[] }> = {}) {
+function setup(
+  overrides: Partial<{ zones: DockZone[]; onScanEvent: (e: QuickSortScanEvent) => void }> = {},
+) {
   return renderHook(() =>
-    useQuickSortFlow({ operatorId: 'op-1', userId: 'user-1', zones: overrides.zones ?? zones }),
+    useQuickSortFlow({
+      operatorId: 'op-1',
+      userId: 'user-1',
+      zones: overrides.zones ?? zones,
+      onScanEvent: overrides.onScanEvent,
+    }),
   );
 }
 
@@ -235,6 +242,60 @@ describe('useQuickSortFlow', () => {
       expect(result.current.destination).toBeNull();
       expect(result.current.rejectedCode).toBeNull();
       expect(result.current.exceptionError).toBeNull();
+    });
+
+    // E2E finding (QA, 2026-08-25) — the exception reached dock_scans but
+    // left NO trace in the operator's session: markException never emitted
+    // an onScanEvent, so "ÚLTIMOS ESCANEOS" still showed its empty state
+    // right after the operator marked one. On a screen whose whole job is
+    // to tell you what just happened, an action with no visible result
+    // reads as an action that did not happen — and the operator's only
+    // other feedback, the red rejection card, is gone by then because the
+    // flow has returned to step 1.
+    it('emits a scan event so the exception appears in ÚLTIMOS ESCANEOS', async () => {
+      const onScanEvent = vi.fn();
+      const { result } = setup({ onScanEvent });
+      await act(async () => {
+        await result.current.handlePackageScan('PKG-001');
+      });
+      await act(async () => {
+        await result.current.handleAndenScan('WRONG-CODE');
+      });
+      onScanEvent.mockClear();
+
+      await act(async () => {
+        await result.current.markException();
+      });
+
+      expect(onScanEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'PKG-001',
+          status: 'error',
+          reason: 'EXCEPCIÓN · WRONG-CODE',
+          zoneCode: null,
+        }),
+      );
+    });
+
+    // The counterpart to the finding-#1 fix: a write that failed must not
+    // leave a row in the history claiming it succeeded.
+    it('emits no scan event when the write fails', async () => {
+      mockRecordException.mockRejectedValueOnce(new Error('permission denied'));
+      const onScanEvent = vi.fn();
+      const { result } = setup({ onScanEvent });
+      await act(async () => {
+        await result.current.handlePackageScan('PKG-001');
+      });
+      await act(async () => {
+        await result.current.handleAndenScan('WRONG-CODE');
+      });
+      onScanEvent.mockClear();
+
+      await act(async () => {
+        await result.current.markException();
+      });
+
+      expect(onScanEvent).not.toHaveBeenCalled();
     });
 
     it('is a no-op without a pending rejection', async () => {
