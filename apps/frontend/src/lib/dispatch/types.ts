@@ -43,6 +43,19 @@ export const ON_ROAD_ROUTE_STATUSES = [
 export const FINISHED_ROUTE_STATUSES = [
   'completed', 'cancelled',
 ] as const satisfies readonly RouteStatus[];
+
+/**
+ * Route states in which a stop may still be staged onto the route — the same
+ * set `scan/route.ts`'s `LOADING_WALK` and `seal/route.ts`'s `SEALABLE_FROM`
+ * key off, kept here once so RouteBuilder's "can I still scan / can I seal"
+ * checks cannot drift from what the API actually accepts. `loaded` and beyond
+ * are absent on purpose: once sealed, a stop appearing out of nowhere is an
+ * exception (adoption), not a silent append.
+ */
+export const LOADABLE_ROUTE_STATUSES = [
+  'draft', 'planned', 'loading',
+] as const satisfies readonly RouteStatus[];
+
 export type PackageStatus =
   | 'ingresado' | 'verificado' | 'en_bodega' | 'asignado'
   | 'en_carga' | 'listo_para_despacho' | 'en_ruta' | 'entregado' | 'cancelado';
@@ -68,13 +81,20 @@ export interface RoutePackage {
   contact_name: string | null;
   contact_address: string | null;
   contact_phone: string | null;
-  package_status: PackageStatus;
   /**
-   * spec-70 phase 3. dispatches.stage, added ahead of the full phase-4
-   * useRoutePackages correction so RouteBuilder can tell "on the plan" from
-   * "physically staged" and show the live pending count (decision 4).
-   * package_status above is still the pre-existing type lie documented in
-   * spec-38 (it actually holds dispatches.status); this field is not that.
+   * spec-70 phase 4. dispatches.status (dispatch_status_enum:
+   * pending/delivered/failed/partial) — the provider's delivery outcome, not
+   * a package status. Fixes the spec-38/spec-70-#8 type lie: this used to be
+   * called `package_status` and be typed `PackageStatus`, so a row holding
+   * e.g. `'partial'` (not a `PackageStatus` value at all) was carried under a
+   * type that claimed it couldn't be that. The rows this hook returns are
+   * orders planned or staged onto the route, not packages — see
+   * `useRoutePackages.ts` and `PackageRow.tsx`.
+   */
+  status: DispatchStatus;
+  /**
+   * spec-70 phase 3. dispatches.stage — lets RouteBuilder tell "on the plan"
+   * from "physically staged" and show the live pending count (decision 4).
    */
   stage: DispatchStage;
 }
@@ -103,10 +123,10 @@ export type ScanAction =
 export type ScanResult = {
   ok: true;
   // spec-38/spec-70: the validator hasn't staged or written the DB yet, so it
-  // cannot honestly claim `stage` or `package_status` — the scan handler knows
-  // both only after it decides stage vs adopt and performs the write, and adds
+  // cannot honestly claim `stage` or `status` — the scan handler knows both
+  // only after it decides stage vs adopt and performs the write, and adds
   // them itself. Omit rather than a fabricated placeholder value.
-  package: Omit<RoutePackage, 'stage' | 'package_status'>;
+  package: Omit<RoutePackage, 'stage' | 'status'>;
   action: ScanAction;
 } | {
   ok: false;
@@ -127,4 +147,25 @@ export interface RouteDispatchSummary {
   contact_address: string | null;
   contact_phone: string | null;
   status: DispatchStatus;
+}
+
+/**
+ * What `POST /routes/[id]/scan` actually returns.
+ *
+ * Not `RoutePackage`: the endpoint's `package_status` field is genuinely
+ * `packages.status` (a real `PackageStatus`, written by the update the scan
+ * handler just performed) — a different fact from `RoutePackage.status`
+ * (`dispatches.status`, the DispatchTrack outcome). Reusing `RoutePackage`
+ * here would recreate the exact type lie phase 4 removed, just moved one
+ * field over.
+ */
+export interface ScanApiResponse {
+  dispatch_id: string;
+  order_id: string;
+  order_number: string;
+  contact_name: string | null;
+  contact_address: string | null;
+  contact_phone: string | null;
+  stage: DispatchStage;
+  package_status: PackageStatus;
 }

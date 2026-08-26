@@ -13,17 +13,22 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import type { FleetVehicle } from '@/lib/dispatch/types';
+import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus } from '@/lib/dispatch/types';
 
 interface Props {
   packageCount: number;
   vehicles: FleetVehicle[];
   selectedVehicle: string;
   driverName: string;
-  routeClosed: boolean;
+  /**
+   * spec-70 phase 4, breakage #3. The route's real status, not a local
+   * `useState` a reload could wipe. `undefined` while the route is still
+   * loading is treated as "not yet actionable" — every affordance below
+   * defaults to disabled rather than guessing.
+   */
+  routeStatus: RouteStatus | undefined;
   dispatching: boolean;
   dispatchError: string | null;
-  canDelete?: boolean;
   onVehicleChange: (v: string) => void;
   onDriverChange: (v: string) => void;
   onClose: () => void;
@@ -37,10 +42,9 @@ export function RoutePanel({
   vehicles,
   selectedVehicle,
   driverName,
-  routeClosed,
+  routeStatus,
   dispatching,
   dispatchError,
-  canDelete,
   onVehicleChange,
   onDriverChange,
   onClose,
@@ -48,6 +52,17 @@ export function RoutePanel({
   onRetry,
   onDelete,
 }: Props) {
+  // Same set scan/route.ts's LOADING_WALK and seal/route.ts's SEALABLE_FROM
+  // key off — a route can still take stops and still be sealed exactly while
+  // it is draft/planned/loading.
+  const canLoad = routeStatus != null && (LOADABLE_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
+  // Matches what POST /dispatch requires (route.status !== 'loaded' -> 409):
+  // Despachar must never be enabled at any other status, including past it.
+  const isLoaded = routeStatus === 'loaded';
+  // Matches DELETE /routes/[id]'s OPEN_ROUTE_STATUSES check: delete is legal
+  // through 'loaded', refused from 'dispatched' on (spec-70 decision 6).
+  const canDelete = routeStatus != null && (OPEN_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
+
   return (
     <div className="w-full md:w-[340px] shrink-0 flex flex-col bg-surface border-l-[1.5px] border-border">
       {/* Vehicle section */}
@@ -60,7 +75,7 @@ export function RoutePanel({
           <select
             value={selectedVehicle}
             onChange={(e) => onVehicleChange(e.target.value)}
-            disabled={routeClosed}
+            disabled={!canLoad}
             className="w-full min-h-[52px] bg-background border-[1.5px] border-border rounded-[10px] text-text text-[15px] px-3.5 cursor-pointer outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Seleccionar camión…</option>
@@ -79,7 +94,7 @@ export function RoutePanel({
           <Input
             value={driverName}
             onChange={(e) => onDriverChange(e.target.value)}
-            disabled={routeClosed}
+            disabled={!canLoad}
             placeholder="Nombre o RUT…"
             className="min-h-[52px] rounded-[10px] border-[1.5px] text-[15px] px-3.5"
           />
@@ -91,18 +106,17 @@ export function RoutePanel({
         <h3 className="text-[10px] font-bold tracking-widest uppercase text-text-muted mb-3.5">
           Resumen
         </h3>
-        <div className="grid grid-cols-2 gap-2.5">
-          {(['Paquetes', 'Órdenes'] as const).map((label) => (
-            <div
-              key={label}
-              className="bg-surface-raised border border-border rounded-lg px-3 py-2.5 text-center"
-            >
-              <div className="font-mono text-[22px] font-bold text-text">
-                {packageCount}
-              </div>
-              <div className="text-[11px] text-text-muted mt-px">{label}</div>
-            </div>
-          ))}
+        {/*
+          One tile, not two identical ones: this hook only ever knew the
+          order count (breakage #8 — the rows are orders on the route, not
+          packages), so a "Paquetes" tile next to an "Órdenes" tile showing
+          the same number claimed a package-level count that doesn't exist.
+        */}
+        <div className="bg-surface-raised border border-border rounded-lg px-3 py-2.5 text-center">
+          <div className="font-mono text-[22px] font-bold text-text">
+            {packageCount}
+          </div>
+          <div className="text-[11px] text-text-muted mt-px">Órdenes</div>
         </div>
       </div>
 
@@ -125,7 +139,7 @@ export function RoutePanel({
             <Button
               variant="outline"
               className="w-full h-13 rounded-[10px] text-[15px] font-semibold"
-              disabled={routeClosed || packageCount === 0}
+              disabled={!canLoad || packageCount === 0}
             >
               Cerrar Ruta
             </Button>
@@ -151,7 +165,7 @@ export function RoutePanel({
           <AlertDialogTrigger asChild>
             <Button
               className="w-full h-14 rounded-[10px] text-base font-extrabold"
-              disabled={!routeClosed || !selectedVehicle || dispatching}
+              disabled={!isLoaded || !selectedVehicle || dispatching}
             >
               {dispatching ? 'Despachando…' : 'Despachar a DispatchTrack →'}
             </Button>
@@ -187,7 +201,10 @@ export function RoutePanel({
               <AlertDialogHeader>
                 <AlertDialogTitle>¿Eliminar esta ruta?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Los paquetes asignados volverán al estado <strong>asignado</strong>. Esta acción no se puede deshacer.
+                  {/* Fixes breakage #9's stale copy: nothing writes 'asignado' any
+                      more — the dock-scan trigger is what puts a package on an
+                      andén, and DELETE /routes/[id] reverts to 'sectorizado'. */}
+                  Los paquetes asignados volverán al estado <strong>sectorizado</strong>. Esta acción no se puede deshacer.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

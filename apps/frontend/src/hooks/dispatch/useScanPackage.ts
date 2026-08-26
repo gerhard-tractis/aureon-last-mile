@@ -1,10 +1,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { RoutePackage } from '@/lib/dispatch/types';
+import type { ScanApiResponse } from '@/lib/dispatch/types';
 
 export function useScanPackage(routeId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (code: string): Promise<RoutePackage> => {
+    // Typed as ScanApiResponse, not RoutePackage: the endpoint's
+    // `package_status` field is genuinely `packages.status`, a different
+    // vocabulary from `RoutePackage.status` (`dispatches.status`) — see
+    // ScanApiResponse's doc comment.
+    mutationFn: async (code: string): Promise<ScanApiResponse> => {
       const res = await fetch(`/api/dispatch/routes/${routeId}/scan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -12,7 +16,7 @@ export function useScanPackage(routeId: string) {
       });
       const json = await res.json();
       if (!res.ok) throw { code: json.code, message: json.message };
-      return json as RoutePackage;
+      return json as ScanApiResponse;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatch', 'packages', routeId] });

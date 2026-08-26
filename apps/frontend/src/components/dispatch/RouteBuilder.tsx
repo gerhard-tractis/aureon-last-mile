@@ -9,7 +9,9 @@ import { PackageRow } from './PackageRow';
 import { RoutePanel } from './RoutePanel';
 import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
-import type { FleetVehicle } from '@/lib/dispatch/types';
+import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
+import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
+import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
 
 interface Props {
   routeId: string;
@@ -22,13 +24,20 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [driverName, setDriverName] = useState('');
-  const [routeClosed, setRouteClosed] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [sealError, setSealError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const { data: packages = [], refetch } = useRoutePackages(routeId, operatorId);
+  // spec-70 phase 4, breakage #3: "closed" used to live in a `useState` a page
+  // reload wiped. The route's real status is fetched here and is what every
+  // affordance below (badge, scan zone, seal, dispatch) derives from.
+  const { data: route } = useDispatchRoute(routeId, operatorId);
+  const routeStatus = route?.status;
+  const canLoad = routeStatus != null && (LOADABLE_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
+  const statusConfig = routeStatus ? ROUTE_STATUS_CONFIG[routeStatus] : undefined;
+
   const scanMutation = useScanPackage(routeId);
 
   // spec-70 decision 4: shown live while loading, not just discovered when
@@ -75,7 +84,6 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     const res = await fetch(`/api/dispatch/routes/${routeId}/seal`, { method: 'POST' });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
-      setRouteClosed(true);
       await refetch();
     } else {
       // A refusal (e.g. UNSEALED_STOPS) used to be swallowed here, so the
@@ -130,19 +138,24 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
           <span className="text-xs text-text-muted">
             {new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })}
           </span>
-          <StatusBadge
-            status={routeClosed ? 'Listo' : 'Borrador'}
-            variant={routeClosed ? 'success' : 'neutral'}
-            size="sm"
-          />
+          {statusConfig && (
+            <StatusBadge
+              status={routeStatus!}
+              label={statusConfig.label}
+              variant={statusConfig.variant}
+              size="sm"
+            />
+          )}
         </div>
 
-        <ScanZone onScan={handleScan} disabled={routeClosed} lastError={scanError} />
+        <ScanZone onScan={handleScan} disabled={!canLoad} lastError={scanError} />
 
-        {/* Package count bar */}
+        {/* Order count bar. spec-70 phase 4, breakage #8: these rows are
+            orders planned/staged onto the route, not scanned packages — see
+            useRoutePackages.ts. */}
         <div className="shrink-0 flex items-center justify-between px-5 h-9 bg-background border-b border-border">
           <span className="text-[11px] text-text-muted uppercase tracking-[0.06em]">
-            Paquetes escaneados
+            Órdenes en la ruta
           </span>
           <span className="flex items-center gap-3">
             {pendingCount > 0 && (
@@ -181,10 +194,9 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         vehicles={vehicles}
         selectedVehicle={selectedVehicle}
         driverName={driverName}
-        routeClosed={routeClosed}
+        routeStatus={routeStatus}
         dispatching={dispatching}
         dispatchError={dispatchError}
-        canDelete={!routeClosed}
         onVehicleChange={setSelectedVehicle}
         onDriverChange={setDriverName}
         onClose={handleClose}
