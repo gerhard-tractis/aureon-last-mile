@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding; fase 4.3 modo rápido de escritorio), [spec-62](spec-62-reception-mobile.md) (precedente móvil: rama de árbol completo bajo `lg`), [spec-39](spec-39-distribution-pending-list.md) / [spec-41](spec-41-pending-list-order-grouping.md) (pendientes por sectorizar), [spec-40](spec-40-dock-zone-barcode-labels.md) (etiquetas de andén), [spec-66](spec-66-ops-leader-role.md) (`ops_leader`), [spec-67](spec-67-sidebar-information-architecture.md) (`MobileTabBar`, secciones de nav)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-24_
 
@@ -247,3 +247,51 @@ Mantener sobre 70 %. Cada componente nuevo llega con su test en el mismo commit.
 | `QuickSortScanner` resulta imposible de reutilizar en móvil sin reescribirlo | Fase 5.1 hace la extracción explícita, con los tests migrados, en vez de duplicar la máquina de estados |
 | La migración de capacidad pasa el PR sin aplicarse | Verificación manual contra QA en la fase 1, no confianza en los checks verdes |
 | El árbol móvil monta cabeceras duplicadas | Test explícito por pantalla; es el bug que ya apareció en 3h y en spec-62 |
+
+---
+
+## Verificación E2E — 2026-08-25
+
+Recorrido completo contra QA (`qa.aureon.tractis.ai`) a 390 × 844, como
+`qa-ops-leader@qa.test`, con las ocho pantallas ejercidas y cada resultado
+confirmado también en la base, no solo en pantalla.
+
+Los tres caminos de mayor riesgo se verificaron de punta a punta:
+
+1. **Capacidad (fase 1).** Se configuró desde *Configurar zonas* → `A3
+   capacity=20` en la base → la barra aparece en la hoja de envío y en
+   `/andenes`, y **no** aparece en A1/A2, que siguen sin capacidad.
+2. **Compuerta de la fase 0, en vivo.** *Mover a andén* llevó
+   `QA-OUT-007-CTN-2` de `retenido` a `sectorizado` en A2, con
+   `manual_override=true` y `redirect_reason=NULL` — correcto, porque A2 no
+   es consolidación.
+3. **Excepción del `4i` (fase 5).** Escanear el andén equivocado registró
+   `scan_result=wrong_zone` con `dock_zone_id=A3` — o sea, **qué** andén se
+   leyó mal — y dejó el paquete intacto en `en_bodega`, tal como la pantalla
+   promete.
+
+### Pendientes conocidos
+
+- **Lector Zebra.** Sin cubrir y sin poder cubrirse desde aquí: Playwright
+  teclea limpio, así que no reproduce las dos trampas reales del terreno —
+  el lector no emite Enter y el layout US/ES corrompe los guiones. Queda en
+  manos del usuario con el dispositivo físico.
+- **La excepción no deja rastro en la sesión.** `markException` graba la
+  fila en `dock_scans` pero no emite `onScanEvent`, así que *ÚLTIMOS
+  ESCANEOS* no la muestra: el operario la marca y no ve nada. Es una línea
+  en `useQuickSortFlow`; no se arregló aquí para no ampliar el alcance al
+  cierre.
+- **El caso negativo de permisos no se pudo probar en QA.**
+  `qa-warehouse-staff@qa.test` tiene solo `{warehouse}`, así que no alcanza
+  el módulo de Distribución y no se pudo demostrar en vivo que la hoja de
+  envío manual está ausente para ese rol. Los tests unitarios sí lo cubren.
+
+### Hallazgos de datos de QA (no son de este spec)
+
+- `qa-admin@qa.test` no tiene el permiso `distribution`; un admin no llega
+  al módulo.
+- 18 de 19 paquetes `sectorizado` tienen `dock_zone_id NULL`, así que los
+  conteos por andén se leen casi en cero. Es pre-existente y afecta igual a
+  la grilla de escritorio, que usa el mismo hook.
+- Todos los bultos retenidos están fechados hoy, así que la sección
+  *PRÓXIMOS* de `4f` no se ejercitó.
