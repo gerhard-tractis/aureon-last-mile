@@ -40,6 +40,7 @@ describe('useRoutePackages', () => {
       id: 'dispatch-1',
       order_id: 'order-1',
       status: 'pending',
+      stage: 'staged',
       orders: { order_number: 'ORD-001', customer_name: 'Alice', delivery_address: '123 St', customer_phone: '+56911' },
     };
     const chain = {
@@ -61,7 +62,30 @@ describe('useRoutePackages', () => {
       contact_address: '123 St',
       contact_phone: '+56911',
       package_status: 'pending',
+      stage: 'staged',
     });
+  });
+
+  /** decision 4 depends on this: RouteBuilder cannot tell planned from staged without it. */
+  it('returns the row stage (planned/staged/adopted), not just status', async () => {
+    const rawRow = {
+      id: 'dispatch-3',
+      order_id: 'order-3',
+      status: 'pending',
+      stage: 'planned',
+      orders: { order_number: 'ORD-003', customer_name: 'Cara', delivery_address: '789 Rd', customer_phone: null },
+    };
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({ data: [rawRow], error: null }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    const { result } = renderHook(() => useRoutePackages('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.[0].stage).toBe('planned');
   });
 
   it('handles orders as array (takes first element)', async () => {

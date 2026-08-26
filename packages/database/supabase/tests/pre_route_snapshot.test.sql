@@ -670,6 +670,92 @@ END $$;
 ROLLBACK TO test_12;
 
 -- =============================================================================
+-- TEST 13: excludes_orders_on_spec70_active_route_statuses
+--
+-- spec-70 phase 1 remapped every route that meant "sent to DT" from `planned`
+-- to `dispatched`; phase 3 makes `loading` and `loaded` routine states a route
+-- sits in for the whole loading pass. Test 3 already proves `draft` and
+-- `completed`; this proves the two statuses phases 1 and 3 actually introduced
+-- — `loading` and `dispatched` — are excluded too, and that `completed` still
+-- releases the order (retorno_hub, spec-43, must keep working).
+-- =============================================================================
+SAVEPOINT test_13;
+
+DO $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at, comuna_id)
+  VALUES
+    -- Order mid-load on a `loading` route → excluded
+    ('eeee0018-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'T37-ORD-013A', 'Cliente 13A', '+56900000018', 'Calle Norte 16', 'TestComuna Norte',
+      CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037'),
+    -- Order already accepted by DispatchTrack (`dispatched`) → excluded
+    ('eeee0019-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'T37-ORD-013B', 'Cliente 13B', '+56900000019', 'Calle Norte 17', 'TestComuna Norte',
+      CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037'),
+    -- Order whose only history is a completed route → included (retorno_hub)
+    ('eeee0020-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'T37-ORD-013C', 'Cliente 13C', '+56900000020', 'Calle Norte 18', 'TestComuna Norte',
+      CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037');
+
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
+  VALUES
+    ('ffff0018-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0018-0000-0000-0000-000000000037', 'PKG-T37-013A', '{}'::jsonb, 'en_bodega',
+      'dddd0001-0000-0000-0000-000000000037'),
+    ('ffff0019-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0019-0000-0000-0000-000000000037', 'PKG-T37-013B', '{}'::jsonb, 'en_bodega',
+      'dddd0001-0000-0000-0000-000000000037'),
+    ('ffff0020-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0020-0000-0000-0000-000000000037', 'PKG-T37-013C', '{}'::jsonb, 'en_bodega',
+      'dddd0001-0000-0000-0000-000000000037');
+
+  -- A `loading` route
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, raw_data, status)
+  VALUES ('11110003-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'dispatchtrack', 'LOADING_T37_001', CURRENT_DATE, '{}'::jsonb, 'loading');
+
+  -- A `dispatched` route (accepted by DT under the new vocabulary)
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, raw_data, status)
+  VALUES ('11110004-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'dispatchtrack', 'DISPATCHED_T37_001', CURRENT_DATE, '{}'::jsonb, 'dispatched');
+
+  -- A `completed` route (terminal — releases the order)
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, raw_data, status)
+  VALUES ('11110005-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'dispatchtrack', 'DONE_T37_002', CURRENT_DATE, '{}'::jsonb, 'completed');
+
+  INSERT INTO public.dispatches (id, operator_id, order_id, route_id, provider, raw_data, status)
+  VALUES
+    ('22220003-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0018-0000-0000-0000-000000000037', '11110003-0000-0000-0000-000000000037',
+      'dispatchtrack', '{}'::jsonb, 'pending'),
+    ('22220004-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0019-0000-0000-0000-000000000037', '11110004-0000-0000-0000-000000000037',
+      'dispatchtrack', '{}'::jsonb, 'pending'),
+    ('22220005-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+      'eeee0020-0000-0000-0000-000000000037', '11110005-0000-0000-0000-000000000037',
+      'dispatchtrack', '{}'::jsonb, 'delivered');
+
+  SELECT public.get_pre_route_snapshot(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid,
+    CURRENT_DATE
+  ) INTO v_result;
+
+  IF (v_result->'totals'->>'order_count')::int = 1 THEN
+    RAISE NOTICE '✓ TEST 13 PASSED: orders on loading/dispatched routes excluded; order on completed route included';
+  ELSE
+    RAISE EXCEPTION 'TEST 13 FAILED: expected 1 order, got % — result: %',
+      (v_result->'totals'->>'order_count')::int, v_result;
+  END IF;
+END $$;
+
+ROLLBACK TO test_13;
+
+-- =============================================================================
 -- Summary
 -- =============================================================================
 -- RAISE is PL/pgSQL, not SQL: these three lines used to sit at statement level

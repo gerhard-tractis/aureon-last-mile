@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ROLE_DEFAULT_PERMISSIONS, canLeadPickupRoute, ROUTE_LEADER_ROLES } from './permissions';
+import { ROLE_DEFAULT_PERMISSIONS, canLeadPickupRoute, canRemoveFromPlan, ROUTE_LEADER_ROLES } from './permissions';
 
 describe('ROLE_DEFAULT_PERMISSIONS', () => {
   // Will mirror the handle_new_user CASE (spec-61 Task 1.2) once that
@@ -64,5 +64,32 @@ describe('canLeadPickupRoute', () => {
     expect(canLeadPickupRoute('loading_crew')).toBe(false);
     expect(canLeadPickupRoute('some_future_role')).toBe(false);
     expect(canLeadPickupRoute(null)).toBe(false);
+  });
+});
+
+describe('canRemoveFromPlan — spec-70', () => {
+  it.each(['ops_leader', 'operations_manager', 'admin', 'super_admin'])(
+    'allows %s',
+    (role) => expect(canRemoveFromPlan(role)).toBe(true),
+  );
+
+  /**
+   * The scanner operator must never be able to shrink the plan — that is the
+   * entire mechanism by which "a planned package goes on the truck" holds.
+   */
+  it.each(['dispatch_operator', 'pickup_crew', 'warehouse', 'customer_service', ''])(
+    'refuses %s',
+    (role) => expect(canRemoveFromPlan(role)).toBe(false),
+  );
+
+  it('refuses a missing role', () => {
+    expect(canRemoveFromPlan(null)).toBe(false);
+    expect(canRemoveFromPlan(undefined)).toBe(false);
+  });
+
+  /** pickup_leader leads inbound routes and has no say over a delivery plan. */
+  it('refuses pickup_leader even though it leads pickup routes', () => {
+    expect(canLeadPickupRoute('pickup_leader')).toBe(true);
+    expect(canRemoveFromPlan('pickup_leader')).toBe(false);
   });
 });

@@ -141,6 +141,9 @@ export async function POST(
         ...validation.package,
         dispatch_id: dispatchId,
         stage: validation.action.kind === 'stage' ? 'staged' : 'adopted',
+        // The validator can't honestly claim this — see ScanResult.package's
+        // Omit — but by here the update above has just written it.
+        package_status: 'en_carga',
       },
       { status: 201 },
     );

@@ -69,6 +69,14 @@ export interface RoutePackage {
   contact_address: string | null;
   contact_phone: string | null;
   package_status: PackageStatus;
+  /**
+   * spec-70 phase 3. dispatches.stage, added ahead of the full phase-4
+   * useRoutePackages correction so RouteBuilder can tell "on the plan" from
+   * "physically staged" and show the live pending count (decision 4).
+   * package_status above is still the pre-existing type lie documented in
+   * spec-38 (it actually holds dispatches.status); this field is not that.
+   */
+  stage: DispatchStage;
 }
 
 export interface FleetVehicle {
@@ -94,7 +102,11 @@ export type ScanAction =
 
 export type ScanResult = {
   ok: true;
-  package: RoutePackage;
+  // spec-38/spec-70: the validator hasn't staged or written the DB yet, so it
+  // cannot honestly claim `stage` or `package_status` — the scan handler knows
+  // both only after it decides stage vs adopt and performs the write, and adds
+  // them itself. Omit rather than a fabricated placeholder value.
+  package: Omit<RoutePackage, 'stage' | 'package_status'>;
   action: ScanAction;
 } | {
   ok: false;

@@ -106,3 +106,25 @@ export const ROUTE_LEADER_ROLES = [
 export function canLeadPickupRoute(role: string | null | undefined): boolean {
   return !!role && (ROUTE_LEADER_ROLES as readonly string[]).includes(role);
 }
+
+/**
+ * Who may take a stop off a route's plan.
+ *
+ * spec-70 decision 2 makes a plan a commitment: a planned stop goes on the
+ * truck unless a manager removes it, with a reason and an audit entry. The
+ * person holding the scanner is deliberately not on this list — the whole point
+ * is that the load cannot quietly diverge from the plan.
+ *
+ * ROUTE_LEADER_ROLES minus `pickup_leader`, which leads inbound pickup routes
+ * and has no authority over a delivery plan.
+ */
+export const PLAN_MANAGER_ROLES = [
+  'ops_leader',
+  'operations_manager',
+  'admin',
+  'super_admin',
+] as const;
+
+export function canRemoveFromPlan(role: string | null | undefined): boolean {
+  return !!role && (PLAN_MANAGER_ROLES as readonly string[]).includes(role);
+}

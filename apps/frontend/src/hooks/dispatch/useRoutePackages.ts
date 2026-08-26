@@ -9,7 +9,7 @@ export function useRoutePackages(routeId: string | null, operatorId: string | nu
       const supabase = createSPAClient();
       const { data, error } = await supabase
         .from('dispatches')
-        .select('id, order_id, status, orders(order_number, customer_name, delivery_address, customer_phone)')
+        .select('id, order_id, status, stage, orders(order_number, customer_name, delivery_address, customer_phone)')
         .eq('route_id', routeId!)
         .eq('operator_id', operatorId!)
         .is('deleted_at', null);
@@ -24,6 +24,10 @@ export function useRoutePackages(routeId: string | null, operatorId: string | nu
           contact_address: ord?.delivery_address ?? null,
           contact_phone: ord?.customer_phone ?? null,
           package_status: d.status as RoutePackage['package_status'],
+          // spec-70 decision 4: the plan/load gap has to be visible while
+          // loading, not just at the seal refusal — this is what lets
+          // RouteBuilder show "faltan N por estibar" live.
+          stage: d.stage as RoutePackage['stage'],
         };
       });
     },

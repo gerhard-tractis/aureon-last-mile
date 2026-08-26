@@ -65,16 +65,49 @@ export async function POST(
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ code: 'VALIDATION_ERROR' }, { status: 400 });
 
-    const { data: route } = await supabase
+    const { data: route, error: routeError } = await supabase
       .from('routes')
       .select('id, status, route_date')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
       .single();
+    // PGRST116 ("no row matched") is a genuine 404; anything else is a query
+    // that never ran, which the outer catch would otherwise misreport as a
+    // DispatchTrack failure — it hasn't been called yet. See
+    // scan-validator.ts's header for why silently treating a failed query as
+    // "not found" is the specific bug class this guards against.
+    if (routeError && routeError.code !== 'PGRST116') {
+      console.error('[dispatch/dispatch POST] route lookup failed', routeError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar la ruta' },
+        { status: 500 },
+      );
+    }
     if (!route) return NextResponse.json({ code: 'NOT_FOUND' }, { status: 404 });
-    if (route.status !== 'draft') {
+    // spec-70 decision 2: a route may only reach DispatchTrack once its
+    // manifest is sealed — every stop staged or adopted, none merely
+    // planned. `loaded` is what /seal writes once that holds; requiring
+    // `draft` here (the pre-spec-70 check) let a route with unstaged stops
+    // dispatch straight through.
+    if (route.status !== 'loaded') {
       return NextResponse.json({ code: 'INVALID_STATE' }, { status: 409 });
+    }
+
+    // Breakage #10: vehicle and driver used to live only in React state and
+    // never reached the database, so there was no record of who drove.
+    // truck_identifier is the vehicle's external_vehicle_id (what the <select>
+    // in RoutePanel sends) — resolved here to the fleet_vehicles row so
+    // routes.vehicle_id can hold a real foreign key.
+    const { data: vehicle } = await supabase
+      .from('fleet_vehicles')
+      .select('id')
+      .eq('external_vehicle_id', parsed.data.truck_identifier)
+      .eq('operator_id', operatorId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (!vehicle) {
+      return NextResponse.json({ code: 'VEHICLE_NOT_FOUND', message: 'Camión no encontrado' }, { status: 422 });
     }
 
     // orders columns: customer_name, customer_phone, delivery_address (no contact_email).
@@ -157,13 +190,27 @@ export async function POST(
       dispatches: dtDispatches,
     }, apiToken);
 
-    // DT confirmed — now update local state
+    // DT confirmed — now update local state.
     const orderIds = dispatches.map((d) => d.order_id).filter(Boolean) as string[];
+
+    // The status write goes through the state machine, not a raw UPDATE — the
+    // RPC is the one place that owns which edges are legal, and `loaded ->
+    // dispatched` is the only one this handler is allowed to take.
+    const { error: transitionError } = await supabase.rpc('transition_route_status', {
+      p_route_id: routeId,
+      p_operator_id: operatorId,
+      p_to_status: 'dispatched',
+    });
+    if (transitionError) throw transitionError;
 
     await Promise.all([
       supabase
         .from('routes')
-        .update({ status: 'planned', external_route_id })
+        .update({
+          external_route_id,
+          vehicle_id: vehicle.id,
+          driver_name: parsed.data.driver_identifier ?? null,
+        })
         .eq('id', routeId)
         .eq('operator_id', operatorId),
       supabase

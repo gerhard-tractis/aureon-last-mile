@@ -64,10 +64,12 @@ function buildClient(routeStatus: string | null = 'planned') {
   return ops;
 }
 
+// No stage/package_status — ScanResult.package Omits both; validateScan
+// genuinely does not know either until the handler decides stage vs adopt
+// and performs the write below.
 const PKG = {
   dispatch_id: '', order_id: 'o1', order_number: 'ORD-1',
   contact_name: 'Mario', contact_address: 'Av 1', contact_phone: '+569',
-  package_status: 'en_carga' as const,
 };
 
 function makeReq(body: unknown = { code: 'CTN-1' }) {
@@ -132,6 +134,21 @@ describe('POST /scan — staging a planned stop', () => {
     await POST(makeReq(), { params });
     const wrote = ops.filter((o) => o.kind === 'update' && o.payload && 'planned_stops' in o.payload);
     expect(wrote).toEqual([]);
+  });
+
+  /**
+   * spec-38/spec-70 review fix: the validator cannot honestly claim
+   * package_status (ScanResult.package Omits it) since validation runs before
+   * the write below happens -- the handler adds the real value itself, once
+   * the write it just issued has made it true.
+   */
+  it('adds package_status to the response, since the validator cannot claim it', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+
+    const res = await POST(makeReq(), { params });
+    const json = await res.json();
+    expect(json.package_status).toBe('en_carga');
   });
 });
 
