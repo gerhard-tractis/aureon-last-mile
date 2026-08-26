@@ -276,22 +276,38 @@ Los tres caminos de mayor riesgo se verificaron de punta a punta:
   teclea limpio, así que no reproduce las dos trampas reales del terreno —
   el lector no emite Enter y el layout US/ES corrompe los guiones. Queda en
   manos del usuario con el dispositivo físico.
-- **La excepción no deja rastro en la sesión.** `markException` graba la
-  fila en `dock_scans` pero no emite `onScanEvent`, así que *ÚLTIMOS
-  ESCANEOS* no la muestra: el operario la marca y no ve nada. Es una línea
-  en `useQuickSortFlow`; no se arregló aquí para no ampliar el alcance al
-  cierre.
-- **El caso negativo de permisos no se pudo probar en QA.**
-  `qa-warehouse-staff@qa.test` tiene solo `{warehouse}`, así que no alcanza
-  el módulo de Distribución y no se pudo demostrar en vivo que la hoja de
-  envío manual está ausente para ese rol. Los tests unitarios sí lo cubren.
+- ~~**La excepción no deja rastro en la sesión.**~~ **Resuelto** el
+  2026-08-26: `markException` emite `onScanEvent` tras un registro exitoso
+  — y solo tras uno exitoso, para que el historial nunca afirme una fila
+  que no existe. La excepción aparece en *ÚLTIMOS ESCANEOS* como
+  `EXCEPCIÓN · <andén leído>`.
+- ~~**El caso negativo de permisos no se pudo probar en QA.**~~
+  **Resuelto** el 2026-08-26. El bloqueo era un dato de QA, no del
+  producto: `qa-warehouse-staff@qa.test` tenía `{warehouse}`, un permiso
+  que ningún módulo consulta, mientras su equivalente en Musan
+  (`bodega@musan.com`) tiene `{reception,distribution}`. Corregido el dato,
+  el caso se probó en vivo con rol `warehouse_staff`: la lista de
+  pendientes se ve igual pero **sin** los botones `⋯`, y en consolidación
+  el pie muestra **solo** *Liberar a sectorización* — *Mover a andén* está
+  ausente, no deshabilitado. Es exactamente la corrección de gateo de la
+  fase 4, confirmada contra el entorno.
 
 ### Hallazgos de datos de QA (no son de este spec)
 
+- `qa-warehouse-staff@qa.test` tenía `{warehouse}`, permiso que ningún
+  módulo consulta — el usuario no alcanzaba nada. **Corregido en QA** el
+  2026-08-26 a `{reception,distribution}`, igualando a su equivalente de
+  Musan. Si el seed se vuelve a generar, volverá a aparecer: el arreglo
+  está en la base de QA, no en el script.
 - `qa-admin@qa.test` no tiene el permiso `distribution`; un admin no llega
-  al módulo.
+  al módulo. **Sin corregir**, porque a diferencia del anterior no está
+  claro que deba tenerlo: el módulo es de piso y `admin` no es un rol de
+  piso. Es una decisión de producto, no un error evidente.
 - 18 de 19 paquetes `sectorizado` tienen `dock_zone_id NULL`, así que los
   conteos por andén se leen casi en cero. Es pre-existente y afecta igual a
-  la grilla de escritorio, que usa el mismo hook.
+  la grilla de escritorio, que usa el mismo hook. **Sin corregir**: reparar
+  18 filas a mano supone saber a qué andén pertenecía cada una, y esa
+  información no está en ninguna parte — se perdió cuando se marcaron como
+  sectorizadas sin pasar por el trigger.
 - Todos los bultos retenidos están fechados hoy, así que la sección
   *PRÓXIMOS* de `4f` no se ejercitó.
