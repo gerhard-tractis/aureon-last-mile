@@ -23,7 +23,7 @@ export function useRoutePackages(routeId: string | null, operatorId: string | nu
           contact_name: ord?.customer_name ?? null,
           contact_address: ord?.delivery_address ?? null,
           contact_phone: ord?.customer_phone ?? null,
-          package_status: d.status as RoutePackage['package_status'],
+          status: d.status as RoutePackage['status'],
           // spec-70 decision 4: the plan/load gap has to be visible while
           // loading, not just at the seal refusal — this is what lets
           // RouteBuilder show "faltan N por estibar" live.

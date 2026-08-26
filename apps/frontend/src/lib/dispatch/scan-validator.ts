@@ -189,7 +189,7 @@ export async function validateScan(
 
   // The DTO keeps DispatchTrack's contact_* naming; the orders table calls the
   // same three fields customer_name / delivery_address / customer_phone.
-  const pkg: Omit<RoutePackage, 'stage' | 'package_status'> = {
+  const pkg: Omit<RoutePackage, 'stage' | 'status'> = {
     dispatch_id: '',              // filled after insert
     order_id: found.order_id,
     order_number: order?.order_number ?? code,
@@ -198,10 +198,10 @@ export async function validateScan(
     contact_phone: order?.customer_phone ?? null,
   };
 
-  // `stage` and `package_status` are genuinely unknown here: the scan handler
-  // hasn't decided stage vs adopt or written the DB yet. A fabricated value on
-  // this DTO is the spec-38 type lie in miniature — the type now refuses to
-  // let one back in (ScanResult.package Omits both), and the handler adds the
+  // `stage` and `status` are genuinely unknown here: the scan handler hasn't
+  // decided stage vs adopt or written the DB yet. A fabricated value on this
+  // DTO is the spec-38 type lie in miniature — the type now refuses to let
+  // one back in (ScanResult.package Omits both), and the handler adds the
   // real values once it knows them.
   return { ok: true, package: pkg, action };
 }

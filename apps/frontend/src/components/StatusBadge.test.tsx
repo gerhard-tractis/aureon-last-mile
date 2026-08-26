@@ -152,6 +152,29 @@ describe('StatusBadge kind="order" vs kind="package" — two grammatically disti
   });
 });
 
+describe('StatusBadge kind="dispatch" — dispatches.status / dispatch_status_enum, a third vocabulary', () => {
+  it('covers every dispatch_status_enum value with a non-raw Spanish label, including "partial"', () => {
+    const values = ['pending', 'delivered', 'failed', 'partial'];
+    for (const status of values) {
+      const { unmount } = render(<StatusBadge status={status} kind="dispatch" />);
+      expect(screen.queryByText(status)).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('renders "partial" as "Parcial" with the warning variant — a value neither order nor package vocabulary has', () => {
+    const { container } = render(<StatusBadge status="partial" kind="dispatch" />);
+    expect(screen.getByText('Parcial')).toBeInTheDocument();
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('bg-status-warning-bg');
+  });
+
+  it('renders "delivered" as "Entregado" under kind="dispatch", distinct from "package"\'s config entry', () => {
+    render(<StatusBadge status="delivered" kind="dispatch" />);
+    expect(screen.getByText('Entregado')).toBeInTheDocument();
+  });
+});
+
 describe('StatusBadge label override', () => {
   it('an explicit label prop wins over both the config lookup and the raw-status fallback', () => {
     render(<StatusBadge status="draft" label="Borrador" variant="neutral" />);

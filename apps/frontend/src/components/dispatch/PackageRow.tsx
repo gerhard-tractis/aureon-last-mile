@@ -1,7 +1,6 @@
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/StatusBadge';
-import type { BadgeVariant } from '@/components/StatusBadge';
 import type { RoutePackage } from '@/lib/dispatch/types';
 
 interface Props {
@@ -10,23 +9,7 @@ interface Props {
   onRemove: (dispatchId: string) => void;
 }
 
-const PACKAGE_STATUS_CONFIG: Record<
-  string,
-  { label: string; variant: BadgeVariant }
-> = {
-  ingresado: { label: 'Ingresado', variant: 'neutral' },
-  verificado: { label: 'Verificado', variant: 'info' },
-  en_bodega: { label: 'En bodega', variant: 'neutral' },
-  asignado: { label: 'Asignado', variant: 'info' },
-  en_carga: { label: 'En carga', variant: 'warning' },
-  listo_para_despacho: { label: 'Listo', variant: 'success' },
-  en_ruta: { label: 'En ruta', variant: 'warning' },
-  entregado: { label: 'Entregado', variant: 'success' },
-  cancelado: { label: 'Cancelado', variant: 'error' },
-};
-
 export function PackageRow({ index, pkg, onRemove }: Props) {
-  const statusConfig = PACKAGE_STATUS_CONFIG[pkg.package_status];
   // spec-70 decision 4: the gap between the plan and the load has to be
   // visible on the row while loading is still happening — the seal refusal
   // is the worst possible moment to find out a stop was never scanned.
@@ -57,10 +40,17 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
           </div>
         )}
       </div>
+      {/*
+        kind="dispatch": pkg.status is dispatches.status (dispatch_status_enum),
+        the provider's delivery outcome — not a package status. This used to
+        render under kind="package" from a field literally named
+        `package_status`, so 'partial' (a real value here, not a
+        PackageStatus at all) fell back to the raw string. See
+        RoutePackage.status in lib/dispatch/types.ts.
+      */}
       <StatusBadge
-        status={pkg.package_status}
-        kind="package"
-        variant={statusConfig?.variant}
+        status={pkg.status}
+        kind="dispatch"
         size="sm"
       />
       <Button

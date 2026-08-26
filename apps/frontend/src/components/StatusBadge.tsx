@@ -1,8 +1,9 @@
 import { cn } from '@/lib/utils';
+import type { DispatchStatus } from '@/lib/dispatch/types';
 
 export type OrderStatus = 'pending' | 'picked_up' | 'in_transit' | 'delivered' | 'failed' | 'returned';
 export type BadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
-export type StatusBadgeKind = 'order' | 'package';
+export type StatusBadgeKind = 'order' | 'package' | 'dispatch';
 
 interface StatusBadgeProps {
   status: OrderStatus | string;
@@ -104,9 +105,28 @@ const PACKAGE_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
   extraviado:             { variant: 'error',   label: 'Extraviado' },
 };
 
+/**
+ * `dispatches.status` / `dispatch_status_enum` — spec-70 phase 4. A THIRD
+ * vocabulary, not a rename of either above: it is the routing provider's
+ * delivery outcome for a stop, written by the DT webhooks, and it takes
+ * `'partial'`, a value neither `order_status_enum` nor `package_status_enum`
+ * has. Before this existed, `PackageRow` fed these four values through
+ * `kind="package"` under a field literally typed `PackageStatus` — 'partial'
+ * had no entry there and fell back to the raw string, and 'pending' silently
+ * matched `PACKAGE_STATUS_CONFIG`'s unrelated null-status fallback. See
+ * `RoutePackage.status` in `lib/dispatch/types.ts`.
+ */
+const DISPATCH_STATUS_CONFIG: Record<DispatchStatus, StatusConfigEntry> = {
+  pending:   { variant: 'neutral', label: 'Pendiente' },
+  delivered: { variant: 'success', label: 'Entregado' },
+  failed:    { variant: 'error',   label: 'Fallido' },
+  partial:   { variant: 'warning', label: 'Parcial' },
+};
+
 const STATUS_CONFIG_BY_KIND: Record<StatusBadgeKind, Record<string, StatusConfigEntry>> = {
   order: ORDER_STATUS_CONFIG,
   package: PACKAGE_STATUS_CONFIG,
+  dispatch: DISPATCH_STATUS_CONFIG,
 };
 
 // spec-54: text now comes from the -text tokens rather than the base hue. The

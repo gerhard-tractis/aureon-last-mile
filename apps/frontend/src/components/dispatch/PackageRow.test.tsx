@@ -6,7 +6,7 @@ import { PackageRow } from './PackageRow';
 const pkg = {
   dispatch_id: 'd1', order_id: 'o1', order_number: 'ORD-4821',
   contact_name: 'Mario González', contact_address: 'Providencia 123',
-  contact_phone: null, package_status: 'en_carga' as const, stage: 'staged' as const,
+  contact_phone: null, status: 'pending' as const, stage: 'staged' as const,
 };
 
 describe('PackageRow', () => {
@@ -35,5 +35,22 @@ describe('PackageRow', () => {
   it('does not show the unstaged marker for a staged row', () => {
     render(<PackageRow index={1} pkg={pkg} onRemove={vi.fn()} />);
     expect(screen.queryByText(/sin estibar/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * spec-70 phase 4, breakage #8: pkg.status is dispatches.status
+   * (dispatch_status_enum), a vocabulary `PACKAGE_STATUS_CONFIG` never
+   * modelled — 'partial' had no entry there and rendered as the raw string
+   * "partial" instead of a label. This regression-tests the fix.
+   */
+  it('renders a dispatch-status label for "partial", not the raw string', () => {
+    render(<PackageRow index={1} pkg={{ ...pkg, status: 'partial' }} onRemove={vi.fn()} />);
+    expect(screen.getByText('Parcial')).toBeInTheDocument();
+    expect(screen.queryByText('partial')).not.toBeInTheDocument();
+  });
+
+  it('renders "delivered" as "Entregado"', () => {
+    render(<PackageRow index={1} pkg={{ ...pkg, status: 'delivered' }} onRemove={vi.fn()} />);
+    expect(screen.getByText('Entregado')).toBeInTheDocument();
   });
 });

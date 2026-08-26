@@ -61,7 +61,7 @@ describe('useRoutePackages', () => {
       contact_name: 'Alice',
       contact_address: '123 St',
       contact_phone: '+56911',
-      package_status: 'pending',
+      status: 'pending',
       stage: 'staged',
     });
   });
@@ -86,6 +86,35 @@ describe('useRoutePackages', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.[0].stage).toBe('planned');
+  });
+
+  /**
+   * spec-70 phase 4, breakage #8: the row is `dispatches.status`
+   * (dispatch_status_enum), which takes `'partial'` — a value that is not in
+   * `PackageStatus` at all. The old field name/type (`package_status:
+   * PackageStatus`) could never honestly hold this; `status: DispatchStatus`
+   * can.
+   */
+  it('carries a dispatch-only status value (partial) through untouched', async () => {
+    const rawRow = {
+      id: 'dispatch-4',
+      order_id: 'order-4',
+      status: 'partial',
+      stage: 'staged',
+      orders: { order_number: 'ORD-004', customer_name: 'Dana', delivery_address: '1 Rd', customer_phone: null },
+    };
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({ data: [rawRow], error: null }),
+    };
+    mockFrom.mockReturnValue(chain);
+
+    const { result } = renderHook(() => useRoutePackages('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.[0].status).toBe('partial');
+    expect(result.current.data?.[0]).not.toHaveProperty('package_status');
   });
 
   it('handles orders as array (takes first element)', async () => {
