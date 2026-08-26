@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { StatusBadge } from '@/components/StatusBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouteDispatches } from '@/hooks/dispatch/useRouteDispatches';
 import type { DispatchRoute } from '@/lib/dispatch/types';
@@ -152,7 +153,7 @@ export function RouteActivityRow({ route, operatorId, isOpen, onToggle }: Props)
                   <p className="text-[10px] font-bold tracking-widest uppercase text-text-secondary mb-2">Orden</p>
                   <div className="grid grid-cols-2 gap-3">
                     <div><p className="text-xs text-text-secondary">Número</p><p className="text-sm font-mono font-semibold text-accent">{selectedOrder.order_number}</p></div>
-                    <div><p className="text-xs text-text-secondary">Estado</p><p className="text-sm font-medium text-text capitalize">{selectedOrder.status}</p></div>
+                    <div><p className="text-xs text-text-secondary">Estado</p><StatusBadge status={selectedOrder.status} kind="dispatch" size="sm" /></div>
                   </div>
                 </div>
                 <div>

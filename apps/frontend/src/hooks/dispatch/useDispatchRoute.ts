@@ -9,9 +9,23 @@ import type { DispatchRoute } from '@/lib/dispatch/types';
  * disabled, whether the manifest can still be sealed, and whether Despachar
  * is unlocked.
  */
+/**
+ * The route query's key, exported so every writer that changes a route's
+ * status invalidates the same one.
+ *
+ * This is not ceremony: the key was previously written inline here and
+ * nowhere else, so nothing in the repo invalidated it. A successful seal
+ * moved the row to `loaded` and the UI went on rendering `loading` — breakage
+ * #3 rebuilt out of new parts, the exact defect this phase exists to kill.
+ * `operatorId` is part of the identity so a cached route cannot survive an
+ * operator switch.
+ */
+export const dispatchRouteKey = (routeId: string | null, operatorId: string | null) =>
+  ['dispatch', 'route', routeId, operatorId] as const;
+
 export function useDispatchRoute(routeId: string | null, operatorId: string | null) {
   return useQuery({
-    queryKey: ['dispatch', 'route', routeId],
+    queryKey: dispatchRouteKey(routeId, operatorId),
     queryFn: async () => {
       const supabase = createSPAClient();
       const { data, error } = await supabase

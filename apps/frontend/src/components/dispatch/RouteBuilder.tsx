@@ -10,6 +10,7 @@ import { RoutePanel } from './RoutePanel';
 import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
+import { useRefreshRouteStatus } from '@/hooks/dispatch/useRefreshRouteStatus';
 import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
 import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
 
@@ -34,11 +35,16 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   // reload wiped. The route's real status is fetched here and is what every
   // affordance below (badge, scan zone, seal, dispatch) derives from.
   const { data: route } = useDispatchRoute(routeId, operatorId);
+  // Every mutation below changes routes.status server-side. Refreshing the
+  // packages list alone left the UI rendering the pre-mutation status — a
+  // sealed route still offering "Cerrar ruta" and still refusing to enable
+  // Despachar, with no way for the operator to tell anything had happened.
+  const refreshRouteStatus = useRefreshRouteStatus(routeId, operatorId);
   const routeStatus = route?.status;
   const canLoad = routeStatus != null && (LOADABLE_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
   const statusConfig = routeStatus ? ROUTE_STATUS_CONFIG[routeStatus] : undefined;
 
-  const scanMutation = useScanPackage(routeId);
+  const scanMutation = useScanPackage(routeId, operatorId);
 
   // spec-70 decision 4: shown live while loading, not just discovered when
   // /seal refuses — the cutoff is the worst possible moment to find out a
@@ -71,7 +77,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
       body: JSON.stringify({ reason: reason.trim() }),
     });
     if (res.ok) {
-      await refetch();
+      await Promise.all([refetch(), refreshRouteStatus()]);
     } else {
       const json = await res.json().catch(() => ({}));
       setRemoveError(json.message ?? 'No se pudo quitar la parada');
@@ -84,7 +90,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     const res = await fetch(`/api/dispatch/routes/${routeId}/seal`, { method: 'POST' });
     const json = await res.json().catch(() => ({}));
     if (res.ok) {
-      await refetch();
+      // Both, and the route one matters most: sealing moves the row to
+      // `loaded`, which is what flips the badge, disables Cerrar ruta and
+      // unlocks Despachar. Refreshing only the package list left every one of
+      // those showing the pre-seal state.
+      await Promise.all([refetch(), refreshRouteStatus()]);
     } else {
       // A refusal (e.g. UNSEALED_STOPS) used to be swallowed here, so the
       // button looked like it did nothing — this is the fix.

@@ -62,8 +62,19 @@ describe('RoutePanel — derived from routeStatus', () => {
     expect(screen.getByRole('button', { name: /Despachar/ })).toBeDisabled();
   });
 
-  it('locks the vehicle/driver fields once the route is no longer loadable', () => {
+  /**
+   * A sealed route still needs a truck picked. `selectedVehicle` lives in
+   * React state, so a tablet reload after sealing comes back with nothing
+   * selected — if the field were locked here, Despachar could never enable
+   * and the route would be undispatchable from the UI with no way out.
+   */
+  it('keeps the vehicle/driver fields editable on a sealed route', () => {
     render(<RoutePanel {...baseProps} routeStatus="loaded" />);
+    expect(screen.getByPlaceholderText('Nombre o RUT…')).toBeEnabled();
+  });
+
+  it('locks the vehicle/driver fields once the route has left', () => {
+    render(<RoutePanel {...baseProps} routeStatus="dispatched" />);
     expect(screen.getByPlaceholderText('Nombre o RUT…')).toBeDisabled();
   });
 

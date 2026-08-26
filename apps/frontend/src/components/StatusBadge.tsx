@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import type { DispatchStatus } from '@/lib/dispatch/types';
 
 export type OrderStatus = 'pending' | 'picked_up' | 'in_transit' | 'delivered' | 'failed' | 'returned';
 export type BadgeVariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
@@ -115,7 +116,7 @@ const PACKAGE_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
  * matched `PACKAGE_STATUS_CONFIG`'s unrelated null-status fallback. See
  * `RoutePackage.status` in `lib/dispatch/types.ts`.
  */
-const DISPATCH_STATUS_CONFIG: Record<string, StatusConfigEntry> = {
+const DISPATCH_STATUS_CONFIG: Record<DispatchStatus, StatusConfigEntry> = {
   pending:   { variant: 'neutral', label: 'Pendiente' },
   delivered: { variant: 'success', label: 'Entregado' },
   failed:    { variant: 'error',   label: 'Fallido' },

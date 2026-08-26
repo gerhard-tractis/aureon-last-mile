@@ -59,6 +59,18 @@ export function RoutePanel({
   // Matches what POST /dispatch requires (route.status !== 'loaded' -> 409):
   // Despachar must never be enabled at any other status, including past it.
   const isLoaded = routeStatus === 'loaded';
+  /**
+   * The truck and driver stay editable through `loaded`, not just while
+   * loading.
+   *
+   * Gating these on `canLoad` alone made a sealed route permanently
+   * undispatchable: `selectedVehicle` lives in React state, so reloading the
+   * tablet after a seal — the PWA reload this phase exists to survive — came
+   * back with an empty selection, a disabled selector and a Despachar button
+   * that could never enable. Sealing before picking a truck did the same. The
+   * assignment is only frozen once the route actually leaves.
+   */
+  const canAssignVehicle = canLoad || isLoaded;
   // Matches DELETE /routes/[id]'s OPEN_ROUTE_STATUSES check: delete is legal
   // through 'loaded', refused from 'dispatched' on (spec-70 decision 6).
   const canDelete = routeStatus != null && (OPEN_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
@@ -75,7 +87,7 @@ export function RoutePanel({
           <select
             value={selectedVehicle}
             onChange={(e) => onVehicleChange(e.target.value)}
-            disabled={!canLoad}
+            disabled={!canAssignVehicle}
             className="w-full min-h-[52px] bg-background border-[1.5px] border-border rounded-[10px] text-text text-[15px] px-3.5 cursor-pointer outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
             <option value="">Seleccionar camión…</option>
@@ -94,7 +106,7 @@ export function RoutePanel({
           <Input
             value={driverName}
             onChange={(e) => onDriverChange(e.target.value)}
-            disabled={!canLoad}
+            disabled={!canAssignVehicle}
             placeholder="Nombre o RUT…"
             className="min-h-[52px] rounded-[10px] border-[1.5px] text-[15px] px-3.5"
           />

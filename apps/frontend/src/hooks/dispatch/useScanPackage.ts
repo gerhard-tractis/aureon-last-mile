@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ScanApiResponse } from '@/lib/dispatch/types';
+import { dispatchRouteKey } from './useDispatchRoute';
 
-export function useScanPackage(routeId: string) {
+export function useScanPackage(routeId: string, operatorId: string | null = null) {
   const queryClient = useQueryClient();
   return useMutation({
     // Typed as ScanApiResponse, not RoutePackage: the endpoint's
@@ -20,6 +21,10 @@ export function useScanPackage(routeId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dispatch', 'packages', routeId] });
+      // The scan handler walks draft -> planned -> loading, so the route row
+      // changes underneath us. Without this the header badge still reads
+      // "Borrador" through an entire load.
+      queryClient.invalidateQueries({ queryKey: dispatchRouteKey(routeId, operatorId) });
     },
   });
 }

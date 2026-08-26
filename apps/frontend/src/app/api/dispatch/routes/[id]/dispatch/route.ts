@@ -91,7 +91,16 @@ export async function POST(
     // `draft` here (the pre-spec-70 check) let a route with unstaged stops
     // dispatch straight through.
     if (route.status !== 'loaded') {
-      return NextResponse.json({ code: 'INVALID_STATE' }, { status: 409 });
+      // The message is surfaced verbatim by RouteBuilder. Without it a
+      // Despachar click on a stale cache showed only "Error al despachar",
+      // which tells the operator nothing about what to do next.
+      return NextResponse.json(
+        {
+          code: 'INVALID_STATE',
+          message: `La ruta debe estar cerrada para despachar (estado: ${route.status})`,
+        },
+        { status: 409 },
+      );
     }
 
     // Breakage #10: vehicle and driver used to live only in React state and

@@ -19,6 +19,15 @@ vi.mock('@/hooks/dispatch/useScanPackage', () => ({
   useScanPackage: () => ({ mutateAsync: vi.fn() }),
 }));
 
+// The route row changes underneath every mutation here, so the builder has to
+// re-read it. Key alignment between this refresher and the query it targets is
+// covered for real in useRefreshRouteStatus.test.tsx — mounting a QueryClient
+// here would test react-query, not the builder.
+const refreshRouteStatusMock = vi.fn();
+vi.mock('@/hooks/dispatch/useRefreshRouteStatus', () => ({
+  useRefreshRouteStatus: () => refreshRouteStatusMock,
+}));
+
 // spec-70 phase 4, breakage #3: RouteBuilder derives everything from the
 // route's real status now, fetched through useDispatchRoute — not a
 // `useState` a page reload wiped.
@@ -158,6 +167,45 @@ describe('RouteBuilder — seal', () => {
  * handleRemove at all before this.
  */
 describe('RouteBuilder — remove from plan', () => {
+
+  /**
+   * The bug this pins: `handleClose` used to call `useRoutePackages`'s
+   * refetch, so a 200 from /seal refreshed the stop list and nothing else.
+   * The route stayed `loading` in the cache — badge unchanged, Cerrar ruta
+   * still enabled, Despachar still disabled — and a second tap only returned
+   * `already_sealed`. Breakage #3 rebuilt out of new parts.
+   */
+  it('re-reads the route status after a successful seal, so the seal becomes visible', async () => {
+    mockPackages = [pkg({ stage: 'staged' })];
+    mockRouteStatus = 'loading';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true, sealed_stops: 1 }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+
+    await waitFor(() => expect(refreshRouteStatusMock).toHaveBeenCalled());
+  });
+
+  it('does not re-read the route status when the seal is refused', async () => {
+    mockPackages = [pkg({ stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      json: async () => ({ code: 'UNSEALED_STOPS', message: 'Faltan 1 parada(s) por estibar.' }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+
+    await waitFor(() => expect(screen.getByText(/faltan 1 parada/i)).toBeInTheDocument());
+    expect(refreshRouteStatusMock).not.toHaveBeenCalled();
+  });
+
   it('prompts for a reason and sends it in the DELETE body', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
     mockRouteStatus = 'loading';
