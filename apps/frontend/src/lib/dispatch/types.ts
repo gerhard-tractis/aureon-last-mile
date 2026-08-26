@@ -102,7 +102,11 @@ export type ScanAction =
 
 export type ScanResult = {
   ok: true;
-  package: RoutePackage;
+  // spec-38/spec-70: the validator hasn't staged or written the DB yet, so it
+  // cannot honestly claim `stage` or `package_status` — the scan handler knows
+  // both only after it decides stage vs adopt and performs the write, and adds
+  // them itself. Omit rather than a fabricated placeholder value.
+  package: Omit<RoutePackage, 'stage' | 'package_status'>;
   action: ScanAction;
 } | {
   ok: false;

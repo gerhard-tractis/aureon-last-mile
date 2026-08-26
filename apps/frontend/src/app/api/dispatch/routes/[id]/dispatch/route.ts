@@ -65,13 +65,25 @@ export async function POST(
     const parsed = bodySchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ code: 'VALIDATION_ERROR' }, { status: 400 });
 
-    const { data: route } = await supabase
+    const { data: route, error: routeError } = await supabase
       .from('routes')
       .select('id, status, route_date')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
       .single();
+    // PGRST116 ("no row matched") is a genuine 404; anything else is a query
+    // that never ran, which the outer catch would otherwise misreport as a
+    // DispatchTrack failure — it hasn't been called yet. See
+    // scan-validator.ts's header for why silently treating a failed query as
+    // "not found" is the specific bug class this guards against.
+    if (routeError && routeError.code !== 'PGRST116') {
+      console.error('[dispatch/dispatch POST] route lookup failed', routeError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar la ruta' },
+        { status: 500 },
+      );
+    }
     if (!route) return NextResponse.json({ code: 'NOT_FOUND' }, { status: 404 });
     // spec-70 decision 2: a route may only reach DispatchTrack once its
     // manifest is sealed — every stop staged or adopted, none merely

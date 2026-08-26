@@ -17,16 +17,30 @@ import type { RouteStatus } from '@/lib/dispatch/types';
  * cannot act on is worse than none.
  *
  * States the seal may be reached from, and what each means:
+ *   draft    — a route this deploy finds sitting there. The old builder left
+ *              routes at `draft` through its whole scan flow, and phase 1's
+ *              backfill moved their dispatch rows straight to `staged`
+ *              without touching route status. Without this, every such route
+ *              is unsealable and undispatchable forever — refused here in the
+ *              same way `planned` is, walking the same three-step path.
  *   planned  — orders assigned, nothing staged. Always refuses (every stop is
  *              pending), except the empty-route case which gets its own code.
  *   loading  — the normal path.
  *   loaded   — already sealed. Idempotent success; the button is at a dock and
  *              gets double-tapped.
  */
-const SEALABLE_FROM: readonly string[] = ['planned', 'loading'];
+const SEALABLE_FROM: readonly string[] = ['draft', 'planned', 'loading'];
 
-/** planned -> loaded is not a legal edge; it goes through loading. */
+/** planned/draft -> loaded is not a legal edge; it goes through loading. */
 const SEAL_WALK: Record<string, readonly RouteStatus[]> = {
+  draft: ['planned', 'loading', 'loaded'],
+  // Unreachable insurance, not a real path: a `planned` route can only carry
+  // staged rows if the scan handler's stage RPC succeeded, and that RPC is
+  // what moves the route off `planned` in the first place — a throw on that
+  // RPC aborts the scan handler before any row is staged. Kept anyway so a
+  // route arriving here at `planned` (a hand-edited row, a future caller)
+  // still walks a real path instead of getting stuck one step short of
+  // `loaded`.
   planned: ['loading', 'loaded'],
   loading: ['loaded'],
 };
@@ -45,7 +59,7 @@ export async function POST(
 
     const { id: routeId } = await params;
 
-    const { data: route } = await supabase
+    const { data: route, error: routeError } = await supabase
       .from('routes')
       .select('id, status')
       .eq('id', routeId)
@@ -53,6 +67,18 @@ export async function POST(
       .is('deleted_at', null)
       .single();
 
+    // PGRST116 is "no row matched" — a genuine 404. Anything else is a query
+    // that failed to run at all, which is not the same fact and must not be
+    // reported as one; scan-validator.ts's header names exactly this
+    // confusion as what hid three broken queries behind "Código no
+    // encontrado" for months.
+    if (routeError && routeError.code !== 'PGRST116') {
+      console.error('[dispatch/seal POST] route lookup failed', routeError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar la ruta' },
+        { status: 500 },
+      );
+    }
     if (!route) return NextResponse.json({ code: 'NOT_FOUND' }, { status: 404 });
 
     if (route.status === 'loaded') {
@@ -71,12 +97,25 @@ export async function POST(
 
     // Counts come from the view, never from routes.planned_stops — that column
     // drifted by construction and is what made EMPTY_ROUTE unreliable.
-    const { data: counts } = await supabase
+    const { data: counts, error: countsError } = await supabase
       .from('route_stop_counts')
       .select('total_stops, pending_stops, staged_stops, adopted_stops')
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       .maybeSingle();
+
+    // A route with zero dispatches legitimately has no row in this view
+    // (it's a GROUP BY), so `counts === null` with no error is EMPTY_ROUTE —
+    // correct. But a query that errored is not "empty": swallowing it here
+    // used to report a 40-stop route as EMPTY_ROUTE, which is the same class
+    // of bug the route lookup above guards against.
+    if (countsError) {
+      console.error('[dispatch/seal POST] route_stop_counts query failed', countsError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar el estado de la ruta' },
+        { status: 500 },
+      );
+    }
 
     const total = counts?.total_stops ?? 0;
     const pendingCount = counts?.pending_stops ?? 0;

@@ -274,6 +274,32 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(res.status).toBe(409);
   });
 
+  /**
+   * A query that failed to run is not the same fact as "no such route", and
+   * the outer catch would otherwise report it as a DispatchTrack failure it
+   * never got the chance to attempt.
+   */
+  it('reports a failed route lookup as QUERY_FAILED, not 404 or DT_API_ERROR', async () => {
+    const routeChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: null,
+        error: { code: '08006', message: 'connection reset' },
+      }),
+    };
+    const primaryFromMock = vi.fn().mockReturnValueOnce(routeChain);
+    const client = buildSessionClient({ fromMock: primaryFromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
   it('returns 422 when the truck_identifier does not resolve to a fleet vehicle', async () => {
     const routeChain = {
       select: vi.fn().mockReturnThis(),

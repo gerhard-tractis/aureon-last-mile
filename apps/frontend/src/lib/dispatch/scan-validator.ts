@@ -189,20 +189,20 @@ export async function validateScan(
 
   // The DTO keeps DispatchTrack's contact_* naming; the orders table calls the
   // same three fields customer_name / delivery_address / customer_phone.
-  const pkg: RoutePackage = {
+  const pkg: Omit<RoutePackage, 'stage' | 'package_status'> = {
     dispatch_id: '',              // filled after insert
     order_id: found.order_id,
     order_number: order?.order_number ?? code,
     contact_name: order?.customer_name ?? null,
     contact_address: order?.delivery_address ?? null,
     contact_phone: order?.customer_phone ?? null,
-    package_status: 'en_carga',
-    // Placeholder — the scan handler (route.ts) overwrites this in its
-    // response once it knows whether `action` resolved to stage or adopt.
-    // Validation itself hasn't happened yet, so 'planned' is what's true here.
-    stage: 'planned',
   };
 
+  // `stage` and `package_status` are genuinely unknown here: the scan handler
+  // hasn't decided stage vs adopt or written the DB yet. A fabricated value on
+  // this DTO is the spec-38 type lie in miniature — the type now refuses to
+  // let one back in (ScanResult.package Omits both), and the handler adds the
+  // real values once it knows them.
   return { ok: true, package: pkg, action };
 }
 

@@ -99,3 +99,62 @@ describe('RouteBuilder — seal', () => {
     );
   });
 });
+
+/**
+ * spec-70 phase 3 review fix: the DELETE handler now requires `{ reason }`
+ * (400 without one), but this button sent no body at all, so every click
+ * 400'd and the trash icon silently did nothing — the one escape hatch the
+ * seal refusal points people at. Regression coverage: nothing exercised
+ * handleRemove at all before this.
+ */
+describe('RouteBuilder — remove from plan', () => {
+  it('prompts for a reason and sends it in the DELETE body', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      '/api/dispatch/routes/r1/packages/d1',
+      expect.objectContaining({
+        method: 'DELETE',
+        body: JSON.stringify({ reason: 'Cliente canceló' }),
+      }),
+    ));
+    expect(refetchMock).toHaveBeenCalled();
+  });
+
+  it('does nothing when the reason prompt is cancelled', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a refusal (e.g. FORBIDDEN or ROUTE_SEALED) instead of silently doing nothing', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        code: 'FORBIDDEN',
+        message: 'Solo un responsable puede quitar paradas de la planificación.',
+      }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Solo un responsable puede quitar paradas/)).toBeInTheDocument(),
+    );
+  });
+});

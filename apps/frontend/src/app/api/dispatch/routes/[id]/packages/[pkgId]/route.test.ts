@@ -34,28 +34,33 @@ function buildClient(opts: {
   role?: string;
   routeStatus?: string | null;
   dispatchFound?: boolean;
+  dispatchQueryError?: { code: string; message: string };
 } = {}) {
   // Not a default parameter: {role: undefined} must mean "no role in the
   // claims", not "fall back to ops_leader" — the exact case the missing-role
   // test needs to exercise.
   const role = 'role' in opts ? opts.role : 'ops_leader';
-  const { routeStatus = 'loading', dispatchFound = true } = opts;
+  const { routeStatus = 'loading', dispatchFound = true, dispatchQueryError } = opts;
 
   const dispatchChain = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
-    single: vi.fn().mockResolvedValue({
-      data: dispatchFound
-        ? {
-            id: 'd1',
-            order_id: 'o1',
-            route_id: 'r1',
-            routes: routeStatus ? { status: routeStatus } : null,
-          }
-        : null,
-      error: null,
-    }),
+    single: vi.fn().mockResolvedValue(
+      dispatchQueryError
+        ? { data: null, error: dispatchQueryError }
+        : {
+            data: dispatchFound
+              ? {
+                  id: 'd1',
+                  order_id: 'o1',
+                  route_id: 'r1',
+                  routes: routeStatus ? { status: routeStatus } : null,
+                }
+              : null,
+            error: null,
+          },
+    ),
   };
 
   const dispatchUpdateSpy = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnThis() });
@@ -185,6 +190,42 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
+  });
+
+  /**
+   * Fails closed: a route that cannot be resolved must refuse, not proceed.
+   * ownsTheOrder (scan-validator.ts) makes the same call in the same
+   * situation — two sibling guards with opposite defaults is how a bypass
+   * gets shipped.
+   */
+  it('refuses removal when the route cannot be resolved, rather than proceeding', async () => {
+    const { client } = buildClient({ routeStatus: null });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('ROUTE_SEALED');
+  });
+
+  /**
+   * A query that failed to run is not the same fact as "no such dispatch" —
+   * reporting it as 404 is exactly the confusion scan-validator.ts's header
+   * documents as having hidden three broken queries for months.
+   */
+  it('reports a failed dispatch lookup as QUERY_FAILED, not 404', async () => {
+    const { client } = buildClient({ dispatchQueryError: { code: '08006', message: 'connection reset' } });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
+  });
+
+  it('treats PGRST116 (no row matched) as a genuine 404, not QUERY_FAILED', async () => {
+    const { client } = buildClient({ dispatchQueryError: { code: 'PGRST116', message: 'no rows' } });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(404);
   });
 
   it('404s when the dispatch is not found', async () => {

@@ -62,21 +62,39 @@ export async function DELETE(
 
     const { pkgId: dispatchId } = await params;
 
-    const { data: dispatch } = await supabase
+    const { data: dispatch, error: dispatchError } = await supabase
       .from('dispatches')
       .select('id, order_id, route_id, routes(status)')
       .eq('id', dispatchId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
       .single();
+    // PGRST116 ("no row matched") is a genuine 404; anything else is a query
+    // that never ran, which must not be reported as "not found" — see
+    // scan-validator.ts's header for why that confusion is dangerous here.
+    if (dispatchError && dispatchError.code !== 'PGRST116') {
+      console.error('[dispatch/packages DELETE] dispatch lookup failed', dispatchError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar la parada' },
+        { status: 500 },
+      );
+    }
     if (!dispatch) return NextResponse.json({ code: 'NOT_FOUND' }, { status: 404 });
 
+    // Fail closed: ownsTheOrder (scan-validator.ts) makes the same call in
+    // the same situation for the opposite reason — a route that cannot be
+    // resolved is refused, not waved through. A `null` embed used to skip
+    // this guard entirely and let the removal proceed, which is the wrong
+    // default for a check that exists to stop a sealed manifest from quietly
+    // losing a stop.
     const route = (Array.isArray(dispatch.routes) ? dispatch.routes[0] : dispatch.routes) as RouteRow | null;
-    if (route && !(REMOVABLE_FROM as readonly string[]).includes(route.status)) {
+    if (!route || !(REMOVABLE_FROM as readonly string[]).includes(route.status)) {
       return NextResponse.json(
         {
           code: 'ROUTE_SEALED',
-          message: `El manifiesto ya está sellado (estado: ${route.status}); no se puede quitar una parada.`,
+          message: route
+            ? `El manifiesto ya está sellado (estado: ${route.status}); no se puede quitar una parada.`
+            : 'No se pudo verificar el estado de la ruta; no se puede quitar la parada.',
         },
         { status: 409 },
       );

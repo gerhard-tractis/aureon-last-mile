@@ -26,6 +26,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
   const [sealError, setSealError] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const { data: packages = [], refetch } = useRoutePackages(routeId, operatorId);
   const scanMutation = useScanPackage(routeId);
@@ -47,8 +48,25 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   };
 
   const handleRemove = async (dispatchId: string) => {
-    await fetch(`/api/dispatch/routes/${routeId}/packages/${dispatchId}`, { method: 'DELETE' });
-    await refetch();
+    setRemoveError(null);
+    // The handler requires a non-empty reason (400 without one) — this used
+    // to send no body at all, so every click 400'd silently and the trash
+    // icon looked like it worked while doing nothing. A route with an order
+    // that will never reach the dock then has no way to seal: the seal
+    // refusal names removal as the way out, and this is that way out.
+    const reason = window.prompt('Motivo para quitar esta parada de la planificación:');
+    if (!reason || !reason.trim()) return;
+    const res = await fetch(`/api/dispatch/routes/${routeId}/packages/${dispatchId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    if (res.ok) {
+      await refetch();
+    } else {
+      const json = await res.json().catch(() => ({}));
+      setRemoveError(json.message ?? 'No se pudo quitar la parada');
+    }
   };
 
   const handleClose = async () => {
@@ -141,6 +159,12 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         {sealError && (
           <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
             ⚠ {sealError}
+          </div>
+        )}
+
+        {removeError && (
+          <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
+            ⚠ {removeError}
           </div>
         )}
 

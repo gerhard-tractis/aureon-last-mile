@@ -30,6 +30,7 @@ function buildClient(
   routeStatus: string | null,
   counts: Counts | null = { total_stops: 3, pending_stops: 0, staged_stops: 3, adopted_stops: 0 },
   pending: { order_id: string; orders: { order_number: string } }[] = [],
+  opts: { routeError?: { code: string; message: string }; countsError?: { code: string; message: string } } = {},
 ) {
   const ops: Op[] = [];
   mockFrom.mockImplementation((table: string) => {
@@ -42,13 +43,18 @@ function buildClient(
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn(self);
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
-    chain.maybeSingle = chain.single = vi.fn(() =>
-      Promise.resolve(
-        table === 'routes'
-          ? { data: routeStatus ? { id: 'route-1', status: routeStatus } : null, error: null }
-          : { data: counts, error: null },
-      ),
-    );
+    chain.maybeSingle = chain.single = vi.fn(() => {
+      if (table === 'routes') {
+        return Promise.resolve(
+          opts.routeError
+            ? { data: null, error: opts.routeError }
+            : { data: routeStatus ? { id: 'route-1', status: routeStatus } : null, error: null },
+        );
+      }
+      return Promise.resolve(
+        opts.countsError ? { data: null, error: opts.countsError } : { data: counts, error: null },
+      );
+    });
     chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
       Promise.resolve(
         table === 'dispatches' ? { data: pending, error: null } : { data: null, error: null },
@@ -152,5 +158,47 @@ describe('POST /seal — a plan is a commitment', () => {
     mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
     const res = await POST(req(), { params });
     expect(res.status).toBe(401);
+  });
+
+  /**
+   * Review fix: the old builder left routes at `draft` through its whole scan
+   * flow, and phase 1's backfill moved their dispatch rows straight to
+   * `staged` without touching route status. Without `draft` in SEALABLE_FROM
+   * every such route is unsealable and undispatchable forever from the
+   * moment this deploys.
+   */
+  it('seals a legacy draft route', async () => {
+    buildClient('draft', { total_stops: 2, pending_stops: 0, staged_stops: 2, adopted_stops: 0 });
+
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({
+      p_to_status: 'loaded',
+    }));
+  });
+
+  /**
+   * A query that failed to run is not the same fact as "no such route" or
+   * "no stops" — scan-validator.ts's header names exactly this confusion as
+   * what hid three broken queries behind "Código no encontrado" for months.
+   */
+  it('reports a failed route lookup as QUERY_FAILED, not 404', async () => {
+    buildClient('loading', undefined, undefined, { routeError: { code: '08006', message: 'connection reset' } });
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(500);
+    expect((await res.json()).code).toBe('QUERY_FAILED');
+  });
+
+  it('treats PGRST116 (no row matched) as a genuine 404, not QUERY_FAILED', async () => {
+    buildClient('loading', undefined, undefined, { routeError: { code: 'PGRST116', message: 'no rows' } });
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(404);
+  });
+
+  it('reports a failed route_stop_counts lookup as QUERY_FAILED, not EMPTY_ROUTE', async () => {
+    buildClient('loading', undefined, undefined, { countsError: { code: '08006', message: 'connection reset' } });
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(500);
+    expect((await res.json()).code).toBe('QUERY_FAILED');
   });
 });
