@@ -6,7 +6,7 @@
 > / `useQuickSortFlow`, the scan-then-scan loop this repoints), [spec-40](spec-40-dock-zone-barcode-labels.md)
 > (dock-zone barcode label layout — `backlog`, not yet built; only its pattern is reused here)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-25_
 
@@ -19,7 +19,8 @@ an order is sorted onto an andén (a comuna-based sortation geography) and nothi
 represents *where on the dock a specific truck's load sits*. The driver has to walk the andenes
 looking for his packages, because "his truck" is not a place.
 
-This spec introduces `load_positions` — one physical spot per route, fed from many andenes — and a
+This spec introduces `load_positions` — physical dock spots, long-lived and fewer than the routes
+dispatched in a day, reused across waves and fed from many andenes (Decision 4) — and a
 **staging pass**: at the wave cutoff, the system tells operators which packages must move from
 their andén into their route's position, and records that move with one scan per package.
 
@@ -116,12 +117,23 @@ is stated explicitly in Decision 1 so the second step is a config change, not a 
    than the routes dispatched in a day: a position is a dock location, and it gets reused across
    waves. So `load_positions` rows are **long-lived** (one per physical spot, soft-deletable like
    every other table in this schema) and a route's occupancy of one is a separate, time-bounded fact
-   — `routes.load_position_id`, nullable, set when a position is assigned to a route and cleared
-   when it is released back to the pool after dispatch. Modelling occupancy as a column on `routes`
-   rather than a join table is deliberate: a route occupies at most one position at a time (a route
-   is one truck's load), so the relationship is many-routes-to-one-position over time, not
-   many-to-many at any instant — a plain FK captures that without inventing a bridge table nothing
-   else needs.
+   — `routes.load_position_id`, nullable, set when a position is assigned to a route. Modelling
+   occupancy as a column on `routes` rather than a join table is deliberate: a route occupies at most
+   one position at a time (a route is one truck's load), so the relationship is many-routes-to-one-
+   position over time, not many-to-many at any instant — a plain FK captures that without inventing a
+   bridge table nothing else needs.
+
+   **Shipped release semantics (corrects an earlier draft of this passage):** release does **not**
+   clear `load_position_id`. The phase 1 migration
+   (`20260827000001_spec71_load_positions.sql:105-111`) stamps `load_position_released_at = now()`
+   and `load_position_released_by = <user>` and leaves `load_position_id` set, so the row still
+   records which position was released; `routes_load_position_released_requires_id_chk` rejects any
+   attempt to clear `load_position_id` while `load_position_released_at` is set. **Occupied** means
+   `load_position_id IS NOT NULL AND load_position_released_at IS NULL AND deleted_at IS NULL` — the
+   predicate the partial unique index `unique_route_per_active_load_position` and the CHECK
+   constraints below actually enforce. Reassigning a released route to a new (or the same) position
+   requires resetting `load_position_released_at` back to `NULL`; see Decision 8 and the phase 2
+   bullet under Implementation phases for the residual work this creates.
 
 5. **Staging writes `dispatches.stage = 'staged'`. No parallel status.** spec-70 already gives every
    dispatch a plan/load axis; this spec's staging scan is the physical-confirmation event that axis
@@ -133,22 +145,93 @@ is stated explicitly in Decision 1 so the second step is a config change, not a 
    "Overloading `status` with local lifecycle would put two writers with two vocabularies on one
    column, which is how we got here").
 
+6. **Positions are open floor in front of the andenes, not truck bays.** New operational fact from
+   the client: this tenant has **no truck bays**. Andenes (`dock_zones`) are zones against the
+   wall, and a load position is an area of open floor in front of them, where a route's load is
+   consolidated before loading — not a bay a truck backs into. This corrects the "Muelle 4" example
+   used for `label` in the Data model section below, which read as a bay; it is better read as a
+   named floor spot, e.g. "Zona frente a Andén 4."
+
+7. **Positions are offset from the andenes they serve — this is an exclusion rule, not a proximity
+   rule.** The client is explicit: a route's position must **not** front an andén that route is
+   still drawing packages from, because the pile sitting in that position would block the andén's
+   face while sorting into it is still running. `load_positions.fronts_dock_zone_id` (new nullable
+   FK to `dock_zones`, added in the follow-on migration `20260827000002`) records which andén, if
+   any, a position physically stands in front of — so assignment (phase 2) can check "does this
+   route source from the andén this candidate position fronts?" and exclude it if so, and so the
+   phase-5 move-task list can order work by short andén→position hops. It is deliberately not used
+   to pick "the nearest position to this route's andenes" — that would be the opposite of the rule.
+   The alternative considered — stage a route only after every andén it draws from has closed its
+   wave — was rejected: it hard-couples the staging cutoff to the sort schedule and makes a package
+   that arrives late to one andén hold up staging for every other andén the route already finished
+   with, which is exactly the kind of awkward late-arrival handling Decision 1's phased cutover was
+   designed to avoid. Enforcement of the offset rule is deliberately **not** a database constraint —
+   whether a candidate position conflicts with a route depends on that route's package composition
+   (which andenes its `dispatches` rows actually source from), which is dynamic, only known through
+   joins across `dispatches`/`packages`, and not derivable from `load_positions` alone. It is a
+   phase 2 (assignment-time) application concern.
+
+   **The offset rule can be evaluated at `planned`.** A Pre-ruta-created route's source andenes are
+   already known at that point: `get_pre_route_snapshot`'s cohort requires `p.dock_zone_id IS NOT
+   NULL` (`20260817000003_fix_pre_route_sectorizado_cohort.sql:57`), so `packages.dock_zone_id` is
+   populated for the packages a Pre-ruta-planned route draws from before assignment happens. This
+   does not change the assignment timing decided above.
+
+   **Residual risk: the dispatch set can change after assignment.** Packages added to a route after
+   its position was assigned can introduce a new source andén that was not part of the offset check
+   at assignment time, silently invalidating a check that passed. This is a stated requirement, not
+   designed here: **the offset check must be re-evaluated whenever a route's dispatch set changes**,
+   and a route whose position becomes conflicting as a result must be surfaced for reassignment, not
+   silently left wrong. See the phase 2 bullet under Implementation phases.
+
+   **Soft-deleted andenes leave a dangling `fronts_dock_zone_id`.** `dock_zones` is soft-deleted and
+   hard deletes never happen in production, so `fronts_dock_zone_id`'s `ON DELETE SET NULL` is
+   effectively dead there: a retired andén leaves `fronts_dock_zone_id` pointing at a `dock_zones`
+   row that every RLS-scoped read filters out via `deleted_at IS NULL`. Consumers joining through
+   this column MUST filter `dock_zones.deleted_at IS NULL`, and must treat a non-NULL
+   `fronts_dock_zone_id` whose join comes back empty as "fronts a retired andén," not as "fronts
+   nothing." The FK action is kept as `ON DELETE SET NULL` regardless (see the column comment in
+   `20260827000002_spec71_position_adjacency.sql`); this is a consumer-side contract, not a schema
+   change.
+
+8. **Position assignment happens at route creation (`planned`); release happens at `dispatched`.**
+   Settling the timing question phase 2 left open (see the former Open Question below): a route is
+   assigned a `load_positions` row as soon as it is created and reaches spec-70's `planned` state,
+   not deferred to `loaded` or the seal. It is released back to the pool when the route reaches
+   `dispatched`. This gives operators a position to stage into from the moment a route exists,
+   which matches how staging actually starts well before a route is sealed.
+
+   **Assignment is best-effort — no position available is not an error.** If no `load_positions` row
+   is free when a route reaches `planned`, the route is created and planned normally with
+   `load_position_id` left `NULL`; it is assigned a position later, whenever one is released. There
+   is **no queue**, route planning is **never blocked**, and no error is raised for this case.
+   Staging cannot start for that route until it has a position, but that is a downstream consequence,
+   not a gate on planning. The schema already permits this: `load_position_id` is nullable and
+   `routes_load_position_assigned_at_requires_id_chk` allows both NULL together (no position, no
+   assigned-at) and both set (a position, with its assigned-at) — it does not require a position to
+   exist. See the phase 2 bullet under Implementation phases.
+
 ---
 
 ## Data model
 
+Shipped across two migrations: the table and the `routes` occupancy columns in
+`20260827000001_spec71_load_positions.sql` (phase 1); `fronts_dock_zone_id` added by `ALTER TABLE`
+in the follow-on `20260827000002_spec71_position_adjacency.sql` (Decision 7). What follows is the
+resulting shape, not a single migration's contents.
+
 ```sql
--- packages/database/supabase/migrations/<timestamp>_spec71_load_positions.sql
+-- packages/database/supabase/migrations/20260827000001_spec71_load_positions.sql
 
 CREATE TABLE public.load_positions (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  operator_id  UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
-  code         TEXT NOT NULL,           -- scanned/printed identifier, e.g. "POS-04"
-  label        TEXT,                    -- human-readable name/location, e.g. "Muelle 4"
-  is_active    BOOLEAN NOT NULL DEFAULT true,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  deleted_at   TIMESTAMPTZ
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  operator_id          UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
+  code                 TEXT NOT NULL,           -- scanned/printed identifier, e.g. "POS-04"
+  label                TEXT,                    -- human-readable name/location, e.g. "Zona frente a Andén 4"
+  is_active            BOOLEAN NOT NULL DEFAULT true,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at           TIMESTAMPTZ
 );
 
 -- Partial unique index, not a table-level UNIQUE constraint — the repo
@@ -158,18 +241,61 @@ CREATE TABLE public.load_positions (
 CREATE UNIQUE INDEX unique_load_position_code_per_operator
   ON public.load_positions (operator_id, code) WHERE deleted_at IS NULL;
 
--- routes: which position (if any) this route's load currently occupies
+-- routes: which position (if any) this route's load currently occupies, and
+-- the assign/release audit facts (actor columns follow dispatches.staged_by's
+-- precedent for a physical-confirmation event — see the note below).
 ALTER TABLE public.routes
-  ADD COLUMN IF NOT EXISTS load_position_id UUID REFERENCES public.load_positions(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS load_position_assigned_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS load_position_id          UUID REFERENCES public.load_positions(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS load_position_assigned_at  TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS load_position_assigned_by  UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS load_position_released_at  TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS load_position_released_by  UUID REFERENCES public.users(id) ON DELETE SET NULL;
+
+-- At most one un-released route per position at a time (Decision 4's
+-- "occupied" predicate: load_position_id IS NOT NULL AND
+-- load_position_released_at IS NULL AND deleted_at IS NULL).
+CREATE UNIQUE INDEX unique_route_per_active_load_position
+  ON public.routes (load_position_id)
+  WHERE load_position_id IS NOT NULL
+    AND load_position_released_at IS NULL
+    AND deleted_at IS NULL;
+
+ALTER TABLE public.routes
+  ADD CONSTRAINT routes_load_position_released_requires_id_chk
+    CHECK (load_position_released_at IS NULL OR load_position_id IS NOT NULL),
+  ADD CONSTRAINT routes_load_position_assigned_at_requires_id_chk
+    CHECK (load_position_assigned_at IS NOT NULL OR load_position_id IS NULL);
 ```
 
-**Note on the second `routes` column above:** the exact column set (assigned_at, assigned_by,
-released_at) needs to be settled against spec-70 phase 3's audit pattern (`removal_reason` +
-`audit_logs`) during implementation, not guessed here. The implementing PR picks the final shape and
-writes it into the migration; this spec fixes the *decision* (assignment/release are tracked facts,
-not derived) and leaves the column list to be finalized alongside spec-70 phase 3, which lands the
-audit-log convention this should match.
+```sql
+-- packages/database/supabase/migrations/20260827000002_spec71_position_adjacency.sql
+
+ALTER TABLE public.load_positions
+  ADD COLUMN IF NOT EXISTS fronts_dock_zone_id UUID
+    REFERENCES public.dock_zones(id) ON DELETE SET NULL;
+                                                 -- andén this position stands in front of, if any
+                                                 -- (Decision 7) — exclusion input for phase 2, not
+                                                 -- a proximity/nearest-position input
+
+CREATE INDEX idx_load_positions_fronts_dock_zone_id
+  ON public.load_positions (fronts_dock_zone_id)
+  WHERE fronts_dock_zone_id IS NOT NULL;
+```
+
+**On the `routes` actor columns (settled, not guessed):** the Data-model note in an earlier draft of
+this spec left the column set (assigned_at/assigned_by/released_at/released_by) to be settled
+against spec-70 phase 3's audit convention during implementation. It has since been settled and
+shipped. Spec-70 phase 3 (`20260825000004`, "seal, dispatch, delete, manager-only removal") landed
+an app-layer `audit_logs` insert for the actor plus a domain column on the row
+(`dispatches.removal_reason`) with no dedicated `removed_by` column — that convention pulls toward
+no dedicated actor columns here. But spec-70 phase 1's `dispatches.staged_by` is the precedent that
+cuts the other way: a dedicated actor column for a *physical-confirmation event*, even though every
+table in this schema also carries the generic `audit_trigger_func → audit_logs` trail. Assignment
+and release of a load position were judged physical-confirmation events like staging, not removal
+events, so they follow `staged_by` and get their own actor columns
+(`load_position_assigned_by`/`load_position_released_by`) here. **Both conventions apply, not
+either:** phase 2 (the application code that writes these columns) must additionally write
+`audit_logs` rows for assign/release, matching phase 3's convention for those events too.
 
 RLS: `operator_id = public.get_operator_id()`, matching every other table in this schema (e.g.
 `dock_zones`, `vehicles` in `20260812000001_spec52_vehicles_table.sql`). Soft delete via
@@ -178,10 +304,11 @@ RLS: `operator_id = public.get_operator_id()`, matching every other table in thi
 physical dock).
 
 **No change to `dispatches`.** Staging a package still writes `dispatches.stage`; which destination
-it was staged against — andén or position — is derivable from the scan event, not a new column. If
-a scan-event audit trail is needed for "which position did this package land in," it belongs in
-`dock_scans` (the existing scan-event table `trg_dock_scan_advance_package_status` reads), extended
-with a nullable `load_position_id` alongside its existing `dock_zone_id`, not in `dispatches`.
+it was staged against — andén or position — is derivable from the scan event, not a new column. The
+scan-event audit trail for "which position did this package land in" was decided **yes** and has
+shipped: `dock_scans` (the existing scan-event table `trg_dock_scan_advance_package_status` reads)
+carries a nullable `load_position_id` column alongside its existing `dock_zone_id`, added in
+`20260827000001_spec71_load_positions.sql`. Not in `dispatches`.
 
 ---
 
@@ -198,11 +325,18 @@ not confirm the DB job ran.
   behaviour, and that a position can be reassigned to a new route only after being released from its
   previous one.
 - **Phase 2 — Assignment and release.** The operations to attach a `load_positions` row to a route
-  (at or after the route reaches `loaded` — spec-70's state — or earlier if operations wants to
-  reserve a position ahead of the seal; this ordering choice is deferred to implementation and
-  should be validated with the client, not assumed here) and to release it back to the pool once the
-  route is `dispatched`. A route cannot be assigned a position that is already occupied by another
-  non-released route of the same operator.
+  at route creation / `planned` (Decision 8) and to release it back to the pool once the route is
+  `dispatched`. A route cannot be assigned a position that is already occupied by another
+  non-released route of the same operator, and — per Decision 7 — assignment must honour the offset
+  rule: a candidate position whose `fronts_dock_zone_id` names an andén the route is still sourcing
+  packages from (via its `dispatches`/`packages`) must be excluded from assignment for that route.
+  **Best-effort assignment (Decision 8):** if no position is free at `planned`, the route is created
+  with `load_position_id` left `NULL` — no queue, no blocking of route planning, no error — and is
+  assigned a position later, whenever one is released. **Offset re-check (Decision 7):** the offset
+  check must be re-evaluated whenever a route's dispatch set changes after assignment, and a route
+  whose position becomes conflicting as a result must be surfaced for reassignment, not silently
+  left wrong; the mechanism for this is not designed here. Reassigning a released route must reset
+  `load_position_released_at` to `NULL` (Decision 4) or it stays invisible to the occupancy index.
 - **Phase 3 — Staging scan.** Extend `useQuickSortFlow` with a second destination kind
   (`load_positions`, matched by `code`) alongside the existing `dock_zones` kind; wire the reject
   state for a mismatched position exactly as it already exists for a mismatched andén. The scan
@@ -220,7 +354,6 @@ not confirm the DB job ran.
 
 ## Open questions for implementation
 
-- Exact timing of position assignment relative to spec-70's `loaded`/`dispatched` states (see phase
-  2) — needs a client conversation, not an assumption in this doc.
-- Whether `dock_scans` gets the `load_position_id` column mentioned in the Data model section, or
-  whether a lighter-weight event log is preferred — decide when phase 3 is scoped in detail.
+Both prior open questions here are answered: position assignment timing is Decision 8
+(route creation / `planned`, released on `dispatched`), and `dock_scans.load_position_id` was
+decided YES and shipped in the phase 1 migration (`20260827000001_spec71_load_positions.sql`).
