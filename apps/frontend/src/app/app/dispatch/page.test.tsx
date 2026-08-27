@@ -66,13 +66,32 @@ describe('DispatchPage — SIN RUTEAR follows the selected date', () => {
     const { default: DispatchPage } = await import('./page');
     renderWithClient(<DispatchPage />);
     const today = new Date().toISOString().slice(0, 10);
-    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', today);
+    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', today, null, null);
   });
 
   it('queries the pre-route snapshot for the ?date= param, not today — the same date PreRouteBoard reads', async () => {
     mockSearchParams = new URLSearchParams('date=2026-09-15');
     const { default: DispatchPage } = await import('./page');
     renderWithClient(<DispatchPage />);
-    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15');
+    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', null, null);
+  });
+
+  // Code review on #556: the date fix alone still let the header disagree
+  // with the board on the *window* axis — picking "Mañana" narrowed the
+  // board's totals line while the header went on counting the whole day.
+  // Both callers now resolve `?window=` through the same
+  // resolvePreRouteWindow PreRouteBoard uses.
+  it("queries the pre-route snapshot for the ?window= param's bounds, matching what PreRouteBoard passes", async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15&window=manana');
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', '00:00', '12:00');
+  });
+
+  it('passes null window bounds for the "todas" default, same as no ?window= at all', async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15&window=todas');
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', null, null);
   });
 });

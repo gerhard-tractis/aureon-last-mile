@@ -15,6 +15,7 @@ import { RoutePlanCanvas } from './RoutePlanCanvas';
 import { RouteDraftPanel } from './RouteDraftPanel';
 import { UnmappedComunasNotice } from './UnmappedComunasNotice';
 import { PreRouteFilters } from './PreRouteFilters';
+import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
 /**
  * spec-54 phase 4.2 — the Pre-ruta board (mock 1c).
@@ -24,13 +25,6 @@ import { PreRouteFilters } from './PreRouteFilters';
  * all visible while you decide. Below 1024px the columns stack, per the
  * handoff's responsive rule.
  */
-
-const WINDOW_TIME_MAP: Record<string, { start: string; end: string } | null> = {
-  todas: null,
-  manana: { start: '00:00', end: '12:00' },
-  tarde: { start: '12:00', end: '17:00' },
-  noche: { start: '17:00', end: '24:00' },
-};
 
 interface PreRouteBoardProps {
   onCreateRoute: (orderIds: string[], routeDate: string) => void;
@@ -44,7 +38,7 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   const today = new Date().toISOString().slice(0, 10);
   const date = params.get('date') ?? today;
   const windowKey = params.get('window') ?? 'todas';
-  const times = WINDOW_TIME_MAP[windowKey] ?? null;
+  const times = resolvePreRouteWindow(windowKey);
 
   const { snapshot, isLoading } = usePreRouteSnapshot(
     operatorId,

@@ -17,6 +17,7 @@ import { OPEN_ROUTE_STATUSES, FINISHED_ROUTE_STATUSES } from '@/lib/dispatch/typ
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
+import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
 const sevenDaysAgo = new Date();
 sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -109,15 +110,23 @@ function DispatchPageContent() {
   const { operatorId } = useOperatorId();
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
 
-  // QA finding #2: this used to hardcode `today`, while PreRouteBoard reads
-  // its date from the `?date=` param — so the "SIN RUTEAR" figure in the
-  // header answered for today even when the board itself (via the date
-  // picker inside PreRouteFilters) was showing tomorrow's wave. Reading the
-  // same param here is what makes the badge and the board unable to
-  // disagree, rather than merely making them agree by coincidence today.
+  // QA finding #2: this used to hardcode `today` and pass no window bounds,
+  // while PreRouteBoard reads both `?date=` and `?window=` — so the "SIN
+  // RUTEAR" figure in the header answered for today's whole day even when
+  // the board itself (via PreRouteFilters) was showing tomorrow's "Mañana"
+  // slice. Reading both params here, through the same resolvePreRouteWindow
+  // the board uses, is what makes the badge and the board unable to
+  // disagree on either axis — and it makes this call share the board's
+  // react-query cache key instead of firing a second RPC for the same data.
   const today = new Date().toISOString().slice(0, 10);
   const selectedDate = params.get('date') ?? today;
-  const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(operatorId ?? null, selectedDate);
+  const selectedWindow = resolvePreRouteWindow(params.get('window') ?? 'todas');
+  const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(
+    operatorId ?? null,
+    selectedDate,
+    selectedWindow?.start ?? null,
+    selectedWindow?.end ?? null,
+  );
 
   const createRouteMutation = useCreateRouteFromSelection();
 

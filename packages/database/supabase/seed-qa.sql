@@ -741,8 +741,12 @@ ON CONFLICT (id) DO NOTHING;
 -- fleet_vehicles — the QA test operator's own trucks
 -- =============================================================================
 -- QA finding #4: every one of the 27 fleet_vehicles rows on QA belongs to
--- Musan (cfea91ec-5e48-43f7-b756-45759715df10, the row above); the QA test
--- operator 00000000-0000-4000-8000-000000000001 had zero. The route
+-- Musan — cfea91ec-5e48-43f7-b756-45759715df10 as read directly off the live
+-- QA database at the time this was written, NOT a value to hardcode or trust
+-- going forward: per the warning two sections up, Musan's id is
+-- gen_random_uuid() and differs per environment, which is exactly why the
+-- row above resolves it by slug instead. The QA test operator
+-- 00000000-0000-4000-8000-000000000001 had zero. The route
 -- builder's truck <select> reads fleet_vehicles scoped to the session's own
 -- operator_id (see apps/frontend/src/app/app/dispatch/[routeId]/page.tsx),
 -- so it was always empty for QA and "Despachar a DispatchTrack" could never
