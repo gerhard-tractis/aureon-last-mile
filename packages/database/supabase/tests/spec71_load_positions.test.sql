@@ -75,8 +75,15 @@ ON CONFLICT (id) DO UPDATE
 SELECT set_config('request.jwt.claims', '{}', true);
 INSERT INTO public.load_positions (id, operator_id, code, label)
 VALUES
-  ('11110001-0000-0000-0000-000000000071', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'POS-A1', 'Muelle A1'),
-  ('11110002-0000-0000-0000-000000000071', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000071', 'POS-B1', 'Muelle B1')
+  ('11110001-0000-0000-0000-000000000071', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'POS-A1', 'Zona frente a Andén 1'),
+  ('11110002-0000-0000-0000-000000000071', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000071', 'POS-B1', 'Zona frente a Andén B1')
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed one andén (dock_zones) per operator, for the fronts_dock_zone_id tests below.
+INSERT INTO public.dock_zones (id, operator_id, name, code, is_active)
+VALUES
+  ('44440011-0000-0000-0000-000000000071', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'Andén A1', 'AN-A1', true),
+  ('44440012-0000-0000-0000-000000000071', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000071', 'Andén B1', 'AN-B1', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
@@ -404,7 +411,7 @@ BEGIN
   PERFORM set_config('request.jwt.claims', '{}', true);
 
   INSERT INTO public.load_positions (id, operator_id, code, label)
-  VALUES (v_pos_a2, 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'POS-A2', 'Muelle A2')
+  VALUES (v_pos_a2, 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'POS-A2', 'Zona frente a Andén 2')
   ON CONFLICT (id) DO NOTHING;
 
   INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, status)
@@ -581,6 +588,163 @@ DO $$ BEGIN
 END $$;
 
 ROLLBACK TO test_14;
+
+-- =============================================================================
+-- TEST 15: load_positions.fronts_dock_zone_id accepts NULL (default) and
+-- accepts a valid dock_zones id.
+-- =============================================================================
+SAVEPOINT test_15;
+
+DO $$
+DECLARE
+  v_pos  UUID := '11110001-0000-0000-0000-000000000071';
+  v_zone UUID := '44440011-0000-0000-0000-000000000071';
+  v_read UUID;
+BEGIN
+  PERFORM set_config('request.jwt.claims', '{}', true);
+
+  -- Default / explicit NULL.
+  SELECT fronts_dock_zone_id INTO v_read FROM public.load_positions WHERE id = v_pos;
+  IF v_read IS NOT NULL THEN
+    RAISE EXCEPTION 'fronts_dock_zone_id should default to NULL, got %', v_read;
+  END IF;
+
+  -- Accepts a valid dock_zones id.
+  UPDATE public.load_positions SET fronts_dock_zone_id = v_zone WHERE id = v_pos;
+
+  SELECT fronts_dock_zone_id INTO v_read FROM public.load_positions WHERE id = v_pos;
+  IF v_read IS DISTINCT FROM v_zone THEN
+    RAISE EXCEPTION 'fronts_dock_zone_id did not persist a valid dock_zones id, got %', v_read;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 15 PASSED: fronts_dock_zone_id accepts NULL and a valid dock_zones id';
+END $$;
+
+ROLLBACK TO test_15;
+
+-- =============================================================================
+-- TEST 16: fronts_dock_zone_id rejects a dock_zone id that does not exist
+-- (FK violation).
+-- =============================================================================
+SAVEPOINT test_16;
+
+DO $$
+DECLARE
+  v_pos     UUID := '11110001-0000-0000-0000-000000000071';
+  v_missing UUID := '99999999-9999-9999-9999-999999999999';
+  blocked   BOOLEAN := false;
+BEGIN
+  PERFORM set_config('request.jwt.claims', '{}', true);
+
+  BEGIN
+    UPDATE public.load_positions SET fronts_dock_zone_id = v_missing WHERE id = v_pos;
+  EXCEPTION WHEN foreign_key_violation THEN
+    blocked := true;
+  END;
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'fronts_dock_zone_id accepted a dock_zones id that does not exist';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 16 PASSED: fronts_dock_zone_id rejects a nonexistent dock_zones id';
+END $$;
+
+ROLLBACK TO test_16;
+
+-- =============================================================================
+-- TEST 17: ON DELETE SET NULL — hard-deleting the referenced dock_zones row
+-- nulls load_positions.fronts_dock_zone_id rather than deleting the
+-- position. Uses a dedicated dock_zones row (inserted and deleted inside
+-- this savepoint) so it cannot be blocked by any other fixture referencing
+-- it, e.g. dock_batches.dock_zone_id (NOT NULL, no ON DELETE action).
+-- =============================================================================
+SAVEPOINT test_17;
+
+DO $$
+DECLARE
+  v_pos      UUID := '11110001-0000-0000-0000-000000000071';
+  v_zone     UUID := '44440099-0000-0000-0000-000000000071';
+  v_read     UUID;
+  c_position INT;
+BEGIN
+  PERFORM set_config('request.jwt.claims', '{}', true);
+
+  INSERT INTO public.dock_zones (id, operator_id, name, code, is_active)
+  VALUES (v_zone, 'aaaaaaaa-aaaa-aaaa-aaaa-000000000071', 'Andén Temp', 'AN-TEMP', true);
+
+  UPDATE public.load_positions SET fronts_dock_zone_id = v_zone WHERE id = v_pos;
+
+  DELETE FROM public.dock_zones WHERE id = v_zone;
+
+  SELECT COUNT(*) INTO c_position FROM public.load_positions WHERE id = v_pos;
+  IF c_position <> 1 THEN
+    RAISE EXCEPTION 'load_positions row was removed by ON DELETE SET NULL on fronts_dock_zone_id, expected it to survive';
+  END IF;
+
+  SELECT fronts_dock_zone_id INTO v_read FROM public.load_positions WHERE id = v_pos;
+  IF v_read IS NOT NULL THEN
+    RAISE EXCEPTION 'fronts_dock_zone_id was not nulled after its dock_zones row was deleted, got %', v_read;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 17 PASSED: deleting the referenced dock_zone nulls fronts_dock_zone_id (ON DELETE SET NULL), position survives';
+END $$;
+
+ROLLBACK TO test_17;
+
+-- =============================================================================
+-- TEST 18: cross-tenant fronts_dock_zone_id — pinning current behaviour, not
+-- a spec-71 decision. FK checks bypass RLS, so operator A CAN set
+-- fronts_dock_zone_id to operator B's andén; there is no composite FK,
+-- trigger, or CHECK anywhere in this repo that guards a cross-table FK
+-- against pointing at another tenant's row (every sibling FK — e.g.
+-- dock_zones_id on dock_batches/dock_scans/packages — has this identical
+-- exposure), so spec-71 does not invent a one-off guard for this column
+-- either. What IS guaranteed is that reading the andén back under RLS, from
+-- a different operator's session, returns no row — RLS still protects reads
+-- of dock_zones itself even though the FK let the pointer be set. A future
+-- change to this characteristic (e.g. a repo-wide tenancy guard) should be
+-- a deliberate decision made with full knowledge of this test, not an
+-- accidental side effect.
+-- =============================================================================
+SAVEPOINT test_18;
+
+DO $$
+DECLARE
+  v_pos_a     UUID := '11110001-0000-0000-0000-000000000071';
+  v_zone_b    UUID := '44440012-0000-0000-0000-000000000071'; -- operator B's andén
+  v_read      UUID;
+  c_joined    INT;
+BEGIN
+  PERFORM set_config('request.jwt.claims', '{}', true);
+
+  -- Operator A's session sets its own position to front operator B's andén.
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-000000000171","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000071","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+
+  UPDATE public.load_positions SET fronts_dock_zone_id = v_zone_b WHERE id = v_pos_a;
+
+  SELECT fronts_dock_zone_id INTO v_read FROM public.load_positions WHERE id = v_pos_a;
+  IF v_read IS DISTINCT FROM v_zone_b THEN
+    RAISE EXCEPTION 'operator A should be able to set fronts_dock_zone_id to another operator''s dock_zones row (FK checks bypass RLS), got %', v_read;
+  END IF;
+
+  -- A join back to dock_zones, still under operator A's RLS session, sees
+  -- no andén row — RLS filters out operator B's zone even though the FK
+  -- pointer is live.
+  SELECT COUNT(*) INTO c_joined
+    FROM public.load_positions lp
+    JOIN public.dock_zones dz ON dz.id = lp.fronts_dock_zone_id
+   WHERE lp.id = v_pos_a;
+  IF c_joined <> 0 THEN
+    RAISE EXCEPTION 'joining fronts_dock_zone_id to dock_zones under RLS unexpectedly returned a row for another operator''s andén, got %', c_joined;
+  END IF;
+
+  RESET role;
+  RAISE NOTICE '✓ TEST 18 PASSED: cross-tenant fronts_dock_zone_id can be set (no repo-wide guard exists for this), and a join back under RLS returns no andén row';
+END $$;
+
+ROLLBACK TO test_18;
 
 DO $$ BEGIN
   RAISE NOTICE '========================================';
