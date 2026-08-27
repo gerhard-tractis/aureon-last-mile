@@ -64,3 +64,27 @@ export function todayISOInTimezone(now: Date = new Date()): string {
     day: '2-digit',
   }).format(now);
 }
+
+/**
+ * Weekday + day + month for a pure `YYYY-MM-DD` civil date (e.g.
+ * `routes.route_date`) — "jue, 27 ago".
+ *
+ * spec-70 QA finding: RouteBuilder's header used `new Date()` (today) instead
+ * of the route's own date. The naive fix, `new Date(routeDateISO)`, is *also*
+ * wrong here: that string has no time component so JS parses it as UTC
+ * midnight, and formatting a UTC instant with the viewer's *local* zone (what
+ * `toLocaleDateString` does without an explicit `timeZone`) can roll the
+ * calendar date back a day in Chile (UTC-3/-4) — `2026-08-26` renders as
+ * "25 ago" for a browser sitting west of UTC. There is no instant to convert:
+ * `route_date` names a day, not a moment, so both the parse and the format
+ * are pinned to UTC — never the ambient `TIMEZONE` — so the digits in the
+ * column are the digits shown, regardless of where the browser sits.
+ */
+export function formatRouteHeaderDate(routeDateISO: string): string {
+  return new Date(`${routeDateISO}T00:00:00Z`).toLocaleDateString(LOCALE, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}

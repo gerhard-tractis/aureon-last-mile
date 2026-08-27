@@ -109,8 +109,15 @@ function DispatchPageContent() {
   const { operatorId } = useOperatorId();
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
 
+  // QA finding #2: this used to hardcode `today`, while PreRouteBoard reads
+  // its date from the `?date=` param — so the "SIN RUTEAR" figure in the
+  // header answered for today even when the board itself (via the date
+  // picker inside PreRouteFilters) was showing tomorrow's wave. Reading the
+  // same param here is what makes the badge and the board unable to
+  // disagree, rather than merely making them agree by coincidence today.
   const today = new Date().toISOString().slice(0, 10);
-  const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(operatorId ?? null, today);
+  const selectedDate = params.get('date') ?? today;
+  const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(operatorId ?? null, selectedDate);
 
   const createRouteMutation = useCreateRouteFromSelection();
 
