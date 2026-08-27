@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouteBuilder } from './RouteBuilder';
@@ -15,8 +15,9 @@ vi.mock('@/hooks/dispatch/useRoutePackages', () => ({
   useRoutePackages: () => ({ data: mockPackages, refetch: refetchMock }),
 }));
 
+const scanMutateAsyncMock = vi.fn();
 vi.mock('@/hooks/dispatch/useScanPackage', () => ({
-  useScanPackage: () => ({ mutateAsync: vi.fn() }),
+  useScanPackage: () => ({ mutateAsync: scanMutateAsyncMock }),
 }));
 
 // The route row changes underneath every mutation here, so the builder has to
@@ -32,9 +33,15 @@ vi.mock('@/hooks/dispatch/useRefreshRouteStatus', () => ({
 // route's real status now, fetched through useDispatchRoute — not a
 // `useState` a page reload wiped.
 let mockRouteStatus: RouteStatus | undefined = 'draft';
+// QA finding #1: the header date used to come from `new Date()`, not this
+// route's own `route_date` — default undefined so most tests (which don't
+// care about the date) render nothing rather than assert a stray value.
+let mockRouteDate: string | undefined;
 vi.mock('@/hooks/dispatch/useDispatchRoute', () => ({
   useDispatchRoute: () => ({
-    data: mockRouteStatus ? ({ status: mockRouteStatus } as DispatchRoute) : undefined,
+    data: mockRouteStatus
+      ? ({ status: mockRouteStatus, route_date: mockRouteDate } as DispatchRoute)
+      : undefined,
   }),
 }));
 
@@ -56,7 +63,48 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockPackages = [];
   mockRouteStatus = 'draft';
+  mockRouteDate = undefined;
   global.fetch = vi.fn();
+});
+
+/**
+ * QA finding #1: live QA showed "jue, 27 ago" (today) in the header for a
+ * route whose `routes.route_date` is 2026-08-26 (a Wednesday) — the header
+ * asserted the browser's clock instead of the row's own date.
+ */
+describe('RouteBuilder — header date', () => {
+  it("renders the route's own route_date, not today", () => {
+    mockRouteDate = '2026-08-26';
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByText('mié, 26 ago')).toBeInTheDocument();
+  });
+
+  it('shows nothing while the route is still loading, rather than a wrong date', () => {
+    // Pinned to a Wednesday (2026-08-26 — same date the other test in this
+    // block uses) on purpose: two of the seven es-CL short weekdays are
+    // accented ("mié", "sáb"), and this is one of them. A regex that can't
+    // match an accented weekday would silently pass against a regression
+    // back to `new Date()` on exactly the days that render one — see the
+    // comment on the pattern below.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-26T12:00:00'));
+    mockRouteStatus = undefined; // useDispatchRoute mock returns data: undefined
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    // formatRouteHeaderDate's output always has this shape — "wkd, D mon" —
+    // so this pattern only matches the header date, not incidental text
+    // elsewhere on the page. `\S{3}`, not `\w{3}`: `\w` is [A-Za-z0-9_], so
+    // `\w{3}` doesn't match "mié" or "sáb" — a regression back to `new
+    // Date()` on one of those two days would render a real date this
+    // assertion couldn't see, and the test would pass against the broken
+    // implementation.
+    expect(
+      screen.queryByText(/^\S{3}, \d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)$/),
+    ).not.toBeInTheDocument();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 });
 
 /**
@@ -256,6 +304,78 @@ describe('RouteBuilder — remove from plan', () => {
 
     await waitFor(() =>
       expect(screen.getByText(/Solo un responsable puede quitar paradas/)).toBeInTheDocument(),
+    );
+  });
+});
+
+/**
+ * QA finding #3: after a seal was refused with "Faltan 2 parada(s)...",
+ * removing one stop left the banner still saying 2 while the live "faltan N
+ * por estibar" counter correctly said 1 — the refusal it described no longer
+ * held. Seed the seal refusal first (same path as the "seal" describe block
+ * above), then exercise the action that should clear it.
+ */
+describe('RouteBuilder — stale seal-error banner', () => {
+  async function seedSealError() {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        code: 'UNSEALED_STOPS',
+        message: 'Faltan 2 parada(s) por estibar. Escanéalas o pide a un responsable que las quite de la planificación.',
+      }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await waitFor(() =>
+      expect(screen.getByText(/Faltan 2 parada\(s\)/)).toBeInTheDocument(),
+    );
+  }
+
+  it('clears the banner once a scan succeeds', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    scanMutateAsyncMock.mockResolvedValue(undefined);
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await seedSealError();
+
+    await userEvent.type(screen.getByPlaceholderText(/Escanea barcode/i), 'PKG-1{Enter}');
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Faltan 2 parada\(s\)/)).not.toBeInTheDocument(),
+    );
+  });
+
+  it('does not clear the banner when a scan fails', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    scanMutateAsyncMock.mockRejectedValue(new Error('Paquete no encontrado'));
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await seedSealError();
+
+    await userEvent.type(screen.getByPlaceholderText(/Escanea barcode/i), 'PKG-1{Enter}');
+
+    await waitFor(() => expect(screen.getByText('Paquete no encontrado')).toBeInTheDocument());
+    expect(screen.getByText(/Faltan 2 parada\(s\)/)).toBeInTheDocument();
+  });
+
+  it('clears the banner once a removal succeeds', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await seedSealError();
+
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Faltan 2 parada\(s\)/)).not.toBeInTheDocument(),
     );
   });
 });

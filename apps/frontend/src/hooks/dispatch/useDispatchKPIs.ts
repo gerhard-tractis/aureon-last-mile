@@ -4,8 +4,6 @@ import { OPEN_ROUTE_STATUSES, ON_ROAD_ROUTE_STATUSES } from '@/lib/dispatch/type
 
 interface DispatchKPIs {
   openRoutes: number;
-  pendingPackages: number;
-  dispatchedToday: number;
   inRoute: number;
 }
 
@@ -25,31 +23,26 @@ export function useDispatchKPIs(operatorId: string | null) {
       if (openErr) throw openErr;
 
       const openRoutes = openData?.length ?? 0;
-      const pendingPackages = (openData ?? []).reduce(
-        (sum: number, r: { planned_stops: number | null }) => sum + (r.planned_stops ?? 0),
-        0,
-      );
 
-      // Query 2: today's released routes. `dispatched` is what spec-70 renamed
-      // the old `planned` to, so leaving this at ['in_progress','completed']
-      // reported zero for every route sitting at DispatchTrack unstarted.
-      const today = new Date().toISOString().split('T')[0];
-      const { data: todayData, error: todayErr } = await supabase
+      // Query 2: on-road routes, counted exactly as DispatchInProgressTab
+      // lists them — ON_ROAD_ROUTE_STATUSES, no date filter. QA finding #2:
+      // this used to add `.eq('route_date', today)`, so a route dispatched
+      // yesterday and still on the road counted as 0 here while the tab it
+      // labels went on listing it and its "N vehículos en ruta" strip. A
+      // route on the road is on the road regardless of which day it was
+      // dispatched — the badge has to count what opening the tab shows, or
+      // the two numbers can disagree by construction, not by bug.
+      const { data: onRoadData, error: onRoadErr } = await supabase
         .from('routes')
         .select('status')
         .eq('operator_id', operatorId!)
-        .in('status', [...ON_ROAD_ROUTE_STATUSES, 'completed'])
-        .eq('route_date', today)
+        .in('status', [...ON_ROAD_ROUTE_STATUSES])
         .is('deleted_at', null);
-      if (todayErr) throw todayErr;
+      if (onRoadErr) throw onRoadErr;
 
-      const dispatchedToday = todayData?.length ?? 0;
-      const onRoad = new Set<string>(ON_ROAD_ROUTE_STATUSES);
-      const inRoute = (todayData ?? []).filter(
-        (r: { status: string }) => onRoad.has(r.status),
-      ).length;
+      const inRoute = onRoadData?.length ?? 0;
 
-      return { openRoutes, pendingPackages, dispatchedToday, inRoute };
+      return { openRoutes, inRoute };
     },
     enabled: !!operatorId,
     staleTime: 15_000,

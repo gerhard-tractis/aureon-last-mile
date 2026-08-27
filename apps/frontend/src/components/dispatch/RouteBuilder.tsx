@@ -13,6 +13,7 @@ import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
 import { useRefreshRouteStatus } from '@/hooks/dispatch/useRefreshRouteStatus';
 import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
 import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
+import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
 
 interface Props {
   routeId: string;
@@ -55,6 +56,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     setScanError(null);
     try {
       await scanMutation.mutateAsync(code);
+      // QA finding #3: a seal refusal ("Faltan 2 parada(s)...") stayed on
+      // screen after a scan lowered the live count to 1 — the banner named a
+      // shortfall that no longer existed. A successful scan can only move a
+      // stop toward staged, so any prior refusal it names is now stale.
+      setSealError(null);
       await refetch();
     } catch (err: unknown) {
       const e = err as { message?: string };
@@ -77,6 +83,12 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
       body: JSON.stringify({ reason: reason.trim() }),
     });
     if (res.ok) {
+      // QA finding #3: removing a stop is the seal refusal's own remedy — the
+      // one it names ("...pide a un responsable que las quite") — so a
+      // successful removal can only bring the shortfall down, never leave it
+      // unchanged. Clear the stale banner rather than let it name a count
+      // the live counter has already moved past.
+      setSealError(null);
       await Promise.all([refetch(), refreshRouteStatus()]);
     } else {
       const json = await res.json().catch(() => ({}));
@@ -145,9 +157,15 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
           <span className="font-mono text-[15px] font-bold text-accent">
             {routeId.slice(0, 8).toUpperCase()}
           </span>
-          <span className="text-xs text-text-muted">
-            {new Date().toLocaleDateString('es-CL', { weekday: 'short', day: 'numeric', month: 'short' })}
-          </span>
+          {/* QA finding #1: this rendered today's date via `new Date()`, not
+              the route's own — a route dated 2026-08-26 showed "jue, 27 ago".
+              `route` is still undefined on first paint, so show nothing
+              rather than guess; a wrong date is worse than a blank one. */}
+          {route?.route_date && (
+            <span className="text-xs text-text-muted">
+              {formatRouteHeaderDate(route.route_date)}
+            </span>
+          )}
           {statusConfig && (
             <StatusBadge
               status={routeStatus!}

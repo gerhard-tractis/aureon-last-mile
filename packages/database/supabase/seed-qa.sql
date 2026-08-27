@@ -738,6 +738,41 @@ WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
+-- fleet_vehicles — the QA test operator's own trucks
+-- =============================================================================
+-- QA finding #4: every one of the 27 fleet_vehicles rows on QA belongs to
+-- Musan — cfea91ec-5e48-43f7-b756-45759715df10 as read directly off the live
+-- QA database at the time this was written, NOT a value to hardcode or trust
+-- going forward: per the warning two sections up, Musan's id is
+-- gen_random_uuid() and differs per environment, which is exactly why the
+-- row above resolves it by slug instead. The QA test operator
+-- 00000000-0000-4000-8000-000000000001 had zero. The route
+-- builder's truck <select> reads fleet_vehicles scoped to the session's own
+-- operator_id (see apps/frontend/src/app/app/dispatch/[routeId]/page.tsx),
+-- so it was always empty for QA and "Despachar a DispatchTrack" could never
+-- enable — nobody had ever exercised the dispatch step against QA.
+--
+-- Collision safety: the DispatchTrack webhook sync
+-- (apps/worker/n8n/workflows/paris-dispatchtrack-webhook.json) upserts on
+-- `on_conflict=operator_id,provider,external_vehicle_id` — matching this
+-- table's own `unique_vehicle_per_operator` constraint — but it always
+-- writes the hardcoded Musan operator id, never the QA test operator's. A
+-- webhook upsert therefore can never match, and so can never clobber, a row
+-- seeded under 00000000-0000-4000-8000-000000000001: the operator_id half of
+-- the conflict target can't agree. Fixed ids in the same
+-- 00000000-0000-4000-8000-0000000002xx family the QA users use (see the
+-- pickup-crew/pickup-leader ids above), one per plate.
+INSERT INTO public.fleet_vehicles (
+  id, operator_id, provider, external_vehicle_id, plate_number, vehicle_type, driver_name
+)
+VALUES
+  ('00000000-0000-4000-8000-000000000230', '00000000-0000-4000-8000-000000000001',
+   'dispatchtrack'::routing_provider_enum, 'QA-TRUCK-01', 'QATR01', 'Furgón', NULL),
+  ('00000000-0000-4000-8000-000000000231', '00000000-0000-4000-8000-000000000001',
+   'dispatchtrack'::routing_provider_enum, 'QA-TRUCK-02', 'QATR02', 'Camión', NULL)
+ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
 -- Re-anchor the dated fixtures to today
 -- =============================================================================
 -- Every INSERT above computes its dates from CURRENT_DATE, and every INSERT is
@@ -846,4 +881,8 @@ BEGIN
     (SELECT count(*) FROM public.manifests     WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND external_load_id IN ('QA-CARGA-A','QA-CARGA-B','QA-CARGA-C') AND pickup_route_id IS NULL),
     (SELECT count(*) FROM public.pickup_scans  WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.packages      WHERE operator_id = '00000000-0000-4000-8000-000000000001' AND status = 'retorno_hub');
+  -- QA finding #4: fleet_vehicles (the Despacho truck <select>'s own table,
+  -- distinct from `vehicles` above) should read 2 for the QA operator, not 0.
+  RAISE NOTICE 'seed-qa: fleet_vehicles(QA operator)=%',
+    (SELECT count(*) FROM public.fleet_vehicles WHERE operator_id = '00000000-0000-4000-8000-000000000001');
 END $$;
