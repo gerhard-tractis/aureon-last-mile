@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import QuickSortPage from './page';
 import type { ZoneGroup } from '@/hooks/distribution/usePendingSectorization';
 
@@ -24,9 +25,13 @@ vi.mock('@/lib/context/GlobalContext', () => ({
 }));
 
 // The scanner owns a Supabase-backed mutation of its own; this page's contract
-// is the pending list beside it, so the scanner is stubbed out here.
+// is the pending list beside it, so the scanner is stubbed out here. Renders
+// the `mode` prop it was given so the header toggle (spec-71 phase 3 review
+// item 2) can be asserted without un-stubbing the whole scanner.
 vi.mock('@/components/distribution/QuickSortScanner', () => ({
-  QuickSortScanner: () => <div data-testid='quicksort-scanner' />,
+  QuickSortScanner: ({ mode }: { mode?: string }) => (
+    <div data-testid="quicksort-scanner" data-mode={mode} />
+  ),
 }));
 
 let belowLg = false;
@@ -210,5 +215,30 @@ describe('QuickSortPage — isBelowLg branch', () => {
     render(<QuickSortPage />);
     expect(screen.getByTestId('quicksort-mobile-view')).toBeInTheDocument();
     expect(screen.queryByTestId('quicksort-scanner')).not.toBeInTheDocument();
+  });
+});
+
+// spec-71 phase 3 review item 2 — before this toggle, nothing in the product
+// ever passed mode='stage' to QuickSortScanner; the staging pass was
+// unreachable. This is its only entry point.
+describe('QuickSortPage — stage mode toggle (spec-71 phase 3)', () => {
+  it('defaults to sectorize mode', () => {
+    render(<QuickSortPage />);
+    expect(screen.getByTestId('quicksort-scanner')).toHaveAttribute('data-mode', 'sectorize');
+  });
+
+  it('switches the scanner to stage mode via the Estibar tab', async () => {
+    const user = userEvent.setup();
+    render(<QuickSortPage />);
+    await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+    expect(screen.getByTestId('quicksort-scanner')).toHaveAttribute('data-mode', 'stage');
+  });
+
+  it('switches back to sectorize mode via the Sectorizar tab', async () => {
+    const user = userEvent.setup();
+    render(<QuickSortPage />);
+    await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+    await user.click(screen.getByRole('tab', { name: 'Sectorizar' }));
+    expect(screen.getByTestId('quicksort-scanner')).toHaveAttribute('data-mode', 'sectorize');
   });
 });

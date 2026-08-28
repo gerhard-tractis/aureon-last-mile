@@ -344,6 +344,13 @@ not confirm the DB job ran.
   (spec-70's `stage='planned'` dispatch on that `route_id`) before flipping it to `staged` — this is
   the same check spec-70 phase 2 already does for the route-level stage scan; this phase points it
   at a position instead of a route directly, resolving route via `load_positions.id → routes.load_position_id`.
+  Both destination codes (`load_positions.code` and `dock_zones.code`) are compared through the same
+  guarded `normalizeScanCode`/`scanCodesMatch` (`lib/scan/normalize-scan-code.ts`), with an ambiguity
+  guard on both paths: a scan that normalizes to more than one active row fails loudly instead of
+  resolving to an arbitrary first match. **Known limit (review finding 3):** this only fixes the
+  DESTINATION code. Package/manifest lookups (`.eq('label', barcode)`) are still unnormalized, and
+  QA's observed scanner corruption (`CARGA'PARIS'...`) was a package code — that hardware problem is
+  not solved by this phase.
 - **Phase 4 — Position seal.** One scan/tap per position, refusing while any dispatch assigned to a
   route occupying that position is still `planned` (mirrors spec-70's `/seal` `UNSEALED_STOPS`
   guard, one level down). Idempotent, per the same pattern.

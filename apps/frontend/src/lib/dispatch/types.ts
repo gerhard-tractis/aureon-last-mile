@@ -127,6 +127,13 @@ export type ScanResult = {
   // only after it decides stage vs adopt and performs the write, and adds
   // them itself. Omit rather than a fabricated placeholder value.
   package: Omit<RoutePackage, 'stage' | 'status'>;
+  /**
+   * spec-71 phase 3. `packages.id` — deliberately absent from `package`
+   * above (that DTO is keyed by `dispatch_id`/`order_id` for the route-scan
+   * response), but the position-scan path needs the actual package row to
+   * write `dock_scans.package_id` (the per-package staging audit trail).
+   */
+  packageId: string;
   action: ScanAction;
 } | {
   ok: false;

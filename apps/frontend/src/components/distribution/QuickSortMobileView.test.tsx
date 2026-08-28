@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QuickSortMobileView } from './QuickSortMobileView';
 
 /** spec-68 Fase 5.2–5.5 — the mobile quicksort container wiring. */
@@ -63,6 +64,25 @@ const mockUpdateBatchZone = vi.fn().mockResolvedValue({ error: null });
 vi.mock('@/lib/distribution/batch-zone', () => ({
   updateBatchDockZone: (...args: unknown[]) => mockUpdateBatchZone(...args),
 }));
+
+// spec-71 phase 3 mobile — stage mode's lookup goes through
+// lookupStagePackageScan/submitPositionStageScan, mocked directly here the
+// same way useQuickSortFlow.stage.test.ts mocks findExpectedLoadPosition:
+// simpler than extending the sectorize suite's raw supabase chain mocks.
+const mockLookupStagePackageScan = vi.fn();
+const mockSubmitPositionStageScan = vi.fn();
+vi.mock('@/lib/dispatch/stage-package-scan', () => ({
+  lookupStagePackageScan: (...args: unknown[]) => mockLookupStagePackageScan(...args),
+  submitPositionStageScan: (...args: unknown[]) => mockSubmitPositionStageScan(...args),
+}));
+
+const POSITION_DESTINATION = {
+  dispatchId: 'd1',
+  routeId: 'route-1',
+  positionId: 'lp-1',
+  positionCode: 'POS-04',
+  positionLabel: 'Zona frente a Andén 4',
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -160,6 +180,98 @@ describe('QuickSortMobileView', () => {
       fireEvent.click(screen.getByText('Enviar a consolidación'));
       expect(mockToastError).toHaveBeenCalledWith('No hay zona de consolidación activa configurada');
       expect(mockUpdateBatchZone).not.toHaveBeenCalled();
+    });
+  });
+
+  // spec-71 phase 3 mobile — the Sectorizar/Estibar switch and the
+  // scan_position (stage) step 2 screen. Before this, nothing on mobile
+  // ever passed mode='stage' to useQuickSortFlow; staging was reachable on
+  // desktop only.
+  describe('mode toggle and stage-mode step 2 (spec-71 phase 3 mobile)', () => {
+    beforeEach(() => {
+      mockLookupStagePackageScan.mockResolvedValue({
+        ok: true,
+        pkg: { id: 'pkg-1', label: 'PKG-001', orderNumber: 'ORD-1', comunaName: 'Las Condes' },
+        position: POSITION_DESTINATION,
+      });
+      mockSubmitPositionStageScan.mockResolvedValue({ ok: true });
+    });
+
+    it('switches to stage mode via the Estibar tab, keeping the toggle and posición copy visible', async () => {
+      const user = userEvent.setup();
+      render(<QuickSortMobileView />);
+      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('Carga a posición')).toBeInTheDocument();
+    });
+
+    it('advances to the scan_position step 2 screen after a package scan in stage mode', async () => {
+      const user = userEvent.setup();
+      render(<QuickSortMobileView />);
+      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+
+      const input = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(input, { target: { value: 'PKG-001' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+
+      await screen.findByText('POS-04');
+      expect(screen.getByText('AHORA ESCANEA LA POSICIÓN')).toBeInTheDocument();
+      // Sectorize-only affordances must not leak into the stage screen.
+      expect(screen.queryByText('Enviar a consolidación')).not.toBeInTheDocument();
+    });
+
+    it('rejects a mismatched position scan, re-arming the field with the error state', async () => {
+      const user = userEvent.setup();
+      render(<QuickSortMobileView />);
+      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+
+      const packageInput = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+      fireEvent.keyDown(packageInput, { key: 'Enter' });
+      await screen.findByText('POS-04');
+
+      const positionInput = screen.getByLabelText(/escanear posición/i);
+      fireEvent.change(positionInput, { target: { value: 'POS-99' } });
+      fireEvent.keyDown(positionInput, { key: 'Enter' });
+
+      await screen.findByText('ASIGNACIÓN FALLIDA');
+      expect(mockSubmitPositionStageScan).not.toHaveBeenCalled();
+    });
+
+    it('Cancelar returns to step 1 without touching the sectorize batch-close path', async () => {
+      const user = userEvent.setup();
+      render(<QuickSortMobileView />);
+      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+
+      const input = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(input, { target: { value: 'PKG-001' } });
+      fireEvent.keyDown(input, { key: 'Enter' });
+      await screen.findByText('POS-04');
+
+      fireEvent.click(screen.getByText('Cancelar y volver al paso 1'));
+      await screen.findByLabelText(/escanear paquete/i);
+      expect(screen.getByText('Carga a posición')).toBeInTheDocument();
+    });
+
+    it('confirms a matching position scan, closing back to step 1 with the counter advanced', async () => {
+      const user = userEvent.setup();
+      render(<QuickSortMobileView />);
+      await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+
+      const packageInput = screen.getByLabelText(/escanear paquete/i);
+      fireEvent.change(packageInput, { target: { value: 'PKG-001' } });
+      fireEvent.keyDown(packageInput, { key: 'Enter' });
+      await screen.findByText('POS-04');
+
+      const positionInput = screen.getByLabelText(/escanear posición/i);
+      fireEvent.change(positionInput, { target: { value: 'POS-04' } });
+      fireEvent.keyDown(positionInput, { key: 'Enter' });
+
+      await waitFor(() => expect(mockSubmitPositionStageScan).toHaveBeenCalledWith({
+        packageCode: 'PKG-001',
+        positionCode: 'POS-04',
+      }));
+      await screen.findByLabelText(/escanear paquete/i);
     });
   });
 });

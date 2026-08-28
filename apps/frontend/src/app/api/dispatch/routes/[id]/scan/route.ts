@@ -1,8 +1,8 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { validateScan, DISPATCHABLE_STATUSES } from '@/lib/dispatch/scan-validator';
-import type { RouteStatus } from '@/lib/dispatch/types';
+import { validateScan } from '@/lib/dispatch/scan-validator';
+import { stageDispatch, advancePackagesToEnCarga, LOADING_WALK } from '@/lib/dispatch/stage-dispatch';
 
 const bodySchema = z.object({
   code: z.string().min(1),
@@ -15,20 +15,15 @@ const bodySchema = z.object({
 /** What an unplanned scan records when the operator offered no explanation. */
 const DEFAULT_ADOPTION_REASON = 'Escaneado sin estar en la planificación';
 
-/**
- * Route states in which stops may still be added, and the walk each one needs
- * to reach `loading`.
- *
- * `draft -> loading` is not a legal edge: a manually created empty route has to
- * pass through `planned` first, which is precisely what adding its first stop
- * means. `loaded` and beyond are absent — once the manifest is sealed, a stop
- * appearing out of nowhere is an exception to be handled, not a silent append.
- */
-const LOADING_WALK: Record<string, readonly RouteStatus[]> = {
-  draft: ['planned', 'loading'],
-  planned: ['loading'],
-  loading: [],
-};
+// `LOADING_WALK` (route states in which stops may still be added, and the
+// walk each one needs to reach `loading`) now lives in
+// `lib/dispatch/stage-dispatch.ts`, shared with the position-scan handler's
+// route-status guard (review item 5) instead of a second local copy here.
+//
+// `draft -> loading` is not a legal edge: a manually created empty route has to
+// pass through `planned` first, which is precisely what adding its first stop
+// means. `loaded` and beyond are absent — once the manifest is sealed, a stop
+// appearing out of nowhere is an exception to be handled, not a silent append.
 
 export async function POST(
   request: NextRequest,
@@ -87,12 +82,12 @@ export async function POST(
     if (validation.action.kind === 'stage') {
       // The row Pre-ruta seeded is updated in place. Inserting a second row
       // here is what made the plan and the load indistinguishable.
-      const { error: stageError } = await supabase
-        .from('dispatches')
-        .update({ stage: 'staged', staged_at: now, staged_by: session.user.id })
-        .eq('id', validation.action.dispatchId)
-        .eq('operator_id', operatorId);
-      if (stageError) throw stageError;
+      await stageDispatch(supabase, {
+        dispatchId: validation.action.dispatchId,
+        orderId: validation.package.order_id,
+        operatorId,
+        userId: session.user.id,
+      });
       dispatchId = validation.action.dispatchId;
     } else {
       const { data: inserted, error: adoptError } = await supabase
@@ -112,17 +107,11 @@ export async function POST(
         .single();
       if (adoptError) throw adoptError;
       dispatchId = inserted.id;
-    }
 
-    // Whatever state the validator accepted is what has to advance. Filtering
-    // on 'asignado' alone would leave a package scanned in from an andén
-    // sitting at 'sectorizado' while its dispatch row already said staged.
-    await supabase
-      .from('packages')
-      .update({ status: 'en_carga' })
-      .eq('operator_id', operatorId)
-      .eq('order_id', validation.package.order_id)
-      .in('status', [...DISPATCHABLE_STATUSES]);
+      // `stageDispatch` above bundles this same advance with its dispatch
+      // update; the adopt branch INSERTs instead, so it takes just this half.
+      await advancePackagesToEnCarga(supabase, { operatorId, orderId: validation.package.order_id });
+    }
 
     // planned_stops is deliberately not touched. It drifted precisely because
     // this handler incremented it while removal never decremented; spec-70

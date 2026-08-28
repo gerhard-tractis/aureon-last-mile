@@ -165,4 +165,23 @@ describe('validateDockDestination', () => {
     const result = validateDockDestination('B1', { suggestedZoneCode: 'A1', zones: inactiveZones });
     expect(result).toEqual({ kind: 'rejected_wrong_dock', expectedCode: 'A1' });
   });
+
+  // spec-71 phase 3 review item 3 — now sharing `scanCodesMatch`, this
+  // path picks up both fixes item 1 established for load_positions.
+  it('matches the layout-corrupted hyphen against the suggested zone, same as load_positions', () => {
+    const result = validateDockDestination("A'1", { suggestedZoneCode: 'A-1', zones });
+    expect(result).toEqual({ kind: 'accepted_suggested' });
+  });
+
+  it('never matches an all-punctuation scan that normalizes to empty', () => {
+    const result = validateDockDestination('---', { suggestedZoneCode: 'A1', zones });
+    expect(result).toEqual({ kind: 'rejected_wrong_dock', expectedCode: 'A1' });
+  });
+
+  it('reports ambiguous when two active consolidación zones collide under normalization', () => {
+    const consolB: DockZone = { ...consolidationZone, id: 'zone-consol-2', code: 'CON-S' };
+    const collidingZones: DockZone[] = [andenA, andenB, consolidationZone, consolB];
+    const result = validateDockDestination('CONS', { suggestedZoneCode: 'A1', zones: collidingZones });
+    expect(result).toEqual({ kind: 'ambiguous', expectedCode: 'A1' });
+  });
 });
