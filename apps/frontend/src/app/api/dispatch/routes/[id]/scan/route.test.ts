@@ -255,3 +255,131 @@ describe('POST /scan — rejection passthrough', () => {
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * spec-71 Decision 8: the draft -> planned leg of the walk (a manually
+ * created empty route's first stop) gets the same best-effort load-position
+ * assignment create_seeded_route's caller gets.
+ */
+describe('POST /scan — spec-71 load position assignment on draft -> planned', () => {
+  it('calls assign_load_position only when the walk passes through planned', async () => {
+    buildClient('draft');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    await POST(makeReq(), { params });
+
+    const assignCalls = mockRpc.mock.calls.filter((c) => c[0] === 'assign_load_position');
+    expect(assignCalls).toEqual([
+      ['assign_load_position', { p_route_id: 'route-1', p_operator_id: 'op-1', p_user_id: 'u-1' }],
+    ]);
+  });
+
+  it('does not call assign_load_position when the route is already planned (loading is the only leg)', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    await POST(makeReq(), { params });
+
+    expect(mockRpc.mock.calls.filter((c) => c[0] === 'assign_load_position')).toEqual([]);
+  });
+
+  it('writes an audit_logs row when a position was assigned', async () => {
+    const ops = buildClient('draft');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'assign_load_position'
+        ? Promise.resolve({ data: 'pos-1', error: null })
+        : Promise.resolve({ data: null, error: null }),
+    );
+
+    await POST(makeReq(), { params });
+
+    const auditOp = ops.find((o) => o.table === 'audit_logs' && o.kind === 'insert');
+    expect(auditOp?.payload).toEqual(
+      expect.objectContaining({
+        operator_id: 'op-1',
+        user_id: 'u-1',
+        action: 'assign_load_position',
+        resource_type: 'routes',
+        resource_id: 'route-1',
+        changes_json: { load_position_id: 'pos-1' },
+      }),
+    );
+  });
+
+  it('does not write an audit_logs row when no position was available (best-effort)', async () => {
+    const ops = buildClient('draft');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockResolvedValue({ data: null, error: null }); // assign_load_position returns null
+
+    await POST(makeReq(), { params });
+
+    expect(ops.some((o) => o.table === 'audit_logs' && o.payload?.action === 'assign_load_position')).toBe(false);
+  });
+
+  it('a thrown assign_load_position never fails the scan', async () => {
+    buildClient('draft');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'assign_load_position' ? Promise.reject(new Error('boom')) : Promise.resolve({ data: null, error: null }),
+    );
+
+    const res = await POST(makeReq(), { params });
+    expect(res.status).toBe(201);
+  });
+});
+
+/**
+ * spec-71 Decision 7 residual risk: an adopted scan changes the route's
+ * dispatch set, so the offset conflict must be re-checked and surfaced.
+ */
+describe('POST /scan — spec-71 offset re-check on adopt', () => {
+  it('calls check_load_position_conflict for an adopted (unplanned) scan', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockResolvedValue({ data: { conflict: false }, error: null });
+
+    await POST(makeReq(), { params });
+
+    expect(mockRpc).toHaveBeenCalledWith('check_load_position_conflict', {
+      p_route_id: 'route-1',
+      p_operator_id: 'op-1',
+    });
+  });
+
+  it('does NOT call check_load_position_conflict for a staged (already-planned) scan', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    await POST(makeReq(), { params });
+
+    expect(mockRpc.mock.calls.filter((c) => c[0] === 'check_load_position_conflict')).toEqual([]);
+  });
+
+  it('surfaces load_position_conflict: true in the response when the RPC reports a conflict', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'check_load_position_conflict'
+        ? Promise.resolve({ data: { load_position_id: 'pos-1', conflict: true }, error: null })
+        : Promise.resolve({ data: null, error: null }),
+    );
+
+    const res = await POST(makeReq(), { params });
+    const body = await res.json();
+    expect(body.load_position_conflict).toBe(true);
+  });
+
+  it('reports load_position_conflict: false by default', async () => {
+    buildClient('planned');
+    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockRpc.mockResolvedValue({ data: null, error: null });
+
+    const res = await POST(makeReq(), { params });
+    const body = await res.json();
+    expect(body.load_position_conflict).toBe(false);
+  });
+});

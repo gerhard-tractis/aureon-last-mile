@@ -91,7 +91,47 @@ export async function POST(req: Request) {
 
     if (createErr) throw createErr;
 
-    return NextResponse.json(route, { status: 201 });
+    // spec-71 Decision 8: a seeded route reaches `planned` immediately, so it
+    // gets a best-effort load-position assignment right here. No position
+    // free is not an error — the route is still returned as created; it is
+    // simply left with load_position_id NULL until one frees up.
+    const createdRoute = route as { id?: string } | null;
+    // Built fresh rather than mutated onto `createdRoute` — the RPC result is
+    // someone else's object; patching a field onto it in place is surprising
+    // for any future reader who holds onto `route` expecting exactly what
+    // create_seeded_route returned.
+    let responseBody: unknown = route;
+    if (createdRoute?.id) {
+      try {
+        const { data: assignedPositionId, error: assignError } = await supabase.rpc('assign_load_position', {
+          p_route_id: createdRoute.id,
+          p_operator_id: operatorId,
+          p_user_id: session.user.id,
+        });
+        if (assignError) {
+          console.error('[dispatch/routes POST] assign_load_position failed', assignError);
+        } else if (assignedPositionId) {
+          responseBody = { ...createdRoute, load_position_id: assignedPositionId };
+          // Audit log — actual audit_logs schema: operator_id, user_id,
+          // action, resource_type, resource_id, changes_json, ip_address.
+          // Mirrors the shape used in [id]/dispatch/route.ts.
+          await supabase.from('audit_logs').insert({
+            operator_id: operatorId,
+            user_id: session.user.id,
+            action: 'assign_load_position',
+            resource_type: 'routes',
+            resource_id: createdRoute.id,
+            changes_json: { load_position_id: assignedPositionId },
+            ip_address: 'unknown',
+          }).then(() => null, () => null);
+        }
+      } catch (assignErr) {
+        // Best-effort (Decision 8): never fail route creation over assignment.
+        console.error('[dispatch/routes POST] assign_load_position threw', assignErr);
+      }
+    }
+
+    return NextResponse.json(responseBody, { status: 201 });
   } catch (err) {
     console.error('[dispatch/routes POST]', err);
     return NextResponse.json({ code: 'INTERNAL_ERROR' }, { status: 500 });

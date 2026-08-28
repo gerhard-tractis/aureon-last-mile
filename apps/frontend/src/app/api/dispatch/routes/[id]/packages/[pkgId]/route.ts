@@ -135,7 +135,42 @@ export async function DELETE(
       ip_address: 'unknown',
     }).then(() => null, () => null);
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    // spec-71 Decision 7 residual risk: removing a stop changes this route's
+    // dispatch set too. Note the direction, though: a removal can only ever
+    // SHRINK the set of andenes this route sources from, so this re-check can
+    // clear an existing conflict but can never introduce a new one — it is
+    // not load-bearing for *detecting* a conflict the way the adopt-scan
+    // re-check in [id]/scan/route.ts is (an adopt GROWS the set). It stays
+    // here anyway so a route that was conflicting can be observed to clear.
+    // Surfaced, not auto-fixed: no reassignment UI here.
+    let loadPositionConflict = false;
+    if (dispatch.route_id) {
+      try {
+        // check_load_position_conflict (20260827000003) raises ROUTE_NOT_FOUND
+        // rather than returning no row when the route is missing / not this
+        // operator's — but supabase-js resolves that as {data: null, error},
+        // it does not reject. Checking `error` here (not just discarding it)
+        // is what keeps that distinguishable: a missing-route/query failure
+        // is logged, not silently coerced into the same `false` a genuine
+        // "no conflict" result would produce.
+        const { data: conflictResult, error: conflictError } = await supabase.rpc('check_load_position_conflict', {
+          p_route_id: dispatch.route_id,
+          p_operator_id: operatorId,
+        });
+        if (conflictError) {
+          console.error('[dispatch/packages DELETE] check_load_position_conflict failed', conflictError);
+        } else {
+          loadPositionConflict = Boolean((conflictResult as { conflict?: boolean } | null)?.conflict);
+        }
+      } catch (conflictErr) {
+        console.error('[dispatch/packages DELETE] check_load_position_conflict threw', conflictErr);
+      }
+    }
+
+    // No UI consumes load_position_conflict yet — spec-71 phase 5 is
+    // expected to surface it for a reassignment flow. Until then it is
+    // carried through and logged, not acted on.
+    return NextResponse.json({ ok: true, load_position_conflict: loadPositionConflict }, { status: 200 });
   } catch (err) {
     console.error('[dispatch/packages DELETE]', err);
     return NextResponse.json({ code: 'INTERNAL_ERROR' }, { status: 500 });

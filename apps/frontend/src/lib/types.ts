@@ -790,6 +790,7 @@ export type Database = {
           redirect_reason: string | null
           manual_override: boolean
           dock_zone_id: string | null
+          load_position_id: string | null
         }
         Insert: {
           id?: string
@@ -805,6 +806,7 @@ export type Database = {
           redirect_reason?: string | null
           manual_override?: boolean
           dock_zone_id?: string | null
+          load_position_id?: string | null
         }
         Update: {
           id?: string
@@ -820,6 +822,7 @@ export type Database = {
           redirect_reason?: string | null
           manual_override?: boolean
           dock_zone_id?: string | null
+          load_position_id?: string | null
         }
         Relationships: [
           {
@@ -1485,6 +1488,11 @@ export type Database = {
           created_at: string
           updated_at: string
           deleted_at: string | null
+          load_position_id: string | null
+          load_position_assigned_at: string | null
+          load_position_assigned_by: string | null
+          load_position_released_at: string | null
+          load_position_released_by: string | null
         }
         Insert: {
           id?: string
@@ -1505,6 +1513,11 @@ export type Database = {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+          load_position_id?: string | null
+          load_position_assigned_at?: string | null
+          load_position_assigned_by?: string | null
+          load_position_released_at?: string | null
+          load_position_released_by?: string | null
         }
         Update: {
           id?: string
@@ -1525,6 +1538,11 @@ export type Database = {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+          load_position_id?: string | null
+          load_position_assigned_at?: string | null
+          load_position_assigned_by?: string | null
+          load_position_released_at?: string | null
+          load_position_released_by?: string | null
         }
         Relationships: [
           {
@@ -1539,6 +1557,64 @@ export type Database = {
             columns: ["vehicle_id"]
             isOneToOne: false
             referencedRelation: "fleet_vehicles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routes_load_position_id_fkey"
+            columns: ["load_position_id"]
+            isOneToOne: false
+            referencedRelation: "load_positions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      load_positions: {
+        Row: {
+          id: string
+          operator_id: string
+          code: string
+          label: string | null
+          is_active: boolean
+          fronts_dock_zone_id: string | null
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          code: string
+          label?: string | null
+          is_active?: boolean
+          fronts_dock_zone_id?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          code?: string
+          label?: string | null
+          is_active?: boolean
+          fronts_dock_zone_id?: string | null
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "load_positions_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "load_positions_fronts_dock_zone_id_fkey"
+            columns: ["fronts_dock_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
             referencedColumns: ["id"]
           },
         ]
@@ -2105,6 +2181,49 @@ export type Database = {
           p_to_status: Database["public"]["Enums"]["route_status_enum"]
         }
         Returns: Database["public"]["Enums"]["route_status_enum"]
+      }
+      assign_load_position: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_user_id: string
+          p_load_position_id?: string | null
+        }
+        Returns: string | null
+      }
+      release_load_position: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      load_position_conflicts_with_route: {
+        Args: {
+          p_load_position_id: string
+          p_route_id: string
+          p_operator_id: string
+        }
+        Returns: boolean
+      }
+      check_load_position_conflict: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+        }
+        Returns: Json
+      }
+      sweep_load_position_assignments: {
+        Args: {
+          p_operator_id: string
+          p_user_id: string
+          p_limit?: number
+        }
+        Returns: {
+          route_id: string
+          load_position_id: string
+        }[]
       }
       process_failed_delivery: {
         Args: {
