@@ -318,6 +318,41 @@ JOIN public.chile_comunas c ON c.nombre = z.comuna_name
 ON CONFLICT (dock_zone_id, comuna_id) DO NOTHING;
 
 -- =============================================================================
+-- load_positions — spec-71's posiciones de carga
+-- =============================================================================
+-- Without these, spec-71 does nothing observable: assign_load_position finds
+-- no candidate, every route stays load_position_id NULL as a best-effort miss,
+-- and the staging scan, the position seal and the move-task list all have
+-- nothing to point at. The table shipped in 20260827000001 and no phase of
+-- spec-71 ever creates a row -- andenes have the same gap and this file is
+-- where they are solved, so positions are solved here too.
+--
+-- This tenant has no truck bays. A position is open floor in FRONT of the
+-- andenes (Decision 6), so `label` names a floor spot, not a muelle.
+--
+-- fronts_dock_zone_id is set deliberately so the offset rule (Decision 7) has
+-- something real to exclude against in QA: a route sourcing from A1 must not
+-- be given POS-01, which stands in front of A1 and would block its face.
+-- POS-04 fronts nothing -- an open lane, the always-safe fallback.
+--
+-- Known limit (spec-71 phase 3 review, finding 3): normalizeScanCode fixes
+-- the DESTINATION code (this table's `code`), but package/manifest lookups
+-- (`.eq('label', barcode)`) are still unnormalized -- QA's observed
+-- corruption (`CARGA'PARIS'...`) was a package code, not a position or
+-- dock_zone one. That hardware problem is not solved by this phase.
+INSERT INTO public.load_positions (id, operator_id, code, label, fronts_dock_zone_id, is_active)
+VALUES
+  ('00000000-0000-4000-8000-000000000190', '00000000-0000-4000-8000-000000000001',
+   'POS-01', 'Frente a Andén A1', '00000000-0000-4000-8000-000000000180', true),
+  ('00000000-0000-4000-8000-000000000191', '00000000-0000-4000-8000-000000000001',
+   'POS-02', 'Frente a Andén A2', '00000000-0000-4000-8000-000000000181', true),
+  ('00000000-0000-4000-8000-000000000192', '00000000-0000-4000-8000-000000000001',
+   'POS-03', 'Frente a Andén A3', '00000000-0000-4000-8000-000000000182', true),
+  ('00000000-0000-4000-8000-000000000193', '00000000-0000-4000-8000-000000000001',
+   'POS-04', 'Pasillo central',    NULL,                                   true)
+ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
 -- Mobile in-flight state: pending manifests to route, and returns
 -- =============================================================================
 -- Two mobile screens render an empty state with nothing further to test them
@@ -860,7 +895,7 @@ COMMIT;
 -- Summary (visible in psql output when run with -a or via RAISE)
 DO $$
 BEGIN
-  RAISE NOTICE 'seed-qa: operator=%, drivers=%, pickup_points=%, routes=%, orders=%, packages=%, dispatches=%, dock_zones=%',
+  RAISE NOTICE 'seed-qa: operator=%, drivers=%, pickup_points=%, routes=%, orders=%, packages=%, dispatches=%, dock_zones=%, load_positions=%',
     (SELECT count(*) FROM public.operators WHERE id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.drivers   WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.pickup_points WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
@@ -868,7 +903,8 @@ BEGIN
     (SELECT count(*) FROM public.orders    WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.packages  WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
     (SELECT count(*) FROM public.dispatches WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
-    (SELECT count(*) FROM public.dock_zones WHERE operator_id = '00000000-0000-4000-8000-000000000001');
+    (SELECT count(*) FROM public.dock_zones WHERE operator_id = '00000000-0000-4000-8000-000000000001'),
+    (SELECT count(*) FROM public.load_positions WHERE operator_id = '00000000-0000-4000-8000-000000000001');
   -- pickup_routes should read 0 here: the QA pickup_crew driver must land on
   -- 3j (no active route) and start one through the UI (spec-54). unrouted
   -- pending manifests should read 3 (QA-CARGA-A/B/C, pickup_route_id NULL) —

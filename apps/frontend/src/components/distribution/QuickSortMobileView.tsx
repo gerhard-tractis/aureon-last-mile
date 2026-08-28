@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { QuickSortMobile } from './QuickSortMobile';
 import { QuickSortMobileDock } from './QuickSortMobileDock';
-import { useQuickSortFlow, type QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
+import { QuickSortMobileStagePosition } from './QuickSortMobileStagePosition';
+import {
+  useQuickSortFlow,
+  type QuickSortFlowMode,
+  type QuickSortScanEvent,
+} from '@/hooks/distribution/useQuickSortFlow';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useCurrentUserName } from '@/hooks/useCurrentUserName';
 import { useDockZones } from '@/hooks/distribution/useDockZones';
@@ -15,13 +20,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 /**
  * spec-68 Fase 5.2–5.5 — `4g`/`4h`/`4i`/`4j`, quicksort below `lg`.
  *
- * Assembles `useQuickSortFlow` (Fase 5.1) with the two mobile presentations
- * — `QuickSortMobile` (step 1) and `QuickSortMobileDock` (step 2, all three
- * states). Owns the "últimos escaneos" session list the same way the
- * desktop route does (`onScanEvent` callback, newest first, capped), and
- * looks up the destination zone's capacity/count for `QuickSortMobileDock`
- * from `zones`/`useSectorizedByZone` — no new queries, same data the
- * desktop screen already reads.
+ * Assembles `useQuickSortFlow` (Fase 5.1) with the mobile presentations —
+ * `QuickSortMobile` (step 1), `QuickSortMobileDock` (step 2, sectorize
+ * mode's three states) and `QuickSortMobileStagePosition` (step 2, stage
+ * mode — spec-71 phase 3 mobile). Owns the "últimos escaneos" session list
+ * the same way the desktop route does (`onScanEvent` callback, newest
+ * first, capped), and looks up the destination zone's capacity/count for
+ * `QuickSortMobileDock` from `zones`/`useSectorizedByZone` — no new
+ * queries, same data the desktop screen already reads.
+ *
+ * spec-71 phase 3 mobile — `mode` is local `useState`, defaulting to
+ * `'sectorize'` (Decisión: keep existing behaviour unchanged), the same
+ * shape `/app/distribution/quicksort`'s desktop page already uses for its
+ * `Tabs` toggle. `QuickSortMobile` renders the switch (its own segmented
+ * pill row, not desktop's `Tabs`); this component just owns the state and
+ * routes step 2 to whichever destination shape `useQuickSortFlow` armed —
+ * `flow.destination` (dock zone) or `flow.positionDestination` (load
+ * position) are mutually exclusive per the hook's own contract.
  */
 export function QuickSortMobileView() {
   const router = useRouter();
@@ -35,11 +50,14 @@ export function QuickSortMobileView() {
     setScans((prev) => [event, ...prev].slice(0, 50));
   }, []);
 
+  const [mode, setMode] = useState<QuickSortFlowMode>('sectorize');
+
   const flow = useQuickSortFlow({
     operatorId: operatorId ?? '',
     userId: userId ?? '',
     zones: zones ?? [],
     onScanEvent: handleScanEvent,
+    mode,
   });
 
   if (!operatorId || !userId || !zones) {
@@ -91,6 +109,19 @@ export function QuickSortMobileView() {
     );
   }
 
+  if (flow.state === 'scan_position' && flow.positionDestination) {
+    return (
+      <QuickSortMobileStagePosition
+        positionDestination={flow.positionDestination}
+        currentPackage={flow.currentPackage}
+        rejectedCode={flow.rejectedCode}
+        scans={scans}
+        onScanPosition={(code) => { void flow.handlePositionScan(code); }}
+        onCancel={flow.cancelStep2}
+      />
+    );
+  }
+
   return (
     <QuickSortMobile
       operatorName={userName ?? null}
@@ -104,6 +135,8 @@ export function QuickSortMobileView() {
         input?.focus();
       }}
       onCloseBatch={goToDistribution}
+      mode={mode}
+      onModeChange={setMode}
     />
   );
 }

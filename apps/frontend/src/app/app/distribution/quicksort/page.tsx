@@ -7,6 +7,7 @@ import {
   QuickSortScanner,
   type QuickSortScanEvent,
 } from '@/components/distribution/QuickSortScanner';
+import type { QuickSortFlowMode } from '@/hooks/distribution/useQuickSortFlow';
 import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
 import { DockCard } from '@/components/distribution/DockCard';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
@@ -26,6 +27,7 @@ import {
 import { useManualDockAssignment } from '@/hooks/distribution/useManualDockAssignment';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 
@@ -50,6 +52,23 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
  * component: Next type-checks every export of a page module against its
  * Page contract, so `QuickSortDesktopContent` below stays unexported, the
  * same shape `KpiTile` already used before this change.
+ *
+ * spec-71 phase 3 review item 2 — this is the console's only entry point:
+ * before this, nothing in the product passed `mode='stage'` to
+ * `QuickSortScanner`, so the whole staging pass (endpoint, hook branch,
+ * `scan_position` render block) was unreachable. A `Tabs` toggle in the
+ * header, next to "Modo rápido" — the same local-`useState` + `Tabs`
+ * pattern `/app/dispatch`'s own tab row already uses — flips local `mode`
+ * between `'sectorize'` (today's comuna sort, unchanged, still the
+ * default) and `'stage'` (the wave-cutoff staging pass: scan package, then
+ * scan the `load_positions` code the package's route occupies). Deliberately
+ * the smallest switch, not a second screen: the rest of this page (andén
+ * grid, "Pendientes por sectorizar") stays as-is under either tab — it is
+ * sectorize-mode content, but leaving it visible during a staging pass is
+ * harmless, and building a stage-specific layout is phase 5's job, not
+ * this fix's. Below `lg`, `QuickSortMobileView` is unchanged: it does not
+ * accept a mode and never renders `scan_position`, so staging stays a
+ * desktop-only entry point for now — a real limit, not an oversight.
  */
 
 function KpiTile({
@@ -111,6 +130,7 @@ function QuickSortDesktopContent() {
   const manualAssign = useManualDockAssignment(operatorId ?? '', user?.id ?? '');
 
   const [scans, setScans] = useState<QuickSortScanEvent[]>([]);
+  const [mode, setMode] = useState<QuickSortFlowMode>('sectorize');
 
   const handleScanEvent = useCallback((event: QuickSortScanEvent) => {
     // Newest first, and bounded: a long shift would otherwise grow this list
@@ -173,6 +193,15 @@ function QuickSortDesktopContent() {
           <ArrowLeft className="h-5 w-5 text-text-secondary" />
         </Button>
         <h1 className="font-heading text-lg font-semibold leading-none text-text">Modo rápido</h1>
+
+        {/* spec-71 phase 3 — the staging pass's only entry point. Same
+            local-state Tabs pattern as /app/dispatch's header. */}
+        <Tabs value={mode} onValueChange={(v) => setMode(v as QuickSortFlowMode)}>
+          <TabsList>
+            <TabsTrigger value="sectorize">Sectorizar</TabsTrigger>
+            <TabsTrigger value="stage">Estibar</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </header>
 
       {/* Scan block — the field and its result, with the shift's numbers
@@ -183,6 +212,7 @@ function QuickSortDesktopContent() {
           userId={user.id}
           zones={zones}
           onScanEvent={handleScanEvent}
+          mode={mode}
         />
 
         <div className="grid grid-cols-2 gap-2.5">

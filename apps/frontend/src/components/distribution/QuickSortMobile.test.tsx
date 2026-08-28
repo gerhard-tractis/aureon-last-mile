@@ -99,4 +99,47 @@ describe('QuickSortMobile', () => {
       expect(btn.className).toMatch(/h-\[5[6-9]px\]|h-\[60px\]/);
     }
   });
+
+  // spec-71 phase 3 mobile — the mode toggle. Desktop's entry point into
+  // `mode: 'stage'` is a `Tabs` in the header row; this screen has no such
+  // row, so the switch is its own segmented pill instead of a `Tabs` drop-in.
+  describe('mode toggle (spec-71 phase 3 mobile)', () => {
+    it('renders no toggle when onModeChange is not passed (every other caller unaffected)', () => {
+      render(<QuickSortMobile {...baseProps()} />);
+      expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+    });
+
+    it('defaults to Sectorizar selected, and shows the andén copy, when mode is omitted', () => {
+      render(<QuickSortMobile {...baseProps()} onModeChange={vi.fn()} />);
+      expect(screen.getByRole('tab', { name: 'Sectorizar' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'false');
+      expect(screen.getByText('Clasificación en andén')).toBeInTheDocument();
+      expect(
+        screen.getByText('El sistema te dirá a qué andén va antes de que lo muevas'),
+      ).toBeInTheDocument();
+    });
+
+    it('shows the Estibar tab selected and the posición copy when mode="stage"', () => {
+      render(<QuickSortMobile {...baseProps()} mode="stage" onModeChange={vi.fn()} />);
+      expect(screen.getByRole('tab', { name: 'Estibar' })).toHaveAttribute('aria-selected', 'true');
+      expect(screen.getByText('Carga a posición')).toBeInTheDocument();
+      expect(
+        screen.getByText('El sistema te dirá a qué posición va antes de que lo muevas'),
+      ).toBeInTheDocument();
+    });
+
+    it('calls onModeChange with the tapped mode', () => {
+      const onModeChange = vi.fn();
+      render(<QuickSortMobile {...baseProps()} onModeChange={onModeChange} />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Estibar' }));
+      expect(onModeChange).toHaveBeenCalledWith('stage');
+    });
+
+    it('keeps both toggle buttons at the 44px touch-target floor', () => {
+      render(<QuickSortMobile {...baseProps()} onModeChange={vi.fn()} />);
+      for (const tab of screen.getAllByRole('tab')) {
+        expect(tab.className).toMatch(/h-11/);
+      }
+    });
+  });
 });

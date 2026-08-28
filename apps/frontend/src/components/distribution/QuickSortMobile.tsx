@@ -5,20 +5,33 @@ import { DistributionMobileHeader, useIsOnline } from './DistributionMobileHeade
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import { cn } from '@/lib/utils';
-import type { QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
+import type { QuickSortFlowMode, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
 
 /**
  * spec-68 Fase 5.2 — `4g`, quicksort step 1, below `lg`.
  *
  * Top to bottom: titled header (operator · paso 1 de 2 · N escaneos hoy,
- * connection chip), the dashed-accent scan panel, the session counter row,
- * ÚLTIMOS ESCANEOS, and the fixed footer (Ingresar código / Cerrar lote).
+ * connection chip), the mode toggle (spec-71 phase 3 mobile), the
+ * dashed-accent scan panel, the session counter row, ÚLTIMOS ESCANEOS, and
+ * the fixed footer (Ingresar código / Cerrar lote).
  *
  * "N escaneos hoy" reads `sessionCount` — the same session counter
  * `useQuickSortFlow` already tracks. There is no server-side "scans today"
  * query in this codebase (Decisión 9's pattern: don't invent one for a
  * number the session count already answers close enough for), and turnos
  * don't exist in the schema either (Decisión 9, `4c`).
+ *
+ * spec-71 phase 3 mobile — desktop's entry point into `mode: 'stage'` is a
+ * `Tabs` dropped into `/app/distribution/quicksort`'s header row; this
+ * screen has no such row (Decisión 4 keeps step 2 header-less, and step
+ * 1's header is the titled `DistributionMobileHeader`, not a bar with room
+ * for a second control). So the switch is its own segmented pill row
+ * instead — two `h-11` (44px) touch targets, the floor every button on
+ * this screen already holds to, in a `role="tablist"` matching the
+ * semantics `Tabs` gives desktop. Only rendered when `onModeChange` is
+ * passed, so every other caller stays unaffected. Mode only switches on
+ * step 1 — step 2 has no header for a toggle to live in, and switching
+ * mid-scan makes no operational sense.
  */
 export interface QuickSortMobileProps {
   operatorName: string | null;
@@ -36,6 +49,10 @@ export interface QuickSortMobileProps {
   onEnterCode: () => void;
   /** Footer "Cerrar lote" — ends the session and returns to Distribución. */
   onCloseBatch: () => void;
+  /** Defaults to `'sectorize'` — unchanged behaviour when omitted. */
+  mode?: QuickSortFlowMode;
+  /** Renders the Sectorizar/Estibar toggle when provided. */
+  onModeChange?: (mode: QuickSortFlowMode) => void;
 }
 
 function timeLabel(at: Date): string {
@@ -52,13 +69,15 @@ export function QuickSortMobile({
   onEnterCode,
   onCloseBatch,
   isOnline: isOnlineOverride,
+  mode = 'sectorize',
+  onModeChange,
 }: QuickSortMobileProps) {
   const isOnline = useIsOnline(isOnlineOverride);
   return (
     <div className="flex min-h-0 flex-col gap-5 px-5 py-[22px] pb-[104px]">
       <DistributionMobileHeader
         variant="titled"
-        title="Clasificación en andén"
+        title={mode === 'stage' ? 'Carga a posición' : 'Clasificación en andén'}
         subtitle={`${operatorName ?? 'Operario'} · paso 1 de 2 · ${sessionCount} escaneos hoy`}
         onBack={onBack}
         statusChip={
@@ -67,6 +86,43 @@ export function QuickSortMobile({
             : { label: 'SIN CONEXIÓN', tone: 'error' }
         }
       />
+
+      {onModeChange && (
+        <div
+          role="tablist"
+          aria-label="Modo de escaneo"
+          className="flex items-center gap-1 rounded-full border border-border bg-surface p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'sectorize'}
+            onClick={() => onModeChange('sectorize')}
+            className={cn(
+              'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
+              mode === 'sectorize'
+                ? 'bg-accent-light text-accent-light-foreground'
+                : 'text-text-secondary active:bg-surface-raised',
+            )}
+          >
+            Sectorizar
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'stage'}
+            onClick={() => onModeChange('stage')}
+            className={cn(
+              'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
+              mode === 'stage'
+                ? 'bg-accent-light text-accent-light-foreground'
+                : 'text-text-secondary active:bg-surface-raised',
+            )}
+          >
+            Estibar
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-accent bg-accent-muted px-5 py-8 text-center">
         <span className="font-mono text-[9.5px] font-semibold uppercase tracking-[.12em] text-accent">
@@ -77,7 +133,9 @@ export function QuickSortMobile({
           Escanea el paquete
         </p>
         <p className="text-[12.5px] leading-[1.4] text-text-secondary">
-          El sistema te dirá a qué andén va antes de que lo muevas
+          {mode === 'stage'
+            ? 'El sistema te dirá a qué posición va antes de que lo muevas'
+            : 'El sistema te dirá a qué andén va antes de que lo muevas'}
         </p>
         <ScanField
           ariaLabel="Escanear paquete"

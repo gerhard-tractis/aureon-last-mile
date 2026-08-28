@@ -203,7 +203,7 @@ export async function validateScan(
   // DTO is the spec-38 type lie in miniature — the type now refuses to let
   // one back in (ScanResult.package Omits both), and the handler adds the
   // real values once it knows them.
-  return { ok: true, package: pkg, action };
+  return { ok: true, package: pkg, packageId: found.id, action };
 }
 
 function queryFailed(message: string): ScanResult {

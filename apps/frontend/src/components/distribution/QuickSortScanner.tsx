@@ -2,7 +2,11 @@
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import type { DockZone } from '@/lib/distribution/sectorization-engine';
-import { useQuickSortFlow, type QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
+import {
+  useQuickSortFlow,
+  type QuickSortScanEvent,
+  type QuickSortFlowMode,
+} from '@/hooks/distribution/useQuickSortFlow';
 
 export type { QuickSortScanEvent };
 
@@ -12,6 +16,13 @@ interface QuickSortScannerProps {
   zones: DockZone[];
   /** Feeds the "Últimos escaneos" panel alongside this console. */
   onScanEvent?: (event: QuickSortScanEvent) => void;
+  /**
+   * spec-71 phase 3. 'stage' repoints this same console at the wave-cutoff
+   * staging pass — the destination becomes a `load_positions` row instead
+   * of a `dock_zones` row. Defaults to 'sectorize' (today's unchanged
+   * comuna sort), so every existing caller of this component is unaffected.
+   */
+  mode?: QuickSortFlowMode;
 }
 
 /**
@@ -22,17 +33,24 @@ interface QuickSortScannerProps {
  * This component's own behaviour is unchanged from before the extraction —
  * its tests moved to `useQuickSortFlow.test.ts`, this file keeps only the
  * rendering-wiring tests.
+ *
+ * spec-71 phase 3 adds a third rendered state, `scan_position`, alongside
+ * `scan_package`/`scan_anden` — the staging pass's destination scan, wired
+ * exactly like the andén one: destination shown and the field armed in the
+ * same step, reject state on mismatch instead of a state transition.
  */
-export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: QuickSortScannerProps) {
+export function QuickSortScanner({ operatorId, userId, zones, onScanEvent, mode = 'sectorize' }: QuickSortScannerProps) {
   const {
     state,
     destination,
+    positionDestination,
     currentPackage,
     error,
     counter,
     handlePackageScan,
     handleAndenScan,
-  } = useQuickSortFlow({ operatorId, userId, zones, onScanEvent });
+    handlePositionScan,
+  } = useQuickSortFlow({ operatorId, userId, zones, onScanEvent, mode });
 
   return (
     <div className="flex flex-col gap-3">
@@ -72,12 +90,33 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent }: Qui
         </>
       )}
 
+      {/* spec-71 phase 3 — same shape as scan_anden above, pointed at the
+          position the package's route currently occupies. A mismatched scan
+          rejects (error + field stays armed) rather than transitioning. */}
+      {state === 'scan_position' && positionDestination && (
+        <>
+          <ScanResult
+            status="ok"
+            title={`POSICIÓN ${positionDestination.positionCode}${positionDestination.positionLabel ? ` · ${positionDestination.positionLabel}` : ''}`}
+            context={currentPackage?.label ?? ''}
+            code={positionDestination.positionCode}
+          />
+
+          <ScanField
+            size="md"
+            ariaLabel="Escanear posición"
+            onScan={(code) => { void handlePositionScan(code); }}
+            helperText="Escanea la posición para confirmar"
+          />
+        </>
+      )}
+
       {error && (
         <ScanResult status="error" title={error} context={currentPackage?.label} />
       )}
 
       <p className="font-mono text-[10.5px] uppercase tracking-[.1em] text-text-muted">
-        {counter} paquetes sectorizados en esta sesión
+        {counter} paquetes {mode === 'stage' ? 'cargados a posición' : 'sectorizados'} en esta sesión
       </p>
     </div>
   );
