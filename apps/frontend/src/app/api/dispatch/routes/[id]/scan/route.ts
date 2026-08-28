@@ -134,6 +134,64 @@ export async function POST(
         p_to_status: to,
       });
       if (transitionError) throw transitionError;
+
+      // spec-71 Decision 8: a route reaching `planned` here (the draft ->
+      // planned leg of the walk, taken on a manually created empty route's
+      // first stop) gets the same best-effort load-position assignment
+      // create_seeded_route's caller gets. No position free is not an error.
+      if (to === 'planned') {
+        try {
+          const { data: assignedPositionId, error: assignError } = await supabase.rpc('assign_load_position', {
+            p_route_id: routeId,
+            p_operator_id: operatorId,
+            p_user_id: session.user.id,
+          });
+          if (assignError) {
+            console.error('[dispatch/scan POST] assign_load_position failed', assignError);
+          } else if (assignedPositionId) {
+            await supabase.from('audit_logs').insert({
+              operator_id: operatorId,
+              user_id: session.user.id,
+              action: 'assign_load_position',
+              resource_type: 'routes',
+              resource_id: routeId,
+              changes_json: { load_position_id: assignedPositionId },
+              ip_address: 'unknown',
+            }).then(() => null, () => null);
+          }
+        } catch (assignErr) {
+          console.error('[dispatch/scan POST] assign_load_position threw', assignErr);
+        }
+      }
+    }
+
+    // spec-71 Decision 7 residual risk: an adopted scan just changed this
+    // route's dispatch set, which can introduce a new source andén that
+    // conflicts with its already-assigned position. The `stage` path does
+    // not change the dispatch set (it updates a row already counted), so it
+    // is not re-checked. Surfaced, not auto-fixed — no reassignment UI here.
+    let loadPositionConflict = false;
+    if (validation.action.kind === 'adopt') {
+      try {
+        // check_load_position_conflict (20260827000003) raises ROUTE_NOT_FOUND
+        // rather than returning no row when the route is missing / not this
+        // operator's — but supabase-js resolves that as {data: null, error},
+        // it does not reject. Checking `error` here (not just discarding it)
+        // is what keeps that distinguishable: a missing-route/query failure
+        // is logged, not silently coerced into the same `false` a genuine
+        // "no conflict" result would produce.
+        const { data: conflictResult, error: conflictError } = await supabase.rpc('check_load_position_conflict', {
+          p_route_id: routeId,
+          p_operator_id: operatorId,
+        });
+        if (conflictError) {
+          console.error('[dispatch/scan POST] check_load_position_conflict failed', conflictError);
+        } else {
+          loadPositionConflict = Boolean((conflictResult as { conflict?: boolean } | null)?.conflict);
+        }
+      } catch (conflictErr) {
+        console.error('[dispatch/scan POST] check_load_position_conflict threw', conflictErr);
+      }
     }
 
     return NextResponse.json(
@@ -144,6 +202,10 @@ export async function POST(
         // The validator can't honestly claim this — see ScanResult.package's
         // Omit — but by here the update above has just written it.
         package_status: 'en_carga',
+        // No UI consumes this yet — spec-71 phase 5 is expected to surface it
+        // for a reassignment flow. Until then it is carried through and
+        // logged, not acted on.
+        load_position_conflict: loadPositionConflict,
       },
       { status: 201 },
     );

@@ -666,3 +666,230 @@ describe('POST /routes/[id]/dispatch — items', () => {
     expect(items).toEqual([]);
   });
 });
+
+/**
+ * spec-71 Decision 8: release happens at `dispatched`. load_position_id is
+ * LEFT SET on the route row (Decision 4) — only release_load_position and its
+ * audit_logs row are new here.
+ */
+describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
+  function loadedRouteChain(loadPositionId: string | null) {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'r1', status: 'loaded', route_date: '2026-03-24', load_position_id: loadPositionId },
+        error: null,
+      }),
+    };
+  }
+
+  function dispatchesChain() {
+    return {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'd1',
+          order_id: 'o1',
+          orders: { order_number: '4821', customer_name: 'Mario', delivery_address: 'Av 1', customer_phone: null },
+        }],
+        error: null,
+      }),
+    };
+  }
+
+  function updateChain() {
+    return {
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+      insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
+    };
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+  });
+
+  it('calls release_load_position when the route holds a position', async () => {
+    const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(rpcMock).toHaveBeenCalledWith('release_load_position', {
+      p_route_id: 'r1',
+      p_operator_id: 'op-1',
+      p_user_id: 'u1',
+    });
+  });
+
+  it('does not call release_load_position when the route never held a position', async () => {
+    const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain(null))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(rpcMock.mock.calls.filter((c) => c[0] === 'release_load_position')).toEqual([]);
+  });
+
+  it('writes an audit_logs row for the release', async () => {
+    const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    const releaseAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce({ insert: releaseAuditInsert }) // release_load_position's own audit row
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(releaseAuditInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operator_id: 'op-1',
+        user_id: 'u1',
+        action: 'release_load_position',
+        resource_type: 'routes',
+        resource_id: 'r1',
+        changes_json: {
+          load_position_id: 'pos-1',
+          previous_state: 'occupied',
+          new_state: 'released',
+        },
+      }),
+    );
+  });
+
+  it('a failed/thrown release_load_position never fails the dispatch', async () => {
+    const rpcMock = vi.fn((fn: string) =>
+      fn === 'release_load_position'
+        ? Promise.resolve({ data: null, error: { message: 'db error' } })
+        : Promise.resolve({ data: 'dispatched', error: null }),
+    );
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+  });
+
+  /**
+   * spec-71 phase 2 code-review fix: the missing re-attempt on release.
+   * release_load_position only frees a position; sweep_load_position_assignments
+   * is what re-attempts assignment for a route that missed out earlier, and it
+   * must run right after a successful release.
+   */
+  it('sweeps for routes that missed a position after a successful release', async () => {
+    const rpcMock = vi.fn((fn: string) => {
+      if (fn === 'release_load_position') return Promise.resolve({ data: null, error: null });
+      if (fn === 'sweep_load_position_assignments') {
+        return Promise.resolve({ data: [{ route_id: 'r7', load_position_id: 'pos-1' }], error: null });
+      }
+      return Promise.resolve({ data: 'dispatched', error: null });
+    });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(rpcMock).toHaveBeenCalledWith('sweep_load_position_assignments', {
+      p_operator_id: 'op-1',
+      p_user_id: 'u1',
+    });
+  });
+
+  it('writes an audit_logs row for each route the sweep assigned a position to', async () => {
+    const rpcMock = vi.fn((fn: string) => {
+      if (fn === 'release_load_position') return Promise.resolve({ data: null, error: null });
+      if (fn === 'sweep_load_position_assignments') {
+        return Promise.resolve({
+          data: [
+            { route_id: 'r7', load_position_id: 'pos-1' },
+            { route_id: 'r8', load_position_id: 'pos-2' },
+          ],
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: 'dispatched', error: null });
+    });
+    const sweepAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
+    const releaseAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce({ insert: releaseAuditInsert }) // release_load_position's own audit row
+      .mockReturnValueOnce({ insert: sweepAuditInsert })   // sweep audit row for r7
+      .mockReturnValueOnce({ insert: sweepAuditInsert })   // sweep audit row for r8
+      .mockReturnValue(updateChain());                     // routes/packages update + final audit row
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(sweepAuditInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'assign_load_position',
+        resource_type: 'routes',
+        resource_id: 'r7',
+        changes_json: { load_position_id: 'pos-1', via: 'sweep_after_release' },
+      }),
+    );
+    expect(sweepAuditInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource_id: 'r8',
+        changes_json: { load_position_id: 'pos-2', via: 'sweep_after_release' },
+      }),
+    );
+  });
+
+  it('a failed/thrown sweep_load_position_assignments never fails the dispatch', async () => {
+    const rpcMock = vi.fn((fn: string) => {
+      if (fn === 'release_load_position') return Promise.resolve({ data: null, error: null });
+      if (fn === 'sweep_load_position_assignments') {
+        return Promise.resolve({ data: null, error: { message: 'sweep db error' } });
+      }
+      return Promise.resolve({ data: 'dispatched', error: null });
+    });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(loadedRouteChain('pos-1'))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+  });
+});

@@ -35,6 +35,7 @@ function buildClient(opts: {
   routeStatus?: string | null;
   dispatchFound?: boolean;
   dispatchQueryError?: { code: string; message: string };
+  rpcMock?: ReturnType<typeof vi.fn>;
 } = {}) {
   // Not a default parameter: {role: undefined} must mean "no role in the
   // claims", not "fall back to ops_leader" — the exact case the missing-role
@@ -90,14 +91,18 @@ function buildClient(opts: {
     return dispatchChain;
   });
 
+  const rpcMock = opts.rpcMock ?? vi.fn().mockResolvedValue({ data: { conflict: false }, error: null });
+
   return {
     client: {
       auth: { getSession: vi.fn().mockResolvedValue(sessionWithRole(role)) },
       from: fromMock,
+      rpc: rpcMock,
     },
     dispatchUpdateSpy,
     packagesUpdateSpy,
     auditInsertSpy,
+    rpcMock,
   };
 }
 
@@ -241,5 +246,48 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
     });
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * spec-71 Decision 7 residual risk: removing a stop changes the route's
+ * dispatch set too, so the offset conflict must be re-checked and surfaced.
+ */
+describe('DELETE /routes/[id]/packages/[pkgId] — spec-71 offset re-check', () => {
+  it('calls check_load_position_conflict with the dispatch\'s route_id', async () => {
+    const { client, rpcMock } = buildClient();
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    await DELETE(buildRequest(), { params });
+    expect(rpcMock).toHaveBeenCalledWith('check_load_position_conflict', {
+      p_route_id: 'r1',
+      p_operator_id: 'op-1',
+    });
+  });
+
+  it('surfaces load_position_conflict: true when the RPC reports a conflict', async () => {
+    const rpcMock = vi.fn().mockResolvedValue({ data: { load_position_id: 'pos-1', conflict: true }, error: null });
+    const { client } = buildClient({ rpcMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    const body = await res.json();
+    expect(body.load_position_conflict).toBe(true);
+  });
+
+  it('reports load_position_conflict: false when there is no conflict', async () => {
+    const { client } = buildClient();
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    const body = await res.json();
+    expect(body.load_position_conflict).toBe(false);
+  });
+
+  it('a thrown check_load_position_conflict never fails the removal', async () => {
+    const rpcMock = vi.fn().mockRejectedValue(new Error('boom'));
+    const { client } = buildClient({ rpcMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.load_position_conflict).toBe(false);
   });
 });

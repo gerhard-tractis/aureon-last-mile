@@ -67,7 +67,7 @@ export async function POST(
 
     const { data: route, error: routeError } = await supabase
       .from('routes')
-      .select('id, status, route_date')
+      .select('id, status, route_date, load_position_id')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
@@ -211,6 +211,89 @@ export async function POST(
       p_to_status: 'dispatched',
     });
     if (transitionError) throw transitionError;
+
+    // spec-71 Decision 8: release happens at `dispatched`. Best-effort in
+    // the sense that a route with no position (never assigned one) has
+    // nothing to release — release_load_position is itself idempotent, but
+    // skipping the call entirely when there is nothing to do avoids a
+    // pointless RPC round-trip and a misleading audit_logs row.
+    if (route.load_position_id) {
+      try {
+        const { error: releaseError } = await supabase.rpc('release_load_position', {
+          p_route_id: routeId,
+          p_operator_id: operatorId,
+          p_user_id: session.user.id,
+        });
+        if (releaseError) {
+          console.error('[dispatch/dispatch POST] release_load_position failed', releaseError);
+        } else {
+          // Audit log — actual audit_logs schema: operator_id, user_id,
+          // action, resource_type, resource_id, changes_json, ip_address.
+          // changes_json carries the before/after of the release itself
+          // (Decision 4: load_position_id is LEFT SET, only the
+          // released_at/_by pair moves from unset to stamped).
+          await supabase.from('audit_logs').insert({
+            operator_id: operatorId,
+            user_id: session.user.id,
+            action: 'release_load_position',
+            resource_type: 'routes',
+            resource_id: routeId,
+            changes_json: {
+              load_position_id: route.load_position_id,
+              previous_state: 'occupied',
+              new_state: 'released',
+            },
+            ip_address: 'unknown',
+          }).then(() => null, () => null);
+
+          // spec-71 phase 2's own bullet: a route left at load_position_id
+          // NULL is "assigned a position later, whenever one is released."
+          // This release just freed one, so sweep this operator's other
+          // routes that missed out earlier — sweep_load_position_assignments
+          // (packages/database/supabase/migrations/20260827000003) does the
+          // scan/assign loop in one round-trip, bounded and oldest-created-
+          // first; see that migration's header for the ordering/cap
+          // rationale. The route being dispatched here can never be swept:
+          // its load_position_id stays SET by release (Decision 4), so it
+          // never matches the sweep's `load_position_id IS NULL` filter.
+          // Best-effort like every other call in this block — never fails
+          // the dispatch request.
+          try {
+            const { data: sweepResults, error: sweepError } = await supabase.rpc(
+              'sweep_load_position_assignments',
+              { p_operator_id: operatorId, p_user_id: session.user.id },
+            );
+            if (sweepError) {
+              console.error('[dispatch/dispatch POST] sweep_load_position_assignments failed', sweepError);
+            } else if (Array.isArray(sweepResults) && sweepResults.length) {
+              // One audit_logs row per assignment the sweep actually made,
+              // exactly like the existing assign_load_position call sites
+              // (routes/route.ts, [id]/scan/route.ts).
+              await Promise.all(
+                (sweepResults as { route_id: string; load_position_id: string }[]).map((swept) =>
+                  supabase.from('audit_logs').insert({
+                    operator_id: operatorId,
+                    user_id: session.user.id,
+                    action: 'assign_load_position',
+                    resource_type: 'routes',
+                    resource_id: swept.route_id,
+                    changes_json: { load_position_id: swept.load_position_id, via: 'sweep_after_release' },
+                    ip_address: 'unknown',
+                  }).then(() => null, () => null),
+                ),
+              );
+            }
+          } catch (sweepErr) {
+            console.error('[dispatch/dispatch POST] sweep_load_position_assignments threw', sweepErr);
+          }
+        }
+      } catch (releaseErr) {
+        // The route has already transitioned to `dispatched` (and is about
+        // to be confirmed at DT); a release failure must not surface as a
+        // dispatch failure.
+        console.error('[dispatch/dispatch POST] release_load_position threw', releaseErr);
+      }
+    }
 
     await Promise.all([
       supabase

@@ -57,6 +57,23 @@ function makeChain(result: { data: unknown; error: unknown }) {
 
 const DRAFT_ROUTE = { id: 'route-1', status: 'draft', route_date: '2026-04-23', created_at: '2026-04-23T12:00:00Z' };
 
+/**
+ * Routes mockRpc by function name so `create_seeded_route` resolves the
+ * created route while `assign_load_position` (spec-71 phase 2, called right
+ * after) resolves `null` — no position available — the best-effort default
+ * these pre-existing tests don't care about. A single blanket
+ * `mockResolvedValue` for both calls made `assign_load_position` "return" the
+ * route object itself, which the handler then wrote back onto
+ * `load_position_id` — a circular reference JSON.stringify chokes on.
+ */
+function mockRpcSeedThenNoPosition(seededRoute: unknown = DRAFT_ROUTE) {
+  mockRpc.mockImplementation((fn: string) =>
+    fn === 'create_seeded_route'
+      ? Promise.resolve({ data: seededRoute, error: null })
+      : Promise.resolve({ data: null, error: null }),
+  );
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('POST /api/dispatch/routes', () => {
@@ -111,7 +128,7 @@ describe('POST /api/dispatch/routes', () => {
       .mockReturnValueOnce(ordersChain)     // from('orders')
       .mockReturnValueOnce(dispatchesChain); // from('dispatches')
 
-    mockRpc.mockResolvedValue({ data: DRAFT_ROUTE, error: null });
+    mockRpcSeedThenNoPosition();
 
     const res = await POST(makePost({ order_ids: ['ord-1', 'ord-2'] }));
     expect(res.status).toBe(201);
@@ -195,7 +212,7 @@ describe('POST /api/dispatch/routes — spec-70', () => {
     mockFrom
       .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
       .mockReturnValueOnce(makeChain({ data: [], error: null }));
-    mockRpc.mockResolvedValue({ data: DRAFT_ROUTE, error: null });
+    mockRpcSeedThenNoPosition();
   }
 
   it('passes the wave date through to the RPC', async () => {
@@ -249,11 +266,102 @@ describe('POST /api/dispatch/routes — spec-70', () => {
         .mockReturnValueOnce(
           makeChain({ data: [{ order_id: 'ord-1', route: { status } }], error: null }),
         );
-      mockRpc.mockResolvedValue({ data: DRAFT_ROUTE, error: null });
+      mockRpcSeedThenNoPosition();
 
       const res = await POST(makePost({ order_ids: ['ord-1'] }));
       expect(res.status).toBe(201);
       expect(mockRpc).toHaveBeenCalled();
     },
   );
+});
+
+/**
+ * spec-71 Decision 8: a seeded route reaches `planned` immediately, so it
+ * gets a best-effort load-position assignment right after creation.
+ */
+describe('POST /api/dispatch/routes — spec-71 load position assignment', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function seedRoute() {
+    mockGetSession.mockResolvedValue(authedSession('op-1'));
+    mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [], error: null }));
+  }
+
+  it('calls assign_load_position with the new route id right after create_seeded_route', async () => {
+    seedRoute();
+    mockRpcSeedThenNoPosition();
+
+    await POST(makePost({ order_ids: ['ord-1'] }));
+
+    expect(mockRpc).toHaveBeenCalledWith('assign_load_position', {
+      p_route_id: 'route-1',
+      p_operator_id: 'op-1',
+      p_user_id: 'u-1',
+    });
+  });
+
+  it('best-effort: no position available still returns 201 and never touches audit_logs', async () => {
+    seedRoute();
+    mockRpcSeedThenNoPosition(); // assign_load_position resolves { data: null }
+
+    const res = await POST(makePost({ order_ids: ['ord-1'] }));
+    expect(res.status).toBe(201);
+    // Only the two ownership/routed-check from() calls — no third
+    // (audit_logs) call, since nothing was assigned.
+    expect(mockFrom).toHaveBeenCalledTimes(2);
+  });
+
+  it('writes an audit_logs row and echoes load_position_id when a position was assigned', async () => {
+    mockGetSession.mockResolvedValue(authedSession('op-1'));
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'create_seeded_route'
+        ? Promise.resolve({ data: DRAFT_ROUTE, error: null })
+        : Promise.resolve({ data: 'pos-1', error: null }),
+    );
+
+    const auditInsertSpy = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
+    mockFrom
+      .mockReturnValueOnce(makeChain({ data: [{ id: 'ord-1' }], error: null }))
+      .mockReturnValueOnce(makeChain({ data: [], error: null }))
+      .mockReturnValueOnce({ insert: auditInsertSpy });
+
+    const res = await POST(makePost({ order_ids: ['ord-1'] }));
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.load_position_id).toBe('pos-1');
+
+    expect(auditInsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operator_id: 'op-1',
+        user_id: 'u-1',
+        action: 'assign_load_position',
+        resource_type: 'routes',
+        resource_id: 'route-1',
+        changes_json: { load_position_id: 'pos-1' },
+      }),
+    );
+  });
+
+  it('a thrown/errored assign_load_position never fails route creation', async () => {
+    seedRoute();
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'create_seeded_route'
+        ? Promise.resolve({ data: DRAFT_ROUTE, error: null })
+        : Promise.reject(new Error('boom')),
+    );
+
+    const res = await POST(makePost({ order_ids: ['ord-1'] }));
+    expect(res.status).toBe(201);
+  });
+
+  it('does not assign a position for an empty draft route (draft, not planned)', async () => {
+    mockGetSession.mockResolvedValue(authedSession('op-1'));
+    mockFrom.mockReturnValue(makeChain({ data: DRAFT_ROUTE, error: null }));
+
+    const res = await POST(makePost({}));
+    expect(res.status).toBe(201);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
 });
