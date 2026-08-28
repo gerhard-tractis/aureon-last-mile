@@ -142,4 +142,18 @@ describe('QuickSortMobile', () => {
       }
     });
   });
+
+  // spec-71 phase 4, review finding #1 (HIGH). ScanField focuses on mount, and
+  // SealPositionCard renders AFTER the package field — so an always-armed seal
+  // field won the focus race and the gun's next PACKAGE barcode was typed into
+  // it and POSTed to /load-positions/seal. On mobile the package field never
+  // remounts, so focus never came back on its own: every later scan kept
+  // landing in the seal field. The card is collapsed by default now; this test
+  // is the permanent guard on that.
+  it('leaves focus on the package field in stage mode — the seal card must not steal the gun', () => {
+    render(<QuickSortMobile {...baseProps()} mode="stage" onModeChange={vi.fn()} />);
+
+    expect(screen.queryByLabelText('Escanear posición a sellar')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(screen.getByLabelText('Escanear paquete'));
+  });
 });

@@ -38,6 +38,17 @@ interface ScanFieldProps {
    * reactivar el lector" (spec-62, mock 3q).
    */
   onFocusStateChange?: (focused: boolean) => void;
+  /**
+   * Defaults to `true` — unchanged for every existing caller. Set `false`
+   * for a field that competes with another field for the operator's
+   * primary attention (spec-71 phase 4 review fix #1): `SealPositionCard`
+   * mounts its own `ScanField` alongside the package field, and a
+   * permanently-focusing second field steals the scanner gun's input mid
+   * flow. That field renders only once the operator has deliberately
+   * revealed it (tap-to-reveal), at which point it may take focus — this
+   * prop is what lets it opt out of the mount-time grab until then.
+   */
+  autoFocus?: boolean;
 }
 
 function BarcodeIcon({ className }: { className?: string }) {
@@ -57,6 +68,7 @@ export function ScanField({
   disabled = false,
   className,
   onFocusStateChange,
+  autoFocus = true,
 }: ScanFieldProps) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -64,10 +76,12 @@ export function ScanField({
 
   // Keep focus on the field. A scanner gun types into whatever is focused, so
   // losing focus silently drops scans — the operator keeps working and nothing
-  // records.
+  // records. `autoFocus: false` opts a field out of this entirely (review
+  // fix #1) — used by a field that would otherwise fight another ScanField
+  // for the operator's input.
   useEffect(() => {
-    if (!disabled) inputRef.current?.focus();
-  }, [disabled]);
+    if (!disabled && autoFocus) inputRef.current?.focus();
+  }, [disabled, autoFocus]);
 
   function submit(raw: string) {
     if (disabled) return;

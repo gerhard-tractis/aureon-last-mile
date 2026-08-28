@@ -128,6 +128,28 @@ describe('ScanField', () => {
     expect(onScan).not.toHaveBeenCalled();
   });
 
+  // Review fix #1 — SealPositionCard mounts a second ScanField that must
+  // not steal the operator's scanner-gun input from the package field.
+  it('does not autofocus when autoFocus is false', () => {
+    render(
+      <>
+        <input aria-label="other field" autoFocus />
+        <ScanField onScan={vi.fn()} autoFocus={false} />
+      </>,
+    );
+    expect(document.activeElement).not.toBe(screen.getByLabelText('Código de barras'));
+    expect(document.activeElement).toBe(screen.getByLabelText('other field'));
+  });
+
+  it('takes focus once autoFocus flips from false to true', () => {
+    const { rerender } = render(<ScanField onScan={vi.fn()} autoFocus={false} />);
+    const input = screen.getByRole('textbox');
+    expect(document.activeElement).not.toBe(input);
+
+    rerender(<ScanField onScan={vi.fn()} autoFocus />);
+    expect(document.activeElement).toBe(input);
+  });
+
   it('reports when it loses and regains focus', async () => {
     const onFocusStateChange = vi.fn();
     const user = userEvent.setup();

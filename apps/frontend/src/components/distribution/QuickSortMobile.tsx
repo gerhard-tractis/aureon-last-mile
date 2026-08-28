@@ -4,6 +4,7 @@ import { ScanLine } from 'lucide-react';
 import { DistributionMobileHeader, useIsOnline } from './DistributionMobileHeader';
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
+import { SealPositionCard } from '@/components/distribution/SealPositionCard';
 import { cn } from '@/lib/utils';
 import type { QuickSortFlowMode, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
 
@@ -144,6 +145,24 @@ export function QuickSortMobile({
           className="w-full"
         />
       </div>
+
+      {/* spec-71 phase 4 — the position seal, reachable from stage mode's
+          step 1 only (positions have nothing to seal until packages are
+          staged into them). Same component desktop uses — not a fork.
+          Review fix #1 — the card collapses on its own after a seal or a
+          cancel; `onCollapse` hands focus back to the package field above,
+          the same `querySelector` pattern `QuickSortMobileView`'s
+          `onEnterCode` already uses (this component owns no ref to a
+          field it does not render itself). */}
+      {mode === 'stage' && (
+        <SealPositionCard
+          onCollapse={() => {
+            document
+              .querySelector<HTMLInputElement>('input[aria-label="Escanear paquete"]')
+              ?.focus();
+          }}
+        />
+      )}
 
       {error && <ScanResult status="error" title={error} />}
 

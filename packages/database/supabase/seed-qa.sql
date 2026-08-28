@@ -352,6 +352,53 @@ VALUES
    'POS-04', 'Pasillo central',    NULL,                                   true)
 ON CONFLICT (id) DO NOTHING;
 
+-- load_positions — Transportes Musan
+-- =============================================================================
+-- QA finding: the block above seeds only the QA test operator, which has 4
+-- routes. Musan has ~120 and is the operator anyone testing with realistic
+-- volume will pick — and it had ZERO positions, so assign_load_position found
+-- no candidate and the whole of spec-71 was inert for it. Found by querying QA
+-- directly; a green deploy says nothing about this.
+--
+-- Musan's id is gen_random_uuid() (migration 20260223000001) and differs per
+-- environment, so it is resolved by slug exactly as the fleet_vehicles row
+-- below does. Its andenes (QUIL-001, CONSOL) are seeded elsewhere with
+-- generated ids too, so fronts_dock_zone_id is resolved by code within the
+-- same operator rather than hardcoded. If the operator or an andén is absent,
+-- the SELECT yields no row and the seed skips it rather than failing.
+--
+-- Three positions, deliberately: Decision 7's offset rule EXCLUDES a position
+-- fronting an andén the route sources from. Musan has only two andenes, so
+-- with fewer positions a route sourcing from QUIL-001 could find nothing
+-- assignable. POS-03 fronts nothing (an open lane) and is the always-safe
+-- fallback that keeps assignment succeeding.
+--
+-- QUIL-001 is also the better normalisation test than the A1/A2/A3 codes
+-- above: it carries the hyphen the QA scanner's US/ES layout corrupts.
+INSERT INTO public.load_positions (id, operator_id, code, label, fronts_dock_zone_id, is_active)
+SELECT '00000000-0000-4000-8000-000000000195', o.id, 'POS-01', 'Frente a Quilicura',
+       (SELECT dz.id FROM public.dock_zones dz
+         WHERE dz.operator_id = o.id AND dz.code = 'QUIL-001' AND dz.deleted_at IS NULL),
+       true
+FROM public.operators o
+WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.load_positions (id, operator_id, code, label, fronts_dock_zone_id, is_active)
+SELECT '00000000-0000-4000-8000-000000000196', o.id, 'POS-02', 'Frente a Consolidación',
+       (SELECT dz.id FROM public.dock_zones dz
+         WHERE dz.operator_id = o.id AND dz.code = 'CONSOL' AND dz.deleted_at IS NULL),
+       true
+FROM public.operators o
+WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public.load_positions (id, operator_id, code, label, fronts_dock_zone_id, is_active)
+SELECT '00000000-0000-4000-8000-000000000197', o.id, 'POS-03', 'Pasillo central', NULL, true
+FROM public.operators o
+WHERE o.slug = 'transportes-musan' AND o.deleted_at IS NULL
+ON CONFLICT (id) DO NOTHING;
+
 -- =============================================================================
 -- Mobile in-flight state: pending manifests to route, and returns
 -- =============================================================================
