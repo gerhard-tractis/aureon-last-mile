@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { PackageSearch, ScanLine, TriangleAlert, Warehouse, Layers } from 'lucide-react';
+import { PackageSearch, ScanLine, TriangleAlert, Warehouse, Layers, MoveRight } from 'lucide-react';
 import { StatTile } from '@/components/StatTile';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DistributionMobileHeader } from './DistributionMobileHeader';
@@ -152,6 +152,16 @@ export function DistributionMobileView({
           title="Andenes"
           subtitle="Ocupación por zona"
           testId="process-row-andenes"
+        />
+        {/* spec-71 phase 5 — the staging-pass move-task picker: "faltan por
+            mover a posición", grouped by the andén each pending package
+            currently sits in. */}
+        <DistributionProcessRow
+          href="/app/distribution/mover-a-posicion"
+          icon={MoveRight}
+          title="Mover a posición"
+          subtitle="Agrupado por andén"
+          testId="process-row-mover-a-posicion"
         />
       </section>
 

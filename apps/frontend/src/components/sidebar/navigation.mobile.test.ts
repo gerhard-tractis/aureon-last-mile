@@ -223,4 +223,12 @@ describe('isImmersiveMobileRoute', () => {
     expect(isImmersiveMobileRoute('/app/distribution/andenes')).toBe(false);
     expect(isImmersiveMobileRoute('/app/distribution/andenes/anything')).toBe(false);
   });
+
+  // spec-71 phase 5 review item 4 — /mover-a-posicion owns its own fixed
+  // bottom-0 z-40 action bar (Escanear); without joining this list,
+  // MobileTabBar would render underneath it and the two footers overlap.
+  it('the distribution mover-a-posicion screen is immersive too', () => {
+    expect(isImmersiveMobileRoute('/app/distribution/mover-a-posicion')).toBe(true);
+    expect(isImmersiveMobileRoute('/app/distribution/mover-a-posicion/anything')).toBe(true);
+  });
 });
