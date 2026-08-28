@@ -154,6 +154,16 @@ describe('DistributionMobileView (4c)', () => {
     expect(screen.getByTestId('process-row-andenes')).not.toHaveAttribute('aria-disabled');
   });
 
+  // spec-71 phase 5 review item 7 — the row this phase adds had no
+  // coverage at all. Pins the link target and testId the same way every
+  // sibling row above already is.
+  it('Mover a posición is a real link to the phase-5 move-task picker', () => {
+    render(<DistributionMobileView {...baseProps} />);
+    const link = screen.getByRole('link', { name: /mover a posición/i });
+    expect(link).toHaveAttribute('href', '/app/distribution/mover-a-posicion');
+    expect(screen.getByTestId('process-row-mover-a-posicion')).not.toHaveAttribute('aria-disabled');
+  });
+
   // spec-68 Fase 3 — /app/distribution/pendientes ships this phase, so its
   // row is the first of the three to go live.
   it('Pendientes de sectorizar is a real link now that /pendientes exists', () => {

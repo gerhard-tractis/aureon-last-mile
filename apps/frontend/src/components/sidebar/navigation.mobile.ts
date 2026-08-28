@@ -119,6 +119,13 @@ export function buildMobileTabs(ctx: NavContext): MobileTab[] {
  * `QuickSortMobile`/`QuickSortMobileDock`). The desktop tree at this same
  * route keeps its own header instead — this list only gates the GLOBAL
  * `MobileTabBar`, which never renders above `lg` anyway.
+ *
+ * spec-71 phase 5 review item 4 — `/app/distribution/mover-a-posicion`
+ * joins for the same reason as every route above it: its own footer
+ * (`app/app/distribution/mover-a-posicion/page.tsx`) is a `fixed bottom-0
+ * z-40` action bar (Escanear), and without this entry `MobileTabBar`
+ * would render underneath it at `fixed bottom-0 z-30` — same overlap bug
+ * this list exists to prevent for pendientes/consolidacion/quicksort.
  */
 const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/pickup/scan',
@@ -128,6 +135,7 @@ const MOBILE_IMMERSIVE_PREFIXES = [
   '/app/distribution/pendientes',
   '/app/distribution/consolidacion',
   '/app/distribution/quicksort',
+  '/app/distribution/mover-a-posicion',
 ];
 
 export function isImmersiveMobileRoute(pathname: string): boolean {

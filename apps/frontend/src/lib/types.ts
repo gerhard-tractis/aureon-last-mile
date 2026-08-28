@@ -2225,6 +2225,16 @@ export type Database = {
           load_position_id: string
         }[]
       }
+      // spec-71 phase 5 (20260828000001). The move-task picker's data
+      // source — see MoveTaskSnapshot below for the real (narrower) return
+      // shape; `Json` here matches every other jsonb-returning function in
+      // this file (get_pre_route_snapshot, check_load_position_conflict).
+      get_move_task_snapshot: {
+        Args: {
+          p_operator_id: string
+        }
+        Returns: Json
+      }
       process_failed_delivery: {
         Args: {
           p_order_number: string
@@ -2584,4 +2594,45 @@ export type PreRouteSnapshot = {
   };
   andenes: PreRouteAnden[];
   unmapped_comunas: { id: string; name: string; order_count: number; package_count: number }[];
+};
+
+// spec-71 phase 5 (20260828000001_spec71_move_task_snapshot.sql). The
+// move-task picker's data source. `groups` is per-andén, ordered by
+// remaining_count DESC (biggest hop first) in the SQL function itself —
+// consumers should not re-sort. `is_retired` is Decision 7's consumer
+// contract: a group whose `dock_zone_id` points at a soft-deleted andén
+// still appears (dock_zone_code/name are then null), it does not vanish.
+export type MoveTaskZoneGroup = {
+  dock_zone_id: string | null;
+  dock_zone_code: string | null;
+  dock_zone_name: string | null;
+  is_retired: boolean;
+  remaining_count: number;
+};
+
+export type MoveTaskRoute = {
+  route_id: string;
+  external_route_id: string;
+  driver_name: string | null;
+  load_position_id: string;
+  load_position_code: string;
+  load_position_label: string | null;
+  total_packages: number;
+  remaining_packages: number;
+  offset_conflict: boolean;
+  groups: MoveTaskZoneGroup[];
+};
+
+export type MoveTaskUnassignedRoute = {
+  route_id: string;
+  external_route_id: string;
+  driver_name: string | null;
+  total_packages: number;
+  remaining_packages: number;
+};
+
+export type MoveTaskSnapshot = {
+  generated_at: string;
+  routes: MoveTaskRoute[];
+  unassigned_routes: MoveTaskUnassignedRoute[];
 };

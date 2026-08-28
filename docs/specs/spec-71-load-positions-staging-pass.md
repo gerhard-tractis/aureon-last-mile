@@ -211,6 +211,38 @@ is stated explicitly in Decision 1 so the second step is a config change, not a 
    assigned-at) and both set (a position, with its assigned-at) — it does not require a position to
    exist. See the phase 2 bullet under Implementation phases.
 
+9. **Phase 5 is the mobile picker; the desktop supervisor view is a separate spec.** The phase-5
+   bullet under Implementation phases asks for "a view/screen listing 'faltan por mover a posición'
+   per route... so an operator can work the move list rather than hunting the dock" — that is an
+   operator standing on the floor doing one andén→position hop at a time, which is a mobile,
+   andén-grouped task list, not a dashboard. Shipped as `/app/distribution/mover-a-posicion`
+   (`get_move_task_snapshot`, `20260828000001`): for each route holding an active position, its
+   remaining packages grouped by the andén they currently sit in, plus Decision 7's offset-conflict
+   flag and Decision 8's unassigned (blocked, no position) routes surfaced inline — not on a separate
+   screen, per the phase-5 bullet's own framing of both as currently-invisible states that need a
+   home. **Deliberately out of scope here:** a desktop, wave-level supervisor view — staging progress
+   across every route in a wave, every conflict at a glance, every unassigned route in one table, from
+   a floor lead's or dispatcher's chair rather than a single operator's walk. That is oversight of the
+   staging pass, not execution of a single move task; it needs its own data shape (aggregates across
+   routes, not one route's next hop) and its own UI (a table/board, not a phone card list), and
+   conflating the two would have pulled this phase past a single mobile screen. It is left for a
+   future spec, scoped separately once there is real usage of the mobile picker to design the
+   supervisor view against.
+
+   **Ambiguity in the phase-5 bullet's own wording (code review, phase-5 item 10):** it asks for
+   "packages whose dispatch is `planned` or already `staged` on the andén, not yet staged onto their
+   route's position" — but there is no "staged on the andén" state under spec-70's `dispatches.stage`
+   axis (`planned` / `staged` / `adopted`); `staged` there already means "reached its route's
+   position" (phase 3's write path). The bullet is describing a physical fact (the package sits on an
+   andén, ready to move) using dispatch-stage vocabulary that cannot express it. The reading shipped:
+   `dispatches.stage IN ('planned', 'staged')` decides which packages belong to a route's plan at all
+   (`adopted` packages were confirmed physically present by a route-level scan and are out of this
+   screen's scope); whether a member package still counts as "remaining" is decided per package by
+   `dock_scans.load_position_id` (phase 1, `20260827000001`) — not by `stage` a second time — because
+   `stage` lives on the ORDER's dispatch row and a multi-bulto order's `stage` flips to `staged` on
+   its first package scan, which would otherwise hide the rest of that order's unmoved packages (code
+   review, phase-5 item 1).
+
 ---
 
 ## Data model
