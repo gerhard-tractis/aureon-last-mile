@@ -60,6 +60,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!validation.ok) {
+      // Review fix — QUERY_FAILED is not "the scanned code did not resolve",
+      // it's a query that never ran to completion; reporting it as the same
+      // 422 as a genuine refusal was wrong, and its message carries the raw
+      // driver text, which must not reach the client. Logged here instead,
+      // matching seal-load-position.ts's own QUERY_FAILED handling.
+      if (validation.code === 'QUERY_FAILED') {
+        console.error('[dispatch/load-positions/scan POST] position/route resolution query failed', validation.message);
+        return NextResponse.json(
+          { code: validation.code, message: 'No se pudo validar la posición' },
+          { status: 500 },
+        );
+      }
       return NextResponse.json({ code: validation.code, message: validation.message }, { status: 422 });
     }
 

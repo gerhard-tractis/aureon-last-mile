@@ -9,6 +9,7 @@ import {
 } from '@/components/distribution/QuickSortScanner';
 import type { QuickSortFlowMode } from '@/hooks/distribution/useQuickSortFlow';
 import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
+import { SealPositionCard } from '@/components/distribution/SealPositionCard';
 import { DockCard } from '@/components/distribution/DockCard';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
@@ -215,11 +216,29 @@ function QuickSortDesktopContent() {
           mode={mode}
         />
 
-        <div className="grid grid-cols-2 gap-2.5">
-          <KpiTile label="Sectorizados" value={sectorized} />
-          <KpiTile label="En esta sesión" value={scans.filter((s) => s.status === 'ok').length} />
-          <KpiTile label="Pendientes" value={kpis?.pending ?? 0} tone="warning" />
-          <KpiTile label="Consolidación" value={kpis?.consolidation ?? 0} />
+        <div className="flex flex-col gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            <KpiTile label="Sectorizados" value={sectorized} />
+            <KpiTile label="En esta sesión" value={scans.filter((s) => s.status === 'ok').length} />
+            <KpiTile label="Pendientes" value={kpis?.pending ?? 0} tone="warning" />
+            <KpiTile label="Consolidación" value={kpis?.consolidation ?? 0} />
+          </div>
+
+          {/* spec-71 phase 4 — the position seal, only during the staging
+              pass: a position has nothing to seal until the wave cutoff.
+              Review fix #1 — the card collapses after a seal or cancel and
+              `onCollapse` hands focus back to the package field, which is
+              two components away, so it uses the same `querySelector`
+              pattern `QuickSortMobileView`'s `onEnterCode` already does. */}
+          {mode === 'stage' && (
+            <SealPositionCard
+              onCollapse={() => {
+                document
+                  .querySelector<HTMLInputElement>('input[aria-label="Escanear paquete"]')
+                  ?.focus();
+              }}
+            />
+          )}
         </div>
       </div>
 

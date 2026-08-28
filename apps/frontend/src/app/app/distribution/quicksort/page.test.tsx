@@ -241,4 +241,17 @@ describe('QuickSortPage — stage mode toggle (spec-71 phase 3)', () => {
     await user.click(screen.getByRole('tab', { name: 'Sectorizar' }));
     expect(screen.getByTestId('quicksort-scanner')).toHaveAttribute('data-mode', 'sectorize');
   });
+
+  // spec-71 phase 4, review finding #1 (HIGH). SealPositionCard used to mount
+  // an always-armed ScanField, which focuses on mount and renders after the
+  // package field — so it won the focus race and swallowed package scans.
+  // Collapsed by default now: no field exists until the operator taps.
+  it('mounts no seal scan field when switching to Estibar — it must not arm itself', async () => {
+    const user = userEvent.setup();
+    render(<QuickSortPage />);
+    await user.click(screen.getByRole('tab', { name: 'Estibar' }));
+
+    expect(screen.getByRole('button', { name: 'Sellar posición' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('Escanear posición a sellar')).not.toBeInTheDocument();
+  });
 });

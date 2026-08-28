@@ -200,6 +200,30 @@ describe('POST /api/dispatch/load-positions/scan', () => {
     expect(ops.find((o) => o.table === 'dock_scans' && o.kind === 'insert')).toBeUndefined();
   });
 
+  // Review item 2 — same fix as seal-load-position.ts, applied here since
+  // this handler had the identical QUERY_FAILED-as-422 bug it was copied
+  // from: a query that failed to run is a 500, not a resolution refusal,
+  // and its raw driver text must not reach the client.
+  it('500s QUERY_FAILED with a generic message, not the raw driver text', async () => {
+    buildClient();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockValidatePositionScan.mockResolvedValue({
+      ok: false,
+      code: 'QUERY_FAILED',
+      message: 'No se pudo validar la posición: connection terminated unexpectedly',
+    });
+
+    const res = await POST(makeReq());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ code: 'QUERY_FAILED', message: 'No se pudo validar la posición' });
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('connection terminated unexpectedly'),
+    );
+    consoleError.mockRestore();
+  });
+
   it('404s when the route the position resolved to no longer exists for this operator', async () => {
     buildClient(null);
     mockValidatePositionScan.mockResolvedValue(STAGE_RESULT);
