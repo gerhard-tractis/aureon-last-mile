@@ -5,6 +5,7 @@ import { DistributionMobileHeader, useIsOnline } from './DistributionMobileHeade
 import { ScanField } from '@/components/scan/ScanField';
 import { ScanResult } from '@/components/scan/ScanResult';
 import { SealPositionCard } from '@/components/distribution/SealPositionCard';
+import { refocusPackageField } from '@/lib/scan/refocus-package-field';
 import { cn } from '@/lib/utils';
 import type { QuickSortFlowMode, QuickSortScanEvent } from '@/hooks/distribution/useQuickSortFlow';
 
@@ -98,7 +99,7 @@ export function QuickSortMobile({
             type="button"
             role="tab"
             aria-selected={mode === 'sectorize'}
-            onClick={() => onModeChange('sectorize')}
+            onClick={() => { onModeChange('sectorize'); refocusPackageField(); }}
             className={cn(
               'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
               mode === 'sectorize'
@@ -112,7 +113,7 @@ export function QuickSortMobile({
             type="button"
             role="tab"
             aria-selected={mode === 'stage'}
-            onClick={() => onModeChange('stage')}
+            onClick={() => { onModeChange('stage'); refocusPackageField(); }}
             className={cn(
               'h-11 flex-1 rounded-full font-mono text-[11px] font-semibold uppercase tracking-[.08em] transition-colors',
               mode === 'stage'
