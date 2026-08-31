@@ -179,10 +179,9 @@ must be verified applied against QA before phase 2 merges.
     pending/staged/adopted_stops.
   - `lib/dispatch/seal-route.ts:123,133` — `pendingCount` comes out 0 → **seal opens on a
     partially-loaded route** (the production failure this spec exists to fix).
-  - `lib/dispatch/scan-validator.ts:170` — `stage !== 'planned'` → the 2nd bulto is refused again;
-    the deadlock returns.
-  - `lib/dispatch/expected-load-position.ts:98` — `.eq('stage','planned')` → `NO_POSITION_ASSIGNED`
-    on the 2nd bulto's position scan (mobile deadlock).
+  - `lib/dispatch/expected-load-position.ts:98` (as of phase 2, `.in('stage', ['planned',
+    'staged', 'adopted'])`) — still needs `partially_staged` added, or the 2nd bulto's position
+    scan hits `NO_POSITION_ASSIGNED` again once the dispatch is in that state (mobile deadlock).
   - `get_move_task_snapshot` (`20260828000001:170,190`) — `stage IN ('planned','staged')` → the
     route drops off the move list with work still outstanding.
   - `lib/dispatch/seal-route.ts:166` — `.in('stage',['staged','adopted'])` → `partially_staged`
@@ -193,6 +192,17 @@ must be verified applied against QA before phase 2 merges.
     are missing the value; `useRoutePackages.ts:30` casts blindly. **`dispatch_stage` in
     `lib/types.ts` is a fiction — no such enum exists in the database; `stage` is TEXT + a CHECK
     constraint, not a Postgres enum.**
+  - **New in phase 2:** `stage-dispatch.ts`'s `stageDispatch` now preserves `adopted` instead of
+    overwriting it to `staged` (review item 3) — phase 3's own recompute must keep doing the
+    same. It MUST still walk `adopted` dispatches (not just `planned`/`partially_staged`/
+    `staged`) when deciding whether any live package is outstanding, exactly as phase 1's
+    backfill comment already requires — an adopted multi-bulto order must not be able to seal
+    with a sibling bulto still on the andén just because the recompute skipped `adopted` rows.
+
+  `lib/dispatch/scan-validator.ts:170`'s `stage !== 'planned'` refusal — **fixed by phase 2.**
+  The gate is now per-package (`packages.loaded_at`/`load_inferred`), not per-dispatch-stage, so
+  it no longer re-refuses the 2nd bulto once the order's dispatch reads `staged`. Not a phase 3
+  blocker.
 
   Widen `UNSEALED_STOPS` to refuse on `planned` OR `partially_staged`, which both seals inherit
   through the shared `sealRoute` (Decision 6) once `seal-route.ts` is fixed per the checklist

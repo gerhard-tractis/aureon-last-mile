@@ -115,9 +115,17 @@ export interface FleetVehicle {
  * the package is physically present but was never planned onto this route, and
  * refusing it would send operators back to paper while silently treating it as
  * planned would erase the fact that the plan was wrong.
+ *
+ * spec-74 phase 2 review item 3. `currentStage` carries the dispatch row's
+ * `stage` AS IT STOOD when this scan was validated — not what the write
+ * should set it to. `stageDispatch` needs it to decide that: without it, a
+ * sibling bulto scanned after the order was `adopted` (never planned onto
+ * this route at all) silently rewrote the row to `staged`, erasing the
+ * "never planned" fact `adopted_reason` exists to preserve. Only `planned`
+ * becomes `staged` this phase; `adopted` must stay `adopted`.
  */
 export type ScanAction =
-  | { kind: 'stage'; dispatchId: string }
+  | { kind: 'stage'; dispatchId: string; currentStage: DispatchStage }
   | { kind: 'adopt' };
 
 export type ScanResult = {

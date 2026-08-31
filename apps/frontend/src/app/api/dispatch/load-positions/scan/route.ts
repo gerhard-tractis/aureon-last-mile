@@ -106,8 +106,12 @@ export async function POST(request: NextRequest) {
     await stageDispatch(supabase, {
       dispatchId: validation.dispatchId,
       orderId: validation.package.order_id,
+      packageId: validation.packageId,
       operatorId,
       userId: session.user.id,
+      // spec-74 phase 2 review item 3 — lets stageDispatch preserve
+      // `adopted` instead of overwriting it to `staged`.
+      currentStage: validation.currentStage,
     });
 
     // spec-71 phase 1's per-package staging audit column. batch_id and
@@ -126,6 +130,12 @@ export async function POST(request: NextRequest) {
     });
     if (dockScanError) throw dockScanError;
 
+    // spec-74 phase 2 review item 3. Only a `planned` row becomes `staged`;
+    // an already-`adopted` row (this order was never planned onto this
+    // route) stays `adopted` — the response must say so, not always claim
+    // `staged`.
+    const finalStage = validation.currentStage === 'adopted' ? 'adopted' : 'staged';
+
     return NextResponse.json(
       {
         dispatch_id: validation.dispatchId,
@@ -134,7 +144,7 @@ export async function POST(request: NextRequest) {
         contact_name: validation.package.contact_name,
         contact_address: validation.package.contact_address,
         contact_phone: validation.package.contact_phone,
-        stage: 'staged',
+        stage: finalStage,
         package_status: 'en_carga',
         position_code: validation.positionCode,
       },

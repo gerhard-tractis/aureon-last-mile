@@ -899,6 +899,9 @@ export type Database = {
           dock_zone_id: string | null
           return_reason: string | null
           return_reason_code: string | null
+          loaded_at: string | null
+          loaded_by: string | null
+          load_inferred: boolean
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -924,6 +927,9 @@ export type Database = {
           dock_zone_id?: string | null
           return_reason?: string | null
           return_reason_code?: string | null
+          loaded_at?: string | null
+          loaded_by?: string | null
+          load_inferred?: boolean
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -949,6 +955,9 @@ export type Database = {
           dock_zone_id?: string | null
           return_reason?: string | null
           return_reason_code?: string | null
+          loaded_at?: string | null
+          loaded_by?: string | null
+          load_inferred?: boolean
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -973,6 +982,13 @@ export type Database = {
             columns: ["dock_zone_id"]
             isOneToOne: false
             referencedRelation: "dock_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packages_loaded_by_fkey"
+            columns: ["loaded_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]

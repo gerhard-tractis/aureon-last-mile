@@ -47,6 +47,9 @@ function buildClient(routeStatus: string | null = 'planned') {
     chain.eq = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn(self);
+    // spec-74 phase 2 review item 1 — advancePackagesToEnCarga's widened
+    // idempotency guard.
+    chain.or = vi.fn(self);
     chain.insert = vi.fn((p: Record<string, unknown>) => { op.kind = 'insert'; op.payload = p; return chain; });
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
     chain.single = vi.fn(() =>
@@ -56,8 +59,13 @@ function buildClient(routeStatus: string | null = 'planned') {
           : { data: { id: 'new-dispatch' }, error: null },
       ),
     );
+    // spec-74 phase 2 review item 4 — `packages`' write now resolves
+    // through `.select('id')`, and advancePackagesToEnCarga treats an
+    // empty/null result as a failure. Resolving one matched row here keeps
+    // every existing test's implicit "the write succeeds" assumption true;
+    // the item-4-specific zero-rows/error cases get their own client.
     chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-      Promise.resolve({ data: null, error: null }).then(res, rej);
+      Promise.resolve(table === 'packages' ? { data: [{ id: 'pkg-1' }], error: null } : { data: null, error: null }).then(res, rej);
     return chain;
   });
   mockRpc.mockResolvedValue({ data: null, error: null });
@@ -95,7 +103,7 @@ beforeEach(() => {
 describe('POST /scan — staging a planned stop', () => {
   it('updates the seeded row rather than inserting a second one', async () => {
     const ops = buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     const res = await POST(makeReq(), { params });
     expect(res.status).toBe(201);
@@ -112,14 +120,24 @@ describe('POST /scan — staging a planned stop', () => {
     expect(update?.filters).toContainEqual(['operator_id', 'op-1']);
   });
 
-  it('advances the packages of the order to en_carga', async () => {
+  /**
+   * spec-74 phase 2. Used to filter on `order_id` alone, sweeping every
+   * package of the order — the exact multi-bulto over-claim spec-74 exists
+   * to kill. The write is now scoped to the ONE package actually scanned,
+   * and records the per-box load fact (`loaded_at`/`loaded_by`) phase 1
+   * added.
+   */
+  it('advances only the scanned package to en_carga and records who loaded it', async () => {
     const ops = buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     await POST(makeReq(), { params });
     const pkgOp = ops.find((o) => o.table === 'packages' && o.kind === 'update');
     expect(pkgOp?.payload?.status).toBe('en_carga');
-    expect(pkgOp?.filters).toContainEqual(['order_id', 'o1']);
+    expect(pkgOp?.payload?.loaded_at).toBeTruthy();
+    expect(pkgOp?.payload?.loaded_by).toBe('u-1');
+    expect(pkgOp?.filters).toContainEqual(['id', 'pkg-1']);
+    expect(pkgOp?.filters).not.toContainEqual(['order_id', 'o1']);
   });
 
   /**
@@ -129,7 +147,7 @@ describe('POST /scan — staging a planned stop', () => {
    */
   it('never touches planned_stops', async () => {
     const ops = buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     await POST(makeReq(), { params });
     const wrote = ops.filter((o) => o.kind === 'update' && o.payload && 'planned_stops' in o.payload);
@@ -144,7 +162,7 @@ describe('POST /scan — staging a planned stop', () => {
    */
   it('adds package_status to the response, since the validator cannot claim it', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     const res = await POST(makeReq(), { params });
     const json = await res.json();
@@ -152,10 +170,33 @@ describe('POST /scan — staging a planned stop', () => {
   });
 });
 
+/**
+ * spec-74 phase 2 review item 3 — a sibling bulto scanned after its order
+ * was already `adopted` must not silently relabel the dispatch `staged`.
+ */
+describe('POST /scan — spec-74 phase 2 review item 3 (preserving adopted)', () => {
+  it('keeps stage adopted when the dispatch was already adopted', async () => {
+    const ops = buildClient('planned');
+    mockValidateScan.mockResolvedValue({
+      ok: true, packageId: 'pkg-1', package: PKG,
+      action: { kind: 'stage', dispatchId: 'd1', currentStage: 'adopted' },
+    });
+
+    const res = await POST(makeReq(), { params });
+    expect(res.status).toBe(201);
+
+    const update = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(update?.payload?.stage).toBe('adopted');
+
+    const body = await res.json();
+    expect(body.stage).toBe('adopted');
+  });
+});
+
 describe('POST /scan — adopting an unplanned stop', () => {
   it('inserts a dispatch at stage adopted with a reason', async () => {
     const ops = buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
 
     const res = await POST(makeReq({ code: 'CTN-9', reason: 'llegó suelto del andén 3' }), { params });
     expect(res.status).toBe(201);
@@ -170,7 +211,7 @@ describe('POST /scan — adopting an unplanned stop', () => {
 
   it('records a default reason when the operator gave none', async () => {
     const ops = buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
 
     await POST(makeReq(), { params });
     const insert = ops.find((o) => o.table === 'dispatches' && o.kind === 'insert');
@@ -181,7 +222,7 @@ describe('POST /scan — adopting an unplanned stop', () => {
 describe('POST /scan — route lifecycle', () => {
   it('moves a planned route to loading on the first scan', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     await POST(makeReq(), { params });
     const targets = mockRpc.mock.calls
@@ -196,7 +237,7 @@ describe('POST /scan — route lifecycle', () => {
    */
   it('walks a draft route through planned before loading', async () => {
     buildClient('draft');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
 
     await POST(makeReq(), { params });
     const targets = mockRpc.mock.calls
@@ -207,7 +248,7 @@ describe('POST /scan — route lifecycle', () => {
 
   it('does not transition a route that is already loading', async () => {
     buildClient('loading');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     await POST(makeReq(), { params });
     expect(mockRpc.mock.calls.filter((c) => c[0] === 'transition_route_status')).toEqual([]);
@@ -217,7 +258,7 @@ describe('POST /scan — route lifecycle', () => {
     'refuses to load onto a %s route',
     async (status) => {
       buildClient(status);
-      mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+      mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
       const res = await POST(makeReq(), { params });
       expect(res.status).toBe(409);
@@ -264,7 +305,7 @@ describe('POST /scan — rejection passthrough', () => {
 describe('POST /scan — spec-71 load position assignment on draft -> planned', () => {
   it('calls assign_load_position only when the walk passes through planned', async () => {
     buildClient('draft');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockResolvedValue({ data: null, error: null });
 
     await POST(makeReq(), { params });
@@ -277,7 +318,7 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
 
   it('does not call assign_load_position when the route is already planned (loading is the only leg)', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
     mockRpc.mockResolvedValue({ data: null, error: null });
 
     await POST(makeReq(), { params });
@@ -287,7 +328,7 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
 
   it('writes an audit_logs row when a position was assigned', async () => {
     const ops = buildClient('draft');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockImplementation((fn: string) =>
       fn === 'assign_load_position'
         ? Promise.resolve({ data: 'pos-1', error: null })
@@ -311,7 +352,7 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
 
   it('does not write an audit_logs row when no position was available (best-effort)', async () => {
     const ops = buildClient('draft');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockResolvedValue({ data: null, error: null }); // assign_load_position returns null
 
     await POST(makeReq(), { params });
@@ -321,7 +362,7 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
 
   it('a thrown assign_load_position never fails the scan', async () => {
     buildClient('draft');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockImplementation((fn: string) =>
       fn === 'assign_load_position' ? Promise.reject(new Error('boom')) : Promise.resolve({ data: null, error: null }),
     );
@@ -338,7 +379,7 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
 describe('POST /scan — spec-71 offset re-check on adopt', () => {
   it('calls check_load_position_conflict for an adopted (unplanned) scan', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockResolvedValue({ data: { conflict: false }, error: null });
 
     await POST(makeReq(), { params });
@@ -351,7 +392,7 @@ describe('POST /scan — spec-71 offset re-check on adopt', () => {
 
   it('does NOT call check_load_position_conflict for a staged (already-planned) scan', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
     mockRpc.mockResolvedValue({ data: null, error: null });
 
     await POST(makeReq(), { params });
@@ -361,7 +402,7 @@ describe('POST /scan — spec-71 offset re-check on adopt', () => {
 
   it('surfaces load_position_conflict: true in the response when the RPC reports a conflict', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'adopt' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'adopt' } });
     mockRpc.mockImplementation((fn: string) =>
       fn === 'check_load_position_conflict'
         ? Promise.resolve({ data: { load_position_id: 'pos-1', conflict: true }, error: null })
@@ -375,7 +416,7 @@ describe('POST /scan — spec-71 offset re-check on adopt', () => {
 
   it('reports load_position_conflict: false by default', async () => {
     buildClient('planned');
-    mockValidateScan.mockResolvedValue({ ok: true, package: PKG, action: { kind: 'stage', dispatchId: 'd1' } });
+    mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
     mockRpc.mockResolvedValue({ data: null, error: null });
 
     const res = await POST(makeReq(), { params });
