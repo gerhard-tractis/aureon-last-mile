@@ -10,6 +10,7 @@ import {
 import type { QuickSortFlowMode } from '@/hooks/distribution/useQuickSortFlow';
 import { QuickSortMobileView } from '@/components/distribution/QuickSortMobileView';
 import { SealPositionCard } from '@/components/distribution/SealPositionCard';
+import { refocusPackageField } from '@/lib/scan/refocus-package-field';
 import { DockCard } from '@/components/distribution/DockCard';
 import { RecentScansPanel } from '@/components/distribution/RecentScansPanel';
 import { PendingDockList } from '@/components/distribution/PendingDockList';
@@ -54,22 +55,14 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
  * Page contract, so `QuickSortDesktopContent` below stays unexported, the
  * same shape `KpiTile` already used before this change.
  *
- * spec-71 phase 3 review item 2 — this is the console's only entry point:
- * before this, nothing in the product passed `mode='stage'` to
- * `QuickSortScanner`, so the whole staging pass (endpoint, hook branch,
- * `scan_position` render block) was unreachable. A `Tabs` toggle in the
- * header, next to "Modo rápido" — the same local-`useState` + `Tabs`
- * pattern `/app/dispatch`'s own tab row already uses — flips local `mode`
- * between `'sectorize'` (today's comuna sort, unchanged, still the
- * default) and `'stage'` (the wave-cutoff staging pass: scan package, then
- * scan the `load_positions` code the package's route occupies). Deliberately
- * the smallest switch, not a second screen: the rest of this page (andén
- * grid, "Pendientes por sectorizar") stays as-is under either tab — it is
- * sectorize-mode content, but leaving it visible during a staging pass is
- * harmless, and building a stage-specific layout is phase 5's job, not
- * this fix's. Below `lg`, `QuickSortMobileView` is unchanged: it does not
- * accept a mode and never renders `scan_position`, so staging stays a
- * desktop-only entry point for now — a real limit, not an oversight.
+ * spec-71 phase 3 — this page is the staging pass's only entry point.
+ * Before it, nothing passed `mode='stage'` to `QuickSortScanner`, so the
+ * endpoint, hook branch and `scan_position` block were all unreachable. A
+ * `Tabs` toggle (same local-state pattern `/app/dispatch` uses) flips between
+ * `'sectorize'` (today's comuna sort, unchanged, still default) and `'stage'`.
+ * The rest of the page stays as-is under either tab: it is sectorize content,
+ * harmless during a staging pass, and a stage-specific layout was phase 5's
+ * job, not this one's.
  */
 
 function KpiTile({
@@ -197,7 +190,15 @@ function QuickSortDesktopContent() {
 
         {/* spec-71 phase 3 — the staging pass's only entry point. Same
             local-state Tabs pattern as /app/dispatch's header. */}
-        <Tabs value={mode} onValueChange={(v) => setMode(v as QuickSortFlowMode)}>
+        {/* Re-arm the package field: the gun types into whatever holds focus,
+            and the tab trigger keeps it. See refocus-package-field.ts. */}
+        <Tabs
+          value={mode}
+          onValueChange={(v) => {
+            setMode(v as QuickSortFlowMode);
+            refocusPackageField();
+          }}
+        >
           <TabsList>
             <TabsTrigger value="sectorize">Sectorizar</TabsTrigger>
             <TabsTrigger value="stage">Estibar</TabsTrigger>
@@ -224,12 +225,9 @@ function QuickSortDesktopContent() {
             <KpiTile label="Consolidación" value={kpis?.consolidation ?? 0} />
           </div>
 
-          {/* spec-71 phase 4 — the position seal, only during the staging
-              pass: a position has nothing to seal until the wave cutoff.
-              Review fix #1 — the card collapses after a seal or cancel and
-              `onCollapse` hands focus back to the package field, which is
-              two components away, so it uses the same `querySelector`
-              pattern `QuickSortMobileView`'s `onEnterCode` already does. */}
+          {/* spec-71 phase 4 — the position seal, only during the staging pass.
+
+              onCollapse re-arms the package field (see refocus-package-field.ts). */}
           {mode === 'stage' && (
             <SealPositionCard
               onCollapse={() => {
