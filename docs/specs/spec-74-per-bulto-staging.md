@@ -5,7 +5,7 @@
 > (the position seal that cannot be made honest until this lands), [spec-55](spec-55-carton-expansion.md)
 > (carton expansion — why multi-bulto orders exist at all)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-31_
 
@@ -83,11 +83,16 @@ Any per-package completeness check must land **with** a per-package scan path, n
    "this order is planned on this route" — spec-70's axis is not re-cut. What changes is that
    "physically loaded" stops being read off that row for a multi-package order.
 
-2. **A dispatch is `staged` when every one of its packages is staged, not when the first is.**
-   This keeps `dispatches.stage` meaningful and keeps spec-70's `UNSEALED_STOPS` guard correct
-   for free, rather than adding a second gate beside it. The scan handler computes it after each
-   package scan: stage the package, then promote the dispatch only once none of its live packages
-   are outstanding.
+2. **Three order states, not two: `planned` -> `partially_staged` -> `staged`.** A dispatch is
+   `staged` only when every one of its live packages is loaded; it is `partially_staged` while
+   some are and some are not. The intermediate value is the point, not an implementation detail:
+   "nothing has been scanned" and "half this order is on the truck and half is on the andén" are
+   different operational facts and a supervisor has to be able to tell them apart. Collapsing
+   both into `planned` would hide exactly the situation this spec exists to surface.
+
+   Both seals refuse while any dispatch is `planned` **or** `partially_staged`, so spec-70's
+   existing `UNSEALED_STOPS` guard becomes correct by widening its predicate rather than by
+   adding a second gate beside it.
 
 3. **`packages` carries the per-box load fact, not a join table.** A package is loaded onto
    exactly one route at a time, so the relationship is many-packages-to-one-route — a plain
@@ -112,37 +117,86 @@ Any per-package completeness check must land **with** a per-package scan path, n
 
 ---
 
-## Open questions for implementation
+## Settled during scoping
 
-- **The exact `packages` column set.** Whether a single `staged_at`/`staged_by` pair is enough, or
-  whether the load needs its own status value, has to be settled against spec-70's status
-  vocabulary — `en_carga` currently means "this order is being loaded" and would become
-  per-package. Decide when phase 1 is scoped, not here.
-- **Backfill.** Existing `staged` dispatches have no per-package evidence. Whether to backfill
-  every package of a staged dispatch as staged (optimistic, matches what the system already
-  claims) or leave them null (honest, but makes historic routes look incomplete) needs a decision
-  — and it determines whether already-`loaded` routes stay sealable.
-- **Whether the route-level scan should write `dock_scans` rows** so the two staging paths leave
-  the same evidence. Out of scope for the gate (Decision 4) but worth settling, since the
-  asymmetry is what made the naive fix impossible.
+- **The per-package fact lives on `packages`, and both scan paths write it.** The desktop
+  RouteBuilder scan already scans a *package* barcode — it simply never recorded which box. So it
+  marks the scanned package loaded exactly as the mobile position scan does. The asymmetry that
+  made a naive seal guard impossible disappears without touching `dock_scans`, which stays
+  spec-71's position audit trail and is deliberately NOT the completeness gate (Decision 4).
 
----
+- **Backfill is optimistic, and says so.** Existing `staged` **and `adopted`** dispatches predate
+  per-box scanning, so no evidence exists either way for their packages. Both are backfilled as
+  loaded, flagged inferred: leaving them NULL would make phase 3's own rule refuse to seal boxes
+  already sitting on trucks the day this column ships. (Not "leaving them NULL flips every
+  in-flight route to `partially_staged`" — under phase 3's rule a dispatch with zero live
+  packages backfilled loaded recomputes to `planned`, since none are loaded; there simply is no
+  route where *some but not all* packages are backfilled, because the backfill is all-or-nothing
+  per order.) This is a placeholder born of missing evidence, not a claim that adoption proves a
+  whole order was loaded — a scan only ever adopts the ONE package barcode it scanned, so an
+  adopted multi-bulto order can still be genuinely incomplete underneath this optimistic backfill.
+  Phase 3 MUST recompute `adopted` dispatches too, not just `planned`/`partially_staged`/`staged`
+  (see its checklist below) — otherwise an adopted order keeps sealing on the strength of one
+  box's scan, the exact QA repro this spec exists to kill, just wearing a different stage name.
+  The migration records that all backfilled rows are inferred rather than scanned, so a later
+  report can tell migrated assumption from real evidence.
+
+- **`en_carga` stays order-level and is not the new fact.** It currently means "this order is
+  being loaded" and is written for every package of an order at once. The per-package load state
+  is a separate column; whether `en_carga` is eventually derived from it is out of scope here.
 
 ## Implementation phases
 
 Each phase is one PR with auto-merge, per `CLAUDE.md`. Phase 1 is the only irreversible one and
 must be verified applied against QA before phase 2 merges.
 
-- **Phase 1 — Database.** The per-package load columns on `packages`, plus a SQL suite in the
-  repo's `DO $$ ... RAISE` style: operator isolation, soft-delete behaviour, and the backfill
-  decision above exercised both ways.
+- **Phase 1 — Database.** The per-package load columns on `packages` (`loaded_at`, `loaded_by`,
+  `load_inferred`), **plus `partially_staged` added to `dispatches.stage`'s CHECK** (the value is
+  added to the schema now so phase 3 is a pure app-layer change; nothing writes it until phase 3),
+  plus a SQL suite in the repo's `DO $$ ... RAISE` style: operator isolation, soft-delete
+  behaviour, and the backfill decision above exercised both ways.
 - **Phase 2 — Make the scanner accept every bulto.** Turn `ALREADY_STAGED` into a per-package
   check and scope `advancePackagesToEnCarga` to the scanned package. **This phase alone fixes the
   deadlock** and must ship before any completeness gate. Both scan paths — the position scan and
   the route-level scan — get the same treatment.
-- **Phase 3 — Promote the dispatch only when complete.** `dispatches.stage` flips to `staged`
-  once no live package of that order is outstanding. spec-70's `UNSEALED_STOPS` then becomes
-  correct without a second gate, and both seals inherit it (Decision 6).
+- **Phase 3 — The writer, and every reader that currently ignores `partially_staged`.** The
+  schema change already happened in phase 1 — `stage` is TEXT + CHECK, not an enum, so there is no
+  "enum label" step here (a two-file dance only applies to `route_status_enum`-style Postgres
+  enums, which `dispatches.stage` deliberately is not, per 20260825000002). This phase is the
+  writer plus the blocker list below.
+
+  **Writer:** each package scan recomputes the dispatch — `partially_staged` while any live
+  package is outstanding, `staged` once none are. The recompute covers `adopted` dispatches too,
+  not just `planned`/`partially_staged`/`staged` — see the Backfill bullet above for why. **When
+  moving `planned` → `partially_staged`, the writer must also set `staged_at`** —
+  `dispatches_staged_at_check` is `(stage = 'planned') = (staged_at IS NULL)` (20260825000002) and
+  rejects the write with a 23514 otherwise (probe-verified).
+
+  **Blocker checklist — every one of these currently mis-handles a dispatch sitting in
+  `partially_staged`, because nothing produces that value yet so nothing had to:**
+
+  - `route_stop_counts` view (`20260825000002`) — counts it in `total_stops` but in none of
+    pending/staged/adopted_stops.
+  - `lib/dispatch/seal-route.ts:123,133` — `pendingCount` comes out 0 → **seal opens on a
+    partially-loaded route** (the production failure this spec exists to fix).
+  - `lib/dispatch/scan-validator.ts:170` — `stage !== 'planned'` → the 2nd bulto is refused again;
+    the deadlock returns.
+  - `lib/dispatch/expected-load-position.ts:98` — `.eq('stage','planned')` → `NO_POSITION_ASSIGNED`
+    on the 2nd bulto's position scan (mobile deadlock).
+  - `get_move_task_snapshot` (`20260828000001:170,190`) — `stage IN ('planned','staged')` → the
+    route drops off the move list with work still outstanding.
+  - `lib/dispatch/seal-route.ts:166` — `.in('stage',['staged','adopted'])` → `partially_staged`
+    packages never advance to `listo_para_despacho`.
+  - `components/dispatch/RouteBuilder.tsx:53` and `PackageRow.tsx:16` — undercount / no "Sin
+    estibar" warning.
+  - `lib/dispatch/types.ts:23` and `lib/types.ts:2281-2284` — `DispatchStage` / `dispatch_stage`
+    are missing the value; `useRoutePackages.ts:30` casts blindly. **`dispatch_stage` in
+    `lib/types.ts` is a fiction — no such enum exists in the database; `stage` is TEXT + a CHECK
+    constraint, not a Postgres enum.**
+
+  Widen `UNSEALED_STOPS` to refuse on `planned` OR `partially_staged`, which both seals inherit
+  through the shared `sealRoute` (Decision 6) once `seal-route.ts` is fixed per the checklist
+  above.
 - **Phase 4 — Screens tell the truth.** spec-71's move list counts per package already; verify it
   against the new fact and drop the `dock_scans` proxy if the column supersedes it. RouteBuilder's
   "Faltan N por estibar" and `PackageRow`'s "Sin estibar" become per-bulto.
