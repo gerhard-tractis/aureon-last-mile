@@ -39,6 +39,9 @@ function buildClient(routeStatus: string | null = 'loading') {
     chain.eq = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn(self);
+    // spec-74 phase 2 review item 1 — advancePackagesToEnCarga's widened
+    // idempotency guard.
+    chain.or = vi.fn(self);
     chain.insert = vi.fn((p: Record<string, unknown>) => { op.kind = 'insert'; op.payload = p; return chain; });
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
     chain.single = vi.fn(() =>
@@ -48,8 +51,12 @@ function buildClient(routeStatus: string | null = 'loading') {
           : { data: null, error: null },
       ),
     );
+    // spec-74 phase 2 review item 4 — `packages`' write now resolves
+    // through `.select('id')`, and advancePackagesToEnCarga treats an
+    // empty/null result as a failure; resolve one matched row so every
+    // existing "the write succeeds" test keeps passing.
     chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-      Promise.resolve({ data: null, error: null }).then(res, rej);
+      Promise.resolve(table === 'packages' ? { data: [{ id: 'pkg-1' }], error: null } : { data: null, error: null }).then(res, rej);
     return chain;
   });
   return ops;
@@ -62,6 +69,9 @@ const STAGE_RESULT = {
   routeId: 'route-1',
   positionId: 'lp-1',
   positionCode: 'POS-04',
+  // spec-74 phase 2 review item 3 — stageDispatch needs this to decide
+  // whether to write `staged` or preserve `adopted`.
+  currentStage: 'planned' as const,
   package: {
     order_id: 'o1',
     order_number: 'ORD-1',
@@ -109,6 +119,24 @@ describe('POST /api/dispatch/load-positions/scan', () => {
     expect(res.status).toBe(400);
   });
 
+  /**
+   * spec-74 phase 2 review item 3 — a sibling bulto staged through the
+   * position scan after its order was already `adopted` must not silently
+   * relabel the dispatch `staged`.
+   */
+  it('keeps stage adopted when the dispatch was already adopted', async () => {
+    const ops = buildClient();
+    mockValidatePositionScan.mockResolvedValue({ ...STAGE_RESULT, currentStage: 'adopted' });
+
+    const res = await POST(makeReq());
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.stage).toBe('adopted');
+
+    const dispatchUpdate = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(dispatchUpdate?.payload?.stage).toBe('adopted');
+  });
+
   it('stages the dispatch, advances the package, and records the scan against the position', async () => {
     const ops = buildClient();
     mockValidatePositionScan.mockResolvedValue(STAGE_RESULT);
@@ -137,9 +165,14 @@ describe('POST /api/dispatch/load-positions/scan', () => {
     expect(dispatchUpdate?.filters).toContainEqual(['id', 'd1']);
     expect(dispatchUpdate?.filters).toContainEqual(['operator_id', 'op-1']);
 
+    // spec-74 phase 2 — scoped to the scanned package (STAGE_RESULT.packageId),
+    // not the whole order, and carries the per-box load fact phase 1 added.
     const pkgUpdate = ops.find((o) => o.table === 'packages' && o.kind === 'update');
     expect(pkgUpdate?.payload?.status).toBe('en_carga');
-    expect(pkgUpdate?.filters).toContainEqual(['order_id', 'o1']);
+    expect(pkgUpdate?.payload?.loaded_at).toBeTruthy();
+    expect(pkgUpdate?.payload?.loaded_by).toBe('u-1');
+    expect(pkgUpdate?.filters).toContainEqual(['id', 'pkg-1']);
+    expect(pkgUpdate?.filters).not.toContainEqual(['order_id', 'o1']);
 
     const dockScanInsert = ops.find((o) => o.table === 'dock_scans' && o.kind === 'insert');
     expect(dockScanInsert?.payload?.load_position_id).toBe('lp-1');

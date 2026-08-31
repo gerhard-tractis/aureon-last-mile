@@ -77,12 +77,35 @@ export type FindExpectedLoadPositionResult =
 
 /**
  * Looks up the position the staging scan should expect for this package's
- * order: its `planned` dispatch, and the position (if any) the dispatch's
- * route currently occupies. `NO_POSITION_ASSIGNED` covers both "no planned
- * dispatch at all" and "planned, but the route has no position yet"
- * (Decision 8's best-effort assignment means that is a normal, not an
- * exceptional, state) — the caller shows the same "cannot stage yet"
- * message either way.
+ * order: its `planned` (or, as of spec-74 phase 2, already-`staged`)
+ * dispatch, and the position (if any) the dispatch's route currently
+ * occupies. `NO_POSITION_ASSIGNED` covers both "no eligible dispatch at
+ * all" and "eligible, but the route has no position yet" (Decision 8's
+ * best-effort assignment means that is a normal, not an exceptional,
+ * state) — the caller shows the same "cannot stage yet" message either way.
+ *
+ * spec-74 phase 2. Used to filter on `stage = 'planned'` only. Phase 2
+ * makes the scanner accept every bulto of a multi-bulto order, but per
+ * spec-74 Decision item 4 `dispatches.stage` still flips to `staged` on the
+ * FIRST bulto's scan — it does not stay `planned` while siblings remain.
+ * With the old filter, the second bulto's position-scan lookup found no
+ * row at all (its order's only dispatch was now `staged`) and refused with
+ * `NO_POSITION_ASSIGNED`, reinstating the exact deadlock this phase exists
+ * to remove (see spec-74's "Watch for" note). Widened to also match
+ * `staged` so an order's dispatch being staged by an earlier bulto does not
+ * block resolving a position for the ones still on the dock.
+ *
+ * spec-74 phase 2 review item 6. `adopted` was missing from this list too:
+ * a multi-bulto order adopted at the desktop (RouteBuilder) and continued
+ * on mobile found no row here either, refused with the same
+ * `NO_POSITION_ASSIGNED` — even though the route-level scan itself would
+ * accept the box (an `adopted` dispatch already owns its order, per
+ * `ownsTheOrder` / `scan-validator.ts`'s membership check). Added alongside
+ * `planned` and `staged`.
+ *
+ * `partially_staged` is not yet written by anything (that is phase 3's
+ * job) and is intentionally left out here for now; phase 3's own blocker
+ * checklist is what teaches this query the wider, permanent set.
  */
 export async function findExpectedLoadPosition(
   supabase: SupabaseClient<Database>,
@@ -95,7 +118,7 @@ export async function findExpectedLoadPosition(
     )
     .eq('operator_id', input.operatorId)
     .eq('order_id', input.orderId)
-    .eq('stage', 'planned')
+    .in('stage', ['planned', 'staged', 'adopted'])
     .is('deleted_at', null)
     .limit(50);
 

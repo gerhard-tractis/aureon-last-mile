@@ -85,8 +85,12 @@ export async function POST(
       await stageDispatch(supabase, {
         dispatchId: validation.action.dispatchId,
         orderId: validation.package.order_id,
+        packageId: validation.packageId,
         operatorId,
         userId: session.user.id,
+        // spec-74 phase 2 review item 3 — lets stageDispatch preserve
+        // `adopted` instead of overwriting it to `staged`.
+        currentStage: validation.action.currentStage,
       });
       dispatchId = validation.action.dispatchId;
     } else {
@@ -110,7 +114,11 @@ export async function POST(
 
       // `stageDispatch` above bundles this same advance with its dispatch
       // update; the adopt branch INSERTs instead, so it takes just this half.
-      await advancePackagesToEnCarga(supabase, { operatorId, orderId: validation.package.order_id });
+      await advancePackagesToEnCarga(supabase, {
+        operatorId,
+        packageId: validation.packageId,
+        userId: session.user.id,
+      });
     }
 
     // planned_stops is deliberately not touched. It drifted precisely because
@@ -183,11 +191,20 @@ export async function POST(
       }
     }
 
+    // spec-74 phase 2 review item 3. A 'stage' action no longer always ends
+    // in `staged` — a dispatch that was already `adopted` stays `adopted`
+    // (stageDispatch's own decision). The response must not claim `staged`
+    // when it did not happen.
+    const finalStage =
+      validation.action.kind === 'stage'
+        ? (validation.action.currentStage === 'adopted' ? 'adopted' : 'staged')
+        : 'adopted';
+
     return NextResponse.json(
       {
         ...validation.package,
         dispatch_id: dispatchId,
-        stage: validation.action.kind === 'stage' ? 'staged' : 'adopted',
+        stage: finalStage,
         // The validator can't honestly claim this — see ScanResult.package's
         // Omit — but by here the update above has just written it.
         package_status: 'en_carga',

@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
 import { validateScan } from './scan-validator';
 import { resolvePositionAndRoute } from './load-position-resolve';
+import type { DispatchStage } from './types';
 
 /**
  * spec-71 phase 3 — the staging pass's scan handler.
@@ -33,6 +34,10 @@ export type PositionScanResult =
       routeId: string;
       positionId: string;
       positionCode: string;
+      // spec-74 phase 2 review item 3. Carried through so the handler can
+      // pass it to `stageDispatch`, which needs it to decide whether to
+      // write `staged` or preserve `adopted` — see `ScanAction.currentStage`.
+      currentStage: DispatchStage;
       package: {
         order_id: string;
         order_number: string;
@@ -110,6 +115,7 @@ export async function validatePositionScan(
     routeId,
     positionId: position.id,
     positionCode: position.code,
+    currentStage: validation.action.currentStage,
     package: {
       order_id: validation.package.order_id,
       order_number: validation.package.order_number,

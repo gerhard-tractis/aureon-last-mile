@@ -85,7 +85,7 @@ const ROUTE = { data: [{ id: 'route-1' }], error: null };
 const STAGE_OK = {
   ok: true,
   packageId: 'pkg-1',
-  action: { kind: 'stage', dispatchId: 'd1' },
+  action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' as const },
   package: {
     dispatch_id: '',
     order_id: 'o1',
@@ -134,7 +134,26 @@ describe('validatePositionScan', () => {
       expect(result.routeId).toBe('route-1');
       expect(result.positionId).toBe('lp-1');
       expect(result.positionCode).toBe('POS-04');
+      // spec-74 phase 2 review item 3 — carried through so the handler can
+      // pass it to stageDispatch, which decides staged vs preserved-adopted.
+      expect(result.currentStage).toBe('planned');
     }
+  });
+
+  /**
+   * spec-74 phase 2 review item 3 — a sibling bulto staged after its order
+   * was already `adopted` must carry that fact through, not silently
+   * report `planned`/`staged`.
+   */
+  it('carries an already-adopted dispatch\'s currentStage through', async () => {
+    const { client } = buildClient([POSITIONS, ROUTE]);
+    mockValidateScan.mockResolvedValue({
+      ...STAGE_OK,
+      action: { kind: 'stage', dispatchId: 'd1', currentStage: 'adopted' as const },
+    });
+    const result = await validatePositionScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.currentStage).toBe('adopted');
   });
 
   it('rejects when no active position matches the scanned code', async () => {

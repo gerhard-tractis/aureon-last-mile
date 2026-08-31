@@ -10,19 +10,22 @@ import { validateScan, DISPATCHABLE_STATUSES } from './scan-validator';
  * "Código no encontrado".
  */
 
-interface Call { table: string; select: string; filters: [string, unknown][] }
+interface Call { table: string; select: string; filters: [string, unknown][]; order: [string, unknown] | null }
 
 function buildClient(responses: { data: unknown; error: { message: string } | null }[]) {
   const calls: Call[] = [];
   let i = 0;
   const from = vi.fn((table: string) => {
-    const call: Call = { table, select: '', filters: [] };
+    const call: Call = { table, select: '', filters: [], order: null };
     calls.push(call);
     const response = responses[i++] ?? { data: [], error: null };
     const chain = {
       select: vi.fn((s: string) => { call.select = s; return chain; }),
       eq: vi.fn((col: string, val: unknown) => { call.filters.push([col, val]); return chain; }),
       is: vi.fn(() => chain),
+      // spec-74 phase 2 review item 5 — records the ordering the order-number
+      // fallback applies, so a test can assert on it directly.
+      order: vi.fn((col: string, opts: unknown) => { call.order = [col, opts]; return chain; }),
       limit: vi.fn(() => Promise.resolve(response)),
     };
     return chain;
@@ -58,6 +61,33 @@ describe('validateScan — query shape', () => {
     expect(calls[0].select).toContain('delivery_address');
     expect(calls[0].select).toContain('customer_phone');
     expect(calls[0].select).not.toContain('contact_name');
+  });
+
+  /**
+   * spec-74 phase 2 review item 2 — `loaded_at`/`load_inferred` were
+   * stripped from BOTH select strings by a mutation and 56/56 tests still
+   * passed: nothing asserted the query actually fetched the columns the
+   * ALREADY_STAGED gate reads. In production `found.loaded_at` would be
+   * `undefined` there, the gate would never fire, and a box could be
+   * scanned repeatedly. Covers both the label lookup AND the order-number
+   * fallback — see this suite's mutation proof in the PR/task notes.
+   */
+  it('selects loaded_at and load_inferred in the label lookup', async () => {
+    const { client, calls } = buildClient([{ data: [], error: null }, { data: [], error: null }]);
+    await validateScan(client, input);
+    expect(calls[0].select).toContain('loaded_at');
+    expect(calls[0].select).toContain('load_inferred');
+  });
+
+  it('selects loaded_at and load_inferred in the order-number fallback lookup', async () => {
+    const { client, calls } = buildClient([
+      { data: [], error: null },
+      { data: [], error: null },
+    ]);
+    await validateScan(client, { ...input, code: 'CARGA-PARIS-001-ORD-106' });
+    expect(calls[1].table).toBe('packages');
+    expect(calls[1].select).toContain('loaded_at');
+    expect(calls[1].select).toContain('load_inferred');
   });
 
   it('surfaces a failing query instead of reporting it as not found', async () => {
@@ -143,6 +173,22 @@ describe('validateScan — membership', () => {
     expect(result.ok).toBe(true);
   });
 
+  /**
+   * spec-74 phase 2 review item 5 — an order number matches every bulto of
+   * that order, not just one. `.limit(1)` with no ordering always returned
+   * the SAME row, so scanning an order number twice could never reach the
+   * second box. Ordered so an unloaded row sorts first.
+   */
+  it('orders the order-number fallback by loaded_at, unloaded first', async () => {
+    const { client, calls } = buildClient([
+      { data: [], error: null },
+      { data: [{ id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW }], error: null },
+      { data: [], error: null },
+    ]);
+    await validateScan(client, { ...input, code: 'CARGA-PARIS-001-ORD-106' });
+    expect(calls[1].order).toEqual(['loaded_at', { ascending: true, nullsFirst: true }]);
+  });
+
   it('returns NOT_FOUND when neither lookup matches', async () => {
     const { client } = buildClient([{ data: [], error: null }, { data: [], error: null }]);
     const result = await validateScan(client, { ...input, code: 'UNKNOWN-999' });
@@ -182,7 +228,7 @@ describe('validateScan — spec-70 stage decisions', () => {
     ]);
     const result = await validateScan(client, input);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1' });
+    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1', currentStage: 'planned' });
   });
 
   it('adopts a package that was never planned onto this route', async () => {
@@ -192,14 +238,106 @@ describe('validateScan — spec-70 stage decisions', () => {
     if (result.ok) expect(result.action).toEqual({ kind: 'adopt' });
   });
 
-  it('refuses a second scan of a stop already staged on this route', async () => {
+  /**
+   * spec-74 phase 2. This used to be `onThisRoute.stage !== 'planned'` — a
+   * per-DISPATCH (order-level) check. That refused every remaining bulto of
+   * a multi-bulto order once the first one flipped the order's single
+   * dispatch row to `staged`, with no operator remedy (spec-74's "Why it
+   * happens" #3). The gate is now per-PACKAGE: it reads THIS box's own
+   * `loaded_at`, not its order's dispatch stage.
+   */
+  it('refuses a second scan of the SAME package once it is itself loaded', async () => {
     const { client } = buildClient([
-      PKG,
+      { data: [{ id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW, loaded_at: '2026-08-31T10:00:00Z' }], error: null },
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'staged', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('ALREADY_STAGED');
+      expect(result.message).toBe('Paquete ya cargado en esta ruta');
+    }
+  });
+
+  /**
+   * spec-74 phase 2's whole point: the exact QA repro. A 2-bulto order's
+   * first box was scanned (its order's one `dispatches` row is now
+   * `staged` — see stage-dispatch.ts's documented over-claim), but the
+   * SECOND, still-unscanned box (`loaded_at` NULL) must be accepted, not
+   * refused as ALREADY_STAGED or WRONG_STATUS.
+   */
+  it('accepts the second, not-yet-loaded bulto of an order whose dispatch is already staged', async () => {
+    const { client } = buildClient([
+      { data: [{ id: 'p2', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW, loaded_at: null }], error: null },
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'staged', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1', currentStage: 'staged' });
+  });
+
+  /**
+   * spec-74 phase 2 review item 1 — the HIGH finding. Phase 1's backfill set
+   * `loaded_at`/`load_inferred = true` on every live package of every
+   * pre-existing `staged`/`adopted` dispatch, so gating on `loaded_at`
+   * alone (the phase-2-as-written behaviour) re-refused every one of those
+   * boxes — including the exact box physically on the andén in spec-74's QA
+   * repro. An inferred row is an assumption, not evidence of a scan, so it
+   * must remain re-scannable.
+   */
+  it('accepts a re-scan of a package whose loaded_at is only inferred (phase-1 backfill)', async () => {
+    const { client } = buildClient([
+      {
+        data: [{
+          id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW,
+          loaded_at: '2026-08-31T00:00:00Z', load_inferred: true,
+        }],
+        error: null,
+      },
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'staged', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1', currentStage: 'staged' });
+  });
+
+  /**
+   * The mirror case: a GENUINE scan (loaded_at set, load_inferred false)
+   * must still refuse a second scan of the same box — the fix above must
+   * not become "loaded_at is never checked again".
+   */
+  it('still refuses a re-scan of a package whose loaded_at is a real scan (load_inferred false)', async () => {
+    const { client } = buildClient([
+      {
+        data: [{
+          id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW,
+          loaded_at: '2026-08-31T10:00:00Z', load_inferred: false,
+        }],
+        error: null,
+      },
       { data: [{ id: 'd1', route_id: 'route-1', stage: 'staged', route: { status: 'loading' } }], error: null },
     ]);
     const result = await validateScan(client, input);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('ALREADY_STAGED');
+  });
+
+  /**
+   * spec-74 phase 2 review item 3 — the dispatch row's CURRENT stage is
+   * surfaced on the action so `stageDispatch` can decide whether to write
+   * `staged` or preserve `adopted`. An `adopted` dispatch (a sibling bulto
+   * scanned after the order was already adopted) must not be silently
+   * relabelled `staged` — the "never planned onto this route" fact would
+   * then survive only in `adopted_reason`.
+   */
+  it('surfaces currentStage: adopted for a sibling bulto of an already-adopted order', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd1', route_id: 'route-1', stage: 'adopted', route: { status: 'loading' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'stage', dispatchId: 'd1', currentStage: 'adopted' });
   });
 
   it('refuses an order planned on a different, still-active route', async () => {

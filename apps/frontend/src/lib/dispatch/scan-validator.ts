@@ -45,6 +45,19 @@ interface PackageRow {
   id: string;
   status: string;
   order_id: string;
+  // spec-74 phase 2. `packages.loaded_at` — the per-BOX load fact phase 1
+  // added. NULL/undefined means this specific package has never been
+  // scanned in, regardless of what its order's `dispatches.stage` says
+  // (see the ALREADY_STAGED check below — that column stays order-level
+  // and over-claims for the rest of this phase).
+  loaded_at: string | null;
+  // spec-74 phase 2 review item 1. `packages.load_inferred` — true when
+  // `loaded_at` was written by phase 1's one-time optimistic backfill
+  // (20260901000001) rather than by a real scan. A backfilled row is an
+  // ASSUMPTION standing in for missing history, not evidence this box was
+  // physically scanned — so it must not gate a re-scan the way a genuine
+  // `loaded_at` does (see the ALREADY_STAGED check below).
+  load_inferred: boolean;
   orders: OrderRow | OrderRow[] | null;
 }
 
@@ -96,7 +109,7 @@ export async function validateScan(
   //    matches on too.
   const { data: pkgs, error: pkgError } = await supabase
     .from('packages')
-    .select(`id, status, order_id, ${ORDER_EMBED}`)
+    .select(`id, status, order_id, loaded_at, load_inferred, ${ORDER_EMBED}`)
     .eq('operator_id', operatorId)
     .eq('label', code)
     .is('deleted_at', null)
@@ -110,12 +123,21 @@ export async function validateScan(
 
   // 2. Fallback: the code is an order number rather than a package label.
   if (!found) {
+    // spec-74 phase 2 review item 5. An order number matches every bulto of
+    // that order, not just one — `.limit(1)` with no ordering always
+    // returned the SAME row, so scanning an order number twice could never
+    // reach the second box. Ordered so an unloaded (or, after item 1,
+    // inferred-only) row sorts first: `loaded_at` ascending with nulls
+    // first puts a never-scanned box ahead of any timestamped one, and in
+    // the common case sorts a backfilled/inferred row (an old, one-time
+    // `MIN(staged_at)`) ahead of a genuinely-just-scanned one too.
     const { data: byOrder, error: orderError } = await supabase
       .from('packages')
-      .select(`id, status, order_id, orders!inner(order_number, customer_name, delivery_address, customer_phone)`)
+      .select(`id, status, order_id, loaded_at, load_inferred, orders!inner(order_number, customer_name, delivery_address, customer_phone)`)
       .eq('operator_id', operatorId)
       .eq('orders.order_number', code)
       .is('deleted_at', null)
+      .order('loaded_at', { ascending: true, nullsFirst: true })
       .limit(1);
 
     if (orderError) return queryFailed(orderError.message);
@@ -167,14 +189,36 @@ export async function validateScan(
   let action: ScanAction;
 
   if (onThisRoute) {
-    if (onThisRoute.stage !== 'planned') {
+    // spec-74 phase 2. This used to be `onThisRoute.stage !== 'planned'`,
+    // refusing the SECOND bulto of a multi-bulto order: the first scan
+    // flips the order's one `dispatches` row to `staged` (see stage-dispatch.ts),
+    // and every remaining, genuinely-unscanned box in the order was then
+    // refused as "already loaded" — the double-lock spec-74 exists to
+    // remove (spec-74 Decision 5 / "Why it happens" #3 in the spec).
+    //
+    // The check is now per-PACKAGE: refuse only when THIS box's own
+    // `loaded_at` is already set, i.e. it was itself already scanned.
+    // `dispatches.stage` staying `staged` after the first bulto is this
+    // phase's known, documented over-claim (phase 3 introduces
+    // `partially_staged` to fix it) — it must not gate the scan any more.
+    //
+    // spec-74 phase 2 review item 1. `loaded_at` alone is not enough: phase
+    // 1's migration backfilled `loaded_at` onto EVERY live package of every
+    // pre-existing `staged`/`adopted` dispatch (flagged `load_inferred`),
+    // so gating on `loaded_at` alone re-deadlocked every one of those
+    // boxes — including the box that was physically on the andén in the
+    // original QA repro. An inferred row is an assumption standing in for
+    // missing history, not proof this box was scanned, so it must remain
+    // re-scannable. Only a GENUINE scan (`loaded_at` set AND
+    // `load_inferred` false) refuses a second one.
+    if (found.loaded_at && !found.load_inferred) {
       return {
         ok: false,
         message: 'Paquete ya cargado en esta ruta',
         code: 'ALREADY_STAGED',
       };
     }
-    action = { kind: 'stage', dispatchId: onThisRoute.id };
+    action = { kind: 'stage', dispatchId: onThisRoute.id, currentStage: onThisRoute.stage };
   } else if (dispatches.some(ownsTheOrder)) {
     return {
       ok: false,
