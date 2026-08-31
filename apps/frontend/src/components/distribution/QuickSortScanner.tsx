@@ -55,7 +55,16 @@ export function QuickSortScanner({ operatorId, userId, zones, onScanEvent, mode 
   return (
     <div className="flex flex-col gap-3">
       {state === 'scan_package' && (
+        /* `key={mode}` is load-bearing, not cosmetic. Found in QA with a real
+           browser: switching Sectorizar -> Estibar leaves focus on the TAB
+           BUTTON the operator just clicked, and this field does not remount on
+           a mode change, so it never reclaims focus — the gun's next scan is
+           typed into a button and silently dropped. (The unit test missed it
+           because rendering with mode='stage' is a MOUNT; a real operator gets
+           here by clicking.) Keying on mode remounts the field, so ScanField's
+           autoFocus effect re-runs and the gun stays armed. */
         <ScanField
+          key={mode}
           ariaLabel="Escanear paquete"
           onScan={(code) => { void handlePackageScan(code); }}
           helperText="Escanea o escribe el código y presiona Enter"

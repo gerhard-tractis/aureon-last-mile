@@ -79,9 +79,14 @@ export default function MoveTaskPage() {
         variant="titled"
         title="Mover a posición"
         subtitle={
+          /* Blocked work is still work. Saying "Nada por mover" while the
+             screen lists routes with packages stuck behind a missing position
+             is how an operator learns to stop believing this screen. */
           totalRemaining > 0
             ? `${totalRemaining} ${totalRemaining === 1 ? 'paquete' : 'paquetes'} por mover`
-            : 'Nada por mover'
+            : unassignedRoutes.length > 0
+              ? 'Sin posición asignada — nada que mover aún'
+              : 'Nada por mover'
         }
         onBack={goBack}
       />

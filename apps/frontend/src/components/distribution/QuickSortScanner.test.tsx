@@ -181,4 +181,24 @@ describe('QuickSortScanner', () => {
       status: 'ok',
     });
   });
+
+  // QA finding (spec-71), found with a real browser and missed by every
+  // mount-based test: an operator reaches stage mode by CLICKING the tab, and
+  // the package field does not remount on a mode change — so focus stayed on
+  // the tab button and the gun's next scan was typed into a button and
+  // silently dropped. `key={mode}` remounts the field so autoFocus re-runs.
+  // Simulated here by re-rendering with a changed `mode`, which is exactly
+  // what the tab click does to this component.
+  it('re-arms the package field when mode changes, so a gun scan is never dropped', () => {
+    const { rerender } = render(
+      <QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} mode="sectorize" />,
+    );
+    const before = screen.getByLabelText(/escanear paquete/i);
+    before.blur();
+    expect(document.activeElement).not.toBe(before);
+
+    rerender(<QuickSortScanner operatorId="op-1" userId="user-1" zones={zones} mode="stage" />);
+
+    expect(document.activeElement).toBe(screen.getByLabelText(/escanear paquete/i));
+  });
 });
