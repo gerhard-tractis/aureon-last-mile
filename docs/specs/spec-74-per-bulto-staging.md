@@ -1,0 +1,165 @@
+# Spec-74: Per-bulto staging — one scan, one box
+
+> **Related:** [spec-70](spec-70-dispatch-state-machine.md) (owns `dispatches.stage`, the
+> order-level fact this spec makes package-level), [spec-71](spec-71-load-positions-staging-pass.md)
+> (the position seal that cannot be made honest until this lands), [spec-55](spec-55-carton-expansion.md)
+> (carton expansion — why multi-bulto orders exist at all)
+
+**Status:** backlog
+
+_Date: 2026-08-31_
+
+---
+
+## Goal
+
+Make staging count **boxes**, not orders. Today one scan of one bulto marks an entire
+multi-bulto order as physically loaded. That is not what happened on the floor, and every
+screen and gate built on top of it inherits the lie.
+
+## Non-Goals
+
+- Changing what a `dispatches` row *means*. It stays one row per order on a route — the plan
+  unit. This spec adds a load unit beneath it; it does not split dispatches per package.
+- Route optimisation, capacity, sequencing — specs 72/73.
+- Changing Pre-ruta's cohort rule or `get_pre_route_snapshot`.
+- Changing `dock_zones` or the sectorization engine.
+- Reworking spec-71's position model. `load_positions`, assignment, release and the offset
+  rule all stand; only the *completeness* question they depend on changes.
+
+---
+
+## The problem, with evidence
+
+Found by driving the deployed QA build through a real staging pass, not by reading code.
+
+**Reproduced end to end on QA (2026-08-31), order `QA-OUT-007`, 2 bultos:**
+
+1. Scanned only `QA-OUT-007-CTN-2` into position `POS-01`.
+2. `dispatches.stage` flipped to `staged` — for the whole order.
+3. Sealed the position. It **succeeded**: *"Posición sellada · 1 parada(s)"*, route walked to
+   `loaded`, both packages marked `listo_para_despacho`.
+4. `QA-OUT-007-CTN-1` had **zero** `dock_scans` rows carrying a `load_position_id`. It was
+   never moved. It was still on the andén.
+
+A truck was sealed and dispatch-ready with a box left on the dock, and every screen said the
+work was done.
+
+### Why it happens
+
+| # | Fact | Where |
+|---|---|---|
+| 1 | The first scan stages the **order**. `stageDispatch` sets `dispatches.stage='staged'` for the order the scanned package belongs to. | `lib/dispatch/stage-dispatch.ts` |
+| 2 | It also advances **every** package of that order to `en_carga` — scoped by `order_id`, not by the package scanned. | `advancePackagesToEnCarga`, `stage-dispatch.ts:30-42` |
+| 3 | A second bulto is then **refused**: `if (onThisRoute.stage !== 'planned') return ALREADY_STAGED` — *"Paquete ya cargado en esta ruta"*. | `lib/dispatch/scan-validator.ts:170` |
+| 4 | And refused again independently: `en_carga` is not in `DISPATCHABLE_STATUSES`, so the status check rejects it as `WRONG_STATUS`. | `scan-validator.ts:28-33,138` |
+| 5 | The seal's `UNSEALED_STOPS` guard counts dispatches still `planned`. After (1) there are none, so the gate opens. | `lib/dispatch/seal-route.ts` |
+
+So the system is **double-locked against scanning the rest of the order**, and then treats the
+order as complete. There is no operator remedy: the remaining bultos cannot be scanned at all.
+
+### Why the obvious fix is not a fix
+
+An attempt was made to add a package-level `UNMOVED_PACKAGES` guard to spec-71's position seal,
+counting packages without a `dock_scans.load_position_id` row. It was discarded before merge
+after review, because with facts (3) and (4) above it is **unsatisfiable**: the seal would
+demand that every bulto be scanned into the position while the scanner refuses to accept them.
+That converts *"seals unsafely"* into *"cannot seal, ever, with no way out"* — strictly worse.
+
+Two further reasons that guard could not stand alone, both worth carrying into this spec:
+
+- **The route-level scan writes no `dock_scans` rows at all** (`app/api/dispatch/routes/[id]/scan/route.ts`
+  — zero occurrences). Any route staged through the desktop RouteBuilder therefore has no
+  per-package evidence whatsoever, so a package-level gate locks it out entirely.
+- **`adopted` dispatches only exist on that route-level path**, so they inherit the same lockout.
+
+Any per-package completeness check must land **with** a per-package scan path, never ahead of it.
+
+---
+
+## Decisions
+
+1. **The load unit is the package; the plan unit stays the order.** `dispatches` keeps meaning
+   "this order is planned on this route" — spec-70's axis is not re-cut. What changes is that
+   "physically loaded" stops being read off that row for a multi-package order.
+
+2. **A dispatch is `staged` when every one of its packages is staged, not when the first is.**
+   This keeps `dispatches.stage` meaningful and keeps spec-70's `UNSEALED_STOPS` guard correct
+   for free, rather than adding a second gate beside it. The scan handler computes it after each
+   package scan: stage the package, then promote the dispatch only once none of its live packages
+   are outstanding.
+
+3. **`packages` carries the per-box load fact, not a join table.** A package is loaded onto
+   exactly one route at a time, so the relationship is many-packages-to-one-route — a plain
+   column, matching the reasoning spec-71 Decision 4 used for `routes.load_position_id`. The
+   exact column set is settled in implementation against spec-70 phase 1's `staged_by` convention
+   (a dedicated actor column) **and** spec-70 phase 3's app-layer `audit_logs` convention — both,
+   as spec-71 phase 2 established.
+
+4. **`dock_scans.load_position_id` is evidence, not state.** It already records which position a
+   package was scanned into (spec-71 phase 1) and it stays the audit trail. It is deliberately
+   *not* promoted into the completeness gate: the route-level scan path writes no such row, so a
+   gate built on it locks out every desktop-staged route. The gate reads the new package column.
+
+5. **The scanner must accept the remaining bultos of a partly-staged order.** `ALREADY_STAGED`
+   becomes a per-*package* check, not a per-dispatch one, and `advancePackagesToEnCarga` advances
+   only the package actually scanned. Both are the locks that make today's state unrecoverable.
+
+6. **Both seals get the same truth.** spec-71's position seal and spec-70's route-level `/seal`
+   must agree on completeness. Today only the position path was going to be guarded, leaving the
+   RouteBuilder seal — the one a dispatcher is most likely to use — as unsafe as before. Whatever
+   `UNSEALED_STOPS` becomes, both endpoints inherit it, because they already share `sealRoute`.
+
+---
+
+## Open questions for implementation
+
+- **The exact `packages` column set.** Whether a single `staged_at`/`staged_by` pair is enough, or
+  whether the load needs its own status value, has to be settled against spec-70's status
+  vocabulary — `en_carga` currently means "this order is being loaded" and would become
+  per-package. Decide when phase 1 is scoped, not here.
+- **Backfill.** Existing `staged` dispatches have no per-package evidence. Whether to backfill
+  every package of a staged dispatch as staged (optimistic, matches what the system already
+  claims) or leave them null (honest, but makes historic routes look incomplete) needs a decision
+  — and it determines whether already-`loaded` routes stay sealable.
+- **Whether the route-level scan should write `dock_scans` rows** so the two staging paths leave
+  the same evidence. Out of scope for the gate (Decision 4) but worth settling, since the
+  asymmetry is what made the naive fix impossible.
+
+---
+
+## Implementation phases
+
+Each phase is one PR with auto-merge, per `CLAUDE.md`. Phase 1 is the only irreversible one and
+must be verified applied against QA before phase 2 merges.
+
+- **Phase 1 — Database.** The per-package load columns on `packages`, plus a SQL suite in the
+  repo's `DO $$ ... RAISE` style: operator isolation, soft-delete behaviour, and the backfill
+  decision above exercised both ways.
+- **Phase 2 — Make the scanner accept every bulto.** Turn `ALREADY_STAGED` into a per-package
+  check and scope `advancePackagesToEnCarga` to the scanned package. **This phase alone fixes the
+  deadlock** and must ship before any completeness gate. Both scan paths — the position scan and
+  the route-level scan — get the same treatment.
+- **Phase 3 — Promote the dispatch only when complete.** `dispatches.stage` flips to `staged`
+  once no live package of that order is outstanding. spec-70's `UNSEALED_STOPS` then becomes
+  correct without a second gate, and both seals inherit it (Decision 6).
+- **Phase 4 — Screens tell the truth.** spec-71's move list counts per package already; verify it
+  against the new fact and drop the `dock_scans` proxy if the column supersedes it. RouteBuilder's
+  "Faltan N por estibar" and `PackageRow`'s "Sin estibar" become per-bulto.
+- **Phase 5 — Verify on the floor.** The QA repro above, re-run: partially stage a multi-bulto
+  order, confirm the remaining bultos **can** be scanned, and confirm neither seal accepts the
+  load until they are. A browser pass, not a unit test — this whole spec exists because unit
+  tests could not see it.
+
+---
+
+## Testing notes
+
+The bug survived a full spec's worth of unit tests, two Opus reviews and a data-layer QA pass.
+It needed a *sequence* against a real environment: a multi-bulto order, a partial scan, then a
+seal. Phase 5 is not optional, and neither is doing it in a browser.
+
+Note also that jsdom does not reproduce the browser behaviours this area depends on — a
+`key={mode}` focus fix passed its jsdom test and shipped broken on the same screens
+(`lib/scan/refocus-package-field.ts` records that one). Treat green unit tests here as evidence
+of wiring, not of behaviour.

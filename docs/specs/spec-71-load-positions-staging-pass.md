@@ -30,6 +30,30 @@ during the day is unchanged; only the cutoff step is new. A future spec can move
 late arrivals falling back to the andén — without changing this spec's data model or screens. That
 is stated explicitly in Decision 1 so the second step is a config change, not a rewrite.
 
+## Known limitation — the seal does not verify every bulto
+
+Found on 2026-08-31 by driving the deployed build through a real staging pass. The position
+seal accepts a load in which some boxes of a multi-bulto order were never moved.
+
+`dispatches.stage` is per **order**, and one package scan flips the whole order to `staged`
+(`stage-dispatch.ts`). The seal's `UNSEALED_STOPS` guard counts dispatches still `planned`, so
+after the first bulto it stops refusing. Reproduced on QA with a 2-bulto order: one bulto
+scanned, seal succeeded, route walked to `loaded`, and the other bulto was still on the andén
+with no position scan against it.
+
+A package-level guard was written and **discarded before merge**: the scanner independently
+refuses the remaining bultos (`ALREADY_STAGED`, and `en_carga` failing `DISPATCHABLE_STATUSES`),
+so the guard would have been unsatisfiable — turning "seals unsafely" into "cannot seal, ever".
+The same applies to spec-70's route-level `/seal`, which shares `sealRoute` and is equally
+permissive.
+
+Fixing it means making staging per-bulto, which re-cuts spec-70's staging model rather than
+spec-71's position model — so it is [spec-74](spec-74-per-bulto-staging.md), not a spec-71 phase.
+Everything spec-71 specified was built; this limitation was inherited, not introduced. It is
+recorded here so `completed` is not read as "the seal guarantees a complete load."
+
+---
+
 ## Non-Goals
 
 - Any map, pin, geocode, or drag-and-drop UI. Dropped from this line of work entirely; see
