@@ -260,3 +260,23 @@ export interface RouteBlocksResult {
   blocks: RouteBlockView[];
   unblocked: UnblockedOrder[];
 }
+
+/**
+ * spec-72 phase 4 (Decision 6) — one comuna's territory history, as returned
+ * by `get_route_territory_history`. `driverName` is the most recent
+ * non-cancelled route's driver among this operator's OTHER routes that
+ * covered this comuna via a live `route_blocks` row; `runCount` is how many
+ * of those non-cancelled routes that same driver ran (all-time, no time
+ * window — see the migration's header comment). Only comunas THIS route
+ * already has a live block for are covered — an order still sitting in
+ * `RouteBlocksResult.unblocked` (orphan) is invisible to this lookup, which
+ * is why every consumer must also surface that orphan count alongside this
+ * data, per spec-72's "Notes for phases 4 and 5".
+ */
+export interface TerritoryHistoryEntry {
+  comunaId: string;
+  comunaName: string;
+  driverName: string;
+  runCount: number;
+  lastRouteDate: string; // ISO date YYYY-MM-DD
+}
