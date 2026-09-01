@@ -209,3 +209,54 @@ export interface ScanApiResponse {
   stage: DispatchStage;
   package_status: PackageStatus;
 }
+
+// spec-72 phase 3. route_blocks.sequence_source — provenance, not
+// correctness (Decision 2). 'optimizer' is reserved: nothing in this repo
+// writes it yet (sidecar/or-tools/ stays unwired, per spec-72's Non-Goals).
+export type SequenceSource = 'default' | 'manual' | 'optimizer';
+
+/**
+ * One row of the manager review list — one comuna-within-a-route block, in
+ * `sequence_index` order, with the order/package counts spec-72 phase 3
+ * asks the list to show. Counts are derived by joining this block's
+ * `comuna_id` against the route's live dispatches/orders, exactly like
+ * `route_blocks` itself has no membership table (spec-72's data-model
+ * section, "counts are derived, never incremented").
+ */
+export interface RouteBlockView {
+  id: string;                 // route_blocks.id
+  comunaId: string;
+  comunaName: string;
+  sequenceIndex: number;
+  sequenceSource: SequenceSource;
+  orderCount: number;
+  packageCount: number;
+}
+
+/**
+ * An order that cannot be shown inside any block. Two distinct causes, kept
+ * separate because they mean different things operationally:
+ *
+ * - `noComuna`: `orders.comuna_id IS NULL` — `normalize_comuna_id` never
+ *   matched a comuna for this order (spec-72's data-model section, already
+ *   planned as the "sin comuna" bucket).
+ * - `orphan`: `orders.comuna_id IS NOT NULL` but no LIVE `route_blocks` row
+ *   on this route covers that comuna. This is the gap spec-72 phase 3's
+ *   spec text calls out explicitly: an order adopted via
+ *   `routes/[id]/scan`'s adopt branch, or any order on a route created by
+ *   `createEmptyDraft` (which never calls `create_seeded_route`, so the
+ *   route's block list can be permanently empty), lands here. A reader that
+ *   trusts `route_blocks` as a complete manifest would silently drop this
+ *   order — the thing spec-72's data-model section forbids.
+ */
+export interface UnblockedOrder {
+  orderId: string;
+  orderNumber: string;
+  comunaName: string | null;  // null only for the noComuna case
+  reason: 'noComuna' | 'orphan';
+}
+
+export interface RouteBlocksResult {
+  blocks: RouteBlockView[];
+  unblocked: UnblockedOrder[];
+}

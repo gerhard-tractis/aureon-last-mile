@@ -45,6 +45,14 @@ vi.mock('@/hooks/dispatch/useDispatchRoute', () => ({
   }),
 }));
 
+// spec-72 phase 3: RouteBlockList (and its own useRouteBlocks read/derive
+// logic) is covered on its own in RouteBlockList.test.tsx /
+// useRouteBlocks.test.ts — mocked to empty here so it renders nothing and
+// this file stays about RouteBuilder's own behaviour, not the block list's.
+vi.mock('@/hooks/dispatch/useRouteBlocks', () => ({
+  useRouteBlocks: () => ({ data: { blocks: [], unblocked: [] }, isLoading: false, refetch: vi.fn() }),
+}));
+
 function pkg(overrides: Partial<RoutePackage> = {}): RoutePackage {
   return {
     dispatch_id: 'd1',

@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ScanZone } from './ScanZone';
 import { PackageRow } from './PackageRow';
 import { RoutePanel } from './RoutePanel';
+import { RouteBlockList } from './RouteBlockList';
 import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
@@ -228,6 +229,8 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
             </strong>
           </span>
         </div>
+
+        <RouteBlockList routeId={routeId} operatorId={operatorId} routeStatus={routeStatus} />
 
         {sealError && (
           <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
