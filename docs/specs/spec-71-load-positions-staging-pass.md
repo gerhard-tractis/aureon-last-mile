@@ -6,9 +6,25 @@
 > / `useQuickSortFlow`, the scan-then-scan loop this repoints), [spec-40](spec-40-dock-zone-barcode-labels.md)
 > (dock-zone barcode label layout — `backlog`, not yet built; only its pattern is reused here)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-25_
+
+> **What `completed` rests on (2026-09-01).** All five phases shipped and were
+> verified against the deployed QA build in a browser: a package scanned to a
+> position flips `dispatches.stage` to `staged` and writes
+> `dock_scans.load_position_id`; the position seal refuses an unstaged load and
+> succeeds once complete; the move list groups by andén and its group counts sum
+> to its headline; the offset rule, the occupancy guard, release semantics and
+> the re-assignment contract were each exercised against live data.
+>
+> **Not verified: the physical scanner.** Every scan in that pass was a typed
+> string. The hyphen normalisation (`POS01` matching a stored `POS-01`) is proven
+> in logic and unproven against the QA gun's US/ES layout on a printed label —
+> which is the failure this normalisation exists for. Positions for a real tenant
+> are also still an onboarding step, as andenes are. See the Known limitation
+> below, which [spec-74](spec-74-per-bulto-staging.md) closes.
+
 
 ---
 
