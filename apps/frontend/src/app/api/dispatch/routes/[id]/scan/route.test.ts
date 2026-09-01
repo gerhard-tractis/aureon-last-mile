@@ -35,8 +35,25 @@ interface Op { table: string; kind: string; payload?: Record<string, unknown>; f
  * Records every table operation so the assertions can be about what the
  * handler wrote, not merely that it returned 201. `routeStatus` seeds the
  * lookup the handler does to decide whether the route may still be loaded.
+ *
+ * spec-74 phase 3 review Fix 3 — `stageDispatch`'s recompute-and-write no
+ * longer runs as app-layer `packages`/`dispatches` queries at all; it is
+ * one call to the `recompute_dispatch_stage` RPC (20260902000001), whose
+ * actual recompute logic (DISPATCHABLE_STATUSES intersection, adopted
+ * preservation, the FOR UPDATE lock) is covered by pgTAP now, not here —
+ * see spec74_phase3_partially_staged.test.sql. This mock only has to be
+ * honest about WHICH stage that RPC reports, via `recomputeStage`
+ * (defaults to the pre-existing `outstanding`-derived guess so untouched
+ * tests keep working unchanged): the handler-level tests in this file are
+ * about response/write WIRING (does the handler report the RPC's real
+ * answer, does it skip dispatch writes it no longer makes directly), not
+ * about the recompute decision itself.
  */
-function buildClient(routeStatus: string | null = 'planned') {
+function buildClient(
+  routeStatus: string | null = 'planned',
+  outstanding: { id: string }[] = [],
+  recomputeStage: string = outstanding.length > 0 ? 'partially_staged' : 'staged',
+) {
   const ops: Op[] = [];
   mockFrom.mockImplementation((table: string) => {
     const op: Op = { table, kind: 'select', filters: [] };
@@ -47,6 +64,8 @@ function buildClient(routeStatus: string | null = 'planned') {
     chain.eq = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn(self);
+    chain.neq = vi.fn(self);
+    chain.limit = vi.fn(self);
     // spec-74 phase 2 review item 1 — advancePackagesToEnCarga's widened
     // idempotency guard.
     chain.or = vi.fn(self);
@@ -59,16 +78,28 @@ function buildClient(routeStatus: string | null = 'planned') {
           : { data: { id: 'new-dispatch' }, error: null },
       ),
     );
-    // spec-74 phase 2 review item 4 — `packages`' write now resolves
-    // through `.select('id')`, and advancePackagesToEnCarga treats an
-    // empty/null result as a failure. Resolving one matched row here keeps
-    // every existing test's implicit "the write succeeds" assumption true;
-    // the item-4-specific zero-rows/error cases get their own client.
-    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-      Promise.resolve(table === 'packages' ? { data: [{ id: 'pkg-1' }], error: null } : { data: null, error: null }).then(res, rej);
+    // spec-74 phase 2 review item 4 — `packages`' UPDATE resolves through
+    // `.select('id')`, and advancePackagesToEnCarga treats an empty/null
+    // result as a failure. Resolving one matched row here keeps every
+    // existing test's implicit "the write succeeds" assumption true; the
+    // item-4-specific zero-rows/error cases get their own client.
+    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
+      let result: { data: unknown; error: unknown } = { data: null, error: null };
+      if (table === 'packages' && op.kind === 'update') {
+        result = { data: [{ id: 'pkg-1' }], error: null };
+      }
+      return Promise.resolve(result).then(res, rej);
+    };
     return chain;
   });
-  mockRpc.mockResolvedValue({ data: null, error: null });
+  // Smart default: `recompute_dispatch_stage` reports `recomputeStage`;
+  // every other RPC name resolves the old blanket `{ data: null, error:
+  // null }` unless a test installs its own `mockImplementation`.
+  mockRpc.mockImplementation((fn: string) =>
+    fn === 'recompute_dispatch_stage'
+      ? Promise.resolve({ data: recomputeStage, error: null })
+      : Promise.resolve({ data: null, error: null }),
+  );
   return ops;
 }
 
@@ -101,23 +132,32 @@ beforeEach(() => {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('POST /scan — staging a planned stop', () => {
-  it('updates the seeded row rather than inserting a second one', async () => {
+  /**
+   * spec-74 phase 3 review Fix 3 — the dispatch row is no longer written by
+   * a direct `.from('dispatches').update(...)` call in this handler (or in
+   * stageDispatch): it goes through the `recompute_dispatch_stage` RPC
+   * (20260902000001), which does the lock + recompute + write atomically in
+   * the database. So "updates the seeded row" is now asserted as "the RPC
+   * was called with this dispatch/operator/order/user", not as an `ops`
+   * table write — and "rather than inserting a second one" is still a
+   * direct `ops` assertion, since the 'stage' branch never touches
+   * `dispatches` via `.insert()` either way.
+   */
+  it('recomputes the seeded row via RPC rather than inserting a second dispatch', async () => {
     const ops = buildClient('planned');
     mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
 
     const res = await POST(makeReq(), { params });
     expect(res.status).toBe(201);
 
-    const dispatchOps = ops.filter((o) => o.table === 'dispatches');
-    expect(dispatchOps.map((o) => o.kind)).toContain('update');
-    expect(dispatchOps.map((o) => o.kind)).not.toContain('insert');
+    expect(ops.some((o) => o.table === 'dispatches')).toBe(false);
 
-    const update = dispatchOps.find((o) => o.kind === 'update');
-    expect(update?.payload?.stage).toBe('staged');
-    expect(update?.payload?.staged_at).toBeTruthy();
-    expect(update?.payload?.staged_by).toBe('u-1');
-    expect(update?.filters).toContainEqual(['id', 'd1']);
-    expect(update?.filters).toContainEqual(['operator_id', 'op-1']);
+    expect(mockRpc).toHaveBeenCalledWith('recompute_dispatch_stage', {
+      p_dispatch_id: 'd1',
+      p_operator_id: 'op-1',
+      p_order_id: 'o1',
+      p_user_id: 'u-1',
+    });
   });
 
   /**
@@ -176,7 +216,10 @@ describe('POST /scan — staging a planned stop', () => {
  */
 describe('POST /scan — spec-74 phase 2 review item 3 (preserving adopted)', () => {
   it('keeps stage adopted when the dispatch was already adopted', async () => {
-    const ops = buildClient('planned');
+    // Preservation of 'adopted' is now decided inside
+    // recompute_dispatch_stage (DB, pgTAP-covered); this test's job is
+    // wiring — that the handler reports whatever the RPC returns, verbatim.
+    buildClient('planned', [], 'adopted');
     mockValidateScan.mockResolvedValue({
       ok: true, packageId: 'pkg-1', package: PKG,
       action: { kind: 'stage', dispatchId: 'd1', currentStage: 'adopted' },
@@ -185,11 +228,42 @@ describe('POST /scan — spec-74 phase 2 review item 3 (preserving adopted)', ()
     const res = await POST(makeReq(), { params });
     expect(res.status).toBe(201);
 
-    const update = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
-    expect(update?.payload?.stage).toBe('adopted');
-
     const body = await res.json();
     expect(body.stage).toBe('adopted');
+  });
+});
+
+/**
+ * spec-74 phase 3 — the writer, exercised through this HTTP handler. Also
+ * regression-proves the response's `stage` is stageDispatch's REAL return
+ * value, not a caller-side 'staged'-by-default guess (the bug this phase's
+ * own review found at [id]/scan/route.ts:199-206 before the fix).
+ */
+describe('POST /scan — spec-74 phase 3 (partially_staged)', () => {
+  it('reports partially_staged when recompute_dispatch_stage says a sibling bulto is still outstanding', async () => {
+    buildClient('planned', [{ id: 'pkg-2' }]);
+    mockValidateScan.mockResolvedValue({
+      ok: true, packageId: 'pkg-1', package: PKG,
+      action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' },
+    });
+
+    const res = await POST(makeReq(), { params });
+    expect(res.status).toBe(201);
+
+    const body = await res.json();
+    expect(body.stage).toBe('partially_staged');
+  });
+
+  it('reports staged once recompute_dispatch_stage says no sibling bulto remains outstanding', async () => {
+    buildClient('planned', []);
+    mockValidateScan.mockResolvedValue({
+      ok: true, packageId: 'pkg-2', package: PKG,
+      action: { kind: 'stage', dispatchId: 'd1', currentStage: 'partially_staged' },
+    });
+
+    const res = await POST(makeReq(), { params });
+    const body = await res.json();
+    expect(body.stage).toBe('staged');
   });
 });
 
@@ -319,7 +393,14 @@ describe('POST /scan — spec-71 load position assignment on draft -> planned', 
   it('does not call assign_load_position when the route is already planned (loading is the only leg)', async () => {
     buildClient('planned');
     mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
-    mockRpc.mockResolvedValue({ data: null, error: null });
+    // action.kind is 'stage', which calls stageDispatch -> the
+    // recompute_dispatch_stage RPC; it must still resolve to a real stage
+    // or the handler 500s before the assertion below is ever reached.
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'recompute_dispatch_stage'
+        ? Promise.resolve({ data: 'staged', error: null })
+        : Promise.resolve({ data: null, error: null }),
+    );
 
     await POST(makeReq(), { params });
 
@@ -393,7 +474,11 @@ describe('POST /scan — spec-71 offset re-check on adopt', () => {
   it('does NOT call check_load_position_conflict for a staged (already-planned) scan', async () => {
     buildClient('planned');
     mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
-    mockRpc.mockResolvedValue({ data: null, error: null });
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'recompute_dispatch_stage'
+        ? Promise.resolve({ data: 'staged', error: null })
+        : Promise.resolve({ data: null, error: null }),
+    );
 
     await POST(makeReq(), { params });
 
@@ -417,7 +502,11 @@ describe('POST /scan — spec-71 offset re-check on adopt', () => {
   it('reports load_position_conflict: false by default', async () => {
     buildClient('planned');
     mockValidateScan.mockResolvedValue({ ok: true, packageId: 'pkg-1', package: PKG, action: { kind: 'stage', dispatchId: 'd1', currentStage: 'planned' } });
-    mockRpc.mockResolvedValue({ data: null, error: null });
+    mockRpc.mockImplementation((fn: string) =>
+      fn === 'recompute_dispatch_stage'
+        ? Promise.resolve({ data: 'staged', error: null })
+        : Promise.resolve({ data: null, error: null }),
+    );
 
     const res = await POST(makeReq(), { params });
     const body = await res.json();

@@ -50,7 +50,14 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   // spec-70 decision 4: shown live while loading, not just discovered when
   // /seal refuses — the cutoff is the worst possible moment to find out a
   // stop was never scanned.
-  const pendingCount = packages.filter((p) => p.stage === 'planned').length;
+  //
+  // spec-74 phase 3: widened to also count `partially_staged` — an order
+  // with one bulto on the truck and one still on the andén is not done
+  // either, and /seal now refuses it exactly like a fully-planned stop
+  // (seal-route.ts's widened UNSEALED_STOPS). This is still ORDER-level
+  // (one order = one unit in this count even if some of its bultos are
+  // already loaded); per-bulto counting is spec-74 phase 4's job.
+  const pendingCount = packages.filter((p) => p.stage === 'planned' || p.stage === 'partially_staged').length;
 
   const handleScan = async (code: string) => {
     setScanError(null);

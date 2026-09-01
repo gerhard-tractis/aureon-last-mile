@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { validateScan } from '@/lib/dispatch/scan-validator';
 import { stageDispatch, advancePackagesToEnCarga, LOADING_WALK } from '@/lib/dispatch/stage-dispatch';
+import type { DispatchStage } from '@/lib/dispatch/types';
 
 const bodySchema = z.object({
   code: z.string().min(1),
@@ -78,11 +79,15 @@ export async function POST(
 
     const now = new Date().toISOString();
     let dispatchId: string;
+    // spec-74 phase 3. Set for the 'stage' branch from stageDispatch's own
+    // return value below (the real recompute result); the 'adopt' branch
+    // sets it directly, since it never calls stageDispatch at all.
+    let finalStage: DispatchStage;
 
     if (validation.action.kind === 'stage') {
       // The row Pre-ruta seeded is updated in place. Inserting a second row
       // here is what made the plan and the load indistinguishable.
-      await stageDispatch(supabase, {
+      finalStage = await stageDispatch(supabase, {
         dispatchId: validation.action.dispatchId,
         orderId: validation.package.order_id,
         packageId: validation.packageId,
@@ -111,6 +116,7 @@ export async function POST(
         .single();
       if (adoptError) throw adoptError;
       dispatchId = inserted.id;
+      finalStage = 'adopted';
 
       // `stageDispatch` above bundles this same advance with its dispatch
       // update; the adopt branch INSERTs instead, so it takes just this half.
@@ -191,15 +197,11 @@ export async function POST(
       }
     }
 
-    // spec-74 phase 2 review item 3. A 'stage' action no longer always ends
-    // in `staged` — a dispatch that was already `adopted` stays `adopted`
-    // (stageDispatch's own decision). The response must not claim `staged`
-    // when it did not happen.
-    const finalStage =
-      validation.action.kind === 'stage'
-        ? (validation.action.currentStage === 'adopted' ? 'adopted' : 'staged')
-        : 'adopted';
-
+    // spec-74 phase 2 review item 3 / phase 3. `finalStage` is set above,
+    // per branch: for 'stage' it is stageDispatch's own return value (the
+    // real recompute — 'adopted', 'partially_staged', or 'staged', never a
+    // caller-side guess); for 'adopt' it is always 'adopted'. The response
+    // must not claim a stage the write did not actually produce.
     return NextResponse.json(
       {
         ...validation.package,

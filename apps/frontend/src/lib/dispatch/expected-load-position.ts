@@ -103,9 +103,13 @@ export type FindExpectedLoadPositionResult =
  * `ownsTheOrder` / `scan-validator.ts`'s membership check). Added alongside
  * `planned` and `staged`.
  *
- * `partially_staged` is not yet written by anything (that is phase 3's
- * job) and is intentionally left out here for now; phase 3's own blocker
- * checklist is what teaches this query the wider, permanent set.
+ * spec-74 phase 3. `partially_staged` added — it is now written (a 2-bulto
+ * order's first scan flips its dispatch to `partially_staged`, not
+ * `staged`), and without it here the SECOND bulto's position-scan lookup
+ * found no row (the order's dispatch was `partially_staged`, matching
+ * neither `planned` nor the old `staged`) and refused with
+ * `NO_POSITION_ASSIGNED` — the exact mobile deadlock this phase's blocker
+ * checklist names.
  */
 export async function findExpectedLoadPosition(
   supabase: SupabaseClient<Database>,
@@ -118,7 +122,7 @@ export async function findExpectedLoadPosition(
     )
     .eq('operator_id', input.operatorId)
     .eq('order_id', input.orderId)
-    .in('stage', ['planned', 'staged', 'adopted'])
+    .in('stage', ['planned', 'partially_staged', 'staged', 'adopted'])
     .is('deleted_at', null)
     .limit(50);
 

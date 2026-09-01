@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
     // The row Pre-ruta/the route-level scan already seeded is updated in
     // place — never a second insert. Exactly [id]/scan/route.ts's 'stage'
     // branch, pointed at the dispatch validatePositionScan resolved.
-    await stageDispatch(supabase, {
+    const finalStage = await stageDispatch(supabase, {
       dispatchId: validation.dispatchId,
       orderId: validation.package.order_id,
       packageId: validation.packageId,
@@ -130,12 +130,11 @@ export async function POST(request: NextRequest) {
     });
     if (dockScanError) throw dockScanError;
 
-    // spec-74 phase 2 review item 3. Only a `planned` row becomes `staged`;
-    // an already-`adopted` row (this order was never planned onto this
-    // route) stays `adopted` — the response must say so, not always claim
-    // `staged`.
-    const finalStage = validation.currentStage === 'adopted' ? 'adopted' : 'staged';
-
+    // spec-74 phase 2 review item 3 / phase 3. `finalStage` (above) is now
+    // stageDispatch's own return value — the real recompute result
+    // ('adopted', 'partially_staged', or 'staged'), not a caller-side guess
+    // that predates `partially_staged` and would otherwise still claim
+    // `staged` for a scan that left a sibling bulto outstanding.
     return NextResponse.json(
       {
         dispatch_id: validation.dispatchId,

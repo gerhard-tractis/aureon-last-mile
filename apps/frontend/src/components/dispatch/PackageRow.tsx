@@ -13,7 +13,13 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
   // spec-70 decision 4: the gap between the plan and the load has to be
   // visible on the row while loading is still happening — the seal refusal
   // is the worst possible moment to find out a stop was never scanned.
-  const unstaged = pkg.stage === 'planned';
+  //
+  // spec-74 phase 3: widened to also cover `partially_staged` — some but
+  // not all of this order's bultos are loaded, which still means it is not
+  // safe to seal (seal-route.ts's widened UNSEALED_STOPS). Per-bulto detail
+  // ("1 of 2 estibados") is spec-74 phase 4's job; this stays the same
+  // order-level warning either way.
+  const unstaged = pkg.stage === 'planned' || pkg.stage === 'partially_staged';
 
   return (
     <div

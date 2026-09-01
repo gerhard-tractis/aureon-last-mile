@@ -38,6 +38,16 @@ describe('PackageRow', () => {
   });
 
   /**
+   * spec-74 phase 3: a partially_staged order (some bultos loaded, some
+   * not) still means the row is not safe to seal — same warning as
+   * `planned`, per-bulto detail is phase 4's job.
+   */
+  it('marks a row at stage=partially_staged as not yet staged too', () => {
+    render(<PackageRow index={1} pkg={{ ...pkg, stage: 'partially_staged' }} onRemove={vi.fn()} />);
+    expect(screen.getByText(/sin estibar/i)).toBeInTheDocument();
+  });
+
+  /**
    * spec-70 phase 4, breakage #8: pkg.status is dispatches.status
    * (dispatch_status_enum), a vocabulary `PACKAGE_STATUS_CONFIG` never
    * modelled — 'partial' had no entry there and rendered as the raw string

@@ -19,18 +19,36 @@ import { POST } from './route';
 
 interface Op { table: string; kind: string; payload?: Record<string, unknown>; filters: [string, unknown][] }
 
-interface Counts { total_stops: number; pending_stops: number; staged_stops: number; adopted_stops: number }
+interface Counts {
+  total_stops: number;
+  pending_stops: number;
+  // spec-74 phase 3 — its own bucket on route_stop_counts (20260902000001).
+  // Optional here (rather than required on every fixture) so every
+  // pre-existing test in this file, which predates the value, keeps
+  // meaning "no partially_staged dispatches" without being touched.
+  partially_staged_stops?: number;
+  staged_stops: number;
+  adopted_stops: number;
+}
 
 /**
- * `counts` is what route_stop_counts reports for the route, and `pending` the
- * rows the seal refusal has to name. Both are what the guard is made of, so
- * both are inputs to every test here.
+ * `counts` is what route_stop_counts reports for the route, `pending` the
+ * rows the seal refusal has to name for a planned/partially_staged stop, and
+ * `adoptedPending`/`outstandingPackages` (spec-74 phase 3) the equivalent
+ * pair for an adopted dispatch's own completeness check — a SEPARATE query
+ * pair `sealRoute` only issues when `adopted_stops > 0`, distinguished here
+ * from the planned/partially_staged query by its `stage = 'adopted'` filter.
  */
 function buildClient(
   routeStatus: string | null,
   counts: Counts | null = { total_stops: 3, pending_stops: 0, staged_stops: 3, adopted_stops: 0 },
   pending: { order_id: string; orders: { order_number: string } }[] = [],
-  opts: { routeError?: { code: string; message: string }; countsError?: { code: string; message: string } } = {},
+  opts: {
+    routeError?: { code: string; message: string };
+    countsError?: { code: string; message: string };
+    adoptedPending?: { order_id: string; orders: { order_number: string } }[];
+    outstandingPackages?: { order_id: string }[];
+  } = {},
 ) {
   const ops: Op[] = [];
   mockFrom.mockImplementation((table: string) => {
@@ -55,10 +73,16 @@ function buildClient(
         opts.countsError ? { data: null, error: opts.countsError } : { data: counts, error: null },
       );
     });
-    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-      Promise.resolve(
-        table === 'dispatches' ? { data: pending, error: null } : { data: null, error: null },
-      ).then(res, rej);
+    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
+      let result: { data: unknown; error: unknown } = { data: null, error: null };
+      if (table === 'dispatches') {
+        const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
+        result = { data: isAdoptedQuery ? (opts.adoptedPending ?? []) : pending, error: null };
+      } else if (table === 'packages' && op.kind !== 'update') {
+        result = { data: opts.outstandingPackages ?? [], error: null };
+      }
+      return Promise.resolve(result).then(res, rej);
+    };
     return chain;
   });
   mockRpc.mockResolvedValue({ data: null, error: null });
@@ -97,6 +121,67 @@ describe('POST /seal — a plan is a commitment', () => {
     // and one they can only stare at.
     expect(json.pending).toEqual(expect.arrayContaining(['ORD-1', 'ORD-2']));
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  /**
+   * spec-74 phase 3 — the production failure this spec exists to fix, at the
+   * HTTP layer: a 2-bulto order with one box scanned reads as
+   * partially_staged, not staged, and the route-level seal (the one a
+   * dispatcher is most likely to use, per spec-74 Decision 6) must refuse
+   * it exactly like a fully-planned stop.
+   */
+  it('refuses (UNSEALED_STOPS) while any stop is partially_staged', async () => {
+    buildClient('loading', { total_stops: 2, pending_stops: 0, partially_staged_stops: 1, staged_stops: 1, adopted_stops: 0 }, [
+      { order_id: 'o1', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe('UNSEALED_STOPS');
+    expect(json.pending_count).toBe(1);
+    expect(json.pending).toEqual(['ORD-1']);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  /**
+   * spec-74 phase 3 — the `adopted` finding, at the HTTP layer. An adopted
+   * dispatch's `stage` never becomes partially_staged (it is preserved
+   * forever, spec-74 phase 2 review item 3), so this refusal can only come
+   * from the packages.loaded_at check — proving the route-level seal picks
+   * it up too, not just the direct sealRoute unit tests.
+   */
+  it('refuses (UNSEALED_STOPS) when an adopted dispatch has an outstanding package', async () => {
+    buildClient(
+      'loading',
+      { total_stops: 1, pending_stops: 0, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 1 },
+      [],
+      {
+        adoptedPending: [{ order_id: 'o1', orders: { order_number: 'ORD-ADOPTED' } }],
+        outstandingPackages: [{ order_id: 'o1' }],
+      },
+    );
+
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.code).toBe('UNSEALED_STOPS');
+    expect(json.pending_count).toBe(1);
+    expect(json.pending).toEqual(['ORD-ADOPTED']);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('seals a fully-loaded adopted dispatch (no outstanding package)', async () => {
+    buildClient(
+      'loading',
+      { total_stops: 1, pending_stops: 0, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 1 },
+      [],
+      { adoptedPending: [{ order_id: 'o1', orders: { order_number: 'ORD-ADOPTED' } }], outstandingPackages: [] },
+    );
+
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(200);
+    expect(mockRpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
   });
 
   it('seals when every stop is staged or adopted', async () => {

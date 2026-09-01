@@ -1995,6 +1995,7 @@ export type Database = {
           pending_stops: number
           staged_stops: number
           adopted_stops: number
+          partially_staged_stops: number
         }
         Relationships: []
       }
@@ -2251,6 +2252,20 @@ export type Database = {
         }
         Returns: Json
       }
+      // spec-74 phase 3 review Fix 3 (20260902000001). Atomically locks a
+      // dispatch row, recomputes its stage from packages, and writes
+      // stage/staged_at/staged_by in one statement — see stage-dispatch.ts.
+      // Returns the DispatchStage text actually written (never widened to
+      // `Json` — the caller narrows this to `DispatchStage` itself).
+      recompute_dispatch_stage: {
+        Args: {
+          p_dispatch_id: string
+          p_operator_id: string
+          p_order_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
       process_failed_delivery: {
         Args: {
           p_order_number: string
@@ -2296,6 +2311,7 @@ export type Database = {
         | "cancelled"
       dispatch_stage:
         | "planned"
+        | "partially_staged"
         | "staged"
         | "adopted"
       dispatch_status_enum:

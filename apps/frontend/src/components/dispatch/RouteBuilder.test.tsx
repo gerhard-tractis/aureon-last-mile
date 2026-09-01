@@ -123,6 +123,17 @@ describe('RouteBuilder — pending-to-stage visibility', () => {
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
     expect(screen.queryByText(/por estibar/i)).not.toBeInTheDocument();
   });
+
+  /**
+   * spec-74 phase 3: a partially_staged order (some bultos loaded, some
+   * still on the andén) must count toward "faltan por estibar" exactly like
+   * a fully-planned one — it is not safe to seal either.
+   */
+  it('counts a partially_staged stop toward "faltan N por estibar" too', () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'partially_staged' }), pkg({ dispatch_id: 'd2', stage: 'staged' })];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByText(/faltan 1 por estibar/i)).toBeInTheDocument();
+  });
 });
 
 /**
