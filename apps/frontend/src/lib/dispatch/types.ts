@@ -18,9 +18,16 @@ export const ACTIVE_ROUTE_STATUSES = [
   'draft', 'planned', 'loading', 'loaded', 'dispatched', 'in_transit', 'in_progress',
 ] as const satisfies readonly RouteStatus[];
 
-// spec-70. The local plan/load axis on `dispatches`, distinct from `status`,
-// which belongs to the routing provider.
-export type DispatchStage = 'planned' | 'staged' | 'adopted';
+// spec-70/74. The local plan/load axis on `dispatches`, distinct from
+// `status`, which belongs to the routing provider. `partially_staged`
+// (spec-74 phase 1 schema, phase 3 writer) sits between `planned` and
+// `staged`: some but not all of the order's live packages are physically
+// confirmed loaded. `adopted` never becomes `partially_staged` or `staged`
+// — it is recomputed for completeness but the stage value itself is
+// preserved forever (spec-74 phase 2 review item 3); an incomplete adopted
+// order is caught by seal-route.ts reading packages.loaded_at directly, not
+// by this column.
+export type DispatchStage = 'planned' | 'partially_staged' | 'staged' | 'adopted';
 
 /**
  * How the Despacho tabs partition the lifecycle.

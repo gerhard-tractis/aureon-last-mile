@@ -120,50 +120,78 @@ export async function advancePackagesToEnCarga(
   }
 }
 
+/**
+ * spec-74 phase 3. Returns the `DispatchStage` actually written, not just
+ * `void` — both HTTP callers ([id]/scan/route.ts and
+ * load-positions/scan/route.ts) build their JSON response's `stage` field
+ * from a caller-side guess ("adopted stays adopted, everything else is
+ * staged") that predates `partially_staged` entirely. Left as a guess, a
+ * response would claim `stage: 'staged'` for a scan this function actually
+ * recomputed to `partially_staged` — the exact kind of reader this phase's
+ * blocker checklist exists to catch, just one call away from the write
+ * itself instead of in a separate module. Returning the real value removes
+ * the guess instead of teaching it a third case to also get right.
+ */
 export async function stageDispatch(
   supabase: SupabaseClient<Database>,
   input: StageDispatchInput,
-): Promise<void> {
-  const now = new Date().toISOString();
-
-  // spec-74 phase 2 review item 3. Used to write `stage: 'staged'`
-  // unconditionally, which silently rewrote an `adopted` dispatch (never
-  // planned onto this route at all) the moment a sibling bulto was
-  // scanned — the "never planned" fact then survived only in
-  // `adopted_reason`, and `route_stop_counts.adopted_stops` undercounted.
-  // Only a `planned` row becomes `staged` this phase; `adopted` stays
-  // `adopted`. (`partially_staged` is not written by anything yet — that
-  // is phase 3's job, per this file's header note.)
-  const nextStage: DispatchStage = input.currentStage === 'adopted' ? 'adopted' : 'staged';
-
-  // The row Pre-ruta (or the route-level scan) already seeded is updated in
-  // place — never a second insert.
+): Promise<DispatchStage> {
+  // spec-74 phase 3 review Fix 2 (BLOCKER) + Fix 3 (BLOCKER).
   //
-  // spec-74 phase 2 review item 8. `staged_at`/`staged_by` are written on
-  // EVERY accepted bulto, so the second and later scans overwrite the
-  // first box's confirmation with the last box's — while phase 1's
-  // backfill deliberately used `MIN(staged_at)`, "the earliest confirmed
-  // load". Left as last-write-wins on purpose rather than guarded to the
-  // first: `dispatches.staged_at`/`staged_by` are an order-level summary
-  // ("when/who last touched this dispatch's staging"), and phase 3's own
-  // per-package recompute — not this timestamp — is what will actually
-  // gate completeness; the per-box facts that must not drift live on
-  // `packages.loaded_at`/`loaded_by` (set once per box, never overwritten,
-  // by `advancePackagesToEnCarga` below). Guarding this column to
-  // first-write-only would need an extra read on every scan for a label
-  // nothing downstream currently keys off of.
-  const { error: stageError } = await supabase
-    .from('dispatches')
-    .update({ stage: nextStage, staged_at: now, staged_by: input.userId })
-    .eq('id', input.dispatchId)
-    .eq('operator_id', input.operatorId);
-  if (stageError) throw stageError;
-
+  // Fix 2 — write ordering. This used to write the dispatch row FIRST, then
+  // advance the package, which throws on zero rows matched. On a single
+  // package the failure mode was: recompute says `staged` -> dispatch
+  // written `staged` -> package write throws -> the handler 500s, but the
+  // dispatch is left saying `staged` with `loaded_at IS NULL` on the
+  // package. `pendingCount` in seal-route.ts is then 0 and the seal opens
+  // on a box that was never loaded — the ORIGINAL bug spec-74 exists to
+  // fix, reached via the error path instead of the happy path. Writing the
+  // package FIRST means a failure now leaves the dispatch behind reality
+  // (fail-safe: still `planned`/`partially_staged`, refusing the seal)
+  // instead of ahead of it (fail-open).
+  //
+  // Fix 3 — concurrency. Even with the ordering fixed, doing "read
+  // outstanding packages, then write dispatch.stage" as two separate
+  // app-layer statements left a window: two bultos of one order scanned
+  // concurrently could each read the other as still outstanding before
+  // either write landed, and both would write `partially_staged` — stuck
+  // forever with nothing left to scan, once both packages actually finish
+  // loading. `recompute_dispatch_stage` (20260902000001) closes that
+  // window structurally: it locks the dispatch row FOR UPDATE, recomputes
+  // from `packages`, and writes stage/staged_at/staged_by in ONE
+  // statement, in the database. A second concurrent call for the same
+  // dispatch blocks on the lock and then recomputes against the first
+  // call's fully-committed package state — not a stale in-process
+  // snapshot. This also makes Fix 2's ordering structural rather than
+  // best-effort: the recompute cannot run before the package write it
+  // depends on, because this function only calls it afterward.
+  //
+  // `input.currentStage` is no longer read here — the RPC re-reads the
+  // dispatch row's live stage under its own row lock, which is strictly
+  // fresher than anything validateScan could have cached. The field stays
+  // on `StageDispatchInput` for callers/tests that still construct it, and
+  // because `ScanAction`'s `currentStage` is used elsewhere (messaging),
+  // but this function's own decision no longer depends on it.
   await advancePackagesToEnCarga(supabase, {
     operatorId: input.operatorId,
     packageId: input.packageId,
     userId: input.userId,
   });
+
+  const { data: nextStage, error: recomputeError } = await supabase.rpc('recompute_dispatch_stage', {
+    p_dispatch_id: input.dispatchId,
+    p_operator_id: input.operatorId,
+    p_order_id: input.orderId,
+    p_user_id: input.userId,
+  });
+  if (recomputeError) throw recomputeError;
+  if (!nextStage) {
+    throw new Error(
+      `stageDispatch: recompute_dispatch_stage returned no stage (dispatch ${input.dispatchId}, operator ${input.operatorId})`,
+    );
+  }
+
+  return nextStage as DispatchStage;
 }
 
 /**

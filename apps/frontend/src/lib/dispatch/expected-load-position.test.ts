@@ -104,7 +104,11 @@ describe('findExpectedLoadPosition', () => {
     // order adopted at the desktop and continued on mobile found no row
     // without it, refused with the same NO_POSITION_ASSIGNED even though
     // the route-level scan itself would accept the box.
-    expect(calls[0].filters).toContainEqual(['stage', ['planned', 'staged', 'adopted']]);
+    //
+    // spec-74 phase 3 — `partially_staged` added: it is now what a 2-bulto
+    // order's dispatch actually holds after its first scan, and without it
+    // here the second bulto's lookup found no row at all.
+    expect(calls[0].filters).toContainEqual(['stage', ['planned', 'partially_staged', 'staged', 'adopted']]);
     expect(calls[0].filters).toContainEqual(['deleted_at', null]);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.position.positionCode).toBe('POS-04');

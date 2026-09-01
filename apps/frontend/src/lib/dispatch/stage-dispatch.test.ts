@@ -8,18 +8,43 @@ import { advancePackagesToEnCarga, stageDispatch } from './stage-dispatch';
  * cover the handler-level wiring). Same mock-chain style as
  * scan-validator.test.ts: record every table/filter/payload rather than
  * mock the client wholesale.
+ *
+ * spec-74 phase 3 review Fix 2/Fix 3 — `stageDispatch` no longer runs its
+ * own recompute query + dispatch update as two app-layer statements. It
+ * writes the package first (`advancePackagesToEnCarga`, Fix 2's ordering),
+ * then calls the `recompute_dispatch_stage` RPC (Fix 3's atomic
+ * lock-recompute-write, done inside the database). The mock below adds an
+ * `rpc` spy alongside `from` so both halves of that sequence — and their
+ * ORDER relative to each other — can be asserted.
  */
 
 interface Op { table: string; kind: string; payload?: Record<string, unknown>; filters: [string, unknown][]; select?: string }
+interface RpcCall { fn: string; args: Record<string, unknown> }
 
 /**
- * `packagesResult` seeds what the `packages` table's `.select('id')` chain
- * resolves to — the return `advancePackagesToEnCarga` now inspects for the
- * review item 4 error/zero-rows check. Defaults to a single matched row (the
- * success case every pre-existing test assumed implicitly).
+ * `packagesResult` seeds what the `packages` table's `.update(...).select('id')`
+ * chain resolves to (the write `advancePackagesToEnCarga` makes). Defaults to
+ * a single matched row (the success case every pre-existing test assumed
+ * implicitly).
+ *
+ * `rpcResult` seeds what `supabase.rpc('recompute_dispatch_stage', ...)`
+ * resolves to — the DB function's own decision (adopted preserved,
+ * partially_staged vs staged), now made inside 20260902000001's
+ * `recompute_dispatch_stage`, not in this TS layer. Defaults to `staged`
+ * (the common single-bulto case).
+ *
+ * `callOrder` records every op ('packages-write' | 'rpc') across BOTH mocks
+ * in the sequence they actually happened, so Fix 2's ordering can be
+ * asserted directly instead of inferred from which mocks were called.
  */
-function buildClient(packagesResult: { data: unknown; error: { message: string } | null } = { data: [{ id: 'pkg-1' }], error: null }) {
+function buildClient(
+  packagesResult: { data: unknown; error: { message: string } | null } = { data: [{ id: 'pkg-1' }], error: null },
+  rpcResult: { data: unknown; error: { message: string } | null } = { data: 'staged', error: null },
+) {
   const ops: Op[] = [];
+  const rpcCalls: RpcCall[] = [];
+  const callOrder: string[] = [];
+
   const from = vi.fn((table: string) => {
     const op: Op = { table, kind: 'select', filters: [] };
     ops.push(op);
@@ -27,23 +52,35 @@ function buildClient(packagesResult: { data: unknown; error: { message: string }
     chain.eq = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
+    chain.neq = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
+    chain.limit = vi.fn((n: number) => { op.filters.push(['limit', n]); return chain; });
     // spec-74 phase 2 review item 1 — records the widened idempotency guard.
     chain.or = vi.fn((expr: string) => { op.filters.push(['or', expr]); return chain; });
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
-    // spec-74 phase 2 review item 4 — `packages`' update now chains
+    // spec-74 phase 2 review item 4 — `packages`' UPDATE now chains
     // `.select('id')` and resolves through IT, not through `.eq()`/`.in()`
-    // directly, so `.select()` here is the thenable, not a passthrough.
+    // directly, so `.select()` here is the thenable for that one case.
     chain.select = vi.fn((cols: string) => {
       op.select = cols;
-      return table === 'packages'
-        ? Promise.resolve(packagesResult)
-        : Promise.resolve({ data: null, error: null });
+      if (table === 'packages' && op.kind === 'update') {
+        callOrder.push('packages-write');
+        return Promise.resolve(packagesResult);
+      }
+      return chain;
     });
-    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
-      Promise.resolve({ data: null, error: null }).then(res, rej);
+    chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
+      return Promise.resolve({ data: null, error: null }).then(res, rej);
+    };
     return chain;
   });
-  return { client: { from } as never, ops };
+
+  const rpc = vi.fn((fn: string, args: Record<string, unknown>) => {
+    rpcCalls.push({ fn, args });
+    callOrder.push('rpc');
+    return Promise.resolve(rpcResult);
+  });
+
+  return { client: { from, rpc } as never, ops, rpcCalls, callOrder };
 }
 
 beforeEach(() => vi.clearAllMocks());
@@ -146,8 +183,36 @@ describe('advancePackagesToEnCarga', () => {
 });
 
 describe('stageDispatch', () => {
-  it('stages the dispatch row and advances only the scanned package', async () => {
-    const { client, ops } = buildClient();
+  it('advances only the scanned package and returns the RPC-decided stage', async () => {
+    const { client, ops, rpcCalls } = buildClient(undefined, { data: 'staged', error: null });
+    const result = await stageDispatch(client, {
+      dispatchId: 'd1',
+      orderId: 'o1',
+      packageId: 'pkg-1',
+      operatorId: 'op-1',
+      userId: 'u-1',
+      currentStage: 'planned',
+    });
+
+    expect(result).toBe('staged');
+    const pkgOp = ops.find((o) => o.table === 'packages' && o.kind === 'update');
+    expect(pkgOp?.filters).toContainEqual(['id', 'pkg-1']);
+    expect(pkgOp?.filters.some(([col]) => col === 'order_id')).toBe(false);
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0].fn).toBe('recompute_dispatch_stage');
+  });
+
+  /**
+   * spec-74 phase 3 review Fix 2 (BLOCKER). This used to write the dispatch
+   * row FIRST, then advance the package — a failure on the package write
+   * left the dispatch AHEAD of reality (`staged` with `loaded_at IS NULL`),
+   * which opens the seal on a box never actually loaded. The fix is
+   * ordering: the package write must happen, and succeed, BEFORE the
+   * dispatch is ever touched. Asserted directly via `callOrder` rather than
+   * inferred from which mocks fired.
+   */
+  it('writes the package before calling recompute_dispatch_stage (fail-safe ordering)', async () => {
+    const { client, callOrder } = buildClient();
     await stageDispatch(client, {
       dispatchId: 'd1',
       orderId: 'o1',
@@ -157,25 +222,66 @@ describe('stageDispatch', () => {
       currentStage: 'planned',
     });
 
-    const dispatchOp = ops.find((o) => o.table === 'dispatches');
-    expect(dispatchOp?.payload?.stage).toBe('staged');
-    expect(dispatchOp?.filters).toContainEqual(['id', 'd1']);
-
-    const pkgOp = ops.find((o) => o.table === 'packages');
-    expect(pkgOp?.filters).toContainEqual(['id', 'pkg-1']);
-    expect(pkgOp?.filters.some(([col]) => col === 'order_id')).toBe(false);
+    expect(callOrder).toEqual(['packages-write', 'rpc']);
   });
 
   /**
-   * spec-74 phase 2 review item 3 — the HIGH-adjacent finding: this used to
-   * write `stage: 'staged'` unconditionally, which silently rewrote an
-   * `adopted` dispatch (never planned onto this route at all) the moment a
-   * sibling bulto was scanned. Only a `planned` row may become `staged`;
-   * `adopted` must survive unchanged.
+   * spec-74 phase 3 review Fix 2. The other half of the ordering fix: if the
+   * package write fails, the RPC must never be called at all — a dispatch
+   * left un-recomputed (still `planned`/`partially_staged`) is fail-safe
+   * (refuses the seal), unlike the old ordering which would have already
+   * committed a `staged` dispatch by this point.
    */
-  it('preserves adopted instead of overwriting it to staged', async () => {
-    const { client, ops } = buildClient();
+  it('never calls recompute_dispatch_stage when the packages advance fails', async () => {
+    const { client, rpcCalls } = buildClient({ data: [], error: null });
+    await expect(
+      stageDispatch(client, {
+        dispatchId: 'd1',
+        orderId: 'o1',
+        packageId: 'pkg-1',
+        operatorId: 'op-1',
+        userId: 'u-1',
+        currentStage: 'planned',
+      }),
+    ).rejects.toThrow(/no package row matched/);
+
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  /**
+   * spec-74 phase 3 review Fix 3 (BLOCKER). The read-then-write recompute
+   * that used to live in this file (two app-layer statements, racy under
+   * concurrent scans of one order) is now `recompute_dispatch_stage`
+   * (20260902000001) — a single atomic DB statement under a row lock.
+   * `stageDispatch` itself no longer decides partially_staged vs staged vs
+   * adopted; it passes the four identifiers the RPC needs and trusts its
+   * answer. Coverage for the actual recompute logic (adopted preserved,
+   * DISPATCHABLE_STATUSES-intersected outstanding count, the lock/race
+   * behaviour) lives in pgTAP now — see
+   * spec74_phase3_partially_staged.test.sql — not here.
+   */
+  it('calls recompute_dispatch_stage with the dispatch, operator, order, and user ids', async () => {
+    const { client, rpcCalls } = buildClient();
     await stageDispatch(client, {
+      dispatchId: 'd1',
+      orderId: 'o1',
+      packageId: 'pkg-1',
+      operatorId: 'op-1',
+      userId: 'u-1',
+      currentStage: 'planned',
+    });
+
+    expect(rpcCalls[0].args).toEqual({
+      p_dispatch_id: 'd1',
+      p_operator_id: 'op-1',
+      p_order_id: 'o1',
+      p_user_id: 'u-1',
+    });
+  });
+
+  it('returns whatever stage the RPC reports, including adopted', async () => {
+    const { client } = buildClient(undefined, { data: 'adopted', error: null });
+    const result = await stageDispatch(client, {
       dispatchId: 'd1',
       orderId: 'o1',
       packageId: 'pkg-1',
@@ -184,13 +290,12 @@ describe('stageDispatch', () => {
       currentStage: 'adopted',
     });
 
-    const dispatchOp = ops.find((o) => o.table === 'dispatches');
-    expect(dispatchOp?.payload?.stage).toBe('adopted');
+    expect(result).toBe('adopted');
   });
 
-  it('still writes staged for a planned row (the common case)', async () => {
-    const { client, ops } = buildClient();
-    await stageDispatch(client, {
+  it('returns partially_staged when the RPC reports it', async () => {
+    const { client } = buildClient(undefined, { data: 'partially_staged', error: null });
+    const result = await stageDispatch(client, {
       dispatchId: 'd1',
       orderId: 'o1',
       packageId: 'pkg-1',
@@ -199,36 +304,41 @@ describe('stageDispatch', () => {
       currentStage: 'planned',
     });
 
-    const dispatchOp = ops.find((o) => o.table === 'dispatches');
-    expect(dispatchOp?.payload?.stage).toBe('staged');
+    expect(result).toBe('partially_staged');
+  });
+
+  it('propagates a failure from recompute_dispatch_stage itself', async () => {
+    const { client } = buildClient(undefined, { data: null, error: { message: 'connection terminated unexpectedly' } });
+    await expect(
+      stageDispatch(client, {
+        dispatchId: 'd1',
+        orderId: 'o1',
+        packageId: 'pkg-1',
+        operatorId: 'op-1',
+        userId: 'u-1',
+        currentStage: 'planned',
+      }),
+    ).rejects.toThrow(/connection terminated/);
+  });
+
+  it('throws when recompute_dispatch_stage returns no stage', async () => {
+    const { client } = buildClient(undefined, { data: null, error: null });
+    await expect(
+      stageDispatch(client, {
+        dispatchId: 'd1',
+        orderId: 'o1',
+        packageId: 'pkg-1',
+        operatorId: 'op-1',
+        userId: 'u-1',
+        currentStage: 'planned',
+      }),
+    ).rejects.toThrow(/returned no stage/);
   });
 
   /**
-   * spec-74 phase 2 review item 8 — `staged_at`/`staged_by` are written on
-   * every accepted bulto (last-write-wins, documented as intentional in
-   * stage-dispatch.ts). Pinned here so a future change notices if it starts
-   * silently guarding this column instead.
-   */
-  it('overwrites staged_at/staged_by on every call — last write wins by design', async () => {
-    const { client, ops } = buildClient();
-    await stageDispatch(client, {
-      dispatchId: 'd1',
-      orderId: 'o1',
-      packageId: 'pkg-1',
-      operatorId: 'op-1',
-      userId: 'u-2',
-      currentStage: 'planned',
-    });
-
-    const dispatchOp = ops.find((o) => o.table === 'dispatches');
-    expect(dispatchOp?.payload?.staged_by).toBe('u-2');
-    expect(dispatchOp?.payload?.staged_at).toBeTruthy();
-  });
-
-  /**
-   * spec-74 phase 2 review item 4 — stageDispatch composes the dispatch
-   * update with advancePackagesToEnCarga; a failure in the latter must
-   * propagate, not be swallowed after the dispatch row already committed.
+   * spec-74 phase 2 review item 4 — stageDispatch composes the packages
+   * advance with the recompute; a failure in the former must propagate, not
+   * be swallowed.
    */
   it('propagates a failure from the packages advance', async () => {
     const { client } = buildClient({ data: [], error: null });
