@@ -8,7 +8,7 @@
 > (`dock_zones.capacity` / `lib/distribution/dock-capacity.ts` — the nullable-capacity precedent
 > this spec copies exactly)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-25_
 
@@ -267,11 +267,14 @@ CREATE UNIQUE INDEX unique_dock_zone_adjacency_pair
   ON public.dock_zone_adjacency (operator_id, dock_zone_id, adjacent_zone_id)
   WHERE deleted_at IS NULL;
 
--- learned capacity: one row per sealed route, feeding the empirical p90
+-- learned capacity: one row per sealed route, feeding the empirical p90.
+-- vehicle_id is nullable — corrected in phase 1 code review, see the phase
+-- 6 note below: routes.vehicle_id is NULL for every route at seal time in
+-- the current codebase, so a NOT NULL here would block every seal.
 CREATE TABLE public.vehicle_load_samples (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   operator_id      UUID NOT NULL REFERENCES public.operators(id) ON DELETE CASCADE,
-  vehicle_id       UUID NOT NULL REFERENCES public.fleet_vehicles(id) ON DELETE CASCADE,
+  vehicle_id       UUID REFERENCES public.fleet_vehicles(id) ON DELETE CASCADE,
   route_id         UUID NOT NULL REFERENCES public.routes(id) ON DELETE CASCADE,
   package_count    INT NOT NULL,
   total_volume_m3  DECIMAL(10,6),   -- null unless every order on the route had tier-2 data
@@ -318,7 +321,16 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
   surfaces them to a manager, and on acceptance creates the scan-confirmed move task described in
   Decision 5.5 — built on spec-71's staging-scan mechanism and spec-72's block concept, but shippable
   before either of those specs lands, since a "move task" here can start as a manual checklist entry
-  and be wired to spec-71's actual scan flow once that exists.
+  and be wired to spec-71's actual scan flow once that exists. **Direction hazard (confirmed against
+  phase 1's schema, not a defect — matches the documented directional-storage design):**
+  `dock_zone_adjacency` allows both an (A,B) row and a (B,A) row to exist as independent live rows;
+  only self-pairs and exact duplicates are blocked. A symmetric candidate read must therefore be
+  `WHERE dock_zone_id = X OR adjacent_zone_id = X` **with DISTINCT** — a pair stored in both
+  directions otherwise returns the neighbour twice. If phase 3's UI ends up writing only one
+  direction while this phase's read checks only one column, top-up candidates go silently
+  asymmetric (X offers Y as a candidate but Y does not offer X) with nothing to surface the gap.
+  Phase 3's write path and this phase's read path must agree on direction(s) explicitly when phase 3
+  is scoped — see the Open question below.
 - **Phase 5 — Tier 2 (cubication).** Once `orders.total_volume_m3`/`total_weight_kg` are actually
   populated for a given retailer/connector (a separate, connector-specific decision this spec does
   not make — see Non-Goals), extend `vehicle-capacity.ts` to prefer volume/weight-aware fill over
@@ -327,6 +339,28 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
 - **Phase 6 — Learned capacity.** Write a `vehicle_load_samples` row on every successful `/seal`
   (spec-70's seal event). Compute and display the rolling p90 alongside the manager's typed
   `capacity_packages` wherever the fill bar renders.
+
+  **Premise failure, found in phase 1 code review (2026-09-01):** this phase assumed spec-70 phase 3
+  would provide a pre-seal vehicle assignment on `routes.vehicle_id`. Spec-70 phase 3 landed
+  (`20260825000004`) and does not. In the current codebase `routes.vehicle_id` has exactly one local
+  writer — the dispatch handler (`app/api/dispatch/routes/[id]/dispatch/route.ts`) — which itself
+  refuses unless the route is already `loaded`, i.e. already sealed (`seal-route.ts`'s
+  `SEALABLE_FROM` is `draft`/`planned`/`loading`). The only other writer is the DispatchTrack
+  webhook, which back-fills the column after the fact. So **`routes.vehicle_id` is NULL for every
+  route at the moment `/seal` fires**, for every route in the codebase today. Phase 1's migration was
+  corrected to make `vehicle_load_samples.vehicle_id` nullable (see that migration's header comment)
+  so a sample can still be written without blocking the seal. That fixes "phase 6 cannot land at all
+  without either blocking a seal or silently dropping every sample," but it does not by itself
+  produce a usable p90 per vehicle — a sample with a NULL `vehicle_id` cannot be attributed to a
+  specific vehicle at write time. Phase 6, when scoped, must pick one of:
+  1. Add a pre-seal vehicle assignment step to the dispatch/loading workflow (does not exist locally
+     today — new scope, not something this spec can assume for free), or
+  2. Write the sample with `vehicle_id = NULL` at seal time and attribute it after the fact once the
+     DispatchTrack webhook back-fills `routes.vehicle_id` (a join through `route_id` at read/report
+     time rather than a value stored on the sample row itself), or
+  3. Some other explicit mechanism decided when phase 6 is scoped.
+  This paragraph exists so phase 6 is scoped against the real state of the codebase, not the
+  assumption this spec started with.
 
 ## Open questions for implementation
 
