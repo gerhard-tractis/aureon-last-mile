@@ -51,13 +51,33 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   // /seal refuses — the cutoff is the worst possible moment to find out a
   // stop was never scanned.
   //
-  // spec-74 phase 3: widened to also count `partially_staged` — an order
-  // with one bulto on the truck and one still on the andén is not done
-  // either, and /seal now refuses it exactly like a fully-planned stop
-  // (seal-route.ts's widened UNSEALED_STOPS). This is still ORDER-level
-  // (one order = one unit in this count even if some of its bultos are
-  // already loaded); per-bulto counting is spec-74 phase 4's job.
-  const pendingCount = packages.filter((p) => p.stage === 'planned' || p.stage === 'partially_staged').length;
+  // spec-74 phase 3 widened this to also count `partially_staged` orders
+  // (an order with one bulto on the truck and one still on the andén is not
+  // done either, and /seal now refuses it exactly like a fully-planned stop
+  // — seal-route.ts's widened UNSEALED_STOPS). Phase 4: the unit counted is
+  // now the outstanding BOX (boxesTotal - boxesLoaded), not the order. A
+  // 3-bulto order with one box scanned used to read "1 stop" (one order =
+  // one unit); it now reads "2" — the boxes actually still on the dock.
+  //
+  // spec-74 phase 4 review item 1 (BLOCKER). `adopted` was missing here, so
+  // an adopted order with an unloaded sibling box contributed 0 — the
+  // screen showed the route as fully staged while seal-route.ts refuses it
+  // (it checks an adopted order's live packages directly, since
+  // `dispatches.stage` on an adopted row is never rewritten to
+  // `partially_staged`/`staged` — see seal-route.ts's own comment on that).
+  // `boxesTotal`/`boxesLoaded` are now pre-filtered to the seal's own
+  // DISPATCHABLE_STATUSES predicate (useRoutePackages.ts, item 3), so
+  // summing `boxesTotal - boxesLoaded` for `adopted` rows too reproduces the
+  // seal's adopted-completeness check exactly — a fully-loaded `adopted`
+  // order still contributes 0 on its own, no separate branch needed.
+  const pendingCount = packages
+    .filter((p) => p.stage === 'planned' || p.stage === 'partially_staged' || p.stage === 'adopted')
+    // No Math.max(..., 0) clamp (spec-74 phase 4 review M2): boxesLoaded can
+    // never exceed boxesTotal — useRoutePackages.ts derives both together
+    // from the same per-package loop (loaded only increments alongside
+    // total), and its item-2 floor only ever raises total, never lowers it.
+    // A clamp here would guard a case the data cannot produce.
+    .reduce((sum, p) => sum + (p.boxesTotal - p.boxesLoaded), 0);
 
   const handleScan = async (code: string) => {
     setScanError(null);
@@ -194,8 +214,13 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
           </span>
           <span className="flex items-center gap-3">
             {pendingCount > 0 && (
+              // spec-74 phase 4 review item 4. This bar counts orders
+              // (packages.length, next to it) but this banner counts
+              // outstanding BOXES — a different unit sharing one row, and
+              // the seal's own refusal banner below counts STOPS. Naming
+              // the unit here disambiguates all three.
               <span className="text-[11px] font-semibold text-status-warning-text">
-                Faltan {pendingCount} por estibar
+                Faltan {pendingCount} bulto{pendingCount === 1 ? '' : 's'} por estibar
               </span>
             )}
             <strong className="font-mono text-[13px] text-accent">

@@ -55,6 +55,11 @@ function pkg(overrides: Partial<RoutePackage> = {}): RoutePackage {
     contact_phone: null,
     status: 'pending',
     stage: 'staged',
+    // spec-74 phase 4: default to a single-bulto order (1 box, none loaded
+    // yet) so every pre-existing fixture keeps behaving like "one order =
+    // one outstanding stop" unless a test overrides boxesTotal/boxesLoaded.
+    boxesTotal: 1,
+    boxesLoaded: 0,
     ...overrides,
   };
 }
@@ -112,10 +117,10 @@ describe('RouteBuilder — header date', () => {
  * discovered only when the seal refuses.
  */
 describe('RouteBuilder — pending-to-stage visibility', () => {
-  it('shows a live "faltan N por estibar" count when stops are still planned', () => {
+  it('shows a live "faltan N bulto(s) por estibar" count when stops are still planned', () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' }), pkg({ dispatch_id: 'd2', stage: 'staged' })];
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-    expect(screen.getByText(/faltan 1 por estibar/i)).toBeInTheDocument();
+    expect(screen.getByText(/faltan 1 bulto por estibar/i)).toBeInTheDocument();
   });
 
   it('shows nothing pending once every stop is staged', () => {
@@ -129,10 +134,52 @@ describe('RouteBuilder — pending-to-stage visibility', () => {
    * still on the andén) must count toward "faltan por estibar" exactly like
    * a fully-planned one — it is not safe to seal either.
    */
-  it('counts a partially_staged stop toward "faltan N por estibar" too', () => {
+  it('counts a partially_staged stop toward "faltan N bulto(s) por estibar" too', () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'partially_staged' }), pkg({ dispatch_id: 'd2', stage: 'staged' })];
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-    expect(screen.getByText(/faltan 1 por estibar/i)).toBeInTheDocument();
+    expect(screen.getByText(/faltan 1 bulto por estibar/i)).toBeInTheDocument();
+  });
+
+  /**
+   * spec-74 phase 4. The count must be outstanding BOXES, not outstanding
+   * ORDERS — a 3-bulto order with one box scanned has 2 boxes left on the
+   * andén, not 0 (dispatches.stage alone) and not 1 (one order = one stop,
+   * the phase-3 order-level widening this phase replaces).
+   */
+  it('counts outstanding boxes within a partially_staged order, not just 1 per order', () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'partially_staged', boxesTotal: 3, boxesLoaded: 1 })];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByText(/faltan 2 bultos por estibar/i)).toBeInTheDocument();
+  });
+
+  it('sums outstanding boxes across multiple planned/partially_staged orders', () => {
+    mockPackages = [
+      pkg({ dispatch_id: 'd1', stage: 'planned', boxesTotal: 2, boxesLoaded: 0 }),
+      pkg({ dispatch_id: 'd2', stage: 'partially_staged', boxesTotal: 3, boxesLoaded: 2 }),
+      pkg({ dispatch_id: 'd3', stage: 'staged', boxesTotal: 1, boxesLoaded: 1 }),
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    // 2 outstanding from d1 + 1 outstanding from d2 = 3.
+    expect(screen.getByText(/faltan 3 bultos por estibar/i)).toBeInTheDocument();
+  });
+
+  /**
+   * spec-74 phase 4 review item 1 (BLOCKER). An `adopted` order used to be
+   * missing from the filter entirely, contributing 0 regardless of how many
+   * of its boxes were still on the andén — the screen showed the route as
+   * fully staged while seal-route.ts refuses it (an adopted row's `stage`
+   * is never rewritten as its packages load).
+   */
+  it('counts outstanding boxes on an adopted order toward "faltan N bulto(s) por estibar"', () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'adopted', boxesTotal: 3, boxesLoaded: 1 })];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByText(/faltan 2 bultos por estibar/i)).toBeInTheDocument();
+  });
+
+  it('does not count a fully-loaded adopted order as pending', () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'adopted', boxesTotal: 2, boxesLoaded: 2 })];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.queryByText(/por estibar/i)).not.toBeInTheDocument();
   });
 });
 
