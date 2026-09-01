@@ -6,7 +6,7 @@
 > (Pre-ruta's andén-grouped planning), `20260306000001_add_routes_dispatches_fleet_tables.sql`
 > (`dispatches.planned_sequence`, the webhook-sync column this spec reuses)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-08-25_
 
@@ -233,6 +233,45 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
   consistent with this spec's Non-Goals), writing `sequence_index` + `sequence_source = 'manual'` on
   any change. Read-only block list is available as soon as phase 2 ships; the editing UI is this
   phase.
+
+  **Known gap carried in from phase 2, must be handled here:** `seed_default_route_blocks`
+  (phase 2) runs exactly once, at route creation/seeding. It is not re-triggered by
+  `app/api/dispatch/routes/[id]/scan/route.ts`'s scan-adopt branch, which inserts a dispatch
+  directly onto an *already-seeded* route — deliberately not touched by phase 2's migration
+  because that file is spec-74's contended territory. An order adopted that way can carry a
+  non-NULL `comuna_id` and still end up with **no block**: it isn't in any block (seeding already
+  happened) and it isn't in the "sin comuna" bucket either (`comuna_id` is not NULL) — it is
+  simply invisible to a reader that trusts `route_blocks` as a complete manifest, which is exactly
+  the silent-drop this spec's data-model section forbids. **Phase 3's reader MUST NOT assume the
+  block list is a complete manifest of the route's orders** — it must independently compute and
+  surface orphans as `comuna_id IS NOT NULL AND (no live route_blocks row for that comuna on this
+  route)`, in addition to the already-planned "sin comuna" bucket for `comuna_id IS NULL` orders.
+
+  **Consequence for empty-draft routes:** `createEmptyDraft`
+  (`apps/frontend/src/app/api/dispatch/routes/route.ts:141-164`) creates a route with zero
+  dispatches and never calls `create_seeded_route` (and therefore never calls
+  `seed_default_route_blocks`). `INSERT INTO dispatches` exists in exactly two places repo-wide —
+  `create_seeded_route` and the scan-adopt branch — so an empty-draft route can *only* ever gain
+  dispatches via scan-adopt, and per the gap above, scan-adopt never triggers block seeding. An
+  empty-draft route will therefore **never have any blocks at all**, for any of its orders, until
+  a later phase closes this gap. Phase 3's orphan handling above covers this case too (every order
+  on such a route is an orphan by that definition), but it is worth stating as its own consequence
+  since it means the block list for these routes isn't just occasionally incomplete — it's
+  permanently empty.
+
+  **Proposed fix, for phase 3 to pick up (not built in phase 2):** make
+  `seed_default_route_blocks` safely re-runnable to pick up new comunas without clobbering a
+  manual reorder, by changing its no-op guard from "any live block exists" to "insert only the
+  comunas that don't yet have a live block on this route" (an anti-join on `route_blocks` by
+  `comuna_id`, still filtered to `sequence_source = 'default'` rows it's safe to append after —
+  never renumbering or touching existing rows, `'manual'` or `'default'`), with new rows getting
+  `sequence_index` values that continue after the current max. That would let phase 3 (or a
+  scan-adopt hook, if that branch's ownership ever opens up) call it again after any dispatch-set
+  change and have newly-adopted comunas gain a block without disturbing anything already there.
+  This is a real behavior change from phase 2's current all-or-nothing no-op and needs its own
+  design pass (in particular: what happens to sequencing when a *new* comuna arrives after a
+  manager has already manually reordered everything else) — explicitly deferred to phase 3, not
+  assumed here.
 - **Phase 4 — Territory stability.** The last-driver lookup and the reassignment warning (Decision
   6). Depends on `routes.driver_name` actually being persisted locally, which is spec-70 phase 3 —
   call this phase blocked on that phase merging, not just on spec-70's docs status.
