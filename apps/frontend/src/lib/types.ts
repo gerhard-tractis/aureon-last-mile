@@ -1750,6 +1750,64 @@ export type Database = {
           },
         ]
       }
+      route_blocks: {
+        Row: {
+          id: string
+          operator_id: string
+          route_id: string
+          comuna_id: string
+          sequence_index: number
+          sequence_source: string
+          created_at: string
+          updated_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          route_id: string
+          comuna_id: string
+          sequence_index: number
+          sequence_source?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          route_id?: string
+          comuna_id?: string
+          sequence_index?: number
+          sequence_source?: string
+          created_at?: string
+          updated_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "route_blocks_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_blocks_route_id_fkey"
+            columns: ["route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "route_blocks_comuna_id_fkey"
+            columns: ["comuna_id"]
+            isOneToOne: false
+            referencedRelation: "chile_comunas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_clients: {
         Row: {
           id: string
@@ -2190,6 +2248,23 @@ export type Database = {
           p_route_date?: string | null
         }
         Returns: Json
+      }
+      move_route_block: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_block_id: string
+          p_direction: string
+        }
+        Returns: undefined
+      }
+      seed_default_route_blocks: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_order_ids?: string[]
+        }
+        Returns: undefined
       }
       transition_route_status: {
         Args: {

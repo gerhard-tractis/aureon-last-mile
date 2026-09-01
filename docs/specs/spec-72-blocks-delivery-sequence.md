@@ -283,10 +283,32 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
 
 ## Open questions for implementation
 
-- Where exactly the block-review UI lives in the route builder flow relative to spec-70's `loading`
-  state — before staging begins, or editable up until seal — needs a product decision, not an
-  assumption here.
+- ~~Where exactly the block-review UI lives relative to spec-70's `loading` state.~~
+  **Resolved in phase 3, in the safe direction: blocks are reorderable only while the route is
+  `draft`, `planned` or `loading`** — the same window `packages/[pkgId]` DELETE uses for removing a
+  stop, and for the same reason: past `loaded` the manifest is sealed, and past `dispatched` the
+  route is a one-way door with no outbound push to reconcile against (Decision 3). Enforced in
+  `move_route_block` itself, not only the handler, so a direct RPC call is refused too —
+  `ROUTE_SEALED` (P0001), mapped to 409. The permissive alternative would have poisoned phase 5:
+  `actual_sequence` is only meaningful against a block order that was frozen at dispatch, and
+  editing after the fact corrupts the planned-vs-actual signal this spec exists to produce.
 - Whether `route_blocks.sequence_index` should be unique per `route_id` (strict total order) is left
   to the SQL suite to decide and enforce; this doc treats it as an obvious yes but doesn't encode a
   `CHECK`/`UNIQUE` for it above since the right enforcement (constraint vs. application-level
   renumber-on-write) depends on how phase 3's reorder UI is built.
+  **Resolved:** phase 1 shipped the partial unique index, and phase 3 added
+  `CHECK (sequence_index > 0)`. That CHECK earned its keep immediately — the reorder had been
+  parking a block at a *negative* index mid-swap, which the constraint rejects. Parking moved to
+  `MAX(live sequence_index) + 1`: strictly positive, still provably collision-free. The safety
+  argument had been prose in a comment; it is now enforced.
+
+## Notes for phases 4 and 5
+
+- **`sequence_index` is not contiguous.** A soft-deleted block leaves live indices like `1, 2, 4`,
+  and the reorder deliberately preserves that gap rather than renumbering. Anything downstream must
+  order by rank and must never assume `1..N`.
+- **`route_blocks` is still not a complete manifest**, even with phase 3's append writer. The writer
+  is invoked by a manager action, not automatically on scan-adopt — so between an adoption and that
+  click, an order with a real comuna has no block. Phase 4's territory lookup ("which comuna did
+  this route cover") derives from blocks, so it will under-report until the append is run, and it
+  will do so **silently**. Surface the orphan count wherever that lookup is consumed.
