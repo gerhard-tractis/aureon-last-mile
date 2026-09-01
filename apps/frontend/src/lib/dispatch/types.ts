@@ -104,6 +104,21 @@ export interface RoutePackage {
    * from "physically staged" and show the live pending count (decision 4).
    */
   stage: DispatchStage;
+  /**
+   * spec-74 phase 4. Count of this order's live (non-deleted) packages —
+   * the load unit `dispatches.stage` cannot see (spec-74 Decision 1: the
+   * plan unit is the order, the load unit is the box). Lets RouteBuilder
+   * and PackageRow tell "1 of 3 bultos loaded" from "0 of 1", instead of
+   * treating every order as one stop regardless of how many boxes it has.
+   */
+  boxesTotal: number;
+  /**
+   * spec-74 phase 4. Count of this order's live packages with
+   * `packages.loaded_at` set — the per-box load fact spec-74 phase 1 added
+   * and phases 2-3 now write on every scan (route-level and position-level
+   * alike). `boxesTotal - boxesLoaded` is the outstanding-box count.
+   */
+  boxesLoaded: number;
 }
 
 export interface FleetVehicle {
@@ -141,7 +156,10 @@ export type ScanResult = {
   // cannot honestly claim `stage` or `status` — the scan handler knows both
   // only after it decides stage vs adopt and performs the write, and adds
   // them itself. Omit rather than a fabricated placeholder value.
-  package: Omit<RoutePackage, 'stage' | 'status'>;
+  // spec-74 phase 4: boxesTotal/boxesLoaded are also genuinely unknown at
+  // validation time (they describe the order's OTHER packages, which this
+  // DTO never queried) — omitted for the same reason stage/status are.
+  package: Omit<RoutePackage, 'stage' | 'status' | 'boxesTotal' | 'boxesLoaded'>;
   /**
    * spec-71 phase 3. `packages.id` — deliberately absent from `package`
    * above (that DTO is keyed by `dispatch_id`/`order_id` for the route-scan

@@ -233,7 +233,11 @@ export async function validateScan(
 
   // The DTO keeps DispatchTrack's contact_* naming; the orders table calls the
   // same three fields customer_name / delivery_address / customer_phone.
-  const pkg: Omit<RoutePackage, 'stage' | 'status'> = {
+  //
+  // spec-74 phase 4: boxesTotal/boxesLoaded are also genuinely unknown here
+  // (this DTO never queried the order's other packages) — omitted for the
+  // same reason stage/status are, matching ScanResult.package's own Omit.
+  const pkg: Omit<RoutePackage, 'stage' | 'status' | 'boxesTotal' | 'boxesLoaded'> = {
     dispatch_id: '',              // filled after insert
     order_id: found.order_id,
     order_number: order?.order_number ?? code,

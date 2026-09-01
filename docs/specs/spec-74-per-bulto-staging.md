@@ -227,3 +227,47 @@ Note also that jsdom does not reproduce the browser behaviours this area depends
 `key={mode}` focus fix passed its jsdom test and shipped broken on the same screens
 (`lib/scan/refocus-package-field.ts` records that one). Treat green unit tests here as evidence
 of wiring, not of behaviour.
+
+---
+
+## Deferred: `get_move_task_snapshot` still reads `dock_scans`, not `packages.loaded_at`
+
+Phase 4 left `get_move_task_snapshot` and `MoveTaskList.tsx` untouched, on purpose, even though
+phase 1 gave the whole codebase a more authoritative per-box fact than the one this function
+still reads. There are now two records of "this box was loaded": `dock_scans.load_position_id`
+(spec-71's position scan, an audit trail of which box went to which spot) and `packages.loaded_at`
+(this spec's phase 1, the state both seals check). They can disagree, and the reason is the same
+one this spec's own "why the obvious fix is not a fix" section already names: the desktop
+route-level scan writes `packages.loaded_at` but writes no `dock_scans` row at all — it never has.
+
+The consequence today is real but survivable: because the move list still counts remaining boxes
+from `dock_scans`, a route staged entirely from the desktop shows every one of its boxes as still
+needing to be moved to a load position. That over-reports work in the safe direction — it never
+lets an actually-outstanding box disappear from the list — but it is factually wrong, and a
+dispatcher who staged a route from the desktop and then opens the move-task picker will see it
+call boxes "not moved" that were, by the record the seals now trust, loaded. It will read as
+broken on the floor even though nothing it gates is unsafe.
+
+This is deliberately not fixed here because of the product direction it runs into: **the loading
+scan is meant to be mobile-only.** The desktop route-level scan may need to keep a fallback for
+when mobile is unavailable, but that fallback should be a bulk action — "mark these as loaded" —
+not a second scanning path standing in for the real one. If the desktop scan path goes away in
+that form, `dock_scans` and `packages.loaded_at` stop being able to disagree on their own, and the
+move list needs no special-casing at all. Switching `get_move_task_snapshot` to
+`packages.loaded_at` now would be patching a disagreement that the right product decision removes
+outright — worth not doing twice.
+
+The open question for whoever picks this back up, stated plainly rather than resolved here:
+`packages.loaded_at` means "loaded" — loaded onto the route, full stop. It does not mean "loaded
+INTO THIS POSITION." The move list is specifically about getting boxes to the right physical
+spot, so if the desktop path survives in any form, a box marked loaded without ever having
+reached a load position must still count as work left to do — a plain switch to
+`packages.loaded_at` would make that box vanish from the list while it is still sitting on the
+wrong andén. Resolving this means first deciding which question the move list is actually
+asking: "is this box loaded" or "is this box where it needs to be." Those are NOT the same
+question today, and the desktop route-level scan is not the only place they diverge: phase 1's
+backfill (20260901000001) set `loaded_at` (with `load_inferred = true`) on every live package of
+every pre-existing `staged`/`adopted` dispatch, with no `dock_scans` row involved at all — and
+those backfilled rows are the majority of pre-existing data, a larger case than the desktop path.
+The desktop scan is the one case that keeps producing new disagreements going forward; the
+backfill is the larger, one-time case already sitting in the data.

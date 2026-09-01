@@ -14,12 +14,31 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
   // visible on the row while loading is still happening — the seal refusal
   // is the worst possible moment to find out a stop was never scanned.
   //
-  // spec-74 phase 3: widened to also cover `partially_staged` — some but
-  // not all of this order's bultos are loaded, which still means it is not
-  // safe to seal (seal-route.ts's widened UNSEALED_STOPS). Per-bulto detail
-  // ("1 of 2 estibados") is spec-74 phase 4's job; this stays the same
-  // order-level warning either way.
-  const unstaged = pkg.stage === 'planned' || pkg.stage === 'partially_staged';
+  // spec-74 phase 3 widened this to also cover `partially_staged` — some
+  // but not all of this order's bultos are loaded, which still means it is
+  // not safe to seal (seal-route.ts's widened UNSEALED_STOPS). Both states
+  // keep the warning border below; phase 4 gives them distinct copy.
+  //
+  // spec-74 phase 4 review item 1 (BLOCKER). `adopted` was missing here
+  // entirely, so a 3-bulto order adopted via the route-level scan with one
+  // box scanned rendered identically to a fully staged stop — no border, no
+  // copy — while seal-route.ts refuses it (an `adopted` row's `stage` is
+  // never rewritten as its packages load; see seal-route.ts's own comment).
+  // `boxesLoaded < boxesTotal` is the same predicate the seal itself checks
+  // for an adopted order's completeness (useRoutePackages.ts pre-filters
+  // both counts to the seal's DISPATCHABLE_STATUSES already), so an
+  // `adopted` row only shows the warning when it is genuinely outstanding —
+  // unlike `planned`/`partially_staged`, which are never "complete" states.
+  const adoptedOutstanding = pkg.stage === 'adopted' && pkg.boxesLoaded < pkg.boxesTotal;
+  const unstaged = pkg.stage === 'planned' || pkg.stage === 'partially_staged' || adoptedOutstanding;
+  // spec-74 phase 4. A fully-unstaged order (0 of N loaded) and a
+  // half-loaded one are different operational facts — spec-74 Decision 2's
+  // whole point is that a supervisor has to be able to tell "nothing
+  // scanned" from "some bultos on the truck, some still on the andén"
+  // instead of both collapsing into one "Sin estibar" warning. An
+  // outstanding `adopted` row gets the same per-bulto copy once at least
+  // one of its boxes has actually been scanned.
+  const isPartial = pkg.stage === 'partially_staged' || (adoptedOutstanding && pkg.boxesLoaded > 0);
 
   return (
     <div
@@ -40,10 +59,19 @@ export function PackageRow({ index, pkg, onRemove }: Props) {
         <div className="text-xs text-text-muted truncate">
           {pkg.contact_address ?? '—'}
         </div>
-        {unstaged && (
+        {isPartial ? (
           <div className="text-[11px] font-semibold text-status-warning-text mt-0.5">
-            Sin estibar
+            {/* spec-74 phase 4 review item 7: every sibling screen names the
+                unit ("N bultos") — ConsolidationPageContent.tsx:196,
+                PendingDockListOrderGroup.tsx:50. This elided it. */}
+            {pkg.boxesLoaded} de {pkg.boxesTotal} bultos estibados
           </div>
+        ) : (
+          unstaged && (
+            <div className="text-[11px] font-semibold text-status-warning-text mt-0.5">
+              Sin estibar
+            </div>
+          )
         )}
       </div>
       {/*
