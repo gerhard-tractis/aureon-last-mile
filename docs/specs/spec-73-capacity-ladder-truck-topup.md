@@ -311,7 +311,12 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
   everything null except the raw count; a configured capacity → fill %, tone, under-fill flag at the
   low end mirroring spec-68's thresholds inverted for "too empty" rather than "too full." A fill-bar
   UI component consuming it, rendering nothing when unconfigured — same contract as
-  `DockCapacityBar`.
+  `DockCapacityBar`. **`VehicleCapacityBar` and `DockCapacityBar` deliberately carry opposite tone
+  semantics** despite near-identical markup: on `/andenes` amber means "nearly full, stop sending"
+  (spec-68 thresholds), on dispatch amber means "under-filled, send more" (this spec's Decision 1).
+  Same colours, same geometry, inverted meaning — invisible from the markup alone. Any future
+  refactor that shares the two into one component must not merge that semantic inversion away; keep
+  the tone-to-meaning mapping an explicit prop, not a hardcoded assumption either component owns.
 - **Phase 3 — Adjacency management.** A settings screen (flat table UI, no map) for configuring
   `dock_zone_adjacency` pairs. Manager-only, per the same role gate spec-68 used for manual dock
   assignment (`ops_leader`/`admin`/`operations_manager`, to be confirmed against the current
