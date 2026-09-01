@@ -2266,6 +2266,19 @@ export type Database = {
         }
         Returns: undefined
       }
+      get_route_territory_history: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+        }
+        Returns: {
+          comuna_id: string
+          comuna_name: string
+          driver_name: string
+          run_count: number
+          last_route_date: string
+        }[]
+      }
       transition_route_status: {
         Args: {
           p_route_id: string

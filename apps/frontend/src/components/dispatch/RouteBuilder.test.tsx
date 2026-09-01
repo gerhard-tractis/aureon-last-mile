@@ -47,10 +47,29 @@ vi.mock('@/hooks/dispatch/useDispatchRoute', () => ({
 
 // spec-72 phase 3: RouteBlockList (and its own useRouteBlocks read/derive
 // logic) is covered on its own in RouteBlockList.test.tsx /
-// useRouteBlocks.test.ts — mocked to empty here so it renders nothing and
-// this file stays about RouteBuilder's own behaviour, not the block list's.
+// useRouteBlocks.test.ts. RouteBuilder itself also reads this hook now
+// (spec-72 phase 4) purely for the orphan count it feeds into
+// TerritoryStability — mockable per-test via mockRouteBlocksData, defaulting
+// to empty so most tests here stay about RouteBuilder's own behaviour.
+let mockRouteBlocksData: { blocks: unknown[]; unblocked: { orderId?: string; reason: string }[] } = { blocks: [], unblocked: [] };
+// Phase-4 review item 4 (HIGH) — a failed blocks read must surface as
+// "orphan count unknown", not silently as 0. Defaults to false so most
+// tests here are unaffected.
+let mockRouteBlocksError = false;
 vi.mock('@/hooks/dispatch/useRouteBlocks', () => ({
-  useRouteBlocks: () => ({ data: { blocks: [], unblocked: [] }, isLoading: false, refetch: vi.fn() }),
+  useRouteBlocks: () => ({
+    data: mockRouteBlocksError ? undefined : mockRouteBlocksData,
+    isLoading: false,
+    isError: mockRouteBlocksError,
+    refetch: vi.fn(),
+  }),
+}));
+
+// spec-72 phase 4 (Decision 6) — territory stability. Mockable per-test via
+// mockTerritoryData, defaulting to empty so most tests here are unaffected.
+let mockTerritoryData: { comunaId: string; comunaName: string; driverName: string; runCount: number; lastRouteDate: string }[] = [];
+vi.mock('@/hooks/dispatch/useRouteTerritoryHistory', () => ({
+  useRouteTerritoryHistory: () => ({ data: mockTerritoryData, isLoading: false }),
 }));
 
 function pkg(overrides: Partial<RoutePackage> = {}): RoutePackage {
@@ -77,6 +96,9 @@ beforeEach(() => {
   mockPackages = [];
   mockRouteStatus = 'draft';
   mockRouteDate = undefined;
+  mockRouteBlocksData = { blocks: [], unblocked: [] };
+  mockRouteBlocksError = false;
+  mockTerritoryData = [];
   global.fetch = vi.fn();
 });
 
@@ -443,5 +465,95 @@ describe('RouteBuilder — stale seal-error banner', () => {
     await waitFor(() =>
       expect(screen.queryByText(/Faltan 2 parada\(s\)/)).not.toBeInTheDocument(),
     );
+  });
+});
+
+/**
+ * spec-72 phase 4 (Decision 6) — territory stability wired end-to-end
+ * through RouteBuilder into RoutePanel/TerritoryStability.
+ */
+describe('RouteBuilder — territory stability', () => {
+  it('pre-fills the driver field from a single-driver territory match', async () => {
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Juan Pérez', runCount: 2, lastRouteDate: '2026-08-20' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('Nombre o RUT…')).toHaveValue('Juan Pérez'),
+    );
+  });
+
+  it('does not pre-fill when the territory history is ambiguous across comunas', () => {
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Juan Pérez', runCount: 2, lastRouteDate: '2026-08-20' },
+      { comunaId: 'c-2', comunaName: 'Providencia', driverName: 'Ana Soto', runCount: 1, lastRouteDate: '2026-08-19' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByPlaceholderText('Nombre o RUT…')).toHaveValue('');
+  });
+
+  it('warns when the manager types a driver that diverges from the territory history', async () => {
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Juan Pérez', runCount: 3, lastRouteDate: '2026-08-20' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    await userEvent.clear(screen.getByPlaceholderText('Nombre o RUT…'));
+    await userEvent.type(screen.getByPlaceholderText('Nombre o RUT…'), 'Otro Conductor');
+    await waitFor(() => {
+      const warning = screen.getByText(/Cambiando de conductor en/);
+      expect(warning.textContent).toContain('Ñuñoa');
+    });
+  });
+
+  it('surfaces the orphan count next to the territory check, since orphan comunas are invisible to it', () => {
+    mockRouteBlocksData = {
+      blocks: [],
+      unblocked: [
+        { orderId: 'o-1', reason: 'orphan' },
+        { orderId: 'o-2', reason: 'orphan' },
+        { orderId: 'o-3', reason: 'noComuna' },
+      ],
+    };
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    // Only the 2 'orphan' rows count toward this caveat, not the noComuna one.
+    expect(screen.getByText(/2 paradas aún sin secuencia asignada/)).toBeInTheDocument();
+  });
+
+  // Review item 1 (HIGH): a single prior run is not a territory.
+  it('does not pre-fill the driver from a territory match with run_count 1 (thin evidence)', () => {
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Pedro Cobertura', runCount: 1, lastRouteDate: '2026-08-30' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.getByPlaceholderText('Nombre o RUT…')).toHaveValue('');
+  });
+
+  it('marks a pre-filled driver as suggested, and clears the marker once the manager edits it', async () => {
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Juan Pérez', runCount: 2, lastRouteDate: '2026-08-20' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText('Nombre o RUT…')).toHaveValue('Juan Pérez'),
+    );
+    expect(screen.getByText('sugerido por historial')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText('Nombre o RUT…'), 'z');
+    await waitFor(() =>
+      expect(screen.queryByText('sugerido por historial')).not.toBeInTheDocument(),
+    );
+  });
+
+  // Review item 4 (HIGH): a failed blocks read must not present a
+  // complete-looking territory answer — the orphan count is unknown, and
+  // that must show as an explicit incompleteness caveat, not silence.
+  it('surfaces an incompleteness caveat, not a false "0 orphans", when the blocks read fails', () => {
+    mockRouteBlocksError = true;
+    mockTerritoryData = [
+      { comunaId: 'c-1', comunaName: 'Ñuñoa', driverName: 'Juan Pérez', runCount: 3, lastRouteDate: '2026-08-20' },
+    ];
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+    expect(screen.queryByText(/paradas aún sin secuencia asignada/)).not.toBeInTheDocument();
+    expect(screen.getByText(/No se pudo verificar si faltan paradas/)).toBeInTheDocument();
   });
 });

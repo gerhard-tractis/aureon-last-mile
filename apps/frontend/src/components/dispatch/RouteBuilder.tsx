@@ -12,6 +12,9 @@ import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
 import { useRefreshRouteStatus } from '@/hooks/dispatch/useRefreshRouteStatus';
+import { useRouteBlocks } from '@/hooks/dispatch/useRouteBlocks';
+import { useRouteTerritoryHistory } from '@/hooks/dispatch/useRouteTerritoryHistory';
+import { useDriverPrefill } from '@/hooks/dispatch/useDriverPrefill';
 import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
 import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
 import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
@@ -47,6 +50,27 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const statusConfig = routeStatus ? ROUTE_STATUS_CONFIG[routeStatus] : undefined;
 
   const scanMutation = useScanPackage(routeId, operatorId);
+
+  // spec-72 phase 4 (Decision 6) — territory stability. `useRouteBlocks` is
+  // already the source RouteBlockList reads for its own orphan count; called
+  // again here it shares react-query's cache under the same key (no extra
+  // request), so this reuses the exact same "sin bloque" definition rather
+  // than recomputing it. That orphan count is what
+  // useRouteTerritoryHistory's own comuna lookup cannot see (it only knows
+  // about comunas with a LIVE block) — surfaced together in RoutePanel via
+  // TerritoryStability so the check's blind spot is visible, not silent.
+  const { data: blockData, isError: blocksError } = useRouteBlocks(routeId, operatorId);
+  // Phase-4 review item 4 (HIGH): `(blockData?.unblocked ?? []).filter(...)`
+  // used to resolve to 0 on BOTH loading and error, which let a failed
+  // blocks read masquerade as "0 orphans" — a complete-looking territory
+  // answer with no incompleteness caveat anywhere on screen. `null` here
+  // means "unknown", distinct from a genuine 0, and TerritoryStability.tsx
+  // renders the two states differently.
+  const territoryOrphanCount = blocksError
+    ? null
+    : (blockData?.unblocked ?? []).filter((u) => u.reason === 'orphan').length;
+  const { data: territory = [] } = useRouteTerritoryHistory(routeId, operatorId);
+  const isDriverSuggested = useDriverPrefill(territory, driverName, setDriverName);
 
   // spec-70 decision 4: shown live while loading, not just discovered when
   // /seal refuses — the cutoff is the worst possible moment to find out a
@@ -266,6 +290,9 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         onDispatch={handleDispatch}
         onRetry={handleDispatch}
         onDelete={handleDelete}
+        territory={territory}
+        territoryOrphanCount={territoryOrphanCount}
+        isDriverSuggested={isDriverSuggested}
       />
     </div>
   );

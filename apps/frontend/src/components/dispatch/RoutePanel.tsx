@@ -13,7 +13,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus } from '@/lib/dispatch/types';
+import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus, type TerritoryHistoryEntry } from '@/lib/dispatch/types';
+import { TerritoryStability } from './TerritoryStability';
 
 interface Props {
   packageCount: number;
@@ -35,6 +36,19 @@ interface Props {
   onDispatch: () => void;
   onRetry: () => void;
   onDelete?: () => void;
+  /**
+   * spec-72 phase 4 (Decision 6) — territory stability. All default so
+   * every pre-existing caller (and every test in RoutePanel.test.tsx) keeps
+   * rendering exactly as before without passing any of them.
+   *
+   * `territoryOrphanCount` defaults to `0`, not `null` — an omitted prop
+   * means "this caller doesn't wire territory data at all" (the pre-spec-72
+   * shape), which is a different fact from RouteBuilder.tsx's own `null`
+   * ("wired, but the blocks read failed" — review item 4).
+   */
+  territory?: TerritoryHistoryEntry[];
+  territoryOrphanCount?: number | null;
+  isDriverSuggested?: boolean;
 }
 
 export function RoutePanel({
@@ -51,6 +65,9 @@ export function RoutePanel({
   onDispatch,
   onRetry,
   onDelete,
+  territory = [],
+  territoryOrphanCount = 0,
+  isDriverSuggested = false,
 }: Props) {
   // Same set scan/route.ts's LOADING_WALK and seal/route.ts's SEALABLE_FROM
   // key off — a route can still take stops and still be sealed exactly while
@@ -109,6 +126,12 @@ export function RoutePanel({
             disabled={!canAssignVehicle}
             placeholder="Nombre o RUT…"
             className="min-h-[52px] rounded-[10px] border-[1.5px] text-[15px] px-3.5"
+          />
+          <TerritoryStability
+            territory={territory}
+            driverName={driverName}
+            orphanCount={territoryOrphanCount}
+            isDriverSuggested={isDriverSuggested}
           />
         </div>
       </div>

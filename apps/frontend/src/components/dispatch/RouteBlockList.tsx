@@ -44,7 +44,7 @@ interface Props {
  * such comuna.
  */
 export function RouteBlockList({ routeId, operatorId, routeStatus }: Props) {
-  const { data, isLoading, refetch } = useRouteBlocks(routeId, operatorId);
+  const { data, isLoading, isError, refetch } = useRouteBlocks(routeId, operatorId);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [movingId, setMovingId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
@@ -53,6 +53,26 @@ export function RouteBlockList({ routeId, operatorId, routeStatus }: Props) {
   const unblocked = data?.unblocked ?? [];
   const orphanCount = unblocked.filter((u) => u.reason === 'orphan').length;
   const canEdit = routeStatus != null && (LOADABLE_ROUTE_STATUSES as readonly string[]).includes(routeStatus);
+
+  // Phase-4 review item 4 (HIGH): a failed read used to fall through to
+  // `data?.blocks ?? []` / `data?.unblocked ?? []` — both empty on error,
+  // exactly like the legitimately-empty case below — so this whole section,
+  // including the "sin secuencia asignada" caveat, silently vanished. Surface
+  // the failure instead of rendering nothing.
+  if (isError) {
+    return (
+      <div className="shrink-0 border-b border-border bg-background px-5 py-2.5 text-xs text-status-error">
+        ⚠ No se pudo cargar la secuencia de entrega por comuna.{' '}
+        <button
+          type="button"
+          onClick={() => refetch()}
+          className="bg-transparent border-none cursor-pointer text-status-error underline text-xs p-0"
+        >
+          Reintentar
+        </button>
+      </div>
+    );
+  }
 
   // Nothing to show yet, or nothing to show at all (a route with zero
   // dispatches has no blocks and no orphans either) — render nothing rather

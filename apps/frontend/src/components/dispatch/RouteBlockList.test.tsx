@@ -12,7 +12,12 @@ import type { RouteBlocksResult } from '@/lib/dispatch/types';
  * tests are about rendering order, the move buttons, and the orphan /
  * "sin comuna" surfacing — not the Supabase query shape.
  */
-let mockResult: { data: RouteBlocksResult | undefined; isLoading: boolean; refetch: () => void };
+let mockResult: {
+  data: RouteBlocksResult | undefined;
+  isLoading: boolean;
+  isError?: boolean;
+  refetch: () => void;
+};
 const refetchMock = vi.fn();
 vi.mock('@/hooks/dispatch/useRouteBlocks', () => ({
   useRouteBlocks: () => mockResult,
@@ -303,5 +308,33 @@ describe('RouteBlockList', () => {
     const list = screen.getByText(/ORD-0/).closest('ul');
     expect(list).toHaveClass('max-h-32');
     expect(list).toHaveClass('overflow-y-auto');
+  });
+
+  // Phase-4 review item 4 (HIGH): a failed read used to fall through to the
+  // same "nothing to show" branch as a legitimately empty route, hiding the
+  // failure entirely.
+  describe('when the blocks read fails', () => {
+    it('renders an explicit error, not nothing', () => {
+      mockResult = { data: undefined, isLoading: false, isError: true, refetch: refetchMock };
+      const { container } = render(
+        <RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />,
+        { wrapper: wrapper() },
+      );
+      expect(container).not.toBeEmptyDOMElement();
+      expect(screen.getByText(/No se pudo cargar la secuencia/)).toBeInTheDocument();
+    });
+
+    it('offers a retry that calls refetch', async () => {
+      mockResult = { data: undefined, isLoading: false, isError: true, refetch: refetchMock };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+      await userEvent.click(screen.getByText('Reintentar'));
+      expect(refetchMock).toHaveBeenCalled();
+    });
+
+    it('does not render blocks or the orphan list underneath the error', () => {
+      mockResult = { data: undefined, isLoading: false, isError: true, refetch: refetchMock };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+      expect(screen.queryByText('Secuencia de entrega por comuna')).not.toBeInTheDocument();
+    });
   });
 });
