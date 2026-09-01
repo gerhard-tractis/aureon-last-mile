@@ -5,9 +5,28 @@
 > (the position seal that cannot be made honest until this lands), [spec-55](spec-55-carton-expansion.md)
 > (carton expansion — why multi-bulto orders exist at all)
 
-**Status:** in progress
+**Status:** completed
 
 _Date: 2026-08-31_
+
+> **What `completed` rests on (2026-09-01).** All five phases shipped. Verified
+> against the deployed QA build: a 3-bulto order shows "Faltan 3 bultos", one box
+> scanned gives `partially_staged` and "1 de 3 bultos estibados", **both seals
+> refuse** while a box is outstanding, and the route walks to `staged` and seals
+> once done. A `dañado` sibling drops out of both the screen count and the seal's
+> predicate, so the gate stays satisfiable — the failure this spec's own doc calls
+> worse than the original bug. An `adopted` order with an outstanding box warns on
+> screen and is refused by the seal.
+>
+> **Scope of that verification.** The scan path itself (package barcode → position
+> code → `staged`) was driven through the real scanner UI on a 2-bulto order. The
+> 3-bulto, `dañado` and `adopted` legs had their package state set in SQL, since
+> the latter two cannot be produced by scanning at all. No single continuous UI run
+> has taken a 3-bulto order from zero to sealed box-by-box; the scan handler does
+> not branch on box count, so that combination is inferred rather than observed.
+>
+> The **Deferred** section below is still open work, not part of this spec.
+
 
 ---
 
