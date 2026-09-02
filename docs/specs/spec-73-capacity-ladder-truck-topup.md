@@ -8,7 +8,7 @@
 > (`dock_zones.capacity` / `lib/distribution/dock-capacity.ts` — the nullable-capacity precedent
 > this spec copies exactly)
 
-**Status:** in progress
+**Status:** in progress (phase 4 backend landed — see phase 4 implementation note below; UI split out)
 
 _Date: 2026-08-25_
 
@@ -366,6 +366,137 @@ Each phase is one PR with auto-merge, per `CLAUDE.md`.
   3. Some other explicit mechanism decided when phase 6 is scoped.
   This paragraph exists so phase 6 is scoped against the real state of the codebase, not the
   assumption this spec started with.
+
+## Phase 4 implementation note (2026-09-02)
+
+**Scope check, done before writing code, per this phase's own instructions:**
+
+- spec-70's audited manager-only removal (`DELETE /routes/[id]/packages/[pkgId]`,
+  `removal_reason` + `audit_logs`, gated to `PLAN_MANAGER_ROLES`, refusing any
+  route past `loading`) exists and works exactly as Decision 5.6 describes.
+  Confirmed by reading the endpoint directly before building on it.
+- spec-72's `route_blocks` (all phases 1-5 merged) is a real, populated table
+  by the time this phase landed — top-up moves an actual `route_blocks` row,
+  not an ad-hoc comuna grouping the spec allowed as a fallback.
+- spec-71's staging-scan mechanism (`load_positions`, `dock_scans.load_position_id`,
+  `get_move_task_snapshot`) already defines "moved" as a per-package fact and
+  already groups a route's remaining work by andén. **No new move-task table
+  or endpoint was built** — a borrowed block's dispatches are re-pointed at
+  the receiving route while the packages physically stay at the donor andén,
+  which makes `get_move_task_snapshot` surface them as ordinary remaining
+  work for that route, exactly the way any other not-yet-staged package
+  would appear. This *is* Decision 5.5's scan-confirmed move task, satisfied
+  by reuse rather than a second, parallel mechanism.
+
+**What was built (backend, one PR):**
+
+- Migration `20260906000001_spec73_phase4_topup_suggestions.sql`:
+  `route_blocks.donor_route_id` (provenance), `route_source_dock_zone_ids`
+  (shared source-andén read), `get_topup_candidates` (read), `accept_topup_block`
+  (write — donor-side audited removal + receiving-side append, one transaction).
+  10 pgTAP tests (`spec73_phase4_topup_suggestions.test.sql`), all mutation-proven.
+- API: `GET /api/dispatch/routes/[id]/topup` (suggestions),
+  `POST /api/dispatch/routes/[id]/topup/accept` (accept), both manager-gated
+  (`PLAN_MANAGER_ROLES`), 25 vitest cases.
+
+**Left out of this slice, deliberately — proposed as phase 4b:** the manager-facing
+UI (a suggestions list on the route detail screen + an accept button/dialog).
+The phase is large enough that landing DB + API as their own reviewable PR,
+then UI as a second, was judged the safer split — the enforcement logic (all
+six Decision 5 sub-rules plus Decision 6) is where the real risk lives, and it
+is now independently tested at the API boundary without a UI dependency.
+`lib/dispatch/vehicle-capacity.ts`'s `getMaxDropsStatus` (phase 2) is already
+available for phase 4b's UI to reuse for the same max_drops read the backend
+enforces server-side.
+
+### Phase 4 code review (2026-09-02) — findings and fixes
+
+The reviewer attacked the Decision 5.5 reuse claim above empirically rather than
+by reading its prose, and it holds **only for a block that has not started
+loading onto its donor's truck**. Everything below was reproduced live against
+the local pgTAP database before it was fixed.
+
+1. **Decision 5.5 — HIGH, fixed.** A donor may be `loading`, and a `loading`
+   route is precisely one whose packages are being scanned onto its own load
+   position right now. Moving such a block re-pointed the plan while the boxes
+   stayed in the donor's truck. `get_move_task_snapshot` reads "moved" from
+   `dock_scans.load_position_id`, which is a **global per-package fact, not a
+   per-route one**, so those packages read as already moved: the receiving
+   route's snapshot went `total_packages` 1 → 2 while `remaining_packages`
+   stayed at 1, with no group naming the borrowed andén. The box was invisible
+   to the move task, `validateScan` refused to re-scan it (`ALREADY_STAGED`:
+   `loaded_at` set with `load_inferred = false`), and the new dispatch's
+   `stage='planned'` left the receiving route permanently unsealable
+   (`UNSEALED_STOPS`). That is the "only updates `route_id` in the database
+   without a physical confirmation" shortcut Decision 5.5 refuses by name.
+   **Fix:** `route_block_is_physically_staged` — such a block is neither
+   suggested nor accepted (`BLOCK_ALREADY_STAGED`). Blocks that were never
+   staged move exactly as before, and TEST 12 is the positive control proving
+   they really do appear as a donor-andén group on the receiving route's move
+   task. So the reuse claim stands, narrowed to the case it is actually true for.
+2. **Decision 5.4b (25% cap) — HIGH, fixed.** `get_topup_candidates` filtered on
+   the block's **package** count; `accept_topup_block` compared its **dispatch**
+   count. They disagreed on every multi-bulto order — the normal case since
+   spec-55's carton expansion. With a cap of 1, the read path correctly offered
+   nothing for an 8-package single-order block and the write path accepted the
+   same block, taking the receiving route from 1 package to 9. Both paths now
+   measure packages.
+3. **Decision 6 (`max_drops`) — HIGH, fixed.** Both paths only asked whether the
+   route was *already* at its cap, never whether the block would push it past.
+   A route with `max_drops = 2` holding 1 drop was offered — and accepted — a
+   5-order block and ended at 6 drops. Both paths now use the post-move count.
+   `NULL`/`0` `max_drops` still means *no cap*, and TEST 14 pins that.
+4. **Security — HIGH, fixed.** The manager gate lived **only** in the Next.js
+   handlers, while `accept_topup_block` is `GRANT EXECUTE ... TO authenticated`.
+   A `loading_crew` user — the exact person spec-70 Decision 3 exists to keep
+   away from the plan — executed a complete top-up through PostgREST and chose
+   the `p_user_id` written to `audit_logs`, attributing their own action to a
+   manager. The same class of finding phase 3 landed one table over. The RPC now
+   reads the caller's role from `public.users` and takes the audit actor from
+   the JWT, and the handler maps a `42501` back to a 403.
+5. **`route_blocks` direct writes — HIGH, partially fixed.** spec-72 phase 1's
+   `GRANT SELECT, INSERT, UPDATE ON route_blocks TO authenticated` has an RLS
+   policy that checks only the tenant, never the role. Phase 4 makes that newly
+   harmful: `donor_route_id` is the ledger Decision 5.4's "one borrowed block per
+   route" cap reads, so one forged row (reproduced from a `loading_crew` session)
+   makes `get_topup_candidates` answer `ALREADY_HAS_TOPUP` for that route
+   forever — a denial of service against every legitimate top-up, available to
+   any signed-in user in the tenant. A `BEFORE INSERT OR UPDATE` trigger now
+   requires a manager to write top-up provenance, which closes the part phase 4
+   introduced. **Residual, unfixed and deliberately out of scope:** the direct
+   INSERT/UPDATE grant on the other three `sequence_source` values. Phase 3's
+   full remedy (`REVOKE` + `SECURITY DEFINER`) would require rewriting spec-72's
+   three `SECURITY INVOKER` block writers (`seed_default_route_blocks`,
+   `move_route_block`, `create_seeded_route`), which belongs in its own change.
+6. **Soft-deleted orders — LOW, fixed.** The donor removal loop and the read
+   path's `package_count` did not filter `orders.deleted_at`, though every other
+   read in the migration does.
+7. **Test gaps closed.** `accept_topup_block`'s own `NOT_ADJACENT` guard
+   (Decision 5.1, write side) had no test at all — a mutant that deleted it
+   survived the original suite. So did a mutant that dropped the receiving-route
+   lookup's `operator_id` filter (the cross-tenant test was being refused by the
+   *donor* lookup and never reached it). TESTS 9 and 16 now cover both. The
+   suite is 17 assertions across 16 tests; 15 of 16 mutants are killed, the
+   survivor being an equivalent mutant (the "already at cap" pre-check is now
+   strictly subsumed by the post-move headroom check, and is kept only for
+   symmetry with the read path's fast return).
+
+**Verified correct, no change needed:** the two-route lock is taken in canonical
+id order (no repeat of phase 3's deadlock); `move_route_block` and
+`seed_default_route_blocks` take the same `routes` `FOR UPDATE` lock, so the
+`MAX(sequence_index) + 1` append cannot race them; the append respects spec-72's
+non-contiguous indices and its `CHECK (sequence_index > 0)`; the donor removal
+writes the same soft-delete + `removal_reason` + `packages.status` +
+`audit_logs('remove_from_plan')` the `DELETE .../packages/[pkgId]` endpoint
+writes, so Decision 5.6's "one audited way" holds; all functions are
+`SECURITY INVOKER` with `search_path` pinned; no map, pin, geocode,
+drag-and-drop, optimizer or `sidecar/or-tools` wiring was added.
+
+**Known residual (not fixed, no ticket yet):** `get_topup_candidates` is
+`GRANT EXECUTE ... TO authenticated` with no role check of its own, so a
+non-manager can enumerate other routes' `external_route_id` / `driver_name`
+through PostgREST. Read-only and same-tenant; the write path is now gated. Worth
+folding into the same change that fixes finding 5.
 
 ## Open questions for implementation
 
