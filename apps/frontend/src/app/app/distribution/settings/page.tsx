@@ -62,6 +62,14 @@ export default function DistributionSettingsPage() {
           <ArrowLeft className="h-5 w-5 text-text-secondary" />
         </Button>
         <h1 className="text-xl font-semibold">Configuración de Andenes</h1>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto"
+          onClick={() => router.push('/app/distribution/settings/adjacency')}
+        >
+          Adyacencia de andenes
+        </Button>
       </div>
 
       <DockZoneList

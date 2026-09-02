@@ -724,6 +724,55 @@ export type Database = {
           },
         ]
       }
+      dock_zone_adjacency: {
+        Row: {
+          id: string
+          operator_id: string
+          dock_zone_id: string
+          adjacent_zone_id: string
+          created_at: string
+          deleted_at: string | null
+        }
+        Insert: {
+          id?: string
+          operator_id: string
+          dock_zone_id: string
+          adjacent_zone_id: string
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Update: {
+          id?: string
+          operator_id?: string
+          dock_zone_id?: string
+          adjacent_zone_id?: string
+          created_at?: string
+          deleted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dock_zone_adjacency_operator_id_fkey"
+            columns: ["operator_id"]
+            isOneToOne: false
+            referencedRelation: "operators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dock_zone_adjacency_dock_zone_id_fkey"
+            columns: ["dock_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "dock_zone_adjacency_adjacent_zone_id_fkey"
+            columns: ["adjacent_zone_id"]
+            isOneToOne: false
+            referencedRelation: "dock_zones"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       dock_batches: {
         Row: {
           id: string
@@ -2380,6 +2429,27 @@ export type Database = {
           p_external_route_id: string
         }
         Returns: Json
+      }
+      add_dock_zone_adjacency_pair: {
+        Args: {
+          p_dock_zone_id: string
+          p_adjacent_zone_id: string
+        }
+        Returns: {
+          id: string
+          operator_id: string
+          dock_zone_id: string
+          adjacent_zone_id: string
+          created_at: string
+          deleted_at: string | null
+        }[]
+      }
+      remove_dock_zone_adjacency_pair: {
+        Args: {
+          p_dock_zone_id: string
+          p_adjacent_zone_id: string
+        }
+        Returns: number
       }
     }
     Enums: {
