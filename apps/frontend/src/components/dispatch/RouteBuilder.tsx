@@ -9,6 +9,8 @@ import { PackageRow } from './PackageRow';
 import { RoutePanel } from './RoutePanel';
 import { RouteBlockList } from './RouteBlockList';
 import { TopupSuggestions } from './TopupSuggestions';
+import { VehicleCapacityBar } from './VehicleCapacityBar';
+import { getVehicleFillStatus, type VehicleFillStatus } from '@/lib/dispatch/vehicle-capacity';
 import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
@@ -41,7 +43,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [sealError, setSealError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
-  const { data: packages = [], refetch } = useRoutePackages(routeId, operatorId);
+  // `isSuccess` (not just `data`) — see the fill-bar block below: a failed or
+  // still-loading packages read defaults `packages` to `[]`, which is
+  // indistinguishable from a genuinely empty route and would otherwise render
+  // as a fabricated 0% fill.
+  const { data: packages = [], refetch, isSuccess: packagesLoaded } = useRoutePackages(routeId, operatorId);
   // spec-70 phase 4, breakage #3: "closed" used to live in a `useState` a page
   // reload wiped. The route's real status is fetched here and is what every
   // affordance below (badge, scan zone, seal, dispatch) derives from.
@@ -109,6 +115,43 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     // total), and its item-2 floor only ever raises total, never lowers it.
     // A clamp here would guard a case the data cannot produce.
     .reduce((sum, p) => sum + (p.boxesTotal - p.boxesLoaded), 0);
+
+  // spec-73 phase 4c — the vehicle fill bar's two inputs.
+  //
+  // Package count: the route's total bultos (Decision 1's "package count",
+  // distinct from the "Órdenes" count elsewhere on this screen), not order
+  // count — capacity_packages is a bulto capacity, and a route with few
+  // multi-bulto orders would otherwise read as far emptier than it is.
+  // Reuses `packages` (already fetched by useRoutePackages above) rather
+  // than adding a query.
+  //
+  // Vehicle identity: `selectedVehicle` (this component's own useState) is
+  // the ONLY vehicle identity available here. `routes.vehicle_id` is NULL
+  // for every route at this point in the flow — its one local writer is the
+  // dispatch handler, which runs after sealing, and DispatchTrack's webhook
+  // only back-fills it after dispatch (spec-73's phase-2 dependency note,
+  // confirmed against the current codebase, not assumed). Before a manager
+  // picks a truck, `selectedVehicle` is `''`, no `vehicles` row matches, and
+  // `capacityPackages` below is `null` — `getVehicleFillStatus` returns
+  // `configured: false` for that, and `VehicleCapacityBar` renders nothing,
+  // never a bar pinned at 0%.
+  //
+  // Phase-4c review item 1. The count is only honest once `useRoutePackages`
+  // has actually succeeded. `packages` defaults to `[]` while the query is
+  // loading AND when it has failed, and an empty array sums to a package
+  // count of 0 that is indistinguishable from a genuinely empty route — so a
+  // failed read would paint "0 / 40 · Bajo cupo · 0%" on a truck that is in
+  // fact full, with TopupSuggestions directly below urging the manager to add
+  // MORE work to it. Same failure shape as the phase-4 blocks finding above
+  // (a failed read masquerading as a real zero), and the exact "never a bar
+  // pinned at 0%" state vehicle-capacity.ts's header forbids. Until the read
+  // succeeds the status is the unconfigured variant, which
+  // `VehicleCapacityBar` renders as nothing at all.
+  const totalPackageCount = packages.reduce((sum, p) => sum + p.boxesTotal, 0);
+  const selectedVehicleRecord = vehicles.find((v) => v.external_vehicle_id === selectedVehicle);
+  const vehicleFillStatus: VehicleFillStatus = packagesLoaded
+    ? getVehicleFillStatus(totalPackageCount, selectedVehicleRecord?.capacity_packages ?? null)
+    : { configured: false, packageCount: 0 };
 
   const handleScan = async (code: string) => {
     setScanError(null);
@@ -262,12 +305,20 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
 
         <RouteBlockList routeId={routeId} operatorId={operatorId} routeStatus={routeStatus} />
 
+        {/* spec-73 phase 4c — the fill bar phase 4b's TopupSuggestions was
+            placed next to but never wired. Answers "why would you [top
+            up]?" immediately above the suggestions that answer "which
+            block could you". Renders nothing until a vehicle is selected
+            and that vehicle has a configured capacity_packages — see
+            VehicleCapacityBar's own render-nothing contract, preserved
+            here by construction (vehicleFillStatus above). */}
+        <VehicleCapacityBar status={vehicleFillStatus} className="px-5 py-2" />
+
         {/* spec-73 phase 4b — sits directly below the block sequence,
             above the package list, next to the under-fill signal (Decision
-            1's fill bar, once wired — see this phase's report on
-            VehicleCapacityBar's own wiring gap) that motivates it. Renders
-            nothing when there is nothing eligible to suggest — see the
-            component's own render-nothing contract. */}
+            1's fill bar, wired in phase 4c immediately above) that
+            motivates it. Renders nothing when there is nothing eligible to
+            suggest — see the component's own render-nothing contract. */}
         <TopupSuggestions routeId={routeId} operatorId={operatorId} role={role} />
 
         {sealError && (

@@ -1496,6 +1496,10 @@ export type Database = {
           created_at: string
           updated_at: string
           deleted_at: string | null
+          // spec-73 phase 1 (20260904000001) — not covered by the generator
+          // this file's other rows were produced from; added by hand to
+          // match the migration until types.ts is regenerated.
+          capacity_packages: number | null
         }
         Insert: {
           id?: string
@@ -1509,6 +1513,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+          capacity_packages?: number | null
         }
         Update: {
           id?: string
@@ -1522,6 +1527,7 @@ export type Database = {
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
+          capacity_packages?: number | null
         }
         Relationships: [
           {

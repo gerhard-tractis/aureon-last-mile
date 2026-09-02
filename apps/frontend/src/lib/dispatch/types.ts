@@ -127,6 +127,14 @@ export interface FleetVehicle {
   plate_number: string | null;
   driver_name: string | null;
   vehicle_type: string | null;
+  /**
+   * spec-73 phase 4c. `fleet_vehicles.capacity_packages` — nullable,
+   * manager-typed, no CHECK constraint (spec-73 Decision 2). `null` means
+   * "not configured": `lib/dispatch/vehicle-capacity.ts`'s
+   * `getVehicleFillStatus` treats it (and 0/negative) as unconfigured and
+   * renders no fill bar for this vehicle.
+   */
+  capacity_packages: number | null;
 }
 
 /**
