@@ -8,6 +8,7 @@ import { ScanZone } from './ScanZone';
 import { PackageRow } from './PackageRow';
 import { RoutePanel } from './RoutePanel';
 import { RouteBlockList } from './RouteBlockList';
+import { TopupSuggestions } from './TopupSuggestions';
 import { useScanPackage } from '@/hooks/dispatch/useScanPackage';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
@@ -15,6 +16,7 @@ import { useRefreshRouteStatus } from '@/hooks/dispatch/useRefreshRouteStatus';
 import { useRouteBlocks } from '@/hooks/dispatch/useRouteBlocks';
 import { useRouteTerritoryHistory } from '@/hooks/dispatch/useRouteTerritoryHistory';
 import { useDriverPrefill } from '@/hooks/dispatch/useDriverPrefill';
+import { useOperatorId } from '@/hooks/useOperatorId';
 import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
 import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
 import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
@@ -27,6 +29,10 @@ interface Props {
 
 export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const router = useRouter();
+  // spec-73 phase 4b — TopupSuggestions' own role gate. GlobalContext, not
+  // the `operatorId` prop (that one is passed in from the server page and
+  // carries no role); same source DockZoneAdjacencySettingsPage reads.
+  const { role } = useOperatorId();
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [driverName, setDriverName] = useState('');
@@ -255,6 +261,14 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         </div>
 
         <RouteBlockList routeId={routeId} operatorId={operatorId} routeStatus={routeStatus} />
+
+        {/* spec-73 phase 4b — sits directly below the block sequence,
+            above the package list, next to the under-fill signal (Decision
+            1's fill bar, once wired — see this phase's report on
+            VehicleCapacityBar's own wiring gap) that motivates it. Renders
+            nothing when there is nothing eligible to suggest — see the
+            component's own render-nothing contract. */}
+        <TopupSuggestions routeId={routeId} operatorId={operatorId} role={role} />
 
         {sealError && (
           <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
