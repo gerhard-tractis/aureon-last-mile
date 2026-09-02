@@ -231,6 +231,23 @@ export interface RouteBlockView {
   sequenceSource: SequenceSource;
   orderCount: number;
   packageCount: number;
+  /**
+   * spec-72 phase 5 — this block's 1-based rank among its route's blocks by
+   * EARLIEST `dispatches.actual_sequence` (Decision 4's "what happened"),
+   * over live, non-orphan dispatches only. `null` means no dispatch in this
+   * block has arrived yet (route not completed, or this block simply hasn't
+   * been reached) — never a fabricated trailing rank.
+   */
+  actualRank: number | null;
+  /**
+   * `true` only when `actualRank` is known AND differs from this block's
+   * planned rank — its 1-based position among the blocks that HAVE arrival
+   * data, in `sequenceIndex` order. Not `sequenceIndex` itself (not
+   * contiguous), and not a position in the full block list (that would count
+   * un-arrived blocks `actualRank` never counted). `false` while `actualRank`
+   * is `null` — "no data yet" is not "out of sequence".
+   */
+  outOfSequence: boolean;
 }
 
 /**

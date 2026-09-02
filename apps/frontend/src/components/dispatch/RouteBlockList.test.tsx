@@ -53,8 +53,8 @@ describe('RouteBlockList', () => {
     mockResult = {
       data: {
         blocks: [
-          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 2, packageCount: 3 },
-          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'manual', orderCount: 1, packageCount: 1 },
+          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 2, packageCount: 3, actualRank: null, outOfSequence: false },
+          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'manual', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
         ],
         unblocked: [],
       },
@@ -71,12 +71,80 @@ describe('RouteBlockList', () => {
     expect(items[1]).toHaveTextContent('(manual)');
   });
 
+  // spec-72 phase 5 — planned-vs-actual badge, read-only presentation.
+  describe('phase 5 — planned-vs-actual badge', () => {
+    it('renders no badge when actualRank is null (no arrival data yet)', () => {
+      mockResult = {
+        data: {
+          blocks: [
+            { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
+          ],
+          unblocked: [],
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+
+      expect(screen.queryByText(/en orden/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/orden real/)).not.toBeInTheDocument();
+    });
+
+    it('renders an in-sequence badge when actualRank matches the planned position', () => {
+      mockResult = {
+        data: {
+          blocks: [
+            { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: 1, outOfSequence: false },
+          ],
+          unblocked: [],
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+
+      expect(screen.getByText('✓ en orden')).toBeInTheDocument();
+    });
+
+    it('renders an out-of-sequence warning badge with the actual rank when it diverges from the plan', () => {
+      mockResult = {
+        data: {
+          blocks: [
+            { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: 2, outOfSequence: true },
+          ],
+          unblocked: [],
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+
+      expect(screen.getByText('⚠ orden real: 2')).toBeInTheDocument();
+      expect(screen.queryByText('✓ en orden')).not.toBeInTheDocument();
+    });
+
+    it('never shows the badge for an orphan/unblocked row — it has no block to attach to', () => {
+      mockResult = {
+        data: {
+          blocks: [],
+          unblocked: [{ orderId: 'o1', orderNumber: 'ORD-1', comunaName: 'Uno', reason: 'orphan' }],
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+      render(<RouteBlockList routeId="r1" operatorId="op-1" routeStatus="planned" />, { wrapper: wrapper() });
+
+      expect(screen.queryByText(/en orden/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/orden real/)).not.toBeInTheDocument();
+    });
+  });
+
   it('disables move-up on the first block and move-down on the last block', () => {
     mockResult = {
       data: {
         blocks: [
-          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
-          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
+          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
+          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
         ],
         unblocked: [],
       },
@@ -95,8 +163,8 @@ describe('RouteBlockList', () => {
     mockResult = {
       data: {
         blocks: [
-          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
-          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
+          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
+          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
         ],
         unblocked: [],
       },
@@ -125,8 +193,8 @@ describe('RouteBlockList', () => {
     mockResult = {
       data: {
         blocks: [
-          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
-          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
+          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
+          { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
         ],
         unblocked: [],
       },
@@ -149,7 +217,7 @@ describe('RouteBlockList', () => {
     mockResult = {
       data: {
         blocks: [
-          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1 },
+          { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default', orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
         ],
         unblocked: [
           { orderId: 'o2', orderNumber: 'ORD-2', comunaName: 'Dos', reason: 'orphan' },
@@ -250,8 +318,8 @@ describe('RouteBlockList', () => {
   describe('review item 1 — editable-window gating', () => {
     const twoBlocks = {
       blocks: [
-        { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default' as const, orderCount: 1, packageCount: 1 },
-        { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default' as const, orderCount: 1, packageCount: 1 },
+        { id: 'b1', comunaId: 'c1', comunaName: 'Uno', sequenceIndex: 1, sequenceSource: 'default' as const, orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
+        { id: 'b2', comunaId: 'c2', comunaName: 'Dos', sequenceIndex: 2, sequenceSource: 'default' as const, orderCount: 1, packageCount: 1, actualRank: null, outOfSequence: false },
       ],
       unblocked: [{ orderId: 'o3', orderNumber: 'ORD-3', comunaName: 'Tres', reason: 'orphan' as const }],
     };

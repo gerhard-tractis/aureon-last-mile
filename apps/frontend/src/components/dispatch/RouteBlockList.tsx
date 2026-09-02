@@ -42,6 +42,17 @@ interface Props {
  * "Agregar a la secuencia" calls `POST /api/dispatch/routes/[id]/blocks`,
  * which re-runs `seed_default_route_blocks` and appends a block for every
  * such comuna.
+ *
+ * spec-72 phase 5 — planned-vs-actual, read-only. Each block already carries
+ * `actualRank`/`outOfSequence` from `useRouteBlocks` (rolled up from
+ * `dispatches.actual_sequence`, written once the route completes). Nothing
+ * here writes anything: this is presentation over that column, per the
+ * phase-5 bullet's own "no further write path". `actualRank === null` (no
+ * arrival data yet — the common case before a route completes) renders
+ * nothing extra; only a known, out-of-order rank gets a badge. Orphan
+ * dispatches never reach `actualRank` at all (excluded in the hook), so an
+ * order that was never in the planned sequence can never show as "out of
+ * sequence" here either.
  */
 export function RouteBlockList({ routeId, operatorId, routeStatus }: Props) {
   const { data, isLoading, isError, refetch } = useRouteBlocks(routeId, operatorId);
@@ -140,6 +151,19 @@ export function RouteBlockList({ routeId, operatorId, routeStatus }: Props) {
                 </span>
                 {b.sequenceSource === 'manual' && (
                   <span className="text-[10px] text-text-muted shrink-0">(manual)</span>
+                )}
+                {b.actualRank != null && (
+                  <span
+                    className={
+                      b.outOfSequence
+                        ? 'text-[10px] text-status-warning-text shrink-0'
+                        : 'text-[10px] text-text-muted shrink-0'
+                    }
+                  >
+                    {b.outOfSequence
+                      ? `⚠ orden real: ${b.actualRank}`
+                      : '✓ en orden'}
+                  </span>
                 )}
               </span>
               <span className="flex items-center gap-1 shrink-0">
