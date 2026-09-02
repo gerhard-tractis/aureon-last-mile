@@ -72,6 +72,19 @@ vi.mock('@/hooks/dispatch/useRouteTerritoryHistory', () => ({
   useRouteTerritoryHistory: () => ({ data: mockTerritoryData, isLoading: false }),
 }));
 
+// spec-73 phase 4b — TopupSuggestions is covered on its own in
+// TopupSuggestions.test.tsx / useTopupCandidates.test.ts. RouteBuilder
+// itself only needs a role to pass through (GlobalContext, not the
+// operatorId prop) and a non-eligible/empty result so the widget renders
+// nothing and stays out of every assertion below that isn't about it.
+vi.mock('@/hooks/useOperatorId', () => ({
+  useOperatorId: () => ({ role: 'admin' }),
+}));
+vi.mock('@/hooks/dispatch/useTopupCandidates', () => ({
+  useTopupCandidates: () => ({ data: { eligible: false, reason: null, candidates: [] }, isLoading: false }),
+  useAcceptTopup: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 function pkg(overrides: Partial<RoutePackage> = {}): RoutePackage {
   return {
     dispatch_id: 'd1',

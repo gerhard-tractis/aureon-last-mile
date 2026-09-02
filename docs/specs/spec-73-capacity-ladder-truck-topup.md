@@ -8,7 +8,7 @@
 > (`dock_zones.capacity` / `lib/distribution/dock-capacity.ts` — the nullable-capacity precedent
 > this spec copies exactly)
 
-**Status:** in progress (phase 4 backend landed — see phase 4 implementation note below; UI split out)
+**Status:** in progress (phases 1–4b landed — count/capacity ladder, adjacency management, top-up backend and its manager-facing UI; phases 5/6 — cubication and learned capacity — remain backlog)
 
 _Date: 2026-08-25_
 
@@ -497,6 +497,103 @@ drag-and-drop, optimizer or `sidecar/or-tools` wiring was added.
 non-manager can enumerate other routes' `external_route_id` / `driver_name`
 through PostgREST. Read-only and same-tenant; the write path is now gated. Worth
 folding into the same change that fixes finding 5.
+
+## Phase 4b implementation note (2026-09-02)
+
+The manager-facing UI phase 4 left out: a suggestions list wired into
+`RouteBuilder.tsx` right below `RouteBlockList` (the same spot the fill-bar
+under-fill signal belongs — see the wiring gap noted below), and above the
+package list.
+
+**What was built:**
+
+- `hooks/dispatch/useTopupCandidates.ts` — `useTopupCandidates` (GET
+  `.../topup`, react-query, `enabled` withholds the fetch entirely when the
+  role gate fails) and `useAcceptTopup` (POST `.../topup/accept`,
+  invalidates the candidates/blocks/packages/route queries in `onSettled`
+  — on BOTH success and a refusal, so a stale suggestion refused by the
+  database is never left rendering as if still available).
+- `components/dispatch/TopupSuggestions.tsx` — the list + accept button.
+  Renders `null` for every case that is not "eligible with at least one
+  candidate": loading, `eligible: false` for any reason
+  (`ROUTE_NOT_LOADABLE`, `AT_MAX_DROPS`, `ALREADY_HAS_TOPUP`), and
+  `eligible: true` with zero candidates — the same render-nothing contract
+  `VehicleCapacityBar` already honours, never a "no suggestions available"
+  message that would misreport "capacity/adjacency never configured" as
+  "nothing to top up". Gated on `PLAN_MANAGER_ROLES`, defence in depth only
+  — the database is the real gate (the GET route and `accept_topup_block`
+  itself, per the phase 4 review's security fix). Accepting a candidate
+  reuses `RouteBuilder`'s existing `window.prompt` reason pattern (same
+  convention `handleRemove` already uses for a manager-only plan removal,
+  which `accept_topup_block` performs internally on the donor side) rather
+  than inventing a second reason-collection UI.
+- Refusal-code -> message mapping (`TOPUP_ACCEPT_REFUSAL_MESSAGES`), one
+  distinct, honest Spanish sentence per code the accept route can return:
+  `BLOCK_ALREADY_STAGED`, `OVER_TOPUP_CAP`, `AT_MAX_DROPS`,
+  `DONOR_ROUTE_NOT_RAIDABLE`, `RECEIVING_ROUTE_NOT_LOADABLE`,
+  `ALREADY_HAS_TOPUP`, `BLOCK_NOT_FOUND`, `NOT_ADJACENT`, `INVALID_TOPUP`,
+  `ROUTE_NOT_FOUND`, `REASON_REQUIRED`, `FORBIDDEN` — plus a generic
+  fallback for anything unmapped. Mutation-proven distinct (see below).
+- Copy discipline: no "óptimo"/"recomendado"/"mejor opción" language
+  anywhere — a suggestion the manager confirms, never an instruction or an
+  optimisation, per Decision 4's reasoning about the p90 applied here too.
+
+**Wiring gap found, not fixed (out of this phase's scope):**
+`VehicleCapacityBar`/`getVehicleFillStatus` (phase 2) were never actually
+wired into any screen — no consumer imports them anywhere in the app tree,
+confirmed by a repo-wide search. The fill bar this phase's suggestions
+widget was meant to sit "next to" does not currently render anywhere. This
+widget was placed where that bar belongs (`RouteBuilder.tsx`, directly
+below the block sequence), so wiring the fill bar in later drops it into
+the right spot automatically, but today a manager sees top-up suggestions
+with no visible fill percentage motivating them. Worth its own small
+follow-up; not attempted here since it is phase 2's gap, not phase 4b's.
+
+**Review fixes (2026-09-02, adversarial review of this phase):**
+
+- *Failed read no longer renders as silence.* The original contract folded
+  "the read failed" into the same `null` as "there is nothing to suggest".
+  Those are different facts, and asserting the first when the second is true
+  is the exact defect phase 3's review found in `RouteBlockList`. A query
+  error now renders one muted line saying the suggestions could not be
+  loaded and that this does not mean there are none; every legitimate empty
+  state (loading, ineligible, zero candidates) still renders nothing.
+- *The refusal now outlives the row it refused.* The refusal invalidates the
+  candidate list and the refetch usually returns fewer rows — often zero,
+  since the refused row is normally the stale one. The render-nothing guard
+  sat ahead of the banner, so the widget unmounted and took the explanation
+  with it: the manager was prompted for a reason and then watched the screen
+  go blank with no statement that anything had been refused.
+- *One accept at a time, route-wide.* Only the clicked row was disabled while
+  its POST was in flight, so a second row could be accepted for the same
+  route. `ALREADY_HAS_TOPUP` is a one-shot ledger (the database serialises
+  and refuses the second), but the manager only learned that after the fact.
+- *The donor route's caches are invalidated too.* `accept_topup_block`
+  soft-deletes the block's dispatches off the DONOR route; only the receiving
+  route's caches were invalidated, so the donor's own `RouteBuilder` went on
+  rendering the block it no longer owns — the borrowed block visible on both
+  routes at once.
+- *Two refusal messages asserted causes the database does not guarantee.*
+  `DONOR_ROUTE_NOT_RAIDABLE` blamed a sealed manifest, but the function
+  refuses for any donor status outside `('planned','loading')` — `draft` and
+  `cancelled` included. `NOT_ADJACENT` blamed adjacency, but the same code is
+  raised when the RECEIVING route has no source andén at all
+  (`array_length(v_own_zones, 1) IS NULL`). Both reworded.
+- *The `eligible` flag was decorative.* Deleting `!data.eligible` from the
+  guard left the whole suite green — the one "ineligible" fixture also had
+  zero candidates. Now covered by an `eligible: false` payload that still
+  carries rows.
+
+**Verification:** hook (8 tests) + component (28 tests) + no regression in
+`RouteBuilder.test.tsx` (30 tests, updated only to mock the two new hooks — verified
+mocks-only: `useOperatorId` has no other consumer in the `RouteBuilder`
+subtree, so no pre-existing assertion was weakened)
++ phase 4's own API suites re-run unchanged (7 + 21 = 28 tests, all green)
+= 102 tests total across the touched files (5 files). `npx tsc --noEmit`
+clean. Eight mutants introduced and reverted, all killed: role gate, the
+`eligible` flag, the refusal-code map, the failed-read note, the refusal
+surviving an emptied list, the route-wide in-flight guard, donor-side cache
+invalidation, and the loading-vs-error distinction.
 
 ## Open questions for implementation
 
