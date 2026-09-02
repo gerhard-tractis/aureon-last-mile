@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouteBuilder } from './RouteBuilder';
-import type { RouteStatus, RoutePackage, DispatchRoute } from '@/lib/dispatch/types';
+import type { RouteStatus, RoutePackage, DispatchRoute, FleetVehicle } from '@/lib/dispatch/types';
 
 const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -11,8 +11,17 @@ vi.mock('next/navigation', () => ({
 
 const refetchMock = vi.fn();
 let mockPackages: RoutePackage[] = [];
+// Phase-4c review item 1. The real hook reports whether the read actually
+// succeeded; `data` alone cannot tell "empty route" from "query failed" or
+// "still loading", both of which leave `packages` defaulting to []. Defaults
+// to a successful read so every pre-existing test here is unaffected.
+let mockPackagesLoaded = true;
 vi.mock('@/hooks/dispatch/useRoutePackages', () => ({
-  useRoutePackages: () => ({ data: mockPackages, refetch: refetchMock }),
+  useRoutePackages: () => ({
+    data: mockPackagesLoaded ? mockPackages : undefined,
+    isSuccess: mockPackagesLoaded,
+    refetch: refetchMock,
+  }),
 }));
 
 const scanMutateAsyncMock = vi.fn();
@@ -104,9 +113,22 @@ function pkg(overrides: Partial<RoutePackage> = {}): RoutePackage {
   };
 }
 
+function vehicle(overrides: Partial<FleetVehicle> = {}): FleetVehicle {
+  return {
+    id: 'v1',
+    external_vehicle_id: 'CAM-1',
+    plate_number: null,
+    driver_name: null,
+    vehicle_type: null,
+    capacity_packages: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   mockPackages = [];
+  mockPackagesLoaded = true;
   mockRouteStatus = 'draft';
   mockRouteDate = undefined;
   mockRouteBlocksData = { blocks: [], unblocked: [] };
@@ -568,5 +590,126 @@ describe('RouteBuilder — territory stability', () => {
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
     expect(screen.queryByText(/paradas aún sin secuencia asignada/)).not.toBeInTheDocument();
     expect(screen.getByText(/No se pudo verificar si faltan paradas/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * spec-73 phase 4c — wiring VehicleCapacityBar into RouteBuilder, fed by
+ * the selected vehicle's `capacity_packages` (the only vehicle identity
+ * available pre-dispatch — `routes.vehicle_id` is NULL until DispatchTrack's
+ * webhook back-fills it after the fact, per the spec's phase-2 dependency
+ * note) and the route's total package (bulto) count.
+ */
+describe('RouteBuilder — vehicle capacity fill bar', () => {
+  it('renders nothing before any vehicle is selected, even when vehicles carry capacity', () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', boxesTotal: 5 })];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 40 })]}
+      />,
+    );
+    expect(screen.queryByTestId('vehicle-capacity-fill')).not.toBeInTheDocument();
+  });
+
+  it('renders nothing once a vehicle with NULL capacity is selected — never a bar pinned at 0%', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', boxesTotal: 5 })];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: null })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    expect(screen.queryByTestId('vehicle-capacity-fill')).not.toBeInTheDocument();
+  });
+
+  it('renders the bar sized by the route\'s total package count once a vehicle with real capacity is selected', async () => {
+    mockPackages = [
+      pkg({ dispatch_id: 'd1', boxesTotal: 3, boxesLoaded: 1 }),
+      pkg({ dispatch_id: 'd2', boxesTotal: 2, boxesLoaded: 0 }),
+    ];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 10 })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    // Total bultos across the route (3 + 2 = 5), not order count (2).
+    expect(screen.getByText('5 / 10')).toBeInTheDocument();
+  });
+
+  it('shows the over-capacity marker once the route\'s package count exceeds the selected vehicle\'s capacity', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', boxesTotal: 12 })];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 10 })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    expect(screen.getByTestId('vehicle-capacity-overcapacity')).toBeInTheDocument();
+  });
+
+  it('switches back to rendering nothing when the manager clears the vehicle selection', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', boxesTotal: 5 })];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 10 })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    expect(screen.getByTestId('vehicle-capacity-fill')).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), '');
+    expect(screen.queryByTestId('vehicle-capacity-fill')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * spec-73 phase 4c review — findings 1 and 2.
+ */
+describe('RouteBuilder — vehicle capacity fill bar, review findings', () => {
+  it('renders nothing while the packages read has not succeeded — never a fabricated 0% on a truck whose load is unknown', async () => {
+    // A failed or still-loading useRoutePackages leaves `packages` at [],
+    // which sums to a package count of 0 that is indistinguishable from a
+    // genuinely empty route. Painting "0 / 40 · Bajo cupo · 0%" there tells
+    // the manager an unknown — possibly full — truck is empty, directly
+    // above TopupSuggestions urging them to add more to it.
+    mockPackagesLoaded = false;
+    mockPackages = [];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 40 })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    expect(screen.queryByTestId('vehicle-capacity-fill')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('vehicle-capacity-underfilled')).not.toBeInTheDocument();
+  });
+
+  it('names the bar’s unit, so it cannot be read as the order count directly above it', async () => {
+    // Two bultos-worth of a single order: the "Órdenes en la ruta" row says
+    // 1, the bar says 5 — different units, adjacent on screen.
+    mockPackages = [pkg({ dispatch_id: 'd1', boxesTotal: 5 })];
+    render(
+      <RouteBuilder
+        routeId="r1"
+        operatorId="op-1"
+        vehicles={[vehicle({ id: 'v1', external_vehicle_id: 'CAM-1', capacity_packages: 10 })]}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'CAM-1');
+    expect(screen.getByText('5 / 10')).toBeInTheDocument();
+    expect(screen.getByTestId('vehicle-capacity-unit')).toHaveTextContent('bultos');
   });
 });

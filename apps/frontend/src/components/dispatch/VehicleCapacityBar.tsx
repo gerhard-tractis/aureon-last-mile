@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import {
   OVER_CAPACITY_THRESHOLD_PCT,
   type VehicleCapacityTone,
+  type VehicleFillBasis,
   type VehicleFillStatus,
 } from '@/lib/dispatch/vehicle-capacity';
 
@@ -74,12 +75,28 @@ const LABEL_TONE_CLASS: Record<VehicleCapacityTone, string> = {
   error: 'text-status-error-text',
 };
 
+/**
+ * spec-73 phase 4c review item 2. "5 / 10" alone is ambiguous, and on the
+ * screen that wires this bar (RouteBuilder) it lands a few pixels under a
+ * row reading "Órdenes en la ruta · 2" — two different units, adjacent,
+ * neither naming itself. `capacity_packages` is a BULTO capacity and
+ * `packageCount` is a bulto count, so the bar says so; the same disambiguation
+ * spec-74 phase 4 review item 4 already applied to the "Faltan N bultos"
+ * banner on that row. Keyed on `status.basis` rather than hard-coded so
+ * phase 5's volume/weight basis has to name its own unit instead of
+ * inheriting "bultos" silently.
+ */
+const BASIS_UNIT_LABEL: Record<VehicleFillBasis, string> = {
+  packages: 'bultos',
+};
+
 export function VehicleCapacityBar({ status, className }: VehicleCapacityBarProps) {
   if (!status.configured) {
     return null;
   }
 
-  const { tone, fillPct, packageCount, capacityPackages, overCapacity } = status;
+  const { tone, fillPct, packageCount, capacityPackages, overCapacity, basis } = status;
+  const unitLabel = BASIS_UNIT_LABEL[basis];
   // The track itself is always drawn to 100% — fillPct is deliberately not
   // clamped (see lib/dispatch/vehicle-capacity.ts), so the bar's own width
   // clamps for layout. `status.overCapacity` (strictly > 100%, rounded —
@@ -92,8 +109,13 @@ export function VehicleCapacityBar({ status, className }: VehicleCapacityBarProp
   return (
     <div className={cn('flex flex-col gap-1', className)}>
       <div className="flex items-baseline justify-between gap-2">
-        <span className={cn('text-xs font-semibold', LABEL_TONE_CLASS[tone])}>
-          {packageCount} / {capacityPackages}
+        <span className="flex items-baseline gap-1">
+          <span className={cn('text-xs font-semibold', LABEL_TONE_CLASS[tone])}>
+            {packageCount} / {capacityPackages}
+          </span>
+          <span data-testid="vehicle-capacity-unit" className={cn('text-[11px]', LABEL_TONE_CLASS[tone])}>
+            {unitLabel}
+          </span>
         </span>
         <span className={cn('text-[11px]', LABEL_TONE_CLASS[tone])}>
           {overCapacity ? (
@@ -107,6 +129,10 @@ export function VehicleCapacityBar({ status, className }: VehicleCapacityBarProp
       </div>
       <div
         role="progressbar"
+        // A bare progressbar has no accessible name, so a screen reader
+        // announces "25 of 40" with no idea what is being counted — the same
+        // ambiguity the visible unit label above fixes for sighted users.
+        aria-label={`Carga del camión en ${unitLabel}`}
         aria-valuenow={packageCount}
         aria-valuemin={0}
         aria-valuemax={capacityPackages}

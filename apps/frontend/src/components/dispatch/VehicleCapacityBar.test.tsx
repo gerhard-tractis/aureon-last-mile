@@ -80,6 +80,39 @@ describe('VehicleCapacityBar', () => {
     });
   });
 
+  /**
+   * spec-73 phase 4c review item 2. The bar is wired into RouteBuilder a few
+   * pixels below a row reading "Órdenes en la ruta · N" — an ORDER count.
+   * "5 / 10" with no unit next to "2 orders" is a legibility trap: a manager
+   * cannot tell whether the bar is sized in boxes or in orders, and the two
+   * differ on every multi-bulto route.
+   */
+  describe('names its unit — the count is bultos, not orders', () => {
+    it('renders the bulto unit alongside the count', () => {
+      const status = getVehicleFillStatus(25, 40);
+      render(<VehicleCapacityBar status={status} />);
+      expect(screen.getByTestId('vehicle-capacity-unit')).toHaveTextContent('bultos');
+    });
+
+    it('names the unit in the over-capacity state too', () => {
+      const status = getVehicleFillStatus(140, 100);
+      render(<VehicleCapacityBar status={status} />);
+      expect(screen.getByTestId('vehicle-capacity-unit')).toHaveTextContent('bultos');
+    });
+
+    it('gives the progressbar an accessible name naming the unit', () => {
+      const status = getVehicleFillStatus(25, 40);
+      render(<VehicleCapacityBar status={status} />);
+      expect(screen.getByRole('progressbar')).toHaveAccessibleName(/bultos/i);
+    });
+
+    it('still renders no unit at all when unconfigured', () => {
+      const status = getVehicleFillStatus(25, null);
+      render(<VehicleCapacityBar status={status} />);
+      expect(screen.queryByTestId('vehicle-capacity-unit')).not.toBeInTheDocument();
+    });
+  });
+
   describe('accessibility — progressbar role and values', () => {
     it('exposes role=progressbar with count-based aria values', () => {
       const status = getVehicleFillStatus(25, 40);
