@@ -224,6 +224,23 @@ COMMENT ON FUNCTION public.spec74_backfill_package_load_state() IS
   'never overwritten. Not part of any ongoing write path — phase 3 (app '
   'layer) is what keeps loaded_at current after this migration runs once.';
 
+-- Same statement_timeout ceiling as 20260825000002's backfill, and for the
+-- same reason. That migration's UPDATE over `dispatches` aborted on production
+-- with SQLSTATE 57014 on 2026-09-02 while finishing instantly in QA, which
+-- holds a few hundred rows. This backfill rewrites `packages` — one row per
+-- bulto, so strictly larger than `dispatches` — and would have hit the same
+-- ceiling as soon as the deploy got past that earlier file.
+--
+-- Raised here pre-emptively rather than after a second failed production
+-- deploy: the two are the only migration-time mass backfills in this batch
+-- (every other UPDATE in these files is inside a function body, scoped to one
+-- route at runtime), so this is the whole exposure, not a sample of it.
+--
+-- Plain SET, not SET LOCAL, for the reason spelled out in 20260825000002:
+-- SET LOCAL is a no-op with a WARNING outside a transaction block, and how
+-- `supabase db push` wraps a migration is not a contract we control.
+SET statement_timeout = 0;
+
 DO $$
 DECLARE backfilled BIGINT;
 BEGIN
