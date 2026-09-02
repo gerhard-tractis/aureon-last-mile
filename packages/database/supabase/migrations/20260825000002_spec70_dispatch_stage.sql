@@ -56,6 +56,40 @@ COMMENT ON COLUMN public.dispatches.staged_by IS
 -- Soft-deleted rows are backfilled too. They are off every plan already, and
 -- leaving them at the column default would be the only rows in the table whose
 -- stage means something different from every other row's.
+--
+-- PRODUCTION FAILURE, 2026-09-02 — why the statement_timeout override exists.
+-- This UPDATE finishes instantly in QA (a few hundred dispatches) and aborted
+-- on production with:
+--
+--   ERROR: canceling statement due to statement timeout (SQLSTATE 57014)
+--
+-- taking the whole migration with it. The transaction rolled back cleanly and
+-- production was left untouched, but nothing after this file could ship until
+-- the statement is able to finish.
+--
+-- Batching was considered and rejected. `supabase db push` runs each migration
+-- in ONE transaction (this file declares no BEGIN/COMMIT of its own), so a
+-- batched loop cannot commit between batches: every row lock is held to the
+-- end regardless, and the usual lock-duration argument for batching does not
+-- apply here. It would also be slower — each batch re-scans for
+-- `stage = 'planned'` with no index on that predicate (idx_dispatches_route_stage
+-- is created further down, after this block), so the loop degrades toward
+-- O(n^2) against the very table it is meant to protect. One sequential pass is
+-- the cheapest correct plan; only the *timeout* was ever wrong, not the query.
+--
+-- Deliberately plain SET, not SET LOCAL. SET LOCAL only takes effect inside a
+-- transaction block: outside one it raises a WARNING and does nothing, which
+-- would silently reproduce the exact failure this line exists to prevent. How
+-- `supabase db push` wraps an individual migration is not guaranteed by any
+-- contract we control, so this must not depend on it. Plain SET is correct in
+-- both cases; its scope is the migration runner's own connection, which exists
+-- only for the duration of the push and is never a pooled application session.
+--
+-- This rewrites every row in dispatches and holds those row locks until the
+-- migration commits, so concurrent writers to the same rows block for the
+-- duration. Apply it outside operating hours.
+SET statement_timeout = 0;
+
 DO $$
 DECLARE moved BIGINT;
 BEGIN
