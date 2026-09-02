@@ -1810,6 +1810,9 @@ export type Database = {
           comuna_id: string
           sequence_index: number
           sequence_source: string
+          // spec-73 phase 4. Set only on a block created by
+          // accept_topup_block — see that migration's column comment.
+          donor_route_id: string | null
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -1821,6 +1824,7 @@ export type Database = {
           comuna_id: string
           sequence_index: number
           sequence_source?: string
+          donor_route_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -1832,6 +1836,7 @@ export type Database = {
           comuna_id?: string
           sequence_index?: number
           sequence_source?: string
+          donor_route_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -2453,6 +2458,50 @@ export type Database = {
           p_adjacent_zone_id: string
         }
         Returns: number
+      }
+      // spec-73 phase 4 (20260906000001). Read-only source-andén lookup
+      // shared by get_topup_candidates/accept_topup_block below.
+      route_source_dock_zone_ids: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_comuna_id?: string | null
+        }
+        Returns: { dock_zone_id: string }[]
+      }
+      // spec-73 phase 4. Top-up suggestion computation — see
+      // GET .../topup/route.ts. Json here matches every other
+      // jsonb-returning function in this file.
+      get_topup_candidates: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+        }
+        Returns: Json
+      }
+      // spec-73 phase 4 review fix (Decision 5.5). TRUE when a route's
+      // comuna block has already been physically scanned onto a load
+      // position, which makes it undonatable.
+      route_block_is_physically_staged: {
+        Args: {
+          p_route_id: string
+          p_operator_id: string
+          p_comuna_id: string
+        }
+        Returns: boolean
+      }
+      // spec-73 phase 4. Accept a top-up suggestion — see
+      // POST .../topup/accept/route.ts.
+      accept_topup_block: {
+        Args: {
+          p_receiving_route_id: string
+          p_donor_route_id: string
+          p_comuna_id: string
+          p_operator_id: string
+          p_user_id: string
+          p_reason: string
+        }
+        Returns: Json
       }
     }
     Enums: {
