@@ -1648,6 +1648,7 @@ export type Database = {
           substatus: string | null
           substatus_code: string | null
           planned_sequence: number | null
+          actual_sequence: number | null
           estimated_at: string | null
           arrived_at: string | null
           completed_at: string | null
@@ -1683,6 +1684,7 @@ export type Database = {
           substatus?: string | null
           substatus_code?: string | null
           planned_sequence?: number | null
+          actual_sequence?: number | null
           estimated_at?: string | null
           arrived_at?: string | null
           completed_at?: string | null
@@ -1713,6 +1715,7 @@ export type Database = {
           substatus?: string | null
           substatus_code?: string | null
           planned_sequence?: number | null
+          actual_sequence?: number | null
           estimated_at?: string | null
           arrived_at?: string | null
           completed_at?: string | null

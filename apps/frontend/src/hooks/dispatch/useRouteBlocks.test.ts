@@ -213,6 +213,206 @@ describe('useRouteBlocks', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
 
+  /**
+   * spec-72 phase 5: a block's actualRank rolls up its member dispatches'
+   * EARLIEST actual_sequence, ranked among only the blocks that have data.
+   * Block 2 (comuna-2) arrives first (actual_sequence 1) despite being
+   * planned second (sequence_index 2) — proves the mismatch surfaces.
+   */
+  it('computes actualRank from the earliest actual_sequence per block and flags a mismatch as outOfSequence', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+        { id: 'block-2', comuna_id: 'comuna-2', sequence_index: 2, sequence_source: 'default', chile_comunas: { nombre: 'Dos' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: 3, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 1, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+        { id: 'd-3', order_id: 'order-3', actual_sequence: 2, orders: { id: 'order-3', order_number: 'ORD-3', comuna_id: 'comuna-2' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const block1 = result.current.data?.blocks.find((b) => b.id === 'block-1');
+    const block2 = result.current.data?.blocks.find((b) => b.id === 'block-2');
+
+    // block-2's earliest actual_sequence is 1 (min of 1,2) -> ranked 1st
+    // overall -> actual rank 1, but planned rank is 2nd in the list -> mismatch.
+    expect(block2).toMatchObject({ actualRank: 1, outOfSequence: true });
+    // block-1's only dispatch has actual_sequence 3 -> ranked 2nd (the only
+    // other ranked block) -> actual rank 2, planned rank 1 -> mismatch too.
+    expect(block1).toMatchObject({ actualRank: 2, outOfSequence: true });
+  });
+
+  it('leaves actualRank null and outOfSequence false when no dispatch in a block has arrived yet', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: null, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.blocks[0]).toMatchObject({ actualRank: null, outOfSequence: false });
+  });
+
+  it('reports actualRank matching plannedRank as in-sequence, not a mismatch', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+        { id: 'block-2', comuna_id: 'comuna-2', sequence_index: 2, sequence_source: 'default', chile_comunas: { nombre: 'Dos' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: 1, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 2, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.blocks[0]).toMatchObject({ actualRank: 1, outOfSequence: false });
+    expect(result.current.data?.blocks[1]).toMatchObject({ actualRank: 2, outOfSequence: false });
+  });
+
+  /**
+   * spec-72 phase 5 MANDATORY orphan exclusion: an orphan dispatch (comuna_id
+   * set, no live block covering it) must never be pulled into ANY block's
+   * actual-rank rollup, even when its actual_sequence would otherwise be the
+   * earliest of all. The one real block's own dispatch stays correctly
+   * ranked 1st (the only ranked block), never displaced by the orphan.
+   */
+  it('excludes an orphan dispatch actual_sequence from every block rollup', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: 2, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+        // Orphan: comuna-2 has no live block, arrived FIRST (actual_sequence 1).
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 1, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Only one live block exists, so its actual rank is 1st regardless of
+    // the orphan's earlier timestamp — the orphan is invisible to ranking.
+    expect(result.current.data?.blocks[0]).toMatchObject({ actualRank: 1, outOfSequence: false });
+    expect(result.current.data?.unblocked).toHaveLength(1);
+    expect(result.current.data?.unblocked[0]).toMatchObject({ orderId: 'order-2', reason: 'orphan' });
+  });
+
+  /**
+   * REVIEW FINDING (phase 5) — partial arrival data must not fabricate a
+   * mismatch. `actualRank` is a rank among ONLY the blocks that have data,
+   * so the planned side of the comparison has to be the SAME population.
+   * Comparing it against a position in the FULL block list flags every block
+   * after an un-arrived one as out of sequence even when the driver visited
+   * them in exactly the planned order.
+   *
+   * Here block-1 (planned first) has no arrival at all — a failed/skipped
+   * stop, which a completed route can legitimately contain. block-2 and
+   * block-3 were then visited in planned order. Neither is out of sequence.
+   * Sequence indices are deliberately non-contiguous (1, 2, 4) to prove the
+   * planned side is a POSITION, not the raw sequence_index.
+   */
+  it('does not flag later blocks as out of sequence when an earlier block has no arrival data', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+        { id: 'block-2', comuna_id: 'comuna-2', sequence_index: 2, sequence_source: 'default', chile_comunas: { nombre: 'Dos' } },
+        { id: 'block-3', comuna_id: 'comuna-3', sequence_index: 4, sequence_source: 'default', chile_comunas: { nombre: 'Tres' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: null, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 1, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+        { id: 'd-3', order_id: 'order-3', actual_sequence: 2, orders: { id: 'order-3', order_number: 'ORD-3', comuna_id: 'comuna-3' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const [b1, b2, b3] = result.current.data!.blocks;
+    expect(b1).toMatchObject({ actualRank: null, outOfSequence: false });
+    expect(b2).toMatchObject({ actualRank: 1, outOfSequence: false });
+    expect(b3).toMatchObject({ actualRank: 2, outOfSequence: false });
+  });
+
+  /**
+   * REVIEW FINDING (phase 5) — the companion of the test above: with the same
+   * un-arrived first block, a genuine swap of the two blocks that DID arrive
+   * must still be flagged. This is what stops the fix from degenerating into
+   * "never flag anything once a block is missing data".
+   */
+  it('still flags a real swap among the blocks that do have arrival data', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+        { id: 'block-2', comuna_id: 'comuna-2', sequence_index: 2, sequence_source: 'default', chile_comunas: { nombre: 'Dos' } },
+        { id: 'block-3', comuna_id: 'comuna-3', sequence_index: 4, sequence_source: 'default', chile_comunas: { nombre: 'Tres' } },
+      ],
+      dispatches: [
+        { id: 'd-1', order_id: 'order-1', actual_sequence: null, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+        // block-3 (planned last) arrived BEFORE block-2 — a real inversion.
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 2, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+        { id: 'd-3', order_id: 'order-3', actual_sequence: 1, orders: { id: 'order-3', order_number: 'ORD-3', comuna_id: 'comuna-3' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const [b1, b2, b3] = result.current.data!.blocks;
+    expect(b1).toMatchObject({ actualRank: null, outOfSequence: false });
+    expect(b2).toMatchObject({ actualRank: 2, outOfSequence: true });
+    expect(b3).toMatchObject({ actualRank: 1, outOfSequence: true });
+  });
+
+  /**
+   * REVIEW FINDING (phase 5) — the actual-rank sort had no tiebreak at all
+   * (`a[1] - b[1] || 0`), despite a comment claiming it fell back to
+   * sequence_index. `actual_sequence` is a plain integer column, so a manual
+   * correction or backfill can duplicate a value across two blocks; without a
+   * tiebreak the resulting order is whatever the (unordered) dispatch query
+   * happened to return. Here the tied blocks are supplied in REVERSE planned
+   * order to prove the tiebreak, not the arrival order of the rows, decides.
+   */
+  it('breaks an actual_sequence tie by planned order, deterministically', async () => {
+    mockTables({
+      blocks: [
+        { id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } },
+        { id: 'block-2', comuna_id: 'comuna-2', sequence_index: 2, sequence_source: 'default', chile_comunas: { nombre: 'Dos' } },
+      ],
+      dispatches: [
+        { id: 'd-2', order_id: 'order-2', actual_sequence: 5, orders: { id: 'order-2', order_number: 'ORD-2', comuna_id: 'comuna-2' } },
+        { id: 'd-1', order_id: 'order-1', actual_sequence: 5, orders: { id: 'order-1', order_number: 'ORD-1', comuna_id: 'comuna-1' } },
+      ],
+      packages: [],
+    });
+
+    const { result } = renderHook(() => useRouteBlocks('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const [b1, b2] = result.current.data!.blocks;
+    expect(b1).toMatchObject({ actualRank: 1, outOfSequence: false });
+    expect(b2).toMatchObject({ actualRank: 2, outOfSequence: false });
+  });
+
   it('operator_id and deleted_at scoping is applied on every query', async () => {
     const { blocksChain, dispatchesChain } = mockTables({
       blocks: [{ id: 'block-1', comuna_id: 'comuna-1', sequence_index: 1, sequence_source: 'default', chile_comunas: { nombre: 'Uno' } }],
