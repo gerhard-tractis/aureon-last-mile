@@ -128,3 +128,25 @@ export const PLAN_MANAGER_ROLES = [
 export function canRemoveFromPlan(role: string | null | undefined): boolean {
   return !!role && (PLAN_MANAGER_ROLES as readonly string[]).includes(role);
 }
+
+/**
+ * Who may configure `dock_zone_adjacency` pairs and (later) `routes.max_drops`
+ * (spec-73 phase 3, Decision 5.1 / Open Questions).
+ *
+ * The spec's own text guesses `ops_leader`/`admin`/`operations_manager` —
+ * spec-68's `MANAGER_ROLES` (useManualDockAssignment.ts), which gates the
+ * OTHER manager-only distribution action (manual dock assignment) but is a
+ * UI-only check with no server enforcement. This reuses `PLAN_MANAGER_ROLES`
+ * verbatim instead: spec-70's `canRemoveFromPlan` gate, the precedent that IS
+ * enforced server-side (the DELETE .../packages/[pkgId] route, and the
+ * add/remove_dock_zone_adjacency_pair RPCs mirror the same pattern one level
+ * lower, in SQL). It is a strict superset of spec-68's three roles — the same
+ * three plus `super_admin`, which every other manager-only gate in this repo
+ * (`PLAN_MANAGER_ROLES`, `ROUTE_LEADER_ROLES`) already includes and which has
+ * no principled reason to be excluded here.
+ */
+export const DOCK_ZONE_ADJACENCY_MANAGER_ROLES = PLAN_MANAGER_ROLES;
+
+export function canManageDockZoneAdjacency(role: string | null | undefined): boolean {
+  return canRemoveFromPlan(role);
+}

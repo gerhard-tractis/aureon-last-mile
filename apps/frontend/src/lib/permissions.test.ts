@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { ROLE_DEFAULT_PERMISSIONS, canLeadPickupRoute, canRemoveFromPlan, ROUTE_LEADER_ROLES } from './permissions';
+import {
+  ROLE_DEFAULT_PERMISSIONS,
+  canLeadPickupRoute,
+  canRemoveFromPlan,
+  canManageDockZoneAdjacency,
+  ROUTE_LEADER_ROLES,
+  DOCK_ZONE_ADJACENCY_MANAGER_ROLES,
+} from './permissions';
 
 describe('ROLE_DEFAULT_PERMISSIONS', () => {
   // Will mirror the handle_new_user CASE (spec-61 Task 1.2) once that
@@ -91,5 +98,28 @@ describe('canRemoveFromPlan — spec-70', () => {
   it('refuses pickup_leader even though it leads pickup routes', () => {
     expect(canLeadPickupRoute('pickup_leader')).toBe(true);
     expect(canRemoveFromPlan('pickup_leader')).toBe(false);
+  });
+});
+
+describe('canManageDockZoneAdjacency — spec-73 phase 3', () => {
+  it('is the same role set as PLAN_MANAGER_ROLES (spec-70\'s canRemoveFromPlan gate)', () => {
+    expect([...DOCK_ZONE_ADJACENCY_MANAGER_ROLES].sort()).toEqual(
+      ['ops_leader', 'operations_manager', 'admin', 'super_admin'].sort(),
+    );
+  });
+
+  it.each(['ops_leader', 'operations_manager', 'admin', 'super_admin'])(
+    'allows %s',
+    (role) => expect(canManageDockZoneAdjacency(role)).toBe(true),
+  );
+
+  it.each(['warehouse_staff', 'pickup_crew', 'loading_crew', 'pickup_leader', ''])(
+    'refuses %s',
+    (role) => expect(canManageDockZoneAdjacency(role)).toBe(false),
+  );
+
+  it('refuses a missing role', () => {
+    expect(canManageDockZoneAdjacency(null)).toBe(false);
+    expect(canManageDockZoneAdjacency(undefined)).toBe(false);
   });
 });
