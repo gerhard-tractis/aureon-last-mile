@@ -9,19 +9,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
-// spec-76 decision 1 — defaults to the desktop branch, same SSR-safe
-// default every other useIsBelowLg consumer's tests rely on. Every test in
-// this file exercises real, unchanged desktop behaviour; the mobile branch
-// (DispatchRouteBeforeScan) is covered on its own in
-// DispatchRouteBeforeScan.test.tsx.
-vi.mock('@/hooks/useViewport', () => ({
-  useIsBelowLg: () => false,
-}));
-
-vi.mock('@/hooks/dispatch/mobile/useRouteLoadBrief', () => ({
-  useRouteLoadBrief: () => ({ data: undefined }),
-}));
-
 const refetchMock = vi.fn();
 let mockPackages: RoutePackage[] = [];
 // Phase-4c review item 1. The real hook reports whether the read actually

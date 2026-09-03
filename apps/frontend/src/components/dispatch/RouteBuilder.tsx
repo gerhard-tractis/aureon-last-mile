@@ -22,10 +22,6 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { LOADABLE_ROUTE_STATUSES, type FleetVehicle } from '@/lib/dispatch/types';
 import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
 import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
-import { useIsBelowLg } from '@/hooks/useViewport';
-import { useRouteLoadBrief } from '@/hooks/dispatch/mobile/useRouteLoadBrief';
-import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
-import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 
 interface Props {
   routeId: string;
@@ -39,16 +35,6 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   // the `operatorId` prop (that one is passed in from the server page and
   // carries no role); same source DockZoneAdjacencySettingsPage reads.
   const { role } = useOperatorId();
-  // spec-76 decision 1 — below `lg`, this component renders 2c
-  // (DispatchRouteBeforeScan) instead of the desktop three-column tree.
-  // Mocked to `false` in RouteBuilder.test.tsx so every existing scan/seal/
-  // dispatch test keeps exercising the desktop branch unchanged.
-  const isBelowLg = useIsBelowLg();
-  // Only fetched below `lg` — a desktop session never pays for this read.
-  // spec-76 lesson 7: `enabled: false` stops the fetch, but this hook is
-  // only ever instantiated once per page, not once per row, so there is no
-  // observer-overhead concern like spec-75's ~204-row case.
-  const { data: loadBrief } = useRouteLoadBrief(routeId, operatorId, { enabled: isBelowLg });
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [driverName, setDriverName] = useState('');
@@ -254,33 +240,6 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
     await fetch(`/api/dispatch/routes/${routeId}`, { method: 'DELETE' });
     router.push('/app/dispatch');
   };
-
-  // spec-76 Fase 3 — 2c. Neither the map, the crew panel, nor the KPI
-  // cards the desktop return below builds ever mount here — this replaces
-  // the whole return, it does not sit alongside it.
-  if (isBelowLg) {
-    return (
-      <DispatchRouteBeforeScan
-        routeCode={routeCode(routeId)}
-        loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
-        pendingOnDock={loadBrief?.pendingOnDock ?? pendingCount}
-        ordersCount={loadBrief?.ordersCount ?? packages.length}
-        stopsCount={loadBrief?.stopsCount ?? 0}
-        vehicleAssignment={loadBrief?.vehicleAssignment ?? null}
-        incompleteOrders={loadBrief?.incompleteOrders ?? []}
-        comunas={loadBrief?.comunas ?? []}
-        onBack={() => router.push('/app/dispatch')}
-        // 2e (the scan loop) and 2d (the vehicle sheet) are spec-76 tasks 2
-        // and 4 — out of this task's (task 1's) scope, and neither screen
-        // exists yet anywhere in the repo. Left as documented no-ops here
-        // rather than routed at a URL that does not exist yet or silently
-        // remounting the desktop ScanZone (which this branch's whole point
-        // is not to do) — task 2/4 wires these once 2d/2e ship.
-        onStartScanning={() => {}}
-        onAssignVehicle={() => {}}
-      />
-    );
-  }
 
   return (
     <div className="flex flex-col md:flex-row h-[calc(100vh-53px)] overflow-hidden">

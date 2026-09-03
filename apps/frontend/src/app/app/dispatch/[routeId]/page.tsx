@@ -1,5 +1,5 @@
 import { createSSRClient } from '@/lib/supabase/server';
-import { RouteBuilder } from '@/components/dispatch/RouteBuilder';
+import { DispatchRouteSurface } from '@/components/dispatch/DispatchRouteSurface';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
 export default async function RouteBuilderPage({ params }: { params: Promise<{ routeId: string }> }) {
@@ -16,7 +16,7 @@ export default async function RouteBuilderPage({ params }: { params: Promise<{ r
     .order('external_vehicle_id');
 
   return (
-    <RouteBuilder
+    <DispatchRouteSurface
       routeId={routeId}
       operatorId={operatorId}
       vehicles={(vehicles ?? []) as FleetVehicle[]}
