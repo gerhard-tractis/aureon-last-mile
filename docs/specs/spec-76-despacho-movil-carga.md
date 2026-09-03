@@ -140,6 +140,51 @@ Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo exc
 28. **Leer el reporte, no el check verde.** El job `e2e-qa` es `continue-on-error: true`, así que un pipeline verde no prueba que el E2E pasó.
 29. Verificación en QA con lector real: el andén es donde se descubren los defectos de teclado del hardware.
 
+## Lecciones aplicadas
+
+Reglas que **ya costaron caro** en otro spec de esta serie. No son teoría: cada una nombra dónde se aprendió. Léelas antes de escribir la primera línea de este spec.
+
+1. Confirmá qué pantalla es un archivo por sus **imports y su ruta**, nunca por su número de artboard.
+
+   *Dónde se aprendió:* `spec-75` decisión 2 afirmaba que `RouteBuilder.tsx` era la pre-ruta (`1a`) y había que partirlo. Es la pantalla de **una ruta** (`/app/dispatch/[routeId]`, `1c`), y las tres columnas de `1a` ya existían. La renumeración entre el handoff viejo y el canvas nuevo lo provocó. De haberse implementado, un agente habría desarmado una pantalla que funciona.
+
+2. El canvas dibuja la **página completa**: separá el chrome de la plataforma y de la app del chrome del módulo.
+
+   *Dónde se aprendió:* `spec-75` mandó redibujar el breadcrumb `Operación / Despacho` que `TopBar` ya renderiza — habría salido dos veces en pantalla. Un elemento presente en un artboard no implica que haya que construirlo: puede pintarlo el sistema operativo o existir un nivel más arriba.
+
+3. Verificá que los campos que el spec da por existentes **estén realmente en el payload**.
+
+   *Dónde se aprendió:* `spec-75` decía que el chevron expandía `sku_items` «que el RPC ya devuelve». No los devuelve. Se resolvió con una consulta perezosa al expandir, sin migración. Antes de prometer «sólo es aplanar la respuesta», leé la definición de la función más reciente.
+
+4. **ARIA anidado se rompe en silencio.** Un rol interactivo con descendientes enfocables los borra del árbol de accesibilidad.
+
+   *Dónde se aprendió:* `spec-75` produjo dos defectos de este tipo en dos tareas. (1) Dos raíces `Tabs` de Radix separadas: cada `aria-controls` apuntaba a un id inexistente — cuatro pestañas huérfanas y cuatro paneles sin etiqueta. (2) Un `div role="checkbox"` con un `<button>` de chevron adentro: `checkbox` es un rol de *presentational children*, así que el chevron desaparecía del árbol, y el nombre accesible de la fila absorbía la etiqueta del botón. **Ninguno de los dos lo detectaron los tests, ni `tsc`, ni la revisión de spec.**
+
+5. **Un `onKeyDown` en un contenedor sin guard de `target` secuestra a sus hijos.**
+
+   *Dónde se aprendió:* En `spec-75`, Enter sobre el chevron enfocado **deseleccionaba la orden** y no expandía nada: el evento burbujeaba al `div`, `preventDefault()` cancelaba la activación del botón y corría el handler del padre. Usá `<button>` nativos como hermanos en vez de manejo de teclado propio; si hace falta un handler en el contenedor, cortá con `if (e.target !== e.currentTarget) return`. **Escribí un test de teclado**: no había ninguno, y por eso se fue a revisión.
+
+6. Un `<button>` dentro de un `<div onClick>` dispara **los dos** handlers.
+
+   *Dónde se aprendió:* Detectado al reestructurar la fila de `spec-75`. Si el patrón «toda la fila es el hit target» convive con un control propio adentro, hace falta `stopPropagation` y un test que fije que la acción ocurre **una** vez.
+
+7. `enabled: false` evita el *fetch*, no el **observer**.
+
+   *Dónde se aprendió:* En `spec-75` cada una de las ~204 filas colapsadas montaba igual un `QueryObserver`, su entrada de caché y su suscripción. La solución es mover el hook al componente que **sólo se monta** cuando hace falta, no gatearlo desde arriba.
+
+8. Sin `memo` + `useCallback` juntos, un clic re-renderiza la lista entera.
+
+   *Dónde se aprendió:* En `spec-75` los handlers se redeclaraban en cada render, así que `memo` por sí solo no habría hecho nada. Es el camino del clic en una pantalla de andén usada a las apuradas: las dos mitades van juntas o no sirve ninguna.
+
+9. Nada de fechas calculadas **al cargar el módulo**.
+
+   *Dónde se aprendió:* En `spec-75`, `sevenDaysAgo` se evaluaba una vez por carga: en una PWA abierta todo el turno, «últimos 7 días» pasaba a significar 8 después de medianoche, y el test se recalculaba en el momento de la aserción, así que habría *flakeado* en vez de detectarlo. Calculá dentro del componente y testeá con *fake timers* cruzando medianoche.
+
+10. Una reescritura puede **perder un campo** que el resto de la UI da por presente.
+
+   *Dónde se aprendió:* En `spec-75` la reescritura de la columna dejó de renderizar el `subtitle` del grupo — el único lugar que nombra **entre qué andenes** se reparte una comuna — mientras seguía mostrando el ícono de advertencia. La UI avisaba del problema y ocultaba el dato. Al reescribir un componente, compará campo por campo contra la versión anterior y decilo explícitamente.
+
+
 ## Riesgos
 
 - **El hardware de QA corrompe guiones y no manda Enter.** Mitigado usando los primitivos compartidos, no un input propio. Verificar en QA antes de declarar terminado.
