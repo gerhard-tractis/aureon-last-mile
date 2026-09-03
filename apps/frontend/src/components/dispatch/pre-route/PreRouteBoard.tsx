@@ -1,13 +1,16 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import {
+  allOrderIds,
   buildGroups,
-  summariseSelection,
+  summariseOrderSelection,
+  toggleGroupSelection,
   type GroupBy,
+  type UnroutedGroup,
 } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UnroutedColumn } from './UnroutedColumn';
@@ -18,12 +21,16 @@ import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
 /**
- * spec-54 phase 4.2 — the Pre-ruta board (mock 1c).
+ * spec-54 phase 4.2 — the Pre-ruta board.
  *
  * Replaces the stacked list with the three-column layout the mock calls for:
  * what is unrouted, what the plan looks like, and what the route will contain,
  * all visible while you decide. Below 1024px the columns stack, per the
  * handoff's responsive rule.
+ *
+ * Selection lives at the order level. Order ids are stable across both
+ * groupings (an order's id doesn't change whether the board groups por
+ * andén or por comuna), so switching groupBy doesn't need to clear it.
  */
 
 interface PreRouteBoardProps {
@@ -48,29 +55,41 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   );
 
   const [groupBy, setGroupBy] = useState<GroupBy>('anden');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
   const groups = useMemo(
+    // snapshot's object identity changes on every refetch even when
+    // `andenes` itself is unchanged; keying off `snapshot` would churn
+    // `groups`' identity (and every row's, through it) on each background
+    // refetch and defeat UnroutedOrderRow's memo below it.
     () => buildGroups(snapshot?.andenes ?? [], groupBy),
-    [snapshot, groupBy],
+    [snapshot?.andenes, groupBy],
   );
-  const summary = useMemo(() => summariseSelection(groups, selectedIds), [groups, selectedIds]);
+  const summary = useMemo(
+    () => summariseOrderSelection(groups, selectedOrderIds),
+    [groups, selectedOrderIds],
+  );
 
-  function toggle(id: string) {
-    setSelectedIds((prev) => {
+  const toggleOrder = useCallback((orderId: string) => {
+    setSelectedOrderIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
       return next;
     });
-  }
+  }, []);
 
-  // Group ids mean different things per grouping, so a selection carried
-  // across would silently point at nothing.
-  function changeGroupBy(next: GroupBy) {
-    setGroupBy(next);
-    setSelectedIds(new Set());
-  }
+  const toggleGroup = useCallback((group: UnroutedGroup) => {
+    setSelectedOrderIds((prev) => toggleGroupSelection(group, prev));
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelectedOrderIds(new Set(allOrderIds(groups)));
+  }, [groups]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedOrderIds(new Set());
+  }, []);
 
   function buildRoute() {
     if (summary.orderIds.length === 0) return;
@@ -101,9 +120,12 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
         <UnroutedColumn
           groups={groups}
           groupBy={groupBy}
-          onGroupByChange={changeGroupBy}
-          selectedIds={selectedIds}
-          onToggle={toggle}
+          onGroupByChange={setGroupBy}
+          selectedOrderIds={selectedOrderIds}
+          onToggleOrder={toggleOrder}
+          onToggleGroup={toggleGroup}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
           summary={summary}
           onBuildRoute={buildRoute}
           isBuilding={isCreating}
@@ -113,10 +135,10 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
         <RouteDraftPanel
           groups={groups}
-          selectedIds={selectedIds}
+          selectedOrderIds={selectedOrderIds}
           summary={summary}
           onBuildRoute={buildRoute}
-          onClear={() => setSelectedIds(new Set())}
+          onClear={clearSelection}
           isBuilding={isCreating}
         />
       </div>

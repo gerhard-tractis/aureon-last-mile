@@ -1,6 +1,7 @@
 import { StatusBadge } from '@/components/StatusBadge';
 import { cn } from '@/lib/utils';
 import { formatDurationSince } from '@/lib/orders/duration';
+import { PACKAGE_STATUS_HELD } from '@/lib/types/pipeline';
 import type { DossierPackage } from '@/hooks/useOrderDossier';
 
 /**
@@ -23,7 +24,7 @@ export function OrderPackageList({ packages, now = new Date() }: Props) {
   return (
     <ul className="flex flex-col gap-2" data-testid="order-package-list">
       {packages.map((pkg) => {
-        const blocking = pkg.status === 'retenido';
+        const blocking = pkg.status === PACKAGE_STATUS_HELD;
         const weight = formatWeight(pkg);
         const meta = [pkg.dock_zone_name, weight].filter((v): v is string => Boolean(v));
         const heldDuration =

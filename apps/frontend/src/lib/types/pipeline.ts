@@ -9,6 +9,13 @@ export const TERMINAL_PACKAGE_STATUSES: PackageStatus[] = [
   'cancelado', 'devuelto', 'dañado', 'extraviado',
 ];
 
+/**
+ * A package held in consolidation — the status that keeps an order from
+ * going out complete. Shared by `OrderPackageList` and the pre-route
+ * chevron (`useOrderPackages`) so the two "held" treatments can't drift.
+ */
+export const PACKAGE_STATUS_HELD: PackageStatus = 'retenido';
+
 // Order status (active pipeline + cancelado)
 export type OrderStatus =
   | 'ingresado' | 'verificado' | 'en_bodega' | 'asignado'
