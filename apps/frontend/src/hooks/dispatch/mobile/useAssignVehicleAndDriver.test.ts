@@ -55,7 +55,7 @@ describe('useAssignVehicleAndDriver', () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       status: 409,
-      json: async () => ({ code: 'VEHICLE_ALREADY_ASSIGNED_TODAY', message: 'Este camión ya lleva otra ruta hoy (RUT-0088)' }),
+      json: async () => ({ code: 'VEHICLE_ALREADY_ASSIGNED_TODAY', message: 'Este camión ya lleva otra ruta hoy (A3F91B2C)' }),
     });
     const { result } = renderHook(() => useAssignVehicleAndDriver());
     let outcome;
@@ -64,7 +64,7 @@ describe('useAssignVehicleAndDriver', () => {
     });
     expect(outcome).toEqual({
       ok: false,
-      message: 'Este camión ya lleva otra ruta hoy (RUT-0088)',
+      message: 'Este camión ya lleva otra ruta hoy (A3F91B2C)',
       code: 'VEHICLE_ALREADY_ASSIGNED_TODAY',
     });
   });

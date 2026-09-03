@@ -37,14 +37,14 @@ describe('DispatchVehiclePickerRow', () => {
     const onSelect = vi.fn();
     render(
       <DispatchVehiclePickerRow
-        row={makeRow({ assignable: false, blockReason: 'blocked', blockedByRouteCode: 'RUT-0088' })}
+        row={makeRow({ assignable: false, blockReason: 'blocked', blockedByRouteCode: 'A3F91B2C' })}
         selected={false}
         onSelect={onSelect}
       />,
     );
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.getByText('EN RUT-0088')).toBeInTheDocument();
+    expect(screen.getByText('EN A3F91B2C')).toBeInTheDocument();
   });
 
   it('a vehicle with no capacity configured is visible, not assignable, and never draws a bar', () => {
@@ -58,6 +58,18 @@ describe('DispatchVehiclePickerRow', () => {
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.getByText('Sin capacidad configurada')).toBeInTheDocument();
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('D1: a vehicle with no identifier is visible, not assignable, labelled "Sin identificador"', () => {
+    render(
+      <DispatchVehiclePickerRow
+        row={makeRow({ externalVehicleId: null, assignable: false, blockReason: 'sin_identificador' })}
+        selected={false}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.getByText('Sin identificador')).toBeInTheDocument();
   });
 
   it('reflects the selected state via aria-checked', () => {

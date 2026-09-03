@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -71,6 +72,7 @@ interface BodyProps {
 }
 
 function Body({ routeId, routeCode, operatorId, onAssigned, onClose }: BodyProps) {
+  const queryClient = useQueryClient();
   const { data: rows, isLoading, isError, refetch } = useVehicleAssignmentOptions(routeId, operatorId, {
     enabled: true,
   });
@@ -93,13 +95,22 @@ function Body({ routeId, routeCode, operatorId, onAssigned, onClose }: BodyProps
   };
 
   const handleAssign = async () => {
-    if (!selectedRow) return;
+    // Guards, not just UI disablement: `selectedRow.externalVehicleId` is
+    // `string | null` on the type — only a genuinely assignable row (never
+    // 'sin_identificador', review D1) can reach here in practice, but the
+    // check keeps that a real precondition rather than an assumption.
+    if (!selectedRow || !selectedRow.externalVehicleId) return;
     setError(null);
     const outcome = await assign(routeId, selectedRow.externalVehicleId, driverName);
     if (!outcome.ok) {
       setError(outcome.message ?? 'No se pudo asignar el camión');
       return;
     }
+    // Review M1 — staleTime: 10_000 on useVehicleAssignmentOptions means
+    // reopening this sheet within 10s of assigning would otherwise still
+    // show the just-assigned truck as free. Invalidate so the NEXT open
+    // (this instance is about to unmount via onClose) fetches fresh.
+    queryClient.invalidateQueries({ queryKey: ['dispatch', 'mobile', 'vehicle-assignment-options'] });
     onAssigned({ vehicleId: outcome.vehicleId ?? selectedRow.id, driverName: outcome.driverName ?? null });
     onClose();
   };
@@ -157,6 +168,10 @@ function Body({ routeId, routeCode, operatorId, onAssigned, onClose }: BodyProps
             setDriverTouched(true);
             setDriverName(e.target.value);
           }}
+          // Review I5 — routes.driver_name is VARCHAR(255); without this a
+          // longer paste surfaced as a bare 500 from the PATCH handler
+          // instead of being stopped at the point of entry.
+          maxLength={255}
           placeholder="Nombre del conductor"
           className="h-11 w-full rounded-[10px] border border-border bg-background px-3.5 text-[13.5px] text-text placeholder:text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         />

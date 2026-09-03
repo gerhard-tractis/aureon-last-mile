@@ -135,26 +135,27 @@ export function useRouteLoadBrief(
       if (routeRow.vehicle_id) {
         const { data: vehicleRow } = await supabase
           .from('fleet_vehicles')
-          .select('external_vehicle_id, driver_name')
+          .select('external_vehicle_id')
           .eq('id', routeRow.vehicle_id)
           .eq('operator_id', operatorId!)
           .is('deleted_at', null)
           .maybeSingle();
         if (vehicleRow?.external_vehicle_id) {
-          // spec-76 task 2 fix — this used to read the vehicle's
-          // fleet_vehicles.driver_name ("last known driver", set by the
-          // DispatchTrack webhook sync, spec-52 migration comment). That
-          // was the only real column available before this task, because
-          // routes.driver_name was permanently NULL (only the dispatch
-          // handler wrote it, after `loaded`). Now that `PATCH
-          // /api/dispatch/routes/[id]` (2d) writes routes.driver_name at
-          // assignment time — the actual driver named for THIS trip, not
-          // the vehicle's usual one — that is the authoritative value.
-          // fleet_vehicles.driver_name is kept only as a fallback for a
-          // route whose vehicle got linked with no driver typed at all.
+          // Review I1 — this used to fall back to fleet_vehicles.driver_name
+          // (the vehicle's fleet-level "last known driver", synced from a
+          // webhook, possibly weeks stale) whenever routeRow.driver_name was
+          // null. That fallback fires exactly when the crew assigned a
+          // truck and deliberately left the driver blank — asserting a
+          // driver under a label ("Vehículo y conductor") that names a
+          // fact this route does not actually have (Lecciones aplicadas
+          // "no proxy under a label that asserts a fact"). routes.driver_name
+          // is the only honest source for THIS route's driver; null means
+          // "Sin conductor", not a guess. The vehicle's usual driver is
+          // already offered as a prefill in the assignment sheet, which is
+          // the right place for a suggestion, not here.
           vehicleAssignment = {
             externalVehicleId: vehicleRow.external_vehicle_id,
-            driverName: routeRow.driver_name ?? vehicleRow.driver_name,
+            driverName: routeRow.driver_name ?? null,
           };
         }
       }

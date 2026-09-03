@@ -173,38 +173,61 @@ function buildPatchRequest(body: unknown) {
 
 interface PatchFixture {
   routeStatus: string | null;
+  provider?: string;
   vehicle?: { id: string; capacity_packages: number | null } | null;
-  busyRoute?: { id: string } | null;
+  vehicleError?: { code: string; message: string } | null;
+  busyRoutes?: { id: string }[];
+  busyRouteError?: { code: string; message: string } | null;
+  updatedRows?: { id: string }[] | null;
+  updateError?: { code: string; message: string } | null;
 }
 
-function buildPatchClient({ routeStatus, vehicle = { id: 'veh-1', capacity_packages: 240 }, busyRoute = null }: PatchFixture) {
+function buildPatchClient({
+  routeStatus,
+  provider = 'dispatchtrack',
+  vehicle = { id: 'veh-1', capacity_packages: 240 },
+  vehicleError = null,
+  busyRoutes = [],
+  busyRouteError = null,
+  updatedRows = [{ id: 'r1' }],
+  updateError = null,
+}: PatchFixture) {
+  const routeSelectEqSpy = vi.fn().mockReturnThis();
   const routeSelectChain = {
     select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
+    eq: routeSelectEqSpy,
     is: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({
-      data: routeStatus ? { id: 'r1', status: routeStatus } : null,
+      data: routeStatus ? { id: 'r1', status: routeStatus, provider } : null,
       error: null,
     }),
   };
 
+  const vehicleSelectEqSpy = vi.fn().mockReturnThis();
   const vehicleSelectChain = {
     select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
+    eq: vehicleSelectEqSpy,
     is: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: vehicle, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: vehicleError ? null : vehicle, error: vehicleError }),
   };
 
+  const busyRouteEqSpy = vi.fn().mockReturnThis();
   const busyRouteChain = {
     select: vi.fn().mockReturnThis(),
-    eq: vi.fn().mockReturnThis(),
+    eq: busyRouteEqSpy,
     is: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
     in: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: busyRoute, error: null }),
+    limit: vi.fn().mockResolvedValue({ data: busyRouteError ? null : busyRoutes, error: busyRouteError }),
   };
 
-  const routeUpdateSpy = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) });
+  const updateEqSpy = vi.fn().mockReturnThis();
+  const routeUpdateSpy = vi.fn().mockReturnValue({
+    eq: updateEqSpy,
+    is: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    select: vi.fn().mockResolvedValue({ data: updateError ? null : updatedRows, error: updateError }),
+  });
   const routeUpdateChain = { update: routeUpdateSpy };
 
   const auditInsertSpy = vi.fn().mockReturnValue({ then: (resolve: (v: unknown) => void) => resolve(null) });
@@ -233,6 +256,10 @@ function buildPatchClient({ routeStatus, vehicle = { id: 'veh-1', capacity_packa
       from: fromMock,
     },
     routeUpdateSpy,
+    routeSelectEqSpy,
+    vehicleSelectEqSpy,
+    busyRouteEqSpy,
+    updateEqSpy,
   };
 }
 
@@ -313,7 +340,7 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
   });
 
   it('409s when the vehicle already carries a different route today', async () => {
-    const { client } = buildPatchClient({ routeStatus: 'planned', busyRoute: { id: 'other-route-id' } });
+    const { client } = buildPatchClient({ routeStatus: 'planned', busyRoutes: [{ id: 'other-route-id' }] });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
     expect(res.status).toBe(409);
@@ -327,5 +354,90 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
     });
     const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
     expect(res.status).toBe(401);
+  });
+
+  // -------------------------------------------------------------------------
+  // Review C1 — the busy-route (double-booking) guard must fail CLOSED, not
+  // silently treat an error as "no conflict".
+  // -------------------------------------------------------------------------
+  it('C1: 500s (never falls through to the write) when the busy-route lookup errors', async () => {
+    const { client, routeUpdateSpy } = buildPatchClient({
+      routeStatus: 'planned',
+      busyRouteError: { code: 'XX000', message: 'connection reset' },
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
+    expect(routeUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  it('C1: a vehicle busy on two other routes today (multiple rows) is still caught, not silently ignored', async () => {
+    const { client, routeUpdateSpy } = buildPatchClient({
+      routeStatus: 'planned',
+      busyRoutes: [{ id: 'other-route-1' }, { id: 'other-route-2' }],
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(409);
+    expect(routeUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Review C2 — the vehicle lookup must not drop its error, and must be
+  // scoped by the route's provider (fleet_vehicles is UNIQUE on
+  // (operator_id, provider, external_vehicle_id), not (operator_id,
+  // external_vehicle_id)).
+  // -------------------------------------------------------------------------
+  it('C2: 500s (not a false 422) when the vehicle lookup errors', async () => {
+    const { client } = buildPatchClient({
+      routeStatus: 'planned',
+      vehicleError: { code: 'XX000', message: 'connection reset' },
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
+  });
+
+  it('C2: scopes the vehicle lookup by the route\'s own provider', async () => {
+    const { client, vehicleSelectEqSpy } = buildPatchClient({ routeStatus: 'planned', provider: 'simpliroute' });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(vehicleSelectEqSpy).toHaveBeenCalledWith('provider', 'simpliroute');
+  });
+
+  // -------------------------------------------------------------------------
+  // Review I4 — TOCTOU: re-check the status filter on the write itself.
+  // -------------------------------------------------------------------------
+  it('I4: 409s (does not silently no-op) when the route status changed between the check and the write', async () => {
+    const { client } = buildPatchClient({ routeStatus: 'planned', updatedRows: [] });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('ALREADY_DISPATCHED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Review I7 — assert the tenancy filter is actually applied on every
+  // query, not just that a mock built to always succeed returns 200.
+  // -------------------------------------------------------------------------
+  it('I7: scopes every query and the write to operator_id', async () => {
+    const { client, routeSelectEqSpy, vehicleSelectEqSpy, busyRouteEqSpy, updateEqSpy } = buildPatchClient({
+      routeStatus: 'planned',
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(
+      buildPatchRequest({ truck_identifier: 'RTHK-72', driver_name: 'Mario' }),
+      { params },
+    );
+    expect(res.status).toBe(200);
+    expect(routeSelectEqSpy).toHaveBeenCalledWith('operator_id', 'op-1');
+    expect(vehicleSelectEqSpy).toHaveBeenCalledWith('operator_id', 'op-1');
+    expect(busyRouteEqSpy).toHaveBeenCalledWith('operator_id', 'op-1');
+    expect(updateEqSpy).toHaveBeenCalledWith('operator_id', 'op-1');
   });
 });

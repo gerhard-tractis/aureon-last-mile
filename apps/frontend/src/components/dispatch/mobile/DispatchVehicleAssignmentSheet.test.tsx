@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('@/hooks/dispatch/mobile/useVehicleAssignmentOptions', () => ({
   useVehicleAssignmentOptions: vi.fn(),
@@ -46,7 +47,7 @@ const ROWS: VehiclePickerRow[] = [
     capacityPackages: 100,
     assignable: false,
     blockReason: 'blocked',
-    blockedByRouteCode: 'RUT-0088',
+    blockedByRouteCode: 'A3F91B2C',
   },
 ];
 
@@ -74,16 +75,23 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+// Body uses useQueryClient() (review M1 — invalidates vehicle options after
+// a successful assign), so every render needs a real QueryClientProvider.
+function renderSheet(ui: JSX.Element) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 describe('DispatchVehicleAssignmentSheet', () => {
   it('does not mount the vehicle-options hook while the sheet is closed (rule 7 — mount-gate, not just enabled:false)', () => {
     mockOptions();
     mockAssign();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open={false}
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
@@ -94,17 +102,17 @@ describe('DispatchVehicleAssignmentSheet', () => {
   it('renders the header with route code and the flota-disponible copy', () => {
     mockOptions();
     mockAssign();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
     );
-    expect(screen.getByText(/RUT-2026-0090/)).toBeInTheDocument();
+    expect(screen.getByText(/ABCDEF12/)).toBeInTheDocument();
     expect(screen.getByText(/Camión y conductor/)).toBeInTheDocument();
     expect(
       screen.getByText(/Un camión que ya lleva otra ruta hoy aparece bloqueado/),
@@ -114,17 +122,17 @@ describe('DispatchVehicleAssignmentSheet', () => {
   it('shows a blocked vehicle labelled with the route that has it, and a no-capacity vehicle as not assignable', () => {
     mockOptions();
     mockAssign();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
     );
-    expect(screen.getByText('EN RUT-0088')).toBeInTheDocument();
+    expect(screen.getByText('EN A3F91B2C')).toBeInTheDocument();
     expect(screen.getByText('Sin capacidad configurada')).toBeInTheDocument();
     // Only ONE selectable radio — the assignable vehicle.
     expect(screen.getAllByRole('radio')).toHaveLength(1);
@@ -134,12 +142,12 @@ describe('DispatchVehicleAssignmentSheet', () => {
     mockOptions();
     mockAssign();
     const user = userEvent.setup();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
@@ -148,15 +156,31 @@ describe('DispatchVehicleAssignmentSheet', () => {
     expect(screen.getByRole('textbox', { name: /conductor/i })).toHaveValue('Mario González');
   });
 
-  it('the primary CTA is disabled until a vehicle is selected', () => {
+  it('caps the driver field at 255 chars — routes.driver_name is VARCHAR(255) (review I5)', () => {
     mockOptions();
     mockAssign();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
+        operatorId="op-1"
+        onAssigned={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('textbox', { name: /conductor/i })).toHaveAttribute('maxLength', '255');
+  });
+
+  it('the primary CTA is disabled until a vehicle is selected', () => {
+    mockOptions();
+    mockAssign();
+    renderSheet(
+      <DispatchVehicleAssignmentSheet
+        open
+        onOpenChange={vi.fn()}
+        routeId="route-1"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
@@ -170,12 +194,12 @@ describe('DispatchVehicleAssignmentSheet', () => {
     const onOpenChange = vi.fn();
     const onAssigned = vi.fn();
     const user = userEvent.setup();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={onOpenChange}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={onAssigned}
       />,
@@ -192,18 +216,18 @@ describe('DispatchVehicleAssignmentSheet', () => {
     mockOptions();
     const assign = vi.fn().mockResolvedValue({
       ok: false,
-      message: 'Este camión ya lleva otra ruta hoy (RUT-0088)',
+      message: 'Este camión ya lleva otra ruta hoy (A3F91B2C)',
       code: 'VEHICLE_ALREADY_ASSIGNED_TODAY',
     });
     (useAssignVehicleAndDriver as ReturnType<typeof vi.fn>).mockReturnValue({ assign, isAssigning: false });
     const onOpenChange = vi.fn();
     const user = userEvent.setup();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={onOpenChange}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,
@@ -212,7 +236,7 @@ describe('DispatchVehicleAssignmentSheet', () => {
     await user.click(screen.getByRole('button', { name: /Asignar y empezar carga/i }));
 
     await waitFor(() =>
-      expect(screen.getByText('Este camión ya lleva otra ruta hoy (RUT-0088)')).toBeInTheDocument(),
+      expect(screen.getByText('Este camión ya lleva otra ruta hoy (A3F91B2C)')).toBeInTheDocument(),
     );
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
@@ -220,12 +244,12 @@ describe('DispatchVehicleAssignmentSheet', () => {
   it('shows loading skeletons while vehicle options are fetching', () => {
     mockOptions({ data: undefined, isLoading: true });
     mockAssign();
-    render(
+    renderSheet(
       <DispatchVehicleAssignmentSheet
         open
         onOpenChange={vi.fn()}
         routeId="route-1"
-        routeCode="RUT-2026-0090"
+        routeCode="ABCDEF12"
         operatorId="op-1"
         onAssigned={vi.fn()}
       />,

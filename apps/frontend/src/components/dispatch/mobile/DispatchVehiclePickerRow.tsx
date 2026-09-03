@@ -44,7 +44,14 @@ export function DispatchVehiclePickerRow({ row, selected, onSelect }: DispatchVe
       >
         <Truck className="h-5 w-5 flex-none text-text-muted" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] font-medium text-text">{row.externalVehicleId}</p>
+          {/* Review D1 — a vehicle with no external_vehicle_id used to be
+              filtered out of the list entirely, which is exactly the
+              "vanishes with no explanation" outcome decision 6's
+              "visible, never hidden" rule exists to prevent. Shown with a
+              named reason instead. */}
+          <p className="truncate text-[13.5px] font-medium text-text">
+            {row.externalVehicleId ?? 'Vehículo sin identificador'}
+          </p>
           <p className="mt-0.5 text-[12px] text-text-secondary">{typeAndCapacityLabel(row)}</p>
         </div>
         {row.blockReason === 'blocked' ? (
@@ -52,6 +59,8 @@ export function DispatchVehiclePickerRow({ row, selected, onSelect }: DispatchVe
             <Lock className="h-3.5 w-3.5" />
             EN {row.blockedByRouteCode}
           </span>
+        ) : row.blockReason === 'sin_identificador' ? (
+          <span className="text-[11px] font-medium text-text-muted">Sin identificador</span>
         ) : (
           <span className="text-[11px] font-medium text-text-muted">Sin capacidad configurada</span>
         )}

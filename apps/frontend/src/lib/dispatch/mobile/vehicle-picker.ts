@@ -6,21 +6,30 @@
 // free, mirroring crew-board.ts / route-load-brief.ts's split so the
 // blocking rule is testable without mocking Supabase.
 //
-// Two independent reasons a vehicle cannot be tapped, spec-76 decision 6:
-//   - 'blocked'      — the vehicle already carries a different route TODAY.
-//                       Visible, never hidden, labelled with that route.
-//   - 'no_capacity'  — fleet_vehicles.capacity_packages IS NULL (or the
-//                       same non-positive/non-finite values
-//                       lib/dispatch/vehicle-capacity.ts already treats as
-//                       unconfigured). Never draws a fake bar, never
-//                       accepts the assignment.
-// A vehicle can be both; 'blocked' wins because "this truck is out on
-// another route right now" is the more actionable fact for the crew than
-// a missing capacity number.
+// Three independent reasons a vehicle cannot be tapped, spec-76 decision 6
+// (D1 review — decision 6's "visible, never hidden" rule covers ANY reason
+// a truck on the dock cannot be assigned, not only the two the spec named
+// by example):
+//   - 'blocked'            — the vehicle already carries a different route
+//                             TODAY. Visible, never hidden, labelled with
+//                             that route.
+//   - 'sin_identificador'  — fleet_vehicles.external_vehicle_id IS NULL.
+//                             There is no truck_identifier to send —
+//                             neither this PATCH nor DispatchTrack later
+//                             has anything to resolve — so the row is
+//                             shown, not silently dropped from the list.
+//   - 'no_capacity'        — fleet_vehicles.capacity_packages IS NULL (or
+//                             the same non-positive/non-finite values
+//                             lib/dispatch/vehicle-capacity.ts already
+//                             treats as unconfigured). Never draws a fake
+//                             bar, never accepts the assignment.
+// A vehicle can be more than one; priority is 'blocked' > 'sin_identificador'
+// > 'no_capacity' — "this truck is out on another route right now" is the
+// single most actionable fact, ahead of any local data gap.
 
 export interface PickerFleetVehicle {
   id: string;
-  externalVehicleId: string;
+  externalVehicleId: string | null;
   plateNumber: string | null;
   vehicleType: string | null;
   driverName: string | null;
@@ -34,11 +43,11 @@ export interface PickerBusyRoute {
   routeCode: string;
 }
 
-export type VehiclePickerBlockReason = 'blocked' | 'no_capacity' | null;
+export type VehiclePickerBlockReason = 'blocked' | 'sin_identificador' | 'no_capacity' | null;
 
 export interface VehiclePickerRow {
   id: string;
-  externalVehicleId: string;
+  externalVehicleId: string | null;
   plateNumber: string | null;
   vehicleType: string | null;
   driverName: string | null;
@@ -80,6 +89,7 @@ export function buildVehiclePickerRows(
 
     let blockReason: VehiclePickerBlockReason = null;
     if (busy) blockReason = 'blocked';
+    else if (!v.externalVehicleId) blockReason = 'sin_identificador';
     else if (!configured) blockReason = 'no_capacity';
 
     return {

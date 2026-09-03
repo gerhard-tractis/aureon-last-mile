@@ -114,30 +114,21 @@ const patchBodySchema = z.object({
 
 /**
  * spec-76 task 2 (2d) — "Asignar camión y conductor". Persists
- * `routes.vehicle_id` / `routes.driver_name` at ASSIGNMENT time, not only at
- * dispatch. Before this, the only writer of either column was
- * `POST /api/dispatch/routes/[id]/dispatch`, which itself refuses to run
- * until the route is `loaded` — so every route 2a/2c can show had both
- * columns permanently NULL and rendered "Sin conductor"/"Sin asignar".
+ * `routes.vehicle_id`/`routes.driver_name` at ASSIGNMENT time — before this,
+ * only `POST .../dispatch` wrote either column, and only once `loaded`, so
+ * every route 2a/2c could show had both permanently NULL.
  *
- * `truck_identifier` is `fleet_vehicles.external_vehicle_id`, resolved here
- * exactly like the dispatch handler resolves it — the same string DispatchTrack
- * needs later, so what this endpoint accepts round-trips to that lookup.
+ * `truck_identifier` is `fleet_vehicles.external_vehicle_id`, resolved the
+ * same way the dispatch handler resolves it. Gated to OPEN_ROUTE_STATUSES
+ * like DELETE — once `dispatched`, DispatchTrack already has an answer and
+ * this must never let it diverge locally (re-checked again on the write
+ * itself below, review I4).
  *
- * Gated the same way as DELETE (OPEN_ROUTE_STATUSES): once a route is
- * `dispatched` its vehicle/driver are already what DispatchTrack was told,
- * and this endpoint must never let that silently diverge locally.
- *
- * Two 422s that mirror spec-76 decision 6, checked server-side too (not
- * only hidden in the sheet's UI, defense in depth):
- *   - VEHICLE_NOT_FOUND — no live fleet_vehicles row for this operator.
- *   - VEHICLE_CAPACITY_NOT_CONFIGURED — capacity_packages IS NULL (or the
- *     same non-positive/non-finite values vehicle-capacity.ts already
- *     treats as unconfigured). Never accepted — never a fake bar downstream.
- * And a 409 VEHICLE_ALREADY_ASSIGNED_TODAY when the vehicle already carries
- * a DIFFERENT active route with today's route_date (Santiago civil date,
- * todayISOInTimezone) — the same "blocked, visible" rule the sheet renders,
- * enforced here so a stale sheet cannot double-book a truck.
+ * 422s mirror decision 6 (checked here too, not only hidden in the sheet):
+ * VEHICLE_NOT_FOUND, VEHICLE_CAPACITY_NOT_CONFIGURED (capacity_packages not
+ * a positive finite number — never a fake bar downstream). 409
+ * VEHICLE_ALREADY_ASSIGNED_TODAY when the vehicle already carries a
+ * DIFFERENT active route with today's route_date (Santiago civil date).
  */
 export async function PATCH(
   request: NextRequest,
@@ -159,7 +150,7 @@ export async function PATCH(
 
     const { data: route, error: routeError } = await supabase
       .from('routes')
-      .select('id, status')
+      .select('id, status, provider')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
@@ -185,13 +176,26 @@ export async function PATCH(
       );
     }
 
-    const { data: vehicle } = await supabase
+    // Review C2 — fleet_vehicles is UNIQUE(operator_id, provider,
+    // external_vehicle_id), not (operator_id, external_vehicle_id). Scoping
+    // only by operator_id let two providers' rows collide under
+    // `.maybeSingle()` and error, surfacing a false 422. Scoped by this
+    // route's own provider (selected above) instead.
+    const { data: vehicle, error: vehicleError } = await supabase
       .from('fleet_vehicles')
       .select('id, capacity_packages')
       .eq('external_vehicle_id', parsed.data.truck_identifier)
       .eq('operator_id', operatorId)
+      .eq('provider', route.provider)
       .is('deleted_at', null)
       .maybeSingle();
+    if (vehicleError) {
+      console.error('[dispatch/routes PATCH] vehicle lookup failed', vehicleError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar el camión' },
+        { status: 500 },
+      );
+    }
     if (!vehicle) {
       return NextResponse.json({ code: 'VEHICLE_NOT_FOUND', message: 'Camión no encontrado' }, { status: 422 });
     }
@@ -202,7 +206,13 @@ export async function PATCH(
       );
     }
 
-    const { data: busyRoute } = await supabase
+    // Review C1 — the ONLY thing stopping a double-booking, so it must fail
+    // CLOSED. `.maybeSingle()` alone degraded to "no conflict" on a vehicle
+    // busy on TWO routes today (multiple-rows error) and on any transient
+    // DB failure — both then `data: null`. `.limit(1)` makes "more than
+    // one" an ordinary array instead of an error; the branch below refuses
+    // to fall through to the write on a real error.
+    const { data: busyRoutes, error: busyRouteError } = await supabase
       .from('routes')
       .select('id')
       .eq('operator_id', operatorId)
@@ -211,7 +221,15 @@ export async function PATCH(
       .is('deleted_at', null)
       .neq('id', routeId)
       .in('status', ACTIVE_ROUTE_STATUSES)
-      .maybeSingle();
+      .limit(1);
+    if (busyRouteError) {
+      console.error('[dispatch/routes PATCH] busy-route lookup failed', busyRouteError);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar la disponibilidad del camión' },
+        { status: 500 },
+      );
+    }
+    const busyRoute = busyRoutes?.[0] ?? null;
     if (busyRoute) {
       return NextResponse.json(
         {
@@ -226,12 +244,30 @@ export async function PATCH(
 
     const driverName = parsed.data.driver_name ?? null;
 
-    const { error: updateError } = await supabase
+    // Review I4 — TOCTOU: the status check above and this write are
+    // separate statements, so a desktop dispatch landing in between would
+    // otherwise overwrite vehicle_id/driver_name AFTER DispatchTrack was
+    // already told something else. Re-asserting the status filter on the
+    // UPDATE itself closes the window: zero rows back means it no longer
+    // matched, treated as a 409, not a silent no-op success.
+    const { data: updatedRows, error: updateError } = await supabase
       .from('routes')
       .update({ vehicle_id: vehicle.id, driver_name: driverName })
       .eq('id', routeId)
-      .eq('operator_id', operatorId);
+      .eq('operator_id', operatorId)
+      .is('deleted_at', null)
+      .in('status', OPEN_ROUTE_STATUSES)
+      .select('id');
     if (updateError) throw updateError;
+    if (!updatedRows || updatedRows.length === 0) {
+      return NextResponse.json(
+        {
+          code: 'ALREADY_DISPATCHED',
+          message: 'La ruta cambió de estado mientras se asignaba — ya no se puede asignar.',
+        },
+        { status: 409 },
+      );
+    }
 
     // Best-effort audit — same pattern as every other mutation in this
     // module (dispatch/route.ts, load-positions/scan, etc.): never fails

@@ -95,4 +95,32 @@ describe('useVehicleAssignmentOptions', () => {
       expect.objectContaining({ id: 'v2', assignable: false, blockReason: 'no_capacity' }),
     ]);
   });
+
+  it('D1: keeps a vehicle with no external_vehicle_id in the list instead of filtering it out', async () => {
+    const client = buildClient({
+      vehicles: [
+        {
+          id: 'v3',
+          external_vehicle_id: null,
+          plate_number: null,
+          vehicle_type: 'Furgón',
+          driver_name: null,
+          capacity_packages: 100,
+        },
+      ],
+      routes: [],
+    });
+    (createSPAClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+    const { result } = renderHook(
+      () => useVehicleAssignmentOptions('route-current', 'op-1', { enabled: true }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data).toEqual([
+      expect.objectContaining({ id: 'v3', externalVehicleId: null, assignable: false, blockReason: 'sin_identificador' }),
+    ]);
+  });
 });
