@@ -34,9 +34,9 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 
 | Mock | Ruta | Estado hoy |
 |---|---|---|
-| `1a` Pre-ruta | `/app/dispatch` pestaña Pre-ruta | Existe: `pre-route/PreRouteBoard.tsx` (125 líneas) + `RouteBuilder.tsx` (364) |
+| `1a` Pre-ruta | `/app/dispatch` pestaña Pre-ruta | **Las tres columnas ya existen**: `PreRouteBoard.tsx` compone `UnroutedColumn` + `RoutePlanCanvas` + `RouteDraftPanel` (spec-54 fase 4.2). Falta el delta — ver decisión 2 |
 | `1b` En carga | `/app/dispatch` pestaña En carga | Existe: `DispatchInProgressTab.tsx`, tarjetas en grid |
-| `1c` Seguimiento de ruta | `/app/dispatch/[routeId]` | Existe: `RoutePanel.tsx`, sin el modo solo-lectura del mock |
+| `1c` Seguimiento de ruta | `/app/dispatch/[routeId]` | Existe: `RouteBuilder.tsx` (364 líneas) + `RoutePanel.tsx`, sin el modo solo-lectura del mock |
 | `1d` En ruta / Completadas | `/app/dispatch` pestañas En ruta y Completadas | Existen como listas sin las métricas de cabecera ni el orden por incidencia |
 
 ### No-goals
@@ -52,7 +52,7 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 
 1. **Los tokens ya existen: no se añade ninguno.** El canvas declara `--surface`, `--text`, `--ok`… porque es un HTML autocontenido. `globals.css` ya tiene el equivalente rebrandeado y los valores coinciden exactamente con el canvas en ambos temas (`#ca9a04` / `#e6c15c` de acento, `#f8fafc` / `#13110d` de fondo, más `--color-map-surface` y `--color-text-body`). La tabla de equivalencias del handoff sigue siendo la referencia de nombres. **No** se crea una capa de tokens de módulo.
 
-2. **`RouteBuilder.tsx` se parte, y es parte de este spec.** Tiene 364 líneas, ya viola la regla de 300, y `1a` es exactamente la pantalla que lo hace crecer: pasa a ser tres columnas simultáneas. Se divide según las tres columnas del mock — selección de órdenes, impacto geográfico, armado de la ruta — cada una con su propio árbol y su propio test. No es refactor no relacionado: es el archivo que hay que tocar para construir `1a`.
+2. **CORREGIDO — `RouteBuilder.tsx` no es la pre-ruta, y las tres columnas de `1a` ya existen.** La primera versión de este spec afirmaba que `RouteBuilder.tsx` era la pantalla de pre-ruta y que había que partirlo en tres columnas para construir `1a`. **Las dos mitades son falsas**, verificado contra el código: `RouteBuilder.tsx` (364 líneas) es la pantalla de **una ruta**, en `/app/dispatch/[routeId]` — importa `ScanZone`, `PackageRow`, `RouteBlockList`, `TopupSuggestions` y `VehicleCapacityBar`. En el canvas nuevo eso es **`1c`**, y partirlo corresponde a la **fase 4**. Y `1a` ya tiene sus tres columnas: `PreRouteBoard.tsx` compone `UnroutedColumn` + `RoutePlanCanvas` + `RouteDraftPanel`, y su propio comentario lo dice — «el layout de tres columnas que pide el mock… bajo 1024px las columnas se apilan» (spec-54 fase 4.2). **Causa raíz: la renumeración.** El handoff antiguo llamaba `1c` a «Despacho escritorio», y el comentario de `PreRouteBoard` dice «(mock 1c)» con **esa** numeración; el canvas nuevo usa `1a` = pre-ruta y `1c` = seguimiento de una ruta. Es exactamente la trampa que este spec advierte en *Fuente de verdad* y en la que cayó igual: **antes de tocar un archivo, confirmar qué pantalla es por sus imports y su ruta, nunca por su número.** Lo que `1a` necesita es el **delta** sobre las columnas existentes — fila por orden en vez de por grupo, chevron con `sku_items`, el cambio de filtros (decisión 6), el pie de selección, arrastrar y soltar con acciones masivas, y las polilíneas y métricas del `RoutePlanCanvas`, que ya existe (no hay librería de mapas en `package.json` y no se agrega ninguna).
 
 3. **La capacidad ya está en el schema, con otro nombre.** El handoff pedía `ALTER TABLE vehicles ADD COLUMN package_capacity`. Eso **no se hace**: `spec-73` ya añadió `fleet_vehicles.capacity_packages` (migración `20260904000001_spec73_vehicle_capacity.sql`), que es la columna que alimenta las barras de ocupación de `1a`, `1b` y `1c`. Ojo con las dos tablas de vehículos del repo (`vehicles` y `fleet_vehicles`): la capacidad vive en `fleet_vehicles`, y la UI debe leer de ahí. El estado *sin capacidad configurada* del mock es el caso `capacity_packages IS NULL` y se muestra como tal, sin barra falsa.
 
@@ -79,8 +79,8 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 2. `page.tsx` (244 líneas) pasa a shell delgado de pestañas; cada pestaña es su propio árbol bajo `components/dispatch/`.
 3. Test: el contador `SIN RUTEAR` del header. **El breadcrumb NO se implementa aquí** — ver decisión 9.
 
-### Fase 2 — `1a` Pre-ruta
-4. Test: `RouteBuilder` partido en tres — selección, impacto, armado — cada uno monta y comunica por props tipadas.
+### Fase 2 — `1a` Pre-ruta (delta sobre las columnas existentes)
+4. **`RouteBuilder` NO se parte aquí** — eso es fase 4 (`1c`). Esta fase trabaja sobre `UnroutedColumn`, `RoutePlanCanvas` y `RouteDraftPanel`, que ya existen.
 5. Test: fila por orden con chevron que expande `sku_items`; paquete retenido marcado.
 6. Test: filtros nuevos (comuna, andén, cliente, ventana libre, solo con problemas) y ausencia de las 4 franjas fijas.
 7. Test: pie de selección («110 seleccionadas · 254 paquetes · 2 comunas») y acciones masivas.
@@ -93,6 +93,7 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 12. Test: panel de cuadrillas activas con su ritmo y estado.
 
 ### Fase 4 — `1c` Seguimiento
+12b. **Partir `RouteBuilder.tsx`** (364 líneas, ya sobre el límite de 300). Es la pantalla de esta fase, y es aquí donde el modo solo-lectura y el panel de vehículo lo hacen crecer.
 13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre.
 14. Test: último cargado, lista de paquetes con sus filas de rechazo (`Ya está en RUT-…`, `orden incompleta`), y ocupación del vehículo.
 
