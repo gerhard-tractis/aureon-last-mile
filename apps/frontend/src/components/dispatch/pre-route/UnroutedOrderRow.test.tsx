@@ -135,4 +135,23 @@ describe('UnroutedOrderRow', () => {
     expect(screen.getByText(longComuna)).toBeInTheDocument();
     expect(screen.getByText('Dirección Corta 1')).toBeInTheDocument();
   });
+
+  it('renders the window without the urgency style by default', () => {
+    render(<UnroutedOrderRow {...BASE} />);
+    expect(screen.getByTestId('unrouted-order-window-o1')).not.toHaveClass('bg-status-error-bg');
+  });
+
+  it('marks the window urgent (red) when urgent is true', () => {
+    render(<UnroutedOrderRow {...BASE} urgent />);
+    expect(screen.getByTestId('unrouted-order-window-o1')).toHaveClass('bg-status-error-bg');
+  });
+
+  it('does not add a focusable control for the urgency chip', () => {
+    // Regression guard: the chip must stay a plain <span>, never a
+    // role-bearing or focusable element nested in the row.
+    render(<UnroutedOrderRow {...BASE} urgent />);
+    const chip = screen.getByTestId('unrouted-order-window-o1');
+    expect(chip.tagName).toBe('SPAN');
+    expect(chip).not.toHaveAttribute('role');
+  });
 });

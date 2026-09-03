@@ -19,6 +19,7 @@ import { RouteDraftPanel } from './RouteDraftPanel';
 import { UnmappedComunasNotice } from './UnmappedComunasNotice';
 import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
+import { applyPreRouteFilters, parsePreRouteFilterState } from '@/lib/dispatch/pre-route-filters';
 
 /**
  * spec-54 phase 4.2 — the Pre-ruta board.
@@ -44,8 +45,7 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
   const today = new Date().toISOString().slice(0, 10);
   const date = params.get('date') ?? today;
-  const windowKey = params.get('window') ?? 'todas';
-  const times = resolvePreRouteWindow(windowKey);
+  const times = resolvePreRouteWindow(params);
 
   const { snapshot, isLoading } = usePreRouteSnapshot(
     operatorId,
@@ -57,13 +57,35 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   const [groupBy, setGroupBy] = useState<GroupBy>('anden');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
+  // spec-75 task 2b — comuna/andén/cliente/"sólo con problemas"/búsqueda
+  // narrow the snapshot client-side (date and ventana are the only filters
+  // the RPC itself applies). Filtering happens on the raw andén → comuna →
+  // orders tree *before* buildGroups, not on the flattened UnroutedGroup
+  // rows — see the reasoning in lib/dispatch/pre-route-filters.ts.
+  const filters = parsePreRouteFilterState(params);
+  const filteredAndenes = useMemo(
+    () => applyPreRouteFilters(snapshot?.andenes ?? [], filters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `filters` is a
+    // fresh object every render (parsePreRouteFilterState reads the URL);
+    // its individual fields (joined so array identity doesn't matter) are
+    // what actually needs to be stable here.
+    [
+      snapshot?.andenes,
+      filters.comunaIds.join(','),
+      filters.andenIds.join(','),
+      filters.clientes.join(','),
+      filters.onlyProblems,
+      filters.search,
+    ],
+  );
+
   const groups = useMemo(
     // snapshot's object identity changes on every refetch even when
     // `andenes` itself is unchanged; keying off `snapshot` would churn
     // `groups`' identity (and every row's, through it) on each background
     // refetch and defeat UnroutedOrderRow's memo below it.
-    () => buildGroups(snapshot?.andenes ?? [], groupBy),
-    [snapshot?.andenes, groupBy],
+    () => buildGroups(filteredAndenes, groupBy),
+    [filteredAndenes, groupBy],
   );
   const summary = useMemo(
     () => summariseOrderSelection(groups, selectedOrderIds),
@@ -110,10 +132,10 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
   return (
     <div className="flex min-h-0 flex-col">
-      {/* Date and delivery-window filters stay as they were — the board reads
-          both from the URL, so removing the only control that sets them would
-          have stranded the operator on today/todas. */}
-      <PreRouteFilters totals={snapshot?.totals} />
+      {/* andenes here is the RAW (unfiltered) snapshot tree — PreRouteFilters
+          builds its comuna/andén/cliente option lists off it so choosing one
+          filter never shrinks what the others can offer. */}
+      <PreRouteFilters totals={snapshot?.totals} andenes={snapshot?.andenes ?? []} />
       <UnmappedComunasNotice comunas={snapshot?.unmapped_comunas ?? []} />
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[330px_1fr_322px]">

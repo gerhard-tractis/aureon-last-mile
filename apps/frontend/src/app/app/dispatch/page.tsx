@@ -27,16 +27,22 @@ function DispatchPageContent() {
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
 
   // QA finding #2: this used to hardcode `today` and pass no window bounds,
-  // while PreRouteBoard reads both `?date=` and `?window=` — so the "SIN
-  // RUTEAR" figure in the header answered for today's whole day even when
-  // the board itself (via PreRouteFilters) was showing tomorrow's "Mañana"
+  // while PreRouteBoard reads both `?date=` and the ventana range — so the
+  // "SIN RUTEAR" figure in the header answered for today's whole day even
+  // when the board itself (via PreRouteFilters) was showing a narrower
   // slice. Reading both params here, through the same resolvePreRouteWindow
   // the board uses, is what makes the badge and the board unable to
   // disagree on either axis — and it makes this call share the board's
   // react-query cache key instead of firing a second RPC for the same data.
+  //
+  // spec-75 task 2b: `?window=` (a fixed Mañana/Tarde/Noche band) was
+  // replaced by the free `?window_start=`/`?window_end=` range Ventana now
+  // writes — resolvePreRouteWindow reads the params directly instead of a
+  // band-name lookup, so this call site changed with it rather than
+  // silently falling back to "todas" forever.
   const today = new Date().toISOString().slice(0, 10);
   const selectedDate = params.get('date') ?? today;
-  const selectedWindow = resolvePreRouteWindow(params.get('window') ?? 'todas');
+  const selectedWindow = resolvePreRouteWindow(params);
   const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(
     operatorId ?? null,
     selectedDate,

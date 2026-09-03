@@ -177,3 +177,31 @@ export function toggleGroupSelection(group: UnroutedGroup, selectedOrderIds: Set
 export function allOrderIds(groups: UnroutedGroup[]): string[] {
   return groups.flatMap((g) => g.orders.map((o) => o.id));
 }
+
+/**
+ * Ascending sort by window start, orders with no window pushed to the end.
+ * Used by the "Ordenar por ventana" toggle in UnroutedColumn — sorts each
+ * group's rows independently, it never reorders across groups.
+ */
+export function sortOrdersByWindow(orders: UnroutedOrderRow[]): UnroutedOrderRow[] {
+  return [...orders].sort((a, b) => {
+    if (a.windowStart === b.windowStart) return 0;
+    if (a.windowStart === null) return 1;
+    if (b.windowStart === null) return -1;
+    return a.windowStart.localeCompare(b.windowStart);
+  });
+}
+
+/**
+ * Order ids whose delivery window closes at the earliest end time among the
+ * given rows — the set UnroutedOrderRow renders its urgency chip red for.
+ * Computed across every visible row (all groups), not per group, so an
+ * order isn't "urgent" only relative to its own comuna/andén. Orders with
+ * no windowEnd are never urgent — there's nothing to close "sooner" on.
+ */
+export function urgentOrderIds(orders: UnroutedOrderRow[]): Set<string> {
+  const ends = orders.map((o) => o.windowEnd).filter((e): e is string => e !== null);
+  if (ends.length === 0) return new Set();
+  const earliest = ends.reduce((min, e) => (e < min ? e : min));
+  return new Set(orders.filter((o) => o.windowEnd === earliest).map((o) => o.id));
+}

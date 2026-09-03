@@ -213,4 +213,29 @@ describe('UnroutedColumn', () => {
     render(<UnroutedColumn {...BASE} groups={[]} />);
     expect(screen.getByText(/No hay órdenes listas para rutear/)).toBeInTheDocument();
   });
+
+  it('flags the order whose window closes soonest across the whole column as urgent', () => {
+    // o1 ends 12:00, o3 ends 18:00, o2 has no window — o1 is the urgent one.
+    render(<UnroutedColumn {...BASE} />);
+    expect(screen.getByTestId('unrouted-order-window-o1')).toHaveClass('bg-status-error-bg');
+    expect(screen.getByTestId('unrouted-order-window-o3')).not.toHaveClass('bg-status-error-bg');
+  });
+
+  it('offers a "Ventana" sort toggle, off by default', () => {
+    render(<UnroutedColumn {...BASE} />);
+    expect(screen.getByRole('button', { name: /ventana/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('sorts each group\'s rows by window start when the Ventana toggle is on, without reordering across groups', async () => {
+    render(<UnroutedColumn {...BASE} />);
+    await userEvent.click(screen.getByRole('button', { name: /ventana/i }));
+    expect(screen.getByRole('button', { name: /ventana/i })).toHaveAttribute('aria-pressed', 'true');
+
+    const rowOrder = screen
+      .getAllByText(/^ORD-/)
+      .map((el) => el.textContent);
+    // o2 (null window) sorts after o1 (08:00) within group a1; a2's o3 stays
+    // in its own group regardless of sort — groups themselves never reorder.
+    expect(rowOrder).toEqual(['ORD-001', 'ORD-002', 'ORD-003']);
+  });
 });

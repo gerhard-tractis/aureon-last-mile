@@ -20,6 +20,11 @@ interface UnroutedOrderRowProps {
   order: OrderRow;
   selected: boolean;
   onToggle: (orderId: string) => void;
+  /** spec-75 task 2b — true when this order's window closes sooner than the
+   *  others currently visible (see `urgentOrderIds` in useUnroutedGroups).
+   *  Purely presentational — a plain `<span>`, not a button, so it adds no
+   *  new node to the row's a11y tree. */
+  urgent?: boolean;
 }
 
 function formatWindow(start: string | null, end: string | null): string {
@@ -34,6 +39,7 @@ export const UnroutedOrderRow = memo(function UnroutedOrderRow({
   order,
   selected,
   onToggle,
+  urgent = false,
 }: UnroutedOrderRowProps) {
   const [expanded, setExpanded] = useState(false);
   const panelId = `unrouted-order-packages-${order.id}`;
@@ -106,7 +112,16 @@ export const UnroutedOrderRow = memo(function UnroutedOrderRow({
           >
             {order.packageCount}
           </span>
-          <span className="font-mono text-[10.5px] leading-none text-text-muted">
+          <span
+            data-testid={`unrouted-order-window-${order.id}`}
+            className={cn(
+              'rounded px-1 py-0.5 font-mono text-[10.5px] leading-none',
+              urgent
+                ? 'bg-status-error-bg text-status-error-text'
+                : 'text-text-muted',
+            )}
+            title={urgent ? 'Ventana más próxima a cerrar' : undefined}
+          >
             {formatWindow(order.windowStart, order.windowEnd)}
           </span>
         </span>

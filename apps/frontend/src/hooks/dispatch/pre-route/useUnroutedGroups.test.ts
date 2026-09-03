@@ -5,6 +5,8 @@ import {
   groupSelectionState,
   toggleGroupSelection,
   allOrderIds,
+  sortOrdersByWindow,
+  urgentOrderIds,
 } from './useUnroutedGroups';
 import type { PreRouteAnden, PreRouteOrder } from '@/lib/types';
 
@@ -229,5 +231,69 @@ describe('allOrderIds', () => {
   it('flattens every order id across every group', () => {
     const groups = buildGroups([anden()], 'anden');
     expect(allOrderIds(groups)).toEqual(['o1', 'o2']);
+  });
+});
+
+describe('sortOrdersByWindow', () => {
+  const rows = buildGroups([anden()], 'anden')[0].orders;
+  it('sorts ascending by windowStart', () => {
+    const [a, b] = [
+      { ...rows[0], id: 'x', windowStart: '14:00:00' },
+      { ...rows[1], id: 'y', windowStart: '09:00:00' },
+    ];
+    expect(sortOrdersByWindow([a, b]).map((o) => o.id)).toEqual(['y', 'x']);
+  });
+
+  it('pushes orders with no windowStart to the end', () => {
+    const [a, b] = [
+      { ...rows[0], id: 'no-window', windowStart: null },
+      { ...rows[1], id: 'has-window', windowStart: '09:00:00' },
+    ];
+    expect(sortOrdersByWindow([a, b]).map((o) => o.id)).toEqual(['has-window', 'no-window']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [
+      { ...rows[0], id: 'x', windowStart: '14:00:00' },
+      { ...rows[1], id: 'y', windowStart: '09:00:00' },
+    ];
+    const copy = [...input];
+    sortOrdersByWindow(input);
+    expect(input).toEqual(copy);
+  });
+});
+
+describe('urgentOrderIds', () => {
+  const rows = buildGroups([anden()], 'anden')[0].orders;
+  it('flags the order(s) whose window ends earliest', () => {
+    const orders = [
+      { ...rows[0], id: 'o1', windowEnd: '12:00:00' },
+      { ...rows[1], id: 'o2', windowEnd: '10:00:00' },
+    ];
+    expect(urgentOrderIds(orders)).toEqual(new Set(['o2']));
+  });
+
+  it('flags every order tied for the earliest end time', () => {
+    const orders = [
+      { ...rows[0], id: 'o1', windowEnd: '10:00:00' },
+      { ...rows[1], id: 'o2', windowEnd: '10:00:00' },
+    ];
+    expect(urgentOrderIds(orders)).toEqual(new Set(['o1', 'o2']));
+  });
+
+  it('ignores orders with no windowEnd', () => {
+    const orders = [
+      { ...rows[0], id: 'o1', windowEnd: null },
+      { ...rows[1], id: 'o2', windowEnd: '10:00:00' },
+    ];
+    expect(urgentOrderIds(orders)).toEqual(new Set(['o2']));
+  });
+
+  it('returns an empty set when nothing has a windowEnd', () => {
+    const orders = [
+      { ...rows[0], id: 'o1', windowEnd: null },
+      { ...rows[1], id: 'o2', windowEnd: null },
+    ];
+    expect(urgentOrderIds(orders)).toEqual(new Set());
   });
 });
