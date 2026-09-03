@@ -79,7 +79,7 @@ export function useRouteLoadBrief(
 
       const { data: routeRow, error: routeError } = await supabase
         .from('routes')
-        .select('vehicle_id, load_position_id, load_position_released_at, load_positions(code, label)')
+        .select('vehicle_id, driver_name, load_position_id, load_position_released_at, load_positions(code, label)')
         .eq('id', routeId!)
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)
@@ -141,9 +141,20 @@ export function useRouteLoadBrief(
           .is('deleted_at', null)
           .maybeSingle();
         if (vehicleRow?.external_vehicle_id) {
+          // spec-76 task 2 fix — this used to read the vehicle's
+          // fleet_vehicles.driver_name ("last known driver", set by the
+          // DispatchTrack webhook sync, spec-52 migration comment). That
+          // was the only real column available before this task, because
+          // routes.driver_name was permanently NULL (only the dispatch
+          // handler wrote it, after `loaded`). Now that `PATCH
+          // /api/dispatch/routes/[id]` (2d) writes routes.driver_name at
+          // assignment time — the actual driver named for THIS trip, not
+          // the vehicle's usual one — that is the authoritative value.
+          // fleet_vehicles.driver_name is kept only as a fallback for a
+          // route whose vehicle got linked with no driver typed at all.
           vehicleAssignment = {
             externalVehicleId: vehicleRow.external_vehicle_id,
-            driverName: vehicleRow.driver_name,
+            driverName: routeRow.driver_name ?? vehicleRow.driver_name,
           };
         }
       }

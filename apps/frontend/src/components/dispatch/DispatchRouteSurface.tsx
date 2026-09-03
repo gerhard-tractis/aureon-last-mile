@@ -1,22 +1,21 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import { useRouteLoadBrief } from '@/hooks/dispatch/mobile/useRouteLoadBrief';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
+import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
 import { RouteBuilder } from './RouteBuilder';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
-// spec-76 review C1 — 2d (vehicle sheet, task 2) and 2e (scan loop, task 4)
-// don't exist yet. The coordinator's sequencing call: this branch does not
-// ship on its own — tasks 2 and 4 land in the same PR — but belt-and-braces
-// while it sits on an unmerged branch, both CTAs on 2c disable themselves
-// and say why, rather than a live-looking 56px primary button (the crew's
-// only entry to scanning on a phone) that silently does nothing.
+// spec-76 review C1 — 2e (scan loop, task 4) still doesn't exist on this
+// branch. 2d (this task) does now, so only the scan CTA keeps a disabled
+// reason; a live-looking 56px primary button that silently does nothing
+// is still the thing being avoided here, just for one CTA instead of two.
 const SCAN_NOT_READY_REASON = 'El escaneo llega en el próximo paso';
-const ASSIGN_NOT_READY_REASON = 'La asignación de camión llega en el próximo paso';
 
 /**
  * spec-76 decision 1 — the viewport branch for `/app/dispatch/[routeId]`,
@@ -53,6 +52,7 @@ export interface DispatchRouteSurfaceProps {
 export function DispatchRouteSurface({ routeId, operatorId, vehicles }: DispatchRouteSurfaceProps) {
   const router = useRouter();
   const isBelowLg = useIsBelowLg();
+  const [assignSheetOpen, setAssignSheetOpen] = useState(false);
   // Only fetched below `lg` — enabled gates the fetch itself, not just the
   // render, so a desktop session's SETTLED render never triggers this query
   // (see the doc comment above on the one transient exception).
@@ -91,21 +91,35 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
       );
     }
     return (
-      <DispatchRouteBeforeScan
-        routeCode={routeCode(routeId)}
-        loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
-        pendingOnDock={loadBrief?.pendingOnDock ?? 0}
-        ordersCount={loadBrief?.ordersCount ?? 0}
-        stopsCount={loadBrief?.stopsCount ?? 0}
-        vehicleAssignment={loadBrief?.vehicleAssignment ?? null}
-        incompleteOrders={loadBrief?.incompleteOrders ?? []}
-        comunas={loadBrief?.comunas ?? []}
-        onBack={() => router.push('/app/dispatch')}
-        onStartScanning={() => {}}
-        onAssignVehicle={() => {}}
-        startScanningDisabledReason={SCAN_NOT_READY_REASON}
-        assignVehicleDisabledReason={ASSIGN_NOT_READY_REASON}
-      />
+      <>
+        <DispatchRouteBeforeScan
+          routeCode={routeCode(routeId)}
+          loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
+          pendingOnDock={loadBrief?.pendingOnDock ?? 0}
+          ordersCount={loadBrief?.ordersCount ?? 0}
+          stopsCount={loadBrief?.stopsCount ?? 0}
+          vehicleAssignment={loadBrief?.vehicleAssignment ?? null}
+          incompleteOrders={loadBrief?.incompleteOrders ?? []}
+          comunas={loadBrief?.comunas ?? []}
+          onBack={() => router.push('/app/dispatch')}
+          onStartScanning={() => {}}
+          onAssignVehicle={() => setAssignSheetOpen(true)}
+          startScanningDisabledReason={SCAN_NOT_READY_REASON}
+        />
+        <DispatchVehicleAssignmentSheet
+          open={assignSheetOpen}
+          onOpenChange={setAssignSheetOpen}
+          routeId={routeId}
+          routeCode={routeCode(routeId)}
+          operatorId={operatorId}
+          onAssigned={() => {
+            // The sheet already persisted the assignment (PATCH
+            // /api/dispatch/routes/[id]); refetching here is what makes
+            // 2c stop showing "Sin asignar" without a full page reload.
+            refetchLoadBrief();
+          }}
+        />
+      </>
     );
   }
 
