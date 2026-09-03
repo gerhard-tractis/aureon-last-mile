@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
@@ -21,17 +21,16 @@ import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
 /**
- * spec-54 phase 4.2 / spec-75 Task 2a — the Pre-ruta board.
+ * spec-54 phase 4.2 — the Pre-ruta board.
  *
  * Replaces the stacked list with the three-column layout the mock calls for:
  * what is unrouted, what the plan looks like, and what the route will contain,
  * all visible while you decide. Below 1024px the columns stack, per the
  * handoff's responsive rule.
  *
- * spec-75: selection now lives at the order level. Order ids are stable
- * across both groupings (an order's id never changes whether the board
- * groups por andén or por comuna), so — unlike the old group-id selection —
- * switching groupBy no longer needs to clear the selection.
+ * Selection lives at the order level. Order ids are stable across both
+ * groupings (an order's id doesn't change whether the board groups por
+ * andén or por comuna), so switching groupBy doesn't need to clear it.
  */
 
 interface PreRouteBoardProps {
@@ -59,34 +58,38 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
   const groups = useMemo(
+    // snapshot's object identity changes on every refetch even when
+    // `andenes` itself is unchanged; keying off `snapshot` would churn
+    // `groups`' identity (and every row's, through it) on each background
+    // refetch and defeat UnroutedOrderRow's memo below it.
     () => buildGroups(snapshot?.andenes ?? [], groupBy),
-    [snapshot, groupBy],
+    [snapshot?.andenes, groupBy],
   );
   const summary = useMemo(
     () => summariseOrderSelection(groups, selectedOrderIds),
     [groups, selectedOrderIds],
   );
 
-  function toggleOrder(orderId: string) {
+  const toggleOrder = useCallback((orderId: string) => {
     setSelectedOrderIds((prev) => {
       const next = new Set(prev);
       if (next.has(orderId)) next.delete(orderId);
       else next.add(orderId);
       return next;
     });
-  }
+  }, []);
 
-  function toggleGroup(group: UnroutedGroup) {
+  const toggleGroup = useCallback((group: UnroutedGroup) => {
     setSelectedOrderIds((prev) => toggleGroupSelection(group, prev));
-  }
+  }, []);
 
-  function selectAll() {
+  const selectAll = useCallback(() => {
     setSelectedOrderIds(new Set(allOrderIds(groups)));
-  }
+  }, [groups]);
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelectedOrderIds(new Set());
-  }
+  }, []);
 
   function buildRoute() {
     if (summary.orderIds.length === 0) return;
@@ -126,7 +129,6 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
           summary={summary}
           onBuildRoute={buildRoute}
           isBuilding={isCreating}
-          operatorId={operatorId}
         />
 
         <RoutePlanCanvas summary={summary} />

@@ -13,14 +13,12 @@ import {
 import { UnroutedOrderRow } from './UnroutedOrderRow';
 
 /**
- * spec-54 phase 4.2 / spec-75 Task 2a — "Órdenes sin rutear" (left column).
+ * spec-54 phase 4.2 — "Órdenes sin rutear" (left column).
  *
- * spec-75 flattens this from one row per group to one row per order —
- * operations needs to see and select individual orders, not just groups.
- * The group header stays as a shortcut checkbox (toggles every order under
- * it) rather than a selectable unit of its own; the whole order row is
- * still the hit target, not just its checkbox — this is used at speed, at a
- * warehouse desk.
+ * One row per order, grouped under a group header. The group header is a
+ * shortcut checkbox (toggles every order under it) rather than a selectable
+ * unit of its own; the whole order row is a click target, not just its
+ * checkbox — this is used at speed, at a warehouse desk.
  */
 
 interface UnroutedColumnProps {
@@ -35,7 +33,6 @@ interface UnroutedColumnProps {
   summary: SelectionSummary;
   onBuildRoute: () => void;
   isBuilding?: boolean;
-  operatorId: string | null;
 }
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
@@ -105,9 +102,11 @@ export function UnroutedColumn({
   summary,
   onBuildRoute,
   isBuilding = false,
-  operatorId,
 }: UnroutedColumnProps) {
-  const totalOrders = groups.reduce((sum, g) => sum + g.orders.length, 0);
+  // group.orderCount (the RPC's own count) is the single source of truth for
+  // this total — summing g.orders.length here as well would give the same
+  // number a second, independent way to drift out of sync with it.
+  const totalOrders = groups.reduce((sum, g) => sum + g.orderCount, 0);
 
   return (
     <section className="flex min-h-0 flex-col border-border bg-surface lg:border-r">
@@ -161,7 +160,6 @@ export function UnroutedColumn({
                   order={order}
                   selected={selectedOrderIds.has(order.id)}
                   onToggle={onToggleOrder}
-                  operatorId={operatorId}
                 />
               ))}
             </div>

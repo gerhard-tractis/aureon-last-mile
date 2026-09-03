@@ -3,22 +3,26 @@
 import { AlertTriangle } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import type { OrderPackage } from '@/hooks/dispatch/pre-route/useOrderPackages';
+import { useOperatorId } from '@/hooks/useOperatorId';
+import { useOrderPackages } from '@/hooks/dispatch/pre-route/useOrderPackages';
 
 /**
- * spec-75 Task 2a — the chevron's expanded content: one order's packages,
- * fetched lazily by `useOrderPackages`. A package held in consolidation
- * (`status === 'retenido'`) is marked here because it is the root cause of
- * orders shipping incomplete — matches the warning treatment
- * `OrderPackageList` already uses for the same status.
+ * The chevron's expanded content: one order's packages. Owns the
+ * `useOrderPackages` fetch itself (rather than the row above it) because
+ * this component only mounts once its row is expanded — mounting is what
+ * gates the query, so a row that never expands never creates a query
+ * observer for it. A package held in consolidation is marked here because
+ * it is the root cause of orders shipping incomplete — matches the warning
+ * treatment `OrderPackageList` already uses for the same status.
  */
 interface UnroutedOrderPackagesProps {
-  packages: OrderPackage[] | undefined;
-  isLoading: boolean;
-  isError: boolean;
+  orderId: string;
 }
 
-export function UnroutedOrderPackages({ packages, isLoading, isError }: UnroutedOrderPackagesProps) {
+export function UnroutedOrderPackages({ orderId }: UnroutedOrderPackagesProps) {
+  const { operatorId } = useOperatorId();
+  const { data: packages, isLoading, isError } = useOrderPackages(orderId, operatorId);
+
   if (isLoading) {
     return (
       <div data-testid="order-packages-loading" className="flex flex-col gap-1.5 px-4 py-2.5">
@@ -45,7 +49,7 @@ export function UnroutedOrderPackages({ packages, isLoading, isError }: Unrouted
       {packages.map((pkg) => (
         <li
           key={pkg.id}
-          data-testid={`package-row-${pkg.id}`}
+          data-testid={`pre-route-package-row-${pkg.id}`}
           className={cn(
             'flex flex-col gap-1 rounded-md border px-2.5 py-2',
             pkg.isHeld ? 'border-status-warning-border bg-status-warning-bg' : 'border-border-subtle',

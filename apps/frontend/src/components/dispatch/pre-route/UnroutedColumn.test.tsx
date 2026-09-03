@@ -4,11 +4,18 @@ import { UnroutedColumn } from './UnroutedColumn';
 import type { UnroutedGroup } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
 import * as useOrderPackagesModule from '@/hooks/dispatch/pre-route/useOrderPackages';
 
+// Module-level, not per-test: every test in this file renders collapsed rows,
+// so one spy for the whole file is enough — restored once at the end rather
+// than per-test, which would undo it before the next test could use it.
 vi.spyOn(useOrderPackagesModule, 'useOrderPackages').mockReturnValue({
   data: undefined,
   isLoading: false,
   isError: false,
 } as ReturnType<typeof useOrderPackagesModule.useOrderPackages>);
+
+afterAll(() => {
+  vi.restoreAllMocks();
+});
 
 const GROUPS: UnroutedGroup[] = [
   {
@@ -76,7 +83,6 @@ const BASE = {
   onClearSelection: () => {},
   summary: EMPTY_SUMMARY,
   onBuildRoute: () => {},
-  operatorId: 'op-1',
 };
 
 describe('UnroutedColumn', () => {

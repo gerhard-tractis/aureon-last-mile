@@ -1,14 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { PACKAGE_STATUS_HELD } from '@/lib/types/pipeline';
 
 /**
- * spec-75 Task 2a — the pre-route chevron's package detail.
+ * The pre-route chevron's package detail.
  *
  * get_pre_route_snapshot already carries every unrouted order for the day —
- * adding sku_items to all of them (as the original spec draft assumed)
- * would balloon that payload for data an operator almost never opens. So
- * this queries `packages` directly, scoped to the one order whose chevron
- * got expanded, and stays disabled until it does.
+ * adding sku_items to all of them would balloon that payload for data an
+ * operator almost never opens. So this queries `packages` directly, scoped
+ * to one order. Called only from `UnroutedOrderPackages`, which itself only
+ * mounts once its row's chevron is expanded — mounting is the gate, so this
+ * hook needs no separate `enabled` flag of its own beyond having both ids.
  */
 
 export interface OrderPackageSku {
@@ -20,7 +22,6 @@ export interface OrderPackageSku {
 export interface OrderPackage {
   id: string;
   label: string;
-  status: string | null;
   /** A package held in consolidation — the root cause of an order shipping incomplete. */
   isHeld: boolean;
   skuItems: OrderPackageSku[];
@@ -50,7 +51,7 @@ interface PackageRow {
   sku_items: unknown;
 }
 
-export function useOrderPackages(orderId: string | null, operatorId: string | null, enabled: boolean) {
+export function useOrderPackages(orderId: string | null, operatorId: string | null) {
   return useQuery<OrderPackage[]>({
     queryKey: ['dispatch', 'pre-route', 'order-packages', orderId, operatorId],
     queryFn: async () => {
@@ -68,12 +69,11 @@ export function useOrderPackages(orderId: string | null, operatorId: string | nu
       return ((data as PackageRow[] | null) ?? []).map((pkg) => ({
         id: pkg.id,
         label: pkg.label,
-        status: pkg.status,
-        isHeld: pkg.status === 'retenido',
+        isHeld: pkg.status === PACKAGE_STATUS_HELD,
         skuItems: normalizeSkuItems(pkg.sku_items),
       }));
     },
-    enabled: enabled && !!orderId && !!operatorId,
+    enabled: !!orderId && !!operatorId,
     staleTime: 30_000,
   });
 }

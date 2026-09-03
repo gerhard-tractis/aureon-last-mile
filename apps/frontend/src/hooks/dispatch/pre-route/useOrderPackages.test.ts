@@ -47,24 +47,22 @@ const MOCK_ROWS = [
 describe('useOrderPackages', () => {
   beforeEach(() => mockFrom.mockReset());
 
-  it('stays idle until enabled', () => {
+  it('stays idle with no orderId', () => {
     mockFrom.mockImplementation(() => packagesChain([]));
-    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1', false), {
-      wrapper: wrapper(),
-    });
+    const { result } = renderHook(() => useOrderPackages(null, 'op-1'), { wrapper: wrapper() });
     expect(result.current.fetchStatus).toBe('idle');
   });
 
-  it('stays idle with no orderId even when enabled', () => {
+  it('stays idle with no operatorId', () => {
     mockFrom.mockImplementation(() => packagesChain([]));
-    const { result } = renderHook(() => useOrderPackages(null, 'op-1', true), { wrapper: wrapper() });
+    const { result } = renderHook(() => useOrderPackages('order-1', null), { wrapper: wrapper() });
     expect(result.current.fetchStatus).toBe('idle');
   });
 
-  it('fetches and normalises packages once enabled', async () => {
+  it('fetches and normalises packages once both ids are present', async () => {
     mockFrom.mockImplementation(() => packagesChain(MOCK_ROWS));
 
-    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1', true), {
+    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1'), {
       wrapper: wrapper(),
     });
 
@@ -75,14 +73,12 @@ describe('useOrderPackages', () => {
       {
         id: 'pkg-1',
         label: 'PKG-001',
-        status: 'en_bodega',
         isHeld: false,
         skuItems: [{ sku: 'SKU-A', description: 'Silla', quantity: 2 }],
       },
       {
         id: 'pkg-2',
         label: 'PKG-002',
-        status: 'retenido',
         isHeld: true,
         skuItems: [{ sku: 'SKU-B', description: 'Mesa', quantity: 1 }],
       },
@@ -93,7 +89,7 @@ describe('useOrderPackages', () => {
     const chain = packagesChain(MOCK_ROWS);
     mockFrom.mockImplementation(() => chain);
 
-    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1', true), {
+    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1'), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -108,7 +104,7 @@ describe('useOrderPackages', () => {
       packagesChain([{ id: 'pkg-3', label: 'PKG-003', status: 'en_bodega', sku_items: null }]),
     );
 
-    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1', true), {
+    const { result } = renderHook(() => useOrderPackages('order-1', 'op-1'), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

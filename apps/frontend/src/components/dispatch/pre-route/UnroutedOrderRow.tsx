@@ -1,24 +1,25 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useOrderPackages } from '@/hooks/dispatch/pre-route/useOrderPackages';
 import type { UnroutedOrderRow as OrderRow } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
 import { UnroutedOrderPackages } from './UnroutedOrderPackages';
 
 /**
- * spec-75 Task 2a — one order row inside the "Órdenes sin rutear" column:
- * ORDEN · COMUNA · DIRECCIÓN · PQT · VENTANA, plus a chevron that fetches
- * and expands the order's packages. The whole row is the checkbox's hit
- * target — this is used at a warehouse desk — the chevron button is the one
- * carve-out, `stopPropagation`-ed so expanding doesn't also (de)select.
+ * One order row inside the "Órdenes sin rutear" column: ORDEN · COMUNA ·
+ * DIRECCIÓN · PQT · VENTANA, plus a chevron that expands the order's
+ * packages. The whole row is a click target for mouse users, but the
+ * checkbox and the chevron are separate focusable sibling controls — a
+ * `role="checkbox"` wrapper around a nested `<button>` strips that button
+ * from the accessibility tree and is an axe `nested-interactive` violation,
+ * the same trap `UnroutedColumn`'s group header avoids by keeping its
+ * checkbox a plain `<button role="checkbox">` with no interactive children.
  */
 interface UnroutedOrderRowProps {
   order: OrderRow;
   selected: boolean;
   onToggle: (orderId: string) => void;
-  operatorId: string | null;
 }
 
 function formatWindow(start: string | null, end: string | null): string {
@@ -29,47 +30,46 @@ function formatWindow(start: string | null, end: string | null): string {
   return 'Sin ventana';
 }
 
-export function UnroutedOrderRow({ order, selected, onToggle, operatorId }: UnroutedOrderRowProps) {
+export const UnroutedOrderRow = memo(function UnroutedOrderRow({
+  order,
+  selected,
+  onToggle,
+}: UnroutedOrderRowProps) {
   const [expanded, setExpanded] = useState(false);
-
-  const {
-    data: packages,
-    isLoading,
-    isError,
-  } = useOrderPackages(order.id, operatorId, expanded);
+  const panelId = `unrouted-order-packages-${order.id}`;
 
   return (
     <div className="border-b border-border-subtle">
       <div
-        role="checkbox"
-        aria-checked={selected}
-        tabIndex={0}
-        data-testid={`unrouted-order-${order.id}`}
         onClick={() => onToggle(order.id)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggle(order.id);
-          }
-        }}
         className={cn(
           'grid w-full cursor-pointer grid-cols-[16px_16px_1fr_auto] items-center gap-2 py-2 pl-4 pr-3 text-left transition-colors',
           selected ? 'bg-accent-muted' : 'hover:bg-surface-raised',
         )}
       >
-        <span
-          aria-hidden
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          aria-label={`Seleccionar orden ${order.orderNumber}`}
+          data-testid={`unrouted-order-${order.id}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle(order.id);
+          }}
           className={cn(
             'grid h-4 w-4 flex-none place-items-center rounded border',
             selected ? 'border-accent bg-accent' : 'border-border-strong bg-surface',
           )}
         >
           {selected && <Check className="h-3 w-3 text-accent-light-foreground" strokeWidth={3} />}
-        </span>
+        </button>
 
         <button
           type="button"
           aria-label={expanded ? 'Contraer paquetes' : 'Expandir paquetes'}
+          aria-expanded={expanded}
+          aria-controls={panelId}
           onClick={(e) => {
             e.stopPropagation();
             setExpanded((v) => !v);
@@ -91,15 +91,19 @@ export function UnroutedOrderRow({ order, selected, onToggle, operatorId }: Unro
               />
             )}
           </span>
-          <span className="flex min-w-0 items-center gap-1 truncate text-[10.5px] leading-none text-text-muted">
-            <span className="flex-none">{order.comunaName}</span>
-            <span aria-hidden>·</span>
-            <span className="truncate">{order.address}</span>
+          <span className="flex min-w-0 items-center gap-1 text-[10.5px] leading-none text-text-muted">
+            <span className="min-w-0 max-w-[45%] flex-shrink truncate">{order.comunaName}</span>
+            <span aria-hidden className="flex-none">·</span>
+            <span className="min-w-0 flex-1 truncate">{order.address}</span>
           </span>
         </span>
 
         <span className="flex flex-none items-center gap-3">
-          <span className="font-mono text-[11px] leading-none text-text-secondary" title="Paquetes">
+          <span
+            data-testid={`unrouted-order-package-count-${order.id}`}
+            className="font-mono text-[11px] leading-none text-text-secondary"
+            title="Paquetes"
+          >
             {order.packageCount}
           </span>
           <span className="font-mono text-[10.5px] leading-none text-text-muted">
@@ -109,10 +113,10 @@ export function UnroutedOrderRow({ order, selected, onToggle, operatorId }: Unro
       </div>
 
       {expanded && (
-        <div className="bg-background">
-          <UnroutedOrderPackages packages={packages} isLoading={isLoading} isError={isError} />
+        <div id={panelId} className="bg-background">
+          <UnroutedOrderPackages orderId={order.id} />
         </div>
       )}
     </div>
   );
-}
+});

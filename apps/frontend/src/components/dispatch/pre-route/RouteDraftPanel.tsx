@@ -1,10 +1,11 @@
 'use client';
 
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import type { SelectionSummary, UnroutedGroup } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
 
 /**
- * spec-54 phase 4.2 / spec-75 Task 2a — "Ruta en armado" (right column).
+ * spec-54 phase 4.2 — "Ruta en armado" (right column).
  *
  * The mock shows a driver card, a vehicle occupancy bar and a numbered stop
  * sequence with per-stop ETAs. Those belong to a route that exists: the
@@ -15,10 +16,9 @@ import type { SelectionSummary, UnroutedGroup } from '@/hooks/dispatch/pre-route
  * rest happens, rather than rendering an empty driver card and a stop list of
  * placeholders.
  *
- * spec-75: selection moved from the group to the order, so this now lists the
- * selected orders themselves (not the groups they belong to) — a group that
- * is only partially selected would otherwise show its full, unselected
- * totals here, which is what the old group-level list did.
+ * This lists the selected orders themselves, not the groups they belong to —
+ * a group that is only partially selected would otherwise show its full,
+ * unselected totals here.
  */
 
 interface RouteDraftPanelProps {
@@ -38,9 +38,10 @@ export function RouteDraftPanel({
   onClear,
   isBuilding = false,
 }: RouteDraftPanelProps) {
-  const selectedOrders = groups
-    .flatMap((g) => g.orders)
-    .filter((o) => selectedOrderIds.has(o.id));
+  const selectedOrders = useMemo(
+    () => groups.flatMap((g) => g.orders).filter((o) => selectedOrderIds.has(o.id)),
+    [groups, selectedOrderIds],
+  );
 
   return (
     <aside className="flex min-h-0 flex-col border-border bg-surface lg:border-l">

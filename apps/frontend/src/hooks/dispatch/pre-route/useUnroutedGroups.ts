@@ -1,8 +1,7 @@
 import type { PreRouteAnden, PreRouteOrder } from '@/lib/types';
 
 /**
- * spec-54 phase 4.2 (grouping) / spec-75 Task 2a (per-order rows) —
- * grouping and selection for the unrouted-orders column.
+ * spec-54 phase 4.2 — grouping and selection for the unrouted-orders column.
  *
  * The mock offers three groupings: por comuna, por cliente, por SLA. Only two
  * are buildable from get_pre_route_snapshot, which returns andenes with their
@@ -10,14 +9,15 @@ import type { PreRouteAnden, PreRouteOrder } from '@/lib/types';
  * here are **Por andén** and **Por comuna**, and the missing two wait for the
  * snapshot RPC to return that data rather than being rendered as dead options.
  *
- * spec-75: operations needs to see and act on individual orders, not just
- * groups, so each group now also carries its flattened order rows
- * (`UnroutedGroup.orders`). Selection lives at the order level — a group
- * checkbox is a derived shortcut (`groupSelectionState` /
- * `toggleGroupSelection`), not a selectable unit of its own. `groupCount` on
- * `SelectionSummary` is kept (not dropped) because `RoutePlanCanvas` and
- * `RouteDraftPanel` both already read it — it now means "groups touched by
- * the current order selection" rather than "groups explicitly checked".
+ * Each group also carries its flattened order rows (`UnroutedGroup.orders`),
+ * because operations needs to see and act on individual orders, not just
+ * groups. Selection lives at the order level — a group checkbox is a derived
+ * shortcut (`groupSelectionState` / `toggleGroupSelection`), not a
+ * selectable unit of its own. `groupCount` on `SelectionSummary` means
+ * "groups touched by the current order selection", not "groups explicitly
+ * checked" — `RoutePlanCanvas` and `RouteDraftPanel` both read it as a group
+ * total, so redefining it here keeps both correct without either needing to
+ * know selection moved to the order level.
  */
 
 export type GroupBy = 'anden' | 'comuna';
