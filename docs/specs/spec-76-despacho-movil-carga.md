@@ -82,6 +82,10 @@ El cierre (`2i`) y el despacho (`2j`–`2l`) son **`spec-77`**: ver *No-goals*.
 
 8. **`2h` agrupa por parada, no lista plana.** Con 148 paquetes una lista plana no es navegable, y la unidad de trabajo del conductor es la parada. Los toggles del mock son *Por parada* / *Por hora* + un filtro *Incompletas*.
 
+10. **La barra de estado del teléfono NO se construye.** Los artboards de 390 × 844 dibujan `09:14`, `5G ▮▮▮` y la batería arriba porque son maquetas de un teléfono completo. Eso es chrome del sistema operativo: lo pinta el teléfono, no la PWA. Lo mismo vale para el indicador `EN LÍNEA` de `2a` sólo en cuanto a posición — ese sí es nuestro, pero va dentro de nuestra cabecera, no en una barra de estado falsa.
+
+    Es el mismo error que ya se cometió una vez en `spec-75`: se instruyó redibujar el breadcrumb `Operación / Despacho` que el `TopBar` ya renderiza (ver `spec-75` decisión 9). **Regla al leer este canvas: distinguir el chrome de la plataforma y de la aplicación del chrome del módulo.** Un elemento presente en un artboard no implica que haya que construirlo; puede pintarlo el sistema operativo o existir ya un nivel más arriba.
+
 9. **Una ruta en carga por otra cuadrilla se ve pero no se abre.** `2b` la muestra con quién la tiene (`la está cargando Javiera P.`) en vez de esconderla, y el toque no navega. Esconderla hace que la cuadrilla la busque; mostrarla sin bloquearla provoca dos sesiones sobre el mismo andén.
 
 ## Plan de implementación (TDD)
