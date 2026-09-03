@@ -231,3 +231,8 @@ describe('allOrderIds', () => {
     expect(allOrderIds(groups)).toEqual(['o1', 'o2']);
   });
 });
+
+// sortOrdersByWindow / urgentOrderIds tests moved to
+// lib/dispatch/pre-route-order-urgency.test.ts alongside the functions
+// (which live there now too — see the re-export note in
+// useUnroutedGroups.ts) to keep this file under the 300-line cap.

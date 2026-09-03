@@ -19,6 +19,11 @@ import { RouteDraftPanel } from './RouteDraftPanel';
 import { UnmappedComunasNotice } from './UnmappedComunasNotice';
 import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
+import {
+  applyPreRouteFilters,
+  parsePreRouteFilterState,
+  summariseFilteredTotals,
+} from '@/lib/dispatch/pre-route-filters';
 
 /**
  * spec-54 phase 4.2 — the Pre-ruta board.
@@ -44,8 +49,7 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
   const today = new Date().toISOString().slice(0, 10);
   const date = params.get('date') ?? today;
-  const windowKey = params.get('window') ?? 'todas';
-  const times = resolvePreRouteWindow(windowKey);
+  const times = resolvePreRouteWindow(params);
 
   const { snapshot, isLoading } = usePreRouteSnapshot(
     operatorId,
@@ -57,14 +61,39 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   const [groupBy, setGroupBy] = useState<GroupBy>('anden');
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
+  // spec-75 task 2b — comuna/andén/cliente/"sólo con problemas"/búsqueda
+  // narrow the snapshot client-side (date and ventana are the only filters
+  // the RPC itself applies). Filtering happens on the raw andén → comuna →
+  // orders tree *before* buildGroups, not on the flattened UnroutedGroup
+  // rows — see the reasoning in lib/dispatch/pre-route-filters.ts.
+  //
+  // Code-review finding (M9): the memo used to key off each filter array
+  // joined with ',', which mis-keys when a value itself contains a comma
+  // (a cliente named "Soto, Ana Ltda" can collapse to the same joined
+  // string as an unrelated filter state) and needed an eslint-disable to
+  // hide the resulting exhaustive-deps warning. `paramsKey` is the
+  // unambiguous source every filter field is parsed from, and the memo
+  // callback closes over `paramsKey` (not `params`) to rebuild a
+  // `URLSearchParams` internally — so it's the only external value the
+  // callback reads, exhaustive-deps is satisfied honestly, and no
+  // eslint-disable is needed.
+  const paramsKey = params.toString();
+  const filteredAndenes = useMemo(
+    () => applyPreRouteFilters(snapshot?.andenes ?? [], parsePreRouteFilterState(new URLSearchParams(paramsKey))),
+    [snapshot?.andenes, paramsKey],
+  );
+
   const groups = useMemo(
     // snapshot's object identity changes on every refetch even when
     // `andenes` itself is unchanged; keying off `snapshot` would churn
     // `groups`' identity (and every row's, through it) on each background
     // refetch and defeat UnroutedOrderRow's memo below it.
-    () => buildGroups(snapshot?.andenes ?? [], groupBy),
-    [snapshot?.andenes, groupBy],
+    () => buildGroups(filteredAndenes, groupBy),
+    [filteredAndenes, groupBy],
   );
+  // I4 — what the filter bar's own totals line shows once any client-side
+  // filter narrows the view; see summariseFilteredTotals's docblock.
+  const filteredTotals = useMemo(() => summariseFilteredTotals(filteredAndenes), [filteredAndenes]);
   const summary = useMemo(
     () => summariseOrderSelection(groups, selectedOrderIds),
     [groups, selectedOrderIds],
@@ -110,10 +139,16 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
 
   return (
     <div className="flex min-h-0 flex-col">
-      {/* Date and delivery-window filters stay as they were — the board reads
-          both from the URL, so removing the only control that sets them would
-          have stranded the operator on today/todas. */}
-      <PreRouteFilters totals={snapshot?.totals} />
+      {/* andenes here is the RAW (unfiltered) snapshot tree — PreRouteFilters
+          builds its comuna/andén/cliente option lists off it so choosing one
+          filter never shrinks what the others can offer. filteredTotals is
+          the narrowed-tree figures (I4) — shown instead of totals once any
+          client-side filter is active. */}
+      <PreRouteFilters
+        totals={snapshot?.totals}
+        filteredTotals={filteredTotals}
+        andenes={snapshot?.andenes ?? []}
+      />
       <UnmappedComunasNotice comunas={snapshot?.unmapped_comunas ?? []} />
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[330px_1fr_322px]">

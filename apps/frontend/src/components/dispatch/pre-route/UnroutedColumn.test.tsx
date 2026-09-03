@@ -25,17 +25,11 @@ const GROUPS: UnroutedGroup[] = [
     orderCount: 2,
     packageCount: 5,
     warning: false,
+    // o2 (no window) is listed BEFORE o1 (has a window) on purpose — I6:
+    // the sort-toggle test needs the pre-toggle order to differ from the
+    // post-toggle order, or it would pass even if sortOrdersByWindow were
+    // a no-op.
     orders: [
-      {
-        id: 'o1',
-        orderNumber: 'ORD-001',
-        comunaName: 'La Florida',
-        address: 'Calle Uno 111',
-        packageCount: 2,
-        windowStart: '08:00:00',
-        windowEnd: '12:00:00',
-        hasSplitDockZone: false,
-      },
       {
         id: 'o2',
         orderNumber: 'ORD-002',
@@ -44,6 +38,16 @@ const GROUPS: UnroutedGroup[] = [
         packageCount: 3,
         windowStart: null,
         windowEnd: null,
+        hasSplitDockZone: false,
+      },
+      {
+        id: 'o1',
+        orderNumber: 'ORD-001',
+        comunaName: 'La Florida',
+        address: 'Calle Uno 111',
+        packageCount: 2,
+        windowStart: '08:00:00',
+        windowEnd: '12:00:00',
         hasSplitDockZone: false,
       },
     ],
@@ -212,5 +216,68 @@ describe('UnroutedColumn', () => {
   it('shows an empty state when nothing is routable', () => {
     render(<UnroutedColumn {...BASE} groups={[]} />);
     expect(screen.getByText(/No hay órdenes listas para rutear/)).toBeInTheDocument();
+  });
+
+  it('flags the order whose window closes soonest across the whole column as urgent', () => {
+    // o1 ends 12:00, o3 ends 18:00, o2 has no window — o1 is the urgent one.
+    render(<UnroutedColumn {...BASE} />);
+    expect(screen.getByTestId('unrouted-order-window-o1')).toHaveClass('bg-status-error-bg');
+    expect(screen.getByTestId('unrouted-order-window-o3')).not.toHaveClass('bg-status-error-bg');
+  });
+
+  it('offers a "Ventana" sort toggle, off by default', () => {
+    render(<UnroutedColumn {...BASE} />);
+    expect(screen.getByRole('button', { name: /ventana/i })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('sorts each group\'s rows by window end when the Ventana toggle is on, without reordering across groups (I6)', async () => {
+    render(<UnroutedColumn {...BASE} />);
+
+    // Pre-toggle: fixture order is [o2 (no window), o1 (12:00), o3] — this
+    // assertion is what makes the next one meaningful; without it, the test
+    // would pass even if sortOrdersByWindow were a no-op.
+    expect(screen.getAllByText(/^ORD-/).map((el) => el.textContent)).toEqual([
+      'ORD-002',
+      'ORD-001',
+      'ORD-003',
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /ventana/i }));
+    expect(screen.getByRole('button', { name: /ventana/i })).toHaveAttribute('aria-pressed', 'true');
+
+    // o1 (has a window) now sorts before o2 (null, pushed to the end)
+    // within group a1; a2's o3 stays in its own group regardless of sort —
+    // groups themselves never reorder.
+    expect(screen.getAllByText(/^ORD-/).map((el) => el.textContent)).toEqual([
+      'ORD-001',
+      'ORD-002',
+      'ORD-003',
+    ]);
+  });
+
+  it('does not show the hidden-selection note when every selected order is still visible', () => {
+    render(
+      <UnroutedColumn
+        {...BASE}
+        selectedOrderIds={new Set(['o1'])}
+        summary={{ groupCount: 1, orderCount: 1, packageCount: 2, comunaCount: 1, orderIds: ['o1'] }}
+      />,
+    );
+    expect(screen.queryByTestId('unrouted-hidden-selected')).toBeNull();
+  });
+
+  it('surfaces selected orders a filter has hidden, rather than pruning or hiding them silently (I5)', () => {
+    // selectedOrderIds carries 3 ids, but a comuna/andén/cliente filter has
+    // narrowed `groups`/`summary` down to just one of them still visible.
+    render(
+      <UnroutedColumn
+        {...BASE}
+        selectedOrderIds={new Set(['o1', 'gone-1', 'gone-2'])}
+        summary={{ groupCount: 1, orderCount: 1, packageCount: 2, comunaCount: 1, orderIds: ['o1'] }}
+      />,
+    );
+    expect(screen.getByTestId('unrouted-hidden-selected')).toHaveTextContent(
+      '2 seleccionadas ocultas por los filtros actuales',
+    );
   });
 });

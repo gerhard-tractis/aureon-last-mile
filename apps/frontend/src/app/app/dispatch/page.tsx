@@ -16,6 +16,7 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
+import { hasActivePreRouteFilters, parsePreRouteFilterState } from '@/lib/dispatch/pre-route-filters';
 
 function DispatchPageContent() {
   const router = useRouter();
@@ -27,16 +28,22 @@ function DispatchPageContent() {
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
 
   // QA finding #2: this used to hardcode `today` and pass no window bounds,
-  // while PreRouteBoard reads both `?date=` and `?window=` — so the "SIN
-  // RUTEAR" figure in the header answered for today's whole day even when
-  // the board itself (via PreRouteFilters) was showing tomorrow's "Mañana"
+  // while PreRouteBoard reads both `?date=` and the ventana range — so the
+  // "SIN RUTEAR" figure in the header answered for today's whole day even
+  // when the board itself (via PreRouteFilters) was showing a narrower
   // slice. Reading both params here, through the same resolvePreRouteWindow
   // the board uses, is what makes the badge and the board unable to
   // disagree on either axis — and it makes this call share the board's
   // react-query cache key instead of firing a second RPC for the same data.
+  //
+  // spec-75 task 2b: `?window=` (a fixed Mañana/Tarde/Noche band) was
+  // replaced by the free `?window_start=`/`?window_end=` range Ventana now
+  // writes — resolvePreRouteWindow reads the params directly instead of a
+  // band-name lookup, so this call site changed with it rather than
+  // silently falling back to "todas" forever.
   const today = new Date().toISOString().slice(0, 10);
   const selectedDate = params.get('date') ?? today;
-  const selectedWindow = resolvePreRouteWindow(params.get('window') ?? 'todas');
+  const selectedWindow = resolvePreRouteWindow(params);
   const { snapshot: preRouteSnapshot } = usePreRouteSnapshot(
     operatorId ?? null,
     selectedDate,
@@ -95,11 +102,17 @@ function DispatchPageContent() {
   const navigateToRoute = (id: string) => router.push(`/app/dispatch/${id}`);
 
   const unrouted = preRouteSnapshot?.totals.order_count ?? 0;
+  // I4 — SIN RUTEAR itself stays the RPC's date/ventana total (it doesn't
+  // apply comuna/andén/cliente/problemas/búsqueda), but the qualifier tells
+  // the operator that figure doesn't match what the Pre-ruta board below is
+  // currently showing them.
+  const hasActiveFilters = hasActivePreRouteFilters(parsePreRouteFilterState(params));
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
       <DispatchModuleHeader
         unrouted={unrouted}
+        hasActiveFilters={hasActiveFilters}
         // `undefined` (still loading) must render no count, not a `0` that
         // reads as a real, briefly-wrong figure — don't collapse this to
         // `?? 0`.

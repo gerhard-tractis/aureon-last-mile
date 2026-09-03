@@ -85,4 +85,15 @@ describe('DispatchModuleHeader', () => {
     fireEvent.click(screen.getByRole('button', { name: /Nueva ruta/ }));
     expect(onNewRoute).toHaveBeenCalled();
   });
+
+  it('shows no filtered qualifier by default (I4)', () => {
+    renderHeader();
+    expect(screen.queryByTestId('unrouted-filtered-qualifier')).toBeNull();
+  });
+
+  it('qualifies SIN RUTEAR as filtered when hasActiveFilters is true, without changing the count itself', () => {
+    renderHeader({ unrouted: 204, hasActiveFilters: true });
+    expect(screen.getByTestId('unrouted-filtered-qualifier')).toHaveTextContent('(filtrado)');
+    expect(screen.getByText(/SIN RUTEAR/)).toHaveTextContent('204');
+  });
 });

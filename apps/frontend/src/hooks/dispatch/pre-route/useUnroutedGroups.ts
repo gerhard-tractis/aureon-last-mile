@@ -177,3 +177,8 @@ export function toggleGroupSelection(group: UnroutedGroup, selectedOrderIds: Set
 export function allOrderIds(groups: UnroutedGroup[]): string[] {
   return groups.flatMap((g) => g.orders.map((o) => o.id));
 }
+
+// sortOrdersByWindow / urgentOrderIds — the delivery-window sort/urgency
+// logic for "Órdenes sin rutear" — now live in
+// lib/dispatch/pre-route-order-urgency.ts (moved out purely to keep this
+// file and its test under the 300-line cap); import them from there.

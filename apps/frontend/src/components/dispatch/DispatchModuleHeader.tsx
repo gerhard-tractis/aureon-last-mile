@@ -15,6 +15,14 @@ interface DispatchModuleHeaderProps {
   enCargaCount?: number;
   /** Routes currently on the road. */
   enRutaCount?: number;
+  /** I4 — true when the Pre-ruta board's comuna/andén/cliente/problemas/
+   *  búsqueda filters (client-side, not date/ventana) are narrowing what's
+   *  on screen. `unrouted` itself never changes for this — it stays the
+   *  RPC's own date/ventana total, same as PreRouteFilters' totals line
+   *  when nothing is filtered — but a qualifier next to SIN RUTEAR tells
+   *  the operator the figure doesn't match what the board is showing them
+   *  right now. */
+  hasActiveFilters?: boolean;
   onNewRoute: () => void;
 }
 
@@ -50,6 +58,7 @@ export function DispatchModuleHeader({
   unrouted,
   enCargaCount,
   enRutaCount,
+  hasActiveFilters = false,
   onNewRoute,
 }: DispatchModuleHeaderProps) {
   return (
@@ -75,6 +84,11 @@ export function DispatchModuleHeader({
             styling — keep the class (and its test assertion) intact. */}
         <span className="font-mono text-[11px] font-medium leading-none text-text-secondary">
           SIN RUTEAR <span className="font-semibold text-text">{unrouted}</span>
+          {hasActiveFilters && (
+            <span data-testid="unrouted-filtered-qualifier" className="ml-1 font-normal normal-case">
+              (filtrado)
+            </span>
+          )}
         </span>
         <Button onClick={onNewRoute} className="flex items-center gap-2">
           <Plus className="h-4 w-4" />

@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertTriangle, Check, Minus, PackageSearch } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { AlertTriangle, ArrowUpDown, Check, Minus, PackageSearch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import {
   type SelectionSummary,
   type UnroutedGroup,
 } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
+import { sortOrdersByWindow, urgentOrderIds } from '@/lib/dispatch/pre-route-order-urgency';
 import { UnroutedOrderRow } from './UnroutedOrderRow';
 
 /**
@@ -108,6 +110,39 @@ export function UnroutedColumn({
   // number a second, independent way to drift out of sync with it.
   const totalOrders = groups.reduce((sum, g) => sum + g.orderCount, 0);
 
+  // spec-75 task 2b — the fixed Mañana/Tarde/Noche filter tabs are gone;
+  // the delivery window is now a sortable column with an urgency chip
+  // instead, since planning tools should treat it as a constraint to
+  // respect, not something that hides orders out of the list. Sort only
+  // ever reorders rows *within* a group — it never moves an order across
+  // groups. Urgency is computed once across every visible order (not per
+  // group), so "sooner than others" compares against the whole column.
+  const [sortByWindow, setSortByWindow] = useState(false);
+  const urgentIds = useMemo(
+    () => urgentOrderIds(groups.flatMap((g) => g.orders)),
+    [groups],
+  );
+  const displayGroups = useMemo(
+    () =>
+      sortByWindow
+        ? groups.map((g) => ({ ...g, orders: sortOrdersByWindow(g.orders) }))
+        : groups,
+    [groups, sortByWindow],
+  );
+
+  // I5 — selection lives at the order level and outlives filtering: narrow
+  // the comuna/andén/cliente filters and an order selected earlier can
+  // simply no longer be in `groups`. `summary.orderCount` only counts
+  // selected orders that are still visible, so the gap against the full
+  // `selectedOrderIds` set is exactly what's ticked but currently hidden.
+  // Silently building the route would still be correct (it only ever uses
+  // the visible `summary.orderIds`) — but the operator has no way to know
+  // 37 other orders are still selected until the filters clear and they
+  // reappear, possibly after already being routed. Surface it instead of
+  // pruning: pruning on every filter change would look like the tool
+  // silently discarding a selection the operator made on purpose.
+  const hiddenSelectedCount = selectedOrderIds.size - summary.orderCount;
+
   return (
     <section className="flex min-h-0 flex-col border-border bg-surface lg:border-r">
       <header className="flex flex-none flex-col gap-2.5 border-b border-border px-4 py-3.5">
@@ -123,7 +158,7 @@ export function UnroutedColumn({
           </span>
         </div>
 
-        <div className="flex gap-1">
+        <div className="flex items-center gap-1">
           {GROUP_OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -140,18 +175,33 @@ export function UnroutedColumn({
               {opt.label}
             </button>
           ))}
+
+          <button
+            type="button"
+            aria-pressed={sortByWindow}
+            onClick={() => setSortByWindow((v) => !v)}
+            className={cn(
+              'ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-[11px] leading-none transition-colors',
+              sortByWindow
+                ? 'bg-surface-raised font-semibold text-text'
+                : 'text-text-secondary hover:bg-surface-raised',
+            )}
+          >
+            <ArrowUpDown className="h-3 w-3" aria-hidden />
+            Ventana
+          </button>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {groups.length === 0 ? (
+        {displayGroups.length === 0 ? (
           <EmptyState
             icon={PackageSearch}
             title="Nada que rutear"
             description="No hay órdenes listas para rutear con estos filtros."
           />
         ) : (
-          groups.map((group) => (
+          displayGroups.map((group) => (
             <div key={group.id}>
               <GroupHeaderRow group={group} selectedOrderIds={selectedOrderIds} onToggleGroup={onToggleGroup} />
               {group.orders.map((order) => (
@@ -160,6 +210,7 @@ export function UnroutedColumn({
                   order={order}
                   selected={selectedOrderIds.has(order.id)}
                   onToggle={onToggleOrder}
+                  urgent={urgentIds.has(order.id)}
                 />
               ))}
             </div>
@@ -172,6 +223,15 @@ export function UnroutedColumn({
           {summary.orderCount} seleccionadas · {summary.packageCount} paquetes ·{' '}
           {summary.comunaCount} {summary.comunaCount === 1 ? 'comuna' : 'comunas'}
         </span>
+
+        {hiddenSelectedCount > 0 && (
+          <span
+            data-testid="unrouted-hidden-selected"
+            className="font-mono text-[10.5px] leading-none text-status-warning-text"
+          >
+            {hiddenSelectedCount} seleccionadas ocultas por los filtros actuales
+          </span>
+        )}
 
         <div className="flex gap-2">
           <Button

@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
@@ -77,21 +77,38 @@ describe('DispatchPage — SIN RUTEAR follows the selected date', () => {
   });
 
   // Code review on #556: the date fix alone still let the header disagree
-  // with the board on the *window* axis — picking "Mañana" narrowed the
-  // board's totals line while the header went on counting the whole day.
-  // Both callers now resolve `?window=` through the same
-  // resolvePreRouteWindow PreRouteBoard uses.
-  it("queries the pre-route snapshot for the ?window= param's bounds, matching what PreRouteBoard passes", async () => {
-    mockSearchParams = new URLSearchParams('date=2026-09-15&window=manana');
+  // with the board on the *window* axis — narrowing the board's ventana
+  // range left the header counting the whole day. Both callers resolve
+  // `?window_start=`/`?window_end=` through the same resolvePreRouteWindow
+  // PreRouteBoard uses.
+  //
+  // spec-75 task 2b replaced the old fixed `?window=manana` band with a
+  // free `?window_start=`/`?window_end=` range — these two tests moved
+  // with it rather than exercising a param PreRouteFilters no longer sets.
+  it("queries the pre-route snapshot for the ?window_start=/?window_end= bounds, matching what PreRouteBoard passes", async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15&window_start=00:00&window_end=12:00');
     const { default: DispatchPage } = await import('./page');
     renderWithClient(<DispatchPage />);
     expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', '00:00', '12:00');
   });
 
-  it('passes null window bounds for the "todas" default, same as no ?window= at all', async () => {
-    mockSearchParams = new URLSearchParams('date=2026-09-15&window=todas');
+  it('passes null window bounds when neither ?window_start= nor ?window_end= is set', async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15');
     const { default: DispatchPage } = await import('./page');
     renderWithClient(<DispatchPage />);
     expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', null, null);
+  });
+
+  it('shows no filtered qualifier on SIN RUTEAR when no client-side filter is active (I4)', async () => {
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.queryByTestId('unrouted-filtered-qualifier')).toBeNull();
+  });
+
+  it('qualifies SIN RUTEAR as filtered when a comuna/andén/cliente/problemas/búsqueda filter is active (I4)', async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15&comunas=c1');
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.getByTestId('unrouted-filtered-qualifier')).toBeInTheDocument();
   });
 });
