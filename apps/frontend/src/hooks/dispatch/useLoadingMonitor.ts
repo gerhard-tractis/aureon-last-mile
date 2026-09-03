@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import { OPEN_ROUTE_STATUSES, type RouteStatus } from '@/lib/dispatch/types';
+import { daysBeforeISO } from '@/lib/dispatch/loading-monitor';
+import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 import {
   aggregatePackagesByRoute,
   aggregateCrew,
@@ -13,6 +15,18 @@ import {
 // stack's request-line ceiling and fail the WHOLE query, not just degrade.
 const ID_CHUNK_SIZE = 100;
 
+// I3 review — this query used to have no lower bound at all: every route
+// ever left open (draft/planned/loading/loaded, forever) stayed in scope,
+// each fanning out to a dispatches read and then a packages read of every
+// order on it, refetched every 30s. At the repo's real production scale
+// (~112k dispatches / ~61k packages, per project memory) that is an
+// unbounded and growing query, not a slow one. This screen's whole purpose
+// is "what is on the dock RIGHT NOW" — a route still open after this many
+// days is already a different, worse problem than a live loading monitor
+// is for, so it is out of scope here rather than silently degrading this
+// query for everyone.
+const ROUTE_DATE_LOOKBACK_DAYS = 3;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
@@ -24,20 +38,15 @@ function firstOf<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
-interface FleetVehicleEmbed { plate_number: string | null; vehicle_type: string | null }
 interface LoadPositionEmbed { code: string; label: string | null }
 
 interface RawRouteRow {
   id: string;
   external_route_id: string | null;
   route_date: string;
-  driver_name: string | null;
   status: RouteStatus;
   load_position_id: string | null;
   load_position_released_at: string | null;
-  created_at: string;
-  updated_at: string;
-  fleet_vehicles: FleetVehicleEmbed | FleetVehicleEmbed[] | null;
   load_positions: LoadPositionEmbed | LoadPositionEmbed[] | null;
 }
 
@@ -46,9 +55,6 @@ export interface LoadingMonitorRoute {
   externalRouteId: string | null;
   routeDate: string;
   status: RouteStatus;
-  driverName: string | null;
-  vehiclePlate: string | null;
-  vehicleType: string | null;
   /** Only set while the route actually occupies the position — a released
    *  or never-assigned position renders nothing (see andén occupancy rule
    *  in load_positions' own migration comment: occupied requires
@@ -59,17 +65,6 @@ export interface LoadingMonitorRoute {
   packagesLoaded: number;
   firstScanAtIso: string | null;
   lastScanAtIso: string | null;
-  /**
-   * `routes.updated_at` while `status === 'loaded'` — the closest real
-   * timestamp to "when this route closed". There is no dedicated
-   * `sealed_at`/`closed_at` column (transition_route_status only writes
-   * `status` + the generic `updated_at` trigger); nothing else in the
-   * current flow mutates a route after it reaches `loaded` and before
-   * dispatch, so this is an honest proxy, not a fabricated figure — but it
-   * IS a proxy, not a dedicated fact, and a future write between seal and
-   * dispatch would silently move it.
-   */
-  updatedAtIso: string;
 }
 
 export interface CrewMember {
@@ -78,6 +73,7 @@ export interface CrewMember {
   routeId: string;
   loadPositionLabel: string | null;
   scanCount: number;
+  firstScanAtIso: string;
   lastScanAtIso: string;
 }
 
@@ -93,19 +89,40 @@ export interface LoadingMonitorData {
 
 const EMPTY: LoadingMonitorData = { routes: [], crew: [], packagesWaitingOnDock: 0 };
 
+/** Fetch one id-chunked table read, in parallel across chunks (I3 review —
+ *  this used to be a `for…await` loop, serializing what is otherwise an
+ *  embarrassingly parallel set of independent reads). */
+async function fetchChunked<Row>(
+  ids: string[],
+  run: (chunkIds: string[]) => PromiseLike<{ data: Row[] | null; error: unknown }>,
+): Promise<Row[]> {
+  const results = await Promise.all(
+    chunk(ids, ID_CHUNK_SIZE)
+      .filter((c) => c.length > 0)
+      .map(async (c) => {
+        const { data, error } = await run(c);
+        if (error) throw error;
+        return data ?? [];
+      }),
+  );
+  return results.flat();
+}
+
 export function useLoadingMonitor(operatorId: string | null) {
   return useQuery({
     queryKey: ['dispatch', 'loading-monitor', operatorId],
     queryFn: async (): Promise<LoadingMonitorData> => {
       const supabase = createSPAClient();
+      const sinceDate = daysBeforeISO(todayISOInTimezone(), ROUTE_DATE_LOOKBACK_DAYS);
 
       const { data: routeRows, error: routesError } = await supabase
         .from('routes')
         .select(
-          'id, external_route_id, route_date, driver_name, status, load_position_id, load_position_released_at, created_at, updated_at, fleet_vehicles(plate_number, vehicle_type), load_positions(code, label)',
+          'id, external_route_id, route_date, status, load_position_id, load_position_released_at, load_positions(code, label)',
         )
         .eq('operator_id', operatorId!)
         .in('status', [...OPEN_ROUTE_STATUSES])
+        .gte('route_date', sinceDate)
         .is('deleted_at', null)
         .order('route_date', { ascending: false });
       if (routesError) throw routesError;
@@ -114,55 +131,42 @@ export function useLoadingMonitor(operatorId: string | null) {
       if (routes.length === 0) return EMPTY;
 
       const routeIds = routes.map((r) => r.id);
-      const dispatchLinks: DispatchLinkRow[] = [];
-      for (const ids of chunk(routeIds, ID_CHUNK_SIZE)) {
-        const { data, error } = await supabase
+      const dispatchLinks = await fetchChunked<DispatchLinkRow>(routeIds, (ids) =>
+        supabase
           .from('dispatches')
           .select('id, route_id, order_id')
           .in('route_id', ids)
           .eq('operator_id', operatorId!)
-          .is('deleted_at', null);
-        if (error) throw error;
-        dispatchLinks.push(...((data ?? []) as DispatchLinkRow[]));
-      }
+          .is('deleted_at', null),
+      );
 
       const orderIds = [...new Set(dispatchLinks.map((d) => d.order_id).filter((id): id is string => !!id))];
-      const packageRows: PackageLoadRow[] = [];
-      for (const ids of chunk(orderIds, ID_CHUNK_SIZE)) {
-        if (ids.length === 0) continue;
-        const { data, error } = await supabase
+      const packageRows = await fetchChunked<PackageLoadRow>(orderIds, (ids) =>
+        supabase
           .from('packages')
           .select('order_id, loaded_at, loaded_by, status')
           .in('order_id', ids)
           .eq('operator_id', operatorId!)
-          .is('deleted_at', null);
-        if (error) throw error;
-        packageRows.push(...((data ?? []) as PackageLoadRow[]));
-      }
+          .is('deleted_at', null),
+      );
 
       const packageAggByRoute = aggregatePackagesByRoute(dispatchLinks, packageRows);
       const crewAgg = aggregateCrew(dispatchLinks, packageRows);
 
       const crewUserIds = [...new Set(crewAgg.map((c) => c.userId))];
-      const namesByUserId = new Map<string, string>();
-      for (const ids of chunk(crewUserIds, ID_CHUNK_SIZE)) {
-        if (ids.length === 0) continue;
-        const { data, error } = await supabase
+      const userRows = await fetchChunked<{ id: string; full_name: string }>(crewUserIds, (ids) =>
+        supabase
           .from('users')
           .select('id, full_name')
           .in('id', ids)
           .eq('operator_id', operatorId!)
-          .is('deleted_at', null);
-        if (error) throw error;
-        for (const u of (data ?? []) as { id: string; full_name: string }[]) {
-          namesByUserId.set(u.id, u.full_name);
-        }
-      }
+          .is('deleted_at', null),
+      );
+      const namesByUserId = new Map(userRows.map((u) => [u.id, u.full_name]));
 
       const loadPositionLabelByRoute = new Map<string, string | null>();
 
       const monitorRoutes: LoadingMonitorRoute[] = routes.map((r) => {
-        const vehicle = firstOf(r.fleet_vehicles);
         // Occupancy predicate from load_positions' migration comment:
         // occupied === load_position_id set AND load_position_released_at
         // NULL. A released or unassigned position shows nothing rather
@@ -177,16 +181,12 @@ export function useLoadingMonitor(operatorId: string | null) {
           externalRouteId: r.external_route_id,
           routeDate: r.route_date,
           status: r.status,
-          driverName: r.driver_name,
-          vehiclePlate: vehicle?.plate_number ?? null,
-          vehicleType: vehicle?.vehicle_type ?? null,
           loadPositionCode: position?.code ?? null,
           loadPositionLabel: position?.label ?? null,
           packagesTotal: agg?.total ?? 0,
           packagesLoaded: agg?.loaded ?? 0,
           firstScanAtIso: agg?.firstScanAtIso ?? null,
           lastScanAtIso: agg?.lastScanAtIso ?? null,
-          updatedAtIso: r.updated_at,
         };
       });
 
@@ -197,6 +197,7 @@ export function useLoadingMonitor(operatorId: string | null) {
           routeId: c.routeId,
           loadPositionLabel: loadPositionLabelByRoute.get(c.routeId) ?? null,
           scanCount: c.scanCount,
+          firstScanAtIso: c.firstScanAtIso,
           lastScanAtIso: c.lastScanAtIso,
         }))
         .sort((a, b) => Date.parse(b.lastScanAtIso) - Date.parse(a.lastScanAtIso));

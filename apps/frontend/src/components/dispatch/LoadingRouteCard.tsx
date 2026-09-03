@@ -1,6 +1,7 @@
 'use client';
 
-import { Trash2 } from 'lucide-react';
+import { memo } from 'react';
+import { Trash2, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
@@ -14,25 +15,27 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import type { LoadingMonitorRoute } from '@/hooks/dispatch/useLoadingMonitor';
-import { formatFreshness, formatStaleness, computeLoadRateFmt, type LoadState } from '@/lib/dispatch/loading-monitor';
+import type { LoadingMonitorRoute, CrewMember } from '@/hooks/dispatch/useLoadingMonitor';
+import { computeLoadRateFmt, isRouteOverdue, type LoadState } from '@/lib/dispatch/loading-monitor';
 import { LOAD_STATE_LABEL } from '@/lib/dispatch/loading-monitor-labels';
+import { ScanFreshness } from './ScanFreshness';
 
 interface Props {
   route: LoadingMonitorRoute;
   state: LoadState;
-  /** Epoch ms, ticked by the parent (a single useNowTick drives every
-   *  card's freshness text — rule 8: memo + a stable prop, not N intervals). */
+  /** Epoch ms, ticked SLOWLY by the parent (I4 review — this is no longer
+   *  the 1s tick; that lives inside <ScanFreshness> now, the only thing on
+   *  this card that needs second-precision). Used here only for the rate
+   *  figure and nothing else time-sensitive. */
   now: number;
+  /** `todayISOInTimezone()`, resolved once by the parent per render batch
+   *  — not recomputed per card (I1/I2). */
+  today: string;
+  /** This route's own scanning crew (M1 review) — pre-filtered by the
+   *  parent from the full crew list, not fetched again here. */
+  crew: CrewMember[];
   onNavigate: (routeId: string) => void;
   onDelete?: (routeId: string) => void;
-}
-
-function formatCloseTime(iso: string): string {
-  // hour12: false pinned explicitly — Chile uses a 24h clock ("08:41"), and
-  // leaving hour12 to the locale default is not reliable across ICU data
-  // versions (observed rendering "a. m." in this repo's test environment).
-  return new Date(iso).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
 function pct(loaded: number, total: number): number {
@@ -47,6 +50,21 @@ function formatRouteDate(dateStr: string): string {
     day: 'numeric',
     month: 'short',
   });
+}
+
+/**
+ * Minor review item — `createEmptyDraft` mints a placeholder
+ * `external_route_id` like `draft_3f9c8e21…` before a real DispatchTrack id
+ * exists. Showing that raw slug as the card's headline reads as a bug, not
+ * a route name; the route's own short id is what every OTHER state already
+ * falls back to when there is no external id at all, so an unresolved
+ * draft slug gets the same short-id treatment instead of a third format.
+ */
+function routeLabelOf(route: LoadingMonitorRoute): string {
+  if (route.externalRouteId && !route.externalRouteId.startsWith('draft_')) {
+    return route.externalRouteId;
+  }
+  return route.id.slice(0, 8).toUpperCase();
 }
 
 /** Action button per state — "Ver carga" everywhere except LISTA PARA
@@ -65,27 +83,29 @@ function actionLabel(state: LoadState): string {
   return 'Ver carga';
 }
 
-export function LoadingRouteCard({ route, state, now, onNavigate, onDelete }: Props) {
+function LoadingRouteCardImpl({ route, state, now, today, crew, onNavigate, onDelete }: Props) {
   const config = LOAD_STATE_LABEL[state];
-  const routeLabel = route.externalRouteId ?? route.id.slice(0, 8).toUpperCase();
+  const routeLabel = routeLabelOf(route);
   const canDelete = (route.status === 'draft' || route.status === 'planned') && !!onDelete;
   const outstanding = Math.max(0, route.packagesTotal - route.packagesLoaded);
   const rate = computeLoadRateFmt(route.packagesLoaded, route.firstScanAtIso, now);
-  const driverLine = [route.driverName ?? 'Sin conductor', route.vehiclePlate, route.vehicleType]
-    .filter(Boolean)
-    .join(' · ');
+  const overdue = isRouteOverdue(route.routeDate, today);
+  const anden = route.loadPositionLabel ?? route.loadPositionCode;
+  const isDispatchAction = state === 'ready';
 
   return (
+    // C2 review — this used to be `role="button"`/`tabIndex`/`onKeyDown`,
+    // wrapping the delete trigger AND the action button. A `role="button"`
+    // wrapper takes its accessible name from ALL its content (so the whole
+    // card announced as one button reading every stat on it) and a
+    // `button` role forbids interactive descendants, making the REAL
+    // buttons unreachable to assistive tech — jsdom doesn't enforce either
+    // rule, which is why the earlier version's tests passed anyway. The
+    // click here is a bare mouse convenience now; the two real `<button>`
+    // children below carry all keyboard/AT semantics on their own.
     <div
       data-testid={`loading-route-card-${route.id}`}
-      role="button"
-      tabIndex={0}
       onClick={() => onNavigate(route.id)}
-      // Target guard (rule 5): without `e.target === e.currentTarget`, Enter
-      // pressed on a NESTED interactive child (the delete trigger, the
-      // action button) bubbles up here too and double-fires navigation on
-      // top of whatever the child itself does on Enter.
-      onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && onNavigate(route.id)}
       className={cn(
         'flex flex-col gap-3 rounded-xl border-[1.5px] border-border bg-surface p-4 transition-colors hover:bg-surface-raised cursor-pointer',
         state === 'stalled' && 'border-status-error-border bg-status-error-bg',
@@ -97,6 +117,12 @@ export function LoadingRouteCard({ route, state, now, onNavigate, onDelete }: Pr
           <span className="ml-2 font-sans text-[11px] font-normal text-text-secondary">{formatRouteDate(route.routeDate)}</span>
         </span>
         <div className="flex items-center gap-1.5">
+          {/* I2 review — orthogonal to `state`: a route can be both
+              overdue AND stalled (or overdue and healthily loading). Amber
+              warning tokens, deliberately distinct from the stalled
+              card's error-toned border, so the two signals compose
+              instead of one masking the other. */}
+          {overdue && <StatusBadge status="overdue" label="Atrasada" variant="warning" size="sm" />}
           <StatusBadge status={state} label={config.label} variant={config.variant} size="sm" />
           {canDelete && (
             <AlertDialog>
@@ -131,21 +157,24 @@ export function LoadingRouteCard({ route, state, now, onNavigate, onDelete }: Pr
         </div>
       </div>
 
-      {/* Freshness / staleness line — the whole point of this screen (rule
-          9): recomputed from `now`, a prop the parent ticks, never a value
-          captured once at mount. */}
-      {state === 'loading' && route.lastScanAtIso && (
-        <p className="text-xs text-text-secondary">último escaneo {formatFreshness(route.lastScanAtIso, now)}</p>
-      )}
-      {state === 'stalled' && route.lastScanAtIso && (
-        <p className="text-xs font-medium text-status-error-text">sin escaneos {formatStaleness(route.lastScanAtIso, now)}</p>
+      {/* I4 review — <ScanFreshness> owns its own 1s tick; this is the
+          ONLY subtree on the tab that re-renders every second. */}
+      {(state === 'loading' || state === 'stalled') && route.lastScanAtIso && (
+        <ScanFreshness lastScanAtIso={route.lastScanAtIso} stalled={state === 'stalled'} />
       )}
       {state === 'ready' && (
-        <p className="text-xs text-text-secondary">
-          <span>cerrada</span>
-          <span className="mx-1">·</span>
-          <span>Cerró {formatCloseTime(route.updatedAtIso)}</span>
-        </p>
+        // C1 review — dropped the close time entirely. `routes.updated_at`
+        // is NOT reliably "when this route sealed": sweep_load_position_
+        // assignments (20260827000003) also writes it, best-effort, after
+        // EVERY successful dispatch of any OTHER route on this operator,
+        // whenever it frees up a position this route was waiting on — so a
+        // route sealed at 08:41 can read a bumped `updated_at` hours later
+        // with no seal-related event at all. There is no dedicated
+        // sealed_at/closed_at column to read instead (only `status` plus
+        // the generic updated_at trigger), so "cerrada" alone is what's
+        // actually known — a proxy timestamp under a label that asserts a
+        // fact is worse than no timestamp.
+        <p className="text-xs text-text-secondary">cerrada</p>
       )}
 
       <div className="flex items-baseline gap-1.5">
@@ -156,31 +185,41 @@ export function LoadingRouteCard({ route, state, now, onNavigate, onDelete }: Pr
 
       {state === 'stalled' && (
         <p className="text-xs text-text-secondary">
-          «La cuadrilla dejó de escanear. Nadie cerró la ruta y quedan {outstanding} paquetes en el andén.»
+          La cuadrilla dejó de escanear. Nadie cerró la ruta y quedan {outstanding} paquetes en el andén.
         </p>
       )}
 
-      {state === 'draft' && !route.vehiclePlate && (
+      {state === 'draft' && (
         <p className="text-xs font-medium text-status-warning-text">Sin vehículo asignado</p>
       )}
 
-      {(state === 'loading' || state === 'stalled') && (
+      {(state === 'loading' || state === 'stalled') && (anden || rate !== null || crew.length > 0) && (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-secondary">
-          {route.loadPositionLabel && <span>{route.loadPositionLabel}</span>}
+          {anden && <span>{anden}</span>}
           {rate !== null && <span>{rate}/h</span>}
+          {/* M1 review — the crew actually scanning this route, by name.
+              There is no shift/turno concept anywhere in the schema (see
+              ActiveCrewPanel's header comment), so real names are what
+              this row can honestly show. */}
+          {crew.length > 0 && <span>{crew.map((c) => c.fullName).join(', ')}</span>}
         </div>
-      )}
-
-      {(route.driverName || route.vehiclePlate) && (
-        <p className="text-xs text-text-secondary">{driverLine}</p>
       )}
 
       <button
         onClick={(e) => { e.stopPropagation(); onNavigate(route.id); }}
-        className="mt-1 self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground hover:opacity-90 transition-opacity"
+        // Minor review — "Despachar a DispatchTrack" reads as a one-click
+        // dispatch, but it only opens the route's detail screen (see the
+        // header comment above `actionLabel`). The arrow + aria-description
+        // make that a step, not an instant action, without changing the
+        // required label text itself.
+        aria-description={isDispatchAction ? 'Abre la pantalla de la ruta para completar el despacho' : undefined}
+        className="mt-1 flex items-center gap-1 self-start rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground hover:opacity-90 transition-opacity"
       >
         {actionLabel(state)}
+        {isDispatchAction && <ArrowRight className="h-3 w-3" />}
       </button>
     </div>
   );
 }
+
+export const LoadingRouteCard = memo(LoadingRouteCardImpl);

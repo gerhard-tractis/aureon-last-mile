@@ -7,6 +7,8 @@ import {
   formatStaleness,
   computeLoadRateFmt,
   sortByUrgency,
+  isRouteOverdue,
+  daysBeforeISO,
   type LoadState,
 } from './loading-monitor';
 
@@ -100,14 +102,53 @@ describe('sortByUrgency', () => {
   });
 
   it('sortByUrgency reorders a list of routes by their derived state', () => {
-    interface Row { id: string; state: LoadState }
+    interface Row { id: string; state: LoadState; routeDate: string }
     const rows: Row[] = [
-      { id: 'r-ready', state: 'ready' },
-      { id: 'r-draft', state: 'draft' },
-      { id: 'r-stalled', state: 'stalled' },
-      { id: 'r-loading', state: 'loading' },
+      { id: 'r-ready', state: 'ready', routeDate: '2026-09-03' },
+      { id: 'r-draft', state: 'draft', routeDate: '2026-09-03' },
+      { id: 'r-stalled', state: 'stalled', routeDate: '2026-09-03' },
+      { id: 'r-loading', state: 'loading', routeDate: '2026-09-03' },
     ];
-    const sorted = sortByUrgency(rows, (r) => r.state);
+    const sorted = sortByUrgency(rows, (r) => r.state, (r) => r.routeDate);
     expect(sorted.map((r) => r.id)).toEqual(['r-stalled', 'r-loading', 'r-ready', 'r-draft']);
+  });
+
+  it('breaks ties within the same state by route_date ascending — I2: an overdue route sorts to the front of its bucket, not the back', () => {
+    interface Row { id: string; state: LoadState; routeDate: string }
+    const rows: Row[] = [
+      { id: 'r-today', state: 'loading', routeDate: '2026-09-03' },
+      { id: 'r-yesterday', state: 'loading', routeDate: '2026-09-02' },
+      { id: 'r-tomorrow', state: 'loading', routeDate: '2026-09-04' },
+    ];
+    const sorted = sortByUrgency(rows, (r) => r.state, (r) => r.routeDate);
+    expect(sorted.map((r) => r.id)).toEqual(['r-yesterday', 'r-today', 'r-tomorrow']);
+  });
+});
+
+describe('isRouteOverdue (I2 — orthogonal to stalled)', () => {
+  it('is true when route_date is before today', () => {
+    expect(isRouteOverdue('2026-09-02', '2026-09-03')).toBe(true);
+  });
+
+  it('is false for today', () => {
+    expect(isRouteOverdue('2026-09-03', '2026-09-03')).toBe(false);
+  });
+
+  it('is false for a future date', () => {
+    expect(isRouteOverdue('2026-09-04', '2026-09-03')).toBe(false);
+  });
+});
+
+describe('daysBeforeISO (I3 — query date bound)', () => {
+  it('subtracts whole days from an already-resolved civil date', () => {
+    expect(daysBeforeISO('2026-09-03', 3)).toBe('2026-08-31');
+  });
+
+  it('crosses a month boundary correctly', () => {
+    expect(daysBeforeISO('2026-09-01', 3)).toBe('2026-08-29');
+  });
+
+  it('crosses a year boundary correctly', () => {
+    expect(daysBeforeISO('2026-01-01', 3)).toBe('2025-12-29');
   });
 });

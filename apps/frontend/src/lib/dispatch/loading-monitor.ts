@@ -128,8 +128,53 @@ export function computeLoadRateFmt(
   return Math.round((loadedBoxCount / elapsedMinutes) * 60);
 }
 
-/** Stable sort by LOAD_STATE_ORDER — used to put stalled routes first
- *  without mutating the caller's array. */
-export function sortByUrgency<T>(rows: readonly T[], stateOf: (row: T) => LoadState): T[] {
-  return [...rows].sort((a, b) => LOAD_STATE_ORDER[stateOf(a)] - LOAD_STATE_ORDER[stateOf(b)]);
+/**
+ * Stable sort by LOAD_STATE_ORDER, with `route_date` ascending as the
+ * tiebreaker within a bucket (I2 review). Without this, the routes query's
+ * own `route_date` DESC ordering survives the state sort and an overdue
+ * route (the one that has been sitting open longest) lands LAST among its
+ * same-state peers — exactly backwards for a screen whose whole premise is
+ * "wrong ones visible first". `routeDateOf` is optional so callers with no
+ * date to break ties on (tests, non-route rows) are unaffected.
+ */
+export function sortByUrgency<T>(
+  rows: readonly T[],
+  stateOf: (row: T) => LoadState,
+  routeDateOf?: (row: T) => string,
+): T[] {
+  return [...rows].sort((a, b) => {
+    const byState = LOAD_STATE_ORDER[stateOf(a)] - LOAD_STATE_ORDER[stateOf(b)];
+    if (byState !== 0 || !routeDateOf) return byState;
+    return routeDateOf(a) < routeDateOf(b) ? -1 : routeDateOf(a) > routeDateOf(b) ? 1 : 0;
+  });
+}
+
+/**
+ * I3 — the "N days before" bound for the routes query, as pure calendar
+ * arithmetic on an already-resolved civil date string (from
+ * `todayISOInTimezone`). Constructing the `T00:00:00Z`/UTC instant here is
+ * safe specifically BECAUSE the caller already resolved the correct
+ * Santiago civil date first — this function only subtracts whole days from
+ * a date that is already correct, it never re-derives "today" itself
+ * (that would reopen the exact UTC-rollover bug I1 fixes).
+ */
+export function daysBeforeISO(dateISO: string, days: number): string {
+  const d = new Date(`${dateISO}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * I2 — overdue is orthogonal to stalled, not superseded by it. A route
+ * still open past its own `route_date` is a distinct problem (nobody
+ * dispatched it in time) from "the crew stopped scanning" — a crew
+ * scanning at a healthy rate on YESTERDAY's route is still `loading`, not
+ * `stalled`, and needs its own marker. String comparison, not Date math:
+ * `route_date` is already a plain `YYYY-MM-DD` civil date, and comparing
+ * it against another `YYYY-MM-DD` string lexicographically is exact —
+ * no timezone conversion to get wrong, unlike constructing two `Date`
+ * objects would risk.
+ */
+export function isRouteOverdue(routeDate: string, todayISO: string): boolean {
+  return routeDate < todayISO;
 }

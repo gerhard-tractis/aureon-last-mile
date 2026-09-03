@@ -78,7 +78,7 @@ describe('aggregateCrew', () => {
     ];
     const crew = aggregateCrew(dispatches, packages);
     expect(crew).toEqual([
-      { userId: 'u1', routeId: 'r1', scanCount: 2, lastScanAtIso: '2026-09-03T11:58:00Z' },
+      { userId: 'u1', routeId: 'r1', scanCount: 2, firstScanAtIso: '2026-09-03T11:50:00Z', lastScanAtIso: '2026-09-03T11:58:00Z' },
     ]);
   });
 
@@ -89,8 +89,17 @@ describe('aggregateCrew', () => {
     ];
     const crew = aggregateCrew(dispatches, packages);
     expect(crew).toEqual([
-      { userId: 'u1', routeId: 'r2', scanCount: 2, lastScanAtIso: '2026-09-03T11:58:00Z' },
+      { userId: 'u1', routeId: 'r2', scanCount: 2, firstScanAtIso: '2026-09-03T11:50:00Z', lastScanAtIso: '2026-09-03T11:58:00Z' },
     ]);
+  });
+
+  it('keeps firstScanAtIso as the earliest scan even when it arrives out of order', () => {
+    const packages = [
+      { order_id: 'o1', loaded_at: '2026-09-03T11:58:00Z', loaded_by: 'u1', status: 'en_carga' },
+      { order_id: 'o2', loaded_at: '2026-09-03T11:50:00Z', loaded_by: 'u1', status: 'en_carga' },
+    ];
+    const crew = aggregateCrew(dispatches, packages);
+    expect(crew[0].firstScanAtIso).toBe('2026-09-03T11:50:00Z');
   });
 
   it('keeps distinct users separate', () => {

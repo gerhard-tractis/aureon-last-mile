@@ -90,6 +90,10 @@ export interface CrewAgg {
    *  "which andén are they at right now". */
   routeId: string;
   scanCount: number;
+  /** M2 review — this person's EARLIEST scan seen in the current dataset,
+   *  so a per-crew rate can be computed with computeLoadRateFmt the same
+   *  way a per-route one is, rather than inventing a second formula. */
+  firstScanAtIso: string;
   lastScanAtIso: string;
 }
 
@@ -113,10 +117,16 @@ export function aggregateCrew(
 
     const existing = byUser.get(p.loaded_by);
     if (!existing) {
-      byUser.set(p.loaded_by, { userId: p.loaded_by, routeId, scanCount: 1, lastScanAtIso: p.loaded_at });
+      byUser.set(p.loaded_by, {
+        userId: p.loaded_by, routeId, scanCount: 1,
+        firstScanAtIso: p.loaded_at, lastScanAtIso: p.loaded_at,
+      });
       continue;
     }
     existing.scanCount += 1;
+    if (Date.parse(p.loaded_at) < Date.parse(existing.firstScanAtIso)) {
+      existing.firstScanAtIso = p.loaded_at;
+    }
     if (Date.parse(p.loaded_at) > Date.parse(existing.lastScanAtIso)) {
       existing.lastScanAtIso = p.loaded_at;
       existing.routeId = routeId;

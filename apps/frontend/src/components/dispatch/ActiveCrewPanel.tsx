@@ -2,7 +2,7 @@
 
 import { StatusBadge } from '@/components/StatusBadge';
 import type { CrewMember } from '@/hooks/dispatch/useLoadingMonitor';
-import { STALL_THRESHOLD_MINUTES } from '@/lib/dispatch/loading-monitor';
+import { STALL_THRESHOLD_MINUTES, computeLoadRateFmt } from '@/lib/dispatch/loading-monitor';
 
 interface Props {
   crew: CrewMember[];
@@ -47,6 +47,10 @@ export function ActiveCrewPanel({ crew, now }: Props) {
       <ul className="flex flex-col gap-2">
         {crew.map((member) => {
           const inRhythm = isInRhythm(member.lastScanAtIso, now);
+          // M2 review — reuses computeLoadRateFmt verbatim (same "at least
+          // 2 real minutes elapsed" floor as the route cards' rate) rather
+          // than a second, per-person formula.
+          const rate = computeLoadRateFmt(member.scanCount, member.firstScanAtIso, now);
           return (
             <li key={member.userId} className="flex items-center gap-3 text-xs">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-raised font-mono text-[11px] font-bold text-text">
@@ -57,6 +61,7 @@ export function ActiveCrewPanel({ crew, now }: Props) {
                 <span className="text-text-secondary">{member.loadPositionLabel}</span>
               )}
               <span className="font-mono text-text-secondary">{member.scanCount}</span>
+              {rate !== null && <span className="font-mono text-text-secondary">{rate}/h</span>}
               <StatusBadge
                 status={inRhythm ? 'en_ritmo' : 'detenida'}
                 label={inRhythm ? 'EN RITMO' : 'DETENIDA'}

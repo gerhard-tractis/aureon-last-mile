@@ -13,6 +13,7 @@ function makeCrew(overrides: Partial<CrewMember> = {}): CrewMember {
     routeId: 'r1',
     loadPositionLabel: 'A3 Sur Oriente',
     scanCount: 24,
+    firstScanAtIso: new Date(NOW - 40 * 60_000).toISOString(),
     lastScanAtIso: new Date(NOW - 8_000).toISOString(),
     ...overrides,
   };
@@ -50,6 +51,19 @@ describe('ActiveCrewPanel', () => {
   it('renders nothing (no empty-state chrome) when there is no active crew — the panel is optional context, not a primary view', () => {
     const { container } = render(<ActiveCrewPanel crew={[]} now={NOW} />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('shows a per-crew rate (M2) computed the same way as the route rate', () => {
+    // 24 scans over 40 minutes = 36/h
+    render(<ActiveCrewPanel crew={[makeCrew()]} now={NOW} />);
+    expect(screen.getByText('36/h')).toBeInTheDocument();
+  });
+
+  it('renders no rate when there is not yet enough elapsed time', () => {
+    render(
+      <ActiveCrewPanel crew={[makeCrew({ firstScanAtIso: new Date(NOW - 30_000).toISOString() })]} now={NOW} />,
+    );
+    expect(screen.queryByText(/\/h$/)).not.toBeInTheDocument();
   });
 
   it('renders one row per distinct crew member', () => {
