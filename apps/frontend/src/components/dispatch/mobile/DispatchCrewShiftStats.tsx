@@ -1,6 +1,6 @@
 'use client';
 
-import type { ShiftScanStats } from '@/lib/dispatch/mobile/crew-board';
+import type { ShiftScanStats } from '@/lib/dispatch/mobile/crew-shift-stats';
 
 /** spec-76 2a — ESCANEADOS HOY / RITMO tiles. `ratePerHour` renders "—"
  *  rather than "0/h" until there is a real spread to derive it from

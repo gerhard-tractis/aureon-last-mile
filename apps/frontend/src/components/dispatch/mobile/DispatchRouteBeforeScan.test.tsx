@@ -50,7 +50,7 @@ describe('DispatchRouteBeforeScan', () => {
     expect(screen.queryByTestId('dispatch-incomplete-orders-warning')).not.toBeInTheDocument();
   });
 
-  it('keeps "Empezar a escanear" enabled with no vehicle assigned (decision 6)', () => {
+  it('keeps "Empezar a escanear" enabled with no vehicle assigned, absent a disabled reason (decision 6)', () => {
     render(<DispatchRouteBeforeScan {...baseProps} />);
     const button = screen.getByRole('button', { name: /empezar a escanear/i });
     expect(button).toBeEnabled();
@@ -62,7 +62,12 @@ describe('DispatchRouteBeforeScan', () => {
     expect(screen.getByText(/DispatchTrack necesita el identificador del camión/)).toBeInTheDocument();
   });
 
-  it('shows the assigned vehicle and driver when known', () => {
+  // spec-76 review I7 — routes.vehicle_id is only ever written by the
+  // dispatch handler, after `loaded`; every route this screen can show
+  // today has it NULL. This fixture is only realistic for the post-2d
+  // future once `2d` starts persisting an earlier assignment — it is not a
+  // state a route can be in right now.
+  it('renders the assigned vehicle and driver once populated (post-2d future — NULL for every route today)', () => {
     render(
       <DispatchRouteBeforeScan
         {...baseProps}
@@ -90,5 +95,39 @@ describe('DispatchRouteBeforeScan', () => {
     expect(onAssignVehicle).toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: /volver/i }));
     expect(onBack).toHaveBeenCalled();
+  });
+
+  describe('spec-76 review C1 — disabled reason', () => {
+    it('disables "Empezar a escanear" and shows why, when a reason is given', async () => {
+      const onStartScanning = vi.fn();
+      render(
+        <DispatchRouteBeforeScan
+          {...baseProps}
+          onStartScanning={onStartScanning}
+          startScanningDisabledReason="El escaneo llega en el próximo paso"
+        />,
+      );
+      const button = screen.getByRole('button', { name: /empezar a escanear/i });
+      expect(button).toBeDisabled();
+      expect(screen.getByText('El escaneo llega en el próximo paso')).toBeInTheDocument();
+      await userEvent.click(button);
+      expect(onStartScanning).not.toHaveBeenCalled();
+    });
+
+    it('disables "Asignar camión y conductor" and shows why, when a reason is given', async () => {
+      const onAssignVehicle = vi.fn();
+      render(
+        <DispatchRouteBeforeScan
+          {...baseProps}
+          onAssignVehicle={onAssignVehicle}
+          assignVehicleDisabledReason="La asignación llega en el próximo paso"
+        />,
+      );
+      const button = screen.getByRole('button', { name: /asignar camión y conductor/i });
+      expect(button).toBeDisabled();
+      expect(screen.getByText('La asignación llega en el próximo paso')).toBeInTheDocument();
+      await userEvent.click(button);
+      expect(onAssignVehicle).not.toHaveBeenCalled();
+    });
   });
 });

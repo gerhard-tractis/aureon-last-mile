@@ -1,7 +1,8 @@
 'use client';
 
 import { ArrowRight } from 'lucide-react';
-import type { RouteCard, ShiftScanStats } from '@/lib/dispatch/mobile/crew-board';
+import type { RouteCard } from '@/lib/dispatch/mobile/crew-board';
+import type { ShiftScanStats } from '@/lib/dispatch/mobile/crew-shift-stats';
 import type { LastDispatched } from '@/hooks/dispatch/mobile/useCrewLoadingBoard';
 import { DispatchCrewTaskCard } from './DispatchCrewTaskCard';
 import { DispatchCrewShiftStats } from './DispatchCrewShiftStats';

@@ -11,11 +11,13 @@ import { DispatchVehicleAssignmentBlock } from './DispatchVehicleAssignmentBlock
  * starts: andén/órdenes/paradas counts, vehicle assignment, the
  * incomplete-orders warning (decision 5), comunas.
  *
- * `onStartScanning` is enabled with no vehicle assigned (decision 6 — the
- * scan loop, `2e`, is `spec-76` task 4, out of this task's scope) and
- * `onAssignVehicle` opens `2d` (task 2, also out of scope) — both are left
- * to the caller so this screen does not have to know what either target
- * looks like yet.
+ * `onStartScanning` needs no vehicle assigned to be pressed (decision 6 —
+ * a missing vehicle is never why this screen disables scanning).
+ * `startScanningDisabledReason`/`assignVehicleDisabledReason` are a SEPARATE
+ * mechanism: spec-76 review C1 — until `2d`/`2e` (tasks 2/4) actually ship,
+ * the caller passes a reason and both CTAs render disabled with it visible,
+ * rather than a live-looking primary button that silently does nothing on
+ * a loading bay.
  */
 export interface DispatchRouteBeforeScanProps {
   routeCode: string;
@@ -29,6 +31,8 @@ export interface DispatchRouteBeforeScanProps {
   onBack: () => void;
   onStartScanning: () => void;
   onAssignVehicle: () => void;
+  startScanningDisabledReason?: string | null;
+  assignVehicleDisabledReason?: string | null;
 }
 
 export function DispatchRouteBeforeScan({
@@ -43,6 +47,8 @@ export function DispatchRouteBeforeScan({
   onBack,
   onStartScanning,
   onAssignVehicle,
+  startScanningDisabledReason = null,
+  assignVehicleDisabledReason = null,
 }: DispatchRouteBeforeScanProps) {
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="dispatch-route-before-scan">
@@ -91,18 +97,26 @@ export function DispatchRouteBeforeScan({
         <button
           type="button"
           onClick={onStartScanning}
-          className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent-light text-[15px] font-semibold text-accent-light-foreground active:opacity-90"
+          disabled={!!startScanningDisabledReason}
+          className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[10px] bg-accent-light text-[15px] font-semibold text-accent-light-foreground active:opacity-90 disabled:cursor-not-allowed disabled:bg-surface-raised disabled:text-text-muted disabled:active:opacity-100"
         >
           <ScanBarcode className="h-5 w-5" />
           Empezar a escanear
         </button>
+        {startScanningDisabledReason && (
+          <p className="text-center text-[11.5px] text-text-muted">{startScanningDisabledReason}</p>
+        )}
         <button
           type="button"
           onClick={onAssignVehicle}
-          className="flex min-h-[48px] w-full items-center justify-center rounded-[10px] border border-border text-[14px] font-medium text-text active:opacity-90"
+          disabled={!!assignVehicleDisabledReason}
+          className="flex min-h-[48px] w-full items-center justify-center rounded-[10px] border border-border text-[14px] font-medium text-text active:opacity-90 disabled:cursor-not-allowed disabled:text-text-muted disabled:active:opacity-100"
         >
           Asignar camión y conductor
         </button>
+        {assignVehicleDisabledReason && (
+          <p className="text-center text-[11.5px] text-text-muted">{assignVehicleDisabledReason}</p>
+        )}
       </div>
     </div>
   );

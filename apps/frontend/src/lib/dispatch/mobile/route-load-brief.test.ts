@@ -46,14 +46,20 @@ describe('countStops', () => {
 });
 
 describe('countPendingOnDock', () => {
-  it('counts dispatchable, not-yet-loaded packages only', () => {
+  it('counts not-yet-loaded packages actually on the andén only', () => {
     const packages: BriefPackageRow[] = [
-      { order_id: 'o1', status: 'en_bodega', loaded_at: null },
-      { order_id: 'o1', status: 'en_bodega', loaded_at: '2026-09-03T10:00:00Z' }, // already loaded
-      { order_id: 'o2', status: 'retenido', loaded_at: null }, // not dispatchable
+      { order_id: 'o1', status: 'sectorizado', loaded_at: null },
+      { order_id: 'o1', status: 'asignado', loaded_at: '2026-09-03T10:00:00Z' }, // already loaded
+      { order_id: 'o2', status: 'retenido', loaded_at: null }, // held in consolidation
       { order_id: 'o3', status: 'asignado', loaded_at: null },
+      { order_id: 'o4', status: 'listo_para_despacho', loaded_at: null },
     ];
-    expect(countPendingOnDock(packages)).toBe(2);
+    expect(countPendingOnDock(packages)).toBe(3);
+  });
+
+  it('spec-76 review I4 — excludes en_bodega: a box that never reached the andén does not count', () => {
+    const packages: BriefPackageRow[] = [{ order_id: 'o1', status: 'en_bodega', loaded_at: null }];
+    expect(countPendingOnDock(packages)).toBe(0);
   });
 });
 

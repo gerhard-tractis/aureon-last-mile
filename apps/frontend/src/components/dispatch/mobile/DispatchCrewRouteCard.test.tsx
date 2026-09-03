@@ -44,10 +44,15 @@ describe('DispatchCrewRouteCard', () => {
   });
 
   it.each([
-    ['borrador', 'Abrir y asignar vehículo'],
-    ['lista', 'Despachar'],
-  ] as const)('shows the right action label for chip %s', (chip, label) => {
-    render(<DispatchCrewRouteCard route={{ ...base, chip }} onOpen={vi.fn()} />);
+    ['borrador', 'draft', 'Abrir y asignar vehículo'],
+    // spec-76 review I6 — "Abrir", not "Despachar": this action navigates
+    // to 2c, not to the actual (irreversible, spec-77) dispatch call.
+    ['lista', 'loaded', 'Abrir'],
+    // spec-76 review M1 — chip/status kept consistent (`routeChip` can
+    // never emit `lista` for a `loading` route); a fixture that could not
+    // come out of `buildRouteCards` proves nothing.
+  ] as const)('shows the right action label for chip %s', (chip, status, label) => {
+    render(<DispatchCrewRouteCard route={{ ...base, chip, status }} onOpen={vi.fn()} />);
     expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
   });
 

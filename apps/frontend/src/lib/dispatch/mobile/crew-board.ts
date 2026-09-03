@@ -15,6 +15,7 @@
 // route-level box totals have no date axis to conflate.
 
 import { DISPATCHABLE_STATUSES } from '../scan-validator';
+import { ON_ANDEN_STATUSES } from './anden-status';
 import type { RouteStatus } from '../types';
 
 export interface CrewDispatchLinkRow {
@@ -101,6 +102,28 @@ export function aggregateBoxesByRoute(
   return out;
 }
 
+/** Per-route count of packages actually sitting on the dock, not yet
+ *  loaded — spec-76 review I4. Narrower than `aggregateBoxesByRoute`'s
+ *  `total` (which correctly stays `DISPATCHABLE_STATUSES` — "boxes on this
+ *  route" including ones still `en_bodega`): this is "en el andén"
+ *  specifically, so `en_bodega` (decision 5's own rejection reason: "no
+ *  pasó por andén") must not count. */
+export function countAndenPendingByRoute(
+  dispatches: readonly CrewDispatchLinkRow[],
+  packages: readonly CrewPackageRow[],
+): Map<string, number> {
+  const byOrder = routeIdByOrder(dispatches);
+  const out = new Map<string, number>();
+  for (const p of packages) {
+    if (p.loaded_at) continue;
+    if (!(ON_ANDEN_STATUSES as readonly string[]).includes(p.status)) continue;
+    const routeId = byOrder.get(p.order_id);
+    if (!routeId) continue;
+    out.set(routeId, (out.get(routeId) ?? 0) + 1);
+  }
+  return out;
+}
+
 export interface ComunaSummary { comuna: string | null; otherCount: number }
 
 /** Per-route comuna breakdown, reduced to "the dominant comuna, plus how
@@ -139,51 +162,76 @@ export function summarizeComunaByRoute(
 
 export interface RouteLoader { userId: string; fullName: string; lastScanAtIso: string }
 
-/** Route id -> whoever scanned there most recently. One entry per user per
- *  their single most-recent route (spec-76 mirrors loading-monitor-
- *  aggregate.ts's `aggregateCrew`: a crew member can move between routes
- *  across a shift, only their latest scan says where they are now), then
- *  regrouped by route so a route can show its current loader. */
+/**
+ * Route id -> whoever scanned there most recently, computed independently
+ * PER ROUTE — spec-76 review C2. The previous version tracked only each
+ * user's single globally-most-recent scan (mirroring loading-monitor-
+ * aggregate.ts's `aggregateCrew`, which exists to answer "which andén is
+ * this person at right now", a different question). That collapsed a crew
+ * member moving route A -> route B: B's later timestamp evicted A from
+ * `latestByUser`, so A lost its loader entirely and silently fell back to
+ * `borrador` — reopenable by a second crew mid-load. Every route here keeps
+ * its own most-recent scanner regardless of what else that person has since
+ * scanned.
+ */
 export function findLoaderByRoute(
   dispatches: readonly CrewDispatchLinkRow[],
   packages: readonly CrewPackageRow[],
   namesByUserId: ReadonlyMap<string, string>,
 ): Map<string, RouteLoader> {
   const byOrder = routeIdByOrder(dispatches);
-  const latestByUser = new Map<string, { routeId: string; lastScanAtIso: string }>();
+  const latestByRoute = new Map<string, { userId: string; lastScanAtIso: string }>();
   for (const p of packages) {
     if (!p.loaded_at || !p.loaded_by) continue;
     const routeId = byOrder.get(p.order_id);
     if (!routeId) continue;
-    const existing = latestByUser.get(p.loaded_by);
+    const existing = latestByRoute.get(routeId);
     if (!existing || Date.parse(p.loaded_at) > Date.parse(existing.lastScanAtIso)) {
-      latestByUser.set(p.loaded_by, { routeId, lastScanAtIso: p.loaded_at });
+      latestByRoute.set(routeId, { userId: p.loaded_by, lastScanAtIso: p.loaded_at });
     }
   }
   const out = new Map<string, RouteLoader>();
-  for (const [userId, { routeId, lastScanAtIso }] of latestByUser) {
-    const existing = out.get(routeId);
-    if (!existing || Date.parse(lastScanAtIso) > Date.parse(existing.lastScanAtIso)) {
-      out.set(routeId, { userId, fullName: namesByUserId.get(userId) ?? 'Otra persona', lastScanAtIso });
-    }
+  for (const [routeId, { userId, lastScanAtIso }] of latestByRoute) {
+    out.set(routeId, { userId, fullName: namesByUserId.get(userId) ?? 'Otra persona', lastScanAtIso });
   }
   return out;
 }
 
-/** The chip a route card shows — spec-76 decisions 6/9 and the Fase 2 test
- *  list (`TU CARGA` / `BORRADOR` / `LISTA` / another crew's route, shown
- *  but not openable). */
+/**
+ * The chip a route card shows — spec-76 decisions 6/9 and the Fase 2 test
+ * list (`TU CARGA` / `BORRADOR` / `LISTA` / another crew's route, shown
+ * but not openable).
+ *
+ * spec-76 review C2 — `status === 'loading'` with NO resolvable loader
+ * (nobody has scanned yet, e.g. a crew member just opened `2c` and hasn't
+ * scanned) used to fall through to `borrador`, i.e. fully openable — the
+ * exact two-crews-on-one-andén decision 9 exists to prevent. A route
+ * already in `loading` always means SOMEONE moved it out of `draft`, known
+ * or not, so it is treated as blocked either way; the card's own
+ * `'otra persona'` fallback (crew-board.ts's `findLoaderByRoute`) covers
+ * the unresolvable case.
+ */
 export function routeChip(
   status: RouteStatus,
   loader: RouteLoader | undefined,
   forUserId: string | null,
 ): RouteCardChip {
   if (status === 'loaded') return 'lista';
-  if (status === 'loading' && loader) {
-    return loader.userId === forUserId ? 'tu_carga' : 'otra_cuadrilla';
+  if (status === 'loading') {
+    return loader && loader.userId === forUserId ? 'tu_carga' : 'otra_cuadrilla';
   }
   return 'borrador';
 }
+
+/** Fixed display order for 2b's cards (spec-76 review D1: the spec asks
+ *  for the four states AND their order) — TU CARGA first (my priority),
+ *  then BORRADOR, then LISTA, blocked routes from another crew last. */
+const CHIP_RANK: Record<RouteCardChip, number> = {
+  tu_carga: 0,
+  borrador: 1,
+  lista: 2,
+  otra_cuadrilla: 3,
+};
 
 export function buildRouteCards(
   routes: readonly CrewRouteRow[],
@@ -217,44 +265,15 @@ export function buildRouteCards(
       vehicleExternalId: r.vehicleExternalId,
       loadedByOtherName: chip === 'otra_cuadrilla' ? (loader?.fullName ?? null) : null,
     };
-  });
+  })
+    // Stable sort (guaranteed since ES2019): ties keep the routes' own
+    // query order (created_at ASC), only the chip groups themselves move.
+    .sort((a, b) => CHIP_RANK[a.chip] - CHIP_RANK[b.chip]);
 }
 
-export interface ShiftScanStats {
-  scannedToday: number;
-  /** Packages per hour, from this user's first to last scan seen today.
-   *  `null` until there are at least two scans to derive a rate from — a
-   *  single scan has no elapsed interval, and showing "0/h" or a fabricated
-   *  rate would both be dishonest (spec-76 lesson: no proxy under a label
-   *  asserting a fact). */
-  ratePerHour: number | null;
-}
-
-/** `todayISO` must come from `todayISOInTimezone()` at render/query time,
- *  never computed once at module load (spec-76 Lecciones #9). Compares the
- *  CIVIL date of each `loaded_at` instant in `TIMEZONE`, not a UTC slice. */
-export function computeTodayScanStats(
-  packages: readonly CrewPackageRow[],
-  userId: string | null,
-  todayISO: string,
-  civilDateOf: (iso: string) => string,
-): ShiftScanStats {
-  if (!userId) return { scannedToday: 0, ratePerHour: null };
-  const mine = packages.filter(
-    (p) => p.loaded_by === userId && p.loaded_at && civilDateOf(p.loaded_at) === todayISO,
-  );
-  if (mine.length === 0) return { scannedToday: 0, ratePerHour: null };
-  const times = mine.map((p) => Date.parse(p.loaded_at as string)).sort((a, b) => a - b);
-  const first = times[0];
-  const last = times[times.length - 1];
-  const hoursElapsed = (last - first) / (1000 * 60 * 60);
-  // Under 6 minutes of spread is too little to trust a per-hour projection
-  // (one scan right after another would extrapolate to an absurd rate) —
-  // render "still warming up" (null) instead of a number that looks precise
-  // but isn't.
-  const ratePerHour = hoursElapsed >= 0.1 ? mine.length / hoursElapsed : null;
-  return { scannedToday: mine.length, ratePerHour };
-}
+// ShiftScanStats / computeTodayScanStats moved to crew-shift-stats.ts
+// (spec-76 review M5 — keeps this file under 300 lines as tasks 2-6 add to
+// it).
 
 export type RouteTab = 'todas' | 'mias' | 'listas';
 

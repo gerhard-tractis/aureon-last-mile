@@ -4,7 +4,7 @@
 // on the dock for one route before the crew starts scanning. Fetching lives
 // in hooks/dispatch/mobile/useRouteLoadBrief.ts.
 
-import { DISPATCHABLE_STATUSES } from '../scan-validator';
+import { ON_ANDEN_STATUSES } from './anden-status';
 
 export interface BriefDispatchRow {
   order_id: string;
@@ -46,15 +46,21 @@ export function countStops(dispatches: readonly BriefDispatchRow[]): number {
   return addresses.size;
 }
 
-/** Outstanding boxes still on the dock for this route — same counting rule
- *  as useRoutePackages.ts / crew-board.ts's aggregateBoxesByRoute, but this
- *  screen only ever looks at one route so there is nothing to key by
- *  route_id. */
+/**
+ * Boxes actually sitting on the dock for this route, not yet loaded —
+ * "EN EL ANDÉN". spec-76 review I4: this used to gate on the wider
+ * `DISPATCHABLE_STATUSES` (useRoutePackages.ts / crew-board.ts's
+ * `aggregateBoxesByRoute` counting rule), which includes `en_bodega` — the
+ * exact status decision 5's own rejection reason names as "no pasó por
+ * andén". Counting it here had the crew scanning toward a number some of
+ * which had never reached the dock. `ON_ANDEN_STATUSES` is the narrower
+ * set that actually means "physically on the andén, ready to load".
+ */
 export function countPendingOnDock(packages: readonly BriefPackageRow[]): number {
   let pending = 0;
   for (const p of packages) {
     if (p.loaded_at) continue;
-    if ((DISPATCHABLE_STATUSES as readonly string[]).includes(p.status)) pending += 1;
+    if ((ON_ANDEN_STATUSES as readonly string[]).includes(p.status)) pending += 1;
   }
   return pending;
 }

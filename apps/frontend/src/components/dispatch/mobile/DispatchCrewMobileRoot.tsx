@@ -33,29 +33,30 @@ export function DispatchCrewMobileRoot({ operatorId, userId }: DispatchCrewMobil
   const routes = board?.routes ?? [];
   const packagesOnDock = board?.packagesOnDock ?? 0;
 
-  if (view === 'routes') {
-    return (
-      <DispatchCrewRouteList
-        routes={routes}
-        packagesOnDock={packagesOnDock}
-        onOpenRoute={openRoute}
-        onBack={() => setView('home')}
-      />
-    );
-  }
-
+  // spec-76 review M2 — DispatchCrewMobileHeader (EN LÍNEA) hoisted above
+  // the 2a/2b view switch so the route list keeps it too, not just home.
+  // It used to live only in the `home` branch's returned tree.
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="dispatch-crew-mobile-root">
       <DispatchCrewMobileHeader driverName={currentUserName ?? null} />
-      <DispatchCrewHome
-        isLoading={isLoading}
-        myTask={board?.myTask ?? null}
-        queue={board?.queue ?? []}
-        shift={board?.shift ?? { scannedToday: 0, ratePerHour: null }}
-        lastDispatched={board?.lastDispatched ?? null}
-        onContinueTask={openRoute}
-        onChooseRoute={() => setView('routes')}
-      />
+      {view === 'routes' ? (
+        <DispatchCrewRouteList
+          routes={routes}
+          packagesOnDock={packagesOnDock}
+          onOpenRoute={openRoute}
+          onBack={() => setView('home')}
+        />
+      ) : (
+        <DispatchCrewHome
+          isLoading={isLoading}
+          myTask={board?.myTask ?? null}
+          queue={board?.queue ?? []}
+          shift={board?.shift ?? { scannedToday: 0, ratePerHour: null }}
+          lastDispatched={board?.lastDispatched ?? null}
+          onContinueTask={openRoute}
+          onChooseRoute={() => setView('routes')}
+        />
+      )}
     </div>
   );
 }

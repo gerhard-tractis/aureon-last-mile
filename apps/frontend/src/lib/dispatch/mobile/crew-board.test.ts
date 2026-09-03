@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   aggregateBoxesByRoute,
+  countAndenPendingByRoute,
   summarizeComunaByRoute,
   findLoaderByRoute,
   routeChip,
   buildRouteCards,
-  computeTodayScanStats,
   filterRouteCards,
   routeTabCounts,
   routeCode,
@@ -27,7 +27,7 @@ describe('routeCode', () => {
 });
 
 describe('aggregateBoxesByRoute', () => {
-  it('counts loaded and dispatchable-but-unloaded packages per route', () => {
+  it('counts loaded and dispatchable-but-unloaded packages per route (includes en_bodega — packagesTotal is "boxes on the route")', () => {
     const packages: CrewPackageRow[] = [
       { order_id: 'order-1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
       { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'asignado' },
@@ -36,6 +36,35 @@ describe('aggregateBoxesByRoute', () => {
     const agg = aggregateBoxesByRoute(dispatches, packages);
     expect(agg.get('route-1')).toEqual({ total: 2, loaded: 1 });
     expect(agg.get('route-2')).toBeUndefined();
+  });
+});
+
+describe('countAndenPendingByRoute — spec-76 review I4', () => {
+  it('excludes en_bodega — a box that has not reached the andén does not count as "en el andén"', () => {
+    const packages: CrewPackageRow[] = [
+      { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'en_bodega' },
+      { order_id: 'order-2', loaded_at: null, loaded_by: null, status: 'asignado' },
+    ];
+    const pending = countAndenPendingByRoute(dispatches, packages);
+    expect(pending.get('route-1')).toBe(1); // only the `asignado` one
+  });
+
+  it('counts sectorizado/asignado/listo_para_despacho, not-yet-loaded', () => {
+    const packages: CrewPackageRow[] = [
+      { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'sectorizado' },
+      { order_id: 'order-2', loaded_at: null, loaded_by: null, status: 'listo_para_despacho' },
+      { order_id: 'order-3', loaded_at: null, loaded_by: null, status: 'asignado' },
+    ];
+    const pending = countAndenPendingByRoute(dispatches, packages);
+    expect(pending.get('route-1')).toBe(2);
+    expect(pending.get('route-2')).toBe(1);
+  });
+
+  it('excludes a package already loaded', () => {
+    const packages: CrewPackageRow[] = [
+      { order_id: 'order-1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'asignado' },
+    ];
+    expect(countAndenPendingByRoute(dispatches, packages).get('route-1')).toBeUndefined();
   });
 });
 
@@ -80,6 +109,20 @@ describe('findLoaderByRoute', () => {
     ];
     expect(findLoaderByRoute(dispatches, packages, names).size).toBe(0);
   });
+
+  it('spec-76 review C2 — a crew member moving route A -> route B keeps A its own loader', () => {
+    // u1 scans on route-1 (via order-1) first, then later moves to route-2
+    // (via order-3). The old implementation tracked only each user's single
+    // globally-latest scan, so u1's move to route-2 evicted route-1 from the
+    // map entirely — route-1 lost its loader and silently reopened.
+    const packages: CrewPackageRow[] = [
+      { order_id: 'order-1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
+      { order_id: 'order-3', loaded_at: '2026-09-03T11:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
+    ];
+    const loaders = findLoaderByRoute(dispatches, packages, names);
+    expect(loaders.get('route-1')).toMatchObject({ userId: 'u1' });
+    expect(loaders.get('route-2')).toMatchObject({ userId: 'u1' });
+  });
 });
 
 describe('routeChip', () => {
@@ -97,9 +140,14 @@ describe('routeChip', () => {
     expect(routeChip('loading', loader, 'u2')).toBe('otra_cuadrilla');
   });
 
-  it('is borrador when nobody has scanned on it yet', () => {
+  it('is borrador when the route has not started loading at all', () => {
     expect(routeChip('draft', undefined, 'u1')).toBe('borrador');
-    expect(routeChip('loading', undefined, 'u1')).toBe('borrador');
+  });
+
+  it('spec-76 review C2 — loading with NO resolvable loader is otra_cuadrilla, not borrador', () => {
+    // Someone moved the route out of draft (status is loading) but no scan
+    // has landed yet — still blocked, not fully openable by a second crew.
+    expect(routeChip('loading', undefined, 'u1')).toBe('otra_cuadrilla');
   });
 });
 
@@ -138,41 +186,24 @@ describe('buildRouteCards', () => {
     expect(card1.chip).toBe('otra_cuadrilla');
     expect(card1.loadedByOtherName).toBe('Javiera P.');
   });
-});
 
-describe('computeTodayScanStats', () => {
-  const civilDateOf = (iso: string) => iso.slice(0, 10);
-
-  it('counts only this user\'s scans on the given civil date', () => {
-    const packages: CrewPackageRow[] = [
-      { order_id: 'o1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
-      { order_id: 'o2', loaded_at: '2026-09-03T10:30:00Z', loaded_by: 'u1', status: 'en_bodega' },
-      { order_id: 'o3', loaded_at: '2026-09-02T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' }, // yesterday
-      { order_id: 'o4', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u2', status: 'en_bodega' }, // someone else
+  it('spec-76 review D1 — sorts cards TU CARGA, BORRADOR, LISTA, then blocked-by-another-crew', () => {
+    const mixedRoutes: CrewRouteRow[] = [
+      { id: 'r-lista', status: 'loaded', loadPositionLabel: null, vehicleExternalId: null, driverName: null, createdAtIso: '2026-09-03T06:00:00Z' },
+      { id: 'r-otra', status: 'loading', loadPositionLabel: null, vehicleExternalId: null, driverName: null, createdAtIso: '2026-09-03T07:00:00Z' },
+      { id: 'r-borrador', status: 'draft', loadPositionLabel: null, vehicleExternalId: null, driverName: null, createdAtIso: '2026-09-03T08:00:00Z' },
+      { id: 'r-tuya', status: 'loading', loadPositionLabel: null, vehicleExternalId: null, driverName: null, createdAtIso: '2026-09-03T09:00:00Z' },
     ];
-    const stats = computeTodayScanStats(packages, 'u1', '2026-09-03', civilDateOf);
-    expect(stats.scannedToday).toBe(2);
-  });
-
-  it('returns a null rate with fewer than two scans or a too-small time spread', () => {
-    const packages: CrewPackageRow[] = [
-      { order_id: 'o1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
+    const mixedDispatches: CrewDispatchLinkRow[] = [
+      { route_id: 'r-otra', order_id: 'o-otra' },
+      { route_id: 'r-tuya', order_id: 'o-tuya' },
     ];
-    expect(computeTodayScanStats(packages, 'u1', '2026-09-03', civilDateOf).ratePerHour).toBeNull();
-  });
-
-  it('derives packages/hour once there is a real spread', () => {
-    const packages: CrewPackageRow[] = [
-      { order_id: 'o1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
-      { order_id: 'o2', loaded_at: '2026-09-03T11:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
+    const mixedPackages: CrewPackageRow[] = [
+      { order_id: 'o-otra', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'other-user', status: 'en_bodega' },
+      { order_id: 'o-tuya', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
     ];
-    const stats = computeTodayScanStats(packages, 'u1', '2026-09-03', civilDateOf);
-    expect(stats.ratePerHour).toBe(2);
-  });
-
-  it('returns zero/null for a user with no scans today, never undefined', () => {
-    expect(computeTodayScanStats([], 'u1', '2026-09-03', civilDateOf)).toEqual({ scannedToday: 0, ratePerHour: null });
-    expect(computeTodayScanStats([], null, '2026-09-03', civilDateOf)).toEqual({ scannedToday: 0, ratePerHour: null });
+    const cards = buildRouteCards(mixedRoutes, mixedDispatches, mixedPackages, new Map(), names, 'u1');
+    expect(cards.map((c) => c.id)).toEqual(['r-tuya', 'r-borrador', 'r-lista', 'r-otra']);
   });
 });
 

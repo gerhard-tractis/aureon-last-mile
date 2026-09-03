@@ -13,7 +13,10 @@ const CHIP_LABEL: Record<RouteCardChip, string> = {
 const ACTION_LABEL: Record<Exclude<RouteCardChip, 'otra_cuadrilla'>, string> = {
   tu_carga: 'Continuar carga',
   borrador: 'Abrir y asignar vehículo',
-  lista: 'Despachar',
+  // spec-76 review I6 — this used to say "Despachar", but the action
+  // navigates to 2c, the pre-scan screen, not to the actual (irreversible)
+  // dispatch call. Dispatch is spec-77.
+  lista: 'Abrir',
 };
 
 /**
@@ -43,6 +46,10 @@ export function DispatchCrewRouteCard({ route, onOpen }: DispatchCrewRouteCardPr
     : 'Sin comuna';
 
   return (
+    // spec-76 review M8 — this `onClick` needs no keyboard equivalent: it
+    // is not itself a tab stop (no role, no tabIndex), so a keyboard user
+    // reaches the same action through the inner `<button>` below, which
+    // already fires it.
     <div
       data-testid="dispatch-crew-route-card"
       onClick={isOpenable ? () => onOpen(route.id) : undefined}

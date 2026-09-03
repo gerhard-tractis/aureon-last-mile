@@ -9,6 +9,15 @@ import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { RouteBuilder } from './RouteBuilder';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
+// spec-76 review C1 — 2d (vehicle sheet, task 2) and 2e (scan loop, task 4)
+// don't exist yet. The coordinator's sequencing call: this branch does not
+// ship on its own — tasks 2 and 4 land in the same PR — but belt-and-braces
+// while it sits on an unmerged branch, both CTAs on 2c disable themselves
+// and say why, rather than a live-looking 56px primary button (the crew's
+// only entry to scanning on a phone) that silently does nothing.
+const SCAN_NOT_READY_REASON = 'El escaneo llega en el próximo paso';
+const ASSIGN_NOT_READY_REASON = 'La asignación de camión llega en el próximo paso';
+
 /**
  * spec-76 decision 1 — the viewport branch for `/app/dispatch/[routeId]`,
  * kept OUT of `RouteBuilder` on purpose (spec-76 task-1 review): that file
@@ -19,10 +28,21 @@ import type { FleetVehicle } from '@/lib/dispatch/types';
  *
  * Returning before `RouteBuilder` mounts also means its desktop-only hooks
  * (`useRoutePackages`, `useDispatchRoute`, `useRouteBlocks`,
- * `useRouteTerritoryHistory`, `useDriverPrefill`) never run on mobile at
- * all — the previous in-`RouteBuilder` branch still fetched and discarded
- * them (Rules of Hooks forced them to run every render regardless); a
- * phone below `lg` now fetches nothing desktop-shaped.
+ * `useRouteTerritoryHistory`, `useDriverPrefill`) never run on a SETTLED
+ * mobile render. spec-76 review I2 — this does NOT mean a phone fetches
+ * nothing desktop-shaped, full stop: `useIsBelowLg` resolves the real
+ * viewport in a post-hydration effect (`useViewport.ts`'s SSR-safe
+ * default), so `isBelowLg` is `false` on the very first client render
+ * regardless of device. `RouteBuilder` commits once on that first render —
+ * its observers fire a real fetch round — before the effect flips
+ * `isBelowLg` to `true` and this component swaps to the crew tree. One
+ * transient desktop mount is unavoidable with this mechanism; what the
+ * wrapper removes is every fetch AFTER that (previously every fetch, every
+ * render, for the component's whole lifetime, because the branch lived
+ * inside `RouteBuilder` and Rules of Hooks forced its hooks to run
+ * regardless). See `DispatchRouteSurface.viewport-hydration.test.tsx`
+ * (spec-76 review I3), which exercises this with the real hook rather than
+ * a mock that skips it.
  */
 export interface DispatchRouteSurfaceProps {
   routeId: string;
@@ -34,10 +54,14 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
   const router = useRouter();
   const isBelowLg = useIsBelowLg();
   // Only fetched below `lg` — enabled gates the fetch itself, not just the
-  // render, so a desktop session never triggers this query.
-  const { data: loadBrief, isLoading: loadBriefLoading } = useRouteLoadBrief(routeId, operatorId, {
-    enabled: isBelowLg,
-  });
+  // render, so a desktop session's SETTLED render never triggers this query
+  // (see the doc comment above on the one transient exception).
+  const {
+    data: loadBrief,
+    isLoading: loadBriefLoading,
+    isError: loadBriefError,
+    refetch: refetchLoadBrief,
+  } = useRouteLoadBrief(routeId, operatorId, { enabled: isBelowLg });
 
   if (isBelowLg) {
     if (loadBriefLoading) {
@@ -46,6 +70,23 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
           <Skeleton className="h-9 w-40 rounded-md" />
           <Skeleton className="h-24 w-full rounded-[10px]" />
           <Skeleton className="h-56 w-full rounded-[10px]" />
+        </div>
+      );
+    }
+    if (loadBriefError) {
+      // spec-76 review M6 — a failed read used to fall through to `?? 0`
+      // fallbacks, rendering "0 / 0 / 0" that reads as a real (and
+      // reassuring) empty route rather than a query that failed.
+      return (
+        <div className="flex flex-col items-center gap-3 p-6 text-center" data-testid="dispatch-route-surface-error">
+          <p className="text-[13.5px] text-status-error-text">No pudimos cargar el resumen de la ruta.</p>
+          <button
+            type="button"
+            onClick={() => refetchLoadBrief()}
+            className="min-h-[44px] rounded-[10px] border border-border px-4 text-[13.5px] font-medium text-text active:opacity-90"
+          >
+            Reintentar
+          </button>
         </div>
       );
     }
@@ -60,13 +101,10 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
         incompleteOrders={loadBrief?.incompleteOrders ?? []}
         comunas={loadBrief?.comunas ?? []}
         onBack={() => router.push('/app/dispatch')}
-        // 2e (scan loop) and 2d (vehicle sheet) are spec-76 tasks 4 and 2 —
-        // out of this task's scope, and neither exists yet. Documented
-        // no-ops rather than routing at a URL that does not exist yet or
-        // mounting the desktop ScanZone (the whole point of this branch is
-        // not to do that).
         onStartScanning={() => {}}
         onAssignVehicle={() => {}}
+        startScanningDisabledReason={SCAN_NOT_READY_REASON}
+        assignVehicleDisabledReason={ASSIGN_NOT_READY_REASON}
       />
     );
   }

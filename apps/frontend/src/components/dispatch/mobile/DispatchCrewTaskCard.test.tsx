@@ -29,7 +29,13 @@ describe('DispatchCrewTaskCard', () => {
     expect(screen.getByText(/Andén A3/)).toBeInTheDocument();
   });
 
-  it('shows the driver when known', () => {
+  // spec-76 review I7 — routes.driver_name is only ever written by the
+  // dispatch handler, after `loaded`; every route this card can show today
+  // has it NULL. This fixture covers the post-dispatch-handler future the
+  // card is READY for, not a state a route showing this card can be in now
+  // (see the "Sin conductor" test just below for what actually renders
+  // today).
+  it('renders the driver once populated (post-dispatch future — NULL for every route today)', () => {
     render(<DispatchCrewTaskCard task={{ ...baseTask, driverName: 'Mario González' }} onContinue={vi.fn()} />);
     expect(screen.getByText('Mario González')).toBeInTheDocument();
   });

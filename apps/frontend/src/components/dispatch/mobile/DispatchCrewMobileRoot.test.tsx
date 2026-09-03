@@ -46,11 +46,15 @@ describe('DispatchCrewMobileRoot', () => {
     expect(screen.getByTestId('dispatch-crew-task-card')).toBeInTheDocument();
   });
 
-  it('navigates to the route list and back', async () => {
+  it('navigates to the route list and back, keeping the header (EN LÍNEA) on both views', async () => {
     mockBoard = { routes: [], myTask: null, queue: [], shift: { scannedToday: 0, ratePerHour: null }, lastDispatched: null, packagesOnDock: 0 };
     render(<DispatchCrewMobileRoot operatorId="op-1" userId="u1" />);
+    expect(screen.getByText('EN LÍNEA')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /elegir ruta/i }));
     expect(screen.getByTestId('dispatch-crew-route-list')).toBeInTheDocument();
+    // spec-76 review M2 — the header used to live only inside the home
+    // branch's returned tree, so it vanished the moment 2b mounted.
+    expect(screen.getByText('EN LÍNEA')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /volver/i }));
     expect(screen.getByTestId('dispatch-crew-mobile-root')).toBeInTheDocument();
   });

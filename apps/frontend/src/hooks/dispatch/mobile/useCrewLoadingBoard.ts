@@ -10,13 +10,15 @@ import { OPEN_ROUTE_STATUSES, type RouteStatus } from '@/lib/dispatch/types';
 import { todayISOInTimezone, TIMEZONE } from '@/lib/utils/dateFormat';
 import {
   buildRouteCards,
-  computeTodayScanStats,
+  countAndenPendingByRoute,
   routeCode,
   type CrewDispatchLinkRow,
   type CrewPackageRow,
   type RouteCard,
-  type ShiftScanStats,
 } from '@/lib/dispatch/mobile/crew-board';
+import { computeTodayScanStats, type ShiftScanStats } from '@/lib/dispatch/mobile/crew-shift-stats';
+import { civilDateOf } from '@/lib/dispatch/mobile/civil-date';
+import { buildLoadableQueue } from '@/lib/dispatch/mobile/crew-queue';
 
 const ID_CHUNK_SIZE = 100;
 
@@ -40,13 +42,6 @@ async function fetchChunked<Row>(
       }),
   );
   return results.flat();
-}
-
-/** Civil (America/Santiago) YYYY-MM-DD of an ISO instant, for comparing a
- *  `loaded_at` timestamp against `todayISOInTimezone()` — never a UTC slice
- *  (spec-76 Lecciones #9). */
-function civilDateOf(iso: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE }).format(new Date(iso));
 }
 
 export interface LastDispatched {
@@ -169,11 +164,19 @@ export function useCrewLoadingBoard(operatorId: string | null, userId: string | 
       const cards = buildRouteCards(routeRowsForCards, dispatchRows, packageRows, comunaByOrder, namesByUserId, userId);
 
       const myTask = cards.find((c) => c.chip === 'tu_carga') ?? null;
-      const queue = cards.filter((c) => c.id !== myTask?.id);
+      // spec-76 review I5 — a route blocked by another crew must not be
+      // offered on "después de esta" as the next thing to load; see
+      // buildLoadableQueue's own doc comment.
+      const queue = buildLoadableQueue(cards, myTask?.id ?? null);
 
       const shift = computeTodayScanStats(packageRows, userId, todayISO, civilDateOf);
 
-      const packagesOnDock = cards.reduce((sum, c) => sum + Math.max(0, c.packagesTotal - c.packagesLoaded), 0);
+      // spec-76 review I4 — "N paquetes en andén" must count only boxes
+      // physically on the dock (ON_ANDEN_STATUSES), not `packagesTotal`
+      // (which correctly includes `en_bodega` — boxes on the route that
+      // have not reached the andén yet).
+      const andenPendingByRoute = countAndenPendingByRoute(dispatchRows, packageRows);
+      const packagesOnDock = [...andenPendingByRoute.values()].reduce((sum, n) => sum + n, 0);
 
       // Last dispatched route today — audit_logs, not routes.updated_at
       // (spec-76: that column moves for unrelated reasons, e.g. the
