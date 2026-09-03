@@ -203,7 +203,12 @@ describe('validateScan — membership', () => {
     ]);
     const result = await validateScan(client, input);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('ALREADY_IN_ROUTE');
+    if (!result.ok) {
+      expect(result.code).toBe('ALREADY_IN_ROUTE');
+      // spec-76 phase 4 (2f) — 2f names the conflicting route ("Ya está en
+      // otra ruta · RUT-...") and offers to view it; that needs its id.
+      expect(result.conflictingRouteId).toBe('route-2');
+    }
   });
 });
 

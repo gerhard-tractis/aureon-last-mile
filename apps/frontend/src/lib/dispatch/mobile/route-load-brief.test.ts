@@ -5,6 +5,7 @@ import {
   countPendingOnDock,
   findIncompleteOrders,
   groupPackagesByOrder,
+  stopIndexByOrder,
   type BriefDispatchRow,
   type BriefPackageRow,
 } from './route-load-brief';
@@ -86,5 +87,30 @@ describe('groupPackagesByOrder / findIncompleteOrders', () => {
   it('returns an empty list when nothing is retained', () => {
     const packages: BriefPackageRow[] = [{ order_id: 'o1', status: 'en_bodega', loaded_at: null }];
     expect(findIncompleteOrders(dispatches, groupPackagesByOrder(packages))).toEqual([]);
+  });
+});
+
+describe('stopIndexByOrder', () => {
+  it('numbers stops 1-based, ordered by delivery address, same stop for orders sharing an address', () => {
+    // o1 and o3 share 'Calle 1, Santiago' (the same stop); o2 is 'Calle 2,
+    // Santiago', alphabetically after 'Calle 1' — same grouping rule
+    // countStops already uses (spec-76 phase 3, decision 8's own "paradas"
+    // definition), so this stays consistent with what 2c already shows as
+    // "N paradas" rather than inventing a second, different notion of
+    // "stop" for 2e/2f.
+    const result = stopIndexByOrder(dispatches);
+    expect(result.get('o1')).toBe(1);
+    expect(result.get('o3')).toBe(1);
+    expect(result.get('o2')).toBe(2);
+  });
+
+  it('excludes an order with no address rather than fabricating a stop for it', () => {
+    const withMissing: BriefDispatchRow[] = [
+      ...dispatches,
+      { order_id: 'o4', order_number: 'ORD-004', contact_address: null },
+    ];
+    const result = stopIndexByOrder(withMissing);
+    expect(result.has('o4')).toBe(false);
+    expect(result.size).toBe(3);
   });
 });

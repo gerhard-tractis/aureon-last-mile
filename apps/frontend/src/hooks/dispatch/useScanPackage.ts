@@ -16,7 +16,10 @@ export function useScanPackage(routeId: string, operatorId: string | null = null
         body: JSON.stringify({ code }),
       });
       const json = await res.json();
-      if (!res.ok) throw { code: json.code, message: json.message };
+      // spec-76 phase 4 (2f) — conflictingRouteId rides along for
+      // ALREADY_IN_ROUTE; every other caller (RouteBuilder desktop) already
+      // ignores unknown fields on this thrown object.
+      if (!res.ok) throw { code: json.code, message: json.message, conflictingRouteId: json.conflictingRouteId };
       return json as ScanApiResponse;
     },
     onSuccess: () => {

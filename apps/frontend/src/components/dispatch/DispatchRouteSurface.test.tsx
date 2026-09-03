@@ -30,14 +30,23 @@ vi.mock('./RouteBuilder', () => ({
 
 const beforeScanPropsSpy = vi.fn();
 vi.mock('./mobile/DispatchRouteBeforeScan', () => ({
-  DispatchRouteBeforeScan: (props: { routeCode: string; onAssignVehicle: () => void }) => {
+  DispatchRouteBeforeScan: (props: { routeCode: string; onAssignVehicle: () => void; onStartScanning: () => void }) => {
     beforeScanPropsSpy(props);
     return (
       <div data-testid="before-scan-stub">
         {props.routeCode}
         <button type="button" onClick={props.onAssignVehicle}>Asignar vehículo (stub)</button>
+        <button type="button" onClick={props.onStartScanning}>Empezar a escanear (stub)</button>
       </div>
     );
+  },
+}));
+
+const scanSessionPropsSpy = vi.fn();
+vi.mock('./mobile/DispatchRouteScanSession', () => ({
+  DispatchRouteScanSession: (props: { routeCode: string }) => {
+    scanSessionPropsSpy(props);
+    return <div data-testid="scan-session-stub">{props.routeCode}</div>;
   },
 }));
 
@@ -92,15 +101,42 @@ describe('DispatchRouteSurface', () => {
     expect(useRouteLoadBriefMock).toHaveBeenCalledWith('route-12345678', 'op-1', { enabled: true });
   });
 
-  it('spec-76 task 2 — 2d now exists: only the scan CTA (2e, task 4) stays disabled', () => {
+  it('spec-76 task 3 — 2e now exists: the scan CTA is no longer a disabled no-op', () => {
     mockIsBelowLg = true;
     mockLoadBriefLoading = false;
     mockLoadBriefError = false;
     mockLoadBrief = { loadPositionLabel: null, pendingOnDock: 0, ordersCount: 0, stopsCount: 0, vehicleAssignment: null, incompleteOrders: [], comunas: [] };
     render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
     const props = beforeScanPropsSpy.mock.calls.at(-1)?.[0];
-    expect(props.startScanningDisabledReason).toBeTruthy();
+    expect(props.startScanningDisabledReason).toBeUndefined();
     expect(props.assignVehicleDisabledReason).toBeFalsy();
+  });
+
+  it('spec-76 task 3 — pressing "Empezar a escanear" swaps 2c for the scan session (2e), passing route/vehicle context through', async () => {
+    mockIsBelowLg = true;
+    mockLoadBriefLoading = false;
+    mockLoadBriefError = false;
+    mockLoadBrief = {
+      loadPositionLabel: 'A3',
+      pendingOnDock: 5,
+      ordersCount: 3,
+      stopsCount: 2,
+      vehicleAssignment: { externalVehicleId: 'JKPT-45', driverName: 'Mario González' },
+      incompleteOrders: [],
+      comunas: [],
+    };
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+
+    expect(screen.queryByTestId('scan-session-stub')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Empezar a escanear \(stub\)/i }));
+
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('before-scan-stub')).not.toBeInTheDocument();
+    const props = scanSessionPropsSpy.mock.calls.at(-1)?.[0];
+    expect(props.routeCode).toBe('ROUTE-12');
+    expect(props.loadPositionLabel).toBe('A3');
+    expect(props.driverName).toBe('Mario González');
+    expect(props.vehicleExternalId).toBe('JKPT-45');
   });
 
   it('opens the vehicle assignment sheet from the 2c CTA, and refetches the load brief once assigned', async () => {

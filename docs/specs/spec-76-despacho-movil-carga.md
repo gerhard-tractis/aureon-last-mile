@@ -2,7 +2,7 @@
 
 > **Related:** [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio del mismo módulo), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-61](spec-61-pickup-route-crew.md) (precedente de móvil de cuadrilla en Recogida), [spec-62](spec-62-reception-mobile.md) (precedente de móvil de andén en Recepción), [spec-68](spec-68-distribution-mobile.md) (`BatchScanner`, `QuickSortMobile`), [spec-70](spec-70-dispatch-state-machine.md) (estados de ruta y de paquete), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
@@ -230,3 +230,15 @@ Verificado durante `spec-75` tarea 3 recorriendo migraciones y tipos. El canvas 
 - **«El fix no funcionó en QA» suele ser bundle PWA rancio.** Antes de re-depurar: verificar datos → RPC bajo RLS → chunk efectivamente desplegado.
 - **`2f` motivo *ya está en otra ruta*.** La UI no debe ofrecer mover el paquete sola: implica quitarlo de una ruta que puede estar ya cerrada. Se nombra y se deriva.
 - **Superficie grande.** Ocho pantallas en un PR es mucho; si crece, las fases 1–3 y 4–6 se pueden separar en dos PRs bajo este mismo spec sin renumerar.
+
+### Añadido tras la tarea 3 de `spec-76` (`2e`/`2f`, el bucle)
+
+**Decisión 5 / motivo 2 ("Estado `en_bodega` — no pasó por andén") no coincide con `scan-validator.ts` tal como existe en esta rama.** `DISPATCHABLE_STATUSES` (el conjunto que `validateScan` acepta) incluye `en_bodega` — el comentario sobre esa constante explica por qué: la migración `20260817000003` lo agregó para arreglar el cohorte de Pre-Ruta, y nada en el validador lo excluye de nuevo para Despacho. Un escaneo de un paquete `en_bodega` hoy se **acepta**, no se rechaza. `anden-status.ts` (tarea 2, review I4) ya dejaba esto anotado contra esta misma decisión, pero no lo corregía — solo ajustaba qué cuenta como "en el andén" en `2c`.
+
+No se editó `DISPATCHABLE_STATUSES` para resolver esto: sacar `en_bodega` de ahí cambiaría qué acepta el escaneo en TODA Despacho (no solo el copy de `2f`), es la clase de cambio de comportamiento servidor que corresponde a su propia revisión, y podría romper el cohorte que la migración `20260817000003` arregló. En su lugar, `2f` (`lib/dispatch/mobile/scan-rejection-copy.ts`) renderiza el mensaje real de `WRONG_STATUS` que el validador sí devuelve, en vez de fabricar una razón "no pasó por andén" que el sistema no produce. **Pendiente de decisión:** o se corrige el texto de la decisión 5 (el motivo real que el validador rechaza con `WRONG_STATUS` es cualquier estado fuera de `DISPATCHABLE_STATUSES` — `ingresado`, `verificado`, `entregado`, etc. — no específicamente `en_bodega`), o se saca `en_bodega` de `DISPATCHABLE_STATUSES` en un cambio aparte y revisado.
+
+**`parada NN`** no tiene columna de secuencia en el schema (verificado: `assignments.sequence_number` es la tabla del optimizador OR-Tools, sin relación con `routes`/`dispatches`). `2e`/`2f` reusan la misma definición de "parada" que `2c` ya envía (`route-load-brief.ts`'s `countStops`): direcciones de entrega distintas, ordenadas alfabéticamente. Es un índice de agrupación estable, no una afirmación sobre el orden real de visita del conductor — ver `stopIndexByOrder` en `route-load-brief.ts`.
+
+**`ALREADY_IN_ROUTE` ahora devuelve `conflictingRouteId`** (`scan-validator.ts`, `types.ts`, `route.ts`, `useScanPackage.ts`) — antes el endpoint no exponía qué ruta ya tenía el paquete, y decisión 5 pide nombrarla y ofrecer verla. Cambio aditivo (campo opcional), sin migración.
+
+El "dock_scans hardcodeado a `scan_result: 'accepted'`" citado en el encargo de esta tarea describe `POST /api/dispatch/load-positions/scan` (el escaneo de posición), no `POST /api/dispatch/routes/[id]/scan` (el que usan `2e`/`2f`) — este último no escribe en `dock_scans` en ningún caso, aceptado o rechazado. La conclusión que importa para `2e`/`2f` sigue siendo verdadera: un rechazo no se persiste en ningún lado, así que el historial de `2f` es memoria de esta pestaña, no una fuente de verdad.

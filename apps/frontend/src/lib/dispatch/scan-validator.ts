@@ -220,10 +220,15 @@ export async function validateScan(
     }
     action = { kind: 'stage', dispatchId: onThisRoute.id, currentStage: onThisRoute.stage };
   } else if (dispatches.some(ownsTheOrder)) {
+    // spec-76 phase 4 (2f decision 5): "se nombra la ruta y se ofrece
+    // verla". The owning row's own route_id, not a second query — the
+    // dispatches select above already carries it.
+    const conflicting = dispatches.find(ownsTheOrder);
     return {
       ok: false,
       message: 'Paquete ya asignado a otra ruta activa',
       code: 'ALREADY_IN_ROUTE',
+      conflictingRouteId: conflicting?.route_id ?? null,
     };
   } else {
     action = { kind: 'adopt' };

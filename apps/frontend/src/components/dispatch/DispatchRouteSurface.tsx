@@ -8,14 +8,9 @@ import { useRouteLoadBrief } from '@/hooks/dispatch/mobile/useRouteLoadBrief';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
+import { DispatchRouteScanSession } from './mobile/DispatchRouteScanSession';
 import { RouteBuilder } from './RouteBuilder';
 import type { FleetVehicle } from '@/lib/dispatch/types';
-
-// spec-76 review C1 — 2e (scan loop, task 4) still doesn't exist on this
-// branch. 2d (this task) does now, so only the scan CTA keeps a disabled
-// reason; a live-looking 56px primary button that silently does nothing
-// is still the thing being avoided here, just for one CTA instead of two.
-const SCAN_NOT_READY_REASON = 'El escaneo llega en el próximo paso';
 
 /**
  * spec-76 decision 1 — the viewport branch for `/app/dispatch/[routeId]`,
@@ -53,6 +48,13 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
   const router = useRouter();
   const isBelowLg = useIsBelowLg();
   const [assignSheetOpen, setAssignSheetOpen] = useState(false);
+  // spec-76 task 3 — 2e now exists: "Empezar a escanear" switches this
+  // page's own state to the scan session instead of navigating to a new
+  // route, exactly like 2d's sheet does for vehicle assignment. Going back
+  // is not wired (not asked for by the mock — the loop is a one-way door
+  // until Cerrar ruta ships in spec-77) — nothing here regresses the state
+  // once scanning starts.
+  const [scanning, setScanning] = useState(false);
   // Only fetched below `lg` — enabled gates the fetch itself, not just the
   // render, so a desktop session's SETTLED render never triggers this query
   // (see the doc comment above on the one transient exception).
@@ -90,6 +92,18 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
         </div>
       );
     }
+    if (scanning) {
+      return (
+        <DispatchRouteScanSession
+          routeId={routeId}
+          operatorId={operatorId}
+          routeCode={routeCode(routeId)}
+          loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
+          driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
+          vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+        />
+      );
+    }
     return (
       <>
         <DispatchRouteBeforeScan
@@ -102,9 +116,8 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
           incompleteOrders={loadBrief?.incompleteOrders ?? []}
           comunas={loadBrief?.comunas ?? []}
           onBack={() => router.push('/app/dispatch')}
-          onStartScanning={() => {}}
+          onStartScanning={() => setScanning(true)}
           onAssignVehicle={() => setAssignSheetOpen(true)}
-          startScanningDisabledReason={SCAN_NOT_READY_REASON}
         />
         <DispatchVehicleAssignmentSheet
           open={assignSheetOpen}

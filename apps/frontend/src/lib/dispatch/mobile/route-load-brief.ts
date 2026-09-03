@@ -103,3 +103,34 @@ export function groupPackagesByOrder(
   }
   return out;
 }
+
+/**
+ * spec-76 phase 4 (2e/2f) — order_id -> 1-based stop index, for the "parada
+ * 09" the scan loop names on the just-scanned package. There is no stored
+ * stop-sequence column anywhere in this schema (`assignments.sequence_number`
+ * is the OR-Tools optimizer's own table, unrelated to `routes`/`dispatches`
+ * — verified against the migrations, not assumed). Rather than invent a
+ * second, incompatible notion of "stop", this reuses the exact grouping
+ * `countStops` above already uses and 2c already ships as "N paradas":
+ * distinct delivery addresses, ordered alphabetically for a deterministic
+ * number. It is a stable index into that grouping, not a claim about the
+ * driver's actual visiting order — see the "no proxy under a label
+ * asserting a fact" rule in Lecciones aplicadas.
+ */
+export function stopIndexByOrder(
+  dispatches: readonly BriefDispatchRow[],
+): Map<string, number> {
+  const addresses = [
+    ...new Set(dispatches.map((d) => d.contact_address?.trim()).filter((a): a is string => !!a)),
+  ].sort((a, b) => a.localeCompare(b));
+  const indexByAddress = new Map(addresses.map((a, i) => [a, i + 1]));
+
+  const out = new Map<string, number>();
+  for (const d of dispatches) {
+    const address = d.contact_address?.trim();
+    if (!address) continue;
+    const idx = indexByAddress.get(address);
+    if (idx !== undefined) out.set(d.order_id, idx);
+  }
+  return out;
+}
