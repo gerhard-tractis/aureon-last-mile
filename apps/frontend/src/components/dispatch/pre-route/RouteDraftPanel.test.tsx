@@ -10,8 +10,19 @@ const GROUPS: UnroutedGroup[] = [
     subtitle: 'La Florida',
     orderCount: 62,
     packageCount: 148,
-    orderIds: ['o1'],
     warning: false,
+    orders: [
+      {
+        id: 'o1',
+        orderNumber: 'ORD-001',
+        comunaName: 'La Florida',
+        address: 'Calle Uno 111',
+        packageCount: 92,
+        windowStart: null,
+        windowEnd: null,
+        hasSplitDockZone: false,
+      },
+    ],
   },
   {
     id: 'a2',
@@ -19,15 +30,26 @@ const GROUPS: UnroutedGroup[] = [
     subtitle: 'Maipú',
     orderCount: 30,
     packageCount: 70,
-    orderIds: ['o2'],
     warning: false,
+    orders: [
+      {
+        id: 'o2',
+        orderNumber: 'ORD-002',
+        comunaName: 'Maipú',
+        address: 'Calle Dos 222',
+        packageCount: 126,
+        windowStart: null,
+        windowEnd: null,
+        hasSplitDockZone: false,
+      },
+    ],
   },
 ];
 
 const EMPTY = { groupCount: 0, orderCount: 0, packageCount: 0, comunaCount: 0, orderIds: [] };
 const FILLED = {
   groupCount: 2,
-  orderCount: 92,
+  orderCount: 2,
   packageCount: 218,
   comunaCount: 2,
   orderIds: ['o1', 'o2'],
@@ -35,7 +57,7 @@ const FILLED = {
 
 const BASE = {
   groups: GROUPS,
-  selectedIds: new Set<string>(),
+  selectedOrderIds: new Set<string>(),
   summary: EMPTY,
   onBuildRoute: () => {},
   onClear: () => {},
@@ -44,21 +66,21 @@ const BASE = {
 describe('RouteDraftPanel', () => {
   it('prompts for a selection when empty', () => {
     render(<RouteDraftPanel {...BASE} />);
-    expect(screen.getByText(/Selecciona uno o más grupos/)).toBeInTheDocument();
-    expect(screen.queryByTestId('draft-group')).toBeNull();
+    expect(screen.getByText(/Selecciona una o más órdenes/)).toBeInTheDocument();
+    expect(screen.queryByTestId('draft-order')).toBeNull();
   });
 
-  it('lists the selected groups with totals', () => {
-    render(<RouteDraftPanel {...BASE} selectedIds={new Set(['a1', 'a2'])} summary={FILLED} />);
-    expect(screen.getAllByTestId('draft-group')).toHaveLength(2);
-    expect(screen.getByText('92')).toBeInTheDocument();
-    expect(screen.getByText('218')).toBeInTheDocument();
+  it('lists the selected orders with totals', () => {
+    render(<RouteDraftPanel {...BASE} selectedOrderIds={new Set(['o1', 'o2'])} summary={FILLED} />);
+    expect(screen.getAllByTestId('draft-order')).toHaveLength(2);
+    expect(screen.getByText('ORD-001')).toBeInTheDocument();
+    expect(screen.getByText('ORD-002')).toBeInTheDocument();
+    expect(screen.getByTestId('draft-order-count')).toHaveTextContent('2');
+    expect(screen.getByTestId('draft-package-count')).toHaveTextContent('218');
   });
 
   it('says where driver, vehicle and stop order get assigned', () => {
-    // The mock puts them here, but they need a route that exists. Being
-    // explicit beats rendering an empty driver card.
-    render(<RouteDraftPanel {...BASE} selectedIds={new Set(['a1'])} summary={FILLED} />);
+    render(<RouteDraftPanel {...BASE} selectedOrderIds={new Set(['o1'])} summary={FILLED} />);
     expect(screen.getByText(/se asignan al/)).toBeInTheDocument();
   });
 
@@ -74,7 +96,7 @@ describe('RouteDraftPanel', () => {
     render(
       <RouteDraftPanel
         {...BASE}
-        selectedIds={new Set(['a1'])}
+        selectedOrderIds={new Set(['o1'])}
         summary={FILLED}
         onBuildRoute={onBuildRoute}
         onClear={onClear}
@@ -87,7 +109,9 @@ describe('RouteDraftPanel', () => {
   });
 
   it('blocks a double submit while the route is being created', () => {
-    render(<RouteDraftPanel {...BASE} selectedIds={new Set(['a1'])} summary={FILLED} isBuilding />);
+    render(
+      <RouteDraftPanel {...BASE} selectedOrderIds={new Set(['o1'])} summary={FILLED} isBuilding />,
+    );
     expect(screen.getByRole('button', { name: 'Armando…' })).toBeDisabled();
   });
 });

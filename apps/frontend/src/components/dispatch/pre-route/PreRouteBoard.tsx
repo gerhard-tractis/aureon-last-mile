@@ -5,9 +5,12 @@ import { useSearchParams } from 'next/navigation';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import {
+  allOrderIds,
   buildGroups,
-  summariseSelection,
+  summariseOrderSelection,
+  toggleGroupSelection,
   type GroupBy,
+  type UnroutedGroup,
 } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UnroutedColumn } from './UnroutedColumn';
@@ -18,12 +21,17 @@ import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
 /**
- * spec-54 phase 4.2 — the Pre-ruta board (mock 1c).
+ * spec-54 phase 4.2 / spec-75 Task 2a — the Pre-ruta board.
  *
  * Replaces the stacked list with the three-column layout the mock calls for:
  * what is unrouted, what the plan looks like, and what the route will contain,
  * all visible while you decide. Below 1024px the columns stack, per the
  * handoff's responsive rule.
+ *
+ * spec-75: selection now lives at the order level. Order ids are stable
+ * across both groupings (an order's id never changes whether the board
+ * groups por andén or por comuna), so — unlike the old group-id selection —
+ * switching groupBy no longer needs to clear the selection.
  */
 
 interface PreRouteBoardProps {
@@ -48,28 +56,36 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   );
 
   const [groupBy, setGroupBy] = useState<GroupBy>('anden');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
 
   const groups = useMemo(
     () => buildGroups(snapshot?.andenes ?? [], groupBy),
     [snapshot, groupBy],
   );
-  const summary = useMemo(() => summariseSelection(groups, selectedIds), [groups, selectedIds]);
+  const summary = useMemo(
+    () => summariseOrderSelection(groups, selectedOrderIds),
+    [groups, selectedOrderIds],
+  );
 
-  function toggle(id: string) {
-    setSelectedIds((prev) => {
+  function toggleOrder(orderId: string) {
+    setSelectedOrderIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
       return next;
     });
   }
 
-  // Group ids mean different things per grouping, so a selection carried
-  // across would silently point at nothing.
-  function changeGroupBy(next: GroupBy) {
-    setGroupBy(next);
-    setSelectedIds(new Set());
+  function toggleGroup(group: UnroutedGroup) {
+    setSelectedOrderIds((prev) => toggleGroupSelection(group, prev));
+  }
+
+  function selectAll() {
+    setSelectedOrderIds(new Set(allOrderIds(groups)));
+  }
+
+  function clearSelection() {
+    setSelectedOrderIds(new Set());
   }
 
   function buildRoute() {
@@ -101,22 +117,26 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
         <UnroutedColumn
           groups={groups}
           groupBy={groupBy}
-          onGroupByChange={changeGroupBy}
-          selectedIds={selectedIds}
-          onToggle={toggle}
+          onGroupByChange={setGroupBy}
+          selectedOrderIds={selectedOrderIds}
+          onToggleOrder={toggleOrder}
+          onToggleGroup={toggleGroup}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
           summary={summary}
           onBuildRoute={buildRoute}
           isBuilding={isCreating}
+          operatorId={operatorId}
         />
 
         <RoutePlanCanvas summary={summary} />
 
         <RouteDraftPanel
           groups={groups}
-          selectedIds={selectedIds}
+          selectedOrderIds={selectedOrderIds}
           summary={summary}
           onBuildRoute={buildRoute}
-          onClear={() => setSelectedIds(new Set())}
+          onClear={clearSelection}
           isBuilding={isCreating}
         />
       </div>
