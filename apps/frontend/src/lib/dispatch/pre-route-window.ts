@@ -26,10 +26,22 @@ export interface PreRouteWindowBounds {
   end: string;
 }
 
-/** Resolves `?window_start=`/`?window_end=` to snapshot bounds, or null when neither is set. */
+/**
+ * Resolves `?window_start=`/`?window_end=` to snapshot bounds, or null when
+ * neither is set.
+ *
+ * The one-sided defaulting here is load-bearing, not cosmetic: the RPC
+ * gates its window predicate on `p_window_start IS NULL` alone and then
+ * uses *both* params in the overlap test, so passing a real start with a
+ * null end returns zero orders instead of "from start to end of day". A
+ * user who only fills in "Desde" needs `end` defaulted to the last instant
+ * of the day, not left null. `23:59:59`, not `23:59` — the snapshot's
+ * `delivery_window_end` values carry seconds, and `23:59` would exclude an
+ * order whose window closes in that final minute.
+ */
 export function resolvePreRouteWindow(params: URLSearchParams): PreRouteWindowBounds | null {
   const start = params.get('window_start');
   const end = params.get('window_end');
   if (!start && !end) return null;
-  return { start: start ?? '00:00', end: end ?? '23:59' };
+  return { start: start ?? '00:00', end: end ?? '23:59:59' };
 }

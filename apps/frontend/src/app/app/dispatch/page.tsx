@@ -16,6 +16,7 @@ import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
+import { hasActivePreRouteFilters, parsePreRouteFilterState } from '@/lib/dispatch/pre-route-filters';
 
 function DispatchPageContent() {
   const router = useRouter();
@@ -101,11 +102,17 @@ function DispatchPageContent() {
   const navigateToRoute = (id: string) => router.push(`/app/dispatch/${id}`);
 
   const unrouted = preRouteSnapshot?.totals.order_count ?? 0;
+  // I4 — SIN RUTEAR itself stays the RPC's date/ventana total (it doesn't
+  // apply comuna/andén/cliente/problemas/búsqueda), but the qualifier tells
+  // the operator that figure doesn't match what the Pre-ruta board below is
+  // currently showing them.
+  const hasActiveFilters = hasActivePreRouteFilters(parsePreRouteFilterState(params));
 
   return (
     <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
       <DispatchModuleHeader
         unrouted={unrouted}
+        hasActiveFilters={hasActiveFilters}
         // `undefined` (still loading) must render no count, not a `0` that
         // reads as a real, briefly-wrong figure — don't collapse this to
         // `?? 0`.

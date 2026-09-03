@@ -51,4 +51,34 @@ describe('MultiSelectFilter', () => {
     fireEvent.click(screen.getByRole('button', { name: /cliente/i }));
     expect(screen.getByText(/sin resultados/i)).toBeInTheDocument();
   });
+
+  it('never renders a nested checkbox control inside the popover (C1 regression)', () => {
+    // Code-review C1: a role="checkbox" (Radix's real, tabbable button)
+    // nested inside a CommandItem is a dead, unreachable-by-Tab control and
+    // an axe nested-interactive/aria-hidden-focus violation. The selection
+    // glyph must stay a plain, non-interactive icon.
+    render(<MultiSelectFilter label="Andén" options={OPTIONS} selected={['a']} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /andén/i }));
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('marks the selected option with aria-checked on the option itself', () => {
+    render(<MultiSelectFilter label="Andén" options={OPTIONS} selected={['a']} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /andén/i }));
+    expect(screen.getByText('Andén Norte').closest('[cmdk-item]')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByText('Andén Sur').closest('[cmdk-item]')).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('disambiguates two options that share a display name (M12 regression)', () => {
+    const dupes = [
+      { id: 'c1', name: 'Maipú' },
+      { id: 'c2', name: 'Maipú' },
+    ];
+    render(<MultiSelectFilter label="Comuna" options={dupes} selected={[]} onChange={onChange} />);
+    fireEvent.click(screen.getByRole('button', { name: /comuna/i }));
+    const items = screen.getAllByText('Maipú');
+    expect(items).toHaveLength(2);
+    fireEvent.click(items[1]);
+    expect(onChange).toHaveBeenCalledWith(['c2']);
+  });
 });

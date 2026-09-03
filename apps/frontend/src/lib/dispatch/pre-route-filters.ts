@@ -1,4 +1,4 @@
-import type { PreRouteAnden } from '@/lib/types';
+import type { PreRouteAnden, PreRouteSnapshot } from '@/lib/types';
 
 /**
  * spec-75 task 2b — the pre-ruta filter set beyond date/window: comuna,
@@ -18,6 +18,15 @@ import type { PreRouteAnden } from '@/lib/types';
  * onlyProblems, search) drops orders out of a comuna, those counts would
  * lie about what's actually left — so this module recomputes both from the
  * filtered `orders` arrays rather than carrying the RPC's numbers forward.
+ *
+ * `onlyProblems` ("sólo con problemas") only ever narrows to
+ * `has_split_dock_zone` orders — it cannot also surface the unmapped
+ * comunas the spec mentions alongside it. `unmapped_comunas` in the
+ * snapshot is `{id, name, order_count, package_count}[]`: it carries no
+ * `orders` array, so there is nothing to filter *to* — those comunas were
+ * never routable rows to begin with. `UnmappedComunasNotice` (rendered
+ * unconditionally above the board) is the coverage for that half; this
+ * toggle doesn't hide or show it.
  */
 
 export interface PreRouteFilterState {
@@ -115,13 +124,69 @@ export function applyPreRouteFilters(
   return result;
 }
 
+/**
+ * Whether any comuna/andén/cliente/problems/búsqueda filter is currently
+ * narrowing the view (date and ventana don't count — they're the RPC's own
+ * cohort, not a client-side narrowing of it). Drives the "Mostrando X de Y"
+ * qualifier on the filter bar's totals and the header's SIN RUTEAR figure.
+ */
+export function hasActivePreRouteFilters(filters: PreRouteFilterState): boolean {
+  return (
+    filters.comunaIds.length > 0 ||
+    filters.andenIds.length > 0 ||
+    filters.clientes.length > 0 ||
+    filters.onlyProblems ||
+    filters.search.trim() !== ''
+  );
+}
+
+/**
+ * Totals for the *filtered* andén→comuna→orders tree, in the same shape as
+ * `PreRouteSnapshot['totals']` — so PreRouteFilters can show "Mostrando X
+ * de Y" against the RPC's own unfiltered totals without a second,
+ * differently-shaped totals type. Code-review finding: the filter bar's
+ * totals line used to just echo the unfiltered snapshot totals, sitting
+ * inline with the very controls that had just narrowed the view without
+ * ever reflecting them.
+ */
+export function summariseFilteredTotals(andenes: PreRouteAnden[]): PreRouteSnapshot['totals'] {
+  let order_count = 0;
+  let package_count = 0;
+  let split_dock_zone_order_count = 0;
+  for (const anden of andenes) {
+    for (const comuna of anden.comunas) {
+      for (const order of comuna.orders) {
+        order_count += 1;
+        package_count += order.package_count;
+        if (order.has_split_dock_zone) split_dock_zone_order_count += 1;
+      }
+    }
+  }
+  return { order_count, package_count, anden_count: andenes.length, split_dock_zone_order_count };
+}
+
 function encodeList(items: string[]): string {
   return items.map(encodeURIComponent).join(',');
 }
 
+/** decodeURIComponent throws on a malformed percent-escape (e.g. a lone
+ *  trailing `%` from a URL truncated in a chat paste). This runs in
+ *  PreRouteBoard's render body, so an uncaught throw here would take the
+ *  whole Pre-ruta screen to the error boundary — precisely the sharing
+ *  case URL-encoded filter state exists to support. Fall back to the raw
+ *  (still-encoded) segment for that one entry instead of failing the whole
+ *  list. */
+function decodeSegment(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function decodeList(raw: string | null): string[] {
   if (!raw) return [];
-  return raw.split(',').filter(Boolean).map(decodeURIComponent);
+  return raw.split(',').filter(Boolean).map(decodeSegment);
 }
 
 /** Reads the comuna/andén/cliente/problems/búsqueda filters out of the URL. */

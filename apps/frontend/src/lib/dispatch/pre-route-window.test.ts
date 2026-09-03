@@ -20,10 +20,12 @@ describe('resolvePreRouteWindow', () => {
     });
   });
 
-  it('defaults the missing bound to the end of day when only window_start is set', () => {
+  it('defaults the missing bound to the last instant of the day (with seconds, M13) when only window_start is set', () => {
+    // '23:59' (no seconds) would exclude an order whose window closes in
+    // that final minute — delivery_window_end carries seconds.
     expect(resolvePreRouteWindow(new URLSearchParams('window_start=17:00'))).toEqual({
       start: '17:00',
-      end: '23:59',
+      end: '23:59:59',
     });
   });
 });

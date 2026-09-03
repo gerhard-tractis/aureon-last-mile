@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { PreRouteAnden } from '@/lib/types';
 
 const mockReplace = vi.fn();
@@ -56,16 +56,16 @@ describe('PreRouteFilters', () => {
     mockParams = new URLSearchParams();
   });
 
-  it('renders a date input defaulting to today', () => {
+  it('labels the date input "Fecha de entrega" (S1) — the RPC cohort key, and the only unlabelled control before this fix', () => {
     render(<PreRouteFilters andenes={[]} />);
     const today = new Date().toISOString().slice(0, 10);
-    expect(screen.getByDisplayValue(today)).toBeInTheDocument();
+    expect(screen.getByLabelText('Fecha de entrega')).toHaveValue(today);
   });
 
   it('changing date calls router.replace with ?date=', () => {
     render(<PreRouteFilters andenes={[]} />);
     const today = new Date().toISOString().slice(0, 10);
-    fireEvent.change(screen.getByDisplayValue(today), { target: { value: '2026-05-01' } });
+    fireEvent.change(screen.getByLabelText('Fecha de entrega'), { target: { value: '2026-05-01' } });
     expect(lastReplaceUrl()).toContain('date=2026-05-01');
   });
 
@@ -86,14 +86,27 @@ describe('PreRouteFilters', () => {
     expect(lastReplaceUrl()).toContain('window_end=12%3A00');
   });
 
-  it('shows totals chip when totals prop provided', () => {
+  it('shows the unfiltered totals chip when no client-side filter is active', () => {
     render(
       <PreRouteFilters
         andenes={[]}
         totals={{ order_count: 12, package_count: 20, anden_count: 3, split_dock_zone_order_count: 0 }}
       />,
     );
-    expect(screen.getByText(/12/)).toBeInTheDocument();
+    expect(screen.getByText(/12 órdenes/)).toBeInTheDocument();
+    expect(screen.queryByText(/Mostrando/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Mostrando X de Y" against filteredTotals once a filter is active (I4)', () => {
+    mockParams = new URLSearchParams('comunas=c1');
+    render(
+      <PreRouteFilters
+        andenes={[]}
+        totals={{ order_count: 12, package_count: 20, anden_count: 3, split_dock_zone_order_count: 0 }}
+        filteredTotals={{ order_count: 3, package_count: 5, anden_count: 1, split_dock_zone_order_count: 0 }}
+      />,
+    );
+    expect(screen.getByText('Mostrando 3 de 12 órdenes · 5 bultos · 1 andenes')).toBeInTheDocument();
   });
 
   it('offers comuna, andén and cliente multi-select filters built from andenes', () => {
@@ -119,14 +132,80 @@ describe('PreRouteFilters', () => {
     expect(lastReplaceUrl()).toContain('problems=1');
   });
 
-  it('typing in the search box updates ?q=', () => {
-    render(<PreRouteFilters andenes={[]} />);
-    fireEvent.change(screen.getByPlaceholderText(/orden o dirección/i), { target: { value: 'ORD-002' } });
-    expect(lastReplaceUrl()).toContain('q=ORD-002');
-  });
-
   it('does not query for SKU search', () => {
     render(<PreRouteFilters andenes={[]} />);
     expect(screen.queryByPlaceholderText(/sku/i)).not.toBeInTheDocument();
+  });
+
+  describe('búsqueda (I3: debounced, locally-controlled input)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('updates the input immediately, before any debounce fires', () => {
+      render(<PreRouteFilters andenes={[]} />);
+      const input = screen.getByPlaceholderText(/orden o dirección/i);
+      fireEvent.change(input, { target: { value: 'ORD-002' } });
+      expect(input).toHaveValue('ORD-002');
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it('does not write to the URL on every keystroke', () => {
+      render(<PreRouteFilters andenes={[]} />);
+      const input = screen.getByPlaceholderText(/orden o dirección/i);
+      fireEvent.change(input, { target: { value: 'O' } });
+      fireEvent.change(input, { target: { value: 'OR' } });
+      fireEvent.change(input, { target: { value: 'ORD' } });
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
+
+    it('commits ?q= once, ~250ms after typing settles', () => {
+      render(<PreRouteFilters andenes={[]} />);
+      const input = screen.getByPlaceholderText(/orden o dirección/i);
+      fireEvent.change(input, { target: { value: 'O' } });
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+      fireEvent.change(input, { target: { value: 'ORD-002' } }); // resets the debounce
+      act(() => {
+        vi.advanceTimersByTime(249);
+      });
+      expect(mockReplace).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(mockReplace).toHaveBeenCalledTimes(1);
+      expect(lastReplaceUrl()).toContain('q=ORD-002');
+    });
+
+    it('removes ?q= entirely when búsqueda is cleared', () => {
+      mockParams = new URLSearchParams('q=ORD-002');
+      render(<PreRouteFilters andenes={[]} />);
+      const input = screen.getByPlaceholderText(/orden o dirección/i);
+      fireEvent.change(input, { target: { value: '' } });
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(lastReplaceUrl()).not.toContain('q=');
+    });
+  });
+
+  it('round-trips date/tab/comuna params through a búsqueda commit, none dropped (M11)', () => {
+    vi.useFakeTimers();
+    mockParams = new URLSearchParams('date=2026-05-01&tab=pre-ruta&comunas=c1');
+    render(<PreRouteFilters andenes={[]} />);
+    fireEvent.change(screen.getByPlaceholderText(/orden o dirección/i), { target: { value: 'ORD-002' } });
+    act(() => {
+      vi.advanceTimersByTime(250);
+    });
+    const url = lastReplaceUrl();
+    expect(url).toContain('date=2026-05-01');
+    expect(url).toContain('tab=pre-ruta');
+    expect(url).toContain('comunas=c1');
+    expect(url).toContain('q=ORD-002');
+    vi.useRealTimers();
   });
 });

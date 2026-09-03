@@ -154,4 +154,14 @@ describe('UnroutedOrderRow', () => {
     expect(chip.tagName).toBe('SPAN');
     expect(chip).not.toHaveAttribute('role');
   });
+
+  it('carries the urgency in text, not just colour (I8 / WCAG 1.4.1)', () => {
+    render(<UnroutedOrderRow {...BASE} urgent />);
+    expect(screen.getByText('Ventana más próxima a cerrar')).toBeInTheDocument();
+  });
+
+  it('renders no urgency text when not urgent', () => {
+    render(<UnroutedOrderRow {...BASE} />);
+    expect(screen.queryByText('Ventana más próxima a cerrar')).toBeNull();
+  });
 });

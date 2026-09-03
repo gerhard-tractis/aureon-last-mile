@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 /**
@@ -97,5 +97,18 @@ describe('DispatchPage — SIN RUTEAR follows the selected date', () => {
     const { default: DispatchPage } = await import('./page');
     renderWithClient(<DispatchPage />);
     expect(usePreRouteSnapshotMock).toHaveBeenCalledWith('op-1', '2026-09-15', null, null);
+  });
+
+  it('shows no filtered qualifier on SIN RUTEAR when no client-side filter is active (I4)', async () => {
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.queryByTestId('unrouted-filtered-qualifier')).toBeNull();
+  });
+
+  it('qualifies SIN RUTEAR as filtered when a comuna/andén/cliente/problemas/búsqueda filter is active (I4)', async () => {
+    mockSearchParams = new URLSearchParams('date=2026-09-15&comunas=c1');
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.getByTestId('unrouted-filtered-qualifier')).toBeInTheDocument();
   });
 });

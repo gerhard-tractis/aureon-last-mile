@@ -7,12 +7,11 @@ import { EmptyState } from '@/components/EmptyState';
 import { Button } from '@/components/ui/button';
 import {
   groupSelectionState,
-  sortOrdersByWindow,
-  urgentOrderIds,
   type GroupBy,
   type SelectionSummary,
   type UnroutedGroup,
 } from '@/hooks/dispatch/pre-route/useUnroutedGroups';
+import { sortOrdersByWindow, urgentOrderIds } from '@/lib/dispatch/pre-route-order-urgency';
 import { UnroutedOrderRow } from './UnroutedOrderRow';
 
 /**
@@ -131,6 +130,19 @@ export function UnroutedColumn({
     [groups, sortByWindow],
   );
 
+  // I5 — selection lives at the order level and outlives filtering: narrow
+  // the comuna/andén/cliente filters and an order selected earlier can
+  // simply no longer be in `groups`. `summary.orderCount` only counts
+  // selected orders that are still visible, so the gap against the full
+  // `selectedOrderIds` set is exactly what's ticked but currently hidden.
+  // Silently building the route would still be correct (it only ever uses
+  // the visible `summary.orderIds`) — but the operator has no way to know
+  // 37 other orders are still selected until the filters clear and they
+  // reappear, possibly after already being routed. Surface it instead of
+  // pruning: pruning on every filter change would look like the tool
+  // silently discarding a selection the operator made on purpose.
+  const hiddenSelectedCount = selectedOrderIds.size - summary.orderCount;
+
   return (
     <section className="flex min-h-0 flex-col border-border bg-surface lg:border-r">
       <header className="flex flex-none flex-col gap-2.5 border-b border-border px-4 py-3.5">
@@ -211,6 +223,15 @@ export function UnroutedColumn({
           {summary.orderCount} seleccionadas · {summary.packageCount} paquetes ·{' '}
           {summary.comunaCount} {summary.comunaCount === 1 ? 'comuna' : 'comunas'}
         </span>
+
+        {hiddenSelectedCount > 0 && (
+          <span
+            data-testid="unrouted-hidden-selected"
+            className="font-mono text-[10.5px] leading-none text-status-warning-text"
+          >
+            {hiddenSelectedCount} seleccionadas ocultas por los filtros actuales
+          </span>
+        )}
 
         <div className="flex gap-2">
           <Button

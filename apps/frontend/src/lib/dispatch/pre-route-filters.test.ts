@@ -6,6 +6,8 @@ import {
   collectClienteOptions,
   parsePreRouteFilterState,
   serializePreRouteFilterState,
+  hasActivePreRouteFilters,
+  summariseFilteredTotals,
   type PreRouteFilterState,
 } from './pre-route-filters';
 import type { PreRouteAnden, PreRouteOrder } from '@/lib/types';
@@ -163,6 +165,41 @@ describe('applyPreRouteFilters', () => {
     });
     expect(result).toEqual([]);
   });
+
+  it('combines comuna + búsqueda and recomputes counts on both the comuna and the andén, not just presence', () => {
+    // c1 has two orders; comunaIds narrows to c1, search narrows further to
+    // one of its two orders — the recomputed order_count/package_count on
+    // both levels must reflect that single surviving order, not c1's
+    // original RPC count (2) or anden()'s original total (2).
+    const twoOrderComuna = anden({
+      order_count: 2,
+      package_count: 5,
+      comunas: [
+        {
+          id: 'c1',
+          name: 'La Florida',
+          order_count: 2,
+          package_count: 5,
+          orders: [
+            order({ id: 'o1', order_number: 'ORD-001', package_count: 2 }),
+            order({ id: 'o2', order_number: 'ORD-002', package_count: 3 }),
+          ],
+        },
+      ],
+    });
+    const result = applyPreRouteFilters([twoOrderComuna], {
+      ...EMPTY_FILTERS,
+      comunaIds: ['c1'],
+      search: 'ORD-002',
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].comunas).toHaveLength(1);
+    expect(result[0].comunas[0].orders.map((o) => o.id)).toEqual(['o2']);
+    expect(result[0].comunas[0].order_count).toBe(1);
+    expect(result[0].comunas[0].package_count).toBe(3);
+    expect(result[0].order_count).toBe(1);
+    expect(result[0].package_count).toBe(3);
+  });
 });
 
 describe('parsePreRouteFilterState / serializePreRouteFilterState', () => {
@@ -185,5 +222,58 @@ describe('parsePreRouteFilterState / serializePreRouteFilterState', () => {
   it('parses onlyProblems=1 as true and anything else as false', () => {
     expect(parsePreRouteFilterState(new URLSearchParams('problems=1')).onlyProblems).toBe(true);
     expect(parsePreRouteFilterState(new URLSearchParams('problems=0')).onlyProblems).toBe(false);
+  });
+
+  it('does not throw on a malformed percent-escape from a truncated shared URL (C2 regression)', () => {
+    // '%' alone is not a valid escape sequence — decodeURIComponent throws
+    // on it. A URL clipped mid-paste in chat is exactly how this happens.
+    expect(() => parsePreRouteFilterState(new URLSearchParams('comunas=%'))).not.toThrow();
+    expect(parsePreRouteFilterState(new URLSearchParams('comunas=%')).comunaIds).toEqual(['%']);
+  });
+});
+
+describe('hasActivePreRouteFilters', () => {
+  it('is false for the empty filter state', () => {
+    expect(hasActivePreRouteFilters(EMPTY_FILTERS)).toBe(false);
+  });
+
+  it('is true when any single field is set', () => {
+    expect(hasActivePreRouteFilters({ ...EMPTY_FILTERS, comunaIds: ['c1'] })).toBe(true);
+    expect(hasActivePreRouteFilters({ ...EMPTY_FILTERS, onlyProblems: true })).toBe(true);
+    expect(hasActivePreRouteFilters({ ...EMPTY_FILTERS, search: 'ORD' })).toBe(true);
+  });
+
+  it('is false for whitespace-only search', () => {
+    expect(hasActivePreRouteFilters({ ...EMPTY_FILTERS, search: '   ' })).toBe(false);
+  });
+});
+
+describe('summariseFilteredTotals', () => {
+  it('sums orders/packages and counts andenes across the filtered tree', () => {
+    expect(summariseFilteredTotals([anden()])).toEqual({
+      order_count: 2,
+      package_count: 4,
+      anden_count: 1,
+      split_dock_zone_order_count: 1, // o2 has_split_dock_zone: true
+    });
+  });
+
+  it('returns all zeros for an empty tree', () => {
+    expect(summariseFilteredTotals([])).toEqual({
+      order_count: 0,
+      package_count: 0,
+      anden_count: 0,
+      split_dock_zone_order_count: 0,
+    });
+  });
+
+  it('reflects a narrowed tree, not the original snapshot totals', () => {
+    const narrowed = applyPreRouteFilters([anden()], { ...EMPTY_FILTERS, comunaIds: ['c1'] });
+    expect(summariseFilteredTotals(narrowed)).toEqual({
+      order_count: 1,
+      package_count: 2,
+      anden_count: 1,
+      split_dock_zone_order_count: 0,
+    });
   });
 });

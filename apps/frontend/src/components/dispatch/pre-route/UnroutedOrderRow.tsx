@@ -21,9 +21,10 @@ interface UnroutedOrderRowProps {
   selected: boolean;
   onToggle: (orderId: string) => void;
   /** spec-75 task 2b — true when this order's window closes sooner than the
-   *  others currently visible (see `urgentOrderIds` in useUnroutedGroups).
-   *  Purely presentational — a plain `<span>`, not a button, so it adds no
-   *  new node to the row's a11y tree. */
+   *  others currently visible (see `urgentOrderIds` in
+   *  lib/dispatch/pre-route-order-urgency.ts). Purely presentational — a
+   *  plain `<span>`, not a button, so it adds no new node to the row's a11y
+   *  tree. */
   urgent?: boolean;
 }
 
@@ -123,6 +124,12 @@ export const UnroutedOrderRow = memo(function UnroutedOrderRow({
             title={urgent ? 'Ventana más próxima a cerrar' : undefined}
           >
             {formatWindow(order.windowStart, order.windowEnd)}
+            {/* I8 — colour + a non-focusable span's `title` fail WCAG 1.4.1
+                (colour alone) and aren't reliably announced or keyboard-
+                reachable. sr-only text carries the same information through
+                the accessibility tree without adding a visible or focusable
+                node — the chip stays a plain, non-interactive <span>. */}
+            {urgent && <span className="sr-only"> Ventana más próxima a cerrar</span>}
           </span>
         </span>
       </div>

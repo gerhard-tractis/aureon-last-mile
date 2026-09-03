@@ -19,7 +19,11 @@ import { RouteDraftPanel } from './RouteDraftPanel';
 import { UnmappedComunasNotice } from './UnmappedComunasNotice';
 import { PreRouteFilters } from './PreRouteFilters';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
-import { applyPreRouteFilters, parsePreRouteFilterState } from '@/lib/dispatch/pre-route-filters';
+import {
+  applyPreRouteFilters,
+  parsePreRouteFilterState,
+  summariseFilteredTotals,
+} from '@/lib/dispatch/pre-route-filters';
 
 /**
  * spec-54 phase 4.2 — the Pre-ruta board.
@@ -62,21 +66,21 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
   // the RPC itself applies). Filtering happens on the raw andén → comuna →
   // orders tree *before* buildGroups, not on the flattened UnroutedGroup
   // rows — see the reasoning in lib/dispatch/pre-route-filters.ts.
-  const filters = parsePreRouteFilterState(params);
+  //
+  // Code-review finding (M9): the memo used to key off each filter array
+  // joined with ',', which mis-keys when a value itself contains a comma
+  // (a cliente named "Soto, Ana Ltda" can collapse to the same joined
+  // string as an unrelated filter state) and needed an eslint-disable to
+  // hide the resulting exhaustive-deps warning. `paramsKey` is the
+  // unambiguous source every filter field is parsed from, and the memo
+  // callback closes over `paramsKey` (not `params`) to rebuild a
+  // `URLSearchParams` internally — so it's the only external value the
+  // callback reads, exhaustive-deps is satisfied honestly, and no
+  // eslint-disable is needed.
+  const paramsKey = params.toString();
   const filteredAndenes = useMemo(
-    () => applyPreRouteFilters(snapshot?.andenes ?? [], filters),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `filters` is a
-    // fresh object every render (parsePreRouteFilterState reads the URL);
-    // its individual fields (joined so array identity doesn't matter) are
-    // what actually needs to be stable here.
-    [
-      snapshot?.andenes,
-      filters.comunaIds.join(','),
-      filters.andenIds.join(','),
-      filters.clientes.join(','),
-      filters.onlyProblems,
-      filters.search,
-    ],
+    () => applyPreRouteFilters(snapshot?.andenes ?? [], parsePreRouteFilterState(new URLSearchParams(paramsKey))),
+    [snapshot?.andenes, paramsKey],
   );
 
   const groups = useMemo(
@@ -87,6 +91,9 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
     () => buildGroups(filteredAndenes, groupBy),
     [filteredAndenes, groupBy],
   );
+  // I4 — what the filter bar's own totals line shows once any client-side
+  // filter narrows the view; see summariseFilteredTotals's docblock.
+  const filteredTotals = useMemo(() => summariseFilteredTotals(filteredAndenes), [filteredAndenes]);
   const summary = useMemo(
     () => summariseOrderSelection(groups, selectedOrderIds),
     [groups, selectedOrderIds],
@@ -134,8 +141,14 @@ export function PreRouteBoard({ onCreateRoute, isCreating = false }: PreRouteBoa
     <div className="flex min-h-0 flex-col">
       {/* andenes here is the RAW (unfiltered) snapshot tree — PreRouteFilters
           builds its comuna/andén/cliente option lists off it so choosing one
-          filter never shrinks what the others can offer. */}
-      <PreRouteFilters totals={snapshot?.totals} andenes={snapshot?.andenes ?? []} />
+          filter never shrinks what the others can offer. filteredTotals is
+          the narrowed-tree figures (I4) — shown instead of totals once any
+          client-side filter is active. */}
+      <PreRouteFilters
+        totals={snapshot?.totals}
+        filteredTotals={filteredTotals}
+        andenes={snapshot?.andenes ?? []}
+      />
       <UnmappedComunasNotice comunas={snapshot?.unmapped_comunas ?? []} />
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[330px_1fr_322px]">
