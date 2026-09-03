@@ -17,14 +17,25 @@ import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnaps
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 import { hasActivePreRouteFilters, parsePreRouteFilterState } from '@/lib/dispatch/pre-route-filters';
+import { useIsBelowLg } from '@/hooks/useViewport';
+import { DispatchCrewMobileRoot } from '@/components/dispatch/mobile/DispatchCrewMobileRoot';
 
 function DispatchPageContent() {
   const router = useRouter();
   const params = useSearchParams();
   const pathname = usePathname();
   const queryClient = useQueryClient();
+  // spec-76 decision 1 — below `lg` (1024px) the dock crew gets its own
+  // tree (2a/2b), not the three-column desktop board reflowed. The desktop-
+  // only hooks below (KPIs, pre-ruta snapshot, route creation) still run
+  // either way — Rules of Hooks, same as RouteReceptionPage's identical
+  // branch — but the RETURN a few lines down never mounts their JSX (the
+  // map, crew panel, KPI cards) on mobile: not hidden with CSS, not
+  // rendered at all. `useOperatorId`'s `userId` (spec-61 Task 5) is what
+  // tells the crew screen which route is genuinely "mine".
+  const isBelowLg = useIsBelowLg();
 
-  const { operatorId } = useOperatorId();
+  const { operatorId, userId } = useOperatorId();
   const { data: kpis, isLoading: kpisLoading } = useDispatchKPIs(operatorId);
 
   // QA finding #2: this used to hardcode `today` and pass no window bounds,
@@ -97,6 +108,13 @@ function DispatchPageContent() {
         </div>
       </div>
     );
+  }
+
+  // spec-76 Fase 1 — below `lg`, `DispatchCrewMobileRoot` owns the whole
+  // screen (2a home / 2b route list). None of `PreRouteBoard`, the tabs, or
+  // the KPI header below this point ever mount here.
+  if (isBelowLg) {
+    return <DispatchCrewMobileRoot operatorId={operatorId} userId={userId} />;
   }
 
   const navigateToRoute = (id: string) => router.push(`/app/dispatch/${id}`);

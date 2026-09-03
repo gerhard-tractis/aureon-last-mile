@@ -20,7 +20,20 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => ({ operatorId: 'op-1' }),
+  useOperatorId: () => ({ operatorId: 'op-1', userId: 'user-1' }),
+}));
+
+// spec-76 Fase 1 test 1 — defaults to the desktop branch (SSR-safe default,
+// same as every other useIsBelowLg consumer's tests); overridden per test
+// below to exercise the mobile branch.
+let mockIsBelowLg = false;
+vi.mock('@/hooks/useViewport', () => ({
+  useIsBelowLg: () => mockIsBelowLg,
+}));
+
+vi.mock('@/components/dispatch/mobile/DispatchCrewMobileRoot', () => ({
+  DispatchCrewMobileRoot: ({ operatorId, userId }: { operatorId: string | null; userId: string | null }) =>
+    React.createElement('div', { 'data-testid': 'dispatch-crew-mobile-root-stub' }, `${operatorId}:${userId}`),
 }));
 
 vi.mock('@/hooks/dispatch/useDispatchKPIs', () => ({
@@ -59,6 +72,24 @@ function renderWithClient(ui: React.ReactElement) {
 beforeEach(() => {
   usePreRouteSnapshotMock.mockClear();
   mockSearchParams = new URLSearchParams();
+  mockIsBelowLg = false;
+});
+
+describe('DispatchPage — spec-76 viewport branch', () => {
+  it('mounts the desktop tabs tree at or above lg (default)', async () => {
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.queryByTestId('dispatch-crew-mobile-root-stub')).not.toBeInTheDocument();
+  });
+
+  it('mounts DispatchCrewMobileRoot, and only that, below lg', async () => {
+    mockIsBelowLg = true;
+    const { default: DispatchPage } = await import('./page');
+    renderWithClient(<DispatchPage />);
+    expect(screen.getByTestId('dispatch-crew-mobile-root-stub')).toHaveTextContent('op-1:user-1');
+    // Neither the desktop KPI header nor the tabbed board mount alongside it.
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
+  });
 });
 
 describe('DispatchPage — SIN RUTEAR follows the selected date', () => {
