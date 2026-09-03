@@ -82,6 +82,10 @@ El cierre (`2i`) y el despacho (`2j`–`2l`) son **`spec-77`**: ver *No-goals*.
 
 8. **`2h` agrupa por parada, no lista plana.** Con 148 paquetes una lista plana no es navegable, y la unidad de trabajo del conductor es la parada. Los toggles del mock son *Por parada* / *Por hora* + un filtro *Incompletas*.
 
+10. **La barra de estado del teléfono NO se construye.** Los artboards de 390 × 844 dibujan `09:14`, `5G ▮▮▮` y la batería arriba porque son maquetas de un teléfono completo. Eso es chrome del sistema operativo: lo pinta el teléfono, no la PWA. Lo mismo vale para el indicador `EN LÍNEA` de `2a` sólo en cuanto a posición — ese sí es nuestro, pero va dentro de nuestra cabecera, no en una barra de estado falsa.
+
+    Es el mismo error que ya se cometió una vez en `spec-75`: se instruyó redibujar el breadcrumb `Operación / Despacho` que el `TopBar` ya renderiza (ver `spec-75` decisión 9). **Regla al leer este canvas: distinguir el chrome de la plataforma y de la aplicación del chrome del módulo.** Un elemento presente en un artboard no implica que haya que construirlo; puede pintarlo el sistema operativo o existir ya un nivel más arriba.
+
 9. **Una ruta en carga por otra cuadrilla se ve pero no se abre.** `2b` la muestra con quién la tiene (`la está cargando Javiera P.`) en vez de esconderla, y el toque no navega. Esconderla hace que la cuadrilla la busque; mostrarla sin bloquearla provoca dos sesiones sobre el mismo andén.
 
 ## Plan de implementación (TDD)
@@ -120,10 +124,21 @@ Test primero, en rojo, luego implementación. Cobertura sobre 70 %.
 19. Test: quitar una fila devuelve el paquete a `asignado` y registra autor y hora (decisión 7).
 20. Test: paquete `NO EMBARCADO` retenido en consolidación se marca en su parada.
 
-### Fase 7 — Cierre
-21. `npm run test -- --pool=forks` + mutation-test antes de push.
-22. E2E móvil siguiendo `e2e/support/reception-mobile-fixture.ts` como patrón.
-23. Verificación en QA con lector real: el andén es donde se descubren los defectos de teclado del hardware.
+### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario)
+
+Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo excluye: su `testMatch` es `/(spec52-.*|reception-mobile)\.spec\.ts$/` y su propio comentario lo dice — *«dispatch-route y spec47-pickup no tienen fixture… Ampliar este patrón cuando cada uno tenga una»*. El E2E de Despacho se concentra aquí y en `spec-77`, no en `spec-75`: es donde hay lector real, dispositivo real y una acción irreversible. En escritorio el E2E sólo repetiría los tests de componente.
+
+21. **Namespace propio, no el de spec-52.** Todas las suites que la config de QA recoge comparten el namespace de spec-52 — mismo `PREFIX` (`'E2E52'`), misma patente, mismos dos correos — y `seed()` **empieza llamando a `teardown()`**. Un fixture de Despacho metido en ese namespace borraría la ruta en curso de spec-52, y la config advierte que el fallo «parece flakiness de la app, no un cambio de config». El fixture de Despacho usa su propio `PREFIX`, su propia patente y sus propios correos.
+22. `workers: 1` se mantiene. Es load-bearing por lo anterior, no un default olvidado.
+23. Escribir `e2e/support/despacho-fixture.ts` siguiendo el patrón de `reception-mobile-fixture.ts`: precondición verificada explícitamente (no asumir que `seed()` corrió), y estados alcanzados **conduciendo las pantallas reales**, no con `INSERT` directo — las RPC stampan `auth.uid()` y los triggers leen el estado en vivo, así que una fila insertada a mano produce un estado que el resto del sistema no reconoce.
+24. Ampliar el `testMatch` de `playwright.qa.config.ts` para incluir la suite nueva.
+
+### Fase 8 — Cierre
+25. `npm run test -- --pool=forks` + mutation-test antes de push.
+26. E2E móvil (390 × 844) del bucle completo: elegir ruta → asignar vehículo → escanear → rechazos → lista por parada.
+27. Ejecutar el E2E **en el runner del VPS** (`e2e:qa`): cada puerto de QA escucha en localhost del VPS, así que no corre desde un runner de GitHub ni desde una máquina local.
+28. **Leer el reporte, no el check verde.** El job `e2e-qa` es `continue-on-error: true`, así que un pipeline verde no prueba que el E2E pasó.
+29. Verificación en QA con lector real: el andén es donde se descubren los defectos de teclado del hardware.
 
 ## Riesgos
 
