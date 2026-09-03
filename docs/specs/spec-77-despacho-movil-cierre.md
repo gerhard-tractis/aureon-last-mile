@@ -1,6 +1,6 @@
 # Spec-77: Despacho en móvil — cerrar la ruta y despachar a DispatchTrack
 
-> **Related:** [spec-76](spec-76-despacho-movil-carga.md) (el bucle de carga que precede a estas pantallas), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta)
+> **Related:** [spec-79](spec-79-dispatch-handoff-integrity.md) (**arregla H2 y H3; prerrequisito de `2k` y `2l`**), [spec-76](spec-76-despacho-movil-carga.md) (el bucle de carga que precede a estas pantallas), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta)
 
 **Status:** backlog
 
@@ -98,7 +98,7 @@ Esto **contradice directamente el copy de `2l`**, que afirma que «los 24 paquet
 
 ### Qué implica para este spec
 
-H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son defectos de servidor, no de diseño**, y no se resuelven en este spec — dibujar `2k` y `2l` sobre ellos sería escribir en pantalla dos afirmaciones que el backend no sostiene. Las opciones son las mismas para los dos: corregir el backend en su propio spec, o cambiar el copy para describir lo que realmente pasa. **La decisión es del usuario.** Recomendación: corregir el backend, porque el copy honesto de H3 sería «algunos paquetes del andén pueden quedar marcados como en ruta», que no es una cosa que se le pueda pedir a una cuadrilla que interprete.
+H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son defectos de servidor, no de diseño**, y no se resuelven en este spec — dibujar `2k` y `2l` sobre ellos sería escribir en pantalla dos afirmaciones que el backend no sostiene. Las opciones son las mismas para los dos: corregir el backend en su propio spec, o cambiar el copy para describir lo que realmente pasa. **Decidido: se corrige el backend**, en [spec-79](spec-79-dispatch-handoff-integrity.md). El copy honesto de H3 sería «algunos paquetes del andén pueden quedar marcados como en ruta», que no es algo que se le pueda pedir a una cuadrilla que interprete. `2k` y `2l` se implementan **después** de spec-79 y con el copy tal como está diseñado.
 
 ### Fase 0 (resto)
 1. Confirmar si el endpoint expone número de intentos para el `intento 1 de 3` de `2k` — hoy no lo hace: el contador tendría que ser de cliente, y hay que decidir si eso es aceptable.
@@ -134,9 +134,9 @@ H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son def
 
 ## Riesgos
 
-1. **~~El copy promete atomicidad~~ — resuelto en fase 0, con matiz.** Verdadero antes de DT, falso en la ventana posterior a su confirmación. Ver H2. Bloquea `2k` hasta que el usuario decida entre corregir el backend o el copy.
-2. **`2l` afirma algo que el backend contradice.** Ver H3. Bloquea `2l` por la misma decisión.
-3. **Reintento sin idempotencia.** Confirmado: `createDTRoute` no lleva clave de idempotencia, así que *Reintentar* en la ventana de H2 duplica la ruta en DispatchTrack. Mientras H2 no se corrija, `2k` **no debe** presentar *Reintentar* como acción segura y primaria sin advertir el riesgo de duplicado.
+1. **~~El copy promete atomicidad~~ — resuelto en fase 0, con matiz.** Verdadero antes de DT, falso en la ventana posterior a su confirmación. Ver H2. Bloquea `2k` hasta que [spec-79](spec-79-dispatch-handoff-integrity.md) lo corrija.
+2. **`2l` afirma algo que el backend contradice.** Ver H3. Bloquea `2l` hasta [spec-79](spec-79-dispatch-handoff-integrity.md).
+3. **Reintento sin idempotencia.** Confirmado: `createDTRoute` no lleva clave de idempotencia, así que *Reintentar* en la ventana de H2 duplica la ruta en DispatchTrack. Lo arregla [spec-79](spec-79-dispatch-handoff-integrity.md); hasta entonces `2k` **no debe** presentar *Reintentar* como acción segura y primaria.
 4. **Notas de cierre: falta confirmar dónde viven.** Recepción usa `discrepancy_notes` ligada a `manifest_id`, que es de Recogida y no sirve para una `route` de Despacho. Si no hay tabla equivalente para faltantes de carga, la nota de `2i` necesita destino — posible migración. Sigue abierto.
 5. **El contador de intentos no existe en el servidor.** El `intento 1 de 3` de `2k` tendría que ser estado de cliente, que se pierde al recargar. Decidir si se acepta o si el endpoint debe exponerlo.
 6. **Es la pantalla que rompe la operación si sale mal.** Un camión que sale con la ruta mal despachada no se arregla desde Aureon. Revisión en Opus/Fable, no en Sonnet.
