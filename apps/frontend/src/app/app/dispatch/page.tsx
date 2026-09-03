@@ -2,108 +2,24 @@
 
 import { Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Plus, Route, Package } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { EmptyState } from '@/components/EmptyState';
-import { RouteListTile } from '@/components/dispatch/RouteListTile';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { DispatchModuleHeader } from '@/components/dispatch/DispatchModuleHeader';
+import { RouteSkeleton } from '@/components/dispatch/RouteSkeleton';
 import { PreRouteBoard } from '@/components/dispatch/pre-route/PreRouteBoard';
+import { DispatchOpenRoutesTab } from '@/components/dispatch/DispatchOpenRoutesTab';
 import { DispatchInProgressTab } from '@/components/dispatch/DispatchInProgressTab';
+import { DispatchCompletedRoutesTab } from '@/components/dispatch/DispatchCompletedRoutesTab';
 import { useDispatchKPIs } from '@/hooks/dispatch/useDispatchKPIs';
-import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
-import { OPEN_ROUTE_STATUSES, FINISHED_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
 import { resolvePreRouteWindow } from '@/lib/dispatch/pre-route-window';
 
-const sevenDaysAgo = new Date();
-sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-const sinceDateStr = sevenDaysAgo.toISOString().split('T')[0];
-
-function RouteSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-28 w-full rounded-lg" />
-      ))}
-    </div>
-  );
-}
-
-function DispatchOpenTab({
-  operatorId,
-  onNewRoute,
-  onNavigate,
-  onDelete,
-}: {
-  operatorId: string;
-  onNewRoute: () => void;
-  onNavigate: (id: string) => void;
-  onDelete: (id: string) => void;
-}) {
-  const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, [...OPEN_ROUTE_STATUSES]);
-  if (isLoading) return <RouteSkeleton />;
-  if (!routes?.length) {
-    return (
-      <EmptyState
-        icon={Route}
-        title="Sin rutas abiertas"
-        description="No hay rutas pendientes de despacho."
-        action={{ label: 'Crear ruta', onClick: onNewRoute }}
-      />
-    );
-  }
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {routes.map((route) => (
-        <RouteListTile
-          key={route.id}
-          route={route}
-          onClick={() => onNavigate(route.id)}
-          onDelete={() => onDelete(route.id)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function DispatchCompletedTab({
-  operatorId,
-  onNavigate,
-}: {
-  operatorId: string;
-  onNavigate: (id: string) => void;
-}) {
-  const { data: routes, isLoading } = useDispatchRoutesByStatus(
-    operatorId,
-    [...FINISHED_ROUTE_STATUSES],
-    sinceDateStr,
-  );
-  if (isLoading) return <RouteSkeleton />;
-  if (!routes?.length) {
-    return (
-      <EmptyState
-        icon={Package}
-        title="Sin rutas completadas"
-        description="Las rutas completadas en los últimos 7 días aparecerán aquí."
-      />
-    );
-  }
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {routes.map((route) => (
-        <RouteListTile key={route.id} route={route} onClick={() => onNavigate(route.id)} />
-      ))}
-    </div>
-  );
-}
-
 function DispatchPageContent() {
-  const router   = useRouter();
-  const params   = useSearchParams();
+  const router = useRouter();
+  const params = useSearchParams();
   const pathname = usePathname();
   const queryClient = useQueryClient();
 
@@ -161,17 +77,16 @@ function DispatchPageContent() {
   };
 
   if (!operatorId) {
+    // Matches the real shell (module header + route tiles) rather than the
+    // 5-card KPI row this page no longer renders — that skeleton used to
+    // flash a layout the loaded page never shows.
     return (
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-6">
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-20 w-full rounded-md" />
-          ))}
+      <div className="flex min-h-0 flex-col">
+        <div className="border-b border-border bg-surface px-6 py-3.5">
+          <Skeleton className="h-10 w-full max-w-md rounded-md" />
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-28 w-full rounded-lg" />
-          ))}
+        <div className="p-6">
+          <RouteSkeleton />
         </div>
       </div>
     );
@@ -182,56 +97,38 @@ function DispatchPageContent() {
   const unrouted = preRouteSnapshot?.totals.order_count ?? 0;
 
   return (
-    <div className="flex min-h-0 flex-col">
-      {/* Header — title, tabs as inline chips, and the unrouted count that the
-          Pre-ruta tab is about. Replaces the KPI card row: five equal cards
-          gave no clue which one the screen was for. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-border bg-surface px-6 py-3.5">
-        <h1 className="font-heading text-lg font-semibold leading-none text-text">Despacho</h1>
+    <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
+      <DispatchModuleHeader
+        unrouted={unrouted}
+        // `undefined` (still loading) must render no count, not a `0` that
+        // reads as a real, briefly-wrong figure — don't collapse this to
+        // `?? 0`.
+        enCargaCount={kpisLoading ? undefined : kpis?.openRoutes}
+        enRutaCount={kpisLoading ? undefined : kpis?.inRoute}
+        onNewRoute={handleNewRoute}
+      />
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="pre-ruta">Pre-ruta</TabsTrigger>
-            <TabsTrigger value="open">Abiertas {kpisLoading ? '' : kpis?.openRoutes ?? 0}</TabsTrigger>
-            <TabsTrigger value="in_progress">En ruta {kpisLoading ? '' : kpis?.inRoute ?? 0}</TabsTrigger>
-            <TabsTrigger value="completed">Completadas</TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <TabsContent value="pre-ruta" className="mt-0 min-h-0 flex-1">
+        <PreRouteBoard onCreateRoute={handleCreateRoute} isCreating={createRouteMutation.isPending} />
+      </TabsContent>
 
-        <div className="ml-auto flex items-center gap-3">
-          <span className="font-mono text-[11px] font-medium leading-none text-text-secondary">
-            SIN RUTEAR <span className="font-semibold text-text">{unrouted}</span>
-          </span>
-          <Button onClick={handleNewRoute} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Nueva ruta
-          </Button>
-        </div>
-      </div>
+      <TabsContent value="open" className="mt-0 p-6">
+        <DispatchOpenRoutesTab
+          operatorId={operatorId}
+          onNewRoute={handleNewRoute}
+          onNavigate={navigateToRoute}
+          onDelete={handleDeleteRoute}
+        />
+      </TabsContent>
 
-      <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
-        <TabsContent value="pre-ruta" className="mt-0 min-h-0 flex-1">
-          <PreRouteBoard onCreateRoute={handleCreateRoute} isCreating={createRouteMutation.isPending} />
-        </TabsContent>
+      <TabsContent value="in_progress" className="mt-0 p-6">
+        <DispatchInProgressTab operatorId={operatorId} />
+      </TabsContent>
 
-        <TabsContent value="open" className="mt-0 p-6">
-          <DispatchOpenTab
-            operatorId={operatorId}
-            onNewRoute={handleNewRoute}
-            onNavigate={navigateToRoute}
-            onDelete={handleDeleteRoute}
-          />
-        </TabsContent>
-
-        <TabsContent value="in_progress" className="mt-0 p-6">
-          <DispatchInProgressTab operatorId={operatorId} />
-        </TabsContent>
-
-        <TabsContent value="completed" className="mt-0 p-6">
-          <DispatchCompletedTab operatorId={operatorId} onNavigate={navigateToRoute} />
-        </TabsContent>
-      </Tabs>
-    </div>
+      <TabsContent value="completed" className="mt-0 p-6">
+        <DispatchCompletedRoutesTab operatorId={operatorId} onNavigate={navigateToRoute} />
+      </TabsContent>
+    </Tabs>
   );
 }
 
