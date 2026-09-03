@@ -45,6 +45,7 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 - **No se implementa el móvil.** `2a`–`2l` son `spec-76` y `spec-77`; `3a` es `spec-78`.
 - **No se rediseña el sidebar.** `spec-67` ya fijó la arquitectura de navegación. Las pestañas del módulo van en el header del módulo, no en el sidebar.
 - **No se introduce librería de mapas nueva.** El mapa de `1a` se dibuja con el mismo enfoque que ya usa el repo; si hoy no hay mapa real en pre-ruta, se implementa el contenedor y las polilíneas con los tokens `--color-map-surface` / `--color-map-line`, no con un proveedor nuevo.
+- **No se construye el mapa ni la tarjeta de métricas de 4 columnas de `1a`** (decisión 10), ni **arrastrar y soltar sobre vehículos** (decisión 11). Los dos dependen de trabajo que no existe todavía — el optimizador cableado y un proveedor de mapas en un caso, una columna de vehículos en el otro.
 - **No se fuerza tema oscuro.** Decisión heredada de `spec-54`: el usuario elige.
 - **Optimizar y crear N rutas** reusa `useCreateRouteFromSelection`. No se escribe un optimizador nuevo ni se conecta OR-Tools en este spec — queda para un spec futuro (refinamiento OR-Tools / TomTom).
 
@@ -68,7 +69,19 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 
    Regla general para leer este canvas: **distinguir el chrome de la aplicación del chrome del módulo.** Un elemento que aparece en un artboard no implica que haya que construirlo; puede existir ya un nivel más arriba.
 
-8. **Arrastrar y soltar no es el único camino.** Los botones de acción masiva del pie de la lista se implementan junto con el drag, no después.
+8. **Arrastrar y soltar queda fuera de este spec** — ver decisión 11. Lo que el handoff exigía que existiera junto al arrastre — selección múltiple y acciones masivas por teclado — **ya está implementado** en la fase 2, así que la columna es operable sin él.
+
+10. **El mapa y las cuatro métricas del mock no se construyen: no son computables hoy.** `RoutePlanCanvas.tsx` ya tomó esta decisión y la documenta: *«DISTANCIA / DURACIÓN / OCUPACIÓN / CPO EST. … ninguna de las cuatro es computable hoy: vienen del optimizador OR-Tools, que no tiene cableado de frontend, y no hay proveedor de mapas. Inventar números plausibles en una pantalla de planificación sería peor que no mostrar ninguno.»* Es la decisión correcta y **se mantiene**.
+
+    Este spec pedía polilíneas y la tarjeta de métricas en 4 columnas. Implementarlo tal cual significaría **fabricar distancia, duración y costo por orden en la pantalla donde se decide qué sube a un camión**. No se hace. El componente ya dice que es el lugar donde entran cuando lleguen, y el layout no se mueve, así que el trabajo futuro no paga nada por esperar. Mientras tanto la franja de métricas reporta lo que la selección **realmente** contiene (órdenes, paquetes, comunas, grupos).
+
+    Vuelve cuando existan el optimizador cableado y un proveedor de mapas — es el trabajo de ruteo que ya estaba diferido a un spec futuro.
+
+11. **Arrastrar y soltar sobre tarjetas de vehículo queda fuera.** El objetivo del arrastre no existe: la pre-ruta tiene tres columnas — no rutadas, lienzo, ruta en armado — y **ninguna columna de vehículos**. El handoff describía soltar sobre tarjetas de vehículo con barras de capacidad, que es una cuarta columna, es decir una funcionalidad nueva y no un delta sobre lo que hay.
+
+    Además, el propio handoff exigía que el arrastre **nunca fuera el único camino**: la selección múltiple y las acciones masivas por teclado tenían que existir igual. Eso ya está hecho (fase 2), así que la columna es plenamente operable sin arrastre — que era el punto.
+
+    La columna de vehículos y su interacción de arrastre merecen su propio spec, no un injerto sobre un rediseño.
 
 ## Plan de implementación (TDD)
 
@@ -84,7 +97,7 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 5. Test: fila por orden con chevron que expande `sku_items`; paquete retenido marcado.
 6. Test: filtros nuevos (comuna, andén, cliente, ventana libre, solo con problemas) y ausencia de las 4 franjas fijas.
 7. Test: pie de selección («110 seleccionadas · 254 paquetes · 2 comunas») y acciones masivas.
-8. Mapa: contenedor, polilíneas por ruta, la propuesta dasheada, tarjeta de métricas en 4 columnas.
+8. **El mapa y su tarjeta de métricas quedan fuera** — ver decisión 10. `RoutePlanCanvas.tsx` **no se toca**.
 
 ### Fase 3 — `1b` En carga
 9. Test: tarjeta por ruta con sus 4 estados del mock — `EN CARGA`, `LISTA PARA DESPACHO`, `DETENIDA`, `BORRADOR`.
