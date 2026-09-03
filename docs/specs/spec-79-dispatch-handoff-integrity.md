@@ -10,12 +10,13 @@ _Date: 2026-09-03_
 
 ## Goal
 
-Tres defectos de servidor del lado del despacho. Ninguno es de diseño: los tres hacen que el sistema afirme algo que no es cierto, o descarte algo que la operación necesita.
+Cuatro defectos de servidor del lado del despacho. Ninguno es de diseño: los cuatro hacen que el sistema afirme algo que no es cierto, o descarte algo que la operación necesita.
 
 1. **H2 — un fallo posterior a la confirmación de DispatchTrack es indistinguible de un fallo de DispatchTrack**, y reintentarlo duplica la ruta.
 2. **H3 — `en_ruta` se escribe por orden y no por bulto cargado**, así que un paquete que se quedó en el andén queda marcado como si viajara.
 
 3. **H4 — los rechazos de escaneo no se guardan en ninguna parte**, así que nadie puede saber después por qué una ruta salió corta.
+4. **H5 — la asignación de camión y conductor se pierde al despachar**, y un camión se puede reservar dos veces el mismo día.
 
 H3 y H4 **no son problemas del rediseño**: afectan a la operación de hoy. Cualquier orden partida que se despache parcialmente deja bultos de andén en `en_ruta`, invisibles para la ruta siguiente. Vale arreglarlo aunque `spec-77` no existiera.
 
@@ -71,6 +72,30 @@ Encontrado al preparar `spec-75` fase 4. Cuando una lectura se rechaza — *ya e
 **Alcance.** Registrar cada lectura rechazada con lo mínimo para que sirva: código leído, motivo, quién, cuándo, y contra qué ruta o posición se intentó. Requiere migración, y por eso vive acá y no en `spec-75`, que no agrega ninguna.
 
 **Consumidores que se desbloquean:** `1c` (lista de rechazos intercalada, `spec-75` fase 4) y `2f` (pantalla de rechazo del móvil, `spec-76`) — que además pasa a poder mostrar el histórico del turno y no sólo el rechazo en curso.
+
+### H5 — La asignación de camión y conductor se pierde al despachar
+
+Encontrada al implementar `2d` (`spec-76` tarea 2), que es la pantalla que por fin persiste `routes.vehicle_id` y `routes.driver_name` **en el momento de asignar**, y no recién al despachar. Tres defectos del lado del despacho la anulan:
+
+**H5a — `/dispatch` pisa el conductor que escribió la cuadrilla.** `apps/frontend/src/app/api/dispatch/routes/[id]/dispatch/route.ts` escribe `driver_name: parsed.data.driver_identifier ?? null` sin condición. Así que despachar desde el escritorio reemplaza el nombre que la cuadrilla tipeó en `2d` por un **identificador** de DispatchTrack, o lo deja en `null`. La asignación que `2d` existe para persistir es, hoy, advisoria: se pierde en el último paso. Arreglo: caer al `driver_name` ya guardado cuando no viene `driver_identifier`.
+
+**H5b — la búsqueda del vehículo se traga su error y asume una unicidad que no existe.** El mismo handler resuelve `fleet_vehicles` con `.maybeSingle()` sin desestructurar `error`, filtrando sólo por `operator_id`. Pero la unicidad real es `UNIQUE (operator_id, provider, external_vehicle_id)` (`20260306000001`), no `(operator_id, external_vehicle_id)`: dos proveedores pueden tener el mismo identificador para un operador. Con dos filas, `maybeSingle()` da error, `data` queda `null`, y el endpoint responde 422 «camión no encontrado» sobre un camión que sí existe. Y cualquier fallo transitorio de base produce el mismo 422. Arreglo: desestructurar `error`, 500 en lo que no sea `PGRST116`, y acotar por el `provider` de la ruta.
+
+**H5c — un camión se puede reservar dos veces el mismo día.** `PATCH /api/dispatch/routes/[id]` (nuevo en `spec-76`) chequea conflicto leyendo y después escribe, sin nada en el medio: dos cuadrillas en dos teléfonos asignan el mismo camión a dos rutas y ambas escrituras pasan. No hay respaldo en la base — revisadas todas las migraciones, no existe restricción sobre `routes(vehicle_id, route_date)`. El chequeo de aplicación es advisorio, no exigido.
+
+Arreglo, con migración (por eso vive acá y no en `spec-76`, que no agrega ninguna):
+
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS routes_one_vehicle_per_day
+  ON public.routes (operator_id, vehicle_id, route_date)
+  WHERE deleted_at IS NULL
+    AND vehicle_id IS NOT NULL
+    AND status IN ('draft','planned','loading','loaded','dispatched','in_transit','in_progress');
+```
+
+y mapear `23505` al mismo 409 que ya devuelve el chequeo de aplicación. Ojo con el backfill: en producción puede haber filas que ya violan el índice, así que **medir primero** — a escala de producción (~112k despachos) crear el índice sin medir es cómo se agotan los timeouts (ver riesgos).
+
+**Por qué importa.** `2a`, `2c` y el monitor `1b` de `spec-75` mostraban «Sin conductor» / «Sin asignar» para toda ruta que podían mostrar, porque esas columnas sólo se escribían **después** del despacho. `2d` lo corrige aguas arriba; H5a lo vuelve a romper aguas abajo. Los tres arreglos van juntos o la cadena no cierra.
 
 ### No-goals
 
