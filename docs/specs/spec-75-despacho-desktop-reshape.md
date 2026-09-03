@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding, fase 4 «Módulos, uno por PR»), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta), [spec-71](spec-71-load-positions-staging-pass.md) (`get_pre_route_snapshot`, posiciones de carga), [spec-72](spec-72-blocks-delivery-sequence.md) (secuencia de paradas), [spec-73](spec-73-capacity-ladder-truck-topup.md) (`fleet_vehicles.capacity_packages`), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto), [spec-76](spec-76-despacho-movil-carga.md) (móvil de cuadrilla)
 
-**Status:** backlog
+**Status:** in progress
 
 _Date: 2026-09-03_
 

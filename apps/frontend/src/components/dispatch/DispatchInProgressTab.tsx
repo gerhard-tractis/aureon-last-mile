@@ -2,27 +2,17 @@
 
 import { useState } from 'react';
 import { Truck } from 'lucide-react';
-import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/EmptyState';
 import { useDispatchRoutesByStatus } from '@/hooks/dispatch/useDispatchRoutesByStatus';
 import { ON_ROAD_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { RouteActivityRow } from './RouteActivityRow';
-
-function RouteSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 3 }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full rounded-lg" />
-      ))}
-    </div>
-  );
-}
+import { RouteSkeleton } from './RouteSkeleton';
 
 export function DispatchInProgressTab({ operatorId }: { operatorId: string }) {
   const [openRouteId, setOpenRouteId] = useState<string | null>(null);
   const { data: routes, isLoading } = useDispatchRoutesByStatus(operatorId, [...ON_ROAD_ROUTE_STATUSES]);
 
-  if (isLoading) return <RouteSkeleton />;
+  if (isLoading) return <RouteSkeleton rowClass="h-16" />;
   if (!routes?.length) {
     return (
       <EmptyState icon={Truck} title="Sin rutas en camino" description="Las rutas despachadas aparecerán aquí." />
