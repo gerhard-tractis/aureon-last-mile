@@ -185,6 +185,44 @@ Reglas que **ya costaron caro** en otro spec de esta serie. No son teoría: cada
    *Dónde se aprendió:* En `spec-75` la reescritura de la columna dejó de renderizar el `subtitle` del grupo — el único lugar que nombra **entre qué andenes** se reparte una comuna — mientras seguía mostrando el ícono de advertencia. La UI avisaba del problema y ocultaba el dato. Al reescribir un componente, compará campo por campo contra la versión anterior y decilo explícitamente.
 
 
+### Añadido tras la tarea 3 de `spec-75` (monitor de carga)
+
+### Campos del canvas que **no existen en el schema**
+
+Verificado durante `spec-75` tarea 3 recorriendo migraciones y tipos. El canvas los dibuja; la base no los tiene. **No los inventes y no agregues migración para tenerlos** — si el diseño los pide, se renderiza nada y se anota.
+
+| Figura del mock | Realidad |
+|---|---|
+| `Turno A` / `Turno B` (turno de cuadrilla) | **No existe tabla de turnos.** `pickup_route_crew` es otro dominio (viajes de recogida, no carga en andén). |
+| `furgón 12,4 m³` (volumen del vehículo) | `fleet_vehicles` tiene `vehicle_type` (texto) y `capacity_packages` (conteo). No hay columna de volumen. `drivers.max_volume_m3` es un tope de planificación por conductor, otra tabla, no el volumen del camión. |
+| `A3 Sur Oriente` — la parte «sector» | Sólo existe `load_positions.code`/`label` (el andén). No hay columna de sector por ruta. |
+| `Cerró 08:41` (hora de cierre) | No hay `sealed_at`/`closed_at`. Ver la regla sobre proxies abajo. |
+
+1. **Un proxy no se muestra bajo una etiqueta que afirma un hecho.**
+
+   *Dónde se aprendió:* `spec-75` tarea 3 renderizó `Cerró 08:41` desde `routes.updated_at`, razonando que nada más muta una ruta `loaded`. **Es falso:** `sweep_load_position_assignments` incluye `loaded` y llama a `assign_load_position`, que hace `updated_at = now()` — y ese barrido corre después del despacho exitoso de **cualquier otra ruta**. Una ruta sellada a las 08:41 sin andén libre pasa a mostrar «Cerró 11:20» cuando otro despacho libera una posición. Si el dato real hace falta, sale de `audit_logs` (el trigger guarda `{before, after}`, así que la transición a `loaded` está registrada), no de una columna que se mueve por otros motivos.
+
+2. **Un test que pasa sobre datos imposibles no prueba nada.**
+
+   *Dónde se aprendió:* En `spec-75` tarea 3 la línea de conductor + vehículo **no podía renderizarse nunca** en esa pestaña: `routes.vehicle_id` y `driver_name` los escribe sólo `/dispatch`, *después* de la transición a `dispatched`, así que toda ruta de ese conjunto los tiene en `NULL` — y el join a `fleet_vehicles` se pedía cada 30 s para nada. Los tests pasaban porque el fixture inyectaba a mano `driverName: 'Mario González'`. **Los fixtures sólo deben contener datos que el hook realmente pueda producir.**
+
+3. **Las fechas «de hoy» se calculan en la zona horaria de Chile, no en UTC.**
+
+   *Dónde se aprendió:* `spec-75` tarea 3 usó `new Date().toISOString().slice(0,10)` en la cabecera de una pantalla de turno de tarde: desde las ~20:00 de Santiago imprimía la fecha de mañana. El repo ya tiene `todayISOInTimezone()` en `lib/utils/dateFormat.ts`, y su comentario describe exactamente este fallo. Usalo, y pasá `timeZone: TIMEZONE` a todo `toLocale*`.
+
+4. **Un tick por segundo re-renderiza todo lo que lo consume: bajalo al componente que muestra el tiempo.**
+
+   *Dónde se aprendió:* En `spec-75` tarea 3 el tick de 1 s vivía en la pestaña, así que cada segundo se re-renderizaban todas las tarjetas — incluidas las que no muestran ningún texto dependiente del tiempo — y sus subárboles de `AlertDialog`. Se extrajo un componente mínimo que posee su propio tick; el resto pasó a un tick lento alineado con el refetch, y recién ahí `memo` sirve para algo.
+
+5. **Una consulta sin cota temporal crece para siempre.**
+
+   *Dónde se aprendió:* En `spec-75` tarea 3 la consulta de rutas no tenía límite de fecha: toda ruta jamás dejada abierta seguía en alcance, abriéndose a sus despachos y de ahí a todos los paquetes de esas órdenes, en `await` secuencial por lote, cada 30 s. En producción son ~112k despachos y ~61k paquetes. Acotá por fecha y paralelizá los lotes con `Promise.all`.
+
+6. **Dos señales distintas no se colapsan en una.**
+
+   *Dónde se aprendió:* `spec-75` tarea 3 quitó el borde de «atrasada» (`route_date` en el pasado) argumentando que el borde de «detenida» lo reemplazaba. No lo reemplaza: una cuadrilla escaneando a buen ritmo en la ruta de ayer está *atrasada* pero no *detenida*, y como la consulta ordenaba por fecha descendente, esa ruta quedaba **al final**. La señal no fue superada, fue invertida.
+
+
 ## Riesgos
 
 - **El hardware de QA corrompe guiones y no manda Enter.** Mitigado usando los primitivos compartidos, no un input propio. Verificar en QA antes de declarar terminado.
