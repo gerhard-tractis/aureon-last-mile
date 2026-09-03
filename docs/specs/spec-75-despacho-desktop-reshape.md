@@ -49,6 +49,16 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 - **No se fuerza tema oscuro.** Decisión heredada de `spec-54`: el usuario elige.
 - **Optimizar y crear N rutas** reusa `useCreateRouteFromSelection`. No se escribe un optimizador nuevo ni se conecta OR-Tools en este spec — queda para un spec futuro (refinamiento OR-Tools / TomTom).
 
+## Orden alterado: `spec-76` va primero
+
+**Decisión del usuario, 2026-09-03.** Las fases 1–3 (shell del módulo, columna de pre-ruta, filtros, monitor `1b`) están hechas. Las fases 4 y 5 quedan **en pausa** hasta que `spec-76` esté implementado.
+
+**Por qué.** La fase 4 convierte `1c` en solo lectura, lo que **le quita el escaneo al escritorio**. El reemplazo — las pantallas móviles de cuadrilla — es `spec-76`, que todavía no existe. Hacerlo en el orden original dejaba una ventana en la que una cuadrilla que hoy escanea en un navegador de escritorio o ≥1024 px se queda sin pantalla. Se construye primero el reemplazo y después se apaga lo viejo.
+
+Cuando `spec-76` esté en producción, la fase 4 retoma: `1c` pasa a solo lectura, se parte `RouteBuilder.tsx` (364 líneas) y `RoutePanel.tsx` (260) si hace falta.
+
+**Hallazgo que sobrevive de la fase 4** (verificado, no re-derivar): `/app/dispatch/[routeId]` es una URL compartida por tres superficies — `1c` en escritorio, `2c`/`2e` móvil de cuadrilla (`spec-76`), `3a` tablet (`spec-78`). El mecanismo ya existe y se usa igual en `/app/reception/route/[routeId]`: `useIsBelowLg()` de `hooks/useViewport.ts`, con `false` por defecto en tests. Al introducir la rama, los tests de escaneo/sellado/despacho de `RouteBuilder.test.tsx` deben seguir afirmando el comportamiento real e intacto con `useIsBelowLg → true`.
+
 ## Decisiones
 
 1. **Los tokens ya existen: no se añade ninguno.** El canvas declara `--surface`, `--text`, `--ok`… porque es un HTML autocontenido. `globals.css` ya tiene el equivalente rebrandeado y los valores coinciden exactamente con el canvas en ambos temas (`#ca9a04` / `#e6c15c` de acento, `#f8fafc` / `#13110d` de fondo, más `--color-map-surface` y `--color-text-body`). La tabla de equivalencias del handoff sigue siendo la referencia de nombres. **No** se crea una capa de tokens de módulo.
@@ -82,6 +92,10 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
     Además, el propio handoff exigía que el arrastre **nunca fuera el único camino**: la selección múltiple y las acciones masivas por teclado tenían que existir igual. Eso ya está hecho (fase 2), así que la columna es plenamente operable sin arrastre — que era el punto.
 
     La columna de vehículos y su interacción de arrastre merecen su propio spec, no un injerto sobre un rediseño.
+
+12. **Los rechazos de lectura de `1c` se difieren a `spec-79`, no se cortan.** El mock de `1c` muestra las lecturas rechazadas intercaladas en la lista (`Ya está en RUT-2026-0087 · no se agregó`, `orden incompleta · falta 1 paquete en consolidación`). **Hoy no hay de dónde sacarlas:** ni `POST /api/dispatch/routes/[id]/scan` ni `POST /api/dispatch/load-positions/scan` persisten un rechazo — validan, devuelven el mensaje al dispositivo y no escriben nada; el `insert` en `dock_scans` está fijo en `scan_result: 'accepted'` y corre sólo después de que la validación pasa. No hay fila, no hay `audit_logs`, no hay nada.
+
+    A diferencia del mapa y del arrastre (decisiones 10 y 11), esto **no se corta**: `spec-79` pasa a persistir los rechazos, y entonces `1c` los muestra desde datos reales. El motivo es operativo, no de esta pantalla — ver `spec-79`.
 
 ## Plan de implementación (TDD)
 

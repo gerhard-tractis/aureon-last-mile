@@ -10,12 +10,14 @@ _Date: 2026-09-03_
 
 ## Goal
 
-Dos defectos de servidor en `POST /api/dispatch/routes/[id]/dispatch`, encontrados al verificar el copy de `spec-77` contra el endpoint. Ninguno es de diseño: los dos hacen que el sistema afirme algo que no es cierto sobre la única acción irreversible del módulo.
+Tres defectos de servidor del lado del despacho. Ninguno es de diseño: los tres hacen que el sistema afirme algo que no es cierto, o descarte algo que la operación necesita.
 
 1. **H2 — un fallo posterior a la confirmación de DispatchTrack es indistinguible de un fallo de DispatchTrack**, y reintentarlo duplica la ruta.
 2. **H3 — `en_ruta` se escribe por orden y no por bulto cargado**, así que un paquete que se quedó en el andén queda marcado como si viajara.
 
-H3 **no es un problema del rediseño**: afecta a la operación de hoy. Cualquier orden partida que se despache parcialmente deja bultos de andén en `en_ruta`, invisibles para la ruta siguiente. Vale arreglarlo aunque `spec-77` no existiera.
+3. **H4 — los rechazos de escaneo no se guardan en ninguna parte**, así que nadie puede saber después por qué una ruta salió corta.
+
+H3 y H4 **no son problemas del rediseño**: afectan a la operación de hoy. Cualquier orden partida que se despache parcialmente deja bultos de andén en `en_ruta`, invisibles para la ruta siguiente. Vale arreglarlo aunque `spec-77` no existiera.
 
 ## Fuente de verdad
 
@@ -56,12 +58,27 @@ supabase.from('packages').update({ status: 'en_ruta' })
 
 El arreglo es acotar la escritura a los bultos que realmente van en el camión — los de esas órdenes que están en `en_carga` — en vez de a todos los de la orden. Un bulto en `asignado` (nunca escaneado) o `retenido` (consolidación) **no** debe pasar a `en_ruta`.
 
+### H4 — Los rechazos de escaneo no se guardan en ninguna parte
+
+Encontrado al preparar `spec-75` fase 4. Cuando una lectura se rechaza — *ya está en otra ruta*, *`en_bodega`*, *código no encontrado*, *retenido en consolidación* — el endpoint valida, devuelve el mensaje al dispositivo y **no escribe nada**. El `insert` en `dock_scans` lleva `scan_result: 'accepted'` fijo y sólo corre tras validar. No queda fila, ni `audit_logs`, ni rastro. Al refrescar la pantalla, el evento nunca existió.
+
+**Por qué importa más allá de la UI:**
+
+- **El jefe de turno no puede ver por qué una ruta va corta.** Ve `148 de 172` y 24 sin escanear, pero no que 6 de esos 24 se levantaron físicamente y rebotaron, ni por qué. Los 24 se ven iguales a 24 que nadie tocó.
+- **«¿Por qué esta orden salió incompleta?» no tiene respuesta después del hecho.** Un paquete retenido rebota el lunes, rebota el martes y sale el miércoles en una segunda visita, sin nada que conecte los tres eventos.
+- **Los dos patrones de falla más caros son invisibles.** Un paquete que rebota repetidamente como *ya está en otra ruta* significa que se cerró una ruta con paquetes todavía en el andén — un error operativo real que hoy no deja evidencia. Y las retenciones de consolidación son la causa de las entregas en dos visitas que `2c` nombra («el cliente recibe en dos visitas»); sin persistencia no se puede saber si mejoran.
+
+**Alcance.** Registrar cada lectura rechazada con lo mínimo para que sirva: código leído, motivo, quién, cuándo, y contra qué ruta o posición se intentó. Requiere migración, y por eso vive acá y no en `spec-75`, que no agrega ninguna.
+
+**Consumidores que se desbloquean:** `1c` (lista de rechazos intercalada, `spec-75` fase 4) y `2f` (pantalla de rechazo del móvil, `spec-76`) — que además pasa a poder mostrar el histórico del turno y no sólo el rechazo en curso.
+
 ### No-goals
 
 - **No se rediseña la máquina de estados.** `transition_route_status` sigue siendo el único dueño de las aristas de `routes.status`.
 - **No se implementa reapertura ni cancelación de rutas.** Fuera de alcance igual que en `spec-77`.
 - **No se toca UI.** Este spec es servidor y tests. `spec-77` consume el resultado; si se implementa antes, `2k` se dibuja contra los códigos nuevos.
 - **No se cambia el contrato de items/guías.** `buildItems`, el formato de `identifier` y la resolución de `truck_identifier` quedan como están.
+
 
 ## Decisiones
 
