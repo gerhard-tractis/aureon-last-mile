@@ -64,6 +64,10 @@ Las 4 pestañas pasan a vivir en el header del módulo, con su conteo, en vez de
 
 7. **Fila por orden, con chevron.** También del handoff `3f`: el `order_rows` que el RPC ya devuelve anidado se aplana; el chevron expande `packages.sku_items`. Un paquete retenido en consolidación se marca en la fila expandida, porque es la causa raíz de las órdenes incompletas que `1a` señala en la columna izquierda (`Calera de Tango · sin andén que la cubra`, `ORD-48177`…).
 
+9. **El breadcrumb ya existe: no se vuelve a dibujar.** Los artboards del canvas muestran la **página completa**, con sidebar, `ÚLTIMA MILLA`, el bloque de usuario y el breadcrumb `Operación / Despacho`. Ese breadcrumb es el del `TopBar`, que `AppLayout` ya monta sobre todo `/app/*`: `sidebar/navigation.ts` define `crumb: 'Operación'` para la sección OPERACIÓN y lo resuelve solo. Volver a dibujarlo en el header del módulo lo pondría dos veces en pantalla — que es exactamente lo que `PageShell.tsx` documenta haber quitado a propósito: «si una ruta necesita un crumb y no lo tiene, agrégalo a `EXTRA_CRUMBS` en `navigation.ts`, **no de vuelta al cuerpo de la página**». Lo que sí es propio del módulo y no está duplicado en ninguna parte es el contador `SIN RUTEAR`, que sí va en el header.
+
+   Regla general para leer este canvas: **distinguir el chrome de la aplicación del chrome del módulo.** Un elemento que aparece en un artboard no implica que haya que construirlo; puede existir ya un nivel más arriba.
+
 8. **Arrastrar y soltar no es el único camino.** Los botones de acción masiva del pie de la lista se implementan junto con el drag, no después.
 
 ## Plan de implementación (TDD)
@@ -73,7 +77,7 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 ### Fase 1 — Shell del módulo
 1. Test: el header del módulo renderiza las 4 pestañas con su conteo y marca la activa desde la URL.
 2. `page.tsx` (244 líneas) pasa a shell delgado de pestañas; cada pestaña es su propio árbol bajo `components/dispatch/`.
-3. Test: breadcrumb `Operación / Despacho` y el contador `SIN RUTEAR` del header.
+3. Test: el contador `SIN RUTEAR` del header. **El breadcrumb NO se implementa aquí** — ver decisión 9.
 
 ### Fase 2 — `1a` Pre-ruta
 4. Test: `RouteBuilder` partido en tres — selección, impacto, armado — cada uno monta y comunica por props tipadas.
