@@ -98,7 +98,7 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 
 ### Fase 6 — Cierre
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.
-18. E2E: extender `e2e/dispatch-route.spec.ts`.
+18. **Sin E2E nuevo.** Decisión del usuario: el E2E de Despacho se concentra en `spec-76` y `spec-77`, donde hay lector real, dispositivo real y una acción irreversible. Aquí el E2E sólo repetiría lo que ya cubren los tests de componente, y Despacho todavía no tiene fixture de E2E — construirla es tarea de `spec-76`. `e2e/dispatch-route.spec.ts` se deja como está (hoy sólo afirma una redirección de URL, no comportamiento).
 19. Verificación responsive: las tres columnas colapsan a pestañas bajo 1024px (regla del handoff, *Interactions & Behavior*).
 
 ## Riesgos

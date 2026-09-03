@@ -127,10 +127,17 @@ H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son def
 17. Test: ofrece la siguiente carga concreta si existe; si no, no inventa una.
 18. Test: la ruta queda `dispatched` y los paquetes en `en_ruta`.
 
-### Fase 5 — Cierre
+### Fase 5 — Cierre y E2E
+
+El E2E de Despacho se concentra en `spec-76` y aquí (decisión del usuario). Este spec es el objetivo de mayor valor de los cuatro: es la única acción irreversible del módulo, y un fallo suyo manda un camión a la calle con una ruta mal despachada.
+
 19. `npm run test -- --pool=forks` + mutation-test antes de push.
-20. E2E del camino completo cargar → cerrar → despachar, con el envío mockeado en fallo y en éxito.
-21. Verificación en QA.
+20. E2E del camino completo cargar → cerrar → despachar, sobre `e2e/support/despacho-fixture.ts` (lo construye `spec-76` fase 7, con namespace propio).
+21. **DispatchTrack se mockea a nivel de red**, como ya hace `e2e/dispatch-route.spec.ts` interceptando `**/activationcode.dispatchtrack.com/**`. Nunca se despacha de verdad contra DT desde un test.
+22. Tres caminos, no uno: DT rechaza · DT acepta · **DT acepta y la escritura local falla** (H2). El tercero es el que hoy no se distingue y el que `spec-79` arregla; el E2E debe cubrirlo para que no vuelva a colarse.
+23. E2E de que cerrar con faltantes **no** deja bultos del andén en `en_ruta` (H3), con una orden partida a propósito en el fixture.
+24. Ejecutar en el runner del VPS (`e2e:qa`) y **leer el reporte**, no el check verde: `e2e-qa` es `continue-on-error: true`.
+25. Verificación en QA.
 
 ## Riesgos
 
