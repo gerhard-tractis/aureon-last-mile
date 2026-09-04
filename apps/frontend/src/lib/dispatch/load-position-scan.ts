@@ -59,7 +59,11 @@ export type PositionScanResult =
         | 'ALREADY_IN_ROUTE'
         | 'ALREADY_STAGED'
         | 'IN_CONSOLIDATION'
-        | 'QUERY_FAILED';
+        | 'QUERY_FAILED'
+        // spec-76 task 3 review, escalated decision — this staging pass
+        // reuses `validateScan` (scan-validator.ts) verbatim, so any code
+        // that validator can now return must be representable here too.
+        | 'NOT_ON_DOCK';
     };
 
 interface PositionScanInput {

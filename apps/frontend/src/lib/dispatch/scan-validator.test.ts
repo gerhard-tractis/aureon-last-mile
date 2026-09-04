@@ -149,6 +149,31 @@ describe('validateScan — status gate', () => {
     }
   });
 
+  /**
+   * spec-76 task 3 review, escalated decision. `en_bodega` used to be in
+   * `DISPATCHABLE_STATUSES` (accepted); this is a deliberate reversal, not
+   * a fix-forward from a passing state — migration 20260817000003's own
+   * analysis notes `dock_zone_id IS NOT NULL AND status = 'en_bodega'` are
+   * "very nearly mutually exclusive" (the trigger that writes
+   * `dock_zone_id` also sets `status = 'sectorizado'` in the same UPDATE),
+   * so a package still `en_bodega` genuinely never reached the andén.
+   */
+  it('rejects en_bodega with its own reason — NOT_ON_DOCK, not the generic WRONG_STATUS', async () => {
+    const { client } = buildClient([
+      { data: [{ id: 'p1', status: 'en_bodega', order_id: 'o1', orders: ORDER_ROW }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('NOT_ON_DOCK');
+      expect(result.message).toMatch(/no pasó por andén/i);
+    }
+  });
+
+  it('en_bodega is no longer in DISPATCHABLE_STATUSES', () => {
+    expect((DISPATCHABLE_STATUSES as readonly string[]).includes('en_bodega')).toBe(false);
+  });
+
   it('rejects a package already on the road', async () => {
     const { client } = buildClient([
       { data: [{ id: 'p1', status: 'en_ruta', order_id: 'o1', orders: ORDER_ROW }], error: null },
@@ -203,7 +228,12 @@ describe('validateScan — membership', () => {
     ]);
     const result = await validateScan(client, input);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe('ALREADY_IN_ROUTE');
+    if (!result.ok) {
+      expect(result.code).toBe('ALREADY_IN_ROUTE');
+      // spec-76 phase 4 (2f) — 2f names the conflicting route ("Ya está en
+      // otra ruta · RUT-...") and offers to view it; that needs its id.
+      expect(result.conflictingRouteId).toBe('route-2');
+    }
   });
 });
 

@@ -74,7 +74,12 @@ export async function POST(
 
     const validation = await validateScan(supabase, { code: parsed.data.code, routeId, operatorId });
     if (!validation.ok) {
-      return NextResponse.json({ code: validation.code, message: validation.message }, { status: 422 });
+      // spec-76 phase 4 (2f) — carried through only for ALREADY_IN_ROUTE;
+      // validateScan leaves it undefined for every other failure code.
+      return NextResponse.json(
+        { code: validation.code, message: validation.message, conflictingRouteId: validation.conflictingRouteId },
+        { status: 422 },
+      );
     }
 
     const now = new Date().toISOString();

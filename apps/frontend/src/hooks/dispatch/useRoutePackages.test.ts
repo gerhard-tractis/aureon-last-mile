@@ -180,7 +180,17 @@ describe('useRoutePackages', () => {
       dispatches: [rawRow],
       packages: [
         { order_id: 'order-5', loaded_at: '2026-08-31T10:00:00Z', status: 'en_carga' },
-        { order_id: 'order-5', loaded_at: null, status: 'en_bodega' },
+        // spec-76 task 3 review, escalated decision — this row was
+        // `en_bodega` and counted toward boxesTotal (3, not 2). That
+        // encoded the pre-fix bug: `en_bodega` came OUT of
+        // DISPATCHABLE_STATUSES (it never reached the andén, so the
+        // scanner now refuses it — NOT_ON_DOCK), and this hook's own
+        // "excludes an en_bodega, never-loaded package too" test now
+        // covers that exclusion directly. `sectorizado` is what's
+        // genuinely still dispatchable here, preserving this test's
+        // original intent (three DIFFERENT live states aggregating
+        // correctly) without relying on the wrong one.
+        { order_id: 'order-5', loaded_at: null, status: 'sectorizado' },
         { order_id: 'order-5', loaded_at: null, status: 'asignado' },
       ],
     });
@@ -264,7 +274,14 @@ describe('useRoutePackages', () => {
       packages: [
         { order_id: 'order-8', loaded_at: '2026-08-31T10:00:00Z', status: 'en_carga' }, // loaded
         { order_id: 'order-8', loaded_at: null, status: 'dañado' }, // stuck, never loaded — excluded
-        { order_id: 'order-8', loaded_at: null, status: 'en_bodega' }, // outstanding, dispatchable
+        // spec-76 task 3 review, escalated decision — this row used to be
+        // `en_bodega` ("outstanding, dispatchable"), which was the bug: it
+        // encoded `en_bodega` counting toward boxesTotal, the exact thing
+        // this test exists to disprove for a status that can never be
+        // loaded. `sectorizado` is what's genuinely still dispatchable and
+        // unloaded here; `en_bodega`'s own exclusion gets its own test
+        // below ("...never having been sorted...").
+        { order_id: 'order-8', loaded_at: null, status: 'sectorizado' }, // outstanding, dispatchable
       ],
     });
 
@@ -274,6 +291,41 @@ describe('useRoutePackages', () => {
     // 2, not 3: the dañado box is excluded entirely, so the row CAN reach
     // "N of N" once the remaining dispatchable box is scanned.
     expect(result.current.data?.[0].boxesTotal).toBe(2);
+    expect(result.current.data?.[0].boxesLoaded).toBe(1);
+  });
+
+  /**
+   * spec-76 task 3 review, escalated decision. `en_bodega` came OUT of
+   * `DISPATCHABLE_STATUSES` (scan-validator.ts) — it genuinely means "never
+   * sorted to an andén", so the scanner now refuses it (NOT_ON_DOCK). This
+   * hook shares that same constant, so an `en_bodega` box must stop
+   * inflating `boxesTotal` the same way a `dañado` one already didn't:
+   * before this decision, an outstanding `en_bodega` box would show as
+   * "pending" on the desktop pending count forever, even though the
+   * scanner refuses to let it be loaded — the exact seal-vs-screen
+   * disagreement `DISPATCHABLE_STATUSES` exists to prevent (see this
+   * file's other test, item 3, for the `dañado` precedent).
+   */
+  it('excludes an en_bodega, never-loaded package too — it can no longer be scanned in', async () => {
+    const rawRow = {
+      id: 'dispatch-8b',
+      order_id: 'order-8b',
+      status: 'pending',
+      stage: 'partially_staged',
+      orders: { order_number: 'ORD-008B', customer_name: 'Ike', delivery_address: '8B Rd', customer_phone: null },
+    };
+    mockTables({
+      dispatches: [rawRow],
+      packages: [
+        { order_id: 'order-8b', loaded_at: '2026-08-31T10:00:00Z', status: 'en_carga' }, // loaded
+        { order_id: 'order-8b', loaded_at: null, status: 'en_bodega' }, // never sorted, excluded
+      ],
+    });
+
+    const { result } = renderHook(() => useRoutePackages('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.[0].boxesTotal).toBe(1);
     expect(result.current.data?.[0].boxesLoaded).toBe(1);
   });
 

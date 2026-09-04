@@ -1,0 +1,71 @@
+import { describe, it, expect } from 'vitest';
+import { rejectionCopy, ALL_REJECTION_CODES } from './scan-rejection-copy';
+
+describe('rejectionCopy', () => {
+  it('spec-76 decision 5 — ALREADY_IN_ROUTE names the conflicting route when known', () => {
+    // 'RUT-0087' here is a readable fixture, not what crew-board.ts's real
+    // routeCode() emits (an 8-char uppercase slice of a route UUID, e.g.
+    // "ABCDEF12") — this function only renders whatever string it is given.
+    const copy = rejectionCopy({ code: 'ALREADY_IN_ROUTE', message: 'Paquete ya asignado a otra ruta activa', conflictingRouteCode: 'RUT-0087' });
+    expect(copy.title).toContain('RUT-0087');
+    expect(copy.tallyLabel).toBe('YA EN OTRA RUTA');
+    expect(copy.historyLabel).toBe('YA EN RUT-0087');
+    expect(copy.canViewConflictingRoute).toBe(true);
+  });
+
+  it('ALREADY_IN_ROUTE without a resolvable route code still names the reason honestly, without inventing a code', () => {
+    const copy = rejectionCopy({ code: 'ALREADY_IN_ROUTE', message: 'Paquete ya asignado a otra ruta activa', conflictingRouteCode: null });
+    expect(copy.title).toBe('Ya está en otra ruta');
+    expect(copy.canViewConflictingRoute).toBe(false);
+  });
+
+  it('IN_CONSOLIDATION — retenido en consolidación', () => {
+    const copy = rejectionCopy({ code: 'IN_CONSOLIDATION', message: 'Paquete en andén de consolidación: reasígnalo a un andén de reparto antes de cargarlo' });
+    expect(copy.title).toBe('Retenido en consolidación');
+    expect(copy.tallyLabel).toBe('RETENIDO EN CONSOLIDACIÓN');
+  });
+
+  it('NOT_FOUND — never implies the code exists for another operator', () => {
+    const copy = rejectionCopy({ code: 'NOT_FOUND', message: 'Código no encontrado' });
+    expect(copy.title).toBe('Código no encontrado en este operador');
+    expect(copy.title).not.toMatch(/otro operador/i);
+  });
+
+  it('WRONG_STATUS carries the server message verbatim — the generic bucket for anything not named its own reason', () => {
+    const copy = rejectionCopy({ code: 'WRONG_STATUS', message: 'Paquete en estado incorrecto (estado: entregado)' });
+    expect(copy.title).toBe('Paquete en estado incorrecto (estado: entregado)');
+    expect(copy.tallyLabel).toBe('ESTADO NO VÁLIDO');
+  });
+
+  it('spec-76 decision 5 — NOT_ON_DOCK ("estado en_bodega — no pasó por andén") is its own named reason, not the generic WRONG_STATUS bucket', () => {
+    // Escalated during task 3: DISPATCHABLE_STATUSES used to include
+    // 'en_bodega', which made this reason unreachable (the validator
+    // accepted it). Fixed at the source (scan-validator.ts) — see that
+    // file's comment on DISPATCHABLE_STATUSES for the mutual-exclusivity
+    // finding that settled it.
+    const copy = rejectionCopy({ code: 'NOT_ON_DOCK', message: 'Paquete en bodega — no pasó por andén' });
+    expect(copy.title).toBe('Paquete en bodega — no pasó por andén');
+    expect(copy.tallyLabel).toBe('NO PASÓ POR ANDÉN');
+    expect(copy.canViewConflictingRoute).toBe(false);
+  });
+
+  it('ALREADY_STAGED — ya cargado en esta ruta', () => {
+    const copy = rejectionCopy({ code: 'ALREADY_STAGED', message: 'Paquete ya cargado en esta ruta' });
+    expect(copy.title).toBe('Paquete ya cargado en esta ruta');
+    expect(copy.tallyLabel).toBe('YA CARGADO');
+  });
+
+  it('QUERY_FAILED — surfaces a failure, never a fabricated NOT_FOUND', () => {
+    const copy = rejectionCopy({ code: 'QUERY_FAILED', message: 'No se pudo validar el código: timeout' });
+    expect(copy.title).toBe('No se pudo validar el código: timeout');
+    expect(copy.tallyLabel).toBe('FALLO DE RED');
+  });
+
+  it('every code the validator can produce has copy — no silent fallback to a blank card', () => {
+    for (const code of ALL_REJECTION_CODES) {
+      const copy = rejectionCopy({ code, message: 'algo' });
+      expect(copy.title.length).toBeGreaterThan(0);
+      expect(copy.tallyLabel.length).toBeGreaterThan(0);
+    }
+  });
+});
