@@ -7,21 +7,21 @@
 // slightly generic one.
 //
 // Decision 5 names four reasons: "ya está en otra ruta" (ALREADY_IN_ROUTE),
-// "estado en_bodega — no pasó por andén", "código no encontrado en este
-// operador" (NOT_FOUND) and "retenido en consolidación" (IN_CONSOLIDATION).
-// The second one does NOT match the validator as it exists on this branch:
-// `DISPATCHABLE_STATUSES` includes `en_bodega` (the comment on that constant
-// explains why — migration 20260817000003's Pre-Ruta fix), so a scan of an
-// `en_bodega` package is accepted, not rejected. `anden-status.ts`'s own
-// comment already flags this exact gap against decision 5. Inventing an
-// EN_BODEGA-only rejection here would be a proxy shown under a label
-// asserting a fact — the Lecciones aplicadas rule this spec itself names.
-// WRONG_STATUS (the code the validator genuinely returns for a package in
-// an undispatchable status) renders the server's own message instead of a
-// fabricated "no pasó por andén" claim. Flagged in the implementation
-// report; not silently "fixed" by editing DISPATCHABLE_STATUSES here — that
-// would change already-shipped 2c/2a/2b counting behaviour outside this
-// task's scope.
+// "estado en_bodega — no pasó por andén" (NOT_ON_DOCK), "código no
+// encontrado en este operador" (NOT_FOUND) and "retenido en consolidación"
+// (IN_CONSOLIDATION).
+//
+// NOT_ON_DOCK's history: `DISPATCHABLE_STATUSES` used to include
+// `en_bodega`, which made this reason unreachable — a scan of an `en_bodega`
+// package was accepted, not rejected, matching neither decision 5 nor the
+// dock-door "block-not-warn" norm this module now follows. Escalated during
+// task 3's implementation and fixed at the source (scan-validator.ts):
+// migration 20260817000003's own analysis notes `dock_zone_id IS NOT NULL
+// AND status = 'en_bodega'` are "very nearly mutually exclusive" — the same
+// trigger that writes `dock_zone_id` sets `status = 'sectorizado'` in one
+// UPDATE, so `en_bodega` genuinely means "never sorted to an andén", not a
+// state the crew could be holding. `en_bodega`'s presence in
+// `DISPATCHABLE_STATUSES` was vestigial, not deliberate.
 export const ALL_REJECTION_CODES = [
   'NOT_FOUND',
   'WRONG_STATUS',
@@ -29,6 +29,7 @@ export const ALL_REJECTION_CODES = [
   'ALREADY_STAGED',
   'IN_CONSOLIDATION',
   'QUERY_FAILED',
+  'NOT_ON_DOCK',
 ] as const;
 
 export type ScanRejectionCode = (typeof ALL_REJECTION_CODES)[number];
@@ -64,6 +65,7 @@ const TALLY_LABEL: Record<ScanRejectionCode, string> = {
   ALREADY_STAGED: 'YA CARGADO',
   IN_CONSOLIDATION: 'RETENIDO EN CONSOLIDACIÓN',
   QUERY_FAILED: 'FALLO DE RED',
+  NOT_ON_DOCK: 'NO PASÓ POR ANDÉN',
 };
 
 export function rejectionCopy(input: ScanRejectionInput): ScanRejectionCopy {
@@ -81,6 +83,15 @@ export function rejectionCopy(input: ScanRejectionInput): ScanRejectionCopy {
   if (code === 'IN_CONSOLIDATION') {
     return {
       title: 'Retenido en consolidación',
+      tallyLabel: TALLY_LABEL[code],
+      historyLabel: TALLY_LABEL[code],
+      canViewConflictingRoute: false,
+    };
+  }
+
+  if (code === 'NOT_ON_DOCK') {
+    return {
+      title: 'Paquete en bodega — no pasó por andén',
       tallyLabel: TALLY_LABEL[code],
       historyLabel: TALLY_LABEL[code],
       canViewConflictingRoute: false,

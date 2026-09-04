@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { sealRoute } from './seal-route';
+import { DISPATCHABLE_STATUSES } from './scan-validator';
 
 /**
  * spec-74 phase 3 — direct unit coverage of `sealRoute`'s new completeness
@@ -226,10 +227,13 @@ describe('sealRoute — spec-74 phase 3 completeness', () => {
 
     const outstandingOp = ops.find((o) => o.table === 'packages');
     expect(outstandingOp).toBeTruthy();
-    expect(outstandingOp?.filters).toContainEqual([
-      'status',
-      ['en_bodega', 'sectorizado', 'asignado', 'listo_para_despacho'],
-    ]);
+    // spec-76 task 3 review, escalated decision — `en_bodega` came OUT of
+    // DISPATCHABLE_STATUSES (it genuinely never reached the andén, so the
+    // seal must not wait on it either, same reasoning as this test's own
+    // comment for `dañado`/`retenido`). This assertion is intentionally
+    // just `DISPATCHABLE_STATUSES` itself, not a hand-copied array, so it
+    // cannot drift from that constant again.
+    expect(outstandingOp?.filters).toContainEqual(['status', [...DISPATCHABLE_STATUSES]]);
     expect(outstandingOp?.filters).toContainEqual(['operator_id', 'op-1']);
     expect(outstandingOp?.filters).toContainEqual(['deleted_at', null]);
   });

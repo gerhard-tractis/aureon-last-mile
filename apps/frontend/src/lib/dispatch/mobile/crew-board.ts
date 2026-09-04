@@ -81,8 +81,8 @@ export interface RouteBoxAgg { total: number; loaded: number }
 /** Per-route outstanding/loaded box counts — same counting rule as
  *  useRoutePackages.ts and loading-monitor-aggregate.ts's
  *  aggregatePackagesByRoute: a package counts if it is already loaded OR
- *  still in DISPATCHABLE_STATUSES; a dañado/retenido/entregado box that was
- *  never loaded counts toward neither. */
+ *  still in DISPATCHABLE_STATUSES; dañado/retenido/entregado/en_bodega
+ *  (task 3) never loaded counts toward neither. */
 export function aggregateBoxesByRoute(
   dispatches: readonly CrewDispatchLinkRow[],
   packages: readonly CrewPackageRow[],
@@ -103,11 +103,9 @@ export function aggregateBoxesByRoute(
 }
 
 /** Per-route count of packages actually sitting on the dock, not yet
- *  loaded — spec-76 review I4. Narrower than `aggregateBoxesByRoute`'s
- *  `total` (which correctly stays `DISPATCHABLE_STATUSES` — "boxes on this
- *  route" including ones still `en_bodega`): this is "en el andén"
- *  specifically, so `en_bodega` (decision 5's own rejection reason: "no
- *  pasó por andén") must not count. */
+ *  loaded — spec-76 review I4. `ON_ANDEN_STATUSES` is now an alias of
+ *  `DISPATCHABLE_STATUSES` (task 3: `en_bodega` came OUT of the latter, so
+ *  the two sets converged) — own name kept, distinct question. */
 export function countAndenPendingByRoute(
   dispatches: readonly CrewDispatchLinkRow[],
   packages: readonly CrewPackageRow[],

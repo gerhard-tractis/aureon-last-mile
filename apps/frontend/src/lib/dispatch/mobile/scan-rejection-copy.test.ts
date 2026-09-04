@@ -28,17 +28,22 @@ describe('rejectionCopy', () => {
     expect(copy.title).not.toMatch(/otro operador/i);
   });
 
-  it('WRONG_STATUS carries the server message verbatim rather than a fabricated en_bodega reason', () => {
-    // spec-76 review — DISPATCHABLE_STATUSES (scan-validator.ts) already
-    // includes 'en_bodega' (migration 20260817000003's Pre-Ruta fix), so
-    // the validator never actually rejects that status; anden-status.ts's
-    // own I4 comment documents the same gap against decision 5. Faking an
-    // EN_BODEGA-specific rejection copy here would be a proxy shown under
-    // a label asserting a fact (Lecciones aplicadas, "proxy" rule)  —  so
-    // this renders the server's real WRONG_STATUS message instead.
+  it('WRONG_STATUS carries the server message verbatim — the generic bucket for anything not named its own reason', () => {
     const copy = rejectionCopy({ code: 'WRONG_STATUS', message: 'Paquete en estado incorrecto (estado: entregado)' });
     expect(copy.title).toBe('Paquete en estado incorrecto (estado: entregado)');
     expect(copy.tallyLabel).toBe('ESTADO NO VÁLIDO');
+  });
+
+  it('spec-76 decision 5 — NOT_ON_DOCK ("estado en_bodega — no pasó por andén") is its own named reason, not the generic WRONG_STATUS bucket', () => {
+    // Escalated during task 3: DISPATCHABLE_STATUSES used to include
+    // 'en_bodega', which made this reason unreachable (the validator
+    // accepted it). Fixed at the source (scan-validator.ts) — see that
+    // file's comment on DISPATCHABLE_STATUSES for the mutual-exclusivity
+    // finding that settled it.
+    const copy = rejectionCopy({ code: 'NOT_ON_DOCK', message: 'Paquete en bodega — no pasó por andén' });
+    expect(copy.title).toBe('Paquete en bodega — no pasó por andén');
+    expect(copy.tallyLabel).toBe('NO PASÓ POR ANDÉN');
+    expect(copy.canViewConflictingRoute).toBe(false);
   });
 
   it('ALREADY_STAGED — ya cargado en esta ruta', () => {

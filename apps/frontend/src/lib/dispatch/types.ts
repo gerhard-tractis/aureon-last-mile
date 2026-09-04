@@ -181,7 +181,7 @@ export type ScanResult = {
   message: string;
   code:
     | 'NOT_FOUND' | 'WRONG_STATUS' | 'ALREADY_IN_ROUTE'
-    | 'ALREADY_STAGED' | 'IN_CONSOLIDATION' | 'QUERY_FAILED';
+    | 'ALREADY_STAGED' | 'IN_CONSOLIDATION' | 'QUERY_FAILED' | 'NOT_ON_DOCK';
   /** spec-76 2f. ALREADY_IN_ROUTE only — the conflicting `routes.id`, so 2f can name and link the route. */
   conflictingRouteId?: string | null;
 }

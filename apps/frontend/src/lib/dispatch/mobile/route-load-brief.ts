@@ -48,13 +48,18 @@ export function countStops(dispatches: readonly BriefDispatchRow[]): number {
 
 /**
  * Boxes actually sitting on the dock for this route, not yet loaded —
- * "EN EL ANDÉN". spec-76 review I4: this used to gate on the wider
+ * "EN EL ANDÉN". spec-76 review I4 originally gated this on the wider
  * `DISPATCHABLE_STATUSES` (useRoutePackages.ts / crew-board.ts's
- * `aggregateBoxesByRoute` counting rule), which includes `en_bodega` — the
- * exact status decision 5's own rejection reason names as "no pasó por
- * andén". Counting it here had the crew scanning toward a number some of
- * which had never reached the dock. `ON_ANDEN_STATUSES` is the narrower
- * set that actually means "physically on the andén, ready to load".
+ * `aggregateBoxesByRoute` counting rule), which back then still included
+ * `en_bodega` — counting it here had the crew scanning toward a number
+ * some of which had never reached the dock. Task 3's escalated decision
+ * removed `en_bodega` from `DISPATCHABLE_STATUSES` at the source (it is
+ * now rejected at the scanner, not merely excluded from a dock count), so
+ * `ON_ANDEN_STATUSES` (anden-status.ts) is now an alias of
+ * `DISPATCHABLE_STATUSES` rather than a genuinely narrower set — kept as
+ * its own name here because "which boxes count as on the andén" is a
+ * distinct question from "which boxes the scanner accepts" even though
+ * they resolve to the same set today.
  */
 export function countPendingOnDock(packages: readonly BriefPackageRow[]): number {
   let pending = 0;

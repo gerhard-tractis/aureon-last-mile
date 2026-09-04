@@ -24,9 +24,21 @@ interface ScanInput {
  * there: it marks a package parked in a consolidation andén, which has to be
  * re-sorted onto a real andén before it can go on a route. It gets its own
  * message rather than the generic one.
+ *
+ * `en_bodega` is ALSO deliberately excluded (spec-76 task 3 review, escalated
+ * decision) — it was here until this change, and that was a bug, not a
+ * deliberate allowance. Migration 20260817000003's own analysis notes
+ * `dock_zone_id IS NOT NULL AND status = 'en_bodega'` are "very nearly
+ * mutually exclusive": the same trigger that writes `dock_zone_id` sets
+ * `status = 'sectorizado'` in the one UPDATE, so a package still `en_bodega`
+ * genuinely has not been sorted to an andén — the crew cannot physically be
+ * holding it. That migration added `sectorizado`; it never added
+ * `en_bodega`, which was carried over unexamined from an older definition.
+ * Dock-door verification norm is block-not-warn for "not scanned, verified
+ * and released" freight; this validator now matches that. Gets its own
+ * message (NOT_ON_DOCK) — see the check below.
  */
 export const DISPATCHABLE_STATUSES = [
-  'en_bodega',
   'sectorizado',
   'asignado',
   'listo_para_despacho',
@@ -154,6 +166,18 @@ export async function validateScan(
       ok: false,
       message: 'Paquete en andén de consolidación: reasígnalo a un andén de reparto antes de cargarlo',
       code: 'IN_CONSOLIDATION',
+    };
+  }
+
+  // spec-76 task 3 review, escalated decision. `en_bodega` gets its own
+  // reason rather than falling into the generic WRONG_STATUS bucket below —
+  // decision 5 names it as a distinct rejection and the crew needs the
+  // actual cause ("no pasó por andén"), not a generic "estado incorrecto".
+  if (found.status === 'en_bodega') {
+    return {
+      ok: false,
+      message: 'Paquete en bodega — no pasó por andén',
+      code: 'NOT_ON_DOCK',
     };
   }
 

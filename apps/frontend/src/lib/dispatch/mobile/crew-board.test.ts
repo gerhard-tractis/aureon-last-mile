@@ -27,7 +27,14 @@ describe('routeCode', () => {
 });
 
 describe('aggregateBoxesByRoute', () => {
-  it('counts loaded and dispatchable-but-unloaded packages per route (includes en_bodega — packagesTotal is "boxes on the route")', () => {
+  it('counts a loaded package by loaded_at alone, regardless of its current status', () => {
+    // spec-76 task 3 review, escalated decision — `en_bodega` is no longer
+    // in DISPATCHABLE_STATUSES, so this row counts ONLY because loaded_at
+    // is already set (the loaded_at branch short-circuits before the
+    // dispatchable check); it is not an example of en_bodega counting as
+    // "still on the route, not yet loaded" any more (see
+    // countAndenPendingByRoute's own en_bodega-exclusion test below, and
+    // route-load-brief.test.ts's for the packagesTotal-level version).
     const packages: CrewPackageRow[] = [
       { order_id: 'order-1', loaded_at: '2026-09-03T10:00:00Z', loaded_by: 'u1', status: 'en_bodega' },
       { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'asignado' },
@@ -36,6 +43,15 @@ describe('aggregateBoxesByRoute', () => {
     const agg = aggregateBoxesByRoute(dispatches, packages);
     expect(agg.get('route-1')).toEqual({ total: 2, loaded: 1 });
     expect(agg.get('route-2')).toBeUndefined();
+  });
+
+  it('excludes an en_bodega, never-loaded package from packagesTotal too — it can no longer be scanned in', () => {
+    const packages: CrewPackageRow[] = [
+      { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'en_bodega' },
+      { order_id: 'order-1', loaded_at: null, loaded_by: null, status: 'asignado' },
+    ];
+    const agg = aggregateBoxesByRoute(dispatches, packages);
+    expect(agg.get('route-1')).toEqual({ total: 1, loaded: 0 });
   });
 });
 
