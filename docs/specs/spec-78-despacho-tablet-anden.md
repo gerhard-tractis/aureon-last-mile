@@ -3,6 +3,7 @@
 > **Related:** [spec-76](spec-76-despacho-movil-carga.md) (el mismo bucle en 390 px), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio)
 
 **Status:** backlog
+**Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
 
@@ -60,21 +61,21 @@ Lo que `3a` muestra simultáneamente, y que en `2e` requiere navegar:
 
 ## Plan de implementación (TDD)
 
-### Fase 1 — Punto de corte
+### Fase 1 — Punto de corte `[pending]`
 1. Test: con sesión de carga activa y ancho ≥ 1024 → layout `3a`; sin sesión activa y ancho ≥ 1024 → árbol de escritorio (decisión 1).
 2. Test: 844 × 390 (teléfono apaisado) **no** recibe el layout de tablet (corte por ancho y alto).
 3. Test: sin bug de hidratación — mismo patrón `useViewport` / `SSR_SAFE_DEFAULT`.
 
-### Fase 2 — Layout
+### Fase 2 — Layout `[pending]`
 4. Test: contador, resultado de última lectura y barra de acciones montan simultáneamente, sin navegación.
 5. Test: la página no scrollea; las listas internas sí (decisión 5).
 6. Test: `LECTOR LISTO` refleja el estado real del campo (decisión 4).
 
-### Fase 3 — Paridad de comportamiento
+### Fase 3 — Paridad de comportamiento `[pending]`
 7. Test: el bucle de escaneo se comporta igual que `2e` — mismos componentes, mismos 4 motivos de rechazo, campo que se rearma.
 8. Test: *Cerrar ruta* y *Despachar* abren las confirmaciones completas de `spec-77` (decisión 3).
 
-### Fase 4 — Cierre
+### Fase 4 — Cierre `[pending]`
 9. `npm run test -- --pool=forks` + mutation-test antes de push.
 10. E2E con viewport 1024 × 768.
 11. **Verificación física en QA:** la tablet montada, a tres metros, con el lector real. Es el único modo de validar la decisión 2.

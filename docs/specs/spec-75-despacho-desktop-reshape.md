@@ -3,6 +3,7 @@
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding, fase 4 «Módulos, uno por PR»), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta), [spec-71](spec-71-load-positions-staging-pass.md) (`get_pre_route_snapshot`, posiciones de carga), [spec-72](spec-72-blocks-delivery-sequence.md) (secuencia de paradas), [spec-73](spec-73-capacity-ladder-truck-topup.md) (`fleet_vehicles.capacity_packages`), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto), [spec-76](spec-76-despacho-movil-carga.md) (móvil de cuadrilla)
 
 **Status:** in progress
+**Verify:** unit
 
 _Date: 2026-09-03_
 
@@ -101,34 +102,34 @@ Cuando `spec-76` esté en producción, la fase 4 retoma: `1c` pasa a solo lectur
 
 Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`spec-54`).
 
-### Fase 1 — Shell del módulo
+### Fase 1 — Shell del módulo `[done]`
 1. Test: el header del módulo renderiza las 4 pestañas con su conteo y marca la activa desde la URL.
 2. `page.tsx` (244 líneas) pasa a shell delgado de pestañas; cada pestaña es su propio árbol bajo `components/dispatch/`.
 3. Test: el contador `SIN RUTEAR` del header. **El breadcrumb NO se implementa aquí** — ver decisión 9.
 
-### Fase 2 — `1a` Pre-ruta (delta sobre las columnas existentes)
+### Fase 2 — `1a` Pre-ruta (delta sobre las columnas existentes) `[done]`
 4. **`RouteBuilder` NO se parte aquí** — eso es fase 4 (`1c`). Esta fase trabaja sobre `UnroutedColumn`, `RoutePlanCanvas` y `RouteDraftPanel`, que ya existen.
 5. Test: fila por orden con chevron que expande `sku_items`; paquete retenido marcado.
 6. Test: filtros nuevos (comuna, andén, cliente, ventana libre, solo con problemas) y ausencia de las 4 franjas fijas.
 7. Test: pie de selección («110 seleccionadas · 254 paquetes · 2 comunas») y acciones masivas.
 8. **El mapa y su tarjeta de métricas quedan fuera** — ver decisión 10. `RoutePlanCanvas.tsx` **no se toca**.
 
-### Fase 3 — `1b` En carga
+### Fase 3 — `1b` En carga `[done]`
 9. Test: tarjeta por ruta con sus 4 estados del mock — `EN CARGA`, `LISTA PARA DESPACHO`, `DETENIDA`, `BORRADOR`.
 10. Test: `DETENIDA` aparece cuando no hay escaneos en N minutos y nombra la consecuencia («quedan 89 paquetes en el andén»).
 11. Test: *Despachar a DispatchTrack* sólo se ofrece en `LISTA PARA DESPACHO` (decisión 4).
 12. Test: panel de cuadrillas activas con su ritmo y estado.
 
-### Fase 4 — `1c` Seguimiento
+### Fase 4 — `1c` Seguimiento `[parked]`
 12b. **Partir `RouteBuilder.tsx`** (364 líneas, ya sobre el límite de 300). Es la pantalla de esta fase, y es aquí donde el modo solo-lectura y el panel de vehículo lo hacen crecer.
 13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre.
 14. Test: último cargado, lista de paquetes con sus filas de rechazo (`Ya está en RUT-…`, `orden incompleta`), y ocupación del vehículo.
 
-### Fase 5 — `1d` En ruta
+### Fase 5 — `1d` En ruta `[pending]`
 15. Test: métricas de cabecera (entregadas, pendientes, fallidas, OTIF) y el sello `DT SINCRONIZADO`.
 16. Test: orden por incidencia; *Completadas* como filtro de la misma tabla.
 
-### Fase 6 — Cierre
+### Fase 6 — Cierre `[pending]`
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.
 18. **Sin E2E nuevo.** Decisión del usuario: el E2E de Despacho se concentra en `spec-76` y `spec-77`, donde hay lector real, dispositivo real y una acción irreversible. Aquí el E2E sólo repetiría lo que ya cubren los tests de componente, y Despacho todavía no tiene fixture de E2E — construirla es tarea de `spec-76`. `e2e/dispatch-route.spec.ts` se deja como está (hoy sólo afirma una redirección de URL, no comportamiento).
 19. Verificación responsive: las tres columnas colapsan a pestañas bajo 1024px (regla del handoff, *Interactions & Behavior*).

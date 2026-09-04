@@ -3,6 +3,7 @@
 > **Related:** [spec-77](spec-77-despacho-movil-cierre.md) (las pantallas que dependen de estos dos arreglos; ver su *Fase 0*, hallazgos H2 y H3), [spec-70](spec-70-dispatch-state-machine.md) (`transition_route_status`), [spec-71](spec-71-load-positions-staging-pass.md) (posiciones de carga), [spec-74](spec-74-per-bulto-staging.md) (`en_carga`, staging por bulto)
 
 **Status:** backlog
+**Verify:** unit, sql, e2e-qa
 
 _Date: 2026-09-03_
 
@@ -119,33 +120,33 @@ y mapear `23505` al mismo 409 que ya devuelve el chequeo de aplicación. Ojo con
 
 ## Plan de implementación (TDD)
 
-### Fase 0 — Verificación de la API de DispatchTrack (bloqueante para H2)
+### Fase 0 — Verificación de la API de DispatchTrack (bloqueante para H2) `[pending]`
 1. Leer `lib/dispatchtrack-api.ts` y la documentación de DT: ¿soporta clave de idempotencia en la creación de rutas? ¿Hay un `GET` que permita comprobar si una ruta ya existe?
 2. Según el resultado, elegir entre clave de idempotencia y comprobación previa (decisión del scope H2, punto 1). **No** se implementa un reintento seguro sin una de las dos.
 
-### Fase 1 — H3, el arreglo acotado
+### Fase 1 — H3, el arreglo acotado `[pending]`
 3. Test: orden partida con bultos en `en_carga` y en `asignado` → sólo los `en_carga` pasan a `en_ruta`.
 4. Test: bulto `retenido` en consolidación no pasa a `en_ruta`.
 5. Test: orden completa (todos los bultos cargados) sigue comportándose igual que hoy — no hay regresión.
 6. Implementar el filtro acotado.
 7. Medir en producción cuántos bultos están hoy en `en_ruta` sin haber estado en `en_carga` (consulta de sólo lectura, acotada). Reportar la cifra **antes** de proponer backfill.
 
-### Fase 2 — H2, persistir la prueba
+### Fase 2 — H2, persistir la prueba `[pending]`
 8. Test: DT confirma y el `UPDATE` de `routes` posterior falla → `external_route_id` **ya está** persistido.
 9. Reordenar para escribir `external_route_id` inmediatamente tras la confirmación de DT.
 
-### Fase 3 — H2, distinguir los fallos
+### Fase 3 — H2, distinguir los fallos `[pending]`
 10. Test: DT lanza → `502 DT_API_ERROR`, `dispatch_failed` en `audit_logs`, ruta intacta en `loaded`, ningún paquete movido.
 11. Test: DT confirma y `transition_route_status` falla → código **`DT_ACCEPTED_LOCAL_FAILED`**, no `DT_API_ERROR`, con su propia acción de auditoría y el `external_route_id` en el registro.
 12. Test: los fallos best-effort que hoy ya se tragan (`release_load_position`, el sweep, los `audit_logs`) siguen sin hacer fallar el despacho — no se endurecen por accidente.
 
-### Fase 4 — H2, reintento seguro
+### Fase 4 — H2, reintento seguro `[pending]`
 13. Test: reintentar tras `DT_API_ERROR` llama a DT (no pasó nada la primera vez).
 14. Test: reintentar tras `DT_ACCEPTED_LOCAL_FAILED` **no** llama a DT y sólo completa lo local.
 15. Test: dos envíos concurrentes de la misma ruta no crean dos rutas en DT.
 16. Test: la ruta acaba en `dispatched` con su `external_route_id` en ambos caminos de recuperación.
 
-### Fase 5 — Cierre
+### Fase 5 — Cierre `[pending]`
 17. `npm run test -- --pool=forks` + mutation-test antes de push.
 18. Tests SQL locales con `scripts/pgtap-local.sh` si se toca alguna función — el contenedor es compartido entre worktrees, no correr en paralelo con otra rama.
 19. Verificación en QA con DT mockeado en los tres caminos: rechazo, aceptación, y aceptación con fallo local.

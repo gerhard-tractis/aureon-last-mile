@@ -3,6 +3,7 @@
 > **Related:** [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio del mismo módulo), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-61](spec-61-pickup-route-crew.md) (precedente de móvil de cuadrilla en Recogida), [spec-62](spec-62-reception-mobile.md) (precedente de móvil de andén en Recepción), [spec-68](spec-68-distribution-mobile.md) (`BatchScanner`, `QuickSortMobile`), [spec-70](spec-70-dispatch-state-machine.md) (estados de ruta y de paquete), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto)
 
 **Status:** backlog
+**Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
 
@@ -92,39 +93,39 @@ El cierre (`2i`) y el despacho (`2j`–`2l`) son **`spec-77`**: ver *No-goals*.
 
 Test primero, en rojo, luego implementación. Cobertura sobre 70 %.
 
-### Fase 1 — Rama móvil y home
+### Fase 1 — Rama móvil y home `[done]`
 1. Test: bajo `lg` monta el árbol móvil de Despacho; sobre `lg` monta el de escritorio. Sin bug de hidratación (patrón `SSR_SAFE_DEFAULT`).
 2. Test: `2a` con tarea en curso → tarjeta oscura con progreso, `%` y *Seguir escaneando*.
 3. Test: `2a` sin tarea en curso → no renderiza la tarjeta oscura vacía; ofrece elegir ruta.
 4. Test: métricas del turno (escaneados hoy, ritmo) y la cola *Después de esta*.
 
-### Fase 2 — `2b` Elegir ruta
+### Fase 2 — `2b` Elegir ruta `[done]`
 5. Test: los 4 estados del mock (`TU CARGA`, `BORRADOR`, `LISTA`, `TURNO B`) y su orden.
 6. Test: una ruta de otra cuadrilla se renderiza pero no navega (decisión 9).
 7. Test: los filtros `Todas` / `Mis rutas` / `Listas` con su conteo.
 
-### Fase 3 — `2c` + `2d` Antes de escanear
+### Fase 3 — `2c` + `2d` Antes de escanear `[done]`
 8. Test: contadores del andén, órdenes, paradas; comunas de la ruta.
 9. Test: aviso de órdenes incompletas que nombra la consecuencia («el cliente recibe en dos visitas») y lista los `ORD-…`.
 10. Test: sin vehículo → *Empezar a escanear* sigue habilitado (decisión 6).
 11. Test: hoja `2d` — camión bloqueado visible con su ruta; `capacity_packages IS NULL` no asignable.
 
-### Fase 4 — `2e` + `2f` El bucle
+### Fase 4 — `2e` + `2f` El bucle `[done]`
 12. Test: `ScanField` con `useScannerAutoSubmit`; sin Enter del lector el envío ocurre igual.
 13. Test: lectura correcta → resultado grande arriba, contador incrementa, historial abajo, sin confirmación por bulto.
 14. Test: cada uno de los 4 motivos de rechazo (decisión 5) con su color, icono y copy, y el campo sigue armado.
 15. Test: *Ingresar código* manual como salida cuando el código está ilegible.
 
-### Fase 5 — `2g` Cámara
+### Fase 5 — `2g` Cámara `[in_progress]`
 16. Test: el visor no ocupa toda la pantalla y el contador permanece visible.
 17. Test: permiso denegado → mensaje y vuelta al lector, no pantalla en blanco.
 
-### Fase 6 — `2h` Paquetes
+### Fase 6 — `2h` Paquetes `[in_progress]`
 18. Test: agrupado por parada con su conteo; filtro *Incompletas*.
 19. Test: quitar una fila devuelve el paquete a `asignado` y registra autor y hora (decisión 7).
 20. Test: paquete `NO EMBARCADO` retenido en consolidación se marca en su parada.
 
-### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario)
+### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario) `[pending]`
 
 Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo excluye: su `testMatch` es `/(spec52-.*|reception-mobile)\.spec\.ts$/` y su propio comentario lo dice — *«dispatch-route y spec47-pickup no tienen fixture… Ampliar este patrón cuando cada uno tenga una»*. El E2E de Despacho se concentra aquí y en `spec-77`, no en `spec-75`: es donde hay lector real, dispositivo real y una acción irreversible. En escritorio el E2E sólo repetiría los tests de componente.
 
@@ -133,7 +134,7 @@ Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo exc
 23. Escribir `e2e/support/despacho-fixture.ts` siguiendo el patrón de `reception-mobile-fixture.ts`: precondición verificada explícitamente (no asumir que `seed()` corrió), y estados alcanzados **conduciendo las pantallas reales**, no con `INSERT` directo — las RPC stampan `auth.uid()` y los triggers leen el estado en vivo, así que una fila insertada a mano produce un estado que el resto del sistema no reconoce.
 24. Ampliar el `testMatch` de `playwright.qa.config.ts` para incluir la suite nueva.
 
-### Fase 8 — Cierre
+### Fase 8 — Cierre `[pending]`
 25. `npm run test -- --pool=forks` + mutation-test antes de push.
 26. E2E móvil (390 × 844) del bucle completo: elegir ruta → asignar vehículo → escanear → rechazos → lista por parada.
 27. Ejecutar el E2E **en el runner del VPS** (`e2e:qa`): cada puerto de QA escucha en localhost del VPS, así que no corre desde un runner de GitHub ni desde una máquina local.
