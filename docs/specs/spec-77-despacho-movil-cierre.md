@@ -61,7 +61,15 @@ Van en su propio spec y su propio PR precisamente porque son irreversibles: mezc
 
 5. **`2j` es una revisión, no un botón.** Muestra camión, conductor, fecha de reparto, paradas · paquetes, y un bloque *Qué pasa al despachar* con los cuatro efectos: se crean las paradas en DispatchTrack · los paquetes pasan a `en_ruta` y la ruta a `dispatched` · después no se edita desde Aureon · **si el envío falla, nada cambia**. Esa última línea es la que hace que reintentar sea seguro; la fase 0 la verificó y sólo se sostiene hasta que DT confirma — ver H2. El botón exige `truck_identifier`, que el endpoint valida contra `fleet_vehicles.external_vehicle_id` y rechaza con 422 si no existe.
 
-6. **`2k` dice qué NO cambió.** El valor de la pantalla de error no es el código HTTP: es «la ruta sigue `loaded` y los 148 paquetes siguen en `listo_para_despacho`». Más el checklist *Antes de reintentar*, que distingue lo verificado (camión y conductor asignados, 24 paradas con dirección y teléfono) de la advertencia (2 paradas sin teléfono del receptor). **La frase «no se creó nada a medias» queda pendiente de la decisión de H2**: es verdadera para un fallo de DT y falsa para un fallo posterior a su confirmación, y hoy el endpoint devuelve el mismo `502 DT_API_ERROR` en ambos casos, así que la UI no puede distinguirlos. Mientras eso no se corrija, `2k` no puede afirmarla.
+6. **`2k` dice qué NO cambió — y ya no en una sola frase incondicional.** El mock actual pone *«no se creó nada a medias»* sin condición y ofrece *Reintentar* como acción primaria. Eso sólo es defendible para un rechazo que DT realmente devolvió. **Corrección (verificación de `spec-79` fase 0):** en vez de una frase, `2k` distingue tres estados según lo que el servidor realmente sabe:
+
+   | Error | Copy | Primaria |
+   |---|---|---|
+   | `DT_API_ERROR` (DT rechazó, con body recibido) | *«DispatchTrack rechazó el despacho. No se creó nada.»* | Reintentar |
+   | `DT_ACCEPTED_LOCAL_FAILED` | *«DispatchTrack ya recibió la ruta (nº …). Falta terminar de registrarla acá.»* | **Completar** — nunca Reintentar, y nada en pantalla puede volver a llamar a DT |
+   | Sin respuesta (timeout / inalcanzable) | *«No sabemos si DispatchTrack alcanzó a recibir la ruta. Antes de reintentar, verificá si ya existe.»* | **Verificar**, Reintentar degradado |
+
+   La frase incondicional se retira sin importar cuáles de estas opciones terminen implementadas primero. Si la comprobación previa de `spec-79` no está implementada todavía, el tercer estado debe llevar una advertencia explícita de posible duplicado — no puede ofrecer *Verificar* como si el chequeo existiera. El checklist *Antes de reintentar* (verificado: camión y conductor asignados, 24 paradas con dirección y teléfono; advertencia: 2 paradas sin teléfono del receptor) se mantiene para el primer estado, donde reintentar sí es seguro.
 
 7. **`2l` reincorpora al flujo, no a una pantalla vacía.** El acta nombra el id de DispatchTrack (`DT-164972`), las cifras de lo que salió, y **lo que queda pendiente en la nave**: los 24 paquetes que siguen en `asignado` y necesitan otra ruta hoy. Luego ofrece la siguiente carga concreta (`RUT-2026-0090 · Maipú`), no un «volver al inicio». Mismo criterio que el acta de Recogida.
 
@@ -86,6 +94,8 @@ El orden del handler es el correcto: `createDTRoute` se llama **primero** y sól
 
 Es estrecha pero es exactamente el modo de falla que `2k` promete que no existe, sobre la única acción irreversible del módulo.
 
+> **Corrección (verificación de `spec-79` fase 0, 2026-09-04):** el párrafo anterior decía que un fallo posterior a DT «cae en el mismo `catch`» que un rechazo de DT. **Es falso, y el código es peor de lo que describe.** El `UPDATE` de `routes` (que persiste `external_route_id`) y el de `packages` corren en un `Promise.all` sin desestructurar `error`; supabase-js resuelve `{data, error}` en un fallo de base en vez de rechazar. Así que hoy, si ese `UPDATE` de `routes` falla, el handler no se entera: responde `200 {ok:true}` con `external_route_id` **descartado en silencio**, y nada llega a ningún `catch`. La única escritura post-DT que hoy lanza de verdad es `transition_route_status` — así que la ventana real de duplicado es exactamente *DT aceptó Y `transition_route_status` falló*; si la transición tuvo éxito, el guard `route.status !== 'loaded'` ya devuelve 409 sobre cualquier reintento. También se confirmó (leyendo la documentación oficial de DT, `scripts/dt-api-docs.md`) que DT **no ofrece ninguna clave de idempotencia** — cero ocurrencias de `idempoten` en 5.089 líneas — así que la única cobertura adicional posible es una comprobación previa por `GET`, y sólo en reintentos. Detalle completo, con los matices y desconocidos verificados, en [spec-79](spec-79-dispatch-handoff-integrity.md) *Fase 0*.
+
 ### H3 — `en_ruta` se escribe por orden, no por paquete cargado
 
 ```ts
@@ -101,8 +111,10 @@ Esto **contradice directamente el copy de `2l`**, que afirma que «los 24 paquet
 
 H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son defectos de servidor, no de diseño**, y no se resuelven en este spec — dibujar `2k` y `2l` sobre ellos sería escribir en pantalla dos afirmaciones que el backend no sostiene. Las opciones son las mismas para los dos: corregir el backend en su propio spec, o cambiar el copy para describir lo que realmente pasa. **Decidido: se corrige el backend**, en [spec-79](spec-79-dispatch-handoff-integrity.md). El copy honesto de H3 sería «algunos paquetes del andén pueden quedar marcados como en ruta», que no es algo que se le pueda pedir a una cuadrilla que interprete. `2k` y `2l` se implementan **después** de spec-79 y con el copy tal como está diseñado.
 
-### Fase 0 (resto) `[pending]`
-1. Confirmar si el endpoint expone número de intentos para el `intento 1 de 3` de `2k` — hoy no lo hace: el contador tendría que ser de cliente, y hay que decidir si eso es aceptable.
+### Fase 0 (resto) `[done]`
+1. Confirmar si el endpoint expone número de intentos para el `intento 1 de 3` de `2k` — hoy no lo hace: el contador tendría que ser de cliente, y hay que decidir si eso es aceptable. **Respondido:** no lo expone, y `2k` ya no razona sobre «intento N de 3» sino sobre los tres estados de la decisión 6 — el contador de cliente queda como detalle de UI dentro de la Fase 3, no como algo que bloquee esta fase.
+
+Esta verificación quedaba pendiente sobre si DT ofrece una clave de idempotencia o un `GET` previo — la pregunta que abría la *Fase 0 (bloqueante para H2)* de [spec-79](spec-79-dispatch-handoff-integrity.md). Esa fase 0 ya corrió y está `[done]`: DT no ofrece idempotencia, sí existe un `GET` previo utilizable sólo en reintentos, y el código tiene un defecto más grave de lo que este spec había registrado (ver la corrección de H2 arriba). Con eso, **`2k` y `2l` siguen `[blocked]`** — bloqueadas en la *implementación* de `spec-79`, no en su verificación, que es lo que este documento y H2/H3 arriba ya reflejan.
 
 ### Fase 1 — `2i` Cerrar `[pending]`
 3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo.
@@ -215,7 +227,7 @@ Verificado durante `spec-75` tarea 3 recorriendo migraciones y tipos. El canvas 
 
 1. **~~El copy promete atomicidad~~ — resuelto en fase 0, con matiz.** Verdadero antes de DT, falso en la ventana posterior a su confirmación. Ver H2. Bloquea `2k` hasta que [spec-79](spec-79-dispatch-handoff-integrity.md) lo corrija.
 2. **`2l` afirma algo que el backend contradice.** Ver H3. Bloquea `2l` hasta [spec-79](spec-79-dispatch-handoff-integrity.md).
-3. **Reintento sin idempotencia.** Confirmado: `createDTRoute` no lleva clave de idempotencia, así que *Reintentar* en la ventana de H2 duplica la ruta en DispatchTrack. Lo arregla [spec-79](spec-79-dispatch-handoff-integrity.md); hasta entonces `2k` **no debe** presentar *Reintentar* como acción segura y primaria.
+3. **Reintento sin idempotencia — confirmado dos veces.** `createDTRoute` no lleva clave de idempotencia, y la verificación de `spec-79` fase 0 confirmó (leyendo la documentación oficial de DT) que **la API tampoco la ofrece** — no hay nada que agregar del lado del cliente. La única cobertura posible es persistir `external_route_id` (cierra el caso dominante) más una comprobación previa por `GET`, sólo en reintentos, que **no elimina** la ventana — sólo la vuelve rara y detectable. `2k` no puede presentar *Reintentar* como acción segura y primaria salvo en el estado `DT_API_ERROR` de la decisión 6.
 4. **Notas de cierre: falta confirmar dónde viven.** Recepción usa `discrepancy_notes` ligada a `manifest_id`, que es de Recogida y no sirve para una `route` de Despacho. Si no hay tabla equivalente para faltantes de carga, la nota de `2i` necesita destino — posible migración. Sigue abierto.
 5. **El contador de intentos no existe en el servidor.** El `intento 1 de 3` de `2k` tendría que ser estado de cliente, que se pierde al recargar. Decidir si se acepta o si el endpoint debe exponerlo.
 6. **Es la pantalla que rompe la operación si sale mal.** Un camión que sale con la ruta mal despachada no se arregla desde Aureon. Revisión en Opus/Fable, no en Sonnet.
