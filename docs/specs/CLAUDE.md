@@ -33,6 +33,45 @@ Rules:
   system, and a `backlog` one reads as ready to pick up — both mislead once the
   feature is gone. The landing specs (17, 26a-c) are the worked example.
 
+## Estado por fase: el token en el heading
+
+`**Status:**` describe el spec entero. **El estado de cada fase va en un token al final de su heading**, y esa es la única fuente de verdad por fase — la prosa explica, el token decide.
+
+```
+### Fase 1 — webhook_events y el registro de eventos `[done]`
+### Fase 2 — SLA en SQL y get_orders_list `[in_progress]`
+### Fase 3 — 3a, la lista `[pending]`
+### Fase 4 — 3b y 1f `[blocked]`
+```
+
+| Token | Quién tiene la pelota | ¿Un agente la toma? |
+|---|---|---|
+| `pending` | nadie | **sí — la única que toma** |
+| `in_progress` | un agente, ahora | no |
+| `blocked` | el usuario, para poder continuar | no |
+| `awaiting_user_test` | el usuario, para poder cerrar | no |
+| `done` | nadie | no |
+| `parked` | decisión tomada de no construirla | no |
+
+**Por qué importa.** Lo lee una máquina: el hook `Stop` (`.claude/hooks/keep-going.sh`) usa estos tokens para decidir si queda trabajo declarado y sin tomar. Un spec con el estado sólo en prosa — «fase 4 aparcada», «esta ya está hecha» — es invisible para él, así que el agente termina el turno y pregunta en vez de seguir. Los specs 75–79 nacieron así y hubo que retrofitearlos.
+
+**Cuidado al asignar.** El token dice quién tiene la pelota, no si el trabajo fue difícil. Dos errores que ya se cometieron al retrofitear:
+- Marcar `blocked` una fase que en realidad estaba **terminada** (`spec-77` fase 0).
+- Marcar `blocked` la fase que precisamente **desbloquea** a las demás (`spec-79` fase 0). Si nadie está esperando a nadie para empezarla, es `pending`.
+
+Los dos hacen que el hook se salte trabajo disponible, que es justo lo que existe para evitar.
+
+## `**Verify:**`, junto al `**Status:**`
+
+Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término y `scripts/check-spec-fields.sh` falla el PR.
+
+```
+**Status:** in progress
+**Verify:** unit, e2e-qa
+```
+
+Ejemplos por tipo de spec: `unit` (lógica pura), `unit, e2e-qa` (pantallas), `unit, sql, e2e-qa` (cambios de schema o RPC), `unit, golden, invariants` (lógica pesada).
+
 ## Required Skills — In Order
 
 **IMPORTANT: Assess before invoking.** Read and evaluate what already exists before invoking any skill. If a spec is already written and approved, skip brainstorming and writing-plans. If a spec already contains detailed stories, data model, component architecture, and file paths, it IS the plan — don't invoke writing-plans to rewrite it. Only invoke a skill when it will produce something that doesn't already exist.
