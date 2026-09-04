@@ -56,7 +56,7 @@ export function RouteTrackingView({ routeId, operatorId }: Props) {
   const firstScan = brief.scans[brief.scans.length - 1] ?? null;
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-53px)] overflow-hidden">
+    <div className="flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden md:border-r border-border">
         <div className="shrink-0 flex flex-col gap-2 px-5 py-3 bg-surface border-b border-border">
           <div className="flex flex-wrap items-center gap-3">

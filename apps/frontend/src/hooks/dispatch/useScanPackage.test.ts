@@ -50,4 +50,17 @@ describe('useScanPackage', () => {
     expect(keys).toContainEqual(['dispatch', 'packages', 'route-99']);
     expect(keys).toContainEqual(['dispatch', 'mobile', 'route-packages-by-stop', 'route-99', 'op-1']);
   });
+
+  it("spec-78 review C2 — invalidates the load-brief cache (3a's \"en el andén\" / órdenes incompletas), or it freezes on a device nobody touches", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ dispatch_id: 'd1', order_number: 'ORD-1', ok: true }),
+    });
+    const { Wrapper, invalidateSpy } = wrapper();
+    const { result } = renderHook(() => useScanPackage('route-99', 'op-1'), { wrapper: Wrapper });
+    await result.current.mutateAsync('BARCODE-1');
+
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey);
+    expect(keys).toContainEqual(['dispatch', 'mobile', 'route-load-brief', 'route-99', 'op-1']);
+  });
 });

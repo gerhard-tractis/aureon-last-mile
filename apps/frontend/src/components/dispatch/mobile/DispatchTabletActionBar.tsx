@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -13,6 +14,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { CLOSE_ROUTE_DISABLED_REASON } from '@/lib/dispatch/mobile/close-route-copy';
+import { refocusPackageField } from '@/lib/scan/refocus-package-field';
 
 export interface DispatchTabletActionBarProps {
   packagesLoaded: number;
@@ -26,6 +28,9 @@ export interface DispatchTabletActionBarProps {
   onDispatch: () => void;
 }
 
+const CLOSE_REASON_ID = 'dispatch-tablet-close-route-reason';
+const DISPATCH_REASON_ID = 'dispatch-tablet-dispatch-reason';
+
 /**
  * spec-78 (`3a`) decision 3 — both terminal actions, full confirmations,
  * neither simplified because there is room on a bigger screen: an
@@ -38,15 +43,30 @@ export interface DispatchTabletActionBarProps {
  *
  * *Despachar a DispatchTrack* is genuinely wired to the real endpoint
  * (`POST /api/dispatch/routes/[id]/dispatch`, the same one desktop's
- * `RouteBuilder`/`RoutePanel` calls) with a full confirmation dialog of
- * its own — "live", not "not built". Its actual precondition
- * (`route.status === 'loaded'`) genuinely cannot be reached from this
- * screen yet: reaching `loaded` requires sealing the route first (2i,
- * spec-77), and 2i doesn't exist. So the button renders correctly
- * disabled today, for an honest reason, and starts working the moment
- * spec-77 ships — no further change needed here.
+ * `RouteBuilder`/`RoutePanel` calls, via the shared
+ * `useDispatchRouteToDispatchTrack` hook — spec-78 review I1) with a full
+ * confirmation dialog of its own — "live", not "not built". Its actual
+ * precondition (`route.status === 'loaded'`) genuinely cannot be reached
+ * from this screen yet: reaching `loaded` requires sealing the route
+ * first (2i, spec-77), and 2i doesn't exist. So the button renders
+ * correctly disabled today, for an honest reason, and starts working the
+ * moment spec-77 ships — no further change needed here.
+ *
+ * spec-78 review I2 — cancelling the confirmation returns focus to this
+ * trigger button (Radix's default), and `refocusPackageField()` normally
+ * only runs after a scan RESULT (`useRouteScanSession`'s own
+ * onSuccess/onError) — a cancelled dialog produces neither. Without the
+ * `onOpenChange` below, the very next Zebra trigger-pull types into this
+ * button and the read is silently dropped, on a device with no on-screen
+ * confirmation that anything went wrong: the exact failure mode
+ * `refocus-package-field.ts`'s own header documents (spec-71 QA), new
+ * here because 2e's Cerrar ruta has no dialog to cancel out of.
+ *
+ * spec-78 review I3 — `memo`'d: every accepted/rejected scan re-renders
+ * the parent (`useRouteScanSession`'s `history`), but this bar's own
+ * props only change on a dispatch attempt or a route-status refetch.
  */
-export function DispatchTabletActionBar({
+function DispatchTabletActionBarImpl({
   packagesLoaded,
   canDispatch,
   dispatchDisabledReason,
@@ -63,16 +83,27 @@ export function DispatchTabletActionBar({
       )}
       <div className="flex gap-3">
         <div className="flex flex-1 flex-col gap-1">
-          <Button variant="outline" className="h-14 w-full rounded-[10px] text-[14px] font-semibold" disabled>
+          <Button
+            variant="outline"
+            className="h-14 w-full rounded-[10px] text-[14px] font-semibold"
+            disabled
+            aria-describedby={CLOSE_REASON_ID}
+          >
             Cerrar ruta
           </Button>
-          <p className="text-center text-[11px] text-text-muted">{CLOSE_ROUTE_DISABLED_REASON}</p>
+          <p id={CLOSE_REASON_ID} className="text-center text-[11px] text-text-muted">
+            {CLOSE_ROUTE_DISABLED_REASON}
+          </p>
         </div>
 
         <div className="flex flex-1 flex-col gap-1">
-          <AlertDialog>
+          <AlertDialog onOpenChange={(open) => { if (!open) refocusPackageField(); }}>
             <AlertDialogTrigger asChild>
-              <Button className="h-14 w-full rounded-[10px] text-[14px] font-bold" disabled={!canDispatch || dispatching}>
+              <Button
+                className="h-14 w-full rounded-[10px] text-[14px] font-bold"
+                disabled={!canDispatch || dispatching}
+                aria-describedby={!canDispatch && dispatchDisabledReason ? DISPATCH_REASON_ID : undefined}
+              >
                 {dispatching ? 'Despachando…' : 'Despachar a DispatchTrack'}
               </Button>
             </AlertDialogTrigger>
@@ -91,10 +122,14 @@ export function DispatchTabletActionBar({
             </AlertDialogContent>
           </AlertDialog>
           {!canDispatch && dispatchDisabledReason && (
-            <p className="text-center text-[11px] text-text-muted">{dispatchDisabledReason}</p>
+            <p id={DISPATCH_REASON_ID} className="text-center text-[11px] text-text-muted">
+              {dispatchDisabledReason}
+            </p>
           )}
         </div>
       </div>
     </footer>
   );
 }
+
+export const DispatchTabletActionBar = memo(DispatchTabletActionBarImpl);

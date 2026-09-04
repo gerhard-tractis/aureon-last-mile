@@ -2,9 +2,10 @@
 
 // apps/frontend/src/hooks/useIsDockDevice.ts
 //
-// spec-78 decision 1 (revised after the coordinator's correction — see the
-// "Lecciones aplicadas" entry this task added to the spec for the full
-// story) — a per-device DISPLAY preference, not identity or authorisation.
+// spec-78 decision 1 (rewritten after the coordinator's correction — see
+// that decision's own text in the spec for the full story of why the
+// local `scanning` flag couldn't serve) — a per-device DISPLAY
+// preference, not identity or authorisation.
 // `?dock=1` marks THIS browser (persisted in localStorage) as the tablet
 // mounted at a loading dock, so `DispatchRouteSurface` shows the crew scan
 // loop (`3a`) instead of the manager's desktop tree at the same viewport

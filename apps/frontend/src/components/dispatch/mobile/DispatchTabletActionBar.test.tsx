@@ -3,6 +3,11 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DispatchTabletActionBar } from './DispatchTabletActionBar';
 
+const refocusPackageFieldMock = vi.fn();
+vi.mock('@/lib/scan/refocus-package-field', () => ({
+  refocusPackageField: () => refocusPackageFieldMock(),
+}));
+
 const baseProps = {
   packagesLoaded: 148,
   canDispatch: false,
@@ -48,5 +53,24 @@ describe('DispatchTabletActionBar', () => {
   it('shows a dispatch error when present', () => {
     render(<DispatchTabletActionBar {...baseProps} dispatchError="Error de DispatchTrack" />);
     expect(screen.getByText('Error de DispatchTrack')).toBeInTheDocument();
+  });
+
+  it('review I2 — re-arms the scan field after cancelling the confirmation, so the next gun trigger-pull is not silently dropped', async () => {
+    refocusPackageFieldMock.mockClear();
+    render(<DispatchTabletActionBar {...baseProps} canDispatch dispatchDisabledReason={null} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Despachar a DispatchTrack/ }));
+    expect(refocusPackageFieldMock).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(refocusPackageFieldMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('the disabled reasons are wired via aria-describedby, not visible text alone', () => {
+    render(<DispatchTabletActionBar {...baseProps} />);
+    const closeButton = screen.getByRole('button', { name: 'Cerrar ruta' });
+    const dispatchButton = screen.getByRole('button', { name: /Despachar a DispatchTrack/ });
+    expect(closeButton.getAttribute('aria-describedby')).toBeTruthy();
+    expect(dispatchButton.getAttribute('aria-describedby')).toBeTruthy();
   });
 });

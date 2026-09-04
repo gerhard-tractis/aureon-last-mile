@@ -70,24 +70,25 @@ Lo que `3a` muestra simultáneamente, y que en `2e` requiere navegar:
 
 ## Plan de implementación (TDD)
 
-### Fase 1 — Punto de corte `[pending]`
-1. Test: con sesión de carga activa y ancho ≥ 1024 → layout `3a`; sin sesión activa y ancho ≥ 1024 → árbol de escritorio (decisión 1).
-2. Test: 844 × 390 (teléfono apaisado) **no** recibe el layout de tablet (corte por ancho y alto).
-3. Test: sin bug de hidratación — mismo patrón `useViewport` / `SSR_SAFE_DEFAULT`.
+### Fase 1 — Punto de corte `[done]`
+1. Test: con `isDock` (flag de dispositivo persistido) y ancho ≥ 1024 y alto ≥ ~700 → layout `3a`; sin el flag, al mismo ancho → árbol de escritorio, **incluida una ruta en `loading`** (regresión explícita: un jefe de turno sin el flag nunca pierde `1c`) (decisión 1, revisada).
+2. Test: 844 × 390 (teléfono apaisado) **no** recibe el layout de tablet, aun con el flag puesto (corte por ancho y alto, no sólo por el flag).
+3. Test: sin bug de hidratación — mismo patrón `useViewport` / `SSR_SAFE_DEFAULT`, y `useIsDockDevice` resuelto igual (post-hidratación, default `false`).
 
-### Fase 2 — Layout `[pending]`
+### Fase 2 — Layout `[done]`
 4. Test: contador, resultado de última lectura y barra de acciones montan simultáneamente, sin navegación.
-5. Test: la página no scrollea; las listas internas sí (decisión 5).
+5. Test: la página no scrollea (altura real `100dvh - 3.5rem`, no `100vh`/`h-screen` — ver hallazgo de revisión sobre `AppLayout`/`TopBar`); las listas internas sí (decisión 5).
 6. Test: `LECTOR LISTO` refleja el estado real del campo (decisión 4).
 
-### Fase 3 — Paridad de comportamiento `[pending]`
-7. Test: el bucle de escaneo se comporta igual que `2e` — mismos componentes, mismos 4 motivos de rechazo, campo que se rearma.
-8. Test: *Cerrar ruta* y *Despachar* abren las confirmaciones completas de `spec-77` (decisión 3).
+### Fase 3 — Paridad de comportamiento `[done]`
+7. Test: el bucle de escaneo se comporta igual que `2e` — mismos componentes, mismos 4 motivos de rechazo, campo que se rearma (incluido tras cancelar la confirmación de despacho, no sólo tras un resultado de escaneo).
+8. Test: *Cerrar ruta* deshabilitado con su motivo como texto visible (`2i` es `spec-77`, no construido). *Despachar a DispatchTrack* con su propia confirmación completa, contra el endpoint real — no depende de `spec-77` (ver decisión 3).
 
 ### Fase 4 — Cierre `[pending]`
 9. `npm run test -- --pool=forks` + mutation-test antes de push.
 10. E2E con viewport 1024 × 768.
-11. **Verificación física en QA:** la tablet montada, a tres metros, con el lector real. Es el único modo de validar la decisión 2.
+11. **Medir el espacio real antes de validar nada más:** `3a` es un artboard a sangre completa de 1024 × 768, pero a `≥lg` `AppLayout` dibuja además el sidebar (56 px colapsado / 216 px fijado) y el `TopBar` de 56 px — el espacio real es **968 × 712, o 808 × 712 con el sidebar fijado**. Con el panel lateral fijo en 340 px, un sidebar fijado deja 468 px para contador, última lectura y campo de escaneo. Verificar en el dispositivo real si el layout entra en ese espacio antes de continuar — puede no entrar.
+12. **Verificación física en QA:** la tablet montada, a tres metros, con el lector real. Es el único modo de validar la decisión 2.
 
 ## Lecciones aplicadas
 

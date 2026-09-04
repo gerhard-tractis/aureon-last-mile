@@ -7,6 +7,7 @@ import { RouteBuilderPackageList } from './RouteBuilderPackageList';
 import { getVehicleFillStatus, type VehicleFillStatus } from '@/lib/dispatch/vehicle-capacity';
 import { useRoutePackages } from '@/hooks/dispatch/useRoutePackages';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
+import { useDispatchRouteToDispatchTrack } from '@/hooks/dispatch/useDispatchRouteToDispatchTrack';
 import { useRefreshRouteStatus } from '@/hooks/dispatch/useRefreshRouteStatus';
 import { useRouteBlocks } from '@/hooks/dispatch/useRouteBlocks';
 import { useRouteTerritoryHistory } from '@/hooks/dispatch/useRouteTerritoryHistory';
@@ -57,8 +58,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const { role } = useOperatorId();
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [driverName, setDriverName] = useState('');
-  const [dispatching, setDispatching] = useState(false);
-  const [dispatchError, setDispatchError] = useState<string | null>(null);
+  // spec-78 review I1 — the request itself (fetch, payload shape, error
+  // string) now lives in useDispatchRouteToDispatchTrack, shared with the
+  // tablet's own dispatch button (DispatchRouteScanSessionTablet) so the
+  // two can't drift.
+  const { dispatch: dispatchToDispatchTrack, dispatching, error: dispatchError } = useDispatchRouteToDispatchTrack(routeId);
   const [sealError, setSealError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
@@ -165,23 +169,8 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
 
   const handleDispatch = async () => {
     if (!selectedVehicle) return;
-    setDispatching(true);
-    setDispatchError(null);
-    try {
-      const res = await fetch(`/api/dispatch/routes/${routeId}/dispatch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ truck_identifier: selectedVehicle, driver_identifier: driverName || null }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message ?? 'Error al despachar');
-      router.push('/app/dispatch');
-    } catch (err: unknown) {
-      const e = err as { message?: string };
-      setDispatchError(e.message ?? 'Error de DispatchTrack');
-    } finally {
-      setDispatching(false);
-    }
+    const ok = await dispatchToDispatchTrack({ truckIdentifier: selectedVehicle, driverIdentifier: driverName || null });
+    if (ok) router.push('/app/dispatch');
   };
 
   const handleDelete = async () => {
@@ -190,7 +179,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-[calc(100vh-53px)] overflow-hidden">
+    <div className="flex flex-col md:flex-row h-[calc(100dvh-3.5rem)] overflow-hidden">
       <div className="flex-1 flex flex-col overflow-hidden md:border-r border-border">
         <RouteBuilderHeader
           routeId={routeId}

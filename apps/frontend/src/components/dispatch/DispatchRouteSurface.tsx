@@ -16,6 +16,15 @@ import { DispatchPackagesByStop } from './mobile/DispatchPackagesByStop';
 import { RouteBuilder } from './RouteBuilder';
 import { RouteTrackingView } from './RouteTrackingView';
 import type { FleetVehicle } from '@/lib/dispatch/types';
+import type { IncompleteOrder, OrderBoxCount } from '@/lib/dispatch/mobile/route-load-brief';
+
+// spec-78 review I3 — module-scope, not `?? new Map()`/`?? []` inline at
+// the render below: a fresh object literal every render (while `loadBrief`
+// is loading, or genuinely empty) gives `DispatchTabletIncompleteOrders`
+// (memo'd) a new prop identity every time regardless, defeating the memo
+// for the one prop it exists to skip re-rendering on.
+const EMPTY_BOX_COUNTS: ReadonlyMap<string, OrderBoxCount> = new Map();
+const EMPTY_INCOMPLETE_ORDERS: IncompleteOrder[] = [];
 
 /**
  * spec-76 decision 1 — the viewport branch for `/app/dispatch/[routeId]`,
@@ -57,9 +66,9 @@ import type { FleetVehicle } from '@/lib/dispatch/types';
  * on first render is the same unavoidable exception documented above.
  *
  * spec-78 (`3a`, the dock tablet) — a THIRD branch of the same crew tree,
- * not a third component set (decision 1, revised — see the spec's own
- * "Lecciones aplicadas" entry for the full story of why the first version
- * of this condition was wrong). `isTabletDock` below gates on
+ * not a third component set (decision 1, rewritten — see that decision's
+ * own text in the spec for the full story of why the first version of
+ * this condition was wrong). `isTabletDock` below gates on
  * `useIsDockDevice()` (a per-device, persisted `?dock=1` flag — see that
  * hook's own header) **and** `viewport.isDesktop && viewport
  * .hasTabletHeight` — width alone is not enough (a phone in landscape
@@ -195,8 +204,8 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
                 ordersCount={loadBrief?.ordersCount ?? 0}
                 stopsCount={loadBrief?.stopsCount ?? 0}
                 pendingOnDock={loadBrief?.pendingOnDock ?? 0}
-                incompleteOrders={loadBrief?.incompleteOrders ?? []}
-                orderBoxCounts={loadBrief?.orderBoxCounts ?? new Map()}
+                incompleteOrders={loadBrief?.incompleteOrders ?? EMPTY_INCOMPLETE_ORDERS}
+                orderBoxCounts={loadBrief?.orderBoxCounts ?? EMPTY_BOX_COUNTS}
                 comunas={loadBrief?.comunas ?? []}
                 routeStatus={route?.status}
                 onViewPackages={() => setViewingPackages(true)}

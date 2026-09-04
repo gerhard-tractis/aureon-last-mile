@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import type { IncompleteOrder, OrderBoxCount } from '@/lib/dispatch/mobile/route-load-brief';
 
@@ -18,7 +19,11 @@ export interface DispatchTabletIncompleteOrdersProps {
   boxCounts: ReadonlyMap<string, OrderBoxCount>;
 }
 
-export function DispatchTabletIncompleteOrders({ orders, boxCounts }: DispatchTabletIncompleteOrdersProps) {
+// spec-78 review I3 — memo'd: `orders`/`boxCounts` only change when the
+// load brief actually refetches, but the parent re-renders on every
+// accepted/rejected scan (useRouteScanSession's own `history` state).
+// Without this, every scan re-rendered a list with nothing new to show.
+function DispatchTabletIncompleteOrdersImpl({ orders, boxCounts }: DispatchTabletIncompleteOrdersProps) {
   if (orders.length === 0) return null;
   return (
     <section data-testid="dispatch-tablet-incomplete-orders">
@@ -43,3 +48,5 @@ export function DispatchTabletIncompleteOrders({ orders, boxCounts }: DispatchTa
     </section>
   );
 }
+
+export const DispatchTabletIncompleteOrders = memo(DispatchTabletIncompleteOrdersImpl);

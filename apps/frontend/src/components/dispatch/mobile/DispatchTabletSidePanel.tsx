@@ -56,23 +56,31 @@ export function DispatchTabletSidePanel({
   orderBoxCounts,
 }: DispatchTabletSidePanelProps) {
   return (
-    <div className="flex h-full w-[360px] shrink-0 flex-col border-l-[1.5px] border-border bg-surface">
+    // spec-78 review minor — was `w-[360px]` around a `w-full md:w-[340px]
+    // border-l` child (RouteTrackingVehiclePanel): a double border and a
+    // 20px gap at >=md. Matched to the child's own 340px exactly, and the
+    // outer border moved off this wrapper (the child already draws its
+    // own) onto the section below instead, so the border reads as one
+    // continuous line rather than doubling at the seam.
+    <div className="flex h-full w-[340px] shrink-0 flex-col bg-surface">
       <RouteTrackingVehiclePanel
         vehicleExternalId={vehicleExternalId}
         driverName={driverName}
         packagesLoadedCount={packagesLoaded}
         vehicleCapacityPackages={vehicleCapacityPackages}
       />
-      <div className="flex gap-2 px-5 py-3">
-        <StatTile value={ordersCount} label="Órdenes" />
-        <StatTile value={stopsCount} label="Paradas" />
-        <StatTile value={pendingOnDock} label="En el andén" />
-      </div>
-      <div className="flex-1 overflow-y-auto px-5 py-3" data-testid="dispatch-tablet-side-scroll">
-        <div className="flex flex-col gap-4">
-          <DispatchScanRejectionSummary rejectionCount={rejectionCount} tally={rejectionTally} />
-          <DispatchTabletIncompleteOrders orders={incompleteOrders} boxCounts={orderBoxCounts} />
-          <DispatchScanHistoryList entries={history} />
+      <div className="flex flex-1 flex-col overflow-hidden border-l-[1.5px] border-border">
+        <div className="flex gap-2 px-5 py-3">
+          <StatTile value={ordersCount} label="Órdenes" />
+          <StatTile value={stopsCount} label="Paradas" />
+          <StatTile value={pendingOnDock} label="En el andén" />
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-3" data-testid="dispatch-tablet-side-scroll">
+          <div className="flex flex-col gap-4">
+            <DispatchScanRejectionSummary rejectionCount={rejectionCount} tally={rejectionTally} />
+            <DispatchTabletIncompleteOrders orders={incompleteOrders} boxCounts={orderBoxCounts} />
+            <DispatchScanHistoryList entries={history} />
+          </div>
         </div>
       </div>
     </div>
