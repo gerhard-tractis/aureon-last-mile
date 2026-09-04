@@ -68,15 +68,15 @@ export function DispatchRouteBeforeScan({
       </div>
 
       <div className="grid grid-cols-3 gap-2">
-        <div className="rounded-[10px] border border-border bg-surface p-3 text-center">
+        <div data-testid="dispatch-brief-anden" className="rounded-[10px] border border-border bg-surface p-3 text-center">
           <p className="font-mono text-[19px] font-semibold text-text">{pendingOnDock}</p>
           <p className="mt-0.5 text-[10px] uppercase tracking-[.05em] text-text-muted">En el andén</p>
         </div>
-        <div className="rounded-[10px] border border-border bg-surface p-3 text-center">
+        <div data-testid="dispatch-brief-orders" className="rounded-[10px] border border-border bg-surface p-3 text-center">
           <p className="font-mono text-[19px] font-semibold text-text">{ordersCount}</p>
           <p className="mt-0.5 text-[10px] uppercase tracking-[.05em] text-text-muted">Órdenes</p>
         </div>
-        <div className="rounded-[10px] border border-border bg-surface p-3 text-center">
+        <div data-testid="dispatch-brief-stops" className="rounded-[10px] border border-border bg-surface p-3 text-center">
           <p className="font-mono text-[19px] font-semibold text-text">{stopsCount}</p>
           <p className="mt-0.5 text-[10px] uppercase tracking-[.05em] text-text-muted">Paradas</p>
         </div>
