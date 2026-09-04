@@ -27,7 +27,8 @@ H3 y H4 **no son problemas del rediseño**: afectan a la operación de hoy. Cual
 |---|---|
 | `apps/frontend/src/app/api/dispatch/routes/[id]/dispatch/route.ts` | El código con ambos defectos |
 | `spec-77` *Fase 0* | El análisis completo de H1, H2 y H3 |
-| `apps/frontend/src/lib/dispatchtrack-api.ts` (`createDTRoute`) | Dónde va la clave de idempotencia |
+| `apps/frontend/src/lib/dispatchtrack-api.ts` (`createDTRoute`) | Dónde va la comprobación previa (no hay clave de idempotencia que agregar — ver *Fase 0*) |
+| `scripts/dt-api-docs.md` | Scrape de 5.089 líneas de la documentación oficial de DT (`ba74c4c`), ya tratado como autoritativo por specs 58 y 60 |
 | `spec-74` | `en_carga` como estado del bulto efectivamente cargado |
 | Este spec | Los arreglos y su plan |
 
@@ -35,18 +36,22 @@ H3 y H4 **no son problemas del rediseño**: afectan a la operación de hoy. Cual
 
 ### H2 — Reintento seguro
 
-Hoy el orden es correcto en lo esencial: `createDTRoute` primero, estado local después. Si DT falla, nada local cambió y el `catch` registra `dispatch_failed`. **Pero** `transition_route_status`, `release_load_position`, el `UPDATE` de `routes` y el de `packages` corren *después* de que DT confirmó, y todos caen en el mismo `catch`, que responde `502 DT_API_ERROR`. Consecuencias:
+Hoy el orden es correcto en lo esencial: `createDTRoute` primero, estado local después. Si DT falla, nada local cambió y el `catch` registra `dispatch_failed`. **Pero** `transition_route_status`, `release_load_position`, el `UPDATE` de `routes` y el de `packages` corren *después* de que DT confirmó.
+
+> **Corrección tras *Fase 0* (verificada en el repo):** este párrafo decía que las cuatro escrituras posteriores a DT «caen en el mismo `catch`». **Es falso.** El `UPDATE` de `routes` (que persiste `external_route_id`) y el `UPDATE` de `packages` corren dentro de un `Promise.all` **sin desestructurar `error`**, y supabase-js resuelve `{data, error}` en un fallo de base en vez de rechazar. Así que hoy, si ese `UPDATE` de `routes` falla, el handler no se entera: sigue, responde `200 {ok:true}` con el `external_route_id` **descartado en silencio**, y nada cae en ningún `catch`. La única escritura post-DT que sí lanza — y por lo tanto sí puede producir `502 DT_API_ERROR` en esta ventana — es `transition_route_status`. Ver *Fase 0* más abajo para el detalle completo y sus consecuencias.
+
+Consecuencias:
 
 - La UI no puede distinguir «DT rechazó» de «DT aceptó y lo local falló». `spec-77` `2k` afirma que no se creó nada a medias; en el segundo caso es falso.
-- `createDTRoute` no lleva clave de idempotencia, así que *Reintentar* crea una **segunda** ruta en DispatchTrack.
-- `external_route_id` — lo que DT devolvió — se pierde si el `UPDATE` de `routes` no llega a correr, así que la ruta queda sin rastro local de una ruta que sí existe en DT.
+- `createDTRoute` no lleva clave de idempotencia — **confirmado en *Fase 0*: la API de DT no ofrece ninguna** — así que *Reintentar* crea una **segunda** ruta en DispatchTrack.
+- `external_route_id` — lo que DT devolvió — se pierde si el `UPDATE` de `routes` no llega a correr, así que la ruta queda sin rastro local de una ruta que sí existe en DT. Y, por el defecto de arriba, hoy se pierde **en silencio**, sin siquiera un `dispatch_failed`.
 
-Lo que este spec cambia:
+Lo que este spec cambia (orden recomendado, ver *Fase 0* para el detalle de cada punto):
 
-1. **Clave de idempotencia en `createDTRoute`.** Derivada del `route_id`, estable entre reintentos, para que un segundo envío de la misma ruta no cree una segunda en DT. Verificar primero qué soporta la API de DT: si no soporta idempotencia, la alternativa es consultar por la ruta antes de crearla (`GET` por `truck_identifier` + fecha, o el mecanismo que exista) y **no** crear si ya está. La decisión sale de esa verificación; lo que no es aceptable es dejar *Reintentar* creando duplicados.
-2. **Persistir `external_route_id` inmediatamente después de la confirmación de DT**, antes de cualquier otra escritura. Es el dato que hace recuperable el resto: con él, un reintento sabe que DT ya aceptó.
-3. **Código de error propio para el fallo posterior a DT.** Nuevo código — `DT_ACCEPTED_LOCAL_FAILED` — distinto de `DT_API_ERROR`, con su propia acción de `audit_logs`. Es lo que le permite a `2k` decir la verdad en ambos casos y ofrecer *reconciliar* en vez de *reintentar*.
-4. **Las escrituras locales post-DT se agrupan y se hacen reintentables.** Reintentar tras un `DT_ACCEPTED_LOCAL_FAILED` **no** debe volver a llamar a DT: debe completar sólo lo local.
+1. **Persistir `external_route_id` inmediatamente después de la confirmación de DT, y comprobar el `error` de esa escritura.** Es el dato que hace recuperable el resto: con él, un reintento sabe que DT ya aceptó. Hoy no alcanza con moverlo antes en el código — el error también hay que dejar de descartarlo, o el arreglo no cierra nada.
+2. **Código de error propio para el fallo posterior a DT.** Nuevo código — `DT_ACCEPTED_LOCAL_FAILED` — distinto de `DT_API_ERROR`, con su propia acción de `audit_logs` cargando `external_route_id`. Es lo que le permite a `2k` decir la verdad en ambos casos y ofrecer *completar* en vez de *reintentar*.
+3. **Las escrituras locales post-DT se agrupan y se hacen reintentables.** Reintentar tras un `DT_ACCEPTED_LOCAL_FAILED` **no** debe volver a llamar a DT: debe completar sólo lo local.
+4. **Comprobación previa por `GET`, sólo en reintentos.** No hay clave de idempotencia que agregar (*Fase 0*), así que la única cobertura adicional es preguntarle a DT si la ruta ya existe antes de un reintento — nunca en el primer envío (límite de tasa). Cierra el margen que el punto 1 no cubre, no lo reemplaza: ver *Fase 0*, hallazgo 4.
 
 ### H3 — `en_ruta` por bulto cargado
 
@@ -120,9 +125,71 @@ y mapear `23505` al mismo 409 que ya devuelve el chequeo de aplicación. Ojo con
 
 ## Plan de implementación (TDD)
 
-### Fase 0 — Verificación de la API de DispatchTrack (bloqueante para H2) `[pending]`
-1. Leer `lib/dispatchtrack-api.ts` y la documentación de DT: ¿soporta clave de idempotencia en la creación de rutas? ¿Hay un `GET` que permita comprobar si una ruta ya existe?
-2. Según el resultado, elegir entre clave de idempotencia y comprobación previa (decisión del scope H2, punto 1). **No** se implementa un reintento seguro sin una de las dos.
+### Fase 0 — Verificación de la API de DispatchTrack (bloqueante para H2) `[done]`
+
+_Resultado, 2026-09-04. Cada afirmación va etiquetada: **verificado en el repo**, **leído en la documentación de DT**, o **desconocido**._
+
+**Hallazgo 1 — DT no ofrece clave de idempotencia. Verificado (leído en la documentación de DT).**
+
+`scripts/dt-api-docs.md` es un scrape de 5.089 líneas de la documentación oficial de DT (`ba74c4c`), ya tratado como autoritativo por `spec-58` y `spec-60`. Se confirmó: **cero ocurrencias de `idempoten` en todo el archivo.** Los únicos headers documentados son `X-AUTH-TOKEN` y `Content-Type`.
+
+El set completo de campos de nivel superior de Create Route es `truck_identifier`, `date`, `dispatch_date`, `driver_identifier`, `enable_estimations`, `started_at`, `started`, `start_latitude`, `start_longitude`, `dispatches[]` — **no hay ninguna referencia externa a nivel de ruta que nosotros controlemos**, así que no hay nada sobre lo que DT pueda desduplicar. (`tags` existe sólo por despacho, y ningún lookup documentado lo lee.)
+
+**Hallazgo 2 — el código es peor de lo que `spec-77` H2 describe. Verificado en el repo.**
+
+`spec-77` *Fase 0* H2 decía que las escrituras posteriores a DT «caen en el mismo `catch`». **Es falso.** En `apps/frontend/src/app/api/dispatch/routes/[id]/dispatch/route.ts`:
+
+```ts
+await Promise.all([
+  supabase.from('routes').update({ external_route_id, vehicle_id, driver_name })...,
+  supabase.from('packages').update({ status: 'en_ruta' })...,
+]);
+```
+
+No se desestructura `error`, y supabase-js **resuelve** `{data, error}` en un fallo de base en vez de rechazar. Así que un `UPDATE` de `routes` fallido hoy devuelve **`HTTP 200 {ok:true}` con `external_route_id` descartado en silencio** — la operación ve éxito mientras la ruta no guarda ningún rastro local de una ruta que DT ya tiene.
+
+Consecuencias para el plan:
+
+- La única escritura post-DT que hoy realmente lanza es `transition_route_status`.
+- **La ventana real de duplicado es exactamente: DT aceptó Y `transition_route_status` falló.** Si la transición tuvo éxito, el guard `route.status !== 'loaded'` del propio handler ya devuelve 409 sobre un reintento, así que no hay duplicado posible.
+- El arreglo que `spec-77` H2 propuso — «persistir `external_route_id` primero» — **es inútil por sí solo** mientras ese error se siga descartando. Se agrega «revisar esos errores» como ítem explícito del plan (ver Scope H2, punto 1 arriba).
+
+**Hallazgo 3 — existe una comprobación previa real. Leído en la documentación de DT, con matices verificados.**
+
+`GET /api/external/v1/routes?date=:date&truck_identifier=:truck` devuelve `routes[].dispatches[].identifier` — que es `orders.order_number` verbatim (verificado: es el mismo campo que el handler de despacho envía como `identifier` en `dtDispatches`). Así que un reintento puede preguntar «¿ya existe una ruta con estas guías?» sin tocar ningún endpoint de escritura.
+
+Matices, todos verificados en la documentación:
+
+- **Hay que emparejar por identificador de guía, no por camión+fecha.** Un camión puede legítimamente correr dos rutas el mismo día.
+- **Trampa de formato de fecha:** List Routes documenta `yyyy-mm-dd`; Create Route documenta `dd-mm-yyyy`. Invertirlos da un conjunto vacío que se lee como «no hay duplicado» — fallando abierto justo en el único chequeo que no puede fallar así.
+- **Límites de tasa: 1 request/segundo, 1.000/día.** La comprobación previa va **sólo en reintentos**, nunca en el primer intento.
+- **No probado contra el tenant real.** `GET /routes/:id` sí se usa en producción, por la edge function `dispatchtrack-route-poll` (verificado en el repo: `packages/database/supabase/functions/dispatchtrack-route-poll`, línea que llama `/api/external/v1/routes/${route.external_route_id}`). `GET /routes?date=` está documentado pero no se usa en ningún lugar de este repo. El permiso del token para ese endpoint es **inferido, no verificado**.
+- **`DELETE /api/external/v1/routes/:route_id` existe** (leído en la documentación), así que un duplicado es detectable y removible — un flujo de reconciliación tiene un remedio real.
+
+**Hallazgo 4 — `external_route_id` acota pero no cierra la ventana. Razonamiento sobre lo verificado arriba.**
+
+Condicionar los reintentos a un `external_route_id` persistido cierra el caso dominante. No cubre ninguna falla entre que DT confirma y que nosotros escribimos algo:
+
+1. DT confirma, la respuesta nunca llega (reset TCP, timeout de función, 504 de gateway).
+2. El proceso muere entre la respuesta de DT y nuestra primera escritura.
+3. La propia escritura de `external_route_id` falla.
+
+Sólo la comprobación previa por `GET` cubre esos casos. **La duplicación pasa a ser rara y detectable, no imposible**, y `DELETE /routes/:id` es el remedio.
+
+**Orden recomendado** (ya reflejado en Scope H2 y en las Fases 2–4 de este plan):
+
+1. Persistir `external_route_id` inmediatamente tras la confirmación de DT **y comprobar su error** — lo más barato, cierra el caso dominante.
+2. `DT_ACCEPTED_LOCAL_FAILED` como código propio con su propia acción de auditoría cargando `external_route_id`, más un camino de reintento que completa sólo lo local y **nunca vuelve a llamar a DT**.
+3. `GET` previo **sólo en reintentos**, emparejando por identificadores de guía, tratando un `GET` fallido o ambiguo como «no se puede confirmar que sea seguro» — negarse a crear automáticamente y derivar a reconciliación. Una comprobación previa que falla abierto es peor que ninguna.
+4. Tratar `208 "already reported"` como éxito-con-ruta-existente **sólo una vez que alguien haya observado un `208` real**. Hasta entonces, dejar el `throw` actual (hallazgo 5).
+
+**Hallazgo 5 — desconocidos explícitos. Se registran como desconocidos, no se resuelven acá.**
+
+- **El body del `208`** — si trae `route_id`, y qué lo dispara. El scrape sólo capturó la pestaña activa de la documentación, y la 208 aparece como pestaña sin cuerpo capturado (línea ~566 de `scripts/dt-api-docs.md`: la pestaña «208 OK:» existe pero el bloque de código mostrado es el de la pestaña «200 OK:»). `apidoc.beetrack.com` sirve un certificado que sólo cubre `*.dispatchtrack.com`, y `apidoc.dispatchtrack.com` no resuelve. El manejo actual del repo es un **fixture de test escrito a mano, no una respuesta capturada**, y `createDTRoute` (verificado: `apps/frontend/src/lib/dispatchtrack-api.ts`) lanza ante cualquier respuesta sin `route_id` — así que si DT sí responde 208 en un duplicado, hoy un reintento saldría como `DT_API_ERROR`, exactamente la señal equivocada.
+- Si el token de Musan puede llamar `GET /routes?date=` (list) y `DELETE /routes/:id`. Sólo Show Route está probado. La documentación registra fallos de permiso acotados por endpoint en otras partes, así que el scoping por endpoint es real en esta API.
+- Si DT permite dos rutas para el mismo camión+fecha.
+
+Las tres son respondibles sin escribir en DT. **Nota explícita: resolverlas no debe hacerse con un despacho de prueba** — esta es una integración de producción para un operador logístico real.
 
 ### Fase 1 — H3, el arreglo acotado `[pending]`
 3. Test: orden partida con bultos en `en_carga` y en `asignado` → sólo los `en_carga` pasan a `en_ruta`.
@@ -132,8 +199,8 @@ y mapear `23505` al mismo 409 que ya devuelve el chequeo de aplicación. Ojo con
 7. Medir en producción cuántos bultos están hoy en `en_ruta` sin haber estado en `en_carga` (consulta de sólo lectura, acotada). Reportar la cifra **antes** de proponer backfill.
 
 ### Fase 2 — H2, persistir la prueba `[pending]`
-8. Test: DT confirma y el `UPDATE` de `routes` posterior falla → `external_route_id` **ya está** persistido.
-9. Reordenar para escribir `external_route_id` inmediatamente tras la confirmación de DT.
+8. Test: DT confirma y el `UPDATE` de `routes` posterior falla → `external_route_id` **ya está** persistido y el error **no** se descarta en silencio (hallazgo 2 de *Fase 0*: hoy el `Promise.all` no desestructura `error`, así que este caso responde `200 {ok:true}`).
+9. Reordenar para escribir `external_route_id` inmediatamente tras la confirmación de DT, en su propia escritura desestructurando `error` — no dentro del `Promise.all` combinado con `packages`.
 
 ### Fase 3 — H2, distinguir los fallos `[pending]`
 10. Test: DT lanza → `502 DT_API_ERROR`, `dispatch_failed` en `audit_logs`, ruta intacta en `loaded`, ningún paquete movido.
@@ -141,19 +208,25 @@ y mapear `23505` al mismo 409 que ya devuelve el chequeo de aplicación. Ojo con
 12. Test: los fallos best-effort que hoy ya se tragan (`release_load_position`, el sweep, los `audit_logs`) siguen sin hacer fallar el despacho — no se endurecen por accidente.
 
 ### Fase 4 — H2, reintento seguro `[pending]`
-13. Test: reintentar tras `DT_API_ERROR` llama a DT (no pasó nada la primera vez).
+
+_Fase 0 confirmó que DT no ofrece clave de idempotencia (hallazgo 1); esta fase implementa la comprobación previa por `GET`, sólo en reintentos, en su lugar (hallazgo 3 y orden recomendado)._
+
+13. Test: reintentar tras `DT_API_ERROR` llama a DT (no pasó nada la primera vez) — sin comprobación previa, porque no hay nada que confirmar.
 14. Test: reintentar tras `DT_ACCEPTED_LOCAL_FAILED` **no** llama a DT y sólo completa lo local.
-15. Test: dos envíos concurrentes de la misma ruta no crean dos rutas en DT.
-16. Test: la ruta acaba en `dispatched` con su `external_route_id` en ambos caminos de recuperación.
+15. Test: reintentar sin `external_route_id` persistido (ventana no cubierta por la Fase 2) dispara la comprobación previa por `GET`, emparejando por identificadores de guía, no por camión+fecha.
+16. Test: la comprobación previa fallida o ambigua **no** crea la ruta — deriva a reconciliación en vez de fallar abierto.
+17. Test: la ruta acaba en `dispatched` con su `external_route_id` en ambos caminos de recuperación.
 
 ### Fase 5 — Cierre `[pending]`
-17. `npm run test -- --pool=forks` + mutation-test antes de push.
-18. Tests SQL locales con `scripts/pgtap-local.sh` si se toca alguna función — el contenedor es compartido entre worktrees, no correr en paralelo con otra rama.
-19. Verificación en QA con DT mockeado en los tres caminos: rechazo, aceptación, y aceptación con fallo local.
+18. `npm run test -- --pool=forks` + mutation-test antes de push.
+19. Tests SQL locales con `scripts/pgtap-local.sh` si se toca alguna función — el contenedor es compartido entre worktrees, no correr en paralelo con otra rama.
+20. Verificación en QA con DT mockeado en los tres caminos: rechazo, aceptación, y aceptación con fallo local.
 
 ## Riesgos
 
-- **La API de DT puede no ofrecer idempotencia.** Es lo que la fase 0 debe establecer. Si no la ofrece y tampoco hay consulta previa fiable, el reintento seguro no se puede garantizar y `2k` tendrá que advertir del duplicado — que es exactamente la opción que este spec existe para evitar. Ese resultado hay que reportarlo, no rodearlo.
+- **La API de DT no ofrece idempotencia (confirmado en *Fase 0*).** El reintento seguro no se puede garantizar de forma absoluta: la comprobación previa por `GET` cierra el margen que `external_route_id` no cubre, pero no lo elimina (hallazgo 4 de *Fase 0*) — quedan sin cubrir la respuesta que nunca llega, el proceso que muere entre la confirmación de DT y la primera escritura, y el fallo de la propia escritura de `external_route_id`. `2k` debe decir esto, no «no se creó nada a medias» sin condición: ver el cambio de copy en `spec-77`.
+- **La comprobación previa por `GET` no está probada contra el tenant real** (hallazgo 3) y sus límites de tasa (1/seg, 1.000/día) la restringen a reintentos únicamente. No se resuelve escribiendo una ruta de prueba en DT — es una integración de producción para un operador logístico real.
+- **El body del `208 "already reported"` es desconocido** (hallazgo 5). Hasta que alguien observe uno real, `createDTRoute` sigue lanzando ante cualquier respuesta sin `route_id`, así que un 208 real hoy saldría como `DT_API_ERROR` — la señal equivocada.
 - **Backfill en producción.** Cualquier corrección de datos por H3 corre sobre ~112k dispatches / ~61k packages, donde los backfills de migración ya han excedido el timeout dos veces. Medir antes, lotear después, y nunca dentro de una migración sin acotar.
 - **`CREATE OR REPLACE` sobre funciones existentes.** Si el arreglo toca una función SQL, usar como plantilla la definición de la migración **más reciente**, nunca la original — regla de `CLAUDE.md`.
 - **Checks verdes ≠ migración aplicada.** El filtro de rutas de `deploy.yml` se salta el job de base de datos; un PR verde no prueba que la migración corrió.
