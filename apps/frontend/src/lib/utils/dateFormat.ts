@@ -33,6 +33,18 @@ export function formatDateTimeShort(date: string | Date): string {
   });
 }
 
+/** Time only, no date: "21:27" — spec-75 phase 4 review minor. Was
+ *  duplicated verbatim in `RouteTrackingView.tsx` and
+ *  `RouteTrackingScanList.tsx` (`1c`'s scan-list and last-loaded times);
+ *  centralized here instead of drifting in two places. */
+export function formatTimeOnly(date: string | Date): string {
+  return new Date(date).toLocaleTimeString(LOCALE, {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: TIMEZONE,
+  });
+}
+
 /** Date only: "09/03/2026" */
 export function formatDate(date: string | Date): string {
   return new Date(date).toLocaleDateString(LOCALE, {

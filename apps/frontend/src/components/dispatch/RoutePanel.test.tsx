@@ -12,6 +12,7 @@ const baseProps = {
   dispatchError: null,
   onVehicleChange: vi.fn(),
   onDriverChange: vi.fn(),
+  onClose: vi.fn(),
   onDispatch: vi.fn(),
   onRetry: vi.fn(),
   onDelete: vi.fn(),
@@ -25,17 +26,19 @@ const baseProps = {
  * / 'loaded' are the same sets scan/seal/dispatch enforce server-side).
  */
 describe('RoutePanel — derived from routeStatus', () => {
-  /**
-   * spec-75 phase 4, decision 4 — "Cerrar Ruta" (seal) is REMOVED from
-   * this panel, at every status. Closing a route is crew-mobile only
-   * (`2i`, spec-77); the three status-gated enable/disable tests that used
-   * to live here (loading/loaded/empty-route) are replaced by this single
-   * "never mounts" assertion, which is the honest replacement — there is
-   * no status at which the button should exist any more.
-   */
-  it('never mounts a "Cerrar Ruta" action, at any route status', () => {
+  it('enables "Cerrar Ruta" while the route is still loadable (draft/planned/loading) and has stops', () => {
     render(<RoutePanel {...baseProps} routeStatus="loading" />);
-    expect(screen.queryByRole('button', { name: /cerrar ruta/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar Ruta' })).toBeEnabled();
+  });
+
+  it('disables "Cerrar Ruta" once the route is already loaded', () => {
+    render(<RoutePanel {...baseProps} routeStatus="loaded" />);
+    expect(screen.getByRole('button', { name: 'Cerrar Ruta' })).toBeDisabled();
+  });
+
+  it('disables "Cerrar Ruta" for an empty route even while loadable', () => {
+    render(<RoutePanel {...baseProps} routeStatus="draft" packageCount={0} />);
+    expect(screen.getByRole('button', { name: 'Cerrar Ruta' })).toBeDisabled();
   });
 
   it('disables Despachar while the route is only "loading" — not yet sealed', () => {
@@ -92,6 +95,7 @@ describe('RoutePanel — derived from routeStatus', () => {
 
   it('treats an unloaded routeStatus (still fetching) as not yet actionable, not as loadable', () => {
     render(<RoutePanel {...baseProps} routeStatus={undefined} packageCount={2} />);
+    expect(screen.getByRole('button', { name: 'Cerrar Ruta' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Despachar/ })).toBeDisabled();
   });
 

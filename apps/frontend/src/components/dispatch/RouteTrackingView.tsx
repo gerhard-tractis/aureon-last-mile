@@ -9,7 +9,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouteTrackingBrief } from '@/hooks/dispatch/useRouteTrackingBrief';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
-import { formatRouteHeaderDate, TIMEZONE, LOCALE } from '@/lib/utils/dateFormat';
+import { formatRouteHeaderDate, formatTimeOnly } from '@/lib/utils/dateFormat';
 import { RouteTrackingLiveLine } from './RouteTrackingLiveLine';
 import { RouteTrackingScanList } from './RouteTrackingScanList';
 import { RouteTrackingVehiclePanel } from './RouteTrackingVehiclePanel';
@@ -17,10 +17,6 @@ import { RouteTrackingVehiclePanel } from './RouteTrackingVehiclePanel';
 interface Props {
   routeId: string;
   operatorId: string;
-}
-
-function formatScanTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', timeZone: TIMEZONE });
 }
 
 /**
@@ -73,7 +69,12 @@ export function RouteTrackingView({ routeId, operatorId }: Props) {
             <StatusBadge status="loading" label="EN CARGA" variant="info" size="sm" />
             <Badge variant="outline" data-testid="read-only-badge">SOLO LECTURA</Badge>
           </div>
-          {lastScan && firstScan && brief.scannerName && (
+          {/* Phase-4 review — gated on there being a scan at all, not on
+              knowing who made it. A null scannerName (RLS denial, a
+              soft-deleted users row) used to take `hace 8 s` and `ritmo
+              214/h` down with it too; those don't depend on a name — see
+              RouteTrackingLiveLine's own optional scannerName. */}
+          {lastScan && firstScan && (
             <RouteTrackingLiveLine
               scannerName={brief.scannerName}
               loadPositionLabel={brief.loadPositionLabel}
@@ -95,7 +96,7 @@ export function RouteTrackingView({ routeId, operatorId }: Props) {
             </p>
             {lastScan.customerName && <p className="text-[13px] text-text-secondary">{lastScan.customerName}</p>}
             <p className="text-[12px] text-text-muted">
-              paquete {lastScan.boxIndexInOrder} de {lastScan.boxesTotalInOrder} · {brief.packagesLoadedCount} en la ruta · {formatScanTime(lastScan.loadedAtIso)}
+              paquete {lastScan.boxIndexInOrder} de {lastScan.boxesTotalInOrder} · {brief.packagesLoadedCount} en la ruta · {formatTimeOnly(lastScan.loadedAtIso)}
             </p>
           </div>
         ) : (

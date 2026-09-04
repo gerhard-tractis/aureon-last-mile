@@ -78,7 +78,7 @@ describe('RouteTrackingView', () => {
     expect(screen.queryByRole('button', { name: /despachar/i })).not.toBeInTheDocument();
   });
 
-  it('renders "Último cargado · Parada 01" with order, comuna, client, box count and running total', () => {
+  it('renders "Último cargado · Parada 02" with order, comuna, client, box count and running total', () => {
     render(<RouteTrackingView routeId="11111111-2222-3333-4444-555555555555" operatorId="op-1" />);
     expect(screen.getByText(/Último cargado · Parada 02/)).toBeInTheDocument();
     expect(screen.getAllByText(/ORD-2 · Providencia/).length).toBeGreaterThan(0);
@@ -109,5 +109,14 @@ describe('RouteTrackingView', () => {
     render(<RouteTrackingView routeId="11111111-2222-3333-4444-555555555555" operatorId="op-1" />);
     expect(screen.getByText(/todavía no hay paquetes cargados en esta ruta/i)).toBeInTheDocument();
     expect(screen.queryByText(/último cargado/i)).not.toBeInTheDocument();
+  });
+
+  // Phase-4 review — a null scannerName (RLS denial, a soft-deleted user)
+  // must not delete the live freshness/pace line entirely; only the
+  // scan-existence check (lastScan && firstScan) gates it now.
+  it('still renders the live freshness/pace line when scannerName is null', () => {
+    mockData = brief({ scannerName: null });
+    render(<RouteTrackingView routeId="11111111-2222-3333-4444-555555555555" operatorId="op-1" />);
+    expect(screen.getByText(/último paquete hace/)).toBeInTheDocument();
   });
 });

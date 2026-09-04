@@ -251,11 +251,9 @@ describe('RouteBuilder — pending-to-stage visibility', () => {
  *
  * spec-75 phase 4 — the scan-input tests that used to live here are gone,
  * not adapted: RouteBuilder never renders a scan field any more, at any
- * status. Desktop scanning is removed entirely (decision 4) — a `loading`
- * route is never routed to RouteBuilder in the first place any more
- * (`DispatchRouteSurface` sends it to the read-only `RouteTrackingView`
- * instead), so there is no real status at which RouteBuilder could ever
- * need one.
+ * status. Desktop scanning is removed entirely (`ScanZone.tsx` itself is
+ * deleted — spec-76 shipped the crew's mobile replacement, `2e`), unlike
+ * closing (see the seal block below, restored after phase-4 review).
  */
 describe('RouteBuilder — route status is the source of truth', () => {
   it('shows the real route status label in the header, not a hardcoded Borrador/Listo pair', () => {
@@ -264,11 +262,19 @@ describe('RouteBuilder — route status is the source of truth', () => {
     expect(screen.getByText('Cargada')).toBeInTheDocument();
   });
 
-  it('never renders a scan input, at any route status', () => {
-    mockRouteStatus = 'loading';
-    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-    expect(screen.queryByPlaceholderText(/Escanea barcode/i)).not.toBeInTheDocument();
-  });
+  // Phase-4 review — this used to exercise only 'loading', the one status
+  // RouteBuilder can no longer even be mounted at (DispatchRouteSurface
+  // routes 'loading' to the read-only RouteTrackingView instead). Looping
+  // every status RouteBuilder can actually render at is what the title
+  // ("at any route status") claims.
+  it.each(['draft', 'planned', 'loading', 'loaded', 'dispatched'] as const)(
+    'never renders a scan input at status %s',
+    (status) => {
+      mockRouteStatus = status;
+      render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+      expect(screen.queryByPlaceholderText(/Escanea barcode/i)).not.toBeInTheDocument();
+    },
+  );
 
   it('survives a "reload": a route already loaded stays loaded without any local click', () => {
     // The old bug: routeClosed always started false, so a mid-session
@@ -282,12 +288,55 @@ describe('RouteBuilder — route status is the source of truth', () => {
 });
 
 /**
- * spec-75 phase 4, decision 4 — "Cerrar Ruta" (seal, POST /seal) is REMOVED
- * from RouteBuilder entirely. Closing a route is crew-mobile only (`2i`,
- * spec-77). The `describe('RouteBuilder — seal', ...)` block that used to
- * live here (POSTs to /seal not /close, surfaces UNSEALED_STOPS) is deleted,
- * not adapted — there is no seal action left on this screen to test.
+ * spec-70 phase 3: the seal button used to POST to a bare `/close` and ignore
+ * a non-ok response entirely — a refusal (e.g. UNSEALED_STOPS) would leave the
+ * operator staring at a button that silently did nothing.
+ *
+ * spec-75 phase 4 review — this block was briefly deleted on the theory that
+ * decision 4 ("closing is crew-mobile only") already covered desktop too.
+ * It doesn't yet (spec-77 phase 1, which ships the mobile close, is still
+ * `backlog`) — removing this left zero callers of `POST /seal` anywhere.
+ * Restored verbatim from `origin/main` (`f1b66d3`) per review.
  */
+describe('RouteBuilder — seal', () => {
+  it('POSTs to /seal, not /close', async () => {
+    mockPackages = [pkg({ stage: 'staged' })];
+    mockRouteStatus = 'loading';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      '/api/dispatch/routes/r1/seal',
+      expect.objectContaining({ method: 'POST' }),
+    ));
+  });
+
+  it('surfaces the UNSEALED_STOPS message instead of silently doing nothing', async () => {
+    mockPackages = [pkg({ stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        code: 'UNSEALED_STOPS',
+        message: 'Faltan 1 parada(s) por estibar. Escanéalas o pide a un responsable que las quite de la planificación.',
+      }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Escanéalas o pide a un responsable/)).toBeInTheDocument(),
+    );
+  });
+});
 
 /**
  * spec-70 phase 3 review fix: the DELETE handler now requires `{ reason }`
@@ -297,24 +346,50 @@ describe('RouteBuilder — route status is the source of truth', () => {
  * handleRemove at all before this.
  */
 describe('RouteBuilder — remove from plan', () => {
-  it('re-reads the route status after a successful removal, so a since-changed status becomes visible', async () => {
-    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'planned';
-    vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
+  /**
+   * The bug this pins: `handleClose` used to call `useRoutePackages`'s
+   * refetch, so a 200 from /seal refreshed the stop list and nothing else.
+   * The route stayed `loading` in the cache — badge unchanged, Cerrar ruta
+   * still enabled, Despachar still disabled — and a second tap only returned
+   * `already_sealed`. Breakage #3 rebuilt out of new parts.
+   */
+  it('re-reads the route status after a successful seal, so the seal becomes visible', async () => {
+    mockPackages = [pkg({ stage: 'staged' })];
+    mockRouteStatus = 'loading';
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
-      json: async () => ({ ok: true }),
+      json: async () => ({ ok: true, sealed_stops: 1 }),
     });
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
 
     await waitFor(() => expect(refreshRouteStatusMock).toHaveBeenCalled());
   });
 
+  it('does not re-read the route status when the seal is refused', async () => {
+    mockPackages = [pkg({ stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      json: async () => ({ code: 'UNSEALED_STOPS', message: 'Faltan 1 parada(s) por estibar.' }),
+    });
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+
+    await waitFor(() => expect(screen.getByText(/faltan 1 parada/i)).toBeInTheDocument());
+    expect(refreshRouteStatusMock).not.toHaveBeenCalled();
+  });
+
+  // Phase-4 review minor — moved off 'loading' to 'planned': removal itself
+  // doesn't depend on the seal-only status, and 'loading' is no longer a
+  // status RouteBuilder is ever mounted at in production.
   it('prompts for a reason and sends it in the DELETE body', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -336,7 +411,7 @@ describe('RouteBuilder — remove from plan', () => {
 
   it('does nothing when the reason prompt is cancelled', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue(null);
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
 
@@ -347,7 +422,7 @@ describe('RouteBuilder — remove from plan', () => {
 
   it('surfaces a refusal (e.g. FORBIDDEN or ROUTE_SEALED) instead of silently doing nothing', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
@@ -362,6 +437,56 @@ describe('RouteBuilder — remove from plan', () => {
 
     await waitFor(() =>
       expect(screen.getByText(/Solo un responsable puede quitar paradas/)).toBeInTheDocument(),
+    );
+  });
+});
+
+/**
+ * QA finding #3: after a seal was refused with "Faltan 2 parada(s)...",
+ * removing one stop left the banner still saying 2 while the live "faltan N
+ * por estibar" counter correctly said 1 — the refusal it described no longer
+ * held. Seed the seal refusal first (same path as the "seal" describe block
+ * above), then exercise the action that should clear it.
+ *
+ * spec-75 phase 4 review — two of the original three tests here ('clears
+ * the banner once a scan succeeds' / 'does not clear the banner when a scan
+ * fails') are NOT restored: they typed into `ScanZone`'s field, and
+ * `ScanZone.tsx` is genuinely deleted (desktop scanning stays removed —
+ * only closing was restored). The removal-triggered test is unaffected and
+ * is restored verbatim.
+ */
+describe('RouteBuilder — stale seal-error banner', () => {
+  async function seedSealError() {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        code: 'UNSEALED_STOPS',
+        message: 'Faltan 2 parada(s) por estibar. Escanéalas o pide a un responsable que las quite de la planificación.',
+      }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar Ruta' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await waitFor(() =>
+      expect(screen.getByText(/Faltan 2 parada\(s\)/)).toBeInTheDocument(),
+    );
+  }
+
+  it('clears the banner once a removal succeeds', async () => {
+    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
+    mockRouteStatus = 'loading';
+    vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
+    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+
+    await seedSealError();
+
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Eliminar paquete' }));
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Faltan 2 parada\(s\)/)).not.toBeInTheDocument(),
     );
   });
 });

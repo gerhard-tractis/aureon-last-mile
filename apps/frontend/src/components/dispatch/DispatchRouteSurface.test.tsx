@@ -172,6 +172,33 @@ describe('DispatchRouteSurface', () => {
     expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
   });
 
+  // Phase-4 review minor — the `route?.status === 'loading'` check falls
+  // through to RouteBuilder for every other case by construction, but that
+  // was never pinned: a status further along the lifecycle (dispatched,
+  // completed) or a route the status read genuinely failed on (`route` is
+  // `undefined` post-load, not just pre-load — `isLoading` is false here)
+  // must still render something actionable, not a blank screen.
+  it.each(['dispatched', 'completed'] as const)(
+    'falls through to RouteBuilder for a %s route, not a blank screen',
+    (status) => {
+      mockIsBelowLg = false;
+      mockRouteStatus = status;
+      render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+      expect(screen.getByTestId('route-builder-stub')).toBeInTheDocument();
+      expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
+    },
+  );
+
+  it('falls through to RouteBuilder when the status read has settled but returned no route (failed/not found)', () => {
+    mockIsBelowLg = false;
+    mockRouteLoading = false;
+    mockRouteStatus = undefined; // useDispatchRoute mock -> { data: undefined, isLoading: false }
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+    expect(screen.getByTestId('route-builder-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('dispatch-route-surface-desktop-skeleton')).not.toBeInTheDocument();
+  });
+
   it('shows a skeleton, not zeroed counts, while the mobile load brief is loading', () => {
     mockIsBelowLg = true;
     mockLoadBriefLoading = true;

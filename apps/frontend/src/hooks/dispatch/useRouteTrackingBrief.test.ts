@@ -32,7 +32,7 @@ function buildClient({
     { order_id: 'o1', orders: { order_number: 'ORD-1', comuna: 'Maipú', delivery_address: 'Calle 1', customer_name: 'Ana' } },
   ],
   packageRows = [
-    { id: 'p1', order_id: 'o1', label: 'LBL-1', loaded_at: '2026-09-04T10:00:00Z', loaded_by: 'u1' },
+    { id: 'p1', order_id: 'o1', label: 'LBL-1', loaded_at: '2026-09-04T10:00:00Z', loaded_by: 'u1', status: 'en_carga' },
   ],
   scannerFullName = 'Juan Pérez',
 }: Fixture) {

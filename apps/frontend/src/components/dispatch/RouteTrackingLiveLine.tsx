@@ -4,7 +4,16 @@ import { useNowTick } from '@/hooks/dispatch/useNowTick';
 import { formatFreshness, computeLoadRateFmt } from '@/lib/dispatch/loading-monitor';
 
 interface Props {
-  scannerName: string;
+  /**
+   * Phase-4 review — optional, like `loadPositionLabel` already was. A
+   * null `scannerName` (RLS denial, a soft-deleted `users` row) used to
+   * gate the WHOLE line at the caller, silently taking `hace 8 s` and
+   * `ritmo 214/h` with it. Those two figures don't depend on knowing who
+   * is scanning — only on there being a scan at all — so they render on
+   * their own, without a name, exactly like the andén clause already does
+   * without a position.
+   */
+  scannerName: string | null;
   loadPositionLabel: string | null;
   lastScanAtIso: string;
   firstScanAtIso: string;
@@ -37,8 +46,14 @@ export function RouteTrackingLiveLine({
 
   return (
     <p className="text-[13px] text-text-secondary">
-      <span className="font-medium text-text">{scannerName}</span>
-      {' está escaneando'}
+      {scannerName ? (
+        <>
+          <span className="font-medium text-text">{scannerName}</span>
+          {' está escaneando'}
+        </>
+      ) : (
+        'Escaneando'
+      )}
       {loadPositionLabel && <> en el andén <span className="font-medium text-text">{loadPositionLabel}</span></>}
       {' · último paquete hace '}
       {formatFreshness(lastScanAtIso, now)}

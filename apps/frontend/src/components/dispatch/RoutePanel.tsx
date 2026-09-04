@@ -17,11 +17,17 @@ import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type R
 import { TerritoryStability } from './TerritoryStability';
 
 /**
- * spec-75 phase 4 — "Cerrar Ruta" (seal) was removed from this panel.
- * Decision 4 is explicit: closing a route is crew-mobile only (`2i`,
- * spec-77), never desktop, at any route status. `Despachar a
- * DispatchTrack` stays — decision 4 also says dispatching an already-
- * `loaded` route "lo puede hacer cualquiera de las tres superficies".
+ * spec-75 phase 4 review — "Cerrar Ruta" (seal) was briefly removed from
+ * this panel on the theory that decision 4 ("closing is crew-mobile only,
+ * `2i`, spec-77") meant desktop closing could go now. Reverted: verified
+ * zero clients call `POST /api/dispatch/routes/[id]/seal` once it was
+ * gone — the mobile `2i` replacement doesn't exist yet (`disabled`,
+ * "El cierre de ruta es la próxima pantalla — spec-77", and spec-77 is
+ * `Status: backlog`, phase 1 `[pending]`). That is the exact sequencing
+ * spec-75's own "Orden alterado" section requires for scanning (build the
+ * replacement, then retire the old path) — it applies to closing too, not
+ * just scanning. Keep this action until spec-77 phase 1 ships a working
+ * mobile close; that is the commit that gets to delete it, not this one.
  */
 
 interface Props {
@@ -40,6 +46,7 @@ interface Props {
   dispatchError: string | null;
   onVehicleChange: (v: string) => void;
   onDriverChange: (v: string) => void;
+  onClose: () => void;
   onDispatch: () => void;
   onRetry: () => void;
   onDelete?: () => void;
@@ -68,6 +75,7 @@ export function RoutePanel({
   dispatchError,
   onVehicleChange,
   onDriverChange,
+  onClose,
   onDispatch,
   onRetry,
   onDelete,
@@ -174,6 +182,36 @@ export function RoutePanel({
             </button>
           </div>
         )}
+
+        {/* spec-75 phase 4 review — restored, see the header comment above.
+            Removed only by spec-77 phase 1, once mobile 2i can close a
+            route for real. */}
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="outline"
+              className="w-full h-13 rounded-[10px] text-[15px] font-semibold"
+              disabled={!canLoad || packageCount === 0}
+            >
+              Cerrar Ruta
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirmar cierre de ruta</AlertDialogTitle>
+              <AlertDialogDescription>
+                No se podrán agregar más paquetes a esta ruta después de
+                cerrarla.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={onClose}>
+                Cerrar ruta
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <AlertDialog>
           <AlertDialogTrigger asChild>

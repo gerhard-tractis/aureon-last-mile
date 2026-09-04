@@ -29,13 +29,19 @@ interface Props {
  * at that point and the desktop is a spectator, not a builder.
  *
  * spec-75 phase 4 — this component used to also own the scan zone
- * (`ScanZone`) and the seal action ("Cerrar Ruta" → `POST /seal`). Both are
- * REMOVED here, not merely relocated: decision 4 is explicit that closing a
- * route is crew-mobile only (`2i`, spec-77) and the desktop never scans
- * again now that spec-76 shipped the crew's mobile replacement. What
- * survives is everything about ASSEMBLING a route (`draft`/`planned`) and
- * DISPATCHING an already-`loaded` one (decision 4: "despachar lo puede
- * hacer cualquiera de las tres superficies sobre una ruta ya cerrada") —
+ * (`ScanZone`). That is REMOVED here, not relocated: the desktop never
+ * scans again now that spec-76 shipped the crew's mobile replacement
+ * (`2e`). What survives is everything about ASSEMBLING a route
+ * (`draft`/`planned`), DISPATCHING an already-`loaded` one (decision 4:
+ * "despachar lo puede hacer cualquiera de las tres superficies sobre una
+ * ruta ya cerrada"), and — restored after a phase-4 review finding —
+ * SEALING one ("Cerrar Ruta" → `POST /seal`). Sealing was briefly removed
+ * on the theory that decision 4's "closing is crew-mobile only" already
+ * covered it; it doesn't yet, because the mobile `2i` replacement is
+ * `spec-77`, `Status: backlog`. Removing this before that ships left zero
+ * callers of `POST /api/dispatch/routes/[id]/seal` — no way to close a
+ * route at all. Keep it until spec-77 phase 1 lands a working mobile
+ * close (see the matching comment in `RoutePanel.tsx`). Also unchanged:
  * territory stability, the vehicle fill bar, top-up suggestions, removing a
  * stop from the plan, and picking a truck/driver.
  *
@@ -53,6 +59,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [driverName, setDriverName] = useState('');
   const [dispatching, setDispatching] = useState(false);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [sealError, setSealError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   // `isSuccess` (not just `data`) — see the fill-bar block below: a failed or
@@ -112,6 +119,11 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
 
   const handleRemove = async (dispatchId: string) => {
     setRemoveError(null);
+    // The handler requires a non-empty reason (400 without one) — this used
+    // to send no body at all, so every click 400'd silently and the trash
+    // icon looked like it worked while doing nothing. A route with an order
+    // that will never reach the dock then has no way to seal: the seal
+    // refusal names removal as the way out, and this is that way out.
     const reason = window.prompt('Motivo para quitar esta parada de la planificación:');
     if (!reason || !reason.trim()) return;
     const res = await fetch(`/api/dispatch/routes/${routeId}/packages/${dispatchId}`, {
@@ -120,10 +132,34 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
       body: JSON.stringify({ reason: reason.trim() }),
     });
     if (res.ok) {
+      // QA finding #3: removing a stop is the seal refusal's own remedy — the
+      // one it names ("...pide a un responsable que las quite") — so a
+      // successful removal can only bring the shortfall down, never leave it
+      // unchanged. Clear the stale banner rather than let it name a count
+      // the live counter has already moved past.
+      setSealError(null);
       await Promise.all([refetch(), refreshRouteStatus()]);
     } else {
       const json = await res.json().catch(() => ({}));
       setRemoveError(json.message ?? 'No se pudo quitar la parada');
+    }
+  };
+
+  const handleClose = async () => {
+    setSealError(null);
+    // /seal, not the deprecated /close alias — spec-70 phase 3.
+    const res = await fetch(`/api/dispatch/routes/${routeId}/seal`, { method: 'POST' });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) {
+      // Both, and the route one matters most: sealing moves the row to
+      // `loaded`, which is what flips the badge, disables Cerrar ruta and
+      // unlocks Despachar. Refreshing only the package list left every one of
+      // those showing the pre-seal state.
+      await Promise.all([refetch(), refreshRouteStatus()]);
+    } else {
+      // A refusal (e.g. UNSEALED_STOPS) used to be swallowed here, so the
+      // button looked like it did nothing — this is the fix.
+      setSealError(json.message ?? 'No se pudo cerrar la ruta');
     }
   };
 
@@ -172,6 +208,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
           routeStatus={routeStatus}
           role={role}
           vehicleFillStatus={vehicleFillStatus}
+          sealError={sealError}
           removeError={removeError}
           packages={packages}
           onRemove={handleRemove}
@@ -188,6 +225,7 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
         dispatchError={dispatchError}
         onVehicleChange={setSelectedVehicle}
         onDriverChange={setDriverName}
+        onClose={handleClose}
         onDispatch={handleDispatch}
         onRetry={handleDispatch}
         onDelete={handleDelete}

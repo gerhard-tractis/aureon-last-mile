@@ -13,6 +13,7 @@ interface Props {
   routeStatus: RouteStatus | undefined;
   role: string | null | undefined;
   vehicleFillStatus: VehicleFillStatus;
+  sealError: string | null;
   removeError: string | null;
   packages: RoutePackage[];
   onRemove: (dispatchId: string) => void;
@@ -20,8 +21,8 @@ interface Props {
 
 /**
  * spec-75 phase 4 — split out of `RouteBuilder.tsx`. Package-list seam:
- * the block sequence, the vehicle fill bar, top-up suggestions, the remove
- * error banner, and the package rows themselves.
+ * the block sequence, the vehicle fill bar, top-up suggestions, the seal
+ * and remove error banners, and the package rows themselves.
  */
 export function RouteBuilderPackageList({
   routeId,
@@ -29,6 +30,7 @@ export function RouteBuilderPackageList({
   routeStatus,
   role,
   vehicleFillStatus,
+  sealError,
   removeError,
   packages,
   onRemove,
@@ -52,6 +54,12 @@ export function RouteBuilderPackageList({
           Renders nothing when there is nothing eligible to suggest — see
           the component's own render-nothing contract. */}
       <TopupSuggestions routeId={routeId} operatorId={operatorId} role={role} />
+
+      {sealError && (
+        <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">
+          ⚠ {sealError}
+        </div>
+      )}
 
       {removeError && (
         <div className="shrink-0 bg-status-error-bg border-b border-status-error-border text-status-error px-5 py-2.5 text-xs">

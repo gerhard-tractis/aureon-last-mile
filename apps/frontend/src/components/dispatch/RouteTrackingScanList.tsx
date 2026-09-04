@@ -1,14 +1,10 @@
 'use client';
 
-import { TIMEZONE, LOCALE } from '@/lib/utils/dateFormat';
+import { formatTimeOnly } from '@/lib/utils/dateFormat';
 import type { ScanEntry } from '@/lib/dispatch/route-tracking';
 
 interface Props {
   scans: ScanEntry[];
-}
-
-function formatScanTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', timeZone: TIMEZONE });
 }
 
 /**
@@ -37,7 +33,7 @@ export function RouteTrackingScanList({ scans }: Props) {
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-mono text-[12.5px] text-text">{scan.label}</span>
-              <span className="shrink-0 font-mono text-[11px] text-text-muted">{formatScanTime(scan.loadedAtIso)}</span>
+              <span className="shrink-0 font-mono text-[11px] text-text-muted">{formatTimeOnly(scan.loadedAtIso)}</span>
             </div>
             <p className="truncate text-[12.5px] text-text-secondary">
               {scan.orderNumber}

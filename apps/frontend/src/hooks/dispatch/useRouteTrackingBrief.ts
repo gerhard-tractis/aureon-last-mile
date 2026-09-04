@@ -73,23 +73,30 @@ export function useRouteTrackingBrief(routeId: string | null, operatorId: string
     queryFn: async (): Promise<RouteTrackingBrief> => {
       const supabase = createSPAClient();
 
-      const { data: routeRow, error: routeError } = await supabase
-        .from('routes')
-        .select(
-          'route_date, driver_name, vehicle_id, load_position_id, load_position_released_at, load_positions(code, label)',
-        )
-        .eq('id', routeId!)
-        .eq('operator_id', operatorId!)
-        .is('deleted_at', null)
-        .single();
+      // Phase-4 review — `routes` and `dispatches` don't depend on each
+      // other; this used to await them in sequence, costing a full extra
+      // round trip on every 15s poll for no reason.
+      const [
+        { data: routeRow, error: routeError },
+        { data: dispatchRows, error: dispatchError },
+      ] = await Promise.all([
+        supabase
+          .from('routes')
+          .select(
+            'route_date, driver_name, vehicle_id, load_position_id, load_position_released_at, load_positions(code, label)',
+          )
+          .eq('id', routeId!)
+          .eq('operator_id', operatorId!)
+          .is('deleted_at', null)
+          .single(),
+        supabase
+          .from('dispatches')
+          .select('order_id, orders(order_number, comuna, delivery_address, customer_name)')
+          .eq('route_id', routeId!)
+          .eq('operator_id', operatorId!)
+          .is('deleted_at', null),
+      ]);
       if (routeError) throw routeError;
-
-      const { data: dispatchRows, error: dispatchError } = await supabase
-        .from('dispatches')
-        .select('order_id, orders(order_number, comuna, delivery_address, customer_name)')
-        .eq('route_id', routeId!)
-        .eq('operator_id', operatorId!)
-        .is('deleted_at', null);
       if (dispatchError) throw dispatchError;
 
       const rows = dispatchRows ?? [];
@@ -142,7 +149,7 @@ export function useRouteTrackingBrief(routeId: string | null, operatorId: string
       const packageRows = await fetchChunked<TrackingPackageRow>(orderIds, (ids) =>
         supabase
           .from('packages')
-          .select('id, order_id, label, loaded_at, loaded_by')
+          .select('id, order_id, label, loaded_at, loaded_by, status')
           .in('order_id', ids)
           .eq('operator_id', operatorId!)
           .is('deleted_at', null),
