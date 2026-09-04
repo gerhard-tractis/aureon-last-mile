@@ -9,7 +9,24 @@ const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: pushMock }) }));
 
 let mockIsBelowLg = false;
-vi.mock('@/hooks/useViewport', () => ({ useIsBelowLg: () => mockIsBelowLg }));
+// spec-78 — a plain desktop session defaults to a wide, tall window
+// (isDesktop true, hasTabletHeight true); what actually gates the 3a
+// branch is `mockIsDock`, defaulted false, exactly matching production:
+// width/height alone are never enough (see DispatchRouteSurface.tsx's own
+// header comment).
+let mockIsDesktop = true;
+let mockHasTabletHeight = true;
+vi.mock('@/hooks/useViewport', () => ({
+  useViewport: () => ({
+    isBelowLg: mockIsBelowLg,
+    isDesktop: mockIsDesktop,
+    isMobile: false,
+    hasTabletHeight: mockHasTabletHeight,
+  }),
+}));
+
+let mockIsDock = false;
+vi.mock('@/hooks/useIsDockDevice', () => ({ useIsDockDevice: () => mockIsDock }));
 
 let mockLoadBrief: unknown = undefined;
 let mockLoadBriefLoading = false;
@@ -97,6 +114,11 @@ vi.mock('./mobile/DispatchRouteScanSession', () => ({
   },
 }));
 
+// spec-78's DispatchRouteScanSessionTablet (3a) branch is exercised in
+// DispatchRouteSurface.spec78-tablet.test.tsx, not here — this file's
+// existing tests all keep `mockIsDock` at its default `false`, so that
+// branch never mounts and needs no stub in this file.
+
 const packagesByStopPropsSpy = vi.fn();
 vi.mock('./mobile/DispatchPackagesByStop', () => ({
   DispatchPackagesByStop: (props: { routeCode: string; onBack: () => void }) => {
@@ -133,6 +155,9 @@ describe('DispatchRouteSurface', () => {
   beforeEach(() => {
     mockRouteStatus = 'planned';
     mockRouteLoading = false;
+    mockIsDock = false;
+    mockIsDesktop = true;
+    mockHasTabletHeight = true;
   });
 
   it('mounts RouteBuilder (desktop) at or above lg for a non-loading route, without ever fetching the load brief', () => {
@@ -356,3 +381,11 @@ describe('DispatchRouteSurface', () => {
     expect(refetchLoadBriefMock).toHaveBeenCalled();
   });
 });
+
+// spec-78 (`3a`, the dock tablet) viewport-branch tests live in their own
+// file (DispatchRouteSurface.spec78-tablet.test.tsx) — this file was
+// already at 358 lines before this task (over the 300-line budget, kept
+// as-is per the repo's "exceed only if truly unavoidable" rather than
+// unrelated churn); adding the tablet coverage here instead of splitting
+// it out would have grown it further rather than working toward
+// compliance.

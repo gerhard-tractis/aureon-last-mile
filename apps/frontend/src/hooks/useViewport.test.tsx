@@ -49,6 +49,21 @@ describe('useViewport', () => {
   });
 });
 
+describe('hasTabletHeight (spec-78, the dock tablet height cut)', () => {
+  it('is true at tablet height (min-height: 700px matches)', () => {
+    mockMatchMedia((q) => q.includes('min-height: 700px'));
+    const { result } = renderHook(() => useViewport());
+    expect(result.current.hasTabletHeight).toBe(true);
+  });
+
+  it('is false for a phone in landscape (844 × 390 — width matches desktop, height does not)', () => {
+    mockMatchMedia((q) => q.includes('1024px')); // DESKTOP_QUERY matches; height query does not
+    const { result } = renderHook(() => useViewport());
+    expect(result.current.isDesktop).toBe(true);
+    expect(result.current.hasTabletHeight).toBe(false);
+  });
+});
+
 describe('useIsMobileFromViewport', () => {
   it('returns true on mobile viewport', () => {
     mockMatchMedia((q) => q.includes('max-width: 768px'));

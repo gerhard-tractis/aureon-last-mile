@@ -2,7 +2,7 @@
 
 > **Related:** [spec-76](spec-76-despacho-movil-carga.md) (el mismo bucle en 390 px), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
@@ -49,11 +49,20 @@ Lo que `3a` muestra simultáneamente, y que en `2e` requiere navegar:
 
 ## Decisiones
 
-1. **Tercer punto de corte, no un tercer árbol.** El repo ya bifurca en `lg` (1024) entre móvil y escritorio. `3a` cae justo en ese límite y es donde la heurística actual falla: a 1024 px de ancho una tablet del andén recibiría el árbol de **escritorio**, que está dibujado para el jefe de turno y tiene el mapa y los KPI. La condición de `3a` es **ancho ≥ 1024 y contexto de sesión de carga activa**, es decir: si la cuadrilla está escaneando esta ruta, la tablet muestra el bucle, no el panel de jefatura. Se implementa como una variante de layout del árbol de sesión, reusando sus componentes, **no** como un tercer conjunto de componentes.
+1. **Tercer punto de corte, no un tercer árbol — el discriminador es un flag de dispositivo, no la sesión.** El repo ya bifurca en `lg` (1024) entre móvil y escritorio. `3a` cae justo en ese límite y es donde la heurística actual falla: a 1024 px de ancho una tablet del andén recibiría el árbol de **escritorio**, que está dibujado para el jefe de turno.
+
+   La condición real es **`isDock` (flag de dispositivo persistido) Y ancho ≥ 1024 Y alto ≥ ~700**:
+   - **`isDock`** viene de `?dock=1` en la URL, persistido en `localStorage` (`useIsDockDevice()`); `?dock=0` lo limpia (una tablet reasignada no queda pegada). No es identidad ni autorización — es una preferencia de visualización por dispositivo: una tablet marcada lee los mismos datos bajo el mismo RLS que cualquier otra sesión, sólo cambia qué layout se monta.
+   - El corte de **alto** (no sólo ancho) sigue existiendo — un teléfono en horizontal iguala el ancho de escritorio pero no el alto.
+   - **`route.status === 'loading'` NO es parte de esta condición**, a propósito: es un hecho de servidor visible para cualquier viewer al mismo ancho, dock o no. Usarlo aquí le robaría `1c` a un jefe de turno mirando la misma ruta desde su monitor — exactamente el riesgo que este spec identificó y que motivó la corrección de esta decisión.
+
+   Se implementa como una variante de layout del árbol de sesión, reusando sus componentes, **no** como un tercer conjunto de componentes.
+
+   **Por qué no el flag local `scanning` que el árbol móvil ya tiene** (la primera versión de esta decisión, "ancho ≥ 1024 y contexto de sesión de carga activa", asumía que podía servir): ese flag vive en un `useState` de `DispatchRouteSurface`, se resetea en cada carga de página, y la única pantalla que alguna vez lo pone en `true` (`DispatchRouteBeforeScan`, `2c`) sólo montaba por debajo de `lg` — nunca a ancho ≥ 1024. Una tablet del andén, por definición, se abre siempre a ese ancho; con esa primera versión de la condición no existía ningún camino de código por el que esa tablet pudiera llegar alguna vez a `3a`. Una tablet montada en un poste para todo un turno además necesita sobrevivir una recarga de página (u otra cuadrilla moviendo la ruta a `loading`) sin perder el camino de vuelta al bucle — un dispositivo que nadie quiere tocar a mitad de turno es exactamente el dispositivo que no debe necesitar que lo toquen para recuperarse. El flag de dispositivo se aprovisiona una vez, al montar la tablet en la pared, y no se vuelve a tocar — coincide con cómo se usa realmente.
 
 2. **Legibilidad a tres metros es un requisito, no una preferencia.** El resultado de la última lectura y el contador se dimensionan para leerse de pie a distancia. Esto se verifica mirándolo, no sólo con tests: la comprobación es parte de la fase de QA, con la tablet donde va a vivir.
 
-3. **Ambas acciones terminales están presentes, y por eso `spec-77` va primero.** `3a` ofrece *Cerrar ruta* y *Despachar a DispatchTrack* en la misma barra. Las dos pantallas que esas acciones abren son `2i` y `2j`, de `spec-77`. En una tablet fija y compartida el riesgo de toque accidental es mayor que en un teléfono en la mano, así que ambas mantienen su pantalla de confirmación completa — **no** se «simplifica» el cierre porque haya espacio.
+3. **Ambas acciones terminales están presentes, y por eso `spec-77` va primero.** `3a` ofrece *Cerrar ruta* y *Despachar a DispatchTrack* en la misma barra. *Cerrar ruta* abre `2i`, de `spec-77` — deshabilitado con su motivo como texto visible hasta que esa pantalla exista. *Despachar a DispatchTrack*, en cambio, se implementó en esta tarea con su propia confirmación completa (`AlertDialog`) contra el endpoint real (`POST /api/dispatch/routes/[id]/dispatch`, el mismo que usa escritorio) — no depende de `2j`/`spec-77`; su única condición pendiente es que la ruta llegue a `loaded`, lo que hoy sólo pasa sellando desde escritorio (el camino de cuadrilla, `2i`, todavía no existe). En una tablet fija y compartida el riesgo de toque accidental es mayor que en un teléfono en la mano, así que ambas mantienen su pantalla de confirmación completa — **no** se «simplifica» ninguna de las dos porque haya espacio.
 
 4. **El estado del lector es información de primera clase.** En un teléfono la cuadrilla sabe si el campo está enfocado porque lo tiene en la mano. En una tablet montada no: `LECTOR LISTO` es lo que evita los bultos pasados en vano cuando el foco se perdió. Se muestra en la cabecera, y refleja el estado real del campo, no un literal.
 
