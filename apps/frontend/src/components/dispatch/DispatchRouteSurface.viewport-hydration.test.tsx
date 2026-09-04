@@ -29,6 +29,13 @@ vi.mock('@/hooks/dispatch/mobile/useRouteLoadBrief', () => ({
   useRouteLoadBrief: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
 }));
 
+// spec-75 phase 4 — this suite is about the viewport transition, not route
+// status branching; a non-`loading` status keeps the settled desktop path
+// on RouteBuilder, same as before phase 4 existed.
+vi.mock('@/hooks/dispatch/useDispatchRoute', () => ({
+  useDispatchRoute: () => ({ data: { status: 'planned' }, isLoading: false }),
+}));
+
 const vehicles: FleetVehicle[] = [];
 const originalMatchMedia = window.matchMedia;
 

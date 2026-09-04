@@ -16,6 +16,14 @@ import {
 import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus, type TerritoryHistoryEntry } from '@/lib/dispatch/types';
 import { TerritoryStability } from './TerritoryStability';
 
+/**
+ * spec-75 phase 4 — "Cerrar Ruta" (seal) was removed from this panel.
+ * Decision 4 is explicit: closing a route is crew-mobile only (`2i`,
+ * spec-77), never desktop, at any route status. `Despachar a
+ * DispatchTrack` stays — decision 4 also says dispatching an already-
+ * `loaded` route "lo puede hacer cualquiera de las tres superficies".
+ */
+
 interface Props {
   packageCount: number;
   vehicles: FleetVehicle[];
@@ -32,7 +40,6 @@ interface Props {
   dispatchError: string | null;
   onVehicleChange: (v: string) => void;
   onDriverChange: (v: string) => void;
-  onClose: () => void;
   onDispatch: () => void;
   onRetry: () => void;
   onDelete?: () => void;
@@ -61,7 +68,6 @@ export function RoutePanel({
   dispatchError,
   onVehicleChange,
   onDriverChange,
-  onClose,
   onDispatch,
   onRetry,
   onDelete,
@@ -168,33 +174,6 @@ export function RoutePanel({
             </button>
           </div>
         )}
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="outline"
-              className="w-full h-13 rounded-[10px] text-[15px] font-semibold"
-              disabled={!canLoad || packageCount === 0}
-            >
-              Cerrar Ruta
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirmar cierre de ruta</AlertDialogTitle>
-              <AlertDialogDescription>
-                No se podrán agregar más paquetes a esta ruta después de
-                cerrarla.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={onClose}>
-                Cerrar ruta
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
 
         <AlertDialog>
           <AlertDialogTrigger asChild>

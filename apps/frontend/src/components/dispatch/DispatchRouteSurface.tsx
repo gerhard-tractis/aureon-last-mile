@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useIsBelowLg } from '@/hooks/useViewport';
 import { useRouteLoadBrief } from '@/hooks/dispatch/mobile/useRouteLoadBrief';
+import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
 import { DispatchRouteScanSession } from './mobile/DispatchRouteScanSession';
 import { DispatchPackagesByStop } from './mobile/DispatchPackagesByStop';
 import { RouteBuilder } from './RouteBuilder';
+import { RouteTrackingView } from './RouteTrackingView';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
 /**
@@ -38,6 +40,19 @@ import type { FleetVehicle } from '@/lib/dispatch/types';
  * regardless). See `DispatchRouteSurface.viewport-hydration.test.tsx`
  * (spec-76 review I3), which exercises this with the real hook rather than
  * a mock that skips it.
+ *
+ * spec-75 phase 4 — the desktop branch is no longer a single component.
+ * `1c` (decision 4) is read-only for a route in `loading` (`EN CARGA`):
+ * that is the state where a crew is actively scanning on mobile and the
+ * desktop is a spectator, not a builder. `RouteBuilder` (build/assign/
+ * dispatch, no scanning of its own any more — see its own header) keeps
+ * every other status: `draft`/`planned` (still assembling the route) and
+ * `loaded` (Despachar a DispatchTrack stays on desktop — decision 4:
+ * "despachar lo puede hacer cualquiera de las tres superficies"). The
+ * status read below is gated on `!isBelowLg` the same way the mobile load
+ * brief above is gated on `isBelowLg` — a mobile session stops re-running
+ * it once `useIsBelowLg` settles; the one transient desktop-shaped fetch
+ * on first render is the same unavoidable exception documented above.
  */
 export interface DispatchRouteSurfaceProps {
   routeId: string;
@@ -90,6 +105,10 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
     isError: loadBriefError,
     refetch: refetchLoadBrief,
   } = useRouteLoadBrief(routeId, operatorId, { enabled: isBelowLg });
+  // Desktop-only route status read — decides RouteBuilder vs the read-only
+  // 1c tracking view. Gated the mirror-image way from the mobile brief
+  // above (see this file's own header comment).
+  const { data: route, isLoading: routeLoading } = useDispatchRoute(routeId, operatorId, !isBelowLg);
 
   if (isBelowLg) {
     if (loadBriefLoading) {
@@ -175,6 +194,20 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
         />
       </>
     );
+  }
+
+  if (routeLoading) {
+    return (
+      <div className="flex flex-col gap-3 p-5" data-testid="dispatch-route-surface-desktop-skeleton">
+        <Skeleton className="h-9 w-48 rounded-md" />
+        <Skeleton className="h-24 w-full rounded-[10px]" />
+        <Skeleton className="h-56 w-full rounded-[10px]" />
+      </div>
+    );
+  }
+
+  if (route?.status === 'loading') {
+    return <RouteTrackingView routeId={routeId} operatorId={operatorId} />;
   }
 
   return <RouteBuilder routeId={routeId} operatorId={operatorId} vehicles={vehicles} />;

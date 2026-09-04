@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DispatchRouteSurface } from './DispatchRouteSurface';
@@ -25,8 +25,26 @@ vi.mock('@/hooks/dispatch/mobile/useRouteLoadBrief', () => ({
   useRouteLoadBrief: (...args: unknown[]) => useRouteLoadBriefMock(...args),
 }));
 
+// spec-75 phase 4 — desktop route-status read that decides RouteBuilder vs
+// the read-only 1c tracking view. Defaults to a non-`loading` status so
+// every pre-existing desktop test here (written before phase 4) keeps
+// landing on RouteBuilder without having to know about this branch.
+let mockRouteStatus: string | undefined = 'planned';
+let mockRouteLoading = false;
+const useDispatchRouteMock = vi.fn(() => ({
+  data: mockRouteStatus ? { status: mockRouteStatus } : undefined,
+  isLoading: mockRouteLoading,
+}));
+vi.mock('@/hooks/dispatch/useDispatchRoute', () => ({
+  useDispatchRoute: (...args: unknown[]) => useDispatchRouteMock(...args),
+}));
+
 vi.mock('./RouteBuilder', () => ({
   RouteBuilder: ({ routeId }: { routeId: string }) => <div data-testid="route-builder-stub">{routeId}</div>,
+}));
+
+vi.mock('./RouteTrackingView', () => ({
+  RouteTrackingView: ({ routeId }: { routeId: string }) => <div data-testid="route-tracking-stub">{routeId}</div>,
 }));
 
 const beforeScanPropsSpy = vi.fn();
@@ -112,13 +130,46 @@ vi.mock('./mobile/DispatchVehicleAssignmentSheet', () => ({
 const vehicles: FleetVehicle[] = [];
 
 describe('DispatchRouteSurface', () => {
-  it('mounts RouteBuilder (desktop) at or above lg, without ever fetching the load brief', () => {
+  beforeEach(() => {
+    mockRouteStatus = 'planned';
+    mockRouteLoading = false;
+  });
+
+  it('mounts RouteBuilder (desktop) at or above lg for a non-loading route, without ever fetching the load brief', () => {
     mockIsBelowLg = false;
     mockLoadBriefError = false;
     render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
     expect(screen.getByTestId('route-builder-stub')).toBeInTheDocument();
     expect(screen.queryByTestId('before-scan-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
     expect(useRouteLoadBriefMock).toHaveBeenCalledWith('route-12345678', 'op-1', { enabled: false });
+    expect(useDispatchRouteMock).toHaveBeenCalledWith('route-12345678', 'op-1', true);
+  });
+
+  it('spec-75 phase 4 — mounts the read-only RouteTrackingView (1c) on desktop when the route status is loading', () => {
+    mockIsBelowLg = false;
+    mockRouteStatus = 'loading';
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+    expect(screen.getByTestId('route-tracking-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('route-builder-stub')).not.toBeInTheDocument();
+  });
+
+  it('spec-75 phase 4 — mounts RouteBuilder for a loaded route (Despachar stays on desktop, decision 4)', () => {
+    mockIsBelowLg = false;
+    mockRouteStatus = 'loaded';
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+    expect(screen.getByTestId('route-builder-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
+  });
+
+  it('shows a skeleton on desktop while the route status is still loading, not a guess at RouteBuilder vs RouteTrackingView', () => {
+    mockIsBelowLg = false;
+    mockRouteLoading = true;
+    mockRouteStatus = undefined;
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+    expect(screen.getByTestId('dispatch-route-surface-desktop-skeleton')).toBeInTheDocument();
+    expect(screen.queryByTestId('route-builder-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('route-tracking-stub')).not.toBeInTheDocument();
   });
 
   it('shows a skeleton, not zeroed counts, while the mobile load brief is loading', () => {

@@ -23,7 +23,15 @@ import type { DispatchRoute } from '@/lib/dispatch/types';
 export const dispatchRouteKey = (routeId: string | null, operatorId: string | null) =>
   ['dispatch', 'route', routeId, operatorId] as const;
 
-export function useDispatchRoute(routeId: string | null, operatorId: string | null) {
+/**
+ * `enabled` (spec-75 phase 4) — defaults to `true`, so every pre-existing
+ * caller (RouteBuilder) is unaffected. `DispatchRouteSurface` passes
+ * `!isBelowLg` so a mobile session, once `useIsBelowLg`'s post-hydration
+ * effect settles, stops re-running this desktop-only status read — the
+ * same "gate the fetch, not just the render" shape `useRouteLoadBrief`
+ * already uses for the mirror-image mobile-only case.
+ */
+export function useDispatchRoute(routeId: string | null, operatorId: string | null, enabled = true) {
   return useQuery({
     queryKey: dispatchRouteKey(routeId, operatorId),
     queryFn: async () => {
@@ -41,7 +49,7 @@ export function useDispatchRoute(routeId: string | null, operatorId: string | nu
       if (error) throw error;
       return data as DispatchRoute;
     },
-    enabled: !!routeId && !!operatorId,
+    enabled: enabled && !!routeId && !!operatorId,
     staleTime: 5_000,
   });
 }
