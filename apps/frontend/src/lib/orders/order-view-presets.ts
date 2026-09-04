@@ -81,7 +81,18 @@ export const ORDER_VIEW_PRESETS: readonly OrderViewPreset[] = deepFreeze([
     label: 'Pendientes de POD',
     filters: { statuses: ['entregado'], hasPod: false },
   },
-  { id: 'reingresos', label: 'Reingresos', filters: { statuses: ['en_retorno'] } },
+  {
+    id: 'reingresos',
+    label: 'Reingresos',
+    // spec-75 phase 5 review (I5): a failed delivery whose order has at
+    // least one package back at retorno_hub is "awaiting reingreso"
+    // whether the order ended up fully `en_retorno` (nothing delivered) or
+    // `parcialmente_entregado` (some delivered, the rest still pending
+    // reingreso) — both need this same tab. Kept in lockstep with
+    // Despacho's `fallidasSinReingreso` count (useEnRutaSnapshot.ts),
+    // which links here: widen one, widen the other.
+    filters: { statuses: ['en_retorno', 'parcialmente_entregado'] },
+  },
   {
     id: 'entregadas-hoy',
     label: 'Entregadas hoy',

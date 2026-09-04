@@ -54,8 +54,8 @@ describe('ORDER_VIEW_PRESETS', () => {
     });
   });
 
-  it('reingresos filters on en_retorno', () => {
-    expect(getPresetById('reingresos').filters).toEqual({ statuses: ['en_retorno'] });
+  it('reingresos filters on en_retorno and parcialmente_entregado — both are awaiting reingreso (spec-75 I5)', () => {
+    expect(getPresetById('reingresos').filters).toEqual({ statuses: ['en_retorno', 'parcialmente_entregado'] });
   });
 
   it('entregadas-hoy has no baked-in date and requires an injected "today"', () => {

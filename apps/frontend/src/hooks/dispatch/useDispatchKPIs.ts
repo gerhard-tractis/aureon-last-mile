@@ -24,8 +24,9 @@ export function useDispatchKPIs(operatorId: string | null) {
 
       const openRoutes = openData?.length ?? 0;
 
-      // Query 2: on-road routes, counted exactly as DispatchInProgressTab
-      // lists them — ON_ROAD_ROUTE_STATUSES, no date filter. QA finding #2:
+      // Query 2: on-road routes, counted exactly as DispatchEnRutaTab (the
+      // "En ruta" tab, spec-75 phase 5) lists them — ON_ROAD_ROUTE_STATUSES,
+      // no date filter. QA finding #2:
       // this used to add `.eq('route_date', today)`, so a route dispatched
       // yesterday and still on the road counted as 0 here while the tab it
       // labels went on listing it and its "N vehículos en ruta" strip. A

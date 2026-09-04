@@ -48,7 +48,7 @@ describe('DispatchModuleHeader', () => {
     expect(screen.getByRole('tab', { name: 'En ruta 12' })).toBeInTheDocument();
   });
 
-  it('renders Completadas without a count', () => {
+  it('renders Completadas without a count — the canvas shows none for it', () => {
     renderHeader();
     expect(screen.getByRole('tab', { name: 'Completadas' })).toBeInTheDocument();
   });
@@ -68,8 +68,8 @@ describe('DispatchModuleHeader', () => {
   it('calls the ambient Tabs onValueChange when a tab is clicked', async () => {
     const user = userEvent.setup();
     const { onTabChange } = renderHeader();
-    await user.click(screen.getByRole('tab', { name: /Completadas/ }));
-    expect(onTabChange).toHaveBeenCalledWith('completed');
+    await user.click(screen.getByRole('tab', { name: /En ruta/ }));
+    expect(onTabChange).toHaveBeenCalledWith('in_progress');
   });
 
   it('shows the SIN RUTEAR counter in monospace — a spec requirement, not incidental styling', () => {

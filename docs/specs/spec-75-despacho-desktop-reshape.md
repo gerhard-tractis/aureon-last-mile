@@ -127,9 +127,32 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre. Hecho en `RouteTrackingView.test.tsx`.
 14. Test: último cargado, lista de paquetes, y ocupación del vehículo. Hecho — **sin** las filas de rechazo: decisión 12 es explícita en que hoy no hay de dónde sacarlas (`dock_scans` sólo persiste `scan_result: 'accepted'`); se difieren a spec-79 H4, con comentario en `RouteTrackingScanList.tsx` nombrándolo.
 
-### Fase 5 — `1d` En ruta `[pending]`
+### Fase 5 — `1d` En ruta `[done]`
 15. Test: métricas de cabecera (entregadas, pendientes, fallidas, OTIF) y el sello `DT SINCRONIZADO`.
-16. Test: orden por incidencia; *Completadas* como filtro de la misma tabla.
+
+    **Corregido al implementar — dos figuras del mock no tienen fuente y no se construyeron:**
+    - `cierre estimado del día 19:40` — proyección del optimizador OR-Tools, sin cableado de frontend (misma razón que decisión 10).
+    - `DT SINCRONIZADO · 12 s` — `dispatchtrack-route-poll` actualiza filas en su lugar y solo escribe a stdout; ninguna tabla guarda cuándo corrió por última vez. No hay de dónde leerlo.
+
+    `ENTREGADAS`/`PENDIENTES`/`FALLIDAS` sí salen de `dispatches.status` real. `OTIF DEL DÍA` se computa on-time-in-full sobre `dispatches.completed_at`/`estimated_at` (columna que el propio schema documenta "Used for OTIF calculation") y se omite (no un 0 ni un guion bajo una etiqueta) cuando el denominador es cero. `ÚLTIMO EVENTO` sale de `MAX(dispatches.updated_at)` por ruta — no de `routes.updated_at`, que un despacho ajeno puede mover (spec-76, lección de proxy).
+16. Test: orden por incidencia (`compareEnRutaIncidence`: más fallidas primero, empate roto por el evento más antiguo); *Completadas hoy* como sección filtrada al pie de la misma tabla.
+
+    **Corregido tras revisión — la pestaña "Completadas" del header NO se retira.** El canvas dibuja las 4 pestañas por igual en `1a`, `1b` y `1d`, y la fase 1 las construyó a propósito. Lo que decisión 5 descarta es un **segundo árbol de componentes** para "Completadas" — no la pestaña en sí. `DispatchEnRutaTab` (pestaña "En ruta") y `DispatchCompletadasTab` (pestaña "Completadas") renderizan el mismo `EnRutaTable`, sólo con una porción (`enRuta`, `completadas`) distinta — "una tabla con un filtro, no dos tablas" se cumple literalmente sin perder la pestaña. La sección `COMPLETADAS HOY N` al pie de la tabla en vivo (dentro de `DispatchEnRutaTab`) es otra cosa y se mantiene — el canvas muestra ambas, no son alternativas.
+
+    Las filas de `Completadas hoy` distinguen `completed` de `cancelled` con un `StatusBadge` (verde/rojo) — una ruta cancelada no es una ruta que terminó, y el mismo render para ambas ocultaba esa diferencia.
+
+    **Segunda revisión — dos Críticos:**
+    - **La paginación de `dispatches` truncaba en silencio.** `max_rows = 1000` (PostgREST, `config.toml`) cabecea filas devueltas, no ids de ruta pedidas — un lote de 150 rutas × ~25 paradas ya son ~3750 filas, y PostgREST corta a 1000 sin avisar (el mismo cepo que spec-52 ya interpretó mal una vez). Arreglado en dos partes: el lote de `dispatches` bajó a 30 ids de ruta (dimensionado por filas esperadas, no por cantidad de rutas), y toda consulta ahora afirma `assertNotTruncated` — si una respuesta llega exactamente a 1000 filas, se lanza una excepción en vez de aceptar un conteo parcial. Antes de esto, una ruta truncada leía `sin eventos` y el propio orden por incidencia la subía al primer lugar — la pantalla cuyo trabajo es mostrar la peor ruta promovía rutas cuyos datos simplemente no llegaron.
+    - **`routes.planned_stops` no puede leerse localmente.** `20260825000002:162` lo dice explícito: "drifts by construction… nothing local should read it" — DispatchTrack lo escribe con su propio conteo, un número distinto al que este módulo cuenta localmente. `PARADAS` pasó a ser `routeDispatches.length` en ambos lados (numerador y denominador desde el mismo arreglo), así que ya no puede leer `13/8`.
+
+    **Importantes:**
+    - `orders`/`fleet_vehicles` ahora filtran `deleted_at IS NULL` (faltaba).
+    - Ambos cohortes (en ruta y completadas) se acotan a los últimos 7 días (`subtractDaysISO`) — antes el cohorte en ruta no tenía cota temporal, lo que además es lo que hacía alcanzable el cepo de 1000 filas en producción. Una ruta varada más de 7 días deja de aparecer aquí — límite explícito, no silencioso; necesita su propia superficie en un spec futuro.
+    - `fallidasSinReingreso` cuenta también `orders.status = 'parcialmente_entregado'`, no sólo `en_retorno` — un pedido con un bulto entregado y otro en `retorno_hub` sigue esperando reingreso. El preset `reingresos` (`lib/orders/order-view-presets.ts`) se amplió igual, para que el número del footer y la página que abre `Ver reingresos pendientes` no se contradigan.
+
+    **Desviaciones de spec:**
+    - La pestaña **Completadas** (`DispatchCompletadasTab`) muestra los últimos 7 días (`completadasSemana`), igual que la `DispatchCompletedRoutesTab` retirada — decisión 5 gobierna sólo la sección al pie de la tabla en vivo (`completadasHoy`), no el historial de la pestaña.
+    - La celda `RUTA` de cada fila es ahora un `<Link>` real a `/app/dispatch/[routeId]` — sin él, la pantalla construida para señalar la peor ruta no dejaba abrirla. El enlace vive dentro de la celda, no como `onClick` de fila (la forma anidada que ya rompió accesibilidad cuatro veces en este módulo).
 
 ### Fase 6 — Cierre `[pending]`
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.

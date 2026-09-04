@@ -37,6 +37,16 @@ function TabCount({ value }: { value: number | undefined }) {
  * one header component so the tab contents can move out into their own
  * files without page.tsx growing a second header.
  *
+ * spec-75 phase 5 (decision 5) keeps all 4 tabs — the canvas draws the same
+ * 4-tab strip on `1a`, `1b` and `1d` alike, and phase 1 built it on purpose.
+ * "Completadas" stays a tab; what decision 5 rules out is a second
+ * *component tree* for it — `DispatchEnRutaTab` and `DispatchCompletadasTab`
+ * both render `EnRutaTable`, just with a different (enRuta, completadas)
+ * slice, so it is "una tabla con un filtro, no dos tablas" without losing
+ * the tab itself. The `1d` mock's own "Completadas hoy" section at the foot
+ * of the live table is a separate thing and stays inside `DispatchEnRutaTab`
+ * — the two aren't alternatives, the canvas shows both.
+ *
  * No breadcrumb here: TopBar (mounted by AppLayout above every /app/*
  * route, including this one) already renders "Operación / Despacho" via
  * sidebar/navigation.ts. A second one here would duplicate it — see the
