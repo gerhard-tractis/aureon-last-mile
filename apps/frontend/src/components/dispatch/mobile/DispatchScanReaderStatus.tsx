@@ -11,16 +11,26 @@ import { cn } from '@/lib/utils';
  * "Toca para reactivar el lector" already uses (ScanField.tsx's own doc
  * comment), so this label never claims readiness the field itself has not
  * reported.
+ *
+ * spec-78 review — `size`, `'lg'` for `3a`: decision 4 there calls this
+ * line "información de primera clase" (it is what stops boxes being
+ * passed in vain when focus was lost on a mounted device nobody is
+ * holding), so it cannot stay at 2e's 11px. `'md'` is the exact
+ * pre-existing size, unchanged.
  */
 export interface DispatchScanReaderStatusProps {
   armed: boolean;
+  size?: 'md' | 'lg';
 }
 
-export function DispatchScanReaderStatus({ armed }: DispatchScanReaderStatusProps) {
+const TEXT_SIZE = { md: 'text-[11px]', lg: 'text-[15px]' } as const;
+
+export function DispatchScanReaderStatus({ armed, size = 'md' }: DispatchScanReaderStatusProps) {
   return (
     <p
       className={cn(
-        'font-mono text-[11px] font-semibold uppercase tracking-[.06em]',
+        'font-mono font-semibold uppercase tracking-[.06em]',
+        TEXT_SIZE[size],
         armed ? 'text-status-success-text' : 'text-status-warning-text',
       )}
     >

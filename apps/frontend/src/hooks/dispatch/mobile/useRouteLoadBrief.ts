@@ -12,10 +12,12 @@ import {
   countPendingOnDock,
   findIncompleteOrders,
   groupPackagesByOrder,
+  boxCountsByOrder,
   type BriefDispatchRow,
   type BriefPackageRow,
   type ComunaCount,
   type IncompleteOrder,
+  type OrderBoxCount,
 } from '@/lib/dispatch/mobile/route-load-brief';
 
 const ID_CHUNK_SIZE = 100;
@@ -50,6 +52,24 @@ export interface RouteLoadBrief {
   incompleteOrders: IncompleteOrder[];
   loadPositionLabel: string | null;
   vehicleAssignment: { externalVehicleId: string; driverName: string | null } | null;
+  /**
+   * spec-78 (`3a`) — "vehículo con su ocupación". `fleet_vehicles
+   * .capacity_packages` only (never a volume figure — see spec-78's own
+   * "Campos del canvas que no existen en el schema" table), read
+   * alongside `external_vehicle_id` in the same query rather than a
+   * second fetch. `null` when unset — `RouteTrackingVehiclePanel`
+   * (reused verbatim from `1c`) already renders "Sin capacidad
+   * configurada" for that case rather than a fabricated bar.
+   */
+  vehicleCapacityPackages: number | null;
+  /**
+   * spec-78 — the fraction ("2 de 3") `DispatchIncompleteOrdersWarning`
+   * doesn't carry (see `boxCountsByOrder`'s own doc comment). Keyed by
+   * `order_id` for every order on the route, not only the incomplete
+   * ones — the tablet's incomplete-orders list is the only current
+   * caller, but there is no reason to narrow it there.
+   */
+  orderBoxCounts: Map<string, OrderBoxCount>;
 }
 
 const EMPTY: RouteLoadBrief = {
@@ -60,6 +80,8 @@ const EMPTY: RouteLoadBrief = {
   incompleteOrders: [],
   loadPositionLabel: null,
   vehicleAssignment: null,
+  vehicleCapacityPackages: null,
+  orderBoxCounts: new Map(),
 };
 
 interface Options {
@@ -132,14 +154,16 @@ export function useRouteLoadBrief(
         : null;
 
       let vehicleAssignment: RouteLoadBrief['vehicleAssignment'] = null;
+      let vehicleCapacityPackages: number | null = null;
       if (routeRow.vehicle_id) {
         const { data: vehicleRow } = await supabase
           .from('fleet_vehicles')
-          .select('external_vehicle_id')
+          .select('external_vehicle_id, capacity_packages')
           .eq('id', routeRow.vehicle_id)
           .eq('operator_id', operatorId!)
           .is('deleted_at', null)
           .maybeSingle();
+        vehicleCapacityPackages = vehicleRow?.capacity_packages ?? null;
         if (vehicleRow?.external_vehicle_id) {
           // Review I1 — this used to fall back to fleet_vehicles.driver_name
           // (the vehicle's fleet-level "last known driver", synced from a
@@ -168,6 +192,8 @@ export function useRouteLoadBrief(
         incompleteOrders: findIncompleteOrders(dispatches, packagesByOrder),
         loadPositionLabel: position?.label ?? position?.code ?? null,
         vehicleAssignment,
+        vehicleCapacityPackages,
+        orderBoxCounts: boxCountsByOrder(packagesByOrder),
       };
     },
     enabled,

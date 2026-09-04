@@ -11,24 +11,39 @@ import { formatScanTimestamp, type ScanHistoryEntry } from '@/lib/dispatch/mobil
  * change together via `ScanResult`'s own `status` prop, the rest of the
  * card composes around it because ScanResult's `context` is a single line
  * and this screen needs several (order, address, client, box count).
+ *
+ * spec-78 review — `size` (`ScanField`'s own pattern) scales the detail
+ * rows and the "paquete N de M" line. `ScanResult` itself is untouched
+ * (shared by three other modules; its 34px code is already sized for 3m).
+ * `'md'` is the exact pre-existing sizing (2e, unchanged); `'lg'` is 3a's
+ * — the phone's rows were never distance-checked and don't read from
+ * across a dock the way `ScanResult`'s own code already does.
  */
 export interface DispatchScanLastReadProps {
   entry: ScanHistoryEntry;
   /** ALREADY_IN_ROUTE only — navigates to the route that already owns the
    *  package. Never an offer to move it (decision 5). */
   onViewRoute: (routeId: string) => void;
+  size?: 'md' | 'lg';
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+const SIZES = {
+  md: { row: 'text-[13px]', meta: 'text-[11.5px]', banner: 'text-[12px]' },
+  lg: { row: 'text-[17px]', meta: 'text-[15px]', banner: 'text-[15px]' },
+} as const;
+
+function Row({ label, value, size }: { label: string; value: string; size: keyof typeof SIZES }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 text-[13px]">
+    <div className={`flex items-baseline justify-between gap-3 ${SIZES[size].row}`}>
       <span className="text-text-muted">{label}</span>
       <span className="truncate text-right font-medium text-text">{value}</span>
     </div>
   );
 }
 
-export function DispatchScanLastRead({ entry, onViewRoute }: DispatchScanLastReadProps) {
+export function DispatchScanLastRead({ entry, onViewRoute, size = 'md' }: DispatchScanLastReadProps) {
+  const s = SIZES[size];
+
   if (entry.kind === 'rejected') {
     return (
       <div className="flex flex-col gap-2" data-testid="dispatch-scan-last-read">
@@ -39,7 +54,7 @@ export function DispatchScanLastRead({ entry, onViewRoute }: DispatchScanLastRea
           timestamp={formatScanTimestamp(entry.atIso)}
         />
         {entry.rejectionCode === 'ALREADY_IN_ROUTE' && (
-          <p className="rounded-lg border border-status-error-border bg-status-error-bg px-3 py-2 text-[12px] leading-[1.4] text-status-error-text">
+          <p className={`rounded-lg border border-status-error-border bg-status-error-bg px-3 py-2 leading-[1.4] text-status-error-text ${s.banner}`}>
             El paquete NO fue agregado a esta ruta y sigue en la otra.
           </p>
         )}
@@ -69,11 +84,11 @@ export function DispatchScanLastRead({ entry, onViewRoute }: DispatchScanLastRea
         timestamp={formatScanTimestamp(entry.atIso)}
       />
       <div className="flex flex-col gap-1 rounded-lg border border-border-subtle px-3 py-2">
-        {entry.contactAddress && <Row label="Dirección" value={entry.contactAddress} />}
-        {entry.retailerName && <Row label="Cliente" value={entry.retailerName} />}
+        {entry.contactAddress && <Row label="Dirección" value={entry.contactAddress} size={size} />}
+        {entry.retailerName && <Row label="Cliente" value={entry.retailerName} size={size} />}
       </div>
       {entry.boxesLoaded !== null && entry.boxesTotal !== null && (
-        <p className="text-[11.5px] text-text-muted">
+        <p className={`text-text-muted ${s.meta}`}>
           paquete {entry.boxesLoaded} de {entry.boxesTotal}
           {stopLabel ? ` · ${stopLabel}` : ''}
         </p>

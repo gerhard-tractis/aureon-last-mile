@@ -3,17 +3,28 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useIsBelowLg } from '@/hooks/useViewport';
+import { useViewport } from '@/hooks/useViewport';
+import { useIsDockDevice } from '@/hooks/useIsDockDevice';
 import { useRouteLoadBrief } from '@/hooks/dispatch/mobile/useRouteLoadBrief';
 import { useDispatchRoute } from '@/hooks/dispatch/useDispatchRoute';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
 import { DispatchRouteScanSession } from './mobile/DispatchRouteScanSession';
+import { DispatchRouteScanSessionTablet } from './mobile/DispatchRouteScanSessionTablet';
 import { DispatchPackagesByStop } from './mobile/DispatchPackagesByStop';
 import { RouteBuilder } from './RouteBuilder';
 import { RouteTrackingView } from './RouteTrackingView';
 import type { FleetVehicle } from '@/lib/dispatch/types';
+import type { IncompleteOrder, OrderBoxCount } from '@/lib/dispatch/mobile/route-load-brief';
+
+// spec-78 review I3 — module-scope, not `?? new Map()`/`?? []` inline at
+// the render below: a fresh object literal every render (while `loadBrief`
+// is loading, or genuinely empty) gives `DispatchTabletIncompleteOrders`
+// (memo'd) a new prop identity every time regardless, defeating the memo
+// for the one prop it exists to skip re-rendering on.
+const EMPTY_BOX_COUNTS: ReadonlyMap<string, OrderBoxCount> = new Map();
+const EMPTY_INCOMPLETE_ORDERS: IncompleteOrder[] = [];
 
 /**
  * spec-76 decision 1 — the viewport branch for `/app/dispatch/[routeId]`,
@@ -53,6 +64,36 @@ import type { FleetVehicle } from '@/lib/dispatch/types';
  * brief above is gated on `isBelowLg` — a mobile session stops re-running
  * it once `useIsBelowLg` settles; the one transient desktop-shaped fetch
  * on first render is the same unavoidable exception documented above.
+ *
+ * spec-78 (`3a`, the dock tablet) — a THIRD branch of the same crew tree,
+ * not a third component set (decision 1, rewritten — see that decision's
+ * own text in the spec for the full story of why the first version of
+ * this condition was wrong). `isTabletDock` below gates on
+ * `useIsDockDevice()` (a per-device, persisted `?dock=1` flag — see that
+ * hook's own header) **and** `viewport.isDesktop && viewport
+ * .hasTabletHeight` — width alone is not enough (a phone in landscape
+ * matches `isDesktop`) and the height gate alone is not device identity
+ * either (an ordinary wide monitor also has height >= 700, hence the flag).
+ *
+ * Critically: `isDock` alone, without the viewport gate, must NEVER swap a
+ * shift lead's monitor to this tree — but the reverse matters just as
+ * much, and is the whole point of decision 1's rewrite: `route.status ===
+ * 'loading'` is NOT part of this condition. Only `isDock` is, because
+ * `status` is server truth every viewer sees, dock or not — using it here
+ * would show 3a to a manager's 1024px monitor on a `loading` route,
+ * exactly the regression `DispatchRouteSurface.test.tsx` pins ("a
+ * non-dock browser at 1024px still gets 1c for a loading route").
+ *
+ * `isTabletDock` folds into the SAME crew-tree branch `isBelowLg` already
+ * drives (before-scan / scanning / packages-by-stop) rather than a
+ * parallel one: a dock tablet, like a phone, needs to reach "Empezar a
+ * escanear" itself (`DispatchRouteBeforeScan`, reused unchanged — 3a's
+ * artboard is the scan LOOP only, spec-78's scope table names no
+ * tablet-specific before-scan screen). Only the scan-loop layout differs
+ * once `scanning` is true: `DispatchRouteScanSessionTablet` (3a) instead
+ * of `DispatchRouteScanSession` (2e), both driven by the same
+ * `loadBrief`/`scanning`/`viewingPackages` state this component already
+ * owns.
  */
 export interface DispatchRouteSurfaceProps {
   routeId: string;
@@ -62,7 +103,12 @@ export interface DispatchRouteSurfaceProps {
 
 export function DispatchRouteSurface({ routeId, operatorId, vehicles }: DispatchRouteSurfaceProps) {
   const router = useRouter();
-  const isBelowLg = useIsBelowLg();
+  const viewport = useViewport();
+  const isBelowLg = viewport.isBelowLg;
+  const isDock = useIsDockDevice();
+  // spec-78 decision 1 (revised) — see this file's own header comment.
+  const isTabletDock = isDock && viewport.isDesktop && viewport.hasTabletHeight;
+  const isCrewTree = isBelowLg || isTabletDock;
   const [assignSheetOpen, setAssignSheetOpen] = useState(false);
   // spec-76 task 3 — 2e now exists: "Empezar a escanear" switches this
   // page's own state to the scan session instead of navigating to a new
@@ -96,21 +142,26 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
   // normally on top of it — its own state has nothing that needs to
   // survive being closed.
   const [viewingPackages, setViewingPackages] = useState(false);
-  // Only fetched below `lg` — enabled gates the fetch itself, not just the
-  // render, so a desktop session's SETTLED render never triggers this query
-  // (see the doc comment above on the one transient exception).
+  // Fetched for the whole crew tree (phone OR dock tablet) — enabled gates
+  // the fetch itself, not just the render, so a desktop (non-dock) session's
+  // SETTLED render never triggers this query (see the doc comment above on
+  // the one transient exception).
   const {
     data: loadBrief,
     isLoading: loadBriefLoading,
     isError: loadBriefError,
     refetch: refetchLoadBrief,
-  } = useRouteLoadBrief(routeId, operatorId, { enabled: isBelowLg });
-  // Desktop-only route status read — decides RouteBuilder vs the read-only
-  // 1c tracking view. Gated the mirror-image way from the mobile brief
-  // above (see this file's own header comment).
+  } = useRouteLoadBrief(routeId, operatorId, { enabled: isCrewTree });
+  // Route status read — decides RouteBuilder vs the read-only 1c tracking
+  // view for a plain desktop session, gated the mirror-image way from the
+  // mobile brief above (see this file's own header comment). `!isBelowLg`
+  // is unchanged by the tablet branch: a dock tablet's viewport is also
+  // `>= lg`, so this already fires for it too — its own `route.status` is
+  // what `DispatchRouteScanSessionTablet` needs to gate "Despachar a
+  // DispatchTrack", reusing this same read rather than a second query.
   const { data: route, isLoading: routeLoading } = useDispatchRoute(routeId, operatorId, !isBelowLg);
 
-  if (isBelowLg) {
+  if (isCrewTree) {
     if (loadBriefLoading) {
       return (
         <div className="flex flex-col gap-3 p-4" data-testid="dispatch-route-surface-skeleton">
@@ -141,15 +192,35 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
       return (
         <>
           <div hidden={viewingPackages}>
-            <DispatchRouteScanSession
-              routeId={routeId}
-              operatorId={operatorId}
-              routeCode={routeCode(routeId)}
-              loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
-              driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
-              vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
-              onViewPackages={() => setViewingPackages(true)}
-            />
+            {isTabletDock ? (
+              <DispatchRouteScanSessionTablet
+                routeId={routeId}
+                operatorId={operatorId}
+                routeCode={routeCode(routeId)}
+                loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
+                driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
+                vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+                vehicleCapacityPackages={loadBrief?.vehicleCapacityPackages ?? null}
+                ordersCount={loadBrief?.ordersCount ?? 0}
+                stopsCount={loadBrief?.stopsCount ?? 0}
+                pendingOnDock={loadBrief?.pendingOnDock ?? 0}
+                incompleteOrders={loadBrief?.incompleteOrders ?? EMPTY_INCOMPLETE_ORDERS}
+                orderBoxCounts={loadBrief?.orderBoxCounts ?? EMPTY_BOX_COUNTS}
+                comunas={loadBrief?.comunas ?? []}
+                routeStatus={route?.status}
+                onViewPackages={() => setViewingPackages(true)}
+              />
+            ) : (
+              <DispatchRouteScanSession
+                routeId={routeId}
+                operatorId={operatorId}
+                routeCode={routeCode(routeId)}
+                loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
+                driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
+                vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+                onViewPackages={() => setViewingPackages(true)}
+              />
+            )}
           </div>
           {viewingPackages && (
             <DispatchPackagesByStop

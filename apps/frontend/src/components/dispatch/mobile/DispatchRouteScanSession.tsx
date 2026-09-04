@@ -10,12 +10,7 @@ import { DispatchScanHistoryList } from './DispatchScanHistoryList';
 import { DispatchScanRejectionSummary } from './DispatchScanRejectionSummary';
 import { DispatchManualCodeSheet } from './DispatchManualCodeSheet';
 import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
-
-// 2i (close route, spec-77) does not exist on this branch yet. Same
-// convention DispatchRouteSurface already used for the scan CTA before
-// this task: a disabled button with its reason named, never a live-looking
-// one that silently does nothing on a loading bay.
-const CLOSE_ROUTE_DISABLED_REASON = 'El cierre de ruta es la próxima pantalla — spec-77';
+import { CLOSE_ROUTE_DISABLED_REASON } from '@/lib/dispatch/mobile/close-route-copy';
 
 // spec-76 decision 4 — verbatim in spirit: the camera is a fallback, not an
 // equivalent input. Named here, not buried in a tooltip, because a

@@ -5,6 +5,7 @@ import {
   countPendingOnDock,
   findIncompleteOrders,
   groupPackagesByOrder,
+  boxCountsByOrder,
   stopIndexByOrder,
   type BriefDispatchRow,
   type BriefPackageRow,
@@ -87,6 +88,29 @@ describe('groupPackagesByOrder / findIncompleteOrders', () => {
   it('returns an empty list when nothing is retained', () => {
     const packages: BriefPackageRow[] = [{ order_id: 'o1', status: 'en_bodega', loaded_at: null }];
     expect(findIncompleteOrders(dispatches, groupPackagesByOrder(packages))).toEqual([]);
+  });
+});
+
+describe('boxCountsByOrder (spec-78 — the "2 de 3" fraction on ÓRDENES INCOMPLETAS)', () => {
+  it('counts loaded (has loaded_at) vs total packages per order', () => {
+    const packages: BriefPackageRow[] = [
+      { order_id: 'o1', status: 'cargado', loaded_at: '2026-09-03T10:00:00Z' },
+      { order_id: 'o1', status: 'retenido', loaded_at: null },
+      { order_id: 'o1', status: 'en_bodega', loaded_at: null },
+      { order_id: 'o2', status: 'cargado', loaded_at: '2026-09-03T10:01:00Z' },
+    ];
+    const result = boxCountsByOrder(groupPackagesByOrder(packages));
+    expect(result.get('o1')).toEqual({ loaded: 1, total: 3 });
+    expect(result.get('o2')).toEqual({ loaded: 1, total: 1 });
+  });
+
+  it('does not mutate findIncompleteOrders’s own return shape', () => {
+    const packages: BriefPackageRow[] = [
+      { order_id: 'o1', status: 'en_bodega', loaded_at: null },
+      { order_id: 'o1', status: 'retenido', loaded_at: null },
+    ];
+    const byOrder = groupPackagesByOrder(packages);
+    expect(findIncompleteOrders(dispatches, byOrder)).toEqual([{ orderId: 'o1', orderNumber: 'ORD-001' }]);
   });
 });
 

@@ -97,6 +97,29 @@ export function findIncompleteOrders(
   return out;
 }
 
+export interface OrderBoxCount { loaded: number; total: number }
+
+/**
+ * spec-78 (`3a`) — "ÓRDENES INCOMPLETAS" needs the fraction the mock shows
+ * (`ORD-48177 · 2 de 3`), which `findIncompleteOrders` above deliberately
+ * does not carry (its existing callers — 2c's warning, 2h's filter — only
+ * ever needed the order id/number, and its own test asserts that exact
+ * shape with `toEqual`). Rather than grow that return type and risk
+ * breaking two callers that don't need the fraction, this is a second,
+ * additive function over the same `packagesByOrder` map every caller here
+ * already builds via `groupPackagesByOrder` — one definition of "loaded
+ * vs. total for this order", not a second one.
+ */
+export function boxCountsByOrder(
+  packagesByOrder: ReadonlyMap<string, readonly BriefPackageRow[]>,
+): Map<string, OrderBoxCount> {
+  const out = new Map<string, OrderBoxCount>();
+  for (const [orderId, pkgs] of packagesByOrder) {
+    out.set(orderId, { loaded: pkgs.filter((p) => !!p.loaded_at).length, total: pkgs.length });
+  }
+  return out;
+}
+
 export function groupPackagesByOrder(
   packages: readonly BriefPackageRow[],
 ): Map<string, BriefPackageRow[]> {

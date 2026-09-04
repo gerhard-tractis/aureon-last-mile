@@ -38,6 +38,19 @@ export function useScanPackage(routeId: string, operatorId: string | null = null
       queryClient.invalidateQueries({
         queryKey: ['dispatch', 'mobile', 'route-packages-by-stop', routeId, operatorId],
       });
+      // spec-78 review C2 — same problem as I5 above, on a device that
+      // makes it visible for the first time: `useRouteLoadBrief` (its own
+      // `staleTime: 10_000`, no `refetchInterval`) is what feeds `3a`'s
+      // "EN EL ANDÉN" count and the órdenes-incompletas fraction, and
+      // nothing ever refetches it once mounted on 2c/3a — a phone doesn't
+      // sit long enough after the first scan for that to be visible, but
+      // a tablet left mounted for a whole shift shows a `pendingOnDock`
+      // frozen at whatever was true before "Empezar a escanear" while the
+      // counter beside it (this same mutation's own optimistic-refetch
+      // packages count) keeps climbing. Same fix as 2h's.
+      queryClient.invalidateQueries({
+        queryKey: ['dispatch', 'mobile', 'route-load-brief', routeId, operatorId],
+      });
     },
   });
 }

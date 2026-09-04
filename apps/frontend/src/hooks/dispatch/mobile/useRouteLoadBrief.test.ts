@@ -65,7 +65,10 @@ function buildClient({ routeDriverName, vehicleId = 'veh-1' }: Fixture) {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: { external_vehicle_id: 'RTHK-72' }, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: { external_vehicle_id: 'RTHK-72', capacity_packages: 200 },
+      error: null,
+    }),
   };
 
   // A benign fallback, not a throw, for any call this fixture doesn't name
@@ -124,5 +127,27 @@ describe('useRouteLoadBrief — vehicleAssignment.driverName source (review I1/I
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.vehicleAssignment).toBeNull();
+  });
+});
+
+describe('useRouteLoadBrief — spec-78 additions (vehicleCapacityPackages, orderBoxCounts)', () => {
+  beforeEach(() => mockFrom.mockReset());
+
+  it('carries fleet_vehicles.capacity_packages alongside external_vehicle_id, no second fetch', async () => {
+    buildClient({ routeDriverName: 'Mario González' });
+
+    const { result } = renderHook(() => useRouteLoadBrief('r1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.vehicleCapacityPackages).toBe(200);
+  });
+
+  it('is null when the route has no vehicle_id', async () => {
+    buildClient({ routeDriverName: null, vehicleId: null });
+
+    const { result } = renderHook(() => useRouteLoadBrief('r1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.vehicleCapacityPackages).toBeNull();
   });
 });

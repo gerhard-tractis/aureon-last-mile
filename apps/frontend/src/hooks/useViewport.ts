@@ -9,11 +9,22 @@ const DESKTOP_QUERY = '(min-width: 1024px)';
 // `isBelowLg` reads directly as "show the mobile tree" at the call site,
 // instead of a negation the reader has to flip.
 const BELOW_LG_QUERY = '(max-width: 1023px)';
+// spec-78 (`3a`, the dock tablet) — a phone in landscape has the width for
+// the desktop breakpoint but not the height: 844 × 390 matches
+// `DESKTOP_QUERY` yet is nothing like the 1024 × 768 tablet mounted at the
+// dock. This is the height half of that cut, used alongside `isDesktop`
+// (never alone — see DispatchRouteSurface.tsx) rather than a claim that
+// height alone means "tablet". ~700, not 768, on purpose: a real device's
+// viewport height is shorter than its screen height (browser chrome,
+// on-screen keyboard insets already dismissed), so cutting exactly at 768
+// would reject the very tablet this exists to admit.
+const TABLET_HEIGHT_QUERY = '(min-height: 700px)';
 
 export interface ViewportState {
   isMobile: boolean;
   isDesktop: boolean;
   isBelowLg: boolean;
+  hasTabletHeight: boolean;
 }
 
 // Always the SSR-safe default. `/app/pickup` (and other consumers of this
@@ -31,6 +42,7 @@ const SSR_SAFE_DEFAULT: ViewportState = {
   isMobile: false,
   isDesktop: false,
   isBelowLg: false,
+  hasTabletHeight: false,
 };
 
 export function useViewport(): ViewportState {
@@ -43,6 +55,7 @@ export function useViewport(): ViewportState {
       { mql: window.matchMedia(MOBILE_QUERY), key: 'isMobile' as const },
       { mql: window.matchMedia(DESKTOP_QUERY), key: 'isDesktop' as const },
       { mql: window.matchMedia(BELOW_LG_QUERY), key: 'isBelowLg' as const },
+      { mql: window.matchMedia(TABLET_HEIGHT_QUERY), key: 'hasTabletHeight' as const },
     ];
 
     // Resolve the real values once mounted (client-only, post-hydration).
@@ -52,6 +65,7 @@ export function useViewport(): ViewportState {
       isMobile: entries[0].mql.matches,
       isDesktop: entries[1].mql.matches,
       isBelowLg: entries[2].mql.matches,
+      hasTabletHeight: entries[3].mql.matches,
     });
 
     const cleanup = entries.map(({ mql, key }) => {
