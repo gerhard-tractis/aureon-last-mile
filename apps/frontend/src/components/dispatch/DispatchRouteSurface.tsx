@@ -9,6 +9,7 @@ import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
 import { DispatchRouteScanSession } from './mobile/DispatchRouteScanSession';
+import { DispatchPackagesByStop } from './mobile/DispatchPackagesByStop';
 import { RouteBuilder } from './RouteBuilder';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
@@ -55,6 +56,12 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
   // until Cerrar ruta ships in spec-77) — nothing here regresses the state
   // once scanning starts.
   const [scanning, setScanning] = useState(false);
+  // spec-76 task 4 (2h) — "Ver los N" from 2e swaps to this state instead
+  // of navigating, same mechanism as `scanning`. "Volver al escaneo"
+  // switches it back off; scanning itself stays true underneath so
+  // returning does not lose session history (2h renders OVER 2e's state,
+  // not instead of it).
+  const [viewingPackages, setViewingPackages] = useState(false);
   // Only fetched below `lg` — enabled gates the fetch itself, not just the
   // render, so a desktop session's SETTLED render never triggers this query
   // (see the doc comment above on the one transient exception).
@@ -92,6 +99,18 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
         </div>
       );
     }
+    if (scanning && viewingPackages) {
+      return (
+        <DispatchPackagesByStop
+          routeId={routeId}
+          operatorId={operatorId}
+          routeCode={routeCode(routeId)}
+          ordersCount={loadBrief?.ordersCount ?? 0}
+          stopsCount={loadBrief?.stopsCount ?? 0}
+          onBack={() => setViewingPackages(false)}
+        />
+      );
+    }
     if (scanning) {
       return (
         <DispatchRouteScanSession
@@ -101,6 +120,7 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
           loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
           driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
           vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+          onViewPackages={() => setViewingPackages(true)}
         />
       );
     }

@@ -44,9 +44,27 @@ vi.mock('./mobile/DispatchRouteBeforeScan', () => ({
 
 const scanSessionPropsSpy = vi.fn();
 vi.mock('./mobile/DispatchRouteScanSession', () => ({
-  DispatchRouteScanSession: (props: { routeCode: string }) => {
+  DispatchRouteScanSession: (props: { routeCode: string; onViewPackages: () => void }) => {
     scanSessionPropsSpy(props);
-    return <div data-testid="scan-session-stub">{props.routeCode}</div>;
+    return (
+      <div data-testid="scan-session-stub">
+        {props.routeCode}
+        <button type="button" onClick={props.onViewPackages}>Ver los N (stub)</button>
+      </div>
+    );
+  },
+}));
+
+const packagesByStopPropsSpy = vi.fn();
+vi.mock('./mobile/DispatchPackagesByStop', () => ({
+  DispatchPackagesByStop: (props: { routeCode: string; onBack: () => void }) => {
+    packagesByStopPropsSpy(props);
+    return (
+      <div data-testid="packages-by-stop-stub">
+        {props.routeCode}
+        <button type="button" onClick={props.onBack}>Volver al escaneo (stub)</button>
+      </div>
+    );
   },
 }));
 
@@ -153,6 +171,37 @@ describe('DispatchRouteSurface', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Confirmar \(stub\)/i }));
     expect(refetchLoadBriefMock).toHaveBeenCalled();
+  });
+
+  it('spec-76 task 4 (2h) — "Ver los N" swaps the scan session for the packages-by-stop screen, and back', async () => {
+    mockIsBelowLg = true;
+    mockLoadBriefLoading = false;
+    mockLoadBriefError = false;
+    mockLoadBrief = {
+      loadPositionLabel: 'A3',
+      pendingOnDock: 5,
+      ordersCount: 3,
+      stopsCount: 2,
+      vehicleAssignment: { externalVehicleId: 'JKPT-45', driverName: 'Mario González' },
+      incompleteOrders: [],
+      comunas: [],
+    };
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Empezar a escanear \(stub\)/i }));
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Ver los N \(stub\)/i }));
+    expect(screen.getByTestId('packages-by-stop-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('scan-session-stub')).not.toBeInTheDocument();
+    const props = packagesByStopPropsSpy.mock.calls.at(-1)?.[0];
+    expect(props.routeCode).toBe('ROUTE-12');
+    expect(props.ordersCount).toBe(3);
+    expect(props.stopsCount).toBe(2);
+
+    await userEvent.click(screen.getByRole('button', { name: /Volver al escaneo \(stub\)/i }));
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('packages-by-stop-stub')).not.toBeInTheDocument();
   });
 
   it('spec-76 review M6 — shows a retry, not zeroed counts, when the load brief errors', async () => {

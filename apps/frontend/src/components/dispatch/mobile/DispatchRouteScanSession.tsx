@@ -9,15 +9,19 @@ import { DispatchScanLastRead } from './DispatchScanLastRead';
 import { DispatchScanHistoryList } from './DispatchScanHistoryList';
 import { DispatchScanRejectionSummary } from './DispatchScanRejectionSummary';
 import { DispatchManualCodeSheet } from './DispatchManualCodeSheet';
+import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
 
-// None of 2g (camera fallback), 2h (packages-by-stop) or 2i (close route,
-// spec-77) exist on this branch yet. Same convention DispatchRouteSurface
-// already used for the scan CTA before this task: a disabled button with
-// its reason named, never a live-looking one that silently does nothing on
-// a loading bay.
-const CAMERA_DISABLED_REASON = 'La lectura por cámara llega en la próxima pantalla (2g)';
-const PACKAGE_LIST_DISABLED_REASON = 'La lista de paquetes por parada llega en la próxima pantalla (2h)';
+// 2i (close route, spec-77) does not exist on this branch yet. Same
+// convention DispatchRouteSurface already used for the scan CTA before
+// this task: a disabled button with its reason named, never a live-looking
+// one that silently does nothing on a loading bay.
 const CLOSE_ROUTE_DISABLED_REASON = 'El cierre de ruta es la próxima pantalla — spec-77';
+
+// spec-76 decision 4 — verbatim in spirit: the camera is a fallback, not an
+// equivalent input. Named here, not buried in a tooltip, because a
+// touchscreen has no hover state to reveal a title= attribute.
+const CAMERA_THROUGHPUT_COPY =
+  'La cámara lee de una en una. Con el lector Zebra el ritmo es de tres a cuatro veces mayor: úsala sólo si el handheld no está disponible.';
 
 export interface DispatchRouteScanSessionProps {
   routeId: string;
@@ -26,6 +30,11 @@ export interface DispatchRouteScanSessionProps {
   loadPositionLabel: string | null;
   driverName: string | null;
   vehicleExternalId: string | null;
+  /** spec-76 task 4 — 2h now exists: "Ver los N" hands control to the
+   *  caller (DispatchRouteSurface) instead of navigating, mirroring how
+   *  "Empezar a escanear" already swaps this same page's own state rather
+   *  than pushing a new route. */
+  onViewPackages: () => void;
 }
 
 /**
@@ -44,6 +53,7 @@ export function DispatchRouteScanSession({
   loadPositionLabel,
   driverName,
   vehicleExternalId,
+  onViewPackages,
 }: DispatchRouteScanSessionProps) {
   const router = useRouter();
   // Starts false, deliberately — same rationale as ReceptionMobileSession
@@ -52,6 +62,10 @@ export function DispatchRouteScanSession({
   // here would claim the field is armed before that has actually happened.
   const [readerArmed, setReaderArmed] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
+  // spec-76 task 4 (2g) — which input owns the field right now. Starts on
+  // the reader: the mock and decision 4 both treat the camera as the
+  // fallback, never the default.
+  const [inputMode, setInputMode] = useState<'reader' | 'camera'>('reader');
 
   const {
     submitScan,
@@ -80,7 +94,13 @@ export function DispatchRouteScanSession({
         <header className="flex flex-col gap-1">
           <h1 className="font-mono text-[15px] font-bold text-accent">{routeCode}</h1>
           {metaLine && <p className="text-[12.5px] text-text-secondary">{metaLine}</p>}
-          <DispatchScanReaderStatus armed={readerArmed} />
+          {inputMode === 'reader' ? (
+            <DispatchScanReaderStatus armed={readerArmed} />
+          ) : (
+            <p className="font-mono text-[11px] font-semibold uppercase tracking-[.06em] text-text-secondary">
+              MODO CÁMARA
+            </p>
+          )}
         </header>
 
         <div className="flex items-baseline gap-2" data-testid="dispatch-scan-counter">
@@ -92,19 +112,26 @@ export function DispatchRouteScanSession({
         </div>
 
         <div className="flex flex-col gap-2">
-          {/* Deliberately NOT `disabled={isSubmitting}` — unlike
-              ReceptionMobileSession (spec-62), which gates its field on its
-              own pending scan. Design intent here is explicit: "no per-package
-              confirmation" (spec, Goal). Blocking the field until a network
-              round-trip resolves would BE a confirmation gate, and is exactly
-              what the mock's "ritmo tres a cuatro veces mayor" throughput is
-              measured against. `useRouteScanSession` still applies every
-              result via functional setState ordered by atIso, so out-of-order
-              responses can't lose or misplace a history entry even when two
-              scans overlap in flight — and a repeat of a code still in
-              flight (a double Zebra trigger-pull) is deduped before it ever
-              reaches the network. */}
-          <ScanField ariaLabel="Escanear paquete" onScan={submitScan} onFocusStateChange={setReaderArmed} />
+          {inputMode === 'reader' ? (
+            /* Deliberately NOT `disabled={isSubmitting}` — unlike
+               ReceptionMobileSession (spec-62), which gates its field on its
+               own pending scan. Design intent here is explicit: "no per-package
+               confirmation" (spec, Goal). Blocking the field until a network
+               round-trip resolves would BE a confirmation gate, and is exactly
+               what the mock's "ritmo tres a cuatro veces mayor" throughput is
+               measured against. `useRouteScanSession` still applies every
+               result via functional setState ordered by atIso, so out-of-order
+               responses can't lose or misplace a history entry even when two
+               scans overlap in flight — and a repeat of a code still in
+               flight (a double Zebra trigger-pull) is deduped before it ever
+               reaches the network. */
+            <ScanField ariaLabel="Escanear paquete" onScan={submitScan} onFocusStateChange={setReaderArmed} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] leading-[1.4] text-text-secondary">{CAMERA_THROUGHPUT_COPY}</p>
+              <DispatchRouteCameraViewfinder active={inputMode === 'camera'} onDecode={submitScan} />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setManualOpen(true)}
@@ -129,19 +156,17 @@ export function DispatchRouteScanSession({
         <div className="flex gap-2">
           <button
             type="button"
-            disabled
-            className="flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
+            onClick={() => setInputMode(inputMode === 'reader' ? 'camera' : 'reader')}
+            className="flex min-h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text active:opacity-90"
           >
-            <span>Cámara</span>
-            <span className="text-[10px] font-normal leading-tight">{CAMERA_DISABLED_REASON}</span>
+            {inputMode === 'reader' ? 'Cámara' : 'Volver al lector'}
           </button>
           <button
             type="button"
-            disabled
-            className="flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
+            onClick={onViewPackages}
+            className="flex min-h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text active:opacity-90"
           >
-            <span>Ver los {packagesLoaded}</span>
-            <span className="text-[10px] font-normal leading-tight">{PACKAGE_LIST_DISABLED_REASON}</span>
+            Ver los {packagesLoaded}
           </button>
         </div>
         <button
