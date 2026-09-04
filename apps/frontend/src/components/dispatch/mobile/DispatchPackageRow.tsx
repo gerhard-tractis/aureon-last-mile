@@ -5,27 +5,25 @@ import type { StopPackageRow } from '@/lib/dispatch/mobile/route-packages-by-sto
 
 export interface DispatchPackageRowProps {
   pkg: StopPackageRow;
-  onRemove: (pkg: StopPackageRow) => void;
 }
 
 /**
- * spec-76 2h — one package row: barcode, order, "2 de 3", client, then a
- * "Quitar" control.
+ * spec-76 2h — one package row: barcode, order, "2 de 3", client.
  *
- * Lecciones aplicadas #4 — this is the fourth instance of the nested-
- * interactive shape this module has hit. The fix here is the cheapest one
- * available: a plain `<div>` container (no role, no onClick) with a native
- * `<button>` as a SIBLING, not a descendant of anything interactive — so
- * there is no ARIA "presentational children" trap to fall into (#4) and no
- * need for `stopPropagation` (#6), because the container never listens for
- * clicks in the first place.
+ * No remove control here — escalated during review and decided: `DELETE
+ * .../packages/[pkgId]` (what a "Quitar" here would have to call) removes
+ * the WHOLE order from the route's plan, a planning decision spec-70
+ * deliberately gates to a manager role (`canRemoveFromPlan`), not the
+ * crew scanning at the dock. RouteBuilder (desktop, the manager surface)
+ * already has its own removal control against this same endpoint — this
+ * screen does not duplicate it. See DispatchPackagesByStop.tsx's header
+ * comment for the crew's actual action here (spec-79 H4).
  *
- * `memo`'d per Lecciones aplicadas #8 — a route can carry 148 of these; the
- * `onRemove` identity DispatchPackagesByStop hands down is stabilised with
- * `useCallback` there, so this memo actually prevents re-renders instead of
- * doing nothing (the two go together, or neither is worth it).
+ * `memo`'d per Lecciones aplicadas #8 — a route can carry 148 of these,
+ * and `pkg` is a stable object per render from DispatchPackagesByStop's
+ * `useMemo`'d grouping, so this memo has something to compare against.
  */
-export const DispatchPackageRow = memo(function DispatchPackageRow({ pkg, onRemove }: DispatchPackageRowProps) {
+export const DispatchPackageRow = memo(function DispatchPackageRow({ pkg }: DispatchPackageRowProps) {
   const metaParts = [pkg.orderNumber, pkg.packageNumber, pkg.clientName].filter(
     (v): v is string => !!v,
   );
@@ -44,13 +42,6 @@ export const DispatchPackageRow = memo(function DispatchPackageRow({ pkg, onRemo
           </span>
         )}
       </div>
-      <button
-        type="button"
-        onClick={() => onRemove(pkg)}
-        className="min-h-[44px] min-w-[44px] shrink-0 rounded-[8px] border border-border px-3 text-[12.5px] font-medium text-text-secondary active:opacity-90"
-      >
-        Quitar
-      </button>
     </div>
   );
 });

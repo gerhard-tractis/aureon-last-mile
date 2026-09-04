@@ -1,18 +1,15 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRoutePackagesByStop } from '@/hooks/dispatch/mobile/useRoutePackagesByStop';
-import { useRemovePackageFromRoute } from '@/hooks/dispatch/mobile/useRemovePackageFromRoute';
 import {
   groupPackagesByStop,
   groupPackagesByHour,
   findIncompleteFilterState,
   filterStopGroupsToIncomplete,
   filterHourGroupsToIncomplete,
-  type StopPackageRow,
 } from '@/lib/dispatch/mobile/route-packages-by-stop';
 import { DispatchPackageGroupList, type PackageGroupSection } from './DispatchPackageGroupList';
-import { DispatchRemovePackageSheet } from './DispatchRemovePackageSheet';
 
 export interface DispatchPackagesByStopProps {
   routeId: string;
@@ -51,6 +48,32 @@ function toHourSections(groups: ReturnType<typeof groupPackagesByHour>): Package
  * from 2e's "Ver los N" (DispatchRouteSurface swaps its own state, same
  * mechanism "Empezar a escanear" already uses); "Volver al escaneo"
  * (`onBack`) returns there.
+ *
+ * NO "Quitar" here — escalated during review and settled: `DELETE
+ * .../packages/[pkgId]` removes the WHOLE order from the route's plan
+ * (verified against the endpoint, not assumed), which is a planning
+ * decision spec-70 deliberately gates to a manager role
+ * (`canRemoveFromPlan`), correctly so — a role gate on the loading floor
+ * would make "block the truck" or "load it anyway" more attractive than
+ * finding a supervisor, which is backwards for THAT action, but removing
+ * a whole stop from the plan is not that action. RouteBuilder (desktop,
+ * the manager surface) already owns this control against the same
+ * endpoint; it is not duplicated here, and `canRemoveFromPlan` does not
+ * gain a crew role.
+ *
+ * The crew's real, distinct need — "this box isn't going, and why" for a
+ * package that stays on the dock, no plan change involved — is the
+ * reason-code pattern (Infor WMS's short-shipment reason code; Oracle's
+ * dock hold "remedied or overridden"), and it is already scoped as
+ * spec-79 H4 (persisting scan rejections). That is where it lands, not
+ * here.
+ *
+ * `orders.status`/`orders.leading_status` (recalculate_order_status,
+ * trigger-derived from MIN/MAX(pipeline_position)) already give
+ * "partially dispatched" for free as `status !== leading_status` — no
+ * order-level status is invented in this screen's NO EMBARCADO handling,
+ * and none should be added anywhere else: a second writer would race that
+ * trigger, which is exactly what the migration's own header warns against.
  */
 export function DispatchPackagesByStop({
   routeId,
@@ -62,7 +85,6 @@ export function DispatchPackagesByStop({
 }: DispatchPackagesByStopProps) {
   const [mode, setMode] = useState<GroupMode>('parada');
   const [incompleteOnly, setIncompleteOnly] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<StopPackageRow | null>(null);
 
   const { data, isLoading, isError, refetch } = useRoutePackagesByStop(routeId, operatorId);
   // Stable empty-array identity so downstream useMemo hooks below do not
@@ -70,8 +92,6 @@ export function DispatchPackagesByStop({
   // loading/erroring — `?? []` alone allocates a fresh array each time.
   const dispatches = useMemo(() => data?.dispatches ?? [], [data]);
   const packages = useMemo(() => data?.packages ?? [], [data]);
-
-  const removeMutation = useRemovePackageFromRoute(operatorId);
 
   const packagesByOrder = useMemo(() => {
     const map = new Map<string, { order_id: string; status: string; loaded_at: string | null }[]>();
@@ -100,26 +120,6 @@ export function DispatchPackagesByStop({
     if (incompleteOnly) groups = filterHourGroupsToIncomplete(groups, incompleteOrderIds);
     return toHourSections(groups);
   }, [mode, dispatches, packages, incompleteOnly, incompleteOrderIds]);
-
-  // Lecciones aplicadas #8 — stable identity (deps: [], `setRemoveTarget`
-  // is itself stable) so DispatchPackageRow's memo actually skips
-  // re-rendering the ~148 rows this screen can hold. Deliberately does NOT
-  // depend on `removeMutation` — that object is not reference-stable
-  // across renders (same reasoning useRouteScanSession.ts's header gives
-  // for not wrapping `submitScan` in useCallback), and pulling it in here
-  // would undo the memo on every mutation state change.
-  const handleRemove = useCallback((pkg: StopPackageRow) => setRemoveTarget(pkg), []);
-
-  const handleConfirmRemove = useCallback(
-    (reason: string) => {
-      if (!removeTarget) return;
-      removeMutation.mutate(
-        { routeId, dispatchId: removeTarget.dispatchId, reason },
-        { onSuccess: () => setRemoveTarget(null) },
-      );
-    },
-    [removeMutation, removeTarget, routeId],
-  );
 
   if (isLoading) {
     return (
@@ -191,25 +191,9 @@ export function DispatchPackagesByStop({
       <div className="flex flex-col gap-4 p-4 pt-0">
         <DispatchPackageGroupList
           sections={sections}
-          onRemove={handleRemove}
           emptyMessage={incompleteOnly ? 'No hay órdenes incompletas.' : 'No hay paquetes en esta ruta.'}
         />
       </div>
-
-      <DispatchRemovePackageSheet
-        target={removeTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRemoveTarget(null);
-            // Clears any error from this attempt so it does not bleed into
-            // the next package the crew tries to remove.
-            removeMutation.reset();
-          }
-        }}
-        onConfirm={handleConfirmRemove}
-        isPending={removeMutation.isPending}
-        errorMessage={(removeMutation.error as { message: string } | null)?.message ?? null}
-      />
     </div>
   );
 }

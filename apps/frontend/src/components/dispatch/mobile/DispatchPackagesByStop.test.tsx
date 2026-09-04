@@ -9,13 +9,6 @@ vi.mock('@/hooks/dispatch/mobile/useRoutePackagesByStop', () => ({
   useRoutePackagesByStop: (...args: unknown[]) => mockUseRoutePackagesByStop(...args),
 }));
 
-const mutateMock = vi.fn();
-const resetMock = vi.fn();
-let mutationState: { isPending: boolean; error: unknown };
-vi.mock('@/hooks/dispatch/mobile/useRemovePackageFromRoute', () => ({
-  useRemovePackageFromRoute: () => ({ mutate: mutateMock, reset: resetMock, isPending: mutationState.isPending, error: mutationState.error }),
-}));
-
 const dispatches: RawDispatchRow[] = [
   { dispatch_id: 'd1', order_id: 'o1', order_number: 'ORD-1', contact_address: 'Los Aromos 442', client_name: 'Javiera Muñoz' },
   { dispatch_id: 'd2', order_id: 'o2', order_number: 'ORD-2', contact_address: 'Av. Kennedy 5001', client_name: 'Pedro Salas' },
@@ -44,9 +37,6 @@ function renderScreen(overrides: Partial<Parameters<typeof DispatchPackagesBySto
 
 describe('DispatchPackagesByStop', () => {
   beforeEach(() => {
-    mutateMock.mockReset();
-    resetMock.mockReset();
-    mutationState = { isPending: false, error: null };
     mockUseRoutePackagesByStop.mockReturnValue({
       data: { dispatches, packages },
       isLoading: false,
@@ -99,18 +89,9 @@ describe('DispatchPackagesByStop', () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it('spec-76 2h #19 — removing a row opens the confirm sheet and submits through the mutation', async () => {
-    const user = userEvent.setup();
+  it('spec-76 review — no "Quitar" control on the crew path (manager-only via RouteBuilder; spec-79 H4 owns the crew action)', () => {
     renderScreen();
-    const rows = screen.getAllByRole('button', { name: /quitar/i });
-    await user.click(rows[0]);
-    expect(screen.getByRole('heading', { name: /quitar pedido/i })).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Motivo para quitar el pedido'), 'Dañado en tránsito');
-    await user.click(screen.getByRole('button', { name: /^quitar pedido$/i }));
-    expect(mutateMock).toHaveBeenCalledWith(
-      expect.objectContaining({ routeId: 'r1', reason: 'Dañado en tránsito' }),
-      expect.anything(),
-    );
+    expect(screen.queryByRole('button', { name: /quitar/i })).not.toBeInTheDocument();
   });
 
   it('shows a loading state', () => {

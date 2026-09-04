@@ -18,7 +18,6 @@ export interface PackageGroupSection {
 
 export interface DispatchPackageGroupListProps {
   sections: PackageGroupSection[];
-  onRemove: (pkg: StopPackageRow) => void;
   emptyMessage: string;
 }
 
@@ -28,8 +27,12 @@ export interface DispatchPackageGroupListProps {
  * HourGroup[] into the same `PackageGroupSection[]` shape before handing
  * it here, so this component does not know or care which grouping
  * produced it.
+ *
+ * No removal control passed through — see DispatchPackageRow.tsx's header
+ * comment: removing a package removes its whole order from the plan, a
+ * manager-only action (spec-70), not the crew's.
  */
-export function DispatchPackageGroupList({ sections, onRemove, emptyMessage }: DispatchPackageGroupListProps) {
+export function DispatchPackageGroupList({ sections, emptyMessage }: DispatchPackageGroupListProps) {
   if (sections.length === 0) {
     return <p className="p-4 text-center text-[13px] text-text-secondary">{emptyMessage}</p>;
   }
@@ -49,7 +52,7 @@ export function DispatchPackageGroupList({ sections, onRemove, emptyMessage }: D
           </header>
           <div className="flex flex-col gap-1.5">
             {section.packages.map((pkg) => (
-              <DispatchPackageRow key={pkg.packageId} pkg={pkg} onRemove={onRemove} />
+              <DispatchPackageRow key={pkg.packageId} pkg={pkg} />
             ))}
           </div>
         </section>
