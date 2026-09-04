@@ -31,14 +31,13 @@ describe('DispatchModuleHeader', () => {
     expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
   });
 
-  it('renders all 4 tabs in order with their labels', () => {
+  it('renders 3 tabs in order with their labels — "Completadas" merged into "En ruta" (decision 5)', () => {
     renderHeader();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(4);
+    expect(tabs).toHaveLength(3);
     expect(tabs[0]).toHaveTextContent('Pre-ruta');
     expect(tabs[1]).toHaveTextContent('En carga');
     expect(tabs[2]).toHaveTextContent('En ruta');
-    expect(tabs[3]).toHaveTextContent('Completadas');
   });
 
   it('shows counts next to each tab label as part of its accessible name, wired to real data', () => {
@@ -46,11 +45,6 @@ describe('DispatchModuleHeader', () => {
     expect(screen.getByRole('tab', { name: 'Pre-ruta 204' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'En carga 5' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'En ruta 12' })).toBeInTheDocument();
-  });
-
-  it('renders Completadas without a count', () => {
-    renderHeader();
-    expect(screen.getByRole('tab', { name: 'Completadas' })).toBeInTheDocument();
   });
 
   it('omits a tab count when the source data is undefined rather than inventing one', () => {
@@ -68,8 +62,8 @@ describe('DispatchModuleHeader', () => {
   it('calls the ambient Tabs onValueChange when a tab is clicked', async () => {
     const user = userEvent.setup();
     const { onTabChange } = renderHeader();
-    await user.click(screen.getByRole('tab', { name: /Completadas/ }));
-    expect(onTabChange).toHaveBeenCalledWith('completed');
+    await user.click(screen.getByRole('tab', { name: /En ruta/ }));
+    expect(onTabChange).toHaveBeenCalledWith('in_progress');
   });
 
   it('shows the SIN RUTEAR counter in monospace — a spec requirement, not incidental styling', () => {

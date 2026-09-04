@@ -127,9 +127,15 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre. Hecho en `RouteTrackingView.test.tsx`.
 14. Test: último cargado, lista de paquetes, y ocupación del vehículo. Hecho — **sin** las filas de rechazo: decisión 12 es explícita en que hoy no hay de dónde sacarlas (`dock_scans` sólo persiste `scan_result: 'accepted'`); se difieren a spec-79 H4, con comentario en `RouteTrackingScanList.tsx` nombrándolo.
 
-### Fase 5 — `1d` En ruta `[pending]`
+### Fase 5 — `1d` En ruta `[done]`
 15. Test: métricas de cabecera (entregadas, pendientes, fallidas, OTIF) y el sello `DT SINCRONIZADO`.
-16. Test: orden por incidencia; *Completadas* como filtro de la misma tabla.
+
+    **Corregido al implementar — dos figuras del mock no tienen fuente y no se construyeron:**
+    - `cierre estimado del día 19:40` — proyección del optimizador OR-Tools, sin cableado de frontend (misma razón que decisión 10).
+    - `DT SINCRONIZADO · 12 s` — `dispatchtrack-route-poll` actualiza filas en su lugar y solo escribe a stdout; ninguna tabla guarda cuándo corrió por última vez. No hay de dónde leerlo.
+
+    `ENTREGADAS`/`PENDIENTES`/`FALLIDAS` sí salen de `dispatches.status` real. `OTIF DEL DÍA` se computa on-time-in-full sobre `dispatches.completed_at`/`estimated_at` (columna que el propio schema documenta "Used for OTIF calculation") y se omite (no un 0 ni un guion bajo una etiqueta) cuando el denominador es cero. `ÚLTIMO EVENTO` sale de `MAX(dispatches.updated_at)` por ruta — no de `routes.updated_at`, que un despacho ajeno puede mover (spec-76, lección de proxy).
+16. Test: orden por incidencia (`compareEnRutaIncidence`: más fallidas primero, empate roto por el evento más antiguo); *Completadas hoy* como sección filtrada al pie de la misma tabla — la pestaña "Completadas" del header se retiró (decisión 5: "una tabla con un filtro, no dos tablas" incluye no dos tabs).
 
 ### Fase 6 — Cierre `[pending]`
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.

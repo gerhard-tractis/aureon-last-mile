@@ -42,8 +42,8 @@ vi.mock('./pre-route/PreRouteBoard', () => ({
   PreRouteBoard: () => null,
 }));
 
-vi.mock('./DispatchInProgressTab', () => ({
-  DispatchInProgressTab: () => null,
+vi.mock('./DispatchEnRutaTab', () => ({
+  DispatchEnRutaTab: () => null,
 }));
 
 const usePreRouteSnapshotMock = vi.fn(() => ({

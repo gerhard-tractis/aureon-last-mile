@@ -37,6 +37,12 @@ function TabCount({ value }: { value: number | undefined }) {
  * one header component so the tab contents can move out into their own
  * files without page.tsx growing a second header.
  *
+ * spec-75 phase 5 (decision 5) dropped the tab count back to 3: "Completadas"
+ * is no longer a separate tab with its own tree — it is a filtered section
+ * at the foot of the "En ruta" table (`DispatchEnRutaTab`), "una tabla con
+ * un filtro, no dos tablas". The `in_progress` tab id/URL value is unchanged
+ * even though its label and contents now cover both cohorts.
+ *
  * No breadcrumb here: TopBar (mounted by AppLayout above every /app/*
  * route, including this one) already renders "Operación / Despacho" via
  * sidebar/navigation.ts. A second one here would duplicate it — see the
@@ -76,7 +82,6 @@ export function DispatchModuleHeader({
         <TabsTrigger value="in_progress">
           En ruta <TabCount value={enRutaCount} />
         </TabsTrigger>
-        <TabsTrigger value="completed">Completadas</TabsTrigger>
       </TabsList>
 
       <div className="ml-auto flex items-center gap-3">
