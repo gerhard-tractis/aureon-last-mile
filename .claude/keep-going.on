@@ -1,0 +1,3 @@
+# Arms .claude/hooks/keep-going.sh in this worktree.
+# Committed on purpose: every worktree, present and future, inherits it.
+# Delete this file locally to opt a single worktree out.

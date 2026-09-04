@@ -3,6 +3,7 @@
 > **Related:** [spec-79](spec-79-dispatch-handoff-integrity.md) (**arregla H2 y H3; prerrequisito de `2k` y `2l`**), [spec-76](spec-76-despacho-movil-carga.md) (el bucle de carga que precede a estas pantallas), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta)
 
 **Status:** backlog
+**Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
 
@@ -66,7 +67,7 @@ Van en su propio spec y su propio PR precisamente porque son irreversibles: mezc
 
 8. **`2l` no dice «sincronizado» si no lo está.** A diferencia de Recogida, aquí sí hay red y el despacho es sincrónico: el acta se muestra **después** de la respuesta de DispatchTrack, así que puede afirmar que la ruta quedó registrada. Si el envío fue aceptado pero la confirmación se perdió, el estado es `2k` con reintento, no un acta optimista.
 
-## Fase 0 — Verificación previa: hecha
+## Fase 0 — Verificación previa: hecha `[done]`
 
 Se leyó `api/dispatch/routes/[id]/dispatch/route.ts`. Resultado: **el copy es correcto para el caso común y falso para un caso de borde real.** Tres hallazgos, todos con consecuencia sobre el diseño:
 
@@ -100,10 +101,10 @@ Esto **contradice directamente el copy de `2l`**, que afirma que «los 24 paquet
 
 H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son defectos de servidor, no de diseño**, y no se resuelven en este spec — dibujar `2k` y `2l` sobre ellos sería escribir en pantalla dos afirmaciones que el backend no sostiene. Las opciones son las mismas para los dos: corregir el backend en su propio spec, o cambiar el copy para describir lo que realmente pasa. **Decidido: se corrige el backend**, en [spec-79](spec-79-dispatch-handoff-integrity.md). El copy honesto de H3 sería «algunos paquetes del andén pueden quedar marcados como en ruta», que no es algo que se le pueda pedir a una cuadrilla que interprete. `2k` y `2l` se implementan **después** de spec-79 y con el copy tal como está diseñado.
 
-### Fase 0 (resto)
+### Fase 0 (resto) `[pending]`
 1. Confirmar si el endpoint expone número de intentos para el `intento 1 de 3` de `2k` — hoy no lo hace: el contador tendría que ser de cliente, y hay que decidir si eso es aceptable.
 
-### Fase 1 — `2i` Cerrar
+### Fase 1 — `2i` Cerrar `[pending]`
 3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo.
 4. Test: las tres consecuencias aparecen (decisión 2).
 5. Test: *Seguir escaneando* es primaria; el botón de cerrar nombra la cifra exacta.
@@ -111,23 +112,23 @@ H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son def
 7. Test: nota por fila se persiste; su ausencia no bloquea el cierre (decisión 4).
 8. Test: al cerrar, los cargados pasan a `listo_para_despacho` y la ruta a `loaded`.
 
-### Fase 2 — `2j` Despachar
+### Fase 2 — `2j` Despachar `[pending]`
 9. Test: la revisión muestra camión, conductor, fecha, paradas · paquetes.
 10. Test: sin camión asignado → no se puede despachar y se dice por qué (DispatchTrack exige el identificador).
 11. Test: el bloque *Qué pasa al despachar* enumera los cuatro efectos.
 12. Test: doble toque no envía dos veces.
 
-### Fase 3 — `2k` Error
+### Fase 3 — `2k` Error `[blocked]`
 13. Test: fallo → estado de error que nombra qué no cambió; la ruta sigue `loaded` y los paquetes en `listo_para_despacho`.
 14. Test: contador de intentos; al tercero, el copy deriva al jefe de turno.
 15. Test: checklist *Antes de reintentar* separa verificado de advertencia.
 
-### Fase 4 — `2l` Acta
+### Fase 4 — `2l` Acta `[blocked]`
 16. Test: acta con el id de DispatchTrack, las 4 cifras y lo que queda en el andén.
 17. Test: ofrece la siguiente carga concreta si existe; si no, no inventa una.
 18. Test: la ruta queda `dispatched` y los paquetes en `en_ruta`.
 
-### Fase 5 — Cierre y E2E
+### Fase 5 — Cierre y E2E `[pending]`
 
 El E2E de Despacho se concentra en `spec-76` y aquí (decisión del usuario). Este spec es el objetivo de mayor valor de los cuatro: es la única acción irreversible del módulo, y un fallo suyo manda un camión a la calle con una ruta mal despachada.
 
