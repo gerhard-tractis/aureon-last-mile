@@ -28,6 +28,16 @@ export function useScanPackage(routeId: string, operatorId: string | null = null
       // changes underneath us. Without this the header badge still reads
       // "Borrador" through an entire load.
       queryClient.invalidateQueries({ queryKey: dispatchRouteKey(routeId, operatorId) });
+      // spec-76 review I5 — `useRoutePackagesByStop` (2h) keys its query
+      // under a DIFFERENT prefix (`['dispatch','mobile',
+      // 'route-packages-by-stop', routeId, operatorId]`) with its own
+      // 10s `staleTime`. Without this, invalidating only the
+      // `['dispatch','packages',...]` prefix above left 2h showing the
+      // pre-scan manifest for up to 10s after a scan that had already
+      // moved 2e's own counter — "Ver los 148" opened to a stale "147".
+      queryClient.invalidateQueries({
+        queryKey: ['dispatch', 'mobile', 'route-packages-by-stop', routeId, operatorId],
+      });
     },
   });
 }

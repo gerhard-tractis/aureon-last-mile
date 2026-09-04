@@ -9,6 +9,7 @@ import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { DispatchRouteBeforeScan } from './mobile/DispatchRouteBeforeScan';
 import { DispatchVehicleAssignmentSheet } from './mobile/DispatchVehicleAssignmentSheet';
 import { DispatchRouteScanSession } from './mobile/DispatchRouteScanSession';
+import { DispatchPackagesByStop } from './mobile/DispatchPackagesByStop';
 import { RouteBuilder } from './RouteBuilder';
 import type { FleetVehicle } from '@/lib/dispatch/types';
 
@@ -55,6 +56,31 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
   // until Cerrar ruta ships in spec-77) — nothing here regresses the state
   // once scanning starts.
   const [scanning, setScanning] = useState(false);
+  // spec-76 task 4 (2h) — "Ver los N" from 2e swaps to this state instead
+  // of navigating, same mechanism as `scanning`.
+  //
+  // spec-76 review C1 — this used to be an `if (scanning && viewingPackages)
+  // return <DispatchPackagesByStop/>` / `if (scanning) return
+  // <DispatchRouteScanSession/>` PAIR of mutually exclusive branches, so
+  // opening 2h genuinely UNMOUNTED DispatchRouteScanSession.
+  // `useRouteScanSession`'s `history`/`rejectionCount`/`rejectionTally`
+  // live in `useState` inside that hook — that hook's own header says
+  // outright that a rejection lives nowhere else ("this tab's own memory
+  // only") — so one tap on "Ver los 148" and back wiped the crew's only
+  // record of which boxes were refused. The counter alone survived
+  // because it is react-query state, not local to the unmounted
+  // component, which is what made this easy to miss.
+  //
+  // Fixed by keeping `DispatchRouteScanSession` mounted for the whole time
+  // `scanning` is true, toggling the NATIVE `hidden` attribute (not a CSS
+  // class) instead of conditionally rendering it: `hidden` forces
+  // `display: none`, which the browser also treats as un-focusable — the
+  // mounted `ScanField`/camera underneath cannot silently swallow a real
+  // gun scan while 2h is showing, the way a merely off-screen (opacity/
+  // transform) field could. `DispatchPackagesByStop` still mounts/unmounts
+  // normally on top of it — its own state has nothing that needs to
+  // survive being closed.
+  const [viewingPackages, setViewingPackages] = useState(false);
   // Only fetched below `lg` — enabled gates the fetch itself, not just the
   // render, so a desktop session's SETTLED render never triggers this query
   // (see the doc comment above on the one transient exception).
@@ -94,14 +120,29 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
     }
     if (scanning) {
       return (
-        <DispatchRouteScanSession
-          routeId={routeId}
-          operatorId={operatorId}
-          routeCode={routeCode(routeId)}
-          loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
-          driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
-          vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
-        />
+        <>
+          <div hidden={viewingPackages}>
+            <DispatchRouteScanSession
+              routeId={routeId}
+              operatorId={operatorId}
+              routeCode={routeCode(routeId)}
+              loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
+              driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
+              vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+              onViewPackages={() => setViewingPackages(true)}
+            />
+          </div>
+          {viewingPackages && (
+            <DispatchPackagesByStop
+              routeId={routeId}
+              operatorId={operatorId}
+              routeCode={routeCode(routeId)}
+              ordersCount={loadBrief?.ordersCount ?? 0}
+              stopsCount={loadBrief?.stopsCount ?? 0}
+              onBack={() => setViewingPackages(false)}
+            />
+          )}
+        </>
       );
     }
     return (

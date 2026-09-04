@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -43,10 +44,51 @@ vi.mock('./mobile/DispatchRouteBeforeScan', () => ({
 }));
 
 const scanSessionPropsSpy = vi.fn();
+const scanSessionMountSpy = vi.fn();
+const scanSessionUnmountSpy = vi.fn();
 vi.mock('./mobile/DispatchRouteScanSession', () => ({
-  DispatchRouteScanSession: (props: { routeCode: string }) => {
+  // spec-76 review C1 — this stub owns REAL internal state ("history") and
+  // reports its own mount/unmount lifecycle, so the regression test below
+  // can prove the fix structurally: the component is never removed from
+  // the tree (mount called once, unmount never called) across a "Ver los
+  // N" -> "Volver al escaneo" round trip, which is what keeps its (and the
+  // real component's `useRouteScanSession`) internal state alive. A prop
+  // spy alone cannot show this — DispatchRouteScanSession's real state
+  // lives in a hook `DispatchRouteSurface` never touches.
+  DispatchRouteScanSession: (props: { routeCode: string; onViewPackages: () => void }) => {
     scanSessionPropsSpy(props);
-    return <div data-testid="scan-session-stub">{props.routeCode}</div>;
+    const [history, setHistory] = useState<string[]>([]);
+    useEffect(() => {
+      scanSessionMountSpy();
+      return () => scanSessionUnmountSpy();
+    }, []);
+    return (
+      <div data-testid="scan-session-stub">
+        {props.routeCode}
+        <button type="button" onClick={props.onViewPackages}>Ver los N (stub)</button>
+        <button type="button" onClick={() => setHistory((h) => [...h, `scan-${h.length + 1}`])}>
+          Simular escaneo (stub)
+        </button>
+        <ul data-testid="scan-session-history">
+          {history.map((h) => (
+            <li key={h}>{h}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  },
+}));
+
+const packagesByStopPropsSpy = vi.fn();
+vi.mock('./mobile/DispatchPackagesByStop', () => ({
+  DispatchPackagesByStop: (props: { routeCode: string; onBack: () => void }) => {
+    packagesByStopPropsSpy(props);
+    return (
+      <div data-testid="packages-by-stop-stub">
+        {props.routeCode}
+        <button type="button" onClick={props.onBack}>Volver al escaneo (stub)</button>
+      </div>
+    );
   },
 }));
 
@@ -153,6 +195,75 @@ describe('DispatchRouteSurface', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Confirmar \(stub\)/i }));
     expect(refetchLoadBriefMock).toHaveBeenCalled();
+  });
+
+  it('spec-76 task 4 (2h) — "Ver los N" shows the packages-by-stop screen over the (hidden, not unmounted) scan session, and back', async () => {
+    mockIsBelowLg = true;
+    mockLoadBriefLoading = false;
+    mockLoadBriefError = false;
+    mockLoadBrief = {
+      loadPositionLabel: 'A3',
+      pendingOnDock: 5,
+      ordersCount: 3,
+      stopsCount: 2,
+      vehicleAssignment: { externalVehicleId: 'JKPT-45', driverName: 'Mario González' },
+      incompleteOrders: [],
+      comunas: [],
+    };
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Empezar a escanear \(stub\)/i }));
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-session-stub').closest('[hidden]')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /Ver los N \(stub\)/i }));
+    expect(screen.getByTestId('packages-by-stop-stub')).toBeInTheDocument();
+    // spec-76 review C1 — still IN the DOM (not unmounted), just hidden.
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-session-stub').closest('[hidden]')).not.toBeNull();
+    const props = packagesByStopPropsSpy.mock.calls.at(-1)?.[0];
+    expect(props.routeCode).toBe('ROUTE-12');
+    expect(props.ordersCount).toBe(3);
+    expect(props.stopsCount).toBe(2);
+
+    await userEvent.click(screen.getByRole('button', { name: /Volver al escaneo \(stub\)/i }));
+    expect(screen.getByTestId('scan-session-stub')).toBeInTheDocument();
+    expect(screen.getByTestId('scan-session-stub').closest('[hidden]')).toBeNull();
+    expect(screen.queryByTestId('packages-by-stop-stub')).not.toBeInTheDocument();
+  });
+
+  it('spec-76 review C1 — scan session history survives opening and closing 2h (the component is never unmounted)', async () => {
+    mockIsBelowLg = true;
+    mockLoadBriefLoading = false;
+    mockLoadBriefError = false;
+    mockLoadBrief = {
+      loadPositionLabel: 'A3',
+      pendingOnDock: 5,
+      ordersCount: 3,
+      stopsCount: 2,
+      vehicleAssignment: { externalVehicleId: 'JKPT-45', driverName: 'Mario González' },
+      incompleteOrders: [],
+      comunas: [],
+    };
+    scanSessionMountSpy.mockClear();
+    scanSessionUnmountSpy.mockClear();
+    render(<DispatchRouteSurface routeId="route-12345678" operatorId="op-1" vehicles={vehicles} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Empezar a escanear \(stub\)/i }));
+    expect(scanSessionMountSpy).toHaveBeenCalledTimes(1);
+
+    // Simulate a scan landing in the session's own history before 2h opens.
+    await userEvent.click(screen.getByRole('button', { name: /Simular escaneo \(stub\)/i }));
+    expect(screen.getByTestId('scan-session-history')).toHaveTextContent('scan-1');
+
+    await userEvent.click(screen.getByRole('button', { name: /Ver los N \(stub\)/i }));
+    await userEvent.click(screen.getByRole('button', { name: /Volver al escaneo \(stub\)/i }));
+
+    // Never remounted, so the history a real DispatchRouteScanSession would
+    // hold in useRouteScanSession's useState survives the round trip.
+    expect(scanSessionMountSpy).toHaveBeenCalledTimes(1);
+    expect(scanSessionUnmountSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('scan-session-history')).toHaveTextContent('scan-1');
   });
 
   it('spec-76 review M6 — shows a retry, not zeroed counts, when the load brief errors', async () => {

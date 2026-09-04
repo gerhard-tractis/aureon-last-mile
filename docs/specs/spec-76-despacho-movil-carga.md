@@ -122,7 +122,7 @@ Test primero, en rojo, luego implementación. Cobertura sobre 70 %.
 
 ### Fase 6 — `2h` Paquetes `[in_progress]`
 18. Test: agrupado por parada con su conteo; filtro *Incompletas*.
-19. Test: quitar una fila devuelve el paquete a `asignado` y registra autor y hora (decisión 7).
+19. ~~Test: quitar una fila devuelve el paquete a `asignado` y registra autor y hora (decisión 7).~~ **Tachado en la tarea 4** — no hay control de *Quitar* en `2h`. Ver `### Añadido tras la tarea 4 de spec-76` al final del documento: la remoción es una acción de planificación de un solo responsable (`canRemoveFromPlan`), no de la cuadrilla que escanea, y no vuelve a `asignado`.
 20. Test: paquete `NO EMBARCADO` retenido en consolidación se marca en su parada.
 
 ### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario) `[pending]`
@@ -254,3 +254,21 @@ Dos argumentos lo sustentan:
 **`ALREADY_IN_ROUTE` ahora devuelve `conflictingRouteId`** (`scan-validator.ts`, `types.ts`, `route.ts`, `useScanPackage.ts`) — antes el endpoint no exponía qué ruta ya tenía el paquete, y decisión 5 pide nombrarla y ofrecer verla. Cambio aditivo (campo opcional), sin migración.
 
 El "dock_scans hardcodeado a `scan_result: 'accepted'`" citado en el encargo de esta tarea describe `POST /api/dispatch/load-positions/scan` (el escaneo de posición), no `POST /api/dispatch/routes/[id]/scan` (el que usan `2e`/`2f`) — este último no escribe en `dock_scans` en ningún caso, aceptado o rechazado. La conclusión que importa para `2e`/`2f` sigue siendo verdadera: un rechazo no se persiste en ningún lado, así que el historial de `2f` es memoria de esta pestaña, no una fuente de verdad.
+
+### Añadido tras la tarea 4 de `spec-76` (`2g`/`2h`)
+
+**Decisión 7 — corregida. `2h` no tiene control de *Quitar*.** La decisión original («Quitar un paquete lo devuelve al andén... la fila de quitar existe en la lista agrupada») y la tabla de *Scope* («`2h`... con quitar por fila») describían una acción que la cuadrilla no puede tener, verificado contra el endpoint real (`DELETE /api/dispatch/routes/[id]/packages/[pkgId]`, spec-70) en vez de asumido. Tres hallazgos, escalados durante la tarea 4:
+
+1. **Granularidad de orden completa, no de paquete.** `[pkgId]` es en realidad un `dispatches.id` pese al nombre del segmento de ruta — el endpoint quita TODA la orden (todos sus bultos) de la ruta, no el único paquete que la fila representa. No existe ningún endpoint de remoción por paquete individual en este repo.
+2. **El estado resultante es `sectorizado`, no `asignado`.** Verificado contra el propio test del endpoint (*"resets the package to sectorizado, not asignado"*) y un comentario ya existente en el repo ("breakage #9 — nada escribe `asignado` nunca más"). Sigue dentro de `DISPATCHABLE_STATUSES`, así que la única parte de la decisión 7 que sobrevive es que el paquete puede volver a escanearse.
+3. **`canRemoveFromPlan` — solo un responsable.** El endpoint está deliberadamente restringido por spec-70 a `ops_leader`/`operations_manager`/`admin`/`super_admin` («quitar es una acción de un responsable, no del lector — la persona que carga no puede ser quien reduce el plan»). Nada en este módulo de cuadrilla autentica a la cuadrilla con uno de esos roles.
+
+**Decisión, tras investigar el patrón de la industria:** el rol restringido de spec-70 es correcto — sigue siéndolo — para esta acción, precisamente porque es una decisión de planificación (quita una orden entera del plan), no una decisión de "este bulto no sube". Infor WMS exige un código de motivo para un envío corto y no dice nada sobre restringir quién puede reportarlo; el modelo de andén de Oracle retiene una carga hasta que las discrepancias son *"remedied or overridden"* — el patrón de la industria para "la cuadrilla no puede cargar este bulto" es **trazabilidad, no autorización**: un gate de rol en el piso de carga hace que "bloquear el camión" o "cargarlo igual" sean más atractivos que buscar a un responsable, lo que invierte la intención del control. Pero eso no aplica aquí: la acción que `2h` ofrecía es "quitar la orden entera del plan", y esa sí es una decisión de planificación — spec-70 tenía razón sobre ESA acción. Las dos specs tenían razón sobre acciones distintas; spec-76 le pidió a un solo control que hiciera los dos trabajos.
+
+**Resuelto:** *Quitar* se elimina del camino de la cuadrilla en `2h` — no se muestra deshabilitado (un botón deshabilitado en un andén invita a tocarlo repetidamente). `canRemoveFromPlan` no gana un rol de cuadrilla. `RouteBuilder` (escritorio, la superficie de un responsable) ya tiene su propio control de remoción contra el mismo endpoint (`handleRemove`, con `window.prompt` para el motivo) — no se duplica.
+
+**La necesidad real de la cuadrilla — "este bulto no sube, y por qué" — es el patrón de código de motivo, y ya está en el alcance de `spec-79` H4** (persistir los rechazos de escaneo). No se construye acá. `DispatchPackagesByStop.tsx` deja un comentario nombrando H4 como el destino de esta acción para que el próximo agente no vuelva a derivar esta misma conclusión.
+
+**Test #19 de la Fase 6 — tachado explícitamente.** *"quitar una fila devuelve el paquete a `asignado` y registra autor y hora"* es ahora imposible de satisfacer (no hay control que probar, y el estado real nunca fue `asignado`) — no es un test faltante, es un test que dejó de aplicar. Ver la Fase 6 arriba.
+
+**No se inventa un estado de orden "parcialmente despachada".** `recalculate_order_status` ya deriva `orders.status` de `MIN(pipeline_position)` y `orders.leading_status` de `MAX(...)`, por trigger — `status != leading_status` **es** "parcialmente despachada", calculado, no una columna nueva. Un segundo escritor competiría con esa derivación, exactamente lo que la propia cabecera de esa migración advierte. `parcialmente_entregado` existe solo porque la entrega es terminal y el spread colapsa ahí — no es un precedente para inventar un estado equivalente en otras etapas.
