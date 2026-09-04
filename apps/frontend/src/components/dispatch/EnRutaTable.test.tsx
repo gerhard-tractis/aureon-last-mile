@@ -69,4 +69,30 @@ describe('EnRutaTable', () => {
     render(<EnRutaTable enRuta={[]} completadas={[]} />);
     expect(screen.getByText(/Sin rutas en camino/i)).toBeInTheDocument();
   });
+
+  it('renders no status badge for an on-road row — the table columns already carry the signal there', () => {
+    render(<EnRutaTable enRuta={[row({ status: 'in_transit' })]} completadas={[]} />);
+    expect(screen.queryByText('Completada')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cancelada')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes cancelled from completed inside Completadas hoy — they are not the same outcome', () => {
+    render(
+      <EnRutaTable
+        enRuta={[]}
+        completadas={[
+          row({ id: 'done', externalRouteId: 'RUT-DONE', status: 'completed' }),
+          row({ id: 'gone', externalRouteId: 'RUT-GONE', status: 'cancelled' }),
+        ]}
+      />,
+    );
+    expect(screen.getByText('Completada')).toBeInTheDocument();
+    expect(screen.getByText('Cancelada')).toBeInTheDocument();
+  });
+
+  it('accepts an empty enRuta with completadas present — the same table filtered, per the Completadas tab', () => {
+    render(<EnRutaTable enRuta={[]} completadas={[row({ id: 'c1' })]} />);
+    expect(screen.getAllByRole('table')).toHaveLength(1);
+    expect(screen.getByText('RUT-2026-0087')).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,9 @@
 import { Truck } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
+import { StatusBadge } from '@/components/StatusBadge';
 import { EnRutaLastEvent } from './EnRutaLastEvent';
+import { ROUTE_STATUS_CONFIG } from '@/lib/dispatch/route-status-labels';
+import { FINISHED_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import type { EnRutaRoute } from '@/lib/dispatch/en-ruta';
 
 const HEADERS = ['RUTA', 'CONDUCTOR · CAMIÓN', 'COMUNAS', 'PARADAS', 'FALLIDAS', 'ÚLTIMO EVENTO'];
@@ -9,11 +12,25 @@ function RouteRow({ route }: { route: EnRutaRoute }) {
   const driverTruck = [route.driverName ?? 'Sin conductor', route.truckIdentifier]
     .filter(Boolean)
     .join(' · ');
+  // "Completadas hoy" holds both `completed` and `cancelled` routes
+  // (FINISHED_ROUTE_STATUSES) — a route that was cancelled did not finish,
+  // and rendering the two identically loses that distinction (flagged in
+  // the phase-5 review, fixed here). On-road rows carry no badge: the
+  // table's own columns already say what's going on for those.
+  const isFinished = (FINISHED_ROUTE_STATUSES as readonly string[]).includes(route.status);
+  const statusConfig = isFinished ? ROUTE_STATUS_CONFIG[route.status] : null;
 
   return (
     <tr className="border-b border-border last:border-0">
-      <td className="px-4 py-2.5 font-mono text-sm font-semibold text-accent">
-        {route.externalRouteId ?? route.id.slice(0, 8).toUpperCase()}
+      <td className="px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-semibold text-accent">
+            {route.externalRouteId ?? route.id.slice(0, 8).toUpperCase()}
+          </span>
+          {statusConfig && (
+            <StatusBadge status={route.status} label={statusConfig.label} variant={statusConfig.variant} size="sm" />
+          )}
+        </div>
       </td>
       <td className="px-4 py-2.5 text-sm text-text">{driverTruck}</td>
       <td className="px-4 py-2.5 text-sm text-text-secondary">
@@ -42,11 +59,21 @@ function RouteRow({ route }: { route: EnRutaRoute }) {
  * it's given, so the incidence-first ordering stays testable independently
  * of markup.
  */
-export function EnRutaTable({ enRuta, completadas }: { enRuta: EnRutaRoute[]; completadas: EnRutaRoute[] }) {
+export function EnRutaTable({
+  enRuta,
+  completadas,
+  emptyTitle = 'Sin rutas en camino',
+  emptyDescription = 'Las rutas despachadas aparecerán aquí.',
+}: {
+  enRuta: EnRutaRoute[];
+  completadas: EnRutaRoute[];
+  /** Lets the Completadas tab (same table, `enRuta` always empty) show its
+   * own empty copy instead of "en camino", which would be wrong there. */
+  emptyTitle?: string;
+  emptyDescription?: string;
+}) {
   if (!enRuta.length && !completadas.length) {
-    return (
-      <EmptyState icon={Truck} title="Sin rutas en camino" description="Las rutas despachadas aparecerán aquí." />
-    );
+    return <EmptyState icon={Truck} title={emptyTitle} description={emptyDescription} />;
   }
 
   return (

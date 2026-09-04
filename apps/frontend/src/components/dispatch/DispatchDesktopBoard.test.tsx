@@ -46,6 +46,10 @@ vi.mock('./DispatchEnRutaTab', () => ({
   DispatchEnRutaTab: () => null,
 }));
 
+vi.mock('./DispatchCompletadasTab', () => ({
+  DispatchCompletadasTab: () => null,
+}));
+
 const usePreRouteSnapshotMock = vi.fn(() => ({
   snapshot: { totals: { order_count: 0 } },
   isLoading: false,

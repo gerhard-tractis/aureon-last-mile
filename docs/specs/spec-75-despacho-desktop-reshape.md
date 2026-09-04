@@ -135,7 +135,11 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
     - `DT SINCRONIZADO · 12 s` — `dispatchtrack-route-poll` actualiza filas en su lugar y solo escribe a stdout; ninguna tabla guarda cuándo corrió por última vez. No hay de dónde leerlo.
 
     `ENTREGADAS`/`PENDIENTES`/`FALLIDAS` sí salen de `dispatches.status` real. `OTIF DEL DÍA` se computa on-time-in-full sobre `dispatches.completed_at`/`estimated_at` (columna que el propio schema documenta "Used for OTIF calculation") y se omite (no un 0 ni un guion bajo una etiqueta) cuando el denominador es cero. `ÚLTIMO EVENTO` sale de `MAX(dispatches.updated_at)` por ruta — no de `routes.updated_at`, que un despacho ajeno puede mover (spec-76, lección de proxy).
-16. Test: orden por incidencia (`compareEnRutaIncidence`: más fallidas primero, empate roto por el evento más antiguo); *Completadas hoy* como sección filtrada al pie de la misma tabla — la pestaña "Completadas" del header se retiró (decisión 5: "una tabla con un filtro, no dos tablas" incluye no dos tabs).
+16. Test: orden por incidencia (`compareEnRutaIncidence`: más fallidas primero, empate roto por el evento más antiguo); *Completadas hoy* como sección filtrada al pie de la misma tabla.
+
+    **Corregido tras revisión — la pestaña "Completadas" del header NO se retira.** El canvas dibuja las 4 pestañas por igual en `1a`, `1b` y `1d`, y la fase 1 las construyó a propósito. Lo que decisión 5 descarta es un **segundo árbol de componentes** para "Completadas" — no la pestaña en sí. `DispatchEnRutaTab` (pestaña "En ruta") y `DispatchCompletadasTab` (pestaña "Completadas") renderizan el mismo `EnRutaTable`, sólo con una porción (`enRuta`, `completadas`) distinta — "una tabla con un filtro, no dos tablas" se cumple literalmente sin perder la pestaña. La sección `COMPLETADAS HOY N` al pie de la tabla en vivo (dentro de `DispatchEnRutaTab`) es otra cosa y se mantiene — el canvas muestra ambas, no son alternativas.
+
+    Las filas de `Completadas hoy` distinguen `completed` de `cancelled` con un `StatusBadge` (verde/rojo) — una ruta cancelada no es una ruta que terminó, y el mismo render para ambas ocultaba esa diferencia.
 
 ### Fase 6 — Cierre `[pending]`
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.

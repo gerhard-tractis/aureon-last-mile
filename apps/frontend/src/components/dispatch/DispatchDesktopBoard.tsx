@@ -7,6 +7,7 @@ import { DispatchModuleHeader } from './DispatchModuleHeader';
 import { PreRouteBoard } from './pre-route/PreRouteBoard';
 import { DispatchOpenRoutesTab } from './DispatchOpenRoutesTab';
 import { DispatchEnRutaTab } from './DispatchEnRutaTab';
+import { DispatchCompletadasTab } from './DispatchCompletadasTab';
 import { useDispatchKPIs } from '@/hooks/dispatch/useDispatchKPIs';
 import { usePreRouteSnapshot } from '@/hooks/dispatch/pre-route/usePreRouteSnapshot';
 import { useCreateRouteFromSelection } from '@/hooks/dispatch/pre-route/useCreateRouteFromSelection';
@@ -126,6 +127,10 @@ export function DispatchDesktopBoard({ operatorId }: DispatchDesktopBoardProps) 
 
       <TabsContent value="in_progress" className="mt-0 p-6">
         <DispatchEnRutaTab operatorId={operatorId} />
+      </TabsContent>
+
+      <TabsContent value="completed" className="mt-0 p-6">
+        <DispatchCompletadasTab operatorId={operatorId} />
       </TabsContent>
     </Tabs>
   );

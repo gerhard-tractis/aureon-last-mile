@@ -94,6 +94,10 @@ export function buildEnRutaRoute(
     id: route.id,
     externalRouteId: route.external_route_id,
     driverName: route.driver_name,
+    // fleet_vehicles.external_vehicle_id via vehicle_id — never
+    // route.truck_identifier: that field exists on the DispatchRoute type
+    // but no query in this codebase selects it, so it is always undefined.
+    // Don't "restore" it here.
     truckIdentifier: route.vehicle_id ? (vehicleIdentifiers.get(route.vehicle_id) ?? null) : null,
     status: route.status,
     comunas: Array.from(comunaSet).sort((a, b) => a.localeCompare(b, 'es')),
@@ -116,6 +120,19 @@ export function computeEnRutaMetrics(dispatches: RawDispatchRow[]): EnRutaMetric
   // (delivered/partial — a genuine outcome, not still-pending) that also
   // carry a promised time; a resolved dispatch with no estimated_at cannot
   // be graded either way and is excluded rather than counted against.
+  //
+  // Verified (phase-5 review): `estimated_at` is written by exactly one
+  // path for a stop that hasn't resolved — the inbound DispatchTrack
+  // webhook (beetrack-webhook upserts it verbatim from every dispatch
+  // event it receives, confirmed against a captured payload). Our own
+  // POST /dispatch call does NOT seed it — createDTRoute's response is
+  // `{ external_route_id }` only — and dispatchtrack-route-poll only
+  // re-polls routes already at status `in_progress`, not `dispatched`, so
+  // it cannot backfill a route the instant it appears on `1d`. A route
+  // freshly dispatched has `estimated_at = NULL` on every stop until DT's
+  // first webhook lands; `otifPct: null` (nothing rendered) is therefore
+  // the NORMAL state right after dispatch, not a rare edge case — it
+  // should fill in over the route's life as webhooks arrive.
   const gradable = dispatches.filter(
     (d) => ORDER_LOOKUP_STATUSES.includes(d.status) && d.estimated_at && d.completed_at,
   );
