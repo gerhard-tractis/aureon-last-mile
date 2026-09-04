@@ -24,21 +24,30 @@ export interface DispatchPackagesByStopProps {
 type GroupMode = 'parada' | 'hora';
 
 function toStopSections(groups: ReturnType<typeof groupPackagesByStop>): PackageGroupSection[] {
+  // spec-76 review minor — `packageCount` is a LOADED count (a NO
+  // EMBARCADO row does not inflate it); "cargados" says so on screen.
   return groups.map((g) => ({
     key: `stop-${g.stopIndex}`,
     title: `Parada ${String(g.stopIndex).padStart(2, '0')}`,
     subtitle: g.address,
     count: g.packageCount,
+    countUnit: 'cargados',
     packages: g.packages,
   }));
 }
 
 function toHourSections(groups: ReturnType<typeof groupPackagesByHour>): PackageGroupSection[] {
+  // A raw row count, not necessarily "loaded": every non-trailing hour
+  // bucket only ever holds loaded rows (groupPackagesByHour buckets by
+  // `loaded_at`), but the one trailing `hourLabel: null` bucket is
+  // entirely `retenido` rows that were never loaded — "paquetes" is
+  // accurate for both without overclaiming "cargados" for that bucket.
   return groups.map((g) => ({
     key: `hour-${g.hourLabel ?? 'retenidos'}`,
     title: g.hourLabel ?? 'Retenidos en consolidación',
     subtitle: null,
     count: g.packages.length,
+    countUnit: 'paquetes',
     packages: g.packages,
   }));
 }

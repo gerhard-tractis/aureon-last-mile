@@ -69,8 +69,6 @@ describe('groupPackagesByStop', () => {
 describe('groupPackagesByHour', () => {
   it('groups loaded packages by hour (America/Santiago), ascending, with a trailing unloaded bucket', () => {
     const groups = groupPackagesByHour(dispatches, packages);
-    // 14:07Z and 14:22Z are both in the 14:00 UTC hour, which is 11:00 in
-    // America/Santiago (UTC-3 in September, daylight saving observed).
     const hourLabels = groups.map((g) => g.hourLabel);
     expect(hourLabels[hourLabels.length - 1]).toBeNull(); // the retenido one, trailing
     expect(groups[groups.length - 1].packages).toHaveLength(1);
@@ -78,6 +76,21 @@ describe('groupPackagesByHour', () => {
     // Ascending by hour label for the loaded ones.
     const loadedLabels = hourLabels.filter((l): l is string => l !== null);
     expect(loadedLabels).toEqual([...loadedLabels].sort());
+  });
+
+  it('spec-76 review minor — actually asserts the Chile-timezone conversion, not just "sorted"', () => {
+    // spec-76 Lecciones aplicadas #3 (this spec's own lesson list): a test
+    // that never fails if TIMEZONE were silently dropped is not testing
+    // the timezone conversion. Chile has not observed daylight saving
+    // since 2019 — UTC-4 year round, verified against the actual
+    // Intl.DateTimeFormat('America/Santiago') output, not assumed:
+    // 2026-09-03T14:07:00Z -> 10:07 local, T14:22:00Z -> 10:22 local (same
+    // hour bucket), T15:01:00Z -> 11:01 local (the next bucket).
+    const groups = groupPackagesByHour(dispatches, packages);
+    const hourLabels = groups.map((g) => g.hourLabel).filter((l): l is string => l !== null);
+    expect(hourLabels).toEqual(['10:00', '11:00']);
+    expect(groups[0].packages.map((p) => p.packageId).sort()).toEqual(['p1', 'p2']);
+    expect(groups[1].packages.map((p) => p.packageId)).toEqual(['p3']);
   });
 });
 

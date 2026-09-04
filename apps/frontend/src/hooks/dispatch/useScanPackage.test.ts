@@ -9,15 +9,17 @@ vi.stubGlobal('fetch', mockFetch);
 
 function wrapper() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
   const Wrapper = ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: qc }, children);
   Wrapper.displayName = 'TestWrapper';
-  return Wrapper;
+  return { Wrapper, invalidateSpy };
 }
 
 describe('useScanPackage', () => {
   it('exposes a mutateAsync function', () => {
-    const { result } = renderHook(() => useScanPackage('route-1'), { wrapper: wrapper() });
+    const { Wrapper } = wrapper();
+    const { result } = renderHook(() => useScanPackage('route-1'), { wrapper: Wrapper });
     expect(typeof result.current.mutateAsync).toBe('function');
   });
 
@@ -26,11 +28,26 @@ describe('useScanPackage', () => {
       ok: true,
       json: async () => ({ dispatch_id: 'd1', order_number: 'ORD-1', ok: true }),
     });
-    const { result } = renderHook(() => useScanPackage('route-99'), { wrapper: wrapper() });
+    const { Wrapper } = wrapper();
+    const { result } = renderHook(() => useScanPackage('route-99'), { wrapper: Wrapper });
     await result.current.mutateAsync('BARCODE-1');
     expect(mockFetch).toHaveBeenCalledWith(
       '/api/dispatch/routes/route-99/scan',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+
+  it('spec-76 review I5 — invalidates the 2h (route-packages-by-stop) cache too, not just [dispatch, packages]', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ dispatch_id: 'd1', order_number: 'ORD-1', ok: true }),
+    });
+    const { Wrapper, invalidateSpy } = wrapper();
+    const { result } = renderHook(() => useScanPackage('route-99', 'op-1'), { wrapper: Wrapper });
+    await result.current.mutateAsync('BARCODE-1');
+
+    const keys = invalidateSpy.mock.calls.map((c) => (c[0] as { queryKey: unknown[] }).queryKey);
+    expect(keys).toContainEqual(['dispatch', 'packages', 'route-99']);
+    expect(keys).toContainEqual(['dispatch', 'mobile', 'route-packages-by-stop', 'route-99', 'op-1']);
   });
 });

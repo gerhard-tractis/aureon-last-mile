@@ -98,4 +98,34 @@ describe('useRoutePackagesByStop', () => {
     const { result } = renderHook(() => useRoutePackagesByStop('r1', 'op-1'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
   });
+
+  it('spec-76 review I6 — keeps only loaded packages and retenido ones, dropping ambiguous mid-state rows', async () => {
+    mockTables({
+      dispatches: [{ id: 'd1', order_id: 'o1', orders: { order_number: 'ORD-1', delivery_address: 'X', customer_name: null } }],
+      packages: [
+        { id: 'p1', order_id: 'o1', label: 'LOADED', package_number: null, status: 'en_carga', loaded_at: '2026-09-03T14:00:00Z' },
+        { id: 'p2', order_id: 'o1', label: 'RETENIDO', package_number: null, status: 'retenido', loaded_at: null },
+        { id: 'p3', order_id: 'o1', label: 'NOT_YET_LOADED', package_number: null, status: 'sectorizado', loaded_at: null },
+        { id: 'p4', order_id: 'o1', label: 'DAMAGED', package_number: null, status: 'dañado', loaded_at: null },
+        { id: 'p5', order_id: 'o1', label: 'DELIVERED', package_number: null, status: 'entregado', loaded_at: null },
+      ],
+    });
+    const { result } = renderHook(() => useRoutePackagesByStop('r1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const labels = result.current.data?.packages.map((p) => p.label).sort();
+    expect(labels).toEqual(['LOADED', 'RETENIDO']);
+  });
+
+  it('spec-76 review I6 — a package loaded_at-set but whose status has since moved on is still kept', async () => {
+    mockTables({
+      dispatches: [{ id: 'd1', order_id: 'o1', orders: { order_number: 'ORD-1', delivery_address: 'X', customer_name: null } }],
+      packages: [
+        { id: 'p1', order_id: 'o1', label: 'DELIVERED_BUT_LOADED', package_number: null, status: 'entregado', loaded_at: '2026-09-03T14:00:00Z' },
+      ],
+    });
+    const { result } = renderHook(() => useRoutePackagesByStop('r1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.packages).toHaveLength(1);
+  });
 });

@@ -7,12 +7,19 @@ export interface PackageGroupSection {
   key: string;
   title: string;
   subtitle: string | null;
-  /** What the header's "N paquetes" names — the loaded/counted unit
-   *  (StopGroup.packageCount for "Por parada"), NOT necessarily
-   *  `packages.length`: a NO EMBARCADO row is listed below but is not
-   *  itself a loaded package, so it must not inflate this number
+  /** The counted unit (StopGroup.packageCount for "Por parada"), NOT
+   *  necessarily `packages.length`: a NO EMBARCADO row is listed below but
+   *  is not itself a loaded package, so it must not inflate this number
    *  (Lecciones aplicadas "no proxy under a label asserting a fact"). */
   count: number;
+  /** spec-76 review minor — "Por parada"'s `count` is a LOADED count and
+   *  "Por hora"'s is a raw row count (every non-trailing hour bucket only
+   *  ever holds loaded rows anyway, but the trailing "Retenidos" bucket is
+   *  entirely unloaded) — two different meanings that both used to read
+   *  "N paquetes". Each mapper (DispatchPackagesByStop.tsx) says which
+   *  word applies to its own number instead of the label silently
+   *  overclaiming. */
+  countUnit: 'cargados' | 'paquetes';
   packages: StopPackageRow[];
 }
 
@@ -43,11 +50,16 @@ export function DispatchPackageGroupList({ sections, emptyMessage }: DispatchPac
         <section key={section.key} data-testid={`dispatch-package-group-${section.key}`}>
           <header className="mb-2 flex items-baseline justify-between gap-2">
             <div className="flex flex-col">
-              <h3 className="text-[13.5px] font-semibold text-text">{section.title}</h3>
+              {/* spec-76 review minor — h2, not h3: DispatchPackagesByStop's
+                  own "N paquetes cargados" is the h1, and there is no h2
+                  anywhere in this screen otherwise. */}
+              <h2 className="text-[13.5px] font-semibold text-text">{section.title}</h2>
               {section.subtitle && <p className="text-[11.5px] text-text-secondary">{section.subtitle}</p>}
             </div>
             <span className="text-[11.5px] text-text-muted">
-              {section.count} {section.count === 1 ? 'paquete' : 'paquetes'}
+              {section.count} {section.countUnit === 'cargados'
+                ? (section.count === 1 ? 'cargado' : 'cargados')
+                : (section.count === 1 ? 'paquete' : 'paquetes')}
             </span>
           </header>
           <div className="flex flex-col gap-1.5">

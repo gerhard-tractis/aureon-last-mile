@@ -164,7 +164,10 @@ describe('DispatchRouteScanSession', () => {
     expect(screen.queryByRole('textbox', { name: /escanear paquete/i })).not.toBeInTheDocument();
     expect(cameraViewfinderProps.active).toBe(true);
     // The header, counter and route code stay put — 2g is a state of 2e,
-    // not a different screen.
+    // not a different screen. This IS decision 4's "counter has to stay
+    // visible" requirement, asserted at the boundary that actually owns
+    // the header/counter (DispatchRouteCameraViewfinder.test.tsx
+    // deliberately does not re-assert this — it does not own either).
     expect(screen.getByText('RUT-0099')).toBeInTheDocument();
     expect(screen.getByTestId('dispatch-scan-counter')).toBeInTheDocument();
   });
