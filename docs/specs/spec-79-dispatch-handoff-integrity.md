@@ -2,7 +2,7 @@
 
 > **Related:** [spec-77](spec-77-despacho-movil-cierre.md) (las pantallas que dependen de estos dos arreglos; ver su *Fase 0*, hallazgos H2 y H3), [spec-70](spec-70-dispatch-state-machine.md) (`transition_route_status`), [spec-71](spec-71-load-positions-staging-pass.md) (posiciones de carga), [spec-74](spec-74-per-bulto-staging.md) (`en_carga`, staging por bulto)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, sql, e2e-qa
 
 _Date: 2026-09-03_
@@ -191,21 +191,27 @@ Sólo la comprobación previa por `GET` cubre esos casos. **La duplicación pasa
 
 Las tres son respondibles sin escribir en DT. **Nota explícita: resolverlas no debe hacerse con un despacho de prueba** — esta es una integración de producción para un operador logístico real.
 
-### Fase 1 — H3, el arreglo acotado `[pending]`
+### Fase 1 — H3, el arreglo acotado `[done]`
 3. Test: orden partida con bultos en `en_carga` y en `asignado` → sólo los `en_carga` pasan a `en_ruta`.
 4. Test: bulto `retenido` en consolidación no pasa a `en_ruta`.
 5. Test: orden completa (todos los bultos cargados) sigue comportándose igual que hoy — no hay regresión.
 6. Implementar el filtro acotado.
 7. Medir en producción cuántos bultos están hoy en `en_ruta` sin haber estado en `en_carga` (consulta de sólo lectura, acotada). Reportar la cifra **antes** de proponer backfill.
 
-### Fase 2 — H2, persistir la prueba `[pending]`
+   **No ejecutado.** La implementación (3-6) está hecha y probada; el ítem 7 requiere correr una consulta contra producción, algo que esta tarea tenía instrucción explícita de no hacer. Alguien con acceso a producción debe correr esa medición de sólo lectura y decidir, con la cifra en mano, si hace falta backfill — ver la sección de cierre del reporte de implementación para el razonamiento completo.
+
+### Fase 2 — H2, persistir la prueba `[done]`
 8. Test: DT confirma y el `UPDATE` de `routes` posterior falla → `external_route_id` **ya está** persistido y el error **no** se descarta en silencio (hallazgo 2 de *Fase 0*: hoy el `Promise.all` no desestructura `error`, así que este caso responde `200 {ok:true}`).
 9. Reordenar para escribir `external_route_id` inmediatamente tras la confirmación de DT, en su propia escritura desestructurando `error` — no dentro del `Promise.all` combinado con `packages`.
 
-### Fase 3 — H2, distinguir los fallos `[pending]`
+### Fase 3 — H2, distinguir los fallos `[done]`
 10. Test: DT lanza → `502 DT_API_ERROR`, `dispatch_failed` en `audit_logs`, ruta intacta en `loaded`, ningún paquete movido.
 11. Test: DT confirma y `transition_route_status` falla → código **`DT_ACCEPTED_LOCAL_FAILED`**, no `DT_API_ERROR`, con su propia acción de auditoría y el `external_route_id` en el registro.
 12. Test: los fallos best-effort que hoy ya se tragan (`release_load_position`, el sweep, los `audit_logs`) siguen sin hacer fallar el despacho — no se endurecen por accidente.
+
+**Nota de implementación — orden de escrituras dentro de `completeLocalDispatch`.** El orden final no es persist → transition → packages sino **persist → packages (`en_ruta`) → transition → release**. Razón: `transition_route_status` es la escritura que saca a la ruta de `loaded`, y el guard `route.status !== 'loaded'` del propio handler 409ea cualquier intento posterior sobre esa ruta. Si el `UPDATE` de `packages` corriera *después* de `transition_route_status` (como en el orden original de arriba), un fallo ahí dejaría la ruta ya en `dispatched` mientras las cajas siguen en `en_carga` — atrapado detrás de un 409 que ningún reintento puede atravesar. Escribiendo `packages` antes de la transición, un fallo ahí deja la ruta en `loaded`, así que el camino de reintento (ver más abajo) puede completarla sin tropezar con el guard. `transition_route_status` queda como la última escritura que debe tener éxito — el verdadero punto sin retorno — consistente con el hallazgo 2 de *Fase 0*.
+
+**Nota de implementación — camino de reintento (parte del punto 3 del Scope, no de la Fase 4).** Se implementó el reintento que **nunca vuelve a llamar a DT**: si `routes.external_route_id` ya está persistido cuando llega la petición (y `status` sigue en `loaded`, que es la única forma en que puede estarlo tras el reordenamiento de arriba), el handler salta `createDTRoute` y `MISSING_ORDER_NUMBER` por completo y va directo a `completeLocalDispatch` con el `external_route_id` ya conocido. Esto es distinto de la comprobación previa por `GET` de la Fase 4 (que sigue `[pending]`, sin implementar): no consulta a DT, sólo confía en el propio registro persistido. Cierra exactamente la ventana que *Fase 0* describe como "DT aceptó Y `transition_route_status` falló" — no las ventanas más amplias del hallazgo 4 (respuesta de DT que nunca llega, proceso que muere antes de persistir, la propia escritura de `external_route_id` fallando), que siguen abiertas y requieren la Fase 4.
 
 ### Fase 4 — H2, reintento seguro `[pending]`
 
