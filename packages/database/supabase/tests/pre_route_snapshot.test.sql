@@ -73,7 +73,7 @@ BEGIN
   VALUES ('ffff0001-0000-0000-0000-000000000037',
     'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
     'eeee0001-0000-0000-0000-000000000037',
-    'PKG-T37-001', '{}'::jsonb, 'en_bodega',
+    'PKG-T37-001', '{}'::jsonb, 'sectorizado',
     'dddd0001-0000-0000-0000-000000000037');
 
   -- Query for a DIFFERENT date → should return empty andenes
@@ -122,7 +122,7 @@ BEGIN
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES
     ('ffff0002-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0002-0000-0000-0000-000000000037', 'PKG-T37-002A', '{}'::jsonb, 'en_bodega',
+      'eeee0002-0000-0000-0000-000000000037', 'PKG-T37-002A', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037'),
     ('ffff0003-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
       'eeee0003-0000-0000-0000-000000000037', 'PKG-T37-002B', '{}'::jsonb, 'asignado',
@@ -189,10 +189,10 @@ BEGIN
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES
     ('ffff0005-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0005-0000-0000-0000-000000000037', 'PKG-T37-003A', '{}'::jsonb, 'en_bodega',
+      'eeee0005-0000-0000-0000-000000000037', 'PKG-T37-003A', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037'),
     ('ffff0006-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0006-0000-0000-0000-000000000037', 'PKG-T37-003B', '{}'::jsonb, 'en_bodega',
+      'eeee0006-0000-0000-0000-000000000037', 'PKG-T37-003B', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037');
 
   -- Draft route
@@ -286,7 +286,7 @@ BEGIN
   -- Package has ready status but dock_zone_id IS NULL
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status)
   VALUES ('ffff0008-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0008-0000-0000-0000-000000000037', 'PKG-T37-005', '{}'::jsonb, 'en_bodega');
+    'eeee0008-0000-0000-0000-000000000037', 'PKG-T37-005', '{}'::jsonb, 'sectorizado');
 
   SELECT public.get_pre_route_snapshot(
     'aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid,
@@ -324,7 +324,7 @@ BEGIN
 
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES ('ffff0009-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0009-0000-0000-0000-000000000037', 'PKG-T37-006', '{}'::jsonb, 'en_bodega',
+    'eeee0009-0000-0000-0000-000000000037', 'PKG-T37-006', '{}'::jsonb, 'sectorizado',
     'dddd0001-0000-0000-0000-000000000037');
 
   -- Mañana window [00:00, 12:00) → should include the order
@@ -393,10 +393,10 @@ BEGIN
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES
     ('ffff0010-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0010-0000-0000-0000-000000000037', 'PKG-T37-007A', '{}'::jsonb, 'en_bodega',
+      'eeee0010-0000-0000-0000-000000000037', 'PKG-T37-007A', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037'),
     ('ffff0011-0000-0000-0000-000000000037', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000037',
-      'eeee0011-0000-0000-0000-000000000037', 'PKG-T37-007B', '{}'::jsonb, 'en_bodega',
+      'eeee0011-0000-0000-0000-000000000037', 'PKG-T37-007B', '{}'::jsonb, 'sectorizado',
       'dddd0003-0000-0000-0000-000000000037');
 
   SELECT public.get_pre_route_snapshot('aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid, CURRENT_DATE) INTO v_result_a;
@@ -442,7 +442,7 @@ BEGIN
 
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id, deleted_at)
   VALUES ('ffff0013-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0013-0000-0000-0000-000000000037', 'PKG-T37-008B', '{}'::jsonb, 'en_bodega',
+    'eeee0013-0000-0000-0000-000000000037', 'PKG-T37-008B', '{}'::jsonb, 'sectorizado',
     'dddd0001-0000-0000-0000-000000000037', now());
 
   SELECT public.get_pre_route_snapshot(
@@ -481,7 +481,7 @@ BEGIN
   -- Package must have dock_zone_id set (ready to dispatch) but commune is unmapped
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES ('ffff0014-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0014-0000-0000-0000-000000000037', 'PKG-T37-009', '{}'::jsonb, 'en_bodega',
+    'eeee0014-0000-0000-0000-000000000037', 'PKG-T37-009', '{}'::jsonb, 'sectorizado',
     'dddd0001-0000-0000-0000-000000000037');
 
   SELECT public.get_pre_route_snapshot(
@@ -530,14 +530,14 @@ BEGIN
   -- First package → Andén Norte (earlier created_at)
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id, created_at)
   VALUES ('ffff0015-a000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010A', '{}'::jsonb, 'en_bodega',
+    'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010A', '{}'::jsonb, 'sectorizado',
     'dddd0001-0000-0000-0000-000000000037',
     now() - interval '1 hour');
 
   -- Second package → Andén Sur (later created_at — invariant violation)
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id, created_at)
   VALUES ('ffff0015-b000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-    'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010B', '{}'::jsonb, 'en_bodega',
+    'eeee0015-0000-0000-0000-000000000037', 'PKG-T37-010B', '{}'::jsonb, 'sectorizado',
     'dddd0002-0000-0000-0000-000000000037',
     now());
 
@@ -575,13 +575,16 @@ ROLLBACK TO test_10;
 -- =============================================================================
 -- TEST 11: includes_sectorizado_packages
 --
--- Regression guard. Every other fixture in this file inserts packages with
--- status 'en_bodega' AND dock_zone_id set at once — a combination the app never
--- produces. The only writer of packages.dock_zone_id is
--- trg_dock_scan_advance_package_status (latest def: 20260506000001), and that
--- same UPDATE sets status to 'sectorizado'. So the real docked state was outside
--- the cohort and Pre-Ruta rendered empty no matter how many packages sat on an
--- andén. Assert the state the app actually writes.
+-- Regression guard. Originally the only fixture in this file to use
+-- 'sectorizado' — every other one used 'en_bodega' + dock_zone_id set at
+-- once, a combination the app never produces (the only writer of
+-- packages.dock_zone_id, trg_dock_scan_advance_package_status, sets status
+-- to 'sectorizado' in the same UPDATE). spec-76 task 3 (escalated
+-- decision, 20260907000001) removed 'en_bodega' from the ready list
+-- entirely — it is no longer just unrealistic, it is now actively wrong —
+-- so every fixture in this file was updated to 'sectorizado' to match.
+-- Kept as its own named test: this is still the one asserting the state
+-- the app actually writes is included.
 -- =============================================================================
 SAVEPOINT test_11;
 
@@ -704,13 +707,13 @@ BEGIN
   INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
   VALUES
     ('ffff0018-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0018-0000-0000-0000-000000000037', 'PKG-T37-013A', '{}'::jsonb, 'en_bodega',
+      'eeee0018-0000-0000-0000-000000000037', 'PKG-T37-013A', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037'),
     ('ffff0019-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0019-0000-0000-0000-000000000037', 'PKG-T37-013B', '{}'::jsonb, 'en_bodega',
+      'eeee0019-0000-0000-0000-000000000037', 'PKG-T37-013B', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037'),
     ('ffff0020-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
-      'eeee0020-0000-0000-0000-000000000037', 'PKG-T37-013C', '{}'::jsonb, 'en_bodega',
+      'eeee0020-0000-0000-0000-000000000037', 'PKG-T37-013C', '{}'::jsonb, 'sectorizado',
       'dddd0001-0000-0000-0000-000000000037');
 
   -- A `loading` route
@@ -754,6 +757,56 @@ BEGIN
 END $$;
 
 ROLLBACK TO test_13;
+
+-- =============================================================================
+-- TEST 14: excludes_en_bodega_packages (spec-76 task 3, escalated decision,
+-- migration 20260907000001)
+--
+-- 'en_bodega' used to be in the ready list — vestigial, per that migration's
+-- own analysis: `dock_zone_id IS NOT NULL AND status = 'en_bodega'` are
+-- "very nearly mutually exclusive" (the same trigger that writes
+-- dock_zone_id sets status to 'sectorizado' in the one UPDATE), so a
+-- package genuinely still 'en_bodega' has not reached any andén yet — a
+-- planner must not build a route around a box the dock will refuse to
+-- load (scan-validator.ts's NOT_ON_DOCK). This is the guard that migration
+-- promised and never wrote; it is what makes this file the enforcement
+-- 20260907000001's header names.
+-- =============================================================================
+SAVEPOINT test_14;
+
+DO $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at, comuna_id)
+  VALUES ('eeee0021-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'T37-ORD-014', 'Cliente 14', '+56900000021', 'Calle Norte 16', 'TestComuna Norte',
+    CURRENT_DATE, '{}'::jsonb, 'MANUAL', now(), 'cccc0001-0000-0000-0000-000000000037');
+
+  -- Same (unrealistic, but see TEST 11's own note) shape the rest of this
+  -- file uses: dock_zone_id set with a status that in real life would never
+  -- coexist with it. The point here is specifically that 'en_bodega', even
+  -- WITH a dock_zone_id, no longer counts as ready.
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, dock_zone_id)
+  VALUES ('ffff0021-0000-0000-0000-000000000037', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000037',
+    'eeee0021-0000-0000-0000-000000000037', 'PKG-T37-014', '{}'::jsonb, 'en_bodega',
+    'dddd0001-0000-0000-0000-000000000037');
+
+  SELECT public.get_pre_route_snapshot(
+    'aaaaaaaa-aaaa-aaaa-aaaa-000000000037'::uuid,
+    CURRENT_DATE
+  ) INTO v_result;
+
+  IF (v_result->'totals'->>'order_count')::int = 0 THEN
+    RAISE NOTICE '✓ TEST 14 PASSED: en_bodega packages stay out of the cohort';
+  ELSE
+    RAISE EXCEPTION 'TEST 14 FAILED: expected 0 orders, got % — result: %',
+      (v_result->'totals'->>'order_count')::int, v_result;
+  END IF;
+END $$;
+
+ROLLBACK TO test_14;
 
 -- =============================================================================
 -- Summary

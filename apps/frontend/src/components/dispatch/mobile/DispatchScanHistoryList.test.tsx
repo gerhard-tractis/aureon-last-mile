@@ -11,6 +11,9 @@ describe('DispatchScanHistoryList', () => {
 
   it('spec-76 2e/2f — accepted and rejected scans render in the SAME list, newest-first order preserved as given', () => {
     const entries = [
+      // 'RUT-0087' is a readable fixture — routeCode() (crew-board.ts)
+      // really emits an 8-char UUID slice, e.g. "ABCDEF12" (see
+      // scan-rejection-copy.test.ts's own note).
       buildRejectedEntry({
         id: '2',
         code: 'CL9999',
@@ -38,11 +41,28 @@ describe('DispatchScanHistoryList', () => {
 
   it('a rejection row is not a nested interactive control — no button/role inside the row (Lecciones aplicadas #4)', () => {
     const entries = [
-      buildRejectedEntry({ id: '1', code: 'CL1', atIso: 't', failure: { code: 'NOT_FOUND', message: 'x' } }),
+      buildRejectedEntry({ id: '1', code: 'CL1', atIso: '2026-09-03T09:00:00.000Z', failure: { code: 'NOT_FOUND', message: 'x' } }),
     ];
     render(<DispatchScanHistoryList entries={entries} />);
     const row = screen.getByTestId('dispatch-scan-history-row');
     expect(row).not.toHaveAttribute('role', 'button');
     expect(row.querySelector('button')).toBeNull();
+  });
+
+  it('spec-76 review "spec deviations" — renders at most the 20 most recent rows, "ÚLTIMAS" not the full shift', () => {
+    const entries = Array.from({ length: 45 }, (_, i) =>
+      buildAcceptedEntry({
+        id: `e${i}`,
+        code: `CODE-${i}`,
+        atIso: `2026-09-03T09:${String(i).padStart(2, '0')}:00.000Z`,
+        response: { order_id: 'o1', order_number: 'n', contact_name: null, contact_address: null },
+      }),
+    ).reverse(); // newest-first, matching how the hook accumulates it
+    render(<DispatchScanHistoryList entries={entries} />);
+    const rows = screen.getAllByTestId('dispatch-scan-history-row');
+    expect(rows).toHaveLength(20);
+    // The rendered rows are the 20 NEWEST (entries[0..19]), not the oldest.
+    expect(rows[0]).toHaveTextContent('CODE-44');
+    expect(rows[19]).toHaveTextContent('CODE-25');
   });
 });

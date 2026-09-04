@@ -9,18 +9,27 @@ import { formatScanTimestamp, type ScanHistoryEntry } from '@/lib/dispatch/mobil
  * (decision 5: "no bloquea la fila"), not in a separate list — the crew
  * scrolls one chronological log, not two.
  *
- * Lesson 8 (Lecciones aplicadas): this list grows by one row every scan —
- * a few hundred over a shift — and `history` is a NEW array reference on
- * every scan (client state is prepend-only). `Row` is `memo`'d so a scan
- * only ever mounts one new row instead of re-rendering every existing one;
- * it takes no callback props, so there is no `useCallback` half needed to
- * make that memoisation hold.
+ * spec-76 review "spec deviations" — the heading already says ÚLTIMAS, so
+ * only the `MAX_VISIBLE_ROWS` most recent (`entries` is newest-first,
+ * `useRouteScanSession`'s own `insertByAtIso`) are ever rendered here. This
+ * caps the RENDERED rows only: `entries` itself (and the `rejectionCount`/
+ * `rejectionTally` the caller derives from the FULL, uncapped history) is
+ * untouched — capping the count too would under-report a real shift.
+ *
+ * Lesson 8 (Lecciones aplicadas): each accepted/rejected scan is a NEW
+ * array reference (client state, `insertByAtIso`). `Row` is `memo`'d so a
+ * scan only ever mounts/updates the rows the cap actually keeps, not every
+ * one of them; it takes no callback props, so there is no `useCallback`
+ * half needed to make that memoisation hold.
  */
+const MAX_VISIBLE_ROWS = 20;
+
 export interface DispatchScanHistoryListProps {
   entries: readonly ScanHistoryEntry[];
 }
 
 export function DispatchScanHistoryList({ entries }: DispatchScanHistoryListProps) {
+  const visible = entries.slice(0, MAX_VISIBLE_ROWS);
   return (
     <section>
       <h2 className="text-[11px] uppercase tracking-[.06em] text-text-muted">Últimas lecturas</h2>
@@ -30,7 +39,7 @@ export function DispatchScanHistoryList({ entries }: DispatchScanHistoryListProp
         </p>
       ) : (
         <div className="mt-2 flex flex-col gap-1.5">
-          {entries.map((entry) => (
+          {visible.map((entry) => (
             <HistoryRow key={entry.id} entry={entry} />
           ))}
         </div>

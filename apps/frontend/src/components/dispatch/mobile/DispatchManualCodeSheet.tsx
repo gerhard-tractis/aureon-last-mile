@@ -18,6 +18,19 @@ import { Input } from '@/components/ui/input';
  * under `dispatch/mobile/`, not a cross-module import. A code typed here
  * submits through the exact same `onSubmit` the scanner uses — it is a
  * scan, not a different kind of event.
+ *
+ * Opening this sheet steals focus from the always-focused `ScanField`
+ * elsewhere on the screen — that is expected, and nothing here tries to
+ * refocus the scanner behind it (same note as reception's own
+ * `ManualCodeSheet`). On close, Radix's own dialog behaviour returns focus
+ * to whichever element had it before the sheet opened — the "Ingresar
+ * código" trigger button, in real browser use — which is enough: the
+ * operator can see the field again immediately, and `ScanField`'s own
+ * mount/focus effect (or a tap on it) re-arms it from there.
+ * DispatchManualCodeSheet.test.tsx's own test covers what jsdom can prove
+ * honestly here: this component adds no refocus logic of its own, and the
+ * sheet's content genuinely unmounts rather than leaving focus trapped
+ * inside a removed, invisible input.
  */
 export interface DispatchManualCodeSheetProps {
   open: boolean;

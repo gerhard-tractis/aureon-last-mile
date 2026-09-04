@@ -50,7 +50,10 @@ describe('DispatchRouteScanSession', () => {
     expect(screen.getByText('A3 · Mario González · JKPT-45')).toBeInTheDocument();
     expect(screen.getByText(/ZEBRA TC22/)).toBeInTheDocument();
     expect(screen.getByText('148 de 172 paquetes')).toBeInTheDocument();
-    expect(screen.getByText('86%')).toBeInTheDocument();
+    // Spec copy has a thin space before the percent sign ("86 %"), not
+    // "86%" run together — matched by regex since a literal " " would not
+    // match the actual thin-space (U+2009) character rendered.
+    expect(screen.getByText(/86\s*%/)).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -141,12 +144,44 @@ describe('DispatchRouteScanSession', () => {
     expect(screen.getByRole('button', { name: /ver los 148/i })).toBeDisabled();
   });
 
+  it('spec-76 review "spec deviations" — every disabled footer reason is visible text, not a title= tooltip nobody sees on a touchscreen', () => {
+    render(
+      <DispatchRouteScanSession
+        routeId="r1" operatorId="op-1" routeCode="RUT-0099"
+        loadPositionLabel={null} driverName={null} vehicleExternalId={null}
+      />,
+    );
+    expect(screen.getByText(/cámara llega en la próxima pantalla \(2g\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/lista de paquetes por parada llega en la próxima pantalla \(2h\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/cierre de ruta es la próxima pantalla/i)).toBeInTheDocument();
+    // None of the three disabled buttons carry title= any more.
+    for (const name of [/cámara/i, /ver los 148/i, /cerrar ruta/i]) {
+      expect(screen.getByRole('button', { name })).not.toHaveAttribute('title');
+    }
+  });
+
+  it('spec-76 review "spec deviations" — header, counter and ScanField stay visible while the session scrolls (sticky)', () => {
+    render(
+      <DispatchRouteScanSession
+        routeId="r1" operatorId="op-1" routeCode="RUT-0099"
+        loadPositionLabel={null} driverName={null} vehicleExternalId={null}
+      />,
+    );
+    const stickyRegion = screen.getByText('RUT-0099').closest('.sticky');
+    expect(stickyRegion).not.toBeNull();
+    expect(stickyRegion).toContainElement(screen.getByTestId('dispatch-scan-counter'));
+    expect(stickyRegion).toContainElement(screen.getByRole('textbox', { name: /escanear paquete/i }));
+  });
+
   it('clicking "Ver ruta" on an ALREADY_IN_ROUTE rejection navigates to that route', async () => {
     const user = userEvent.setup();
+    // 'RUT-0087' is a readable fixture — routeCode() (crew-board.ts) really
+    // emits an 8-char UUID slice, e.g. "ABCDEF12" (scan-rejection-copy.
+    // test.ts's own note).
     mockSession.lastEntry = buildRejectedEntry({
       id: '3',
       code: 'CL1',
-      atIso: 't',
+      atIso: '2026-09-03T09:00:00.000Z',
       failure: { code: 'ALREADY_IN_ROUTE', message: 'x', conflictingRouteId: 'route-2' },
       conflictingRouteCode: 'RUT-0087',
     });

@@ -69,71 +69,84 @@ export function DispatchRouteScanSession({
     .join(' · ');
 
   return (
-    <div className="flex flex-col gap-4 p-4" data-testid="dispatch-route-scan-session">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-mono text-[15px] font-bold text-accent">{routeCode}</h1>
-        {metaLine && <p className="text-[12.5px] text-text-secondary">{metaLine}</p>}
-        <DispatchScanReaderStatus armed={readerArmed} />
-      </header>
+    <div className="flex flex-col" data-testid="dispatch-route-scan-session">
+      {/* spec-76 review "spec deviations" — decision 4 requires the result,
+          counter and armed field to stay visible for the whole hour the
+          crew watches this screen; a plain scrolling column let them scroll
+          away after ~10 reads. `sticky` (not a separate flex region) keeps
+          this working without restructuring whatever scroll container the
+          page shell above this component provides. */}
+      <div className="sticky top-0 z-10 flex flex-col gap-3 bg-surface p-4 pb-3">
+        <header className="flex flex-col gap-1">
+          <h1 className="font-mono text-[15px] font-bold text-accent">{routeCode}</h1>
+          {metaLine && <p className="text-[12.5px] text-text-secondary">{metaLine}</p>}
+          <DispatchScanReaderStatus armed={readerArmed} />
+        </header>
 
-      <div className="flex items-baseline gap-2" data-testid="dispatch-scan-counter">
-        <span className="font-heading text-[28px] font-semibold leading-none text-text">
-          {packagesLoaded} de {packagesTotal} paquetes
-        </span>
-        <span className="text-[15px] font-medium text-text-secondary">{percent}%</span>
+        <div className="flex items-baseline gap-2" data-testid="dispatch-scan-counter">
+          <span className="font-heading text-[28px] font-semibold leading-none text-text">
+            {packagesLoaded} de {packagesTotal} paquetes
+          </span>
+          {/* U+2009 THIN SPACE before "%" — spec copy is "86 %", not "86%". */}
+          <span className="text-[15px] font-medium text-text-secondary">· {percent}&#8201;%</span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {/* Deliberately NOT `disabled={isSubmitting}` — unlike
+              ReceptionMobileSession (spec-62), which gates its field on its
+              own pending scan. Design intent here is explicit: "no per-package
+              confirmation" (spec, Goal). Blocking the field until a network
+              round-trip resolves would BE a confirmation gate, and is exactly
+              what the mock's "ritmo tres a cuatro veces mayor" throughput is
+              measured against. `useRouteScanSession` still applies every
+              result via functional setState ordered by atIso, so out-of-order
+              responses can't lose or misplace a history entry even when two
+              scans overlap in flight — and a repeat of a code still in
+              flight (a double Zebra trigger-pull) is deduped before it ever
+              reaches the network. */}
+          <ScanField ariaLabel="Escanear paquete" onScan={submitScan} onFocusStateChange={setReaderArmed} />
+          <button
+            type="button"
+            onClick={() => setManualOpen(true)}
+            className="min-h-[44px] self-start text-[12.5px] font-medium text-text-secondary underline decoration-dotted underline-offset-4"
+          >
+            Ingresar código
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-2">
-        {/* Deliberately NOT `disabled={isSubmitting}` — unlike
-            ReceptionMobileSession (spec-62), which gates its field on its
-            own pending scan. Design intent here is explicit: "no per-package
-            confirmation" (spec, Goal). Blocking the field until a network
-            round-trip resolves would BE a confirmation gate, and is exactly
-            what the mock's "ritmo tres a cuatro veces mayor" throughput is
-            measured against. `useRouteScanSession` still applies every
-            result via functional setState, so out-of-order responses can't
-            lose a history entry even when two scans overlap in flight. */}
-        <ScanField ariaLabel="Escanear paquete" onScan={submitScan} onFocusStateChange={setReaderArmed} />
-        <button
-          type="button"
-          onClick={() => setManualOpen(true)}
-          className="min-h-[44px] self-start text-[12.5px] font-medium text-text-secondary underline decoration-dotted underline-offset-4"
-        >
-          Ingresar código
-        </button>
+      <div className="flex flex-col gap-4 p-4 pt-1">
+        {lastEntry && (
+          <DispatchScanLastRead entry={lastEntry} onViewRoute={(id) => router.push(`/app/dispatch/${id}`)} />
+        )}
+
+        <DispatchScanRejectionSummary rejectionCount={rejectionCount} tally={rejectionTally} />
+
+        <DispatchScanHistoryList entries={history} />
       </div>
 
-      {lastEntry && (
-        <DispatchScanLastRead entry={lastEntry} onViewRoute={(id) => router.push(`/app/dispatch/${id}`)} />
-      )}
-
-      <DispatchScanRejectionSummary rejectionCount={rejectionCount} tally={rejectionTally} />
-
-      <DispatchScanHistoryList entries={history} />
-
-      <footer className="mt-2 flex flex-col gap-2">
+      <footer className="mt-2 flex flex-col gap-2 p-4 pt-0">
         <div className="flex gap-2">
           <button
             type="button"
             disabled
-            title={CAMERA_DISABLED_REASON}
-            className="flex min-h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
+            className="flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
           >
-            Cámara
+            <span>Cámara</span>
+            <span className="text-[10px] font-normal leading-tight">{CAMERA_DISABLED_REASON}</span>
           </button>
           <button
             type="button"
             disabled
-            title={PACKAGE_LIST_DISABLED_REASON}
-            className="flex min-h-[48px] flex-1 items-center justify-center rounded-[10px] border border-border text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
+            className="flex min-h-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-[10px] border border-border px-2 text-center text-[13px] font-medium text-text-muted disabled:cursor-not-allowed"
           >
-            Ver los {packagesLoaded}
+            <span>Ver los {packagesLoaded}</span>
+            <span className="text-[10px] font-normal leading-tight">{PACKAGE_LIST_DISABLED_REASON}</span>
           </button>
         </div>
         <button
           type="button"
           disabled
-          title={CLOSE_ROUTE_DISABLED_REASON}
           className="flex min-h-[56px] w-full items-center justify-center rounded-[10px] bg-surface-raised text-[15px] font-semibold text-text-muted disabled:cursor-not-allowed"
         >
           Cerrar ruta

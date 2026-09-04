@@ -3,6 +3,9 @@ import { rejectionCopy, ALL_REJECTION_CODES } from './scan-rejection-copy';
 
 describe('rejectionCopy', () => {
   it('spec-76 decision 5 — ALREADY_IN_ROUTE names the conflicting route when known', () => {
+    // 'RUT-0087' here is a readable fixture, not what crew-board.ts's real
+    // routeCode() emits (an 8-char uppercase slice of a route UUID, e.g.
+    // "ABCDEF12") — this function only renders whatever string it is given.
     const copy = rejectionCopy({ code: 'ALREADY_IN_ROUTE', message: 'Paquete ya asignado a otra ruta activa', conflictingRouteCode: 'RUT-0087' });
     expect(copy.title).toContain('RUT-0087');
     expect(copy.tallyLabel).toBe('YA EN OTRA RUTA');

@@ -130,6 +130,47 @@ export function countRejections(entries: readonly ScanHistoryEntry[]): number {
   return entries.filter((e) => e.kind === 'rejected').length;
 }
 
+/**
+ * spec-76 review Important #2. `ScanField` is deliberately ungated while a
+ * scan is in flight (DispatchRouteScanSession's own comment) — matching the
+ * design's "no per-package confirmation" intent — so two scans overlap
+ * routinely: a slow first scan and a fast second one resolve out of order.
+ * A blind prepend on every `onSuccess`/`onError` would let the slow one's
+ * late arrival jump back in front of the fast one's already-shown result,
+ * and derive `lastEntry` from array position rather than from time. Insert
+ * by `atIso` instead, keeping the list newest-first regardless of
+ * resolution order.
+ */
+export function insertByAtIso(
+  entries: readonly ScanHistoryEntry[],
+  entry: ScanHistoryEntry,
+): ScanHistoryEntry[] {
+  const idx = entries.findIndex((e) => e.atIso <= entry.atIso);
+  if (idx === -1) return [...entries, entry];
+  return [...entries.slice(0, idx), entry, ...entries.slice(idx)];
+}
+
+/** The entry with the greatest `atIso` — what the "last read" card shows.
+ *  Computed by value, not by array position, so it stays correct even if a
+ *  caller ever accumulates `history` some other way than `insertByAtIso`. */
+export function latestEntry(entries: readonly ScanHistoryEntry[]): ScanHistoryEntry | null {
+  if (entries.length === 0) return null;
+  return entries.reduce((latest, e) => (e.atIso > latest.atIso ? e : latest));
+}
+
+/**
+ * spec-76 review Important #3. `packages` (useRoutePackages) is stale until
+ * its cache-invalidation refetch lands, and stays stale for the NEXT scan
+ * too if two boxes of the same order are scanned faster than that refetch
+ * — so a query-based "+1" renders the same "paquete 2 de 3" for both boxes.
+ * Counting this session's own already-accepted entries for the order is
+ * immune to query timing: it only ever grows by exactly one per accepted
+ * scan of that order, exactly when a new one lands.
+ */
+export function countAcceptedForOrder(entries: readonly ScanHistoryEntry[], orderId: string): number {
+  return entries.filter((e) => e.kind === 'accepted' && e.orderId === orderId).length;
+}
+
 export interface RejectionTallyRow {
   code: ScanRejectionCode;
   label: string;

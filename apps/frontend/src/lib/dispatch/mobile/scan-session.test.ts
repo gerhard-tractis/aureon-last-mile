@@ -4,6 +4,9 @@ import {
   buildRejectedEntry,
   tallyRejections,
   countRejections,
+  insertByAtIso,
+  latestEntry,
+  countAcceptedForOrder,
   type ScanHistoryEntry,
 } from './scan-session';
 
@@ -71,10 +74,10 @@ describe('buildRejectedEntry', () => {
 });
 
 const rejections: ScanHistoryEntry[] = [
-  buildRejectedEntry({ id: '1', code: 'a', atIso: 't', failure: { code: 'NOT_FOUND', message: 'x' } }),
-  buildRejectedEntry({ id: '2', code: 'b', atIso: 't', failure: { code: 'NOT_FOUND', message: 'x' } }),
-  buildRejectedEntry({ id: '3', code: 'c', atIso: 't', failure: { code: 'IN_CONSOLIDATION', message: 'x' } }),
-  buildAcceptedEntry({ id: '4', code: 'd', atIso: 't', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } }),
+  buildRejectedEntry({ id: '1', code: 'a', atIso: '2026-09-03T09:00:00.000Z', failure: { code: 'NOT_FOUND', message: 'x' } }),
+  buildRejectedEntry({ id: '2', code: 'b', atIso: '2026-09-03T09:00:00.000Z', failure: { code: 'NOT_FOUND', message: 'x' } }),
+  buildRejectedEntry({ id: '3', code: 'c', atIso: '2026-09-03T09:00:00.000Z', failure: { code: 'IN_CONSOLIDATION', message: 'x' } }),
+  buildAcceptedEntry({ id: '4', code: 'd', atIso: '2026-09-03T09:00:00.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } }),
 ];
 
 describe('countRejections', () => {
@@ -103,5 +106,60 @@ describe('formatScanTimestamp', () => {
     // aside, America/Santiago sits at -03:00/-04:00; this asserts the
     // shape, not a specific offset).
     expect(formatScanTimestamp('2026-09-03T12:19:04.000Z')).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+  });
+});
+
+describe('insertByAtIso', () => {
+  it('inserts newest-first — a later atIso goes to the front', () => {
+    const a = buildAcceptedEntry({ id: 'a', code: 'A', atIso: '2026-09-03T09:00:00.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const b = buildAcceptedEntry({ id: 'b', code: 'B', atIso: '2026-09-03T09:00:05.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const result = insertByAtIso([a], b);
+    expect(result.map((e) => e.id)).toEqual(['b', 'a']);
+  });
+
+  it('spec-76 review Important #2 — an OUT-OF-ORDER resolution (a slower earlier scan resolving after a faster later one) is inserted by atIso, not prepended blindly', () => {
+    // B (started second, resolved first) is already in history; A (started
+    // first, resolved second, so it arrives here LATER in wall-clock terms)
+    // has an EARLIER atIso — it must land BEHIND b, not jump in front of it.
+    const b = buildAcceptedEntry({ id: 'b', code: 'B', atIso: '2026-09-03T09:00:05.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const a = buildAcceptedEntry({ id: 'a', code: 'A', atIso: '2026-09-03T09:00:00.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const result = insertByAtIso([b], a);
+    expect(result.map((e) => e.id)).toEqual(['b', 'a']);
+  });
+
+  it('inserts into the middle of a longer history at the right position', () => {
+    const t = (s: string) => `2026-09-03T09:00:${s}.000Z`;
+    const e3 = buildAcceptedEntry({ id: '3', code: 'C', atIso: t('03'), response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const e1 = buildAcceptedEntry({ id: '1', code: 'A', atIso: t('01'), response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const e2 = buildAcceptedEntry({ id: '2', code: 'B', atIso: t('02'), response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const result = insertByAtIso([e3, e1], e2);
+    expect(result.map((e) => e.id)).toEqual(['3', '2', '1']);
+  });
+});
+
+describe('latestEntry', () => {
+  it('returns the entry with the greatest atIso, regardless of array order', () => {
+    const early = buildAcceptedEntry({ id: 'early', code: 'A', atIso: '2026-09-03T09:00:00.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    const late = buildAcceptedEntry({ id: 'late', code: 'B', atIso: '2026-09-03T09:05:00.000Z', response: { order_id: 'o', order_number: 'n', contact_name: null, contact_address: null } });
+    expect(latestEntry([late, early])?.id).toBe('late');
+    expect(latestEntry([early, late])?.id).toBe('late');
+  });
+
+  it('returns null for an empty history', () => {
+    expect(latestEntry([])).toBeNull();
+  });
+});
+
+describe('countAcceptedForOrder', () => {
+  it('counts only accepted entries for the given order_id', () => {
+    const entries: ScanHistoryEntry[] = [
+      buildAcceptedEntry({ id: '1', code: 'A', atIso: 't1', response: { order_id: 'o1', order_number: 'n', contact_name: null, contact_address: null } }),
+      buildAcceptedEntry({ id: '2', code: 'B', atIso: 't2', response: { order_id: 'o2', order_number: 'n', contact_name: null, contact_address: null } }),
+      buildRejectedEntry({ id: '3', code: 'C', atIso: 't3', failure: { code: 'NOT_FOUND', message: 'x' } }),
+      buildAcceptedEntry({ id: '4', code: 'D', atIso: 't4', response: { order_id: 'o1', order_number: 'n', contact_name: null, contact_address: null } }),
+    ];
+    expect(countAcceptedForOrder(entries, 'o1')).toBe(2);
+    expect(countAcceptedForOrder(entries, 'o2')).toBe(1);
+    expect(countAcceptedForOrder(entries, 'o3')).toBe(0);
   });
 });

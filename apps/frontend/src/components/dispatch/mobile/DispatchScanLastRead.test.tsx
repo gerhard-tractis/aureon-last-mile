@@ -49,6 +49,12 @@ describe('DispatchScanLastRead', () => {
   it('spec-76 2f decision 5 — ALREADY_IN_ROUTE names the route, says the package was NOT added, and offers to view (not move) it', async () => {
     const user = userEvent.setup();
     const onViewRoute = vi.fn();
+    // `conflictingRouteCode` here is a fixture convenience, not what
+    // crew-board.ts's real `routeCode()` produces — that function is
+    // `routeId.slice(0, 8).toUpperCase()` on a UUID (e.g. "ABCDEF12"),
+    // never a human "RUT-NNNN" shape. This component only renders whatever
+    // string it is given; the "RUT-0087" shape is asserted here purely for
+    // readability and never appears on the real screen.
     const entry = buildRejectedEntry({
       id: '3',
       code: 'CL9999',
@@ -71,7 +77,7 @@ describe('DispatchScanLastRead', () => {
     const entry = buildRejectedEntry({
       id: '4',
       code: 'CL1',
-      atIso: 't',
+      atIso: '2026-09-03T09:00:00.000Z',
       failure: { code: 'NOT_FOUND', message: 'Código no encontrado' },
     });
     render(<DispatchScanLastRead entry={entry} onViewRoute={vi.fn()} />);
@@ -83,11 +89,24 @@ describe('DispatchScanLastRead', () => {
     const entry = buildRejectedEntry({
       id: '5',
       code: 'CL1',
-      atIso: 't',
+      atIso: '2026-09-03T09:00:00.000Z',
       failure: { code: 'IN_CONSOLIDATION', message: 'Paquete en andén de consolidación: reasígnalo a un andén de reparto antes de cargarlo' },
     });
     render(<DispatchScanLastRead entry={entry} onViewRoute={vi.fn()} />);
     expect(screen.getByText('Retenido en consolidación')).toBeInTheDocument();
     expect(screen.queryByText(/no fue agregado/i)).not.toBeInTheDocument();
+  });
+
+  it('spec-76 escalated decision — NOT_ON_DOCK ("en_bodega") renders its own card, no ALREADY_IN_ROUTE explanation or Ver ruta button', () => {
+    const entry = buildRejectedEntry({
+      id: '6',
+      code: 'CL1',
+      atIso: '2026-09-03T09:00:00.000Z',
+      failure: { code: 'NOT_ON_DOCK', message: 'Paquete en bodega — no pasó por andén' },
+    });
+    render(<DispatchScanLastRead entry={entry} onViewRoute={vi.fn()} />);
+    expect(screen.getByText('Paquete en bodega — no pasó por andén')).toBeInTheDocument();
+    expect(screen.queryByText(/no fue agregado/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ver ruta/i })).not.toBeInTheDocument();
   });
 });

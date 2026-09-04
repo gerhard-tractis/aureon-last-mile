@@ -529,4 +529,64 @@ END $$;
 
 ROLLBACK TO test_9;
 
+-- =============================================================================
+-- TEST 10 (spec-76 task 3, escalated decision, migration 20260907000001):
+-- recompute_dispatch_stage — an `en_bodega` sibling does NOT block the seal
+-- any more. `en_bodega` came OUT of DISPATCHABLE_STATUSES (scan-validator.ts)
+-- — it is now rejected at the scanner (NOT_ON_DOCK), so it must not count
+-- as "outstanding" either, for the exact same reason TEST 3 already proves
+-- for `dañado`: a box that can never be scanned in must not pin the
+-- dispatch at `partially_staged` forever. This is the guard the migration
+-- header at 20260902000001:398-409 originally claimed and never wrote —
+-- this test is what 20260907000001's header now names as enforcing it.
+-- =============================================================================
+SAVEPOINT test_10;
+
+DO $$
+DECLARE
+  v_op       UUID := 'aaaaaaaa-aaaa-aaaa-aaaa-000000000076';
+  v_user     UUID := 'aaaaaaaa-aaaa-aaaa-aaaa-000000000176';
+  v_route    UUID := '22221011-0000-0000-0000-000000000076';
+  v_order    UUID := 'e1760050-0000-0000-0000-000000000076';
+  v_dispatch UUID := 'd1600050-0000-0000-0000-000000000076';
+  v_result   text;
+  v_row      RECORD;
+BEGIN
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, status)
+  VALUES (v_route, v_op, 'dispatchtrack', 'R-76-080', CURRENT_DATE, 'loading');
+
+  INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
+    delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
+  VALUES (v_order, v_op, 'T76-50', 'Cliente', '+56900000000', 'Calle 1', 'TestComuna',
+    '2099-01-01'::date, '{}'::jsonb, 'MANUAL', now());
+
+  INSERT INTO public.dispatches (id, operator_id, route_id, order_id, provider, status, stage, staged_at)
+  VALUES (v_dispatch, v_op, v_route, v_order, 'dispatchtrack', 'pending', 'planned', NULL);
+
+  -- The package just scanned: already loaded.
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, loaded_at, loaded_by)
+  VALUES ('f1760050-0000-0000-0000-000000000076', v_op, v_order, 'PKG-T76-50A', '{}'::jsonb,
+    'en_carga', NOW(), v_user);
+
+  -- The sibling: en_bodega — never sorted to an andén, never scannable.
+  INSERT INTO public.packages (id, operator_id, order_id, label, raw_data, status, loaded_at)
+  VALUES ('f1760051-0000-0000-0000-000000000076', v_op, v_order, 'PKG-T76-50B', '{}'::jsonb,
+    'en_bodega', NULL);
+
+  v_result := public.recompute_dispatch_stage(v_dispatch, v_op, v_order, v_user);
+
+  IF v_result <> 'staged' THEN
+    RAISE EXCEPTION 'TEST 10: recompute_dispatch_stage returned %, want staged (an en_bodega sibling must not block)', v_result;
+  END IF;
+
+  SELECT * INTO v_row FROM public.dispatches WHERE id = v_dispatch;
+  IF v_row.stage <> 'staged' THEN
+    RAISE EXCEPTION 'TEST 10: dispatches.stage=%, want staged', v_row.stage;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 10 PASSED: an en_bodega sibling does not block the seal (spec-76 task 3)';
+END $$;
+
+ROLLBACK TO test_10;
+
 ROLLBACK;

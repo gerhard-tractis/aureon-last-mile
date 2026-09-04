@@ -23,6 +23,12 @@ describe('DispatchScanRejectionSummary', () => {
     expect(screen.getByText('4')).toBeInTheDocument();
   });
 
+  it('spec-76 review — scoped honestly to this session, not "en este turno" (a turno can span more than this one tab)', () => {
+    render(<DispatchScanRejectionSummary rejectionCount={1} tally={[]} />);
+    expect(screen.getByText('en esta sesión')).toBeInTheDocument();
+    expect(screen.queryByText(/en este turno/i)).not.toBeInTheDocument();
+  });
+
   it('singularizes for one rejection', () => {
     render(<DispatchScanRejectionSummary rejectionCount={1} tally={[]} />);
     expect(screen.getByText('1 RECHAZO')).toBeInTheDocument();
