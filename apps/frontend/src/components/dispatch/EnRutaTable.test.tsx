@@ -10,6 +10,7 @@ function row(overrides: Partial<EnRutaRoute> = {}): EnRutaRoute {
     driverName: 'Mario González',
     truckIdentifier: 'ZALDUENDO',
     status: 'in_transit',
+    routeDate: '2026-09-04',
     comunas: ['Puente Alto', 'La Florida'],
     paradasTotal: 24,
     paradasCompletadas: 13,
@@ -94,5 +95,18 @@ describe('EnRutaTable', () => {
     render(<EnRutaTable enRuta={[]} completadas={[row({ id: 'c1' })]} />);
     expect(screen.getAllByRole('table')).toHaveLength(1);
     expect(screen.getByText('RUT-2026-0087')).toBeInTheDocument();
+  });
+
+  it('the RUTA cell is a real link to the route, so a shift lead can drill through — D2', () => {
+    render(<EnRutaTable enRuta={[row({ id: 'r42' })]} completadas={[]} />);
+    const link = screen.getByRole('link', { name: 'RUT-2026-0087' });
+    expect(link).toHaveAttribute('href', '/app/dispatch/r42');
+  });
+
+  it('the drill-through link lives inside the cell, not a row-level click handler', () => {
+    render(<EnRutaTable enRuta={[row()]} completadas={[]} />);
+    const row_ = screen.getByRole('link', { name: 'RUT-2026-0087' }).closest('tr');
+    expect(row_).not.toHaveAttribute('onclick');
+    expect(row_).not.toHaveAttribute('role', 'button');
   });
 });

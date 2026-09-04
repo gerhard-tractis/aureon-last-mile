@@ -5,6 +5,8 @@ import {
   compareEnRutaIncidence,
   sortEnRutaRoutes,
   formatLastEventLabel,
+  groupDispatchesByRoute,
+  subtractDaysISO,
   type RawDispatchRow,
   type RawRouteRow,
   type EnRutaRoute,
@@ -18,8 +20,6 @@ function route(overrides: Partial<RawRouteRow> = {}): RawRouteRow {
     vehicle_id: 'v1',
     status: 'in_transit',
     route_date: '2026-09-04',
-    planned_stops: 24,
-    completed_stops: 0,
     ...overrides,
   };
 }
@@ -43,6 +43,7 @@ function enRutaRoute(overrides: Partial<EnRutaRoute> = {}): EnRutaRoute {
     driverName: 'X',
     truckIdentifier: 'ZALDUENDO',
     status: 'in_transit',
+    routeDate: '2026-09-04',
     comunas: [],
     paradasTotal: 10,
     paradasCompletadas: 5,
@@ -52,21 +53,46 @@ function enRutaRoute(overrides: Partial<EnRutaRoute> = {}): EnRutaRoute {
   };
 }
 
+describe('groupDispatchesByRoute', () => {
+  it('groups by route_id and drops dispatches with no route_id', () => {
+    const grouped = groupDispatchesByRoute([
+      dispatch({ route_id: 'r1', order_id: 'o1' }),
+      dispatch({ route_id: 'r2', order_id: 'o2' }),
+      dispatch({ route_id: 'r1', order_id: 'o3' }),
+      dispatch({ route_id: null, order_id: 'o4' }),
+    ]);
+    expect(grouped.get('r1')).toHaveLength(2);
+    expect(grouped.get('r2')).toHaveLength(1);
+    expect(Array.from(grouped.keys())).toEqual(['r1', 'r2']);
+  });
+});
+
 describe('buildEnRutaRoute', () => {
-  it('counts fallidas and completadas from this route\'s dispatches only', () => {
-    const dispatches = [
-      dispatch({ route_id: 'r1', status: 'failed' }),
-      dispatch({ route_id: 'r1', status: 'delivered' }),
-      dispatch({ route_id: 'r1', status: 'pending' }),
-      dispatch({ route_id: 'r2', status: 'failed' }), // different route — must not leak in
+  it('counts paradasTotal/paradasCompletadas/fallidas from exactly the dispatches it is given', () => {
+    const routeDispatches = [
+      dispatch({ status: 'failed' }),
+      dispatch({ status: 'delivered' }),
+      dispatch({ status: 'pending' }),
     ];
-    const result = buildEnRutaRoute(route(), dispatches, new Map(), new Map());
-    expect(result.fallidas).toBe(1);
+    const result = buildEnRutaRoute(route(), routeDispatches, new Map(), new Map());
+    expect(result.paradasTotal).toBe(3); // the local dispatch count, never routes.planned_stops
     expect(result.paradasCompletadas).toBe(2); // failed + delivered, not pending
+    expect(result.fallidas).toBe(1);
+  });
+
+  it('numerator and denominator can never drift apart — both come from the same array', () => {
+    const routeDispatches = [dispatch({ status: 'delivered' }), dispatch({ status: 'delivered' })];
+    const result = buildEnRutaRoute(route(), routeDispatches, new Map(), new Map());
+    expect(result.paradasCompletadas).toBeLessThanOrEqual(result.paradasTotal);
+  });
+
+  it('carries routeDate through from the raw row', () => {
+    const result = buildEnRutaRoute(route({ route_date: '2026-09-01' }), [], new Map(), new Map());
+    expect(result.routeDate).toBe('2026-09-01');
   });
 
   it('derives distinct sorted comunas from the order lookup, real column only', () => {
-    const dispatches = [
+    const routeDispatches = [
       dispatch({ order_id: 'o1' }),
       dispatch({ order_id: 'o2' }),
       dispatch({ order_id: 'o3' }), // no comuna entry — must not crash or fabricate
@@ -75,7 +101,7 @@ describe('buildEnRutaRoute', () => {
       ['o1', 'Puente Alto'],
       ['o2', 'La Florida'],
     ]);
-    const result = buildEnRutaRoute(route(), dispatches, orderComunas, new Map());
+    const result = buildEnRutaRoute(route(), routeDispatches, orderComunas, new Map());
     expect(result.comunas).toEqual(['La Florida', 'Puente Alto']);
   });
 
@@ -91,18 +117,19 @@ describe('buildEnRutaRoute', () => {
   });
 
   it('lastEventAt is the max updated_at across this route\'s dispatches', () => {
-    const dispatches = [
-      dispatch({ route_id: 'r1', updated_at: '2026-09-04T10:00:00Z' }),
-      dispatch({ route_id: 'r1', updated_at: '2026-09-04T12:30:00Z' }),
-      dispatch({ route_id: 'r1', updated_at: '2026-09-04T09:00:00Z' }),
+    const routeDispatches = [
+      dispatch({ updated_at: '2026-09-04T10:00:00Z' }),
+      dispatch({ updated_at: '2026-09-04T12:30:00Z' }),
+      dispatch({ updated_at: '2026-09-04T09:00:00Z' }),
     ];
-    const result = buildEnRutaRoute(route(), dispatches, new Map(), new Map());
+    const result = buildEnRutaRoute(route(), routeDispatches, new Map(), new Map());
     expect(result.lastEventAt).toBe('2026-09-04T12:30:00Z');
   });
 
-  it('lastEventAt is null when the route has no dispatches', () => {
+  it('lastEventAt is null and paradasTotal is 0 when the route has no dispatches', () => {
     const result = buildEnRutaRoute(route(), [], new Map(), new Map());
     expect(result.lastEventAt).toBeNull();
+    expect(result.paradasTotal).toBe(0);
   });
 });
 
@@ -169,6 +196,15 @@ describe('compareEnRutaIncidence / sortEnRutaRoutes', () => {
     const fine = enRutaRoute({ id: 'fine', fallidas: 0, lastEventAt: '2026-09-04T12:00:00Z' });
     expect(sortEnRutaRoutes([fine, worst]).map((r) => r.id)).toEqual(['worst', 'fine']);
   });
+
+  it('two routes that both have no event ever are equal — comparator never returns NaN', () => {
+    const a = enRutaRoute({ id: 'a', fallidas: 0, lastEventAt: null });
+    const b = enRutaRoute({ id: 'b', fallidas: 0, lastEventAt: null });
+    expect(compareEnRutaIncidence(a, b)).toBe(0);
+    expect(compareEnRutaIncidence(b, a)).toBe(0);
+    // Array.prototype.sort is stable — the pair's relative order survives.
+    expect(sortEnRutaRoutes([a, b]).map((r) => r.id)).toEqual(['a', 'b']);
+  });
 });
 
 describe('formatLastEventLabel', () => {
@@ -176,9 +212,38 @@ describe('formatLastEventLabel', () => {
     expect(formatLastEventLabel(null, Date.now())).toBe('sin eventos');
   });
 
+  it('renders "hace N s" under a minute', () => {
+    const now = new Date('2026-09-04T12:00:08Z').getTime();
+    expect(formatLastEventLabel('2026-09-04T12:00:00Z', now)).toBe('hace 8 s');
+  });
+
   it('renders "hace N min" from a real timestamp', () => {
     const now = new Date('2026-09-04T12:41:00Z').getTime();
     const label = formatLastEventLabel('2026-09-04T12:00:00Z', now);
     expect(label).toBe('hace 41 min');
+  });
+
+  it('rolls over to hours past 60 minutes — a full-shift monitor, not just a stall card', () => {
+    const now = new Date('2026-09-04T12:40:00Z').getTime();
+    expect(formatLastEventLabel('2026-09-04T07:00:00Z', now)).toBe('hace 5 h 40 min');
+  });
+
+  it('drops the "0 min" tail on an exact hour', () => {
+    const now = new Date('2026-09-04T12:00:00Z').getTime();
+    expect(formatLastEventLabel('2026-09-04T07:00:00Z', now)).toBe('hace 5 h');
+  });
+});
+
+describe('subtractDaysISO', () => {
+  it('subtracts whole civil days', () => {
+    expect(subtractDaysISO('2026-09-04', 7)).toBe('2026-08-28');
+  });
+
+  it('crosses a month boundary', () => {
+    expect(subtractDaysISO('2026-09-03', 5)).toBe('2026-08-29');
+  });
+
+  it('is timezone-independent — pure calendar arithmetic, not "now"', () => {
+    expect(subtractDaysISO('2026-01-01', 1)).toBe('2025-12-31');
   });
 });

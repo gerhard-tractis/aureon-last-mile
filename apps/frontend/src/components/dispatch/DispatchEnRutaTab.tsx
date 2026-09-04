@@ -36,7 +36,7 @@ export function DispatchEnRutaTab({ operatorId }: { operatorId: string }) {
     return <RouteSkeleton rowClass="h-16" />;
   }
 
-  const { enRuta, completadas, metrics, fallidasSinReingreso } = data;
+  const { enRuta, completadasHoy, metrics, fallidasSinReingreso } = data;
   const totalParadas = enRuta.reduce((sum, r) => sum + r.paradasTotal, 0);
 
   return (
@@ -50,11 +50,11 @@ export function DispatchEnRutaTab({ operatorId }: { operatorId: string }) {
 
       <EnRutaMetricsRow metrics={metrics} />
 
-      <EnRutaTable enRuta={enRuta} completadas={completadas} />
+      <EnRutaTable enRuta={enRuta} completadas={completadasHoy} />
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs text-text-secondary">
         <span>
-          {enRuta.length} en ruta · {completadas.length} completadas
+          {enRuta.length} en ruta · {completadasHoy.length} completadas
           {fallidasSinReingreso > 0 && ` · ${fallidasSinReingreso} fallidas sin reingreso registrado`}
         </span>
         {fallidasSinReingreso > 0 && (

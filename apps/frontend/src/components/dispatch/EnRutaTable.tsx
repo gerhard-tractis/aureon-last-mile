@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { Truck } from 'lucide-react';
 import { EmptyState } from '@/components/EmptyState';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -24,9 +25,16 @@ function RouteRow({ route }: { route: EnRutaRoute }) {
     <tr className="border-b border-border last:border-0">
       <td className="px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-accent">
+          {/* A real <Link> inside the cell, not a row-level onClick — the
+              nested-interactive shape (row click + inner control) has broken
+              four times in this module already. The row itself stays a
+              plain <tr>. */}
+          <Link
+            href={`/app/dispatch/${route.id}`}
+            className="font-mono text-sm font-semibold text-accent hover:underline"
+          >
             {route.externalRouteId ?? route.id.slice(0, 8).toUpperCase()}
-          </span>
+          </Link>
           {statusConfig && (
             <StatusBadge status={route.status} label={statusConfig.label} variant={statusConfig.variant} size="sm" />
           )}
@@ -82,7 +90,7 @@ export function EnRutaTable({
         <thead>
           <tr className="border-b border-border">
             {HEADERS.map((h) => (
-              <th key={h} className="px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-text-secondary">
+              <th key={h} scope="col" className="px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-text-secondary">
                 {h}
               </th>
             ))}

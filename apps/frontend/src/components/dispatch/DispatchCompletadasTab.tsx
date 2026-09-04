@@ -16,6 +16,13 @@ import { todayISOInTimezone } from '@/lib/utils/dateFormat';
  *
  * Shares `useEnRutaSnapshot`'s query cache with `DispatchEnRutaTab` (same
  * `operatorId`/`date` key) — switching tabs does not refetch.
+ *
+ * D1 (phase-5 review): shows `completadasSemana` — the last 7 days, the
+ * same window the retired `DispatchCompletedRoutesTab` used
+ * (`daysAgoISO(7)`) — not just today. Decision 5's "misma tabla filtrada"
+ * governs the `1d` foot section (`completadasHoy`, inside
+ * `DispatchEnRutaTab`); it says nothing about narrowing this standalone
+ * tab's own history down to a single day.
  */
 export function DispatchCompletadasTab({ operatorId }: { operatorId: string }) {
   const today = todayISOInTimezone();
@@ -28,9 +35,9 @@ export function DispatchCompletadasTab({ operatorId }: { operatorId: string }) {
   return (
     <EnRutaTable
       enRuta={[]}
-      completadas={data.completadas}
-      emptyTitle="Sin rutas completadas hoy"
-      emptyDescription="Las rutas que terminen o se cancelen hoy aparecerán aquí."
+      completadas={data.completadasSemana}
+      emptyTitle="Sin rutas completadas"
+      emptyDescription="Las rutas completadas o canceladas en los últimos 7 días aparecerán aquí."
     />
   );
 }
