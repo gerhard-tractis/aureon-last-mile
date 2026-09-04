@@ -17,7 +17,7 @@ let mockBoard: {
   lastDispatched: { code: string; timeLabel: string } | null;
   packagesOnDock: number;
 } | undefined;
-let mockIsLoading = false;
+const mockIsLoading = false;
 vi.mock('@/hooks/dispatch/mobile/useCrewLoadingBoard', () => ({
   useCrewLoadingBoard: () => ({ data: mockBoard, isLoading: mockIsLoading }),
 }));
