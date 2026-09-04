@@ -37,6 +37,23 @@
  *   nothing) — only the transition the journey under test actually drives
  *   (here: picking the route, assigning the truck, scanning it loaded) goes
  *   through real screens/RPCs, not the packages' genesis state.
+ *
+ * Two known deviations from production, left as-is for this phase:
+ *
+ * - `openRouteToLoad()` hardcodes `signIn(page, CREW)` — there is only one
+ *   crew persona in this fixture. Decision 9's "a route another crew is
+ *   loading is visible but does not open" needs a SECOND crew signed in on
+ *   a second route; whoever writes that scenario should add a `user`
+ *   parameter to `openRouteToLoad()` (or a sibling function) rather than a
+ *   second hardcoded persona.
+ * - The CREW session itself calls `POST /api/dispatch/routes` to create the
+ *   route. No production crew does this — planning a route is a manager
+ *   action (Pre-Ruta, spec-75), and a crew member only ever picks an
+ *   already-planned one in `2b`. It works here because that endpoint's
+ *   only real gate is tenant RLS (`operator_id`), which any signed-in user
+ *   of this operator satisfies — but it is a shortcut this fixture takes
+ *   deliberately to avoid driving spec-75's own desktop planning UI, not a
+ *   claim that crews create routes.
  */
 import type { Page } from '@playwright/test';
 import { db, signIn, OPERATOR_ID } from './spec52-fixture';
@@ -48,8 +65,10 @@ export const CREW = {
   password: 'e2e76-crew-pass',
   fullName: 'Cami Cuadrilla',
   // loading_crew -> ['distribution','dispatch'] permissions (latest def,
-  // 20260811000001_align_permission_vocabulary.sql) — the role Despacho's
-  // `_client-gate.tsx` actually admits.
+  // 20260824000002_spec66_ops_leader_defaults.sql — same array value as
+  // 20260811000001, but that migration is no longer the newest one that
+  // touches this function; the latest-migration-as-template rule applies
+  // to citations too) — the role Despacho's `_client-gate.tsx` admits.
   role: 'loading_crew',
 };
 
@@ -87,12 +106,15 @@ export const SECOND_ACCEPTED_PACKAGE = STOPS[0].packages[1];
 export const UNKNOWN_CODE = `${PREFIX}-NOPE`;
 
 /** `America/Santiago` civil date, `YYYY-MM-DD` — the same format
- *  `todayISOInTimezone()` (lib/utils/dateFormat.ts) produces and
- *  `POST /api/dispatch/routes`'s `route_date` validates against. Computed
- *  locally rather than imported: this file is e2e/support, outside the app
- *  bundle, and duplicating one `Intl.DateTimeFormat` call is cheaper than
- *  wiring a cross-boundary import for it (Lecciones aplicadas #3 — do not
- *  compute "today" naively; `en-CA` already formats as `YYYY-MM-DD`).
+ *  `todayISOInTimezone()` (`@/lib/utils/dateFormat.ts`) produces and
+ *  `POST /api/dispatch/routes`'s `route_date` validates against.
+ *  `tsconfig.json`'s `**\/*.ts` + the `@/*` alias mean that function DOES
+ *  resolve from here — the boundary is not the reason this is a separate
+ *  one-liner instead. It is kept local because `e2e/support` importing app
+ *  source (rather than the reverse) is not a precedent this file wants to
+ *  set for a duplicate of one `Intl.DateTimeFormat` call (Lecciones
+ *  aplicadas #3 — do not compute "today" naively; `en-CA` already formats
+ *  as `YYYY-MM-DD`).
  */
 function santiagoToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
@@ -186,7 +208,12 @@ export async function seed(): Promise<DespachoSeeded> {
 export async function teardown(): Promise<void> {
   const like = `${PREFIX}-%`;
 
-  await db().query(`DELETE FROM packages WHERE label LIKE $1`, [like]);
+  // Package ids captured BEFORE the DELETE below — an `audit_packages_changes`
+  // row's `resource_id` (20260217000003 / 20260218220000's trigger func,
+  // `TG_TABLE_NAME` + the row's own id) is the package id, which cannot be
+  // recovered once the row is gone.
+  const { rows: pkgRows } = await db().query(`SELECT id FROM packages WHERE label LIKE $1`, [like]);
+  const packageIds = pkgRows.map((r) => r.id as string);
 
   // Routes created via POST /api/dispatch/routes carry a random
   // `draft_<uuid>` external_route_id, not our PREFIX — found instead via
@@ -199,12 +226,40 @@ export async function teardown(): Promise<void> {
   );
   const routeIds = routeRows.map((r) => r.route_id as string);
 
+  // audit_logs carries no FK to either table (confirmed against the audit
+  // trigger's own INSERT) — an incomplete cleanup here blocks nothing, but
+  // a half-cleaned resource_type reads as a finished cleanup that isn't.
+  // Both resource types this fixture's own writes actually generate are
+  // cleaned: `routes` (route creation, vehicle assignment) and `packages`
+  // (every package UPDATE the trigger sees, e.g. the seed INSERT itself).
   if (routeIds.length > 0) {
     await db().query(
       `DELETE FROM audit_logs WHERE resource_type = 'routes' AND resource_id = ANY($1::uuid[])`,
       [routeIds],
     );
   }
+  if (packageIds.length > 0) {
+    await db().query(
+      `DELETE FROM audit_logs WHERE resource_type = 'packages' AND resource_id = ANY($1::uuid[])`,
+      [packageIds],
+    );
+  }
+
+  // No scan table is cleaned here. Correct TODAY only: the despacho scan
+  // endpoint (`POST /api/dispatch/routes/[id]/scan`) writes no row on
+  // either an accepted or a rejected scan (route.ts, verified — see
+  // despacho-crew-mobile.spec.ts's own comment on the same fact), unlike
+  // spec-68's `dock_scans` or spec-62's `reception_scans`. If a future spec
+  // adds one keyed on `package_id REFERENCES packages(id)` with the
+  // schema's default `ON DELETE NO ACTION`/`RESTRICT` (every existing FK to
+  // `packages(id)` in this repo is one of those two — checked against
+  // `dock_scans`/`reception_scans`/`pickup_scans`, none of which CASCADE),
+  // the `DELETE FROM packages` below starts failing hard on a foreign-key
+  // violation, and because `seed()` opens with `teardown()`, that failure
+  // poisons every subsequent run in this namespace rather than just this
+  // one. Whoever adds that table must add its cleanup here first.
+  await db().query(`DELETE FROM packages WHERE label LIKE $1`, [like]);
+
   await db().query(
     `DELETE FROM dispatches WHERE order_id IN (SELECT id FROM orders WHERE external_load_id LIKE $1)`,
     [like],
@@ -256,6 +311,31 @@ export async function openRouteToLoad(page: Page): Promise<DespachoRoute> {
     throw new Error(
       `openRouteToLoad() expected ${STOPS.length} seeded orders, found ${orderRows.length} — ` +
       'did seed() run for this file\'s namespace?',
+    );
+  }
+
+  // `2d`'s own precondition, not just `2a`-`2c`'s: without this, a missing
+  // fleet_vehicles row surfaces 4 tests later as a bare timeout on
+  // `getByRole('radio', { name: VEHICLE_EXTERNAL_ID })` in the spec's own
+  // 2d test — exactly the opaque failure this whole check exists to avoid.
+  const { rows: vehicleRows } = await db().query(
+    `SELECT id FROM fleet_vehicles WHERE external_vehicle_id = $1 AND operator_id = $2 AND deleted_at IS NULL`,
+    [VEHICLE_EXTERNAL_ID, OPERATOR_ID],
+  );
+  if (vehicleRows.length === 0) {
+    throw new Error(
+      `openRouteToLoad() requires seed() to have run first — no fleet_vehicles ` +
+      `row found with external_vehicle_id ${VEHICLE_EXTERNAL_ID}`,
+    );
+  }
+
+  const { rows: crewRows } = await db().query(
+    `SELECT id FROM auth.users WHERE email = $1`,
+    [CREW.email],
+  );
+  if (crewRows.length === 0) {
+    throw new Error(
+      `openRouteToLoad() requires seed() to have run first — no auth.users row for ${CREW.email}`,
     );
   }
 

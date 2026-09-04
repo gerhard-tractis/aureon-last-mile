@@ -60,7 +60,6 @@ test.describe('spec-76 Despacho crew mobile — 2a a 2f', () => {
   });
 
   test('2a/2b — crew signs in, sees the route and picks it', async () => {
-    test.setTimeout(240_000);
     const route = await openRouteToLoad(page);
     routeId = route.id;
     routeCode = route.code;
@@ -73,8 +72,9 @@ test.describe('spec-76 Despacho crew mobile — 2a a 2f', () => {
 
     // No myTask yet (the route is `planned`, not `loading` for this
     // crew) — 2a offers "Elegir ruta" rather than a dark task card, decision
-    // from spec-76 Fase 1 test 3.
-    await expect(page.getByTestId('dispatch-crew-home')).toContainText('Elige una ruta para empezar a cargar.');
+    // from spec-76 Fase 1 test 3. Asserted via the button role only — the
+    // sentence above it is design copy, and the button already covers the
+    // same branch without coupling to its wording.
     await page.getByRole('button', { name: 'Elegir ruta' }).click();
 
     // 2b — the seeded route shows up BORRADOR (chip fallback for `planned`)
@@ -95,9 +95,16 @@ test.describe('spec-76 Despacho crew mobile — 2a a 2f', () => {
     await expect(before).toContainText(routeCode);
     // Three grid tiles: EN EL ANDÉN, ÓRDENES, PARADAS — spec-76 Fase 3 test 8.
     // Both STOPS below produce 2 orders and 2 distinct addresses (stops).
-    await expect(before).toContainText(String(PACKAGES_TOTAL));
-    await expect(before.getByText('Órdenes').locator('xpath=preceding-sibling::p[1]')).toHaveText('2');
-    await expect(before.getByText('Paradas').locator('xpath=preceding-sibling::p[1]')).toHaveText('2');
+    // `data-testid`s on the tiles (DispatchRouteBeforeScan.tsx), not a
+    // substring/xpath match: `toContainText(String(PACKAGES_TOTAL))` would
+    // pass on the digit appearing anywhere in the container, including
+    // inside `routeCode`'s own hex digits, and `getByText(label)
+    // .locator('xpath=preceding-sibling::p[1]')` breaks the moment the
+    // number is wrapped in another element or a second `retenido`/order-
+    // count sibling makes the text match ambiguous.
+    await expect(before.getByTestId('dispatch-brief-anden').locator('p').first()).toHaveText(String(PACKAGES_TOTAL));
+    await expect(before.getByTestId('dispatch-brief-orders').locator('p').first()).toHaveText('2');
+    await expect(before.getByTestId('dispatch-brief-stops').locator('p').first()).toHaveText('2');
     await expect(before).toContainText('Sin asignar');
     // No `startScanningDisabledReason` is ever passed by DispatchRouteSurface
     // — decision 6, a missing vehicle never disables the scan CTA.
@@ -150,11 +157,23 @@ test.describe('spec-76 Despacho crew mobile — 2a a 2f', () => {
     await expect(page.getByTestId('dispatch-scan-rejection-summary')).toContainText('1 RECHAZO');
     await expect(page.getByTestId('dispatch-scan-rejection-summary')).toContainText('CÓDIGO NO ENCONTRADO');
 
-    // The field stays armed (decision 5 — a rejection is a state of 2e, not
-    // a blocking modal): still enabled, and a second accepted scan right
-    // after the rejection — with no re-click, re-focus recovery step, or
-    // screen change in between — actually lands.
-    await expect(scanner).toBeEnabled();
+    // The field stays ARMED (decision 5 — a rejection is a state of 2e, not
+    // a blocking modal), not merely enabled: `toBeEnabled()` alone would
+    // still pass on a field that lost focus entirely, and `fill()` below
+    // would silently refocus it itself before typing — masking the exact
+    // floor failure this exists to catch (refocus-package-field.ts's own
+    // header: a scanner gun's next burst goes into whatever holds focus,
+    // and if that is a button instead, the scan is dropped with no error).
+    // `toBeFocused()` and the reader-status label are both driven by
+    // `ScanField`'s real `onFocusStateChange` (refocusPackageField() calls
+    // `.focus()` on this exact input after every scan, accepted or
+    // rejected) — real observables, not an inference from the next scan
+    // landing.
+    await expect(scanner).toBeFocused();
+    await expect(session).toContainText('LISTO');
+
+    // Only now: a second accepted scan right after the rejection — with no
+    // re-click, no manual refocus step, no screen change — actually lands.
     await scanner.fill(SECOND_ACCEPTED_PACKAGE);
     await scanner.press('Enter');
 

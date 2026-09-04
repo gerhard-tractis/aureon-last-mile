@@ -27,10 +27,14 @@ export default defineConfig({
   // — not spec-52's; see the `workers: 1` comment below). Of the rest:
   // auth-pages and branding are screenshot-generation tools rather than
   // assertions, the old dispatch-route.spec.ts only ever asserted a URL
-  // redirect (`/(app\/dispatch|login)/`, true either way) and is superseded
-  // by despacho-crew-mobile, spec47-pickup has no fixture, and
-  // spec47-consolidated-reception is `test.skip`ped pending exactly this
-  // environment. Widen this pattern as each grows a fixture.
+  // redirect (`/(app\/dispatch|login)/`, true either way) and is replaced by
+  // despacho-crew-mobile for the behaviour it should have covered — but not
+  // fully: that old spec ran at 1440×900 against the desktop `RouteBuilder`
+  // tree, while despacho-crew-mobile runs only at 390×844 and never mounts
+  // it, so the desktop route-builder path has no E2E coverage here.
+  // spec47-pickup has no fixture, and spec47-consolidated-reception is
+  // `test.skip`ped pending exactly this environment. Widen this pattern as
+  // each grows a fixture.
   testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
