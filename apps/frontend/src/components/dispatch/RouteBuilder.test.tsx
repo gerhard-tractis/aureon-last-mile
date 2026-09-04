@@ -24,11 +24,6 @@ vi.mock('@/hooks/dispatch/useRoutePackages', () => ({
   }),
 }));
 
-const scanMutateAsyncMock = vi.fn();
-vi.mock('@/hooks/dispatch/useScanPackage', () => ({
-  useScanPackage: () => ({ mutateAsync: scanMutateAsyncMock }),
-}));
-
 // The route row changes underneath every mutation here, so the builder has to
 // re-read it. Key alignment between this refresher and the query it targets is
 // covered for real in useRefreshRouteStatus.test.tsx — mounting a QueryClient
@@ -249,10 +244,16 @@ describe('RouteBuilder — pending-to-stage visibility', () => {
 });
 
 /**
- * spec-70 phase 4, breakage #3: the header badge, the scan zone, and every
- * button in RoutePanel used to answer to a local `routeClosed` boolean that
+ * spec-70 phase 4, breakage #3: the header badge and every button in
+ * RoutePanel used to answer to a local `routeClosed` boolean that
  * defaulted to `false` on every mount — reload the page and a sealed route
  * looked open again. They now read the fetched route status.
+ *
+ * spec-75 phase 4 — the scan-input tests that used to live here are gone,
+ * not adapted: RouteBuilder never renders a scan field any more, at any
+ * status. Desktop scanning is removed entirely (`ScanZone.tsx` itself is
+ * deleted — spec-76 shipped the crew's mobile replacement, `2e`), unlike
+ * closing (see the seal block below, restored after phase-4 review).
  */
 describe('RouteBuilder — route status is the source of truth', () => {
   it('shows the real route status label in the header, not a hardcoded Borrador/Listo pair', () => {
@@ -261,17 +262,19 @@ describe('RouteBuilder — route status is the source of truth', () => {
     expect(screen.getByText('Cargada')).toBeInTheDocument();
   });
 
-  it('disables the scan input once the route is loaded — matching what /scan refuses server-side', () => {
-    mockRouteStatus = 'loaded';
-    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-    expect(screen.getByPlaceholderText(/Escanea barcode/i)).toBeDisabled();
-  });
-
-  it('keeps the scan input enabled while the route is still loading', () => {
-    mockRouteStatus = 'loading';
-    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-    expect(screen.getByPlaceholderText(/Escanea barcode/i)).toBeEnabled();
-  });
+  // Phase-4 review — this used to exercise only 'loading', the one status
+  // RouteBuilder can no longer even be mounted at (DispatchRouteSurface
+  // routes 'loading' to the read-only RouteTrackingView instead). Looping
+  // every status RouteBuilder can actually render at is what the title
+  // ("at any route status") claims.
+  it.each(['draft', 'planned', 'loading', 'loaded', 'dispatched'] as const)(
+    'never renders a scan input at status %s',
+    (status) => {
+      mockRouteStatus = status;
+      render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
+      expect(screen.queryByPlaceholderText(/Escanea barcode/i)).not.toBeInTheDocument();
+    },
+  );
 
   it('survives a "reload": a route already loaded stays loaded without any local click', () => {
     // The old bug: routeClosed always started false, so a mid-session
@@ -281,7 +284,6 @@ describe('RouteBuilder — route status is the source of truth', () => {
     unmount();
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
     expect(screen.getByText('Cargada')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Escanea barcode/i)).toBeDisabled();
   });
 });
 
@@ -289,6 +291,12 @@ describe('RouteBuilder — route status is the source of truth', () => {
  * spec-70 phase 3: the seal button used to POST to a bare `/close` and ignore
  * a non-ok response entirely — a refusal (e.g. UNSEALED_STOPS) would leave the
  * operator staring at a button that silently did nothing.
+ *
+ * spec-75 phase 4 review — this block was briefly deleted on the theory that
+ * decision 4 ("closing is crew-mobile only") already covered desktop too.
+ * It doesn't yet (spec-77 phase 1, which ships the mobile close, is still
+ * `backlog`) — removing this left zero callers of `POST /seal` anywhere.
+ * Restored verbatim from `origin/main` (`f1b66d3`) per review.
  */
 describe('RouteBuilder — seal', () => {
   it('POSTs to /seal, not /close', async () => {
@@ -338,7 +346,6 @@ describe('RouteBuilder — seal', () => {
  * handleRemove at all before this.
  */
 describe('RouteBuilder — remove from plan', () => {
-
   /**
    * The bug this pins: `handleClose` used to call `useRoutePackages`'s
    * refetch, so a 200 from /seal refreshed the stop list and nothing else.
@@ -377,9 +384,12 @@ describe('RouteBuilder — remove from plan', () => {
     expect(refreshRouteStatusMock).not.toHaveBeenCalled();
   });
 
+  // Phase-4 review minor — moved off 'loading' to 'planned': removal itself
+  // doesn't depend on the seal-only status, and 'loading' is no longer a
+  // status RouteBuilder is ever mounted at in production.
   it('prompts for a reason and sends it in the DELETE body', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: true,
@@ -401,7 +411,7 @@ describe('RouteBuilder — remove from plan', () => {
 
   it('does nothing when the reason prompt is cancelled', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue(null);
     render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
 
@@ -412,7 +422,7 @@ describe('RouteBuilder — remove from plan', () => {
 
   it('surfaces a refusal (e.g. FORBIDDEN or ROUTE_SEALED) instead of silently doing nothing', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
+    mockRouteStatus = 'planned';
     vi.spyOn(window, 'prompt').mockReturnValue('Cliente canceló');
     (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
@@ -437,6 +447,13 @@ describe('RouteBuilder — remove from plan', () => {
  * por estibar" counter correctly said 1 — the refusal it described no longer
  * held. Seed the seal refusal first (same path as the "seal" describe block
  * above), then exercise the action that should clear it.
+ *
+ * spec-75 phase 4 review — two of the original three tests here ('clears
+ * the banner once a scan succeeds' / 'does not clear the banner when a scan
+ * fails') are NOT restored: they typed into `ScanZone`'s field, and
+ * `ScanZone.tsx` is genuinely deleted (desktop scanning stays removed —
+ * only closing was restored). The removal-triggered test is unaffected and
+ * is restored verbatim.
  */
 describe('RouteBuilder — stale seal-error banner', () => {
   async function seedSealError() {
@@ -453,35 +470,6 @@ describe('RouteBuilder — stale seal-error banner', () => {
       expect(screen.getByText(/Faltan 2 parada\(s\)/)).toBeInTheDocument(),
     );
   }
-
-  it('clears the banner once a scan succeeds', async () => {
-    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
-    scanMutateAsyncMock.mockResolvedValue(undefined);
-    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-
-    await seedSealError();
-
-    await userEvent.type(screen.getByPlaceholderText(/Escanea barcode/i), 'PKG-1{Enter}');
-
-    await waitFor(() =>
-      expect(screen.queryByText(/Faltan 2 parada\(s\)/)).not.toBeInTheDocument(),
-    );
-  });
-
-  it('does not clear the banner when a scan fails', async () => {
-    mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];
-    mockRouteStatus = 'loading';
-    scanMutateAsyncMock.mockRejectedValue(new Error('Paquete no encontrado'));
-    render(<RouteBuilder routeId="r1" operatorId="op-1" vehicles={[]} />);
-
-    await seedSealError();
-
-    await userEvent.type(screen.getByPlaceholderText(/Escanea barcode/i), 'PKG-1{Enter}');
-
-    await waitFor(() => expect(screen.getByText('Paquete no encontrado')).toBeInTheDocument());
-    expect(screen.getByText(/Faltan 2 parada\(s\)/)).toBeInTheDocument();
-  });
 
   it('clears the banner once a removal succeeds', async () => {
     mockPackages = [pkg({ dispatch_id: 'd1', stage: 'planned' })];

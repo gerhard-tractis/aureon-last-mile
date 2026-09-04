@@ -120,10 +120,12 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
 11. Test: *Despachar a DispatchTrack* sólo se ofrece en `LISTA PARA DESPACHO` (decisión 4).
 12. Test: panel de cuadrillas activas con su ritmo y estado.
 
-### Fase 4 — `1c` Seguimiento `[parked]`
-12b. **Partir `RouteBuilder.tsx`** (364 líneas, ya sobre el límite de 300). Es la pantalla de esta fase, y es aquí donde el modo solo-lectura y el panel de vehículo lo hacen crecer.
-13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre.
-14. Test: último cargado, lista de paquetes con sus filas de rechazo (`Ya está en RUT-…`, `orden incompleta`), y ocupación del vehículo.
+### Fase 4 — `1c` Seguimiento `[done]`
+12b. **Partir `RouteBuilder.tsx`** (364 líneas, ya sobre el límite de 300). Resuelto por dos vías: `RouteBuilder.tsx` perdió el escaneo (`ScanZone.tsx` se eliminó del repo — spec-76 ya envió el reemplazo móvil) y quedó dividido en `RouteBuilderHeader.tsx`/`RouteBuilderPackageList.tsx`; el modo solo-lectura no creció ese archivo — es la pantalla nueva `RouteTrackingView.tsx` (y sus propios sub-componentes), que `DispatchRouteSurface.tsx` monta en vez de `RouteBuilder` cuando `routes.status === 'loading'`.
+
+    **Corrección post-review:** «Cerrar Ruta» (sellado) **NO** se quitó de `RoutePanel.tsx`/`RouteBuilder.tsx` — se intentó y se revirtió. Verificado: quitarlo dejaba cero llamadores de `POST /api/dispatch/routes/[id]/seal` en todo el repo, porque el reemplazo móvil (`2i`) todavía no existe — `spec-77` sigue en `Status: backlog`, fase 1 `[pending]`. Es la misma regla de secuenciación que este spec ya aplicó al escaneo en «Orden alterado»: se construye el reemplazo primero, se apaga la vía vieja después. El sellado se queda en escritorio hasta que `spec-77` fase 1 exista de verdad.
+13. Test: badge `SOLO LECTURA`; no se monta ninguna acción de escaneo ni de cierre. Hecho en `RouteTrackingView.test.tsx`.
+14. Test: último cargado, lista de paquetes, y ocupación del vehículo. Hecho — **sin** las filas de rechazo: decisión 12 es explícita en que hoy no hay de dónde sacarlas (`dock_scans` sólo persiste `scan_result: 'accepted'`); se difieren a spec-79 H4, con comentario en `RouteTrackingScanList.tsx` nombrándolo.
 
 ### Fase 5 — `1d` En ruta `[pending]`
 15. Test: métricas de cabecera (entregadas, pendientes, fallidas, OTIF) y el sello `DT SINCRONIZADO`.

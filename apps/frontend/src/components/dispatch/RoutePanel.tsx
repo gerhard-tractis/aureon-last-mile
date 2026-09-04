@@ -16,6 +16,20 @@ import {
 import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus, type TerritoryHistoryEntry } from '@/lib/dispatch/types';
 import { TerritoryStability } from './TerritoryStability';
 
+/**
+ * spec-75 phase 4 review — "Cerrar Ruta" (seal) was briefly removed from
+ * this panel on the theory that decision 4 ("closing is crew-mobile only,
+ * `2i`, spec-77") meant desktop closing could go now. Reverted: verified
+ * zero clients call `POST /api/dispatch/routes/[id]/seal` once it was
+ * gone — the mobile `2i` replacement doesn't exist yet (`disabled`,
+ * "El cierre de ruta es la próxima pantalla — spec-77", and spec-77 is
+ * `Status: backlog`, phase 1 `[pending]`). That is the exact sequencing
+ * spec-75's own "Orden alterado" section requires for scanning (build the
+ * replacement, then retire the old path) — it applies to closing too, not
+ * just scanning. Keep this action until spec-77 phase 1 ships a working
+ * mobile close; that is the commit that gets to delete it, not this one.
+ */
+
 interface Props {
   packageCount: number;
   vehicles: FleetVehicle[];
@@ -169,6 +183,9 @@ export function RoutePanel({
           </div>
         )}
 
+        {/* spec-75 phase 4 review — restored, see the header comment above.
+            Removed only by spec-77 phase 1, once mobile 2i can close a
+            route for real. */}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button
