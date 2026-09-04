@@ -10,10 +10,11 @@
  * route, one truck, one accepted scan, one rejected scan. `2g` (camera) and
  * `2h` (packages by stop) are NOT here: they ship on
  * `feat/spec-76-camera-and-packages`, a branch stacked on top of this one.
- * That branch's own E2E should extend `despacho-fixture.ts`'s
- * `openRouteToLoad()` rather than duplicate its setup — see that file's own
- * header for why the route and the packages each reach their state the way
- * they do.
+ * That branch's own E2E should extend `despacho-journey.ts`'s
+ * `openRouteToLoad()` rather than duplicate its setup — see that file's and
+ * `despacho-fixture.ts`'s own headers for why the route and the packages
+ * each reach their state the way they do (navigation vs. row genesis is the
+ * seam the two files are split along).
  *
  * Runs only in the `e2e-qa` job (`continue-on-error: true`) on the VPS
  * self-hosted runner — see `playwright.qa.config.ts` for why it cannot run
@@ -30,10 +31,11 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 import { closeDb, suppressCookieBanner } from './support/spec52-fixture';
 import {
-  seed, teardown, openRouteToLoad,
+  seed, teardown,
   VEHICLE_EXTERNAL_ID, PACKAGE_SCANNER_LABEL,
   ACCEPTED_PACKAGE, SECOND_ACCEPTED_PACKAGE, UNKNOWN_CODE, PACKAGES_TOTAL,
 } from './support/despacho-fixture';
+import { openRouteToLoad } from './support/despacho-journey';
 
 test.describe.configure({ mode: 'serial' });
 

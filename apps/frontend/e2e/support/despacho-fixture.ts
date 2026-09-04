@@ -1,9 +1,12 @@
 /**
- * spec-76 phase 7 — scenario setup for the Despacho crew-mobile E2E
- * (`e2e/despacho-crew-mobile.spec.ts`, 2a-2f). `2g` (camera) and `2h`
- * (packages by stop) ship on `feat/spec-76-camera-and-packages`, stacked on
- * top of this branch — this fixture only needs to reach "route open,
- * packages on the andén, ready to load", the precondition for `2a`-`2f`.
+ * spec-76 phase 7 — the DATA lifecycle for the Despacho crew-mobile E2E
+ * (`e2e/despacho-crew-mobile.spec.ts`, 2a-2f): namespace constants, row
+ * genesis (`seed()`), and cleanup (`teardown()`). Driving screens/RPCs to
+ * reach the journey's starting state is `despacho-journey.ts`'s job — split
+ * out so this file stays under the repo's 300-line guideline and because it
+ * is a real seam: this file owns rows, that one owns navigation, and the
+ * `2g`/`2h` suite on `feat/spec-76-camera-and-packages` will import both
+ * independently.
  *
  * OWN NAMESPACE — the trap `playwright.qa.config.ts` documents. Every suite
  * that config's `testMatch` already collects (spec52-*, reception-mobile)
@@ -16,47 +19,21 @@
  * spec52-fixture.ts (generic infra: a pg pool and the login flow, neither
  * namespaced), matching how reception-mobile-fixture.ts reuses them too.
  *
- * States are reached two different ways, deliberately:
- *
- * - The ROUTE is created through the real `POST /api/dispatch/routes`
- *   endpoint (`page.request`, so it rides the signed-in crew's own session
- *   cookies) rather than an `INSERT INTO routes`. That endpoint calls
- *   `create_seeded_route` (stamps `planned`, opens the `dispatches` rows)
- *   and best-effort `assign_load_position` — inserting those rows by hand
- *   would drift the moment either RPC's shape changes, exactly the
- *   reasoning reception-mobile-fixture.ts's header gives for
- *   `open_route_reception`.
- * - The PACKAGES start life directly INSERTed at `sectorizado` — the dock-
- *   scan trigger's resting state (`trg_dock_scan_advance_package_status`,
- *   20260319000001), reached in production by scanning a package at a dock
- *   zone through spec-68's Distribution module. Driving that whole separate
- *   module's UI just to manufacture Despacho's own precondition is out of
- *   scope for this fixture and would only be re-deriving spec-68's own
- *   fixture. This is the same convention spec52-fixture.ts already uses for
- *   ITS packages (seeded straight at `ingresado`, never driven from
- *   nothing) — only the transition the journey under test actually drives
- *   (here: picking the route, assigning the truck, scanning it loaded) goes
- *   through real screens/RPCs, not the packages' genesis state.
- *
- * Two known deviations from production, left as-is for this phase:
- *
- * - `openRouteToLoad()` hardcodes `signIn(page, CREW)` — there is only one
- *   crew persona in this fixture. Decision 9's "a route another crew is
- *   loading is visible but does not open" needs a SECOND crew signed in on
- *   a second route; whoever writes that scenario should add a `user`
- *   parameter to `openRouteToLoad()` (or a sibling function) rather than a
- *   second hardcoded persona.
- * - The CREW session itself calls `POST /api/dispatch/routes` to create the
- *   route. No production crew does this — planning a route is a manager
- *   action (Pre-Ruta, spec-75), and a crew member only ever picks an
- *   already-planned one in `2b`. It works here because that endpoint's
- *   only real gate is tenant RLS (`operator_id`), which any signed-in user
- *   of this operator satisfies — but it is a shortcut this fixture takes
- *   deliberately to avoid driving spec-75's own desktop planning UI, not a
- *   claim that crews create routes.
+ * Why the PACKAGES start life directly INSERTed at `sectorizado` (not
+ * driven through a screen, unlike the route in despacho-journey.ts): that
+ * is the dock-scan trigger's resting state
+ * (`trg_dock_scan_advance_package_status`, 20260319000001), reached in
+ * production by scanning a package at a dock zone through spec-68's
+ * Distribution module. Driving that whole separate module's UI just to
+ * manufacture Despacho's own precondition is out of scope for this fixture
+ * and would only be re-deriving spec-68's own fixture. This is the same
+ * convention spec52-fixture.ts already uses for ITS packages (seeded
+ * straight at `ingresado`, never driven from nothing) — only the transition
+ * the journey under test actually drives (picking the route, assigning the
+ * truck, scanning it loaded) goes through real screens/RPCs, not the
+ * packages' genesis state.
  */
-import type { Page } from '@playwright/test';
-import { db, signIn, OPERATOR_ID } from './spec52-fixture';
+import { db, OPERATOR_ID } from './spec52-fixture';
 
 export const PREFIX = 'E2E76';
 
@@ -105,23 +82,9 @@ export const SECOND_ACCEPTED_PACKAGE = STOPS[0].packages[1];
 /** Never seeded anywhere — a real `NOT_FOUND` rejection, decision 5. */
 export const UNKNOWN_CODE = `${PREFIX}-NOPE`;
 
-/** `America/Santiago` civil date, `YYYY-MM-DD` — the same format
- *  `todayISOInTimezone()` (`@/lib/utils/dateFormat.ts`) produces and
- *  `POST /api/dispatch/routes`'s `route_date` validates against.
- *  `tsconfig.json`'s `**\/*.ts` + the `@/*` alias mean that function DOES
- *  resolve from here — the boundary is not the reason this is a separate
- *  one-liner instead. It is kept local because `e2e/support` importing app
- *  source (rather than the reverse) is not a precedent this file wants to
- *  set for a duplicate of one `Intl.DateTimeFormat` call (Lecciones
- *  aplicadas #3 — do not compute "today" naively; `en-CA` already formats
- *  as `YYYY-MM-DD`).
- */
-function santiagoToday(): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santiago' }).format(new Date());
-}
-
 /** Mirrors `lib/dispatch/mobile/crew-board.ts`'s `routeCode()` — there is
- *  no human route-code column, only this convention. */
+ *  no human route-code column, only this convention. Exported from here
+ *  (not despacho-journey.ts) since it is pure row-shaping, not navigation. */
 export function toRouteCode(routeId: string): string {
   return routeId.slice(0, 8).toUpperCase();
 }
@@ -275,84 +238,4 @@ export async function teardown(): Promise<void> {
     [CREW.email],
   );
   await db().query(`DELETE FROM auth.users WHERE email = $1`, [CREW.email]);
-}
-
-export interface DespachoRoute { id: string; code: string; }
-
-/**
- * Drives the crew's session to "signed in, one route open at `planned`
- * (2b's BORRADOR chip), packages sitting `sectorizado` on the andén" — the
- * state `2a`/`2b` starts the journey from. See header comment for why the
- * route itself goes through the real endpoint while the packages are
- * seeded directly.
- *
- * PRECONDITION: `seed()` must already have run. Checked explicitly, not
- * assumed — without this, a missing `seed()` call fails as an opaque
- * timeout on `2a`'s empty state instead of here, at the setup step that
- * actually broke (same reasoning as `openRouteForReception`'s own check).
- */
-export async function openRouteToLoad(page: Page): Promise<DespachoRoute> {
-  const { rows: pkgRows } = await db().query(
-    `SELECT status FROM packages WHERE label = $1`,
-    [ACCEPTED_PACKAGE],
-  );
-  if (pkgRows[0]?.status !== 'sectorizado') {
-    throw new Error(
-      'openRouteToLoad() requires seed() to have run first — no \'sectorizado\' ' +
-      `package found with label ${ACCEPTED_PACKAGE}`,
-    );
-  }
-
-  const { rows: orderRows } = await db().query(
-    `SELECT id FROM orders WHERE external_load_id LIKE $1 ORDER BY external_load_id`,
-    [`${PREFIX}-%`],
-  );
-  if (orderRows.length !== STOPS.length) {
-    throw new Error(
-      `openRouteToLoad() expected ${STOPS.length} seeded orders, found ${orderRows.length} — ` +
-      'did seed() run for this file\'s namespace?',
-    );
-  }
-
-  // `2d`'s own precondition, not just `2a`-`2c`'s: without this, a missing
-  // fleet_vehicles row surfaces 4 tests later as a bare timeout on
-  // `getByRole('radio', { name: VEHICLE_EXTERNAL_ID })` in the spec's own
-  // 2d test — exactly the opaque failure this whole check exists to avoid.
-  const { rows: vehicleRows } = await db().query(
-    `SELECT id FROM fleet_vehicles WHERE external_vehicle_id = $1 AND operator_id = $2 AND deleted_at IS NULL`,
-    [VEHICLE_EXTERNAL_ID, OPERATOR_ID],
-  );
-  if (vehicleRows.length === 0) {
-    throw new Error(
-      `openRouteToLoad() requires seed() to have run first — no fleet_vehicles ` +
-      `row found with external_vehicle_id ${VEHICLE_EXTERNAL_ID}`,
-    );
-  }
-
-  const { rows: crewRows } = await db().query(
-    `SELECT id FROM auth.users WHERE email = $1`,
-    [CREW.email],
-  );
-  if (crewRows.length === 0) {
-    throw new Error(
-      `openRouteToLoad() requires seed() to have run first — no auth.users row for ${CREW.email}`,
-    );
-  }
-
-  await signIn(page, CREW);
-
-  const response = await page.request.post('/api/dispatch/routes', {
-    data: {
-      order_ids: orderRows.map((r) => r.id as string),
-      route_date: santiagoToday(),
-    },
-  });
-  if (!response.ok()) {
-    throw new Error(
-      `openRouteToLoad(): POST /api/dispatch/routes returned ${response.status()} — ${await response.text()}`,
-    );
-  }
-  const body = (await response.json()) as { id: string };
-
-  return { id: body.id, code: toRouteCode(body.id) };
 }
