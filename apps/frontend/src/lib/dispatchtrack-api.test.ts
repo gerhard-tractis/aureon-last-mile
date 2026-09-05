@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createDTRoute, findExistingDTRoute, type DTRoutePayload } from './dispatchtrack-api';
+import { createDTRoute, findExistingDTRoute, DTRejectedError, type DTRoutePayload } from './dispatchtrack-api';
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -59,6 +59,67 @@ describe('createDTRoute', () => {
       json: async () => ({ status: 'Bad_request', response: 'Permission denied' }),
     });
     await expect(createDTRoute(payload, 'token')).rejects.toThrow('Permission denied');
+  });
+
+  /**
+   * spec-79 H2 (review round 7): every prior test that touched
+   * DTRejectedError constructed it from a hand-written `vi.mock` class in
+   * the CALLER's test file — the real class this module exports was never
+   * produced by any test. Import it for real here (this file never mocks
+   * `./dispatchtrack-api` itself) so a mutant that replaces `throw new
+   * DTRejectedError(...)` with `throw new Error(...)` is actually caught.
+   */
+  it('a non-ok response throws the real DTRejectedError, not a plain Error', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ status: 'Bad_request', response: 'Permission denied' }),
+    });
+    await expect(createDTRoute(payload, 'token')).rejects.toBeInstanceOf(DTRejectedError);
+  });
+
+  /**
+   * spec-79 H2: no test at all previously covered createDTRoute's own
+   * network-failure branch — the "fetch never received a response" path
+   * that route.ts's outer catch (H-1) must NOT treat as a definite
+   * rejection. Must be a plain Error, never DTRejectedError.
+   */
+  it('throws a plain Error (never DTRejectedError) when fetch fails before any response arrives', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+    const rejection = createDTRoute(payload, 'token');
+    await expect(rejection).rejects.toThrow(/outcome unknown/i);
+    await expect(rejection).rejects.not.toBeInstanceOf(DTRejectedError);
+  });
+
+  /**
+   * spec-79 H2: no test covered the unparsable-body branch either — also
+   * an "outcome unknown" case, never a definite rejection.
+   */
+  it('throws a plain Error (never DTRejectedError) when the response body cannot be parsed', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => { throw new SyntaxError('Unexpected token'); },
+    });
+    const rejection = createDTRoute(payload, 'token');
+    await expect(rejection).rejects.toThrow(/outcome unknown/i);
+    await expect(rejection).rejects.not.toBeInstanceOf(DTRejectedError);
+  });
+
+  /**
+   * spec-79 H3 (review round 6, still surviving at round 7): removing
+   * `signal: AbortSignal.timeout(...)` from the fetch call left every
+   * existing test passing — nothing asserted it was ever there. Without it
+   * a single stuck DT call has no upper bound, which is the entire premise
+   * `DISPATCH_CLAIM_STALE_MS` relies on (dispatch-retry-claim.ts).
+   */
+  it('bounds the fetch with an AbortSignal (H-1.3 / H3): a stuck call must not hang forever', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { route_id: 1 } }),
+    });
+    await createDTRoute(payload, 'token');
+    const options = mockFetch.mock.calls[0][1];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('omits driver_identifier when null', async () => {

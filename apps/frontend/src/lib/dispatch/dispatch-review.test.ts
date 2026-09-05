@@ -65,6 +65,58 @@ describe('dispatchErrorCopy — the codes must not flatten (spec-79 review findi
   it('DT_API_ERROR and DT_ACCEPTED_LOCAL_FAILED never collapse to the same text (the flattening this exists to prevent)', () => {
     expect(dispatchErrorCopy('DT_API_ERROR').text).not.toBe(dispatchErrorCopy('DT_ACCEPTED_LOCAL_FAILED').text);
   });
+
+  /**
+   * spec-79 H1 (review round 7): DT_OUTCOME_UNKNOWN is the ambiguous throw
+   * from route.ts's outer catch (network failure/timeout, unparsable body —
+   * anything that is NOT a definite DTRejectedError). It must never say "DT
+   * rejected" — that would invite a retry of a dispatch DT may have accepted.
+   */
+  it('DT_OUTCOME_UNKNOWN never claims DT rejected the dispatch — the outcome is unknown, not a "no"', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.text).not.toMatch(/rechaz/i);
+    expect(info.text).not.toMatch(/no se cre[oó] nada/i);
+  });
+
+  it('DT_API_ERROR and DT_OUTCOME_UNKNOWN never collapse to the same text', () => {
+    expect(dispatchErrorCopy('DT_API_ERROR').text).not.toBe(dispatchErrorCopy('DT_OUTCOME_UNKNOWN').text);
+  });
+
+  /**
+   * spec-79 round 8 H-2 (surviving mutant): renaming the DT_OUTCOME_UNKNOWN
+   * case label (so it falls through to `default`) left every existing test
+   * passing — `default` already returns `primaryAction: 'verify'`,
+   * `primaryLabel: 'Verificar'`, `showChecklist: false`, and a
+   * `whatChanged` containing "No sabemos", identical to the real branch on
+   * every field the other tests check. Only `.text` differs between the
+   * two, and it was only ever compared against DT_API_ERROR's — also true
+   * of `default`. Pinned against the actual copy, and specifically against
+   * `default`'s DIFFERENT text ("no llegó respuesta del servidor" — the
+   * generic network-failure case, not the DT-round-trip-specific one) so
+   * the fallthrough mutation is caught.
+   */
+  it('DT_OUTCOME_UNKNOWN has its own real copy, not the generic default fallback text', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.text).toBe(
+      'No se pudo confirmar si DispatchTrack recibió la ruta. Tocá «Verificar» — vuelve a intentarlo de forma segura, sin duplicar la ruta.',
+    );
+    expect(info.text).not.toBe(dispatchErrorCopy('UNRECOGNISED_CODE_XYZ').text);
+  });
+
+  /**
+   * spec-79 M-1 (round 8 mediums). Every surface that renders
+   * DT_OUTCOME_UNKNOWN wires its "Verificar" button to `primaryAction ===
+   * 'verify'`, which every consumer implements as exactly the same
+   * `POST .../dispatch` request `retry`/`complete` send (see
+   * DispatchRouteError.tsx, RoutePanel.tsx, DispatchTabletActionBar.tsx —
+   * none of them implement a distinct read-only verification call). The
+   * copy must never instruct the crew not to press the button whose only
+   * implemented behaviour is the exact thing the text forbids.
+   */
+  it('M-1: does NOT tell the crew not to retry — pressing "Verificar" IS the retry request on every surface that renders it', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.text).not.toMatch(/no reintentes/i);
+  });
 });
 
 describe('dispatchErrorCopy — item 13, whatChanged names the real route/package state', () => {
@@ -115,6 +167,13 @@ describe('dispatchErrorCopy — decision 6, three primary-action states', () => 
     expect(info.primaryAction).toBe('verify');
     expect(info.whatChanged).toMatch(/no sabemos/i);
     expect(info.showChecklist).toBe(false);
+  });
+
+  it('DT_OUTCOME_UNKNOWN (spec-79 H1, review round 7) offers verify, no checklist, never retry', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.primaryAction).toBe('verify');
+    expect(info.showChecklist).toBe(false);
+    expect(info.whatChanged).toMatch(/no sabemos/i);
   });
 
   it('DISPATCH_IN_PROGRESS (spec-79 Fase 4 claim) says wait, never "failed"', () => {

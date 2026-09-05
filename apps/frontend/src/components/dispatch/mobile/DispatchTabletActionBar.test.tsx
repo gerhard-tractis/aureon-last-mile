@@ -51,7 +51,19 @@ describe('DispatchTabletActionBar', () => {
   });
 
   it('shows a dispatch error when present', () => {
-    render(<DispatchTabletActionBar {...baseProps} dispatchError="Error de DispatchTrack" />);
+    render(
+      <DispatchTabletActionBar
+        {...baseProps}
+        dispatchError={{
+          text: 'Error de DispatchTrack',
+          whatChanged: '',
+          primaryAction: 'retry',
+          primaryLabel: 'Reintentar',
+          showChecklist: false,
+          retryable: true,
+        }}
+      />,
+    );
     expect(screen.getByText('Error de DispatchTrack')).toBeInTheDocument();
   });
 

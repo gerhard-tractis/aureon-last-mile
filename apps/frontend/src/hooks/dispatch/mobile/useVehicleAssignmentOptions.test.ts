@@ -6,6 +6,7 @@ import React from 'react';
 vi.mock('@/lib/supabase/client', () => ({ createSPAClient: vi.fn() }));
 
 import { createSPAClient } from '@/lib/supabase/client';
+import { OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { useVehicleAssignmentOptions } from './useVehicleAssignmentOptions';
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -16,10 +17,19 @@ function wrapper({ children }: { children: React.ReactNode }) {
 function buildClient(opts: {
   vehicles?: unknown[];
   vehiclesError?: unknown;
+  currentRoute?: { route_date: string } | null;
+  currentRouteError?: unknown;
   routes?: unknown[];
   routesError?: unknown;
 }) {
-  const { vehicles = [], vehiclesError = null, routes = [], routesError = null } = opts;
+  const {
+    vehicles = [],
+    vehiclesError = null,
+    currentRoute = { route_date: '2026-09-05' },
+    currentRouteError = null,
+    routes = [],
+    routesError = null,
+  } = opts;
 
   const vehiclesChain = {
     select: vi.fn().mockReturnThis(),
@@ -28,11 +38,16 @@ function buildClient(opts: {
     order: vi.fn().mockResolvedValue({ data: vehicles, error: vehiclesError }),
   };
 
+  // spec-79 round 8 B-1: the "routes" table now backs TWO queries — the
+  // current route's own route_date (single()) and the busy-routes lookup
+  // scoped by that date (in()). Same mock object services both, mirroring
+  // how supabase-js chains share one builder per `.from()` call.
   const routesChain = {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
     not: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data: currentRoute, error: currentRouteError }),
     in: vi.fn().mockResolvedValue({ data: routes, error: routesError }),
   };
 
@@ -42,7 +57,7 @@ function buildClient(opts: {
     throw new Error(`unexpected table ${table}`);
   });
 
-  return { from: fromMock };
+  return { from: fromMock, routesChain, vehiclesChain };
 }
 
 beforeEach(() => vi.resetAllMocks());
@@ -57,7 +72,7 @@ describe('useVehicleAssignmentOptions', () => {
     expect(client.from).not.toHaveBeenCalled();
   });
 
-  it('shapes fleet vehicles and today-busy routes into picker rows', async () => {
+  it('shapes fleet vehicles and busy routes into picker rows', async () => {
     const client = buildClient({
       vehicles: [
         {
@@ -122,5 +137,54 @@ describe('useVehicleAssignmentOptions', () => {
     expect(result.current.data).toEqual([
       expect.objectContaining({ id: 'v3', externalVehicleId: null, assignable: false, blockReason: 'sin_identificador' }),
     ]);
+  });
+
+  /**
+   * spec-79 round 8 B-1: the client used to filter busy routes with
+   * ACTIVE_ROUTE_STATUSES (includes dispatched/in_transit/in_progress),
+   * duplicating a guard the server relaxed to OPEN_ROUTE_STATUSES in round
+   * 7 (H6). A dispatched morning route rendered the truck's afternoon
+   * route as permanently blocked and untappable — PATCH was never even
+   * reached. Pinned against the SAME imported constant the server uses
+   * (not a re-declared literal array) so the two cannot drift silently
+   * again: if this hook is ever changed back to ACTIVE_ROUTE_STATUSES,
+   * this assertion fails even though ACTIVE_ROUTE_STATUSES is also a real,
+   * importable constant.
+   */
+  it('B-1: filters busy routes by OPEN_ROUTE_STATUSES, the same constant the PATCH server guard uses', async () => {
+    const client = buildClient({ routes: [] });
+    (createSPAClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+    const { result } = renderHook(
+      () => useVehicleAssignmentOptions('route-current', 'op-1', { enabled: true }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(client.routesChain.in).toHaveBeenCalledWith('status', OPEN_ROUTE_STATUSES);
+  });
+
+  /**
+   * spec-79 round 8 B-1 (second-order): the client used to scope the busy-
+   * routes lookup by todayISOInTimezone() while the server (M7, round 7)
+   * scopes by the route's OWN route_date. A route dated tomorrow sharing a
+   * truck with another tomorrow-dated route was invisible to the client
+   * (queried today's date, found nothing, rendered assignable) even though
+   * the server would correctly 409 it. Now the hook fetches the current
+   * route's own route_date first and scopes the busy lookup by THAT.
+   */
+  it("B-1: scopes the busy-route lookup by the route's own route_date, not today", async () => {
+    const client = buildClient({ currentRoute: { route_date: '2026-12-25' }, routes: [] });
+    (createSPAClient as ReturnType<typeof vi.fn>).mockReturnValue(client);
+
+    const { result } = renderHook(
+      () => useVehicleAssignmentOptions('route-current', 'op-1', { enabled: true }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(client.routesChain.eq).toHaveBeenCalledWith('route_date', '2026-12-25');
   });
 });

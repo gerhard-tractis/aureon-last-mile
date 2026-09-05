@@ -2,7 +2,7 @@
 
 import { useDispatchRetryChecklist } from '@/hooks/dispatch/mobile/useDispatchRetryChecklist';
 import { attemptEscalationCopy } from '@/lib/dispatch/mobile/dispatch-attempt-copy';
-import type { DispatchErrorInfo } from '@/lib/dispatch/mobile/dispatch-review';
+import type { DispatchErrorInfo } from '@/lib/dispatch/dispatch-review';
 
 /**
  * spec-77 Fase 3 — `2k`, "DispatchTrack rechazó el envío". Decision 6: the

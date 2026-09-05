@@ -38,44 +38,19 @@ export interface DTRouteResult {
   external_route_id: string;
 }
 
-/**
- * DispatchTrack is tenant-per-subdomain. Transportes Musan is the only tenant
- * this product talks to, and it is the host scripts/sync-pending-orders.mjs and
- * the dispatchtrack-route-poll edge function already use. This module posted to
- * `activationcode.dispatchtrack.com` instead — the placeholder subdomain from
- * DT's own API docs, which does not resolve, so dispatching could never have
- * worked from here.
- *
- * Overridable so QA can be aimed at a sandbox tenant if one is ever issued.
- * Read per call rather than at module load so the value tracks the environment.
- */
-const DEFAULT_DT_BASE_URL = 'https://transportesmusan.dispatchtrack.com';
-
-// Exported (not just used internally) so dt-list-routes.ts can target the
-// same tenant/base URL as Create Route without duplicating the env lookup.
-export function dtBaseUrl(): string {
-  const configured = process.env.DISPATCHTRACK_BASE_URL?.trim();
-  return (configured || DEFAULT_DT_BASE_URL).replace(/\/+$/, '');
-}
+// spec-79 M1 (review round 7): `dtBaseUrl`/`DT_FETCH_TIMEOUT_MS` used to be
+// defined HERE and imported back by `dt-list-routes.ts`, which this file
+// also imports from (below) — a circular import. Moved to a leaf config
+// module neither this file nor `dt-list-routes.ts` needs to import from each
+// other for; re-exported here so every existing consumer of
+// `@/lib/dispatchtrack-api` keeps working unchanged.
+import { dtBaseUrl, DT_FETCH_TIMEOUT_MS } from './dispatchtrack-config';
+export { dtBaseUrl, DT_FETCH_TIMEOUT_MS };
 
 function toDateDMY(isoDate: string): string {
   const [yyyy, mm, dd] = isoDate.split('-');
   return `${dd}-${mm}-${yyyy}`;
 }
-
-/**
- * spec-79 H-1 (review round 6): bounds every DT call so a genuinely in-flight
- * request cannot outlive `DISPATCH_CLAIM_STALE_MS` (dispatch-retry-claim.ts,
- * 2 minutes) — the claim's staleness window is what lets a crashed request's
- * lock be reclaimed, and without a hard upper bound on how long a call can
- * run, "crashed" and "still legitimately working" are indistinguishable.
- * `dispatch-retry-claim.ts`'s own comment used to cite Vercel's serverless
- * function timeout for this; this repo also runs self-hosted (the QA VPS has
- * no such timeout), so the bound has to come from the fetch call itself, not
- * from the hosting platform. Exported so dt-list-routes.ts's own fetch shares
- * the same bound.
- */
-export const DT_FETCH_TIMEOUT_MS = 30_000;
 
 /**
  * Thrown only when DispatchTrack itself answered with a non-2xx HTTP status —

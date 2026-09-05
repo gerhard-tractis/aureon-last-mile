@@ -11,10 +11,13 @@ import type { Database } from '@/lib/types';
  * "not yet confirmed" and both call `createDTRoute`, creating two routes at
  * DispatchTrack (which has no idempotency key — spec-79 Fase 0, finding 1).
  *
- * `dispatch_attempt_at` (20260910000001) is a one-shot claim, not a new
- * state-machine edge — spec-79's own no-goals rule out touching
- * `transition_route_status`'s edges, and this doesn't: `routes.status`
- * never changes here.
+ * `dispatch_attempt_at` (spec-79 M5, review round 7: the migration that adds
+ * this column is `20260911000001_spec79_dispatch_attempt_claim.sql` —
+ * `20260910000001` is a DIFFERENT, unrelated migration
+ * (`spec79_backfill_route_scope_fix.sql`); this comment used to cite the
+ * wrong one) is a one-shot claim, not a new state-machine edge — spec-79's
+ * own no-goals rule out touching `transition_route_status`'s edges, and this
+ * doesn't: `routes.status` never changes here.
  *
  * Two-step reasoning, both atomic conditional UPDATEs:
  *

@@ -113,6 +113,67 @@ describe('resolveExternalRouteIdForDispatch', () => {
     expect(createDTRoute).not.toHaveBeenCalled();
   });
 
+  /**
+   * spec-79 M-3 (round 8 mediums). Scenario: attempt 1 reached DT and
+   * crashed before anything local was written; a box was damaged/withdrawn
+   * before the retry, so the LOCAL manifest is now empty. Under the old
+   * order, EMPTY_MANIFEST refused (422, release: true) before the precheck
+   * ever ran — stranding DT's own real route with no local record of it.
+   * The precheck must run first on the stale path and, on `reuse`, must
+   * short-circuit before EMPTY_MANIFEST is even evaluated.
+   */
+  it('M-3: on the stale-reclaim path, an empty LOCAL manifest does not block the precheck — reuses DT\'s route if it already has one', async () => {
+    (decidePrecheck as ReturnType<typeof vi.fn>).mockResolvedValue({ action: 'reuse', externalRouteId: '555' });
+
+    const result = await resolveExternalRouteIdForDispatch({
+      ...baseParams,
+      wasStale: true,
+      dispatchRows: [dispatchRow('4821', [])], // no packages — manifest is empty
+    });
+
+    expect(result).toEqual({ ok: true, externalRouteId: '555', isRetry: true });
+    expect(decidePrecheck).toHaveBeenCalledTimes(1);
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * spec-79 M-3: the reverse of the above — the precheck ran FIRST, ruled
+   * out DT already holding the route (`create`), and only THEN does the
+   * (still genuinely empty) local manifest refuse with EMPTY_MANIFEST. The
+   * precheck must have been called before this refusal, not skipped.
+   */
+  it('M-3: on the stale-reclaim path, EMPTY_MANIFEST still refuses, but only after the precheck ran and confirmed DT does not already have the route', async () => {
+    (decidePrecheck as ReturnType<typeof vi.fn>).mockResolvedValue({ action: 'create' });
+
+    const result = await resolveExternalRouteIdForDispatch({
+      ...baseParams,
+      wasStale: true,
+      dispatchRows: [dispatchRow('4821', [])],
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'EMPTY_MANIFEST', status: 422, count: 1 });
+    expect(decidePrecheck).toHaveBeenCalledTimes(1);
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * spec-79 M-3: on a genuine first attempt (not stale), the precheck must
+   * never run at all — not before EMPTY_MANIFEST, not after. Nothing earlier
+   * reached DT, so there is nothing to reconcile, and calling DT here would
+   * both cost a needless round trip and violate its rate limit.
+   */
+  it('M-3: on a fresh (non-stale) claim, the precheck is never called even when the manifest is empty', async () => {
+    const result = await resolveExternalRouteIdForDispatch({
+      ...baseParams,
+      wasStale: false,
+      dispatchRows: [dispatchRow('4821', [])],
+    });
+
+    expect(result).toMatchObject({ ok: false, code: 'EMPTY_MANIFEST', status: 422, count: 1 });
+    expect(decidePrecheck).not.toHaveBeenCalled();
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
   it('passes wasStale through to decidePrecheck unchanged', async () => {
     (decidePrecheck as ReturnType<typeof vi.fn>).mockResolvedValue({ action: 'create' });
     (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });

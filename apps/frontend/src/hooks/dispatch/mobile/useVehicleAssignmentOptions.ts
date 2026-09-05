@@ -8,8 +8,7 @@
 // always mounted.
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
-import { ACTIVE_ROUTE_STATUSES } from '@/lib/dispatch/types';
-import { todayISOInTimezone } from '@/lib/utils/dateFormat';
+import { OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import {
   buildVehiclePickerRows,
@@ -55,19 +54,40 @@ export function useVehicleAssignmentOptions(
         capacityPackages: v.capacity_packages ?? null,
       }));
 
-      // "Already carrying another route today" (spec-76 decision 6) is a
-      // date-scoped question — Lecciones aplicadas #9. route_date is a
-      // plain DATE column (YYYY-MM-DD), so it compares directly against
-      // todayISOInTimezone()'s Santiago-civil-date string with no further
-      // conversion.
+      // spec-79 round 8 B-1: this guard is a client-side copy of the one
+      // PATCH /api/dispatch/routes/[id] enforces server-side (busyRoutes,
+      // M7/H6) — it must not diverge from it, in either axis:
+      //
+      //   - Status set: OPEN_ROUTE_STATUSES, not ACTIVE_ROUTE_STATUSES.
+      //     Fase 0 finding 3 — "un camión puede legítimamente correr dos
+      //     rutas el mismo día" — means a truck already `dispatched` on
+      //     its morning route is NOT busy for the purposes of a NEW
+      //     assignment; only another still-OPEN (undispatched) route is a
+      //     genuine double-booking. Importing the SAME constant the server
+      //     guard uses (rather than a locally re-declared array) is what
+      //     keeps the two from drifting again — see
+      //     useVehicleAssignmentOptions.test.ts's B-1 case.
+      //   - Date axis: the CURRENT route's own route_date, not "today"
+      //     (todayISOInTimezone()). A route dated for another day must be
+      //     checked against bookings on ITS date, not today's — fetched
+      //     below before the busy-routes query can run.
+      const { data: currentRoute, error: currentRouteError } = await supabase
+        .from('routes')
+        .select('route_date')
+        .eq('id', routeId!)
+        .eq('operator_id', operatorId!)
+        .is('deleted_at', null)
+        .single();
+      if (currentRouteError) throw currentRouteError;
+
       const { data: routeRows, error: routesError } = await supabase
         .from('routes')
         .select('id, vehicle_id')
         .eq('operator_id', operatorId!)
-        .eq('route_date', todayISOInTimezone())
+        .eq('route_date', currentRoute.route_date)
         .is('deleted_at', null)
         .not('vehicle_id', 'is', null)
-        .in('status', ACTIVE_ROUTE_STATUSES);
+        .in('status', OPEN_ROUTE_STATUSES);
       if (routesError) throw routesError;
 
       const busyRoutesToday: PickerBusyRoute[] = (routeRows ?? [])

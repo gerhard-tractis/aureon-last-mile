@@ -62,6 +62,37 @@ describe('claimDispatchAttempt', () => {
     expect(fresh.isAttemptMock).toHaveBeenCalledWith('dispatch_attempt_at', null);
   });
 
+  /**
+   * spec-79 H4 (review round 7): `attemptToken: nowIso` mutated to a FIXED
+   * string left every existing test passing — nothing proved the token
+   * handed back to the caller is the SAME value actually written to
+   * `dispatch_attempt_at`. `releaseDispatchClaim`'s whole ownership check
+   * (`.eq('dispatch_attempt_at', attemptToken)`) rests on that equality; if
+   * it ever drifts, every release silently no-ops.
+   */
+  it('the returned attemptToken is the EXACT value written to dispatch_attempt_at (fresh claim)', async () => {
+    const fresh = freshClaimChain([{ id: 'r1' }]);
+    const supabase = { from: vi.fn().mockReturnValue(fresh) };
+
+    const result = await claimDispatchAttempt(supabase as never, { routeId: 'r1', operatorId: 'op-1' });
+
+    if (!result.claimed) throw new Error('unreachable');
+    const written = (fresh.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(written).toEqual({ dispatch_attempt_at: result.attemptToken });
+  });
+
+  it('the returned attemptToken is the EXACT value written to dispatch_attempt_at (stale reclaim)', async () => {
+    const fresh = freshClaimChain([]);
+    const stale = staleClaimChain([{ id: 'r1' }]);
+    const supabase = { from: vi.fn().mockReturnValueOnce(fresh).mockReturnValueOnce(stale) };
+
+    const result = await claimDispatchAttempt(supabase as never, { routeId: 'r1', operatorId: 'op-1' });
+
+    if (!result.claimed) throw new Error('unreachable');
+    const written = (stale.update as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(written).toEqual({ dispatch_attempt_at: result.attemptToken });
+  });
+
   it('refuses when a fresh claim already exists and is not stale', async () => {
     const fresh = freshClaimChain([]); // 0 rows: dispatch_attempt_at already set
     const stale = staleClaimChain([]); // 0 rows: not old enough to reclaim
