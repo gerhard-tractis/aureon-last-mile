@@ -81,6 +81,25 @@ describe('dispatchErrorCopy — the codes must not flatten (spec-79 review findi
   it('DT_API_ERROR and DT_OUTCOME_UNKNOWN never collapse to the same text', () => {
     expect(dispatchErrorCopy('DT_API_ERROR').text).not.toBe(dispatchErrorCopy('DT_OUTCOME_UNKNOWN').text);
   });
+
+  /**
+   * spec-79 round 8 H-2 (surviving mutant): renaming the DT_OUTCOME_UNKNOWN
+   * case label (so it falls through to `default`) left every existing test
+   * passing — `default` already returns `primaryAction: 'verify'`,
+   * `primaryLabel: 'Verificar'`, `showChecklist: false`, and a
+   * `whatChanged` containing "No sabemos", identical to the real branch on
+   * every field the other tests check. Only `.text` differs between the
+   * two, and it was only ever compared against DT_API_ERROR's — also true
+   * of `default`. Pinned against the actual copy, and specifically against
+   * `default`'s DIFFERENT text ("no llegó respuesta del servidor" — the
+   * generic network-failure case, not the DT-round-trip-specific one) so
+   * the fallthrough mutation is caught.
+   */
+  it('DT_OUTCOME_UNKNOWN has its own real copy, not the generic default fallback text', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.text).toBe('No se pudo confirmar si DispatchTrack recibió la ruta. No reintentes sin verificar.');
+    expect(info.text).not.toBe(dispatchErrorCopy('UNRECOGNISED_CODE_XYZ').text);
+  });
 });
 
 describe('dispatchErrorCopy — item 13, whatChanged names the real route/package state', () => {
