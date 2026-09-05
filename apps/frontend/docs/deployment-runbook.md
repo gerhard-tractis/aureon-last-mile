@@ -736,11 +736,16 @@ SELECT to_regclass('public.routes_one_vehicle_per_day');  -- must return NULL
 **Pieces, all QA-only:**
 
 1. `infra/supabase-qa/dispatchtrack-mock/server.mjs` — a dependency-free Node HTTP server implementing Create Route and List Routes exactly as `dispatchtrack-api.ts`/`dt-list-routes.ts` call them, plus a `/__test__/*` control surface (`despacho-close-dispatch.spec.ts` reads `/__test__/create-calls?identifier=` to assert a retry never creates a second route). Bound to `127.0.0.1` only — never proxied through nginx.
-2. `infra/supabase-qa/systemd/aureon-dt-mock-qa.service` — the intended long-term way to run it (survives reboots). **Not yet installed as a unit** — this task's sandbox could not write to `/etc/systemd/system` or call `systemctl daemon-reload`/`enable`. Until someone with interactive VPS access installs it, the mock runs as a plain background process (`nohup node server.mjs &`, started manually) — it does **not** survive a VPS reboot. Check before relying on it:
+2. `infra/supabase-qa/systemd/aureon-dt-mock-qa.service` — the intended long-term way to run it (survives reboots). **Not yet installed as a unit** — this task's sandbox could not write to `/etc/systemd/system` or call `systemctl daemon-reload`/`enable`. Until someone with interactive VPS access installs it, the mock runs as a plain background process, **started as the `aureon` user** — it does **not** survive a VPS reboot. Check before relying on it:
    ```bash
    curl -sf http://127.0.0.1:4477/__test__/health
    ```
-   If that fails, restart it manually (`cd /home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock && nohup node server.mjs > /home/aureon/dt-mock.log 2>&1 & disown`) or, better, finish the systemd install:
+   **Must run as `aureon`, never as `root`.** The first post-merge `deploy-qa` run (PR #628) failed because the mock had been installed by `scp`/`ssh` as `root`, leaving `infra/supabase-qa/dispatchtrack-mock/` owned by `root` inside `/home/aureon/aureon-qa` — a checkout the runner manages as `aureon`. `git reset --hard` could not `unlink` a root-owned file in a root-owned directory and the whole sync failed. Fixed with `chown -R aureon:aureon` on that directory; do not repeat the mistake.
+   ```bash
+   # restart it manually, as aureon:
+   su - aureon -c 'cd /home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock && nohup node server.mjs > /home/aureon/dt-mock.log 2>&1 & disown'
+   ```
+   Or, better, finish the systemd install (also as/via `aureon`, or root writing files that end up `aureon`-owned where they live inside the checkout):
    ```bash
    cp aureon-dt-mock-qa.service /etc/systemd/system/
    systemctl daemon-reload
