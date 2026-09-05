@@ -81,18 +81,35 @@ function buildSessionClient(overrides: {
   };
 }
 
-/** Generic update/insert chain reused as the fallback for every from() call
+/**
+ * Generic update/insert chain reused as the fallback for every from() call
  * this handler makes after the first three (routes select, fleet_vehicles,
  * dispatches select): the routes persist update, the packages en_ruta
- * update, and every audit_logs insert. */
+ * update, and every audit_logs insert.
+ *
+ * spec-79 B-1: since the default `dispatchesChain()` fixture now carries a
+ * genuinely-loaded package (needed to pass the new empty-manifest guard),
+ * `.update({status:'en_ruta'})...` actually reaches this mock instead of
+ * being skipped, so `.eq()`'s return value has to support BOTH shapes: the
+ * routes persist's `.eq(id).eq(operator_id)` (resolves `{error}` directly)
+ * and the packages write's longer `.eq(operator_id).in(id).in(status)
+ * .is(deleted_at).select(id)` — reporting every requested id as touched, so
+ * a test that doesn't care about the F2 mismatch path doesn't have to wire
+ * that up by hand (see `packagesEnRutaChain` below for tests that do).
+ */
 function updateChain() {
-  return {
-    update: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockResolvedValue({ error: null }),
-        in: vi.fn().mockResolvedValue({ error: null }),
+  const eqChain = {
+    eq: vi.fn().mockResolvedValue({ error: null }),
+    in: vi.fn((_col: string, ids: string[]) => ({
+      in: vi.fn().mockReturnValue({
+        is: vi.fn().mockReturnValue({
+          select: vi.fn().mockResolvedValue({ data: ids.map((id) => ({ id })), error: null }),
+        }),
       }),
-    }),
+    })),
+  };
+  return {
+    update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(eqChain) }),
     insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
   };
 }
@@ -182,6 +199,12 @@ function routeChain(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * spec-79 B-1: the default carries one genuinely-loaded package — a real
+ * dispatch never has zero, and the new empty-manifest guard now refuses one
+ * that does (that refusal has its own dedicated describe block below). Tests
+ * that specifically care about package contents pass their own `dispatchData`.
+ */
 function dispatchesChain(dispatchData: unknown[] = [
   {
     id: 'd1',
@@ -191,9 +214,7 @@ function dispatchesChain(dispatchData: unknown[] = [
       customer_name: 'Mario',
       delivery_address: 'Av Principal 1',
       customer_phone: null,
-      // PostgREST returns [] for a declared embed with no rows, never an
-      // absent key — the real shape this handler actually receives.
-      packages: [],
+      packages: [genuinelyLoadedPkg({ id: 'pkg-default', label: 'CTN-1', status: 'en_carga' })],
     },
   },
 ]) {
@@ -634,9 +655,19 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
    * a normal state. Skipping the write is still correct (an empty .in() is
    * meaningless), but it must not be silent.
    */
-  it('warns with the routeId when a loaded route has no en_carga/listo_para_despacho packages', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    const packagesFromMock = vi.fn()
+  /**
+   * spec-79 review B-1 (blocker): this used to be "warns with the routeId
+   * when a loaded route has no en_carga/listo_para_despacho packages" and
+   * "skips the packages write entirely when nothing is en_carga" — both
+   * asserted the route still dispatched to DT with a `200`, only logging or
+   * silently skipping the local write. That is exactly the false-negative
+   * bargain B-1 replaces: a route with zero genuinely-loaded packages must
+   * now be REFUSED before DT is ever called, not silently accepted. See
+   * dispatch-dt-payload.test.ts's `findDispatchesWithNoLoadedItems` for the
+   * unit-level coverage of the predicate itself.
+   */
+  it('refuses to dispatch (never calls DT) when a loaded route has no genuinely-loaded packages', async () => {
+    const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
@@ -651,42 +682,142 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
         },
       }]))
       .mockReturnValue(updateChain());
-    const client = buildSessionClient({ fromMock: packagesFromMock });
+    const client = buildSessionClient({ fromMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * spec-79 review B-1 (blocker). Reproduces the defect end to end against the
+ * real handler: `buildItems` filters by `isGenuinelyLoadedPackage`, but
+ * `createDTRoute` omits an empty `items` key entirely instead of sending
+ * `[]` (dispatchtrack-api.ts). Before this guard, a route with zero
+ * genuinely-loaded packages still reached DT as a guide with no contents and
+ * was reported `200 {ok:true, packages_dispatched:0}` — permanently
+ * `dispatched`, with no recovery path (retry 409s once external_route_id is
+ * set, route delete 403s once dispatched). Three real production states
+ * reach it; each gets its own case here.
+ */
+describe('POST /routes/[id]/dispatch — B-1 empty manifest guard', () => {
+  function clientWithPackages(packages: unknown[]) {
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain([{
+        id: 'd1',
+        order_id: 'o1',
+        orders: {
+          order_number: '4821',
+          customer_name: 'Mario',
+          delivery_address: 'Av Principal 1',
+          customer_phone: null,
+          packages,
+        },
+      }]))
+      .mockReturnValue(updateChain());
+    return buildSessionClient({ fromMock });
+  }
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
+  });
+
+  it('refuses a pre-spec-74 route sealed and never re-scanned (every box load_inferred)', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages([
+      {
+        id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'listo_para_despacho', deleted_at: null,
+        loaded_at: '2026-01-01T00:00:00Z', load_inferred: true,
+      },
+    ]));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  it('refuses a route where every box is retenido after staging (seal passed, nothing genuinely loaded)', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'retenido' }),
+    ]));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  it('refuses a route where every box was soft-deleted after sealing', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga', deleted_at: '2026-09-05T00:00:00Z' }),
+    ]));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The stricter, per-stop variant: nine good stops and one empty one still
+   * hands the driver a stop with no contents. The whole route is refused,
+   * not just the empty stop — spec-79's no-goals rule out partial dispatch.
+   */
+  it('refuses the whole route when only ONE of several stops has zero genuinely-loaded boxes', async () => {
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain([
+        {
+          id: 'd1', order_id: 'o1',
+          orders: {
+            order_number: '4821', customer_name: 'Mario', delivery_address: 'Av 1', customer_phone: null,
+            packages: [genuinelyLoadedPkg({ id: 'pkg-good', label: 'CTN-1', status: 'en_carga' })],
+          },
+        },
+        {
+          id: 'd2', order_id: 'o2',
+          orders: {
+            order_number: '4822', customer_name: 'Ana', delivery_address: 'Av 2', customer_phone: null,
+            packages: [genuinelyLoadedPkg({ id: 'pkg-retenido', label: 'CTN-2', status: 'retenido' })],
+          },
+        },
+      ]))
+      .mockReturnValue(updateChain());
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock }));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(body.count).toBe(1);
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  it('does not refuse a route where every stop has at least one genuinely-loaded box', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga' }),
+    ]));
     (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
     expect(res.status).toBe(200);
-
-    expect(warnSpy).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ routeId: 'r1' }));
-    warnSpy.mockRestore();
-  });
-
-  it('skips the packages write entirely when nothing is en_carga', async () => {
-    const packagesFromMock = vi.fn()
-      .mockReturnValueOnce(routeChain())
-      .mockReturnValueOnce(fleetVehicleChain())
-      .mockReturnValueOnce(dispatchesChain([{
-        id: 'd1',
-        order_id: 'o1',
-        orders: {
-          order_number: '4821',
-          customer_name: 'Mario',
-          delivery_address: 'Av Principal 1',
-          customer_phone: null,
-          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'asignado', deleted_at: null }],
-        },
-      }]))
-      .mockReturnValue(updateChain());
-    const client = buildSessionClient({ fromMock: packagesFromMock });
-    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
-    expect(res.status).toBe(200);
-
-    // Only 5 from() calls: routes, fleet_vehicles, dispatches, routes-persist,
-    // dispatch_route audit. No 6th call for a packages update.
-    expect(packagesFromMock).toHaveBeenCalledTimes(5);
+    expect(createDTRoute).toHaveBeenCalled();
   });
 });
 
@@ -745,6 +876,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain()) // persist succeeds
+      .mockReturnValueOnce(updateChain()) // en_ruta write succeeds
       .mockReturnValueOnce({ insert: rejectedAuditInsert }); // dispatch_accepted_local_failed insert rejected
     const rpcMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'transition failed' } });
     const client = buildSessionClient({ fromMock, rpcMock });
@@ -791,6 +923,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain()) // persist succeeds
+      .mockReturnValueOnce(updateChain()) // en_ruta write succeeds
       .mockReturnValueOnce({ insert: acceptedAuditInsert }); // dispatch_accepted_local_failed
     const rpcMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'transition failed' } });
     const client = buildSessionClient({ fromMock, rpcMock });
@@ -934,18 +1067,34 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
 
   /**
    * spec-79 review F3: on this exact path (external_route_id already
-   * persisted, dispatchesChain()'s default fixture carries zero
-   * en_carga/listo_para_despacho packages because the first attempt already
-   * wrote them to en_ruta) loadedPackageIds is legitimately empty. Before
-   * F3 this fired the same warn a genuinely empty dispatch does — a false
-   * alarm on the exact flow spec-79 exists to make safe.
+   * persisted, every package already written to `en_ruta` by the earlier
+   * attempt that got this far) loadedPackageIds is legitimately empty.
+   * Before F3 this fired the same warn a genuinely empty dispatch does — a
+   * false alarm on the exact flow spec-79 exists to make safe.
+   *
+   * spec-79 review M-1: this same fixture is also the M-1 regression case —
+   * `writtenCount` for THIS call is 0 (nothing left to write), but the route
+   * genuinely carries one dispatched box. `packages_dispatched` must report
+   * 1, not 0, on this exact path.
    */
-  it('does NOT warn about zero loaded packages on the sanctioned retry', async () => {
+  it('does NOT warn about zero loaded packages on the sanctioned retry, and reports the true dispatched count (M-1)', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
       .mockReturnValueOnce(fleetVehicleChain())
-      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce(dispatchesChain([{
+        id: 'd1',
+        order_id: 'o1',
+        orders: {
+          order_number: '4821',
+          customer_name: 'Mario',
+          delivery_address: 'Av Principal 1',
+          customer_phone: null,
+          // Already moved to en_ruta by the attempt that got this far —
+          // nothing left for THIS write to touch, but it did happen.
+          packages: [genuinelyLoadedPkg({ id: 'pkg-already-dispatched', label: 'CTN-1', status: 'en_ruta' })],
+        },
+      }]))
       .mockReturnValue(updateChain());
     const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
     const client = buildSessionClient({ fromMock, rpcMock });
@@ -955,6 +1104,8 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
 
     expect(res.status).toBe(200);
     expect(warnSpy).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.packages_dispatched).toBe(1);
     warnSpy.mockRestore();
   });
 
@@ -1075,6 +1226,7 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
           customer_name: 'Mario',
           delivery_address: 'Av Principal 1',
           customer_phone: null,
+          packages: [genuinelyLoadedPkg({ id: `p${i}`, label: `CTN-${i}`, status: 'en_carga' })],
         },
       }))))
       .mockReturnValue(updateChain());
@@ -1237,9 +1389,19 @@ describe('POST /routes/[id]/dispatch — items', () => {
     expect(items.map((i: { code: string }) => i.code)).toEqual(['CTN-6']);
   });
 
-  it('sends no items for an order with no packages', async () => {
-    const items = await itemsFor([]);
-    expect(items).toEqual([]);
+  /**
+   * spec-79 review B-1 (blocker): this used to be "sends no items for an
+   * order with no packages", asserting the handler dispatched anyway with an
+   * empty `items` array. That is exactly the defect B-1 exists to kill — see
+   * the dedicated describe block below and dispatch-dt-payload.test.ts.
+   */
+  it('refuses (EMPTY_MANIFEST) instead of sending an order with no packages', async () => {
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(clientWithPackages([]));
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.code).toBe('EMPTY_MANIFEST');
+    expect(createDTRoute).not.toHaveBeenCalled();
   });
 
   /**
@@ -1311,6 +1473,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain())            // persist external_route_id (now first)
+      .mockReturnValueOnce(updateChain())            // en_ruta write
       .mockReturnValueOnce({ insert: releaseAuditInsert }) // release_load_position's own audit row
       .mockReturnValue(updateChain());
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(buildSessionClient({ fromMock, rpcMock }));
@@ -1402,6 +1565,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain())                  // persist external_route_id (now first)
+      .mockReturnValueOnce(updateChain())                  // en_ruta write
       .mockReturnValueOnce({ insert: releaseAuditInsert }) // release_load_position's own audit row
       .mockReturnValueOnce({ insert: sweepAuditInsert })   // sweep audit row for r7
       .mockReturnValueOnce({ insert: sweepAuditInsert })   // sweep audit row for r8

@@ -5,12 +5,14 @@ import { createDTRoute } from '@/lib/dispatchtrack-api';
 import {
   buildDtDispatches,
   findMissingOrderNumbers,
+  findDispatchesWithNoLoadedItems,
   type DispatchRow,
 } from '@/lib/dispatch/dispatch-dt-payload';
 import {
   completeLocalDispatch,
   DtAcceptedLocalFailedError,
   loadedPackageIds,
+  alreadyDispatchedPackageCount,
   logAcceptedLocalFailed,
 } from '@/lib/dispatch/dispatch-local-completion';
 
@@ -163,6 +165,26 @@ export async function POST(
         );
       }
 
+      // spec-79 B-1 (blocker): symmetric with EMPTY_ROUTE above, at the item
+      // level. A stop can legitimately produce zero genuinely-loaded items
+      // (see findDispatchesWithNoLoadedItems); createDTRoute then omits the
+      // `items` key instead of sending `[]`, so DT got a guide with no
+      // contents and this handler answered `200 {ok:true}` over it. Checked
+      // per stop — one empty stop among many still hands the driver a stop
+      // with no contents.
+      const emptyManifestDispatches = findDispatchesWithNoLoadedItems(dispatchRows);
+      if (emptyManifestDispatches.length) {
+        return NextResponse.json(
+          {
+            code: 'EMPTY_MANIFEST',
+            count: emptyManifestDispatches.length,
+            message:
+              `${emptyManifestDispatches.length} parada(s) de la ruta no tienen bultos cargados; no se puede despachar.`,
+          },
+          { status: 422 },
+        );
+      }
+
       // DISPATCHTRACK_API_KEY is the name every other consumer uses. This
       // handler used to read DT_API_KEY, which nothing sets anywhere. The
       // old name stays as a fallback in case a deployed environment still
@@ -195,9 +217,9 @@ export async function POST(
     // error from here on means "DT accepted, our record of it is
     // incomplete", never "DT rejected" — see the catch block below.
     const loadedIds = loadedPackageIds(dispatchRows);
-    let dispatchedCount: number;
+    let writtenCount: number;
     try {
-      ({ dispatchedCount } = await completeLocalDispatch({
+      ({ dispatchedCount: writtenCount } = await completeLocalDispatch({
         supabase,
         routeId,
         operatorId,
@@ -226,12 +248,15 @@ export async function POST(
       throw localErr;
     }
 
-    // spec-79 review finding 9: no consumer of this field was found outside
-    // this handler's own test — dispatchRows.length was stops/orders, not
-    // bultos. spec-79 review F2: `dispatchedCount` (what completeLocalDispatch
-    // actually wrote to en_ruta) is reported here, not `loadedIds.length`
-    // (what was merely requested) — the TOCTOU guard above exists precisely
-    // because those two can differ.
+    // spec-79 review F2: `writtenCount` (what completeLocalDispatch actually
+    // wrote THIS call) is reported here, never `loadedIds.length` (merely
+    // requested) — those two can differ.
+    // spec-79 review M-1: on a sanctioned retry, every genuinely-loaded box
+    // is already `en_ruta` from the earlier attempt, so `writtenCount` alone
+    // is legitimately 0 — that would answer `packages_dispatched: 0` for a
+    // route carrying 40 boxes. `alreadyDispatchedPackageCount` adds those
+    // already-written boxes so the total is honest on every path.
+    const dispatchedCount = alreadyDispatchedPackageCount(dispatchRows) + writtenCount;
     return NextResponse.json(
       { ok: true, external_route_id: externalRouteId, packages_dispatched: dispatchedCount },
       { status: 200 },

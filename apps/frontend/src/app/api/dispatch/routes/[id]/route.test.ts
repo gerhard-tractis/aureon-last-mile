@@ -16,6 +16,13 @@ function buildClient(
   routeStatus: string | null,
   dispatches: { id: string; order_id: string }[] = [],
   routeError: { code: string; message: string } | null = null,
+  /**
+   * spec-79 review M-2: rows the sibling-dispatch check resolves with — a
+   * live dispatch for one of this route's orders on a DIFFERENT route. Empty
+   * by default so every existing test keeps its current behaviour.
+   */
+  siblingDispatchRows: { order_id: string }[] = [],
+  siblingQueryError: { code: string; message: string } | null = null,
 ) {
   const routeChain = {
     select: vi.fn().mockReturnThis(),
@@ -32,11 +39,34 @@ function buildClient(
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockResolvedValue({ data: dispatches, error: null }),
   };
-  const dispatchesUpdateChain = {
-    update: vi.fn().mockReturnValue({
-      in: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+  const siblingTail = {
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockResolvedValue({
+      data: siblingQueryError ? null : siblingDispatchRows,
+      error: siblingQueryError,
     }),
   };
+  const dispatchesUpdateSpy = vi.fn().mockReturnValue({
+    in: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+  });
+
+  // spec-79 review M-2: `.from('dispatches')` is now called up to three times
+  // (this route's own dispatches, the cross-route sibling check, the
+  // soft-delete). Differentiated by builder method (`select` vs `update`),
+  // with an internal counter on `select` itself so it survives regardless of
+  // total `.from()` calls — a call-count-keyed mock broke the moment this
+  // query was added.
+  let dispatchesSelectCallCount = 0;
+  const dispatchesTableMock = {
+    select: vi.fn(() => {
+      dispatchesSelectCallCount += 1;
+      return dispatchesSelectCallCount === 1 ? dispatchesSelectChain : siblingTail;
+    }),
+    update: dispatchesUpdateSpy,
+  };
+
   // .update({status,...}).in('order_id', orderIds).eq('operator_id', operatorId)
   //  .in('status', [...]).is('deleted_at', null)
   // spec-79 review F6: `.is('deleted_at', null)` re-asserted after the
@@ -59,10 +89,7 @@ function buildClient(
       if (fromMock.mock.calls.filter((c) => c[0] === 'routes').length <= 1) return routeChain;
       return routeDeleteChain;
     }
-    if (table === 'dispatches') {
-      const dispatchesCalls = fromMock.mock.calls.filter((c) => c[0] === 'dispatches').length;
-      return dispatchesCalls <= 1 ? dispatchesSelectChain : dispatchesUpdateChain;
-    }
+    if (table === 'dispatches') return dispatchesTableMock;
     if (table === 'packages') return packagesChain;
     return routeChain;
   });
@@ -80,6 +107,8 @@ function buildClient(
     packagesUpdateSpy,
     packagesStatusInSpy,
     packagesIsSpy,
+    siblingSelectSpy: dispatchesTableMock.select,
+    siblingTail,
   };
 }
 
@@ -136,6 +165,54 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
     expect(packagesStatusInSpy).toHaveBeenCalledWith('status', ['en_carga', 'listo_para_despacho']);
     // spec-79 review F6.
     expect(packagesIsSpy).toHaveBeenCalledWith('deleted_at', null);
+  });
+
+  /**
+   * spec-79 review M-2: `packages` carries no route linkage, so reverting by
+   * `order_id` alone (across every dispatch of the route being deleted)
+   * reached a box physically loaded on a DIFFERENT still-live route for the
+   * same order (two live dispatches per order are explicitly permitted:
+   * 20260901000001_spec74_package_load_state.sql:181-183). This route is
+   * being deleted entirely, so ITS OWN order can't have a sibling on itself
+   * — the sibling check has to look for a live dispatch on ANY route other
+   * than this one.
+   */
+  it('excludes an order from the packages revert when it has a live dispatch on another route (M-2)', async () => {
+    const { client, packagesUpdateSpy, siblingSelectSpy } = buildClient(
+      'planned',
+      [{ id: 'd1', order_id: 'o1' }],
+      null,
+      [{ order_id: 'o1' }],
+    );
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(siblingSelectSpy).toHaveBeenCalled();
+    expect(packagesUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  it('still reverts packages for an order with no live dispatch on another route', async () => {
+    const { client, packagesUpdateSpy } = buildClient('planned', [{ id: 'd1', order_id: 'o1' }], null, []);
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(packagesUpdateSpy).toHaveBeenCalled();
+  });
+
+  it('fails open (reverts as before) when the sibling-dispatch check itself errors', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { client, packagesUpdateSpy } = buildClient(
+      'planned',
+      [{ id: 'd1', order_id: 'o1' }],
+      null,
+      [],
+      { code: '08006', message: 'connection reset' },
+    );
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(packagesUpdateSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it('404s for another operator\'s route', async () => {

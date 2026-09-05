@@ -107,6 +107,29 @@ export function findMissingOrderNumbers(dispatches: DispatchRow[]): DispatchRow[
   return dispatches.filter((d) => !singleOrder(d)?.order_number?.trim());
 }
 
+/**
+ * spec-79 B-1 (blocker). `buildItems` filters by `isGenuinelyLoadedPackage`
+ * (review F5), but `createDTRoute` omits an empty `items` key from the
+ * request entirely instead of sending `[]` (dispatchtrack-api.ts: `if
+ * (d.items?.length) dispatch.items = d.items`). So when every package of a
+ * stop fails that filter, DT still gets the stop — as a guide with no
+ * contents — and the handler reported `200 {ok:true}` over it. Three real
+ * production states reach this: a pre-spec-74 route sealed and never
+ * re-scanned (every box `load_inferred = true`), every box `retenido` after
+ * staging (`retenido` is outside `DISPATCHABLE_STATUSES`, so seal-route.ts's
+ * completeness check never sees it and the seal passes), and every box
+ * soft-deleted after sealing.
+ *
+ * Checked per stop (per dispatch), not once for the whole route: a route
+ * with nine good stops and one empty one still hands the driver a stop with
+ * no contents on the tenth. The caller refuses the whole route rather than
+ * silently drop just that stop — spec-79's no-goals rule out any partial
+ * dispatch or reopening logic.
+ */
+export function findDispatchesWithNoLoadedItems(dispatches: DispatchRow[]): DispatchRow[] {
+  return dispatches.filter((d) => buildItems(singleOrder(d)?.packages).length === 0);
+}
+
 // dispatches.identifier is DT's guide number, and order_number IS that
 // number: the inbound beetrack-webhook matches on `order_number =
 // body.identifier`, and scripts/sync-pending-orders.mjs looks guides up as

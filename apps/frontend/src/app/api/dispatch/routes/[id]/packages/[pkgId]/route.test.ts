@@ -36,6 +36,15 @@ function buildClient(opts: {
   dispatchFound?: boolean;
   dispatchQueryError?: { code: string; message: string };
   rpcMock?: ReturnType<typeof vi.fn>;
+  /**
+   * spec-79 review M-2: rows the sibling-dispatch check (see
+   * `route.ts`'s scoping of the packages revert) resolves with — a live
+   * dispatch for the SAME order on a DIFFERENT route. Empty by default
+   * ("no sibling", the ordinary case), so every existing test keeps its
+   * current behaviour without having to know this query exists.
+   */
+  siblingDispatchRows?: unknown[];
+  siblingQueryError?: { code: string; message: string };
 } = {}) {
   // Not a default parameter: {role: undefined} must mean "no role in the
   // claims", not "fall back to ops_leader" — the exact case the missing-role
@@ -43,8 +52,14 @@ function buildClient(opts: {
   const role = 'role' in opts ? opts.role : 'ops_leader';
   const { routeStatus = 'loading', dispatchFound = true, dispatchQueryError } = opts;
 
-  const dispatchChain = {
-    select: vi.fn().mockReturnThis(),
+  // spec-79 review M-2: `.from('dispatches')` is now called up to three
+  // times (lookup, sibling check, soft-delete) instead of two. Differentiated
+  // by which builder method is invoked (`select` vs `update`), and by an
+  // internal counter on `select` itself, so it survives regardless of how
+  // many times `.from()` is called in total — a call-count-keyed mock broke
+  // on every test the moment this query was added.
+  let selectCallCount = 0;
+  const lookupTail = {
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue(
@@ -63,13 +78,33 @@ function buildClient(opts: {
           },
     ),
   };
+  const siblingTail = {
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    neq: vi.fn().mockReturnThis(),
+    is: vi.fn().mockResolvedValue({
+      data: opts.siblingQueryError ? null : (opts.siblingDispatchRows ?? []),
+      error: opts.siblingQueryError ?? null,
+    }),
+  };
+  lookupTail.eq.mockReturnValue(lookupTail);
+  lookupTail.is.mockReturnValue(lookupTail);
+  siblingTail.eq.mockReturnValue(siblingTail);
+  siblingTail.in.mockReturnValue(siblingTail);
+  siblingTail.neq.mockReturnValue(siblingTail);
 
-  const dispatchUpdateSpy = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnThis() });
-  const dispatchUpdateChain = { update: dispatchUpdateSpy, eq: vi.fn().mockResolvedValue({ error: null }) };
-  // Make the two chained .eq() calls after update resolve on the second.
+  const dispatchUpdateSpy = vi.fn();
   dispatchUpdateSpy.mockReturnValue({
     eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
   });
+
+  const dispatchesTableMock = {
+    select: vi.fn(() => {
+      selectCallCount += 1;
+      return selectCallCount === 1 ? lookupTail : siblingTail;
+    }),
+    update: dispatchUpdateSpy,
+  };
 
   // spec-79 F4: the third filter widened from `.eq('status', 'en_carga')` to
   // `.in('status', LOADED_ON_TRUCK_STATUSES)`.
@@ -88,13 +123,10 @@ function buildClient(opts: {
   const auditChain = { insert: auditInsertSpy };
 
   const fromMock = vi.fn((table: string) => {
-    if (table === 'dispatches') {
-      const calls = fromMock.mock.calls.filter((c) => c[0] === 'dispatches').length;
-      return calls <= 1 ? dispatchChain : dispatchUpdateChain;
-    }
+    if (table === 'dispatches') return dispatchesTableMock;
     if (table === 'packages') return packagesChain;
     if (table === 'audit_logs') return auditChain;
-    return dispatchChain;
+    return dispatchesTableMock;
   });
 
   const rpcMock = opts.rpcMock ?? vi.fn().mockResolvedValue({ data: { conflict: false }, error: null });
@@ -106,6 +138,8 @@ function buildClient(opts: {
       rpc: rpcMock,
     },
     dispatchUpdateSpy,
+    siblingSelectSpy: dispatchesTableMock.select,
+    siblingTail,
     packagesUpdateSpy,
     packagesInSpy,
     packagesIsSpy,
@@ -220,6 +254,48 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
         resource_id: 'd1',
       }),
     );
+  });
+
+  /**
+   * spec-79 review M-2: `packages` carries no route linkage, so the revert
+   * that used to run on `.eq('order_id', dispatch.order_id)` alone reached
+   * every box of the order — including one physically loaded on a DIFFERENT
+   * still-live route for the same order (permitted:
+   * 20260901000001_spec74_package_load_state.sql:181-183). Scenario: order O
+   * planned on routes A and B; a box is scanned onto A; a manager removes
+   * O's stop from B. Without this check the box, physically on truck A, gets
+   * wiped back to `sectorizado` with its load fact cleared — and A can no
+   * longer seal.
+   */
+  it('does not revert packages when the order has a live dispatch on a different route (M-2)', async () => {
+    const { client, packagesUpdateSpy, siblingSelectSpy } = buildClient({
+      siblingDispatchRows: [{ order_id: 'o1' }],
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(siblingSelectSpy).toHaveBeenCalled();
+    expect(packagesUpdateSpy).not.toHaveBeenCalled();
+  });
+
+  it('still reverts packages when no other route carries a live dispatch for the order', async () => {
+    const { client, packagesUpdateSpy } = buildClient({ siblingDispatchRows: [] });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(packagesUpdateSpy).toHaveBeenCalled();
+  });
+
+  it('fails open (reverts as before) when the sibling-dispatch check itself errors', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { client, packagesUpdateSpy } = buildClient({
+      siblingQueryError: { code: '08006', message: 'connection reset' },
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+    expect(packagesUpdateSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it.each(['loaded', 'dispatched', 'in_transit', 'completed'])(

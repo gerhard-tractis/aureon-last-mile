@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { canRemoveFromPlan } from '@/lib/permissions';
 import { LOADED_ON_TRUCK_STATUSES } from '@/lib/dispatch/dispatch-local-completion';
+import { findOrderIdsWithLiveDispatchOnOtherRoutes } from '@/lib/dispatch/dispatch-cross-route-orders';
 
 const bodySchema = z.object({
   reason: z.string().trim().min(1),
@@ -108,7 +109,22 @@ export async function DELETE(
       .eq('operator_id', operatorId);
     if (delError) throw delError;
 
-    if (dispatch.order_id) {
+    // spec-79 review M-2: excludes the order if it still carries a live
+    // dispatch on a DIFFERENT route — otherwise this revert reaches a box
+    // physically loaded on that other route. See
+    // dispatch-cross-route-orders.ts for the full scenario and reasoning.
+    let hasLiveDispatchOnAnotherRoute = false;
+    if (dispatch.order_id && dispatch.route_id) {
+      const ordersOnOtherRoutes = await findOrderIdsWithLiveDispatchOnOtherRoutes(supabase, {
+        operatorId,
+        orderIds: [dispatch.order_id],
+        excludeRouteId: dispatch.route_id,
+        logPrefix: 'dispatch/packages DELETE',
+      });
+      hasLiveDispatchOnAnotherRoute = ordersOnOtherRoutes.has(dispatch.order_id);
+    }
+
+    if (dispatch.order_id && !hasLiveDispatchOnAnotherRoute) {
       // 'sectorizado', not 'asignado' — breakage #9. Nothing writes 'asignado'
       // any more; see scan-validator.ts's header comment.
       //
