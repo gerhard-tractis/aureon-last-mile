@@ -123,3 +123,66 @@ export async function createDTRoute(
 
   return { external_route_id: String(routeId) };
 }
+
+export type DTRouteMatch =
+  | { status: 'not_found' }
+  | { status: 'found'; external_route_id: string }
+  | { status: 'ambiguous' };
+
+/**
+ * spec-79 Fase 0 finding 3 / Fase 4: `GET /api/external/v1/routes?date=`
+ * — the only pre-check DT offers, since it has no idempotency key (Fase 0
+ * finding 1). Used ONLY on the retry path (dispatch-retry-claim.ts's
+ * stale-reclaim), never on a first attempt — DT's rate limit is 1
+ * request/second, 1000/day.
+ *
+ * Matched by GUIDE identifier (`dispatches[].identifier`, the same value
+ * `buildDtDispatches` sends as `identifier`), never by truck+date — a truck
+ * can legitimately run two routes the same day (Fase 0 finding 3's own
+ * caveat).
+ *
+ * `date` goes out as `yyyy-mm-dd` — List Routes documents this format,
+ * NOT the `dd-mm-yyyy` Create Route uses (Fase 0 finding 3's "date format
+ * trap": swapping them silently returns an empty set, which reads as "no
+ * duplicate" — failing open in the one check that must not).
+ *
+ * Throws (never returns a false "not_found") on a non-ok response or an
+ * unrecognisable body shape — the caller must treat a failed pre-check as
+ * unable to confirm safety, not as permission to create. `ambiguous` (guide
+ * identifiers split across more than one DT route) is likewise never
+ * resolved automatically — see route.ts's RECONCILIATION_REQUIRED path.
+ */
+export async function findExistingDTRoute(
+  params: { routeDate: string; identifiers: Array<string | number> },
+  apiToken: string,
+): Promise<DTRouteMatch> {
+  const identifierSet = new Set(params.identifiers.map((v) => String(v)));
+
+  const response = await fetch(
+    `${dtBaseUrl()}/api/external/v1/routes?date=${encodeURIComponent(params.routeDate)}`,
+    { headers: { 'X-AUTH-TOKEN': apiToken } },
+  );
+  const json = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`DT list routes error ${response.status}`);
+  }
+
+  const routes = json?.response?.routes;
+  if (!Array.isArray(routes)) {
+    throw new Error('DT list routes returned an unexpected shape (no response.routes array)');
+  }
+
+  const matchedRouteIds = new Set<string>();
+  for (const r of routes) {
+    const dispatches = Array.isArray(r?.dispatches) ? r.dispatches : [];
+    const hasMatch = dispatches.some((d: { identifier?: unknown }) => identifierSet.has(String(d?.identifier)));
+    if (hasMatch && r?.id !== undefined && r?.id !== null) {
+      matchedRouteIds.add(String(r.id));
+    }
+  }
+
+  if (matchedRouteIds.size === 0) return { status: 'not_found' };
+  if (matchedRouteIds.size > 1) return { status: 'ambiguous' };
+  return { status: 'found', external_route_id: [...matchedRouteIds][0] };
+}

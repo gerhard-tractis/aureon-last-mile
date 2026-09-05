@@ -460,6 +460,25 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
     expect(body.code).toBe('VEHICLE_ALREADY_ASSIGNED_TODAY');
   });
 
+  /**
+   * spec-79 H5c: the busyRoutes check above is a read-then-write, not
+   * atomic — it can miss a genuinely concurrent PATCH assigning the same
+   * vehicle to a different route. routes_one_vehicle_per_day
+   * (20260910000002) is the real backstop; this is what the UPDATE itself
+   * does when THAT constraint catches what the read missed.
+   */
+  it('409s the same VEHICLE_ALREADY_ASSIGNED_TODAY when the UPDATE itself hits the routes_one_vehicle_per_day unique constraint (23505)', async () => {
+    const { client } = buildPatchClient({
+      routeStatus: 'planned',
+      updateError: { code: '23505', message: 'duplicate key value violates unique constraint "routes_one_vehicle_per_day"' },
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('VEHICLE_ALREADY_ASSIGNED_TODAY');
+  });
+
   it('401s without a session', async () => {
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue({
       auth: { getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }) },

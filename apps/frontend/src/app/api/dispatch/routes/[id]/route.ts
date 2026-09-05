@@ -226,6 +226,21 @@ export async function PATCH(
       .is('deleted_at', null)
       .in('status', OPEN_ROUTE_STATUSES)
       .select('id');
+    // spec-79 H5c: routes_one_vehicle_per_day (20260910000002) backs this
+    // handler's own busyRoutes check with a real constraint — that check
+    // reads then writes, not atomically, so two concurrent PATCH requests
+    // assigning the same vehicle to two different routes could both pass
+    // it. 23505 here means the constraint caught what the read missed;
+    // mapped to the same 409 the application-level check already returns.
+    if (updateError?.code === '23505') {
+      return NextResponse.json(
+        {
+          code: 'VEHICLE_ALREADY_ASSIGNED_TODAY',
+          message: 'Este camión ya lleva otra ruta hoy.',
+        },
+        { status: 409 },
+      );
+    }
     if (updateError) throw updateError;
     if (!updatedRows || updatedRows.length === 0) {
       return NextResponse.json(

@@ -53,6 +53,29 @@ function fleetVehicleChain(id: string | null = 'fv-1') {
   };
 }
 
+/**
+ * spec-79 Fase 4: `claimDispatchAttempt`'s own `.from('routes')` call,
+ * inserted between the route lookup and the fleet_vehicles lookup in every
+ * test's fromMock sequence. Defaults to a successful FRESH claim (the
+ * common case for every test in this file that isn't specifically about
+ * concurrency — see dispatch-retry-claim.test.ts for that unit coverage).
+ */
+function claimChain(claimed: boolean = true) {
+  return {
+    update: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          is: vi.fn().mockReturnValue({
+            is: vi.fn().mockReturnValue({
+              select: vi.fn().mockResolvedValue({ data: claimed ? [{ id: 'r1' }] : [], error: null }),
+            }),
+          }),
+        }),
+      }),
+    }),
+  };
+}
+
 function buildSessionClient(overrides: {
   fromMock?: ReturnType<typeof vi.fn>;
   auditInsert?: ReturnType<typeof vi.fn>;
@@ -197,13 +220,32 @@ function failingPackagesEnRutaChain(error: unknown) {
   return { update: updateMock };
 }
 
+/**
+ * Coordinator finding, post-phase-3: every route in production carries a
+ * `draft_<uuid>` placeholder in `external_route_id` from the moment it is
+ * CREATED (the column is NOT NULL; create_seeded_route and POST
+ * /api/dispatch/routes both mint one) — never `undefined`. A fixture that
+ * omits the field entirely does not exist in production, and it hid the
+ * bug where `isRetry` read the placeholder as a confirmed DT id. Every test
+ * that wants a genuine first-attempt route now gets this realistic
+ * placeholder by default; tests exercising an actual retry override with a
+ * real (non-`draft_`) id, exactly as they already did.
+ */
+const DRAFT_ROUTE_PLACEHOLDER_ID = 'draft_11111111-1111-1111-1111-111111111111';
+
 function routeChain(overrides: Record<string, unknown> = {}) {
   return {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     is: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({
-      data: { id: 'r1', status: 'loaded', route_date: '2026-03-24', ...overrides },
+      data: {
+        id: 'r1',
+        status: 'loaded',
+        route_date: '2026-03-24',
+        external_route_id: DRAFT_ROUTE_PLACEHOLDER_ID,
+        ...overrides,
+      },
       error: null,
     }),
   };
@@ -266,6 +308,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
 
     const primaryFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       // If DT throws before any local write, none of these are reached:
@@ -318,6 +361,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     // wraps it in String(routeId)) — never a number.
     const successFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -404,6 +448,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     };
     const primaryFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(failedDispatchesChain);
     const client = buildSessionClient({ fromMock: primaryFromMock });
@@ -419,6 +464,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
   it('returns 422 when the truck_identifier does not resolve to a fleet vehicle', async () => {
     const primaryFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain(null));
     const client = buildSessionClient({ fromMock: primaryFromMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
@@ -433,6 +479,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
   it('returns 422 when route has no dispatches', async () => {
     const primaryFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([]));
     const client = buildSessionClient({ fromMock: primaryFromMock });
@@ -454,6 +501,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     const packagesUpdateChain = packagesEnRutaChain();
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -643,6 +691,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     const mismatchAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -711,6 +760,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
   it('refuses to dispatch (never calls DT) when a loaded route has no genuinely-loaded packages', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -750,6 +800,7 @@ describe('POST /routes/[id]/dispatch — B-1 empty manifest guard', () => {
   function clientWithPackages(packages: unknown[]) {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -821,6 +872,7 @@ describe('POST /routes/[id]/dispatch — B-1 empty manifest guard', () => {
   it('refuses the whole route when only ONE of several stops has zero genuinely-loaded boxes', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([
         {
@@ -885,6 +937,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     };
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(failingRouteUpdate)
@@ -915,6 +968,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain()) // persist succeeds
@@ -941,6 +995,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     const packageUpdateSpy = vi.fn();
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue({ update: packageUpdateSpy, insert: vi.fn().mockResolvedValue({ error: null }) });
@@ -962,6 +1017,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     const acceptedAuditInsert = vi.fn().mockResolvedValue({ error: null });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain()) // persist succeeds
@@ -992,6 +1048,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     const failingPackagesUpdate = failingPackagesEnRutaChain({ message: 'packages update failed' });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -1026,6 +1083,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     const failingPackagesUpdate = failingPackagesEnRutaChain({ message: 'packages update failed' });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -1061,6 +1119,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1087,6 +1146,7 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
   it('never calls DT again when external_route_id is already persisted, and completes local work', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1123,6 +1183,7 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1',
@@ -1154,6 +1215,7 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
   it('a retry that fails again stays DT_ACCEPTED_LOCAL_FAILED and still never calls DT', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1173,6 +1235,7 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
   it('skips MISSING_ORDER_NUMBER validation on retry — DT already has the guide', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd1', order_id: 'o1',
@@ -1200,6 +1263,7 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
   function loadedRouteClient() {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1259,6 +1323,7 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
   function clientForOrderNumbers(orderNumbers: string[]) {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain(orderNumbers.map((order_number, i) => ({
         id: `d${i}`,
@@ -1353,6 +1418,7 @@ describe('POST /routes/[id]/dispatch — items', () => {
   function clientWithPackages(packages: unknown[]) {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain([{
         id: 'd0',
@@ -1477,6 +1543,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1496,6 +1563,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     const rpcMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1512,6 +1580,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     const releaseAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain())            // persist external_route_id (now first)
@@ -1547,6 +1616,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     );
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1572,6 +1642,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());
@@ -1604,6 +1675,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     const releaseAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValueOnce(updateChain())                  // persist external_route_id (now first)
@@ -1643,6 +1715,7 @@ describe('POST /routes/[id]/dispatch — spec-71 load position release', () => {
     });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain({ load_position_id: 'pos-1' }))
+      .mockReturnValueOnce(claimChain())
       .mockReturnValueOnce(fleetVehicleChain())
       .mockReturnValueOnce(dispatchesChain())
       .mockReturnValue(updateChain());

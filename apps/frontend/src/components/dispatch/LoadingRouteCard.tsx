@@ -18,6 +18,7 @@ import {
 import type { LoadingMonitorRoute, CrewMember } from '@/hooks/dispatch/useLoadingMonitor';
 import { computeLoadRateFmt, isRouteOverdue, type LoadState } from '@/lib/dispatch/loading-monitor';
 import { LOAD_STATE_LABEL } from '@/lib/dispatch/loading-monitor-labels';
+import { isConfirmedExternalRouteId } from '@/lib/dispatch/dispatch-external-route-id';
 import { ScanFreshness } from './ScanFreshness';
 
 interface Props {
@@ -59,10 +60,16 @@ function formatRouteDate(dateStr: string): string {
  * a route name; the route's own short id is what every OTHER state already
  * falls back to when there is no external id at all, so an unresolved
  * draft slug gets the same short-id treatment instead of a third format.
+ *
+ * spec-79 Fase 4: the placeholder check now shares its definition with the
+ * dispatch handler (dispatch-external-route-id.ts) instead of repeating the
+ * `draft_` prefix locally — a duplicated magic string is exactly what let
+ * dispatch/route.ts's own copy drift into a blocker (isRetry read the
+ * placeholder as a confirmed DT id).
  */
 function routeLabelOf(route: LoadingMonitorRoute): string {
-  if (route.externalRouteId && !route.externalRouteId.startsWith('draft_')) {
-    return route.externalRouteId;
+  if (isConfirmedExternalRouteId(route.externalRouteId)) {
+    return route.externalRouteId as string;
   }
   return route.id.slice(0, 8).toUpperCase();
 }

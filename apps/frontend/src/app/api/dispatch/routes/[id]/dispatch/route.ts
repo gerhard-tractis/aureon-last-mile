@@ -1,13 +1,7 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { createDTRoute } from '@/lib/dispatchtrack-api';
-import {
-  buildDtDispatches,
-  findMissingOrderNumbers,
-  findDispatchesWithNoLoadedItems,
-  type DispatchRow,
-} from '@/lib/dispatch/dispatch-dt-payload';
+import { type DispatchRow } from '@/lib/dispatch/dispatch-dt-payload';
 import {
   completeLocalDispatch,
   DtAcceptedLocalFailedError,
@@ -15,6 +9,9 @@ import {
   alreadyDispatchedPackageCount,
   logAcceptedLocalFailed,
 } from '@/lib/dispatch/dispatch-local-completion';
+import { isConfirmedExternalRouteId } from '@/lib/dispatch/dispatch-external-route-id';
+import { claimDispatchAttempt, releaseDispatchClaim } from '@/lib/dispatch/dispatch-retry-claim';
+import { resolveExternalRouteIdForDispatch } from '@/lib/dispatch/dispatch-resolve-external-route-id';
 
 const bodySchema = z.object({
   truck_identifier: z.string().min(1),
@@ -26,6 +23,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: routeId } = await params;
+  let claimTaken = false;
   try {
     const supabase = await createSSRClient();
     const { data: { session }, error: authError } = await supabase.auth.getSession();
@@ -40,7 +38,7 @@ export async function POST(
 
     const { data: route, error: routeError } = await supabase
       .from('routes')
-      .select('id, status, route_date, load_position_id, external_route_id')
+      .select('id, status, route_date, load_position_id, external_route_id, provider, driver_name')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
@@ -72,28 +70,56 @@ export async function POST(
       );
     }
 
+    // spec-79 Fase 4, review finding 4: claims this route for THIS request
+    // before anything that could call DispatchTrack — see
+    // dispatch-retry-claim.ts's header for the fresh/stale/refuse reasoning.
+    const claim = await claimDispatchAttempt(supabase, { routeId, operatorId });
+    if (!claim.claimed) {
+      return NextResponse.json(
+        {
+          code: 'DISPATCH_IN_PROGRESS',
+          message: 'Ya hay un intento de despacho en curso para esta ruta.',
+        },
+        { status: 409 },
+      );
+    }
+    claimTaken = true;
+
+    // Releases the claim (best-effort, never throws) before responding,
+    // except where `release: false` is passed (RECONCILIATION_REQUIRED).
+    const respond = async (body: Record<string, unknown>, status: number, release = true) => {
+      if (release) await releaseDispatchClaim(supabase, { routeId, operatorId });
+      return NextResponse.json(body, { status });
+    };
+
     // Breakage #10: vehicle and driver used to live only in React state and
-    // never reached the database, so there was no record of who drove.
-    // truck_identifier is the vehicle's external_vehicle_id (what the <select>
-    // in RoutePanel sends) — resolved here to the fleet_vehicles row so
-    // routes.vehicle_id can hold a real foreign key.
+    // never reached the database. truck_identifier is the vehicle's
+    // external_vehicle_id (what the <select> in RoutePanel sends) —
+    // resolved here to the fleet_vehicles row so routes.vehicle_id can hold
+    // a real foreign key.
     //
-    // spec-79 H5b (out of scope for this review pass, left as a marker): this
-    // doesn't destructure `error`, and filters only by operator_id though the
-    // real uniqueness constraint is (operator_id, provider,
-    // external_vehicle_id) — two providers can share an external_vehicle_id
-    // for the same operator. With two matching rows, maybeSingle() errors,
-    // `data` comes back null, and this reports VEHICLE_NOT_FOUND for a truck
-    // that exists; any transient DB failure produces the same 422.
-    const { data: vehicle } = await supabase
+    // spec-79 H5b: fleet_vehicles is UNIQUE(operator_id, provider,
+    // external_vehicle_id), not (operator_id, external_vehicle_id) — scoped
+    // by this route's own provider (same fix as PATCH
+    // /api/dispatch/routes/[id], Review C2). `error` is destructured and
+    // checked — same fail-closed precedent as
+    // findOrderIdsWithLiveDispatchOnOtherRoutes (spec-79 M-2 addendum): a
+    // guard that treats "the query failed" the same as "no match" is not a
+    // guard. A genuine 0-row "not found" still has `error: null`.
+    const { data: vehicle, error: vehicleError } = await supabase
       .from('fleet_vehicles')
       .select('id')
       .eq('external_vehicle_id', parsed.data.truck_identifier)
       .eq('operator_id', operatorId)
+      .eq('provider', route.provider)
       .is('deleted_at', null)
       .maybeSingle();
+    if (vehicleError) {
+      console.error('[dispatch/dispatch POST] vehicle lookup failed', vehicleError);
+      return respond({ code: 'QUERY_FAILED', message: 'No se pudo verificar el camión' }, 500);
+    }
     if (!vehicle) {
-      return NextResponse.json({ code: 'VEHICLE_NOT_FOUND', message: 'Camión no encontrado' }, { status: 422 });
+      return respond({ code: 'VEHICLE_NOT_FOUND', message: 'Camión no encontrado' }, 422);
     }
 
     // orders columns: customer_name, customer_phone, delivery_address (no contact_email).
@@ -113,104 +139,68 @@ export async function POST(
     // routes lookup above.
     if (dErr) {
       console.error('[dispatch/dispatch POST] dispatches lookup failed', dErr);
-      return NextResponse.json(
-        { code: 'QUERY_FAILED', message: 'No se pudo verificar los despachos' },
-        { status: 500 },
-      );
+      return respond({ code: 'QUERY_FAILED', message: 'No se pudo verificar los despachos' }, 500);
     }
     if (!dispatches?.length) {
-      return NextResponse.json({ code: 'EMPTY_ROUTE' }, { status: 422 });
+      return respond({ code: 'EMPTY_ROUTE' }, 422);
     }
     const dispatchRows = dispatches as unknown as DispatchRow[];
 
-    // spec-79 phase 3: a route that already carries an external_route_id has
-    // been accepted by DT on a previous attempt (persisted by
-    // completeLocalDispatch below, before anything else — see its header).
-    // DT has no idempotency key (spec-79 phase 0, finding 1), so calling it
-    // again here would create a second route in DispatchTrack. Skip straight
-    // to finishing the local work that failed last time.
+    // spec-79 phase 3: a route that already carries a CONFIRMED
+    // external_route_id was accepted by DT on a previous attempt (persisted
+    // by completeLocalDispatch below, before anything else — see its
+    // header). DT has no idempotency key (phase 0, finding 1), so calling
+    // it again would create a second route. Skip straight to finishing the
+    // local work that failed last time.
     //
-    // spec-79 review finding 4 (open gap, deliberately not closed here): this
-    // guard is a READ acted on further down with nothing claiming the route
-    // in between. It makes a SEQUENTIAL retry safe (DT already confirmed, so
-    // a second attempt sees external_route_id set) but does nothing against
-    // two CONCURRENT POSTs — a double-tap on the crew tablet, or a client
-    // retry racing a slow DT call. Both requests can read external_route_id
-    // as null and both call createDTRoute, creating two routes at DT. Closing
-    // this needs a conditional claim (e.g. `UPDATE routes SET
-    // dispatch_attempt_at = now() WHERE id = ? AND operator_id = ? AND
-    // dispatch_attempt_at IS NULL`, refusing when no row comes back) — see
-    // spec-79 Phase 4 for the proposed fix. Neither this phase nor Phase 4's
-    // GET pre-check closes it.
-    // spec-79 review F3: whether DT was already confirmed on an earlier
-    // attempt is also the signal that distinguishes a sanctioned retry from
-    // a genuinely empty dispatch further down (completeLocalDispatch's
-    // zero-loaded-packages warn).
-    const isRetry = Boolean(route.external_route_id);
+    // Coordinator finding (post-phase-3 blocker): `routes.external_route_id`
+    // is NOT NULL and every route is CREATED with a `draft_<uuid>`
+    // placeholder before DispatchTrack ever sees it — a bare `Boolean(...)`
+    // read that as "DT already confirmed" on every never-dispatched route.
+    // See dispatch-external-route-id.ts.
+    //
+    // spec-79 Fase 4: review finding 4's concurrency gap (this guard is a
+    // READ, nothing claims the route in between) is now closed above by
+    // `claimDispatchAttempt` — a genuinely concurrent second request already
+    // got DISPATCH_IN_PROGRESS before reaching this line. `claim.wasStale`
+    // is what's left: a retry recovering from a crashed request, where DT
+    // might already have accepted the route. `isRetry` may still flip true
+    // below, via the GET pre-check finding that route.
+    let isRetry = isConfirmedExternalRouteId(route.external_route_id);
     let externalRouteId: string;
     if (isRetry) {
       externalRouteId = route.external_route_id as string;
     } else {
-      const missingOrderNumbers = findMissingOrderNumbers(dispatchRows);
-      if (missingOrderNumbers.length) {
-        return NextResponse.json(
-          {
-            code: 'MISSING_ORDER_NUMBER',
-            count: missingOrderNumbers.length,
-            // RouteBuilder surfaces `message` verbatim.
-            message:
-              `${missingOrderNumbers.length} orden(es) de la ruta no tienen número de guía; no se puede despachar.`,
-          },
-          { status: 422 },
-        );
-      }
-
-      // spec-79 B-1 (blocker): symmetric with EMPTY_ROUTE above, at the item
-      // level. A stop can legitimately produce zero genuinely-loaded items
-      // (see findDispatchesWithNoLoadedItems); createDTRoute then omits the
-      // `items` key instead of sending `[]`, so DT got a guide with no
-      // contents and this handler answered `200 {ok:true}` over it. Checked
-      // per stop — one empty stop among many still hands the driver a stop
-      // with no contents.
-      const emptyManifestDispatches = findDispatchesWithNoLoadedItems(dispatchRows, routeId);
-      if (emptyManifestDispatches.length) {
-        return NextResponse.json(
-          {
-            code: 'EMPTY_MANIFEST',
-            count: emptyManifestDispatches.length,
-            message:
-              `${emptyManifestDispatches.length} parada(s) de la ruta no tienen bultos cargados; no se puede despachar.`,
-          },
-          { status: 422 },
-        );
-      }
-
-      // DISPATCHTRACK_API_KEY is the name every other consumer uses. This
-      // handler used to read DT_API_KEY, which nothing sets anywhere. The
-      // old name stays as a fallback in case a deployed environment still
-      // carries it.
-      //
-      // spec-79 review finding 3: a missing token is a server
-      // misconfiguration, not a DispatchTrack rejection — `throw` here used
-      // to fall into the outer catch and report DT_API_ERROR though DT was
-      // never called. Mirrors the routes/dispatches lookups above.
+      // DISPATCHTRACK_API_KEY is the name every other consumer uses;
+      // DT_API_KEY stays as a fallback. spec-79 review finding 3: a missing
+      // token is a server misconfiguration, not a DispatchTrack rejection.
       const apiToken = process.env.DISPATCHTRACK_API_KEY || process.env.DT_API_KEY;
       if (!apiToken) {
         console.error('[dispatch/dispatch POST] DISPATCHTRACK_API_KEY not configured');
-        return NextResponse.json(
-          { code: 'QUERY_FAILED', message: 'DispatchTrack no está configurado' },
-          { status: 500 },
-        );
+        return respond({ code: 'QUERY_FAILED', message: 'DispatchTrack no está configurado' }, 500);
       }
 
-      // Call DT API — if this throws, nothing local has changed yet.
-      const created = await createDTRoute({
-        truck_identifier: parsed.data.truck_identifier,
-        route_date: route.route_date,
-        driver_identifier: parsed.data.driver_identifier ?? null,
-        dispatches: buildDtDispatches(dispatchRows, routeId),
-      }, apiToken);
-      externalRouteId = created.external_route_id;
+      // spec-79 phases 1-3 + Fase 4: MISSING_ORDER_NUMBER, EMPTY_MANIFEST,
+      // and the GET pre-check's reuse/create/refuse decision — extracted to
+      // keep this handler under the 300-line cap.
+      const resolved = await resolveExternalRouteIdForDispatch({
+        dispatchRows,
+        routeId,
+        routeDate: route.route_date,
+        truckIdentifier: parsed.data.truck_identifier,
+        driverIdentifier: parsed.data.driver_identifier ?? null,
+        wasStale: claim.wasStale,
+        apiToken,
+      });
+      if (!resolved.ok) {
+        return respond(
+          { code: resolved.code, message: resolved.message, ...(resolved.count !== undefined ? { count: resolved.count } : {}) },
+          resolved.status,
+          resolved.release !== false,
+        );
+      }
+      externalRouteId = resolved.externalRouteId;
+      isRetry = resolved.isRetry;
     }
 
     // DT has confirmed this route — now or on a previous attempt. Every
@@ -226,7 +216,13 @@ export async function POST(
         userId: session.user.id,
         externalRouteId,
         vehicleId: vehicle.id,
-        driverIdentifier: parsed.data.driver_identifier ?? null,
+        // spec-79 H5a: `driver_identifier` is optional in the dispatch body
+        // (desktop dispatch may not send one at all). Falling straight to
+        // `null` overwrote whatever real name the crew already saved at
+        // assignment time (spec-76 2d, PATCH /api/dispatch/routes/[id]) with
+        // nothing. Fall back to the route's own already-persisted
+        // `driver_name` first — only `null` when NEITHER exists.
+        driverIdentifier: parsed.data.driver_identifier ?? route.driver_name ?? null,
         loadPositionId: route.load_position_id,
         loadedPackageIds: loadedIds,
         dispatchCount: dispatchRows.length,
@@ -236,13 +232,17 @@ export async function POST(
     } catch (localErr) {
       if (localErr instanceof DtAcceptedLocalFailedError) {
         await logAcceptedLocalFailed(supabase, operatorId, session.user.id, routeId, localErr);
-        return NextResponse.json(
+        // DT already accepted this route — external_route_id is persisted
+        // (completeLocalDispatch's own ordering), so a future retry is safe
+        // regardless of claim state via isConfirmedExternalRouteId. Release
+        // now so that retry doesn't need to wait out the staleness window.
+        return respond(
           {
             code: 'DT_ACCEPTED_LOCAL_FAILED',
             external_route_id: localErr.externalRouteId,
             message: 'DispatchTrack ya recibió la ruta; falta completar el registro local.',
           },
-          { status: 502 },
+          502,
         );
       }
       throw localErr;
@@ -270,6 +270,12 @@ export async function POST(
       if (errSession) {
         const errOperatorId: string | undefined = errSession.user.app_metadata?.claims?.operator_id;
         if (errOperatorId) {
+          // spec-79 Fase 4: DT definitively rejected (or was never reached),
+          // so this route did not just leave a claim behind — safe to
+          // release now rather than wait out the staleness window.
+          if (claimTaken) {
+            await releaseDispatchClaim(supabase, { routeId, operatorId: errOperatorId });
+          }
           await supabase.from('audit_logs').insert({
             operator_id: errOperatorId,
             user_id: errSession.user.id,

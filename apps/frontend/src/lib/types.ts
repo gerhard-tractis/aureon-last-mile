@@ -1574,6 +1574,7 @@ export type Database = {
           load_position_assigned_by: string | null
           load_position_released_at: string | null
           load_position_released_by: string | null
+          dispatch_attempt_at: string | null
         }
         Insert: {
           id?: string
@@ -1599,6 +1600,7 @@ export type Database = {
           load_position_assigned_by?: string | null
           load_position_released_at?: string | null
           load_position_released_by?: string | null
+          dispatch_attempt_at?: string | null
         }
         Update: {
           id?: string
@@ -1624,6 +1626,7 @@ export type Database = {
           load_position_assigned_by?: string | null
           load_position_released_at?: string | null
           load_position_released_by?: string | null
+          dispatch_attempt_at?: string | null
         }
         Relationships: [
           {
