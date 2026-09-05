@@ -36,12 +36,13 @@ export interface ForceSplitOutcome {
  * soft-deleted: part of the order genuinely travels with this route, so the
  * row still has to say so. It moves to a new stage, `force_split` — not
  * `staged`, because `get_move_task_snapshot`'s plan-membership filter
- * (`stage IN ('planned', 'staged')`) would otherwise keep listing the
- * released packages as still needing to move onto this route, forever, since
- * they will never get a `dock_scans` row here. `force_split` opts a split
- * order out of that membership while `sealRoute`'s own final step (which
- * advances staged/adopted packages to `listo_para_despacho`) is widened to
- * also include it — the loaded half still has to complete the seal.
+ * (latest def 20260902000001: `stage IN ('planned', 'partially_staged',
+ * 'staged')`) would otherwise keep listing the released packages as still
+ * needing to move onto this route, forever, since they will never get a
+ * `dock_scans` row here. `force_split` opts a split order out of that
+ * membership while `sealRoute`'s own final step (which advances staged/
+ * adopted packages to `listo_para_despacho`) is widened to also include
+ * it — the loaded half still has to complete the seal.
  *
  * `removal_reason` is deliberately NOT written here: that column is
  * documented (spec-70, 20260825000002) as "soft-delete plus removal_reason,

@@ -16,9 +16,10 @@
 -- the fully-`planned` release, the row is NOT soft-deleted — part of the
 -- order genuinely travels with this route, so the row still has to say so.
 -- `force_split` is deliberately its own value rather than reusing `staged`:
--- `get_move_task_snapshot`'s plan-membership filter (`stage IN ('planned',
--- 'staged')`, latest def 20260902000001) would otherwise keep listing the
--- released packages as still needing to move onto this route forever —
+-- `get_move_task_snapshot`'s plan-membership filter (latest def
+-- 20260902000001: `stage IN ('planned', 'partially_staged', 'staged')`)
+-- would otherwise keep listing the released packages as still needing to
+-- move onto this route forever —
 -- they will never get a `dock_scans` row here. `force_split` opts a split
 -- order out of that membership; `get_move_task_snapshot` itself needs no
 -- change (it simply never matches the new value). `seal-route.ts`'s own

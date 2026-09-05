@@ -419,6 +419,59 @@ describe('validateScan — spec-70 stage decisions', () => {
   });
 
   /**
+   * spec-77 review (MEDIUM). `ownsTheOrder` treats a `force_split` row as
+   * settled for the WHOLE order, but only half of it is settled: the box
+   * that already travelled on the old (now `loaded`) route still carries
+   * its own genuine `loaded_at` (set, not inferred). Scanning THAT SAME
+   * box onto a different route must refuse — same per-package fact the
+   * `onThisRoute` branch already reads via ALREADY_STAGED, now also
+   * checked on the `adopt` path this scan would otherwise take. Without
+   * this, `routes/[id]/scan/route.ts` inserts a live `dispatches` row on
+   * the new route and then `advancePackagesToEnCarga` matches nothing
+   * (the package's own `loaded_at`/`load_inferred` do not satisfy its
+   * `.or('loaded_at.is.null,load_inferred.eq.true')`), throws, and leaves
+   * an orphaned `adopted` dispatch behind — a 500 instead of the clean
+   * ALREADY_IN_ROUTE this used to return pre-force_split.
+   */
+  it('refuses (not adopt) when the SAME box of a force_split order already travelled', async () => {
+    const { client } = buildClient([
+      {
+        data: [{
+          id: 'p1', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW,
+          loaded_at: '2026-09-04T10:00:00Z', load_inferred: false,
+        }],
+        error: null,
+      },
+      { data: [{ id: 'd-split', route_id: 'route-old', stage: 'force_split', route: { status: 'loaded' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('ALREADY_IN_ROUTE');
+      expect(result.conflictingRouteId).toBe('route-old');
+    }
+  });
+
+  /** The mirror case: the RELEASED box of the same force_split order (its
+   * own loaded_at never set) must still adopt cleanly — the fix above must
+   * not re-block the very case spec-77 phase 1b exists to unblock. */
+  it('still adopts the RELEASED box of a force_split order (its own loaded_at is null)', async () => {
+    const { client } = buildClient([
+      {
+        data: [{
+          id: 'p2', status: 'sectorizado', order_id: 'o1', orders: ORDER_ROW,
+          loaded_at: null, load_inferred: false,
+        }],
+        error: null,
+      },
+      { data: [{ id: 'd-split', route_id: 'route-old', stage: 'force_split', route: { status: 'loaded' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'adopt' });
+  });
+
+  /**
    * A row whose route cannot be resolved is treated as blocking. Guessing the
    * permissive way here would re-open double-routing, which is the more
    * expensive mistake: a package on two trucks is a lost package.

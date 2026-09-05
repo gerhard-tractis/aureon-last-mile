@@ -11,32 +11,12 @@ interface ScanInput {
 /**
  * Package states a Despacho scan may load onto a route.
  *
- * `sectorizado` is the one that matters in practice: the only writer of
- * packages.dock_zone_id is trg_dock_scan_advance_package_status (latest def
- * 20260506000001), and the same UPDATE that stages a package on an andén sets
- * status = 'sectorizado'. That is the state every package is in when it reaches
- * Despacho, yet this validator required 'asignado' and nothing in the product
- * writes that any more — so every scan of a correctly sorted package was
- * refused. Migration 20260817000003 made exactly this correction to the
- * Pre-Ruta cohort; this is the same cohort, one screen later.
- *
- * `retenido` is deliberately excluded, for the same reason it is excluded
- * there: it marks a package parked in a consolidation andén, which has to be
- * re-sorted onto a real andén before it can go on a route. It gets its own
- * message rather than the generic one.
- *
- * `en_bodega` is ALSO deliberately excluded (spec-76 task 3 review, escalated
- * decision) — it was here until this change, and that was a bug, not a
- * deliberate allowance. Migration 20260817000003's own analysis notes
- * `dock_zone_id IS NOT NULL AND status = 'en_bodega'` are "very nearly
- * mutually exclusive": the same trigger that writes `dock_zone_id` sets
- * `status = 'sectorizado'` in the one UPDATE, so a package still `en_bodega`
- * genuinely has not been sorted to an andén — the crew cannot physically be
- * holding it. That migration added `sectorizado`; it never added
- * `en_bodega`, which was carried over unexamined from an older definition.
- * Dock-door verification norm is block-not-warn for "not scanned, verified
- * and released" freight; this validator now matches that. Gets its own
- * message (NOT_ON_DOCK) — see the check below.
+ * `sectorizado` is the state every dock-sorted package is actually in
+ * (`trg_dock_scan_advance_package_status`, latest def 20260506000001);
+ * `retenido` (consolidation, needs re-sorting first) and `en_bodega` (never
+ * sorted to an andén at all — spec-76 task 3, escalated decision: this used
+ * to be allowed by mistake) are each excluded with their own message below
+ * rather than falling into the generic WRONG_STATUS.
  */
 export const DISPATCHABLE_STATUSES = [
   'sectorizado',
@@ -84,23 +64,18 @@ const ACTIVE = new Set<string>(ACTIVE_ROUTE_STATUSES);
 
 /**
  * Whether a dispatch row still owns its order, so the order may not be loaded
- * onto a different route.
+ * onto a different route. `ACTIVE_ROUTE_STATUSES` (`types.ts`) says which
+ * route statuses count; a row with no `route_id`, or one whose route cannot
+ * be resolved, owns nothing rather than blocking permissively — a package on
+ * two trucks is a lost package, so an unresolved route still blocks (see the
+ * fallback below).
  *
- * A row with no route_id owns nothing. A row on a completed or cancelled route
- * is history — that is what lets a package returned through `retorno_hub`
- * (spec-43) go out again. Anything else blocks, *including a row whose route
- * cannot be resolved*: guessing permissively there would re-open
- * double-routing, and a package on two trucks is a lost package.
- *
- * spec-77 phase 1b: a `force_split` row is the one more exception. It is
- * never soft-deleted (part of its order genuinely travelled with that,
- * now-`loaded`, route), so without this it would block forever — the
- * released half of a split order would be "available to another route" on
- * paper (`get_pre_route_snapshot`) but unscannable everywhere in practice,
- * since the old route's `dispatches` row stays alive on an ACTIVE status.
- * `force_split` means this row's claim on the order is already settled (the
- * loaded half shipped, the rest was deliberately let go); it must not gate a
- * fresh scan the way an unresolved or still-open row does.
+ * spec-77 phase 1b: a `force_split` row is the one exception ON TOP of that.
+ * It is never soft-deleted (part of its order genuinely travelled with that,
+ * now-`loaded` route), so without this it would block the RELEASED half
+ * forever, even though `get_pre_route_snapshot` already says it is free.
+ * This does not settle the LOADED half too — see the per-package check on
+ * the `adopt` path below, which is what actually tells the two apart.
  */
 function ownsTheOrder(row: DispatchRow): boolean {
   if (row.route_id == null) return false;
@@ -264,6 +239,21 @@ export async function validateScan(
       message: 'Paquete ya asignado a otra ruta activa',
       code: 'ALREADY_IN_ROUTE',
       conflictingRouteId: conflicting?.route_id ?? null,
+    };
+  } else if (found.loaded_at && !found.load_inferred) {
+    // spec-77 review (MEDIUM). `ownsTheOrder`'s `force_split` exception
+    // (above) frees the RELEASED half of the order, but it cannot tell that
+    // box apart from the one that already travelled — only this box's OWN
+    // `loaded_at`/`load_inferred` can. Without this, the travelled box would
+    // fall into `adopt` on a new route, `advancePackagesToEnCarga` would
+    // match nothing, and the caller would 500 with an orphaned dispatch row
+    // (pre-force_split this returned a clean ALREADY_IN_ROUTE).
+    const forceSplit = dispatches.find((d) => d.stage === 'force_split');
+    return {
+      ok: false,
+      message: 'Paquete ya asignado a otra ruta activa',
+      code: 'ALREADY_IN_ROUTE',
+      conflictingRouteId: forceSplit?.route_id ?? null,
     };
   } else {
     action = { kind: 'adopt' };
