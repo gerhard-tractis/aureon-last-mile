@@ -122,11 +122,38 @@ case "${1:-}" in
     shift
     pass=0; fail=0
     for t in "$@"; do
-      t="$(basename "$t" .sql)"
-      printf "%-56s " "$t"
-      out=$(psq -tA -f "/supabase/tests/$t.sql" 2>&1)
-      if echo "$out" | grep -q "ERROR"; then
-        fail=$((fail+1)); echo "FAIL"; echo "$out" | grep -m2 "ERROR" | sed 's/^/      /'
+      # M-2 fix: the repo mixes two real suffixes (*.test.sql and plain
+      # *.sql — see `ls packages/database/supabase/tests`), and the old
+      # code blindly looked for "$t.sql" with no existence check. A missing
+      # file made `psql -f` print "psql: error: could not open file..." to
+      # stderr (captured by 2>&1 below) in LOWERCASE, which the old
+      # `grep -q "ERROR"` (uppercase) never matched — so a typo'd or
+      # nonexistent test name silently reported PASS having run nothing.
+      # Resolve the short name against both real suffixes inside the
+      # container before running anything; neither existing is a loud FAIL.
+      base="$(basename "$t" .sql)"
+      base="${base%.test}"
+      file=""
+      for cand in "$base.test.sql" "$base.sql"; do
+        if dex test -f "/supabase/tests/$cand"; then file="$cand"; break; fi
+      done
+      if [ -z "$file" ]; then
+        printf "%-56s " "$base"
+        fail=$((fail+1)); echo "FAIL (no such file: $base.test.sql / $base.sql)"
+        continue
+      fi
+      printf "%-56s " "$file"
+      out=$(psq -tA -f "/supabase/tests/$file" 2>&1)
+      # Two real failure shapes, matched precisely (not a bare case-insensitive
+      # "ERROR" — several tests RAISE NOTICE with the lowercase word "error"
+      # inside a passing message, e.g. "raises no error", "not an error";
+      # a loose -i match turned those into false FAILs):
+      #   1. `psql:<file>:<line>: ERROR:  <msg>` — a RAISE EXCEPTION inside a
+      #      DO block, this repo's house style for a failing assertion.
+      #   2. `psql: error: could not open file...` — the file itself is
+      #      missing/unreadable (the exact bug this fix exists for).
+      if echo "$out" | grep -qE "ERROR:|^psql: error:"; then
+        fail=$((fail+1)); echo "FAIL"; echo "$out" | grep -E "ERROR:|^psql: error:" | head -2 | sed 's/^/      /'
       else
         pass=$((pass+1)); echo "PASS"
       fi
