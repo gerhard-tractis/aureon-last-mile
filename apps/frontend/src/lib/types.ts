@@ -2117,6 +2117,12 @@ export type Database = {
           staged_stops: number
           adopted_stops: number
           partially_staged_stops: number
+          // spec-77 phase 1b (20260908000001) — force_split's own bucket,
+          // appended after partially_staged_stops (CREATE OR REPLACE VIEW
+          // cannot reorder existing output columns). Hand-added here for the
+          // same reason the rest of this view is: nothing regenerates this
+          // file against a view.
+          force_split_stops: number
         }
         Relationships: []
       }
