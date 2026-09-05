@@ -27,8 +27,21 @@ export interface ForceSealAuditInput {
  * Same mechanism the manager's `DELETE /packages/[pkgId]` removal uses,
  * distinguished from it by `action`. Errors are swallowed exactly as before
  * (`.then(() => null, () => null)`) — an audit-write failure must not turn
- * an otherwise-successful seal into a 500; the seal itself already
- * succeeded by the time this runs.
+ * an otherwise-successful seal into a 500.
+ *
+ * spec-77 review B1 correction: this is called from `applyPendingStopsPlan`
+ * (`seal-pending-stops.ts`), which only ever runs after every gate that can
+ * REFUSE the seal — `planPendingStopsResolution`'s own checks and, above
+ * all, `checkAdoptedCompleteness` — has already run and passed. So by the
+ * time this writes, the release/split it is recording cannot be undone by a
+ * later refusal; what is NOT yet true at this point is that the seal is
+ * fully committed — `transition_route_status` still has to walk the route
+ * to `loaded`, and that RPC (unlike everything before it) throws instead of
+ * refusing. This audit row can therefore exist for a force call whose
+ * route-status transition later fails; that is expected and recoverable (a
+ * retry re-finds the same rows, now already released/split, and simply
+ * re-attempts the transition), not the "already succeeded" claim this
+ * comment used to make.
  */
 export async function writeForceSealAudit(
   supabase: SupabaseClient<Database>,

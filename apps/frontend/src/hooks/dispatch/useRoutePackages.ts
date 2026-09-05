@@ -58,7 +58,7 @@ export function useRoutePackages(routeId: string | null, operatorId: string | nu
         for (const ids of chunks) {
           const { data: pkgRows, error: pkgError } = await supabase
             .from('packages')
-            .select('order_id, loaded_at, status')
+            .select('order_id, loaded_at, load_inferred, status')
             .in('order_id', ids)
             .eq('operator_id', operatorId!)
             .is('deleted_at', null);
@@ -84,7 +84,17 @@ export function useRoutePackages(routeId: string | null, operatorId: string | nu
             if (!p.loaded_at && !dispatchable) continue;
             const entry = boxesByOrder.get(p.order_id) ?? { total: 0, loaded: 0 };
             entry.total += 1;
-            if (p.loaded_at) entry.loaded += 1;
+            // spec-77 review MEDIUM: `loaded_at` alone is not "genuinely
+            // loaded" — spec-74's backfill set it with `load_inferred: true`
+            // on packages that were never actually scanned onto the truck.
+            // The seal's own gates (force-seal-split.ts,
+            // seal-adopted-completeness.ts) use `loaded_at IS NOT NULL AND
+            // load_inferred = false` as the one discriminator for "genuinely
+            // loaded"; this screen must agree, or its "cargados" count
+            // promises a box travels when the seal's final
+            // `UPDATE packages ... WHERE status = 'en_carga'` leaves it on
+            // the dock.
+            if (p.loaded_at && !p.load_inferred) entry.loaded += 1;
             boxesByOrder.set(p.order_id, entry);
           }
         }

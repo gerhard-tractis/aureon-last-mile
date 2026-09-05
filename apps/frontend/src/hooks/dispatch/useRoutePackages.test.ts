@@ -399,6 +399,44 @@ describe('useRoutePackages', () => {
     expect(packagesCalls).toHaveLength(2);
   });
 
+  /**
+   * spec-77 review MEDIUM. `loaded_at` alone is not "genuinely loaded" — a
+   * spec-74-backfilled box can carry `loaded_at` with `load_inferred: true`
+   * while its real status is still `sectorizado` (never actually scanned).
+   * The seal's own gates (`force-seal-split.ts`, `seal-adopted-completeness`)
+   * already use `loaded_at IS NOT NULL AND load_inferred = false` as the
+   * ONE discriminator for "genuinely loaded"; this screen must use the same
+   * one, or its "N cargados" count and the seal's own advance
+   * (`UPDATE packages ... WHERE status = 'en_carga'`) disagree — a box the
+   * screen calls loaded but the seal leaves on the dock, silently.
+   */
+  it('does not count a load_inferred (backfilled) package as loaded', async () => {
+    const rawRow = {
+      id: 'dispatch-11',
+      order_id: 'order-11',
+      status: 'pending',
+      stage: 'partially_staged',
+      orders: { order_number: 'ORD-011', customer_name: 'Kai', delivery_address: '11 Rd', customer_phone: null },
+    };
+    mockTables({
+      dispatches: [rawRow],
+      packages: [
+        // Genuine scan — counts as loaded.
+        { order_id: 'order-11', loaded_at: '2026-08-31T10:00:00Z', load_inferred: false, status: 'en_carga' },
+        // spec-74 backfill: loaded_at is set but load_inferred is true and
+        // status never advanced past sectorizado — this box never actually
+        // left the dock and must NOT count as loaded.
+        { order_id: 'order-11', loaded_at: '2026-08-30T09:00:00Z', load_inferred: true, status: 'sectorizado' },
+      ],
+    });
+
+    const { result } = renderHook(() => useRoutePackages('route-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.[0].boxesTotal).toBe(2);
+    expect(result.current.data?.[0].boxesLoaded).toBe(1);
+  });
+
   it('does not query packages at all when there are no dispatches', async () => {
     mockTables({ dispatches: [] });
 
