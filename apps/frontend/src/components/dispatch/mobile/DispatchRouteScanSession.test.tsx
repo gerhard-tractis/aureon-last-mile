@@ -1,14 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DispatchRouteScanSession, type DispatchRouteScanSessionProps } from './DispatchRouteScanSession';
 import { buildAcceptedEntry, buildRejectedEntry } from '@/lib/dispatch/mobile/scan-session';
+import type { RoutePackage } from '@/lib/dispatch/types';
 
 const pushMock = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: pushMock }) }));
 
 const submitScanMock = vi.fn();
+const sealMock = vi.fn();
 let mockSession: ReturnType<typeof baseSession>;
+
+function pkg(overrides: Partial<RoutePackage>): RoutePackage {
+  return {
+    dispatch_id: 'd1',
+    order_id: 'o1',
+    order_number: 'ORD-1',
+    contact_name: 'Juan',
+    contact_address: 'Calle 1',
+    contact_phone: null,
+    status: 'pending',
+    stage: 'staged',
+    boxesTotal: 1,
+    boxesLoaded: 1,
+    ...overrides,
+  };
+}
 
 function baseSession() {
   return {
@@ -21,11 +39,16 @@ function baseSession() {
     packagesLoaded: 148,
     packagesTotal: 172,
     percent: 86,
+    packages: [pkg({ order_id: 'o1', boxesTotal: 2, boxesLoaded: 1 })] as RoutePackage[],
   };
 }
 
 vi.mock('@/hooks/dispatch/mobile/useRouteScanSession', () => ({
   useRouteScanSession: () => mockSession,
+}));
+
+vi.mock('@/hooks/dispatch/mobile/useSealRoute', () => ({
+  useSealRoute: () => ({ seal: sealMock, isSealing: false }),
 }));
 
 // The camera itself is exercised in DispatchRouteCameraViewfinder.test.tsx
@@ -64,6 +87,7 @@ function renderSession(overrides: Partial<DispatchRouteScanSessionProps> = {}) {
 describe('DispatchRouteScanSession', () => {
   beforeEach(() => {
     submitScanMock.mockReset();
+    sealMock.mockReset();
     pushMock.mockReset();
     onViewPackagesMock.mockReset();
     mockSession = baseSession();
@@ -132,11 +156,23 @@ describe('DispatchRouteScanSession', () => {
     expect(submitScanMock).toHaveBeenCalledWith('CL7000');
   });
 
-  it('Cerrar ruta stays disabled with its reason — spec-77, not this branch', () => {
+  it('spec-77 item 3 — with nothing missing, Cerrar ruta seals directly (no confirmation sheet)', async () => {
+    const user = userEvent.setup();
+    mockSession = { ...baseSession(), packagesLoaded: 172, packagesTotal: 172, packages: [pkg({ boxesTotal: 1, boxesLoaded: 1 })] };
+    sealMock.mockResolvedValue({ ok: true, sealedStops: 172, ordersClosed: 60 });
     renderSession();
-    const closeButton = screen.getByRole('button', { name: /cerrar ruta/i });
-    expect(closeButton).toBeDisabled();
-    expect(screen.getByText(/próxima pantalla — spec-77/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await waitFor(() => expect(sealMock).toHaveBeenCalledWith('r1'));
+    expect(screen.queryByRole('button', { name: /^cerrar con/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/dispatch'));
+  });
+
+  it('spec-77 item 3 — with faltantes, Cerrar ruta opens the confirmation sheet instead of sealing', async () => {
+    const user = userEvent.setup();
+    renderSession();
+    await user.click(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i }));
+    expect(sealMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/cerrar con faltantes/i)).toBeInTheDocument();
   });
 
   it('spec-76 task 4 — Cámara and Ver los N are wired, not disabled placeholders any more', () => {
@@ -210,10 +246,9 @@ describe('DispatchRouteScanSession', () => {
     expect(screen.getByLabelText('Código del bulto')).toBeInTheDocument();
   });
 
-  it('spec-76 review "spec deviations" — the remaining disabled footer reason is visible text, not a title= tooltip nobody sees on a touchscreen', () => {
+  it('spec-77 — Cerrar ruta is a real button, never a title= tooltip nobody sees on a touchscreen', () => {
     renderSession();
-    expect(screen.getByText(/cierre de ruta es la próxima pantalla/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /cerrar ruta/i })).not.toHaveAttribute('title');
+    expect(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i })).not.toHaveAttribute('title');
   });
 
   it('spec-76 review "spec deviations" — header, counter and ScanField stay visible while the session scrolls (sticky)', () => {
