@@ -28,19 +28,20 @@ export { LOADED_ON_TRUCK_STATUSES, isGenuinelyLoadedPackage };
  * "expected 2 / updated 1" and tripped the F2 mismatch alarm on a healthy
  * write, doubling `packages_dispatched`.
  *
- * Corrected claim: this does NOT prove "scanned onto THIS route" — `packages`
- * carries no route linkage (lib/types.ts) and `loaded_at`/`loaded_by` record
- * none either. It proves only "a real scan put this box on *a* truck"; a box
- * scanned onto route A whose order also carries a dispatch on route B is
- * included in route B's set too.
+ * spec-79 BLOCKER (corrects the claim above): `packages` now DOES carry
+ * enough to answer "scanned onto THIS route" — `loaded_route_id`
+ * (20260909000001), checked by `isGenuinelyLoadedPackage`. A box scanned
+ * onto route A whose order also carries a `force_split` dispatch on route B
+ * no longer appears in B's set: `routeId` is mandatory so no caller can
+ * silently keep the old, route-blind behaviour that put it there.
  */
-export function loadedPackageIds(dispatches: DispatchRow[]): string[] {
+export function loadedPackageIds(dispatches: DispatchRow[], routeId: string): string[] {
   const ids = new Set<string>();
   for (const d of dispatches) {
     const order = Array.isArray(d.orders) ? (d.orders[0] ?? null) : d.orders;
     const pkgs = order?.packages ?? [];
     for (const p of pkgs) {
-      if (isGenuinelyLoadedPackage(p)) ids.add(p.id);
+      if (isGenuinelyLoadedPackage(p, routeId)) ids.add(p.id);
     }
   }
   return [...ids];
@@ -59,13 +60,13 @@ export function loadedPackageIds(dispatches: DispatchRow[]): string[] {
  * path, first attempt or retry, instead of silently regressing to 0 on a
  * retry that recovers 40 boxes.
  */
-export function alreadyDispatchedPackageCount(dispatches: DispatchRow[]): number {
+export function alreadyDispatchedPackageCount(dispatches: DispatchRow[], routeId: string): number {
   const ids = new Set<string>();
   for (const d of dispatches) {
     const order = Array.isArray(d.orders) ? (d.orders[0] ?? null) : d.orders;
     const pkgs = order?.packages ?? [];
     for (const p of pkgs) {
-      if (p.status === 'en_ruta' && isGenuinelyLoadedByFact(p)) ids.add(p.id);
+      if (p.status === 'en_ruta' && isGenuinelyLoadedByFact(p, routeId)) ids.add(p.id);
     }
   }
   return ids.size;

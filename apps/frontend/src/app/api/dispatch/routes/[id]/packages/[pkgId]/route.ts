@@ -117,6 +117,7 @@ export async function DELETE(
     if (dispatch.order_id && dispatch.route_id) {
       const ordersOnOtherRoutes = await findOrderIdsWithLiveDispatchOnOtherRoutes(supabase, {
         operatorId,
+        userId: session.user.id,
         orderIds: [dispatch.order_id],
         excludeRouteId: dispatch.route_id,
         logPrefix: 'dispatch/packages DELETE',
@@ -151,9 +152,20 @@ export async function DELETE(
       // route B could never be scanned again, permanently unloadable. This
       // write releases the box, so the per-box load fact must be released
       // with it.
+      // spec-79 BLOCKER: loaded_route_id reset alongside the rest of the
+      // per-box load fact — a stale route reference here is harmless once
+      // loaded_at is also null (isGenuinelyLoadedPackage already requires
+      // both), but leaving it set is misleading to read and gets
+      // overwritten by the next genuine scan anyway.
       await supabase
         .from('packages')
-        .update({ status: 'sectorizado', loaded_at: null, loaded_by: null, load_inferred: false })
+        .update({
+          status: 'sectorizado',
+          loaded_at: null,
+          loaded_by: null,
+          load_inferred: false,
+          loaded_route_id: null,
+        })
         .eq('operator_id', operatorId)
         .eq('order_id', dispatch.order_id)
         .in('status', [...LOADED_ON_TRUCK_STATUSES])

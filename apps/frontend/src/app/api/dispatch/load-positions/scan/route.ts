@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
       // spec-74 phase 2 review item 3 — lets stageDispatch preserve
       // `adopted` instead of overwriting it to `staged`.
       currentStage: validation.currentStage,
+      routeId: validation.routeId,
     });
 
     // spec-71 phase 1's per-package staging audit column. batch_id and

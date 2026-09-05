@@ -23,9 +23,15 @@ function pkg(overrides: Partial<PackageRow> & { id: string }): PackageRow {
     // dispatch-local-completion.test.ts uses.
     loaded_at: '2026-09-04T10:00:00Z',
     load_inferred: false,
+    // spec-79 BLOCKER: every test in this file calls buildItems/
+    // buildDtDispatches/findDispatchesWithNoLoadedItems with ROUTE_ID —
+    // route-scoping itself is covered by dispatch-load-state.test.ts.
+    loaded_route_id: ROUTE_ID,
     ...overrides,
   };
 }
+
+const ROUTE_ID = 'route-1';
 
 describe('buildItems', () => {
   it('excludes soft-deleted and label-less packages', () => {
@@ -33,7 +39,7 @@ describe('buildItems', () => {
       pkg({ id: 'p1', label: 'CTN-1' }),
       pkg({ id: 'p2', label: null }),
       pkg({ id: 'p3', label: 'CTN-3', deleted_at: '2026-01-01T00:00:00Z' }),
-    ]);
+    ], ROUTE_ID);
     expect(items).toHaveLength(1);
     expect(items[0].code).toBe('CTN-1');
   });
@@ -48,20 +54,20 @@ describe('buildItems', () => {
           { sku: 'SKU-B', description: 'Widget B', quantity: 3 },
         ],
       }),
-    ]);
+    ], ROUTE_ID);
     expect(items).toEqual([
       { code: 'CTN-1', name: 'SKU-A, SKU-B', description: 'Widget A, Widget B', quantity: '5' },
     ]);
   });
 
   it('a package with no SKU data still produces an item with quantity 1', () => {
-    const items = buildItems([pkg({ id: 'p1', label: 'CTN-1', sku_items: [] })]);
+    const items = buildItems([pkg({ id: 'p1', label: 'CTN-1', sku_items: [] })], ROUTE_ID);
     expect(items).toEqual([{ code: 'CTN-1', quantity: '1' }]);
   });
 
   it('handles null/undefined input', () => {
-    expect(buildItems(null)).toEqual([]);
-    expect(buildItems(undefined)).toEqual([]);
+    expect(buildItems(null, ROUTE_ID)).toEqual([]);
+    expect(buildItems(undefined, ROUTE_ID)).toEqual([]);
   });
 
   /**
@@ -74,21 +80,21 @@ describe('buildItems', () => {
     const items = buildItems([
       pkg({ id: 'p1', label: 'CTN-1', status: 'en_carga' }),
       pkg({ id: 'p2', label: 'CTN-2', status: 'retenido' }),
-    ]);
+    ], ROUTE_ID);
     expect(items.map((i) => i.code)).toEqual(['CTN-1']);
   });
 
   it('excludes a package never genuinely scanned (loaded_at null)', () => {
     const items = buildItems([
       pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', loaded_at: null }),
-    ]);
+    ], ROUTE_ID);
     expect(items).toEqual([]);
   });
 
   it('excludes a backfilled (load_inferred) package — not evidence of a real scan', () => {
     const items = buildItems([
       pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', load_inferred: true }),
-    ]);
+    ], ROUTE_ID);
     expect(items).toEqual([]);
   });
 });
@@ -152,31 +158,31 @@ describe('findDispatchesWithNoLoadedItems', () => {
     const d = dispatchWithPackages('d1', [
       pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', load_inferred: true }),
     ]);
-    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+    expect(findDispatchesWithNoLoadedItems([d], ROUTE_ID)).toEqual([d]);
   });
 
   it('flags a dispatch whose every package is retenido after staging', () => {
     const d = dispatchWithPackages('d1', [
       pkg({ id: 'p1', label: 'CTN-1', status: 'retenido' }),
     ]);
-    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+    expect(findDispatchesWithNoLoadedItems([d], ROUTE_ID)).toEqual([d]);
   });
 
   it('flags a dispatch whose every package was soft-deleted after sealing', () => {
     const d = dispatchWithPackages('d1', [
       pkg({ id: 'p1', label: 'CTN-1', status: 'en_carga', deleted_at: '2026-09-05T00:00:00Z' }),
     ]);
-    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+    expect(findDispatchesWithNoLoadedItems([d], ROUTE_ID)).toEqual([d]);
   });
 
   it('flags a dispatch with no packages at all', () => {
     const d = dispatchWithPackages('d1', []);
-    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+    expect(findDispatchesWithNoLoadedItems([d], ROUTE_ID)).toEqual([d]);
   });
 
   it('does not flag a dispatch that carries at least one genuinely-loaded package', () => {
     const d = dispatchWithPackages('d1', [pkg({ id: 'p1', label: 'CTN-1' })]);
-    expect(findDispatchesWithNoLoadedItems([d])).toEqual([]);
+    expect(findDispatchesWithNoLoadedItems([d], ROUTE_ID)).toEqual([]);
   });
 
   it('flags only the empty stop when other stops are fine (per-stop, not whole-route)', () => {
@@ -184,7 +190,7 @@ describe('findDispatchesWithNoLoadedItems', () => {
     const empty = dispatchWithPackages('d2', [
       pkg({ id: 'p2', label: 'CTN-2', status: 'retenido' }),
     ]);
-    expect(findDispatchesWithNoLoadedItems([fine, empty])).toEqual([empty]);
+    expect(findDispatchesWithNoLoadedItems([fine, empty], ROUTE_ID)).toEqual([empty]);
   });
 });
 
@@ -204,22 +210,22 @@ describe('buildDtDispatches', () => {
   }
 
   it('sends a purely numeric order_number as a number', () => {
-    const [dt] = buildDtDispatches([dispatchRow('4821')]);
+    const [dt] = buildDtDispatches([dispatchRow('4821')], ROUTE_ID);
     expect(dt.identifier).toBe(4821);
   });
 
   it('sends an alphanumeric order_number as a string, never mangled by parseInt', () => {
-    const [dt] = buildDtDispatches([dispatchRow('AB-4821')]);
+    const [dt] = buildDtDispatches([dispatchRow('AB-4821')], ROUTE_ID);
     expect(dt.identifier).toBe('AB-4821');
   });
 
   it('sends an order_number with no digits as the string it is, not null/NaN', () => {
-    const [dt] = buildDtDispatches([dispatchRow('SIN-NUMERO')]);
+    const [dt] = buildDtDispatches([dispatchRow('SIN-NUMERO')], ROUTE_ID);
     expect(dt.identifier).toBe('SIN-NUMERO');
   });
 
   it('carries contact fields from the order, not invented ones', () => {
-    const [dt] = buildDtDispatches([dispatchRow('4821')]);
+    const [dt] = buildDtDispatches([dispatchRow('4821')], ROUTE_ID);
     expect(dt.contact_name).toBe('Mario');
     expect(dt.contact_address).toBe('Av Principal 1');
     expect(dt.contact_phone).toBe('555-1234');

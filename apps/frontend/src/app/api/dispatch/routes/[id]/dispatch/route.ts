@@ -103,7 +103,7 @@ export async function POST(
     // comes along because a nested embed cannot be filtered from here.
     const { data: dispatches, error: dErr } = await supabase
       .from('dispatches')
-      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone, packages(id, label, sku_items, status, deleted_at, loaded_at, load_inferred))')
+      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone, packages(id, label, sku_items, status, deleted_at, loaded_at, load_inferred, loaded_route_id))')
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null);
@@ -172,7 +172,7 @@ export async function POST(
       // contents and this handler answered `200 {ok:true}` over it. Checked
       // per stop — one empty stop among many still hands the driver a stop
       // with no contents.
-      const emptyManifestDispatches = findDispatchesWithNoLoadedItems(dispatchRows);
+      const emptyManifestDispatches = findDispatchesWithNoLoadedItems(dispatchRows, routeId);
       if (emptyManifestDispatches.length) {
         return NextResponse.json(
           {
@@ -208,7 +208,7 @@ export async function POST(
         truck_identifier: parsed.data.truck_identifier,
         route_date: route.route_date,
         driver_identifier: parsed.data.driver_identifier ?? null,
-        dispatches: buildDtDispatches(dispatchRows),
+        dispatches: buildDtDispatches(dispatchRows, routeId),
       }, apiToken);
       externalRouteId = created.external_route_id;
     }
@@ -216,7 +216,7 @@ export async function POST(
     // DT has confirmed this route — now or on a previous attempt. Every
     // error from here on means "DT accepted, our record of it is
     // incomplete", never "DT rejected" — see the catch block below.
-    const loadedIds = loadedPackageIds(dispatchRows);
+    const loadedIds = loadedPackageIds(dispatchRows, routeId);
     let writtenCount: number;
     try {
       ({ dispatchedCount: writtenCount } = await completeLocalDispatch({
@@ -256,7 +256,7 @@ export async function POST(
     // is legitimately 0 — that would answer `packages_dispatched: 0` for a
     // route carrying 40 boxes. `alreadyDispatchedPackageCount` adds those
     // already-written boxes so the total is honest on every path.
-    const dispatchedCount = alreadyDispatchedPackageCount(dispatchRows) + writtenCount;
+    const dispatchedCount = alreadyDispatchedPackageCount(dispatchRows, routeId) + writtenCount;
     return NextResponse.json(
       { ok: true, external_route_id: externalRouteId, packages_dispatched: dispatchedCount },
       { status: 200 },

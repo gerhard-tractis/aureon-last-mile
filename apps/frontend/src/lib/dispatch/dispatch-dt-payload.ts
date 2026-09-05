@@ -33,6 +33,16 @@ export interface PackageRow {
   deleted_at: string | null;
   loaded_at: string | null;
   load_inferred: boolean;
+  /**
+   * spec-79 BLOCKER. Which route's `/scan` set `loaded_at` on this box (see
+   * `stage-dispatch.ts`'s `advancePackagesToEnCarga`). `null` for a box
+   * never scanned, one only touched by spec-74's optimistic backfill, or a
+   * genuine pre-migration scan on an order that was ambiguous at backfill
+   * time (see `20260909000001_spec79_loaded_route_id.sql`'s header).
+   * `isGenuinelyLoadedPackage` requires this to equal the route asking —
+   * the fix for a box loaded on route B appearing on route A's manifest.
+   */
+  loaded_route_id: string | null;
 }
 
 export interface OrderRow {
@@ -75,10 +85,17 @@ function singleOrder(d: DispatchRow): OrderRow | null {
  * claimed a box that was sitting on the andén. The DT guide and the local
  * `en_ruta` set must describe the same physical load; this makes that
  * explicit instead of incidental.
+ *
+ * spec-79 BLOCKER: `isGenuinelyLoadedPackage` now also requires
+ * `loaded_route_id === routeId` — a box scanned onto a DIFFERENT route
+ * (the force-split shape: two live dispatches for the same order, one per
+ * route) no longer counts as loaded onto THIS one. `routeId` is mandatory,
+ * not optional, so no call site can silently fall back to the old,
+ * route-blind behaviour.
  */
-export function buildItems(packages: PackageRow[] | null | undefined): DTItem[] {
+export function buildItems(packages: PackageRow[] | null | undefined, routeId: string): DTItem[] {
   return (packages ?? [])
-    .filter((p) => isGenuinelyLoadedPackage(p) && p.label)
+    .filter((p) => isGenuinelyLoadedPackage(p, routeId) && p.label)
     .map((p) => {
       const lines: SkuLine[] = Array.isArray(p.sku_items) ? p.sku_items : [];
       const names: string[] = [];
@@ -126,8 +143,8 @@ export function findMissingOrderNumbers(dispatches: DispatchRow[]): DispatchRow[
  * silently drop just that stop — spec-79's no-goals rule out any partial
  * dispatch or reopening logic.
  */
-export function findDispatchesWithNoLoadedItems(dispatches: DispatchRow[]): DispatchRow[] {
-  return dispatches.filter((d) => buildItems(singleOrder(d)?.packages).length === 0);
+export function findDispatchesWithNoLoadedItems(dispatches: DispatchRow[], routeId: string): DispatchRow[] {
+  return dispatches.filter((d) => buildItems(singleOrder(d)?.packages, routeId).length === 0);
 }
 
 // dispatches.identifier is DT's guide number, and order_number IS that
@@ -144,7 +161,7 @@ export function findDispatchesWithNoLoadedItems(dispatches: DispatchRow[]): Disp
 // parseInt(order_number.replace(/\D/g, '')), which invented a different
 // number for non-numeric guides and NaN (JSON null) for those with no
 // digits — a guide matching nothing on either side.
-export function buildDtDispatches(dispatches: DispatchRow[]): DTDispatch[] {
+export function buildDtDispatches(dispatches: DispatchRow[], routeId: string): DTDispatch[] {
   return dispatches.map((d) => {
     const ord = singleOrder(d);
     const orderNumber = (ord?.order_number ?? '').trim();
@@ -159,7 +176,7 @@ export function buildDtDispatches(dispatches: DispatchRow[]): DTDispatch[] {
       contact_phone: ord?.customer_phone ?? null,
       contact_email: null,
       current_state: 1,
-      items: buildItems(ord?.packages),
+      items: buildItems(ord?.packages, routeId),
     };
   });
 }

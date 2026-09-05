@@ -20,6 +20,11 @@ function pkg(overrides: Partial<PackageRow> & { id: string }): PackageRow {
     deleted_at: null,
     loaded_at: null,
     load_inferred: false,
+    // spec-79 BLOCKER: every fixture below represents a box scanned onto
+    // route 'r1' and every call passes 'r1' as the routeId asking -- this
+    // file is about the STATUS/loaded_at/load_inferred boundary, not the
+    // route-scoping fix (covered by dispatch-load-state.test.ts).
+    loaded_route_id: 'r1',
     ...overrides,
   };
 }
@@ -43,14 +48,14 @@ describe('loadedPackageIds', () => {
     const d = dispatchWithPackages([
       pkg({ id: 'p-scanned', status: 'en_carga', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual(['p-scanned']);
+    expect(loadedPackageIds([d], 'r1')).toEqual(['p-scanned']);
   });
 
   it('includes a genuinely scanned box already moved to listo_para_despacho by /seal', () => {
     const d = dispatchWithPackages([
       pkg({ id: 'p-sealed', status: 'listo_para_despacho', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual(['p-sealed']);
+    expect(loadedPackageIds([d], 'r1')).toEqual(['p-sealed']);
   });
 
   it('excludes a retenido package even when it carries a genuine loaded_at', () => {
@@ -60,14 +65,14 @@ describe('loadedPackageIds', () => {
     const d = dispatchWithPackages([
       pkg({ id: 'p-held', status: 'retenido', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual([]);
+    expect(loadedPackageIds([d], 'r1')).toEqual([]);
   });
 
   it('excludes a dañado package even when it carries a genuine loaded_at', () => {
     const d = dispatchWithPackages([
       pkg({ id: 'p-damaged', status: 'dañado', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual([]);
+    expect(loadedPackageIds([d], 'r1')).toEqual([]);
   });
 
   it('excludes a soft-deleted package regardless of status or loaded_at', () => {
@@ -80,7 +85,7 @@ describe('loadedPackageIds', () => {
         deleted_at: '2026-09-03T00:00:00Z',
       }),
     ]);
-    expect(loadedPackageIds([d])).toEqual([]);
+    expect(loadedPackageIds([d], 'r1')).toEqual([]);
   });
 
   it('excludes an en_carga/listo_para_despacho package never scanned (loaded_at null)', () => {
@@ -88,7 +93,7 @@ describe('loadedPackageIds', () => {
       pkg({ id: 'p-never-scanned', status: 'asignado', loaded_at: null, load_inferred: false }),
       pkg({ id: 'p-dock-ready', status: 'listo_para_despacho', loaded_at: null, load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual([]);
+    expect(loadedPackageIds([d], 'r1')).toEqual([]);
   });
 
   /**
@@ -108,7 +113,7 @@ describe('loadedPackageIds', () => {
         load_inferred: true,
       }),
     ]);
-    expect(loadedPackageIds([d])).toEqual([]);
+    expect(loadedPackageIds([d], 'r1')).toEqual([]);
   });
 
   it('a split order: only the genuinely scanned box qualifies, the untouched sibling does not', () => {
@@ -116,7 +121,7 @@ describe('loadedPackageIds', () => {
       pkg({ id: 'p-loaded', status: 'en_carga', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false }),
       pkg({ id: 'p-on-dock', status: 'asignado', loaded_at: null, load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d])).toEqual(['p-loaded']);
+    expect(loadedPackageIds([d], 'r1')).toEqual(['p-loaded']);
   });
 
   it('flattens across multiple dispatches', () => {
@@ -126,7 +131,7 @@ describe('loadedPackageIds', () => {
     const d2 = dispatchWithPackages([
       pkg({ id: 'p-2', status: 'listo_para_despacho', loaded_at: '2026-09-04T10:05:00Z', load_inferred: false }),
     ]);
-    expect(loadedPackageIds([d1, d2])).toEqual(['p-1', 'p-2']);
+    expect(loadedPackageIds([d1, d2], 'r1')).toEqual(['p-1', 'p-2']);
   });
 
   it('handles an orders array (PostgREST embed shape) the same as a single object', () => {
@@ -141,7 +146,7 @@ describe('loadedPackageIds', () => {
         packages: [pkg({ id: 'p-1', status: 'en_carga', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false })],
       }],
     };
-    expect(loadedPackageIds([d])).toEqual(['p-1']);
+    expect(loadedPackageIds([d], 'r1')).toEqual(['p-1']);
   });
 
   it('LOADED_ON_TRUCK_STATUSES is exactly en_carga and listo_para_despacho', () => {
@@ -173,6 +178,6 @@ describe('loadedPackageIds', () => {
         packages: [pkgShared],
       },
     };
-    expect(loadedPackageIds([d1, d2])).toEqual(['p-shared']);
+    expect(loadedPackageIds([d1, d2], 'r1')).toEqual(['p-shared']);
   });
 });

@@ -94,7 +94,7 @@ describe('advancePackagesToEnCarga', () => {
    */
   it('scopes the write to the one package scanned, not the whole order', async () => {
     const { client, ops } = buildClient();
-    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' });
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
 
     const pkgOp = ops.find((o) => o.table === 'packages');
     expect(pkgOp?.kind).toBe('update');
@@ -105,12 +105,26 @@ describe('advancePackagesToEnCarga', () => {
 
   it('records the per-box load fact — loaded_at and loaded_by — alongside the status advance', async () => {
     const { client, ops } = buildClient();
-    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' });
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
 
     const pkgOp = ops.find((o) => o.table === 'packages');
     expect(pkgOp?.payload?.status).toBe('en_carga');
     expect(pkgOp?.payload?.loaded_at).toBeTruthy();
     expect(pkgOp?.payload?.loaded_by).toBe('u-1');
+  });
+
+  /**
+   * spec-79 BLOCKER: the route linkage `packages` never carried before —
+   * without this, isGenuinelyLoadedPackage (dispatch-load-state.ts) cannot
+   * tell "loaded onto THIS route" from "loaded onto some other route" and a
+   * force-split order's second half reappears on the wrong route's manifest.
+   */
+  it('records loaded_route_id alongside the rest of the per-box load fact', async () => {
+    const { client, ops } = buildClient();
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
+
+    const pkgOp = ops.find((o) => o.table === 'packages');
+    expect(pkgOp?.payload?.loaded_route_id).toBe('route-1');
   });
 
   /**
@@ -122,7 +136,7 @@ describe('advancePackagesToEnCarga', () => {
    */
   it('clears load_inferred to false on the write (a real scan is not an inference)', async () => {
     const { client, ops } = buildClient();
-    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' });
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
 
     const pkgOp = ops.find((o) => o.table === 'packages');
     expect(pkgOp?.payload?.load_inferred).toBe(false);
@@ -138,7 +152,7 @@ describe('advancePackagesToEnCarga', () => {
    */
   it('guards the write with loaded_at IS NULL OR load_inferred = true', async () => {
     const { client, ops } = buildClient();
-    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' });
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
 
     const pkgOp = ops.find((o) => o.table === 'packages');
     expect(pkgOp?.filters).toContainEqual(['or', 'loaded_at.is.null,load_inferred.eq.true']);
@@ -148,7 +162,7 @@ describe('advancePackagesToEnCarga', () => {
 
   it('scopes to the operator and only the dispatchable statuses', async () => {
     const { client, ops } = buildClient();
-    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' });
+    await advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' });
 
     const pkgOp = ops.find((o) => o.table === 'packages');
     expect(pkgOp?.filters).toContainEqual(['operator_id', 'op-1']);
@@ -163,7 +177,7 @@ describe('advancePackagesToEnCarga', () => {
   it('throws when the packages update itself fails', async () => {
     const { client } = buildClient({ data: null, error: { message: 'connection terminated unexpectedly' } });
     await expect(
-      advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' }),
+      advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' }),
     ).rejects.toThrow(/connection terminated/);
   });
 
@@ -177,7 +191,7 @@ describe('advancePackagesToEnCarga', () => {
   it('throws when the packages update matches zero rows', async () => {
     const { client } = buildClient({ data: [], error: null });
     await expect(
-      advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1' }),
+      advancePackagesToEnCarga(client, { operatorId: 'op-1', packageId: 'pkg-1', userId: 'u-1', routeId: 'route-1' }),
     ).rejects.toThrow(/no package row matched/);
   });
 });
@@ -192,6 +206,7 @@ describe('stageDispatch', () => {
       operatorId: 'op-1',
       userId: 'u-1',
       currentStage: 'planned',
+      routeId: 'route-1',
     });
 
     expect(result).toBe('staged');
@@ -220,6 +235,7 @@ describe('stageDispatch', () => {
       operatorId: 'op-1',
       userId: 'u-1',
       currentStage: 'planned',
+      routeId: 'route-1',
     });
 
     expect(callOrder).toEqual(['packages-write', 'rpc']);
@@ -242,6 +258,7 @@ describe('stageDispatch', () => {
         operatorId: 'op-1',
         userId: 'u-1',
         currentStage: 'planned',
+        routeId: 'route-1',
       }),
     ).rejects.toThrow(/no package row matched/);
 
@@ -269,6 +286,7 @@ describe('stageDispatch', () => {
       operatorId: 'op-1',
       userId: 'u-1',
       currentStage: 'planned',
+      routeId: 'route-1',
     });
 
     expect(rpcCalls[0].args).toEqual({
@@ -288,6 +306,7 @@ describe('stageDispatch', () => {
       operatorId: 'op-1',
       userId: 'u-1',
       currentStage: 'adopted',
+      routeId: 'route-1',
     });
 
     expect(result).toBe('adopted');
@@ -302,6 +321,7 @@ describe('stageDispatch', () => {
       operatorId: 'op-1',
       userId: 'u-1',
       currentStage: 'planned',
+      routeId: 'route-1',
     });
 
     expect(result).toBe('partially_staged');
@@ -317,6 +337,7 @@ describe('stageDispatch', () => {
         operatorId: 'op-1',
         userId: 'u-1',
         currentStage: 'planned',
+        routeId: 'route-1',
       }),
     ).rejects.toThrow(/connection terminated/);
   });
@@ -331,6 +352,7 @@ describe('stageDispatch', () => {
         operatorId: 'op-1',
         userId: 'u-1',
         currentStage: 'planned',
+        routeId: 'route-1',
       }),
     ).rejects.toThrow(/returned no stage/);
   });
@@ -350,6 +372,7 @@ describe('stageDispatch', () => {
         operatorId: 'op-1',
         userId: 'u-1',
         currentStage: 'planned',
+        routeId: 'route-1',
       }),
     ).rejects.toThrow(/no package row matched/);
   });
