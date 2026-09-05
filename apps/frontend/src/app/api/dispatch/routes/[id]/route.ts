@@ -5,7 +5,7 @@ import { ACTIVE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types
 import { isCapacityConfigured } from '@/lib/dispatch/mobile/vehicle-picker';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
 import { todayISOInTimezone } from '@/lib/utils/dateFormat';
-import { findOrderIdsWithLiveDispatchOnOtherRoutes } from '@/lib/dispatch/dispatch-cross-route-orders';
+import { releaseRouteDispatches } from '@/lib/dispatch/dispatch-route-delete-cleanup';
 
 export async function DELETE(
   _request: NextRequest,
@@ -54,49 +54,12 @@ export async function DELETE(
       );
     }
 
-    // 1. Get dispatches for this route to find affected orders
-    const { data: dispatches } = await supabase
-      .from('dispatches')
-      .select('id, order_id')
-      .eq('route_id', routeId)
-      .eq('operator_id', operatorId)
-      .is('deleted_at', null);
+    // Soft-deletes this route's dispatches and reverts their packages back
+    // to 'sectorizado' — see dispatch-route-delete-cleanup.ts for the full
+    // reasoning (spec-79 F6/F7/L-3/BLOCKER/M-2).
+    await releaseRouteDispatches(supabase, { routeId, operatorId, userId: session.user.id });
 
-    // 2. Soft-delete dispatches
-    if (dispatches && dispatches.length > 0) {
-      const dispatchIds = dispatches.map((d) => d.id);
-      await supabase
-        .from('dispatches')
-        .update({ deleted_at: new Date().toISOString() })
-        .in('id', dispatchIds)
-        .eq('operator_id', operatorId);
-
-      // 3. Reset packages back to 'sectorizado' — breakage #9 (both 'en_carga'
-      // and 'listo_para_despacho' match; spec-79 F6/F7 reset deleted_at and
-      // the per-box load fact too). spec-79 M-2: excludes any order still
-      // carrying a live dispatch on a DIFFERENT route — this route's own
-      // dispatches are already soft-deleted above, so a sibling here can only
-      // belong elsewhere. See dispatch-cross-route-orders.ts.
-      const orderIds = dispatches.map((d) => d.order_id).filter((id): id is string => id != null);
-      if (orderIds.length > 0) {
-        const ordersOnOtherRoutes = await findOrderIdsWithLiveDispatchOnOtherRoutes(supabase, {
-          operatorId, orderIds, excludeRouteId: routeId, logPrefix: 'dispatch/routes DELETE',
-        });
-        const safeOrderIds = orderIds.filter((id) => !ordersOnOtherRoutes.has(id));
-
-        if (safeOrderIds.length > 0) {
-          await supabase
-            .from('packages')
-            .update({ status: 'sectorizado', loaded_at: null, loaded_by: null, load_inferred: false })
-            .in('order_id', safeOrderIds)
-            .eq('operator_id', operatorId)
-            .in('status', ['en_carga', 'listo_para_despacho'])
-            .is('deleted_at', null);
-        }
-      }
-    }
-
-    // 4. Soft-delete the route
+    // Soft-delete the route itself
     const { error: delError } = await supabase
       .from('routes')
       .update({ deleted_at: new Date().toISOString() })

@@ -37,6 +37,9 @@ export interface StageDispatchInput {
   packageId: string;
   operatorId: string;
   userId: string;
+  /** spec-79 BLOCKER: the route this scan is happening against, threaded
+   * through to `advancePackagesToEnCarga`'s `loaded_route_id` write. */
+  routeId: string;
   /**
    * spec-74 phase 2 review item 3. The dispatch row's `stage` as the
    * validator found it, so this function knows whether to write `staged`
@@ -75,10 +78,17 @@ export interface StageDispatchInput {
  * someone scans it, so the flag must be cleared, not merely left alone —
  * phase 1's migration owns SETTING it true (the one-time optimistic
  * backfill); clearing it on a genuine scan is this file's job.
+ *
+ * spec-79 BLOCKER: also writes `loaded_route_id`, the route linkage
+ * `packages` never carried before — the fact this scan records is "this box
+ * is on THIS route's truck", and `routeId` is the only place that fact ever
+ * gets recorded. Without it, a box scanned onto route B whose order also
+ * carries a `force_split` dispatch on route A read as loaded onto A too
+ * (`isGenuinelyLoadedPackage`, dispatch-load-state.ts).
  */
 export async function advancePackagesToEnCarga(
   supabase: SupabaseClient<Database>,
-  input: { operatorId: string; packageId: string; userId: string },
+  input: { operatorId: string; packageId: string; userId: string; routeId: string },
 ): Promise<void> {
   const now = new Date().toISOString();
   // spec-74 phase 2 review item 1. Used to be `.is('loaded_at', null)` —
@@ -105,7 +115,13 @@ export async function advancePackagesToEnCarga(
   // lied about the box being loaded.
   const { data: updated, error: pkgError } = await supabase
     .from('packages')
-    .update({ status: 'en_carga', loaded_at: now, loaded_by: input.userId, load_inferred: false })
+    .update({
+      status: 'en_carga',
+      loaded_at: now,
+      loaded_by: input.userId,
+      load_inferred: false,
+      loaded_route_id: input.routeId,
+    })
     .eq('operator_id', input.operatorId)
     .eq('id', input.packageId)
     .in('status', [...DISPATCHABLE_STATUSES])
@@ -176,6 +192,7 @@ export async function stageDispatch(
     operatorId: input.operatorId,
     packageId: input.packageId,
     userId: input.userId,
+    routeId: input.routeId,
   });
 
   const { data: nextStage, error: recomputeError } = await supabase.rpc('recompute_dispatch_stage', {

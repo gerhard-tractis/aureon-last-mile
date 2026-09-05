@@ -15,13 +15,14 @@ import type { SeedClient } from '../lib/db';
 import { AssertionCollector, assertOrderStatus } from '../lib/assert';
 import {
   createOrderWithPackages,
+  createStagedRouteForOrder,
   markPackagesLoaded,
   resetOrderPackages,
   resettleOrderStatus,
   resolveUserId,
   QA_USERS,
 } from '../lib/factories';
-import { ScenarioGroup, FIXED_IDS } from '../lib/ids';
+import { ScenarioGroup, FIXED_IDS, qaId } from '../lib/ids';
 
 /** DispatchTrack status codes. 3 and 4 are the failed-delivery paths. */
 const DT_FAILED = 3;
@@ -175,6 +176,16 @@ async function journeyPartialDelivery(
  * built from QA-JRN-003 and dispatched in QA always found zero genuinely
  * loaded packages (loaded_at IS NULL), so `en_ruta` was never written and a
  * green 200 in QA proved nothing about spec-79's fix.
+ *
+ * spec-79 review L-1: this seed used to stamp the per-box load fact without
+ * the `dispatches` row a real scan always leaves alongside it, so there was
+ * no path from this state to a dispatchable route — a QA scan of one of
+ * these boxes 500ed (see `createStagedRouteForOrder`'s header for the full
+ * mechanism). `docs/specs/spec-79-dispatch-handoff-integrity.md` Fase 1
+ * item 7's "Fase 5 item 20 is unreachable" note is corrected by this fix:
+ * QA-JRN-003 now has a real `staged` dispatch on a real route, so a rescan
+ * hits `ALREADY_STAGED` (the correct outcome) and the route can reach
+ * `loaded`/dispatch.
  */
 async function journeyDispatchClose(
   db: SeedClient,
@@ -193,7 +204,15 @@ async function journeyDispatchClose(
     packageStatuses: ['en_carga', 'en_carga'],
   });
   await resetOrderPackages(db, order.orderId, ['en_carga', 'en_carga']);
-  await markPackagesLoaded(db, order.orderId, scannedBy);
+
+  // spec-79 review L-1: a real scan leaves a `dispatches` row behind too, not
+  // just the per-box load fact — see createStagedRouteForOrder's own header.
+  // Sequence range 300000+ is reserved so these ids never collide with this
+  // order's own package ids (301, 302 — sequence*100+i+1).
+  const routeId = qaId(ScenarioGroup.JOURNEYS, 300001);
+  const dispatchId = qaId(ScenarioGroup.JOURNEYS, 300002);
+  await createStagedRouteForOrder(db, { routeId, dispatchId, operatorId, orderId: order.orderId });
+  await markPackagesLoaded(db, order.orderId, scannedBy, operatorId, routeId);
   await resettleOrderStatus(db, order.orderId);
 
   // Exactly what POST /api/dispatch/routes/[id]/close does.

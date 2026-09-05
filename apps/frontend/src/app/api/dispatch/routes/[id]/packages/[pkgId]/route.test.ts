@@ -211,6 +211,9 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
       loaded_at: null,
       loaded_by: null,
       load_inferred: false,
+      // spec-79 BLOCKER: loaded_route_id reset alongside the rest of the
+      // per-box load fact.
+      loaded_route_id: null,
     });
   });
 
@@ -286,15 +289,23 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
     expect(packagesUpdateSpy).toHaveBeenCalled();
   });
 
-  it('fails open (reverts as before) when the sibling-dispatch check itself errors', async () => {
+  /**
+   * spec-79 BLOCKER (coordinator addendum): corrected from "fails open" —
+   * a lookup that cannot run is not evidence the box is safe to revert.
+   * See dispatch-cross-route-orders.ts's header for the full reasoning.
+   */
+  it('fails CLOSED (does not revert) when the sibling-dispatch check itself errors, and records it', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { client, packagesUpdateSpy } = buildClient({
+    const { client, packagesUpdateSpy, auditInsertSpy } = buildClient({
       siblingQueryError: { code: '08006', message: 'connection reset' },
     });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
-    expect(packagesUpdateSpy).toHaveBeenCalled();
+    expect(packagesUpdateSpy).not.toHaveBeenCalled();
+    expect(auditInsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'cross_route_lookup_failed' }),
+    );
     errorSpy.mockRestore();
   });
 

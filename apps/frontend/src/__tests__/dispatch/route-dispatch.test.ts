@@ -119,6 +119,14 @@ function updateChain() {
  * loaded_at set and load_inferred false, not just the right `status` — see
  * dispatch-local-completion.ts's loadedPackageIds. Defaults represent a real
  * scan; callers only need to override id/label/status.
+ *
+ * spec-79 BLOCKER: also defaults `loaded_route_id` to 'r1' — every test in
+ * this file dispatches route 'r1' (see every `params: Promise.resolve({ id:
+ * 'r1' })`), so a package genuinely loaded onto THIS route, by default,
+ * still passes `isGenuinelyLoadedPackage`. The five-step cross-route
+ * scenario itself is covered by dispatch-load-state.test.ts; this file
+ * stays about the handler's WIRING (which functions get called with what),
+ * not the route-scoping predicate.
  */
 function genuinelyLoadedPkg(overrides: {
   id: string;
@@ -126,6 +134,7 @@ function genuinelyLoadedPkg(overrides: {
   status: string;
   loaded_at?: string;
   load_inferred?: boolean;
+  loaded_route_id?: string | null;
   deleted_at?: string | null;
   sku_items?: unknown;
 }) {
@@ -134,6 +143,7 @@ function genuinelyLoadedPkg(overrides: {
     deleted_at: null,
     loaded_at: '2026-09-04T09:00:00Z',
     load_inferred: false,
+    loaded_route_id: 'r1',
     ...overrides,
   };
 }
@@ -481,6 +491,38 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     expect(packagesUpdateChain.update).toHaveBeenCalledWith({ status: 'en_ruta' });
     const inSpy = packagesUpdateChain.update.mock.results[0].value.eq.mock.results[0].value.in;
     expect(inSpy).toHaveBeenCalledWith('id', ['pkg-loaded']);
+  });
+
+  /**
+   * spec-79 BLOCKER — the five-step force-split scenario, at the handler
+   * level (dispatch-load-state.test.ts covers the same fix at the unit
+   * level). Route 'r1' (every test in this file dispatches 'r1') carries a
+   * box genuinely loaded onto a DIFFERENT route ('r-other' — the force-split
+   * shape: two live dispatches for one order, one per route). Before the
+   * BLOCKER fix this box had no route linkage at all, so it read as loaded
+   * onto 'r1' too and both en_ruta and the DT manifest picked it up.
+   */
+  it('BLOCKER: a box genuinely loaded onto a DIFFERENT route is excluded from en_ruta and the DT guide', async () => {
+    const { client, packagesUpdateChain } = clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-on-r1', label: 'CTN-1', status: 'en_carga', loaded_route_id: 'r1' }),
+      genuinelyLoadedPkg({ id: 'pkg-on-other-route', label: 'CTN-2', status: 'en_carga', loaded_route_id: 'r-other' }),
+    ]);
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    // en_ruta write: only the box genuinely loaded onto r1.
+    const inSpy = packagesUpdateChain.update.mock.results[0].value.eq.mock.results[0].value.in;
+    expect(inSpy).toHaveBeenCalledWith('id', ['pkg-on-r1']);
+
+    // DT manifest (buildDtDispatches -> buildItems): same exclusion.
+    expect(createDTRoute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dispatches: [expect.objectContaining({ items: [expect.objectContaining({ code: 'CTN-1' })] })],
+      }),
+      expect.any(String),
+    );
   });
 
   /**

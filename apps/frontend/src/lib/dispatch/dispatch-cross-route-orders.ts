@@ -21,16 +21,32 @@ import type { Database } from '@/lib/types';
  *
  * @returns the subset of `orderIds` that carry a live (`deleted_at IS NULL`)
  * dispatch on a route OTHER than `excludeRouteId` — the ones a caller must
- * NOT revert. Fails OPEN (returns an empty set, logs the error) on a query
- * failure — the same standard the offset re-check (`check_load_position_conflict`)
- * already applies in both call sites: this is a defensive guard added on top
- * of existing behaviour, not a new hard failure mode.
+ * NOT revert.
+ *
+ * Fails CLOSED on a query failure — corrected from an earlier version of
+ * this function that returned an empty set on error, i.e. "no cross-route
+ * orders exist", indistinguishable from a genuine clean check. That is
+ * exactly the M-2 defect this function exists to fix, just moved one level
+ * up: a lookup that cannot run is not evidence the box is safe to revert.
+ * The `check_load_position_conflict` precedent cited to justify the
+ * fail-open default does not actually support it — that guard is
+ * best-effort in the other direction (a failure there can only miss
+ * SURFACING an existing conflict for observability; nothing downstream acts
+ * on it) and was itself never reviewed as a "fail open is fine" pattern to
+ * copy. Here a failure controls whether data gets wiped. On error, every
+ * requested `orderId` is returned (i.e. "assume every one of them might
+ * have a live dispatch elsewhere, revert none of them") — the box's load
+ * fact stays intact and the operator can retry, versus silently corrupting
+ * a second route's state with no signal. Logged loudly (`console.error`,
+ * unchanged) AND recorded (`audit_logs`, best-effort, new) so the failure
+ * is observable after the fact, not just in server logs at the moment it
+ * happened.
  */
 export async function findOrderIdsWithLiveDispatchOnOtherRoutes(
   supabase: SupabaseClient<Database>,
-  params: { operatorId: string; orderIds: string[]; excludeRouteId: string; logPrefix: string },
+  params: { operatorId: string; userId: string; orderIds: string[]; excludeRouteId: string; logPrefix: string },
 ): Promise<Set<string>> {
-  const { operatorId, orderIds, excludeRouteId, logPrefix } = params;
+  const { operatorId, userId, orderIds, excludeRouteId, logPrefix } = params;
   if (orderIds.length === 0) return new Set();
 
   const { data: siblingRows, error: siblingError } = await supabase
@@ -41,8 +57,17 @@ export async function findOrderIdsWithLiveDispatchOnOtherRoutes(
     .neq('route_id', excludeRouteId)
     .is('deleted_at', null);
   if (siblingError) {
-    console.error(`[${logPrefix}] sibling dispatch check failed`, siblingError);
-    return new Set();
+    console.error(`[${logPrefix}] sibling dispatch check failed — failing closed, reverting nothing`, siblingError);
+    await supabase.from('audit_logs').insert({
+      operator_id: operatorId,
+      user_id: userId,
+      action: 'cross_route_lookup_failed',
+      resource_type: 'dispatches',
+      resource_id: excludeRouteId,
+      changes_json: { order_ids: orderIds, error: String(siblingError) },
+      ip_address: 'unknown',
+    }).then(() => null, () => null);
+    return new Set(orderIds);
   }
   return new Set((siblingRows ?? []).map((d) => d.order_id).filter((id): id is string => id != null));
 }

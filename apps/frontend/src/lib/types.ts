@@ -951,6 +951,7 @@ export type Database = {
           loaded_at: string | null
           loaded_by: string | null
           load_inferred: boolean
+          loaded_route_id: string | null
           created_at: string
           updated_at: string
           deleted_at: string | null
@@ -979,6 +980,7 @@ export type Database = {
           loaded_at?: string | null
           loaded_by?: string | null
           load_inferred?: boolean
+          loaded_route_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -1007,6 +1009,7 @@ export type Database = {
           loaded_at?: string | null
           loaded_by?: string | null
           load_inferred?: boolean
+          loaded_route_id?: string | null
           created_at?: string
           updated_at?: string
           deleted_at?: string | null
@@ -1038,6 +1041,13 @@ export type Database = {
             columns: ["loaded_by"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "packages_loaded_route_id_fkey"
+            columns: ["loaded_route_id"]
+            isOneToOne: false
+            referencedRelation: "routes"
             referencedColumns: ["id"]
           },
         ]

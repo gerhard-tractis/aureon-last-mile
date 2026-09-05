@@ -82,6 +82,13 @@ function buildClient(
   const routeDeleteChain = {
     update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) }),
   };
+  // spec-79 BLOCKER (coordinator addendum): findOrderIdsWithLiveDispatchOnOtherRoutes
+  // now writes an audit_logs row on a lookup failure — without this mock, a
+  // query for 'audit_logs' fell through to routeChain (no `.insert`), and
+  // the resulting TypeError propagated past this handler's try/catch as a
+  // 500 instead of exercising the fail-closed path this file tests.
+  const auditInsertSpy = vi.fn().mockReturnValue({ then: (resolve: (v: unknown) => void) => resolve(null) });
+  const auditChain = { insert: auditInsertSpy };
 
   const fromMock = vi.fn((table: string) => {
     if (table === 'routes') {
@@ -91,6 +98,7 @@ function buildClient(
     }
     if (table === 'dispatches') return dispatchesTableMock;
     if (table === 'packages') return packagesChain;
+    if (table === 'audit_logs') return auditChain;
     return routeChain;
   });
 
@@ -109,6 +117,7 @@ function buildClient(
     packagesIsSpy,
     siblingSelectSpy: dispatchesTableMock.select,
     siblingTail,
+    auditInsertSpy,
   };
 }
 
@@ -147,6 +156,9 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
       loaded_at: null,
       loaded_by: null,
       load_inferred: false,
+      // spec-79 BLOCKER: loaded_route_id reset alongside the rest of the
+      // per-box load fact.
+      loaded_route_id: null,
     });
   });
 
@@ -199,9 +211,14 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
     expect(packagesUpdateSpy).toHaveBeenCalled();
   });
 
-  it('fails open (reverts as before) when the sibling-dispatch check itself errors', async () => {
+  /**
+   * spec-79 BLOCKER (coordinator addendum): corrected from "fails open" —
+   * a lookup that cannot run is not evidence the box is safe to revert.
+   * See dispatch-cross-route-orders.ts's header for the full reasoning.
+   */
+  it('fails CLOSED (does not revert) when the sibling-dispatch check itself errors, and records it', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const { client, packagesUpdateSpy } = buildClient(
+    const { client, packagesUpdateSpy, auditInsertSpy } = buildClient(
       'planned',
       [{ id: 'd1', order_id: 'o1' }],
       null,
@@ -211,7 +228,10 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
-    expect(packagesUpdateSpy).toHaveBeenCalled();
+    expect(packagesUpdateSpy).not.toHaveBeenCalled();
+    expect(auditInsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'cross_route_lookup_failed' }),
+    );
     errorSpy.mockRestore();
   });
 
