@@ -78,9 +78,33 @@ vi.mock('./DispatchRouteCameraViewfinder', () => ({
 // only proves the SWAP happens once sealing succeeds, never a navigation.
 const dispatchReviewPropsSpy = vi.fn();
 vi.mock('./DispatchRouteDispatchReview', () => ({
-  DispatchRouteDispatchReview: (props: { routeCode: string }) => {
+  DispatchRouteDispatchReview: (props: {
+    routeCode: string;
+    onDispatched: (outcome: { externalRouteId: string; packagesDispatched: number }) => void;
+  }) => {
     dispatchReviewPropsSpy(props);
-    return <div data-testid="stub-dispatch-review">{props.routeCode}</div>;
+    return (
+      <div data-testid="stub-dispatch-review">
+        {props.routeCode}
+        <button
+          type="button"
+          onClick={() => props.onDispatched({ externalRouteId: 'DT-1', packagesDispatched: 148 })}
+        >
+          stub-dispatch-now
+        </button>
+      </div>
+    );
+  },
+}));
+
+// spec-77 Fase 4 — `2l`. Stubbed for the same reason `2j` is above: this
+// file only proves the SWAP into the acta happens (and with what figures),
+// never its own content/logic (DispatchRouteAcceptance.test.tsx's job).
+const acceptancePropsSpy = vi.fn();
+vi.mock('./DispatchRouteAcceptance', () => ({
+  DispatchRouteAcceptance: (props: { routeCode: string }) => {
+    acceptancePropsSpy(props);
+    return <div data-testid="stub-dispatch-acceptance">{props.routeCode}</div>;
   },
 }));
 
@@ -277,6 +301,52 @@ describe('DispatchRouteScanSession', () => {
     await waitFor(() => expect(sealMock).toHaveBeenCalled());
     expect(await screen.findByTestId('stub-dispatch-review')).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it('spec-77 Fase 4 — a successful dispatch swaps to the acta (2l), never navigates away', async () => {
+    const user = userEvent.setup();
+    sealMock.mockResolvedValue({ ok: true, sealedStops: 172, ordersClosed: 60 });
+    mockSession = {
+      ...baseSession(),
+      packagesLoaded: 172,
+      packagesTotal: 172,
+      packages: [pkg({ stage: 'staged', boxesTotal: 1, boxesLoaded: 1 })],
+    };
+    renderSession();
+    await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await screen.findByTestId('stub-dispatch-review');
+    await user.click(screen.getByRole('button', { name: 'stub-dispatch-now' }));
+    expect(await screen.findByTestId('stub-dispatch-acceptance')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
+    expect(acceptancePropsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalRouteId: 'DT-1',
+        packagesDispatched: 148,
+        packagesLeftAtDock: 0,
+        splitOrdersCount: 0,
+      }),
+    );
+  });
+
+  it('spec-77 Fase 4 item 16 — a forced close threads packagesLeftAtDock/splitOrdersCount through to the acta', async () => {
+    const user = userEvent.setup();
+    sealMock.mockResolvedValue({
+      ok: true,
+      sealedStops: 148,
+      ordersClosed: 60,
+      forced: { reason_code: 'turno_terminado', released_count: 20, split_count: 4, split_order_ids: ['o5', 'o6'] },
+    });
+    renderSession();
+    await user.click(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: 'Terminó el turno' }));
+    await user.click(within(dialog).getByRole('button', { name: /^cerrar con 24 sin cargar$/i }));
+    await screen.findByTestId('stub-dispatch-review');
+    await user.click(screen.getByRole('button', { name: 'stub-dispatch-now' }));
+    await screen.findByTestId('stub-dispatch-acceptance');
+    expect(acceptancePropsSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ packagesLeftAtDock: 24, splitOrdersCount: 2 }),
+    );
   });
 
   it('spec-76 task 4 — Cámara and Ver los N are wired, not disabled placeholders any more', () => {

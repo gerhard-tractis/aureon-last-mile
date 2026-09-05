@@ -467,15 +467,116 @@ directo o forzado, abre `2j` en el mismo estado en vez de navegar — mismo patr
 (pasa `routeDate`/`stopsCount` hacia abajo), `apps/frontend/src/hooks/dispatch/mobile/useRouteLoadBrief.ts`
 (gana `routeDate` — mismo fetch, sin query nueva).
 
-### Fase 3 — `2k` Error `[blocked]`
-13. Test: fallo → estado de error que nombra qué no cambió; la ruta sigue `loaded` y los paquetes en `listo_para_despacho`.
-14. Test: contador de intentos; al tercero, el copy deriva al jefe de turno.
-15. Test: checklist *Antes de reintentar* separa verificado de advertencia.
+### Fase 3 — `2k` Error `[done]`
 
-### Fase 4 — `2l` Acta `[blocked]`
-16. Test: acta con el id de DispatchTrack, las 4 cifras y lo que queda en el andén.
-17. Test: ofrece la siguiente carga concreta si existe; si no, no inventa una.
-18. Test: la ruta queda `dispatched` y los paquetes en `en_ruta`.
+Desbloqueada por `spec-79` Fase 4 (`[done]`, PR #622): `DT_ACCEPTED_LOCAL_FAILED`,
+`EMPTY_MANIFEST`, y los códigos nuevos `DISPATCH_IN_PROGRESS`/`RECONCILIATION_REQUIRED` ya
+existen y están probados del lado del servidor. `dispatchErrorCopy` (`dispatch-review.ts`,
+`2j`) se **extendió** en vez de crear una segunda tabla de mapeo — cada `DispatchErrorInfo`
+ahora lleva `whatChanged` (item 13), `primaryAction`/`primaryLabel` (`'retry' | 'complete' |
+'verify' | 'wait' | null`, decisión 6) y `showChecklist` (item 15, sólo `DT_API_ERROR`).
+
+13. Test: fallo → estado de error que nombra qué no cambió; la ruta sigue `loaded` y los
+    paquetes en `listo_para_despacho`. ✅ `dispatch-review.test.ts` (`whatChanged` por código) +
+    `DispatchRouteError.test.tsx`. `QUERY_FAILED` recibe el mismo `whatChanged` que
+    `DT_API_ERROR` pero **nunca** el texto "rechazó" — es un fallo de base antes de contactar a
+    DT, no un rechazo (instrucción explícita de la tarea). `DT_ACCEPTED_LOCAL_FAILED` es la
+    única excepción real: su `whatChanged` dice qué SÍ cambió (DT ya tiene la ruta), nunca "nada
+    cambió" — decisión 6 lo exige.
+14. Test: contador de intentos; al tercero, el copy deriva al jefe de turno. ✅
+    `dispatch-attempt-copy.test.ts` (`attemptEscalationCopy`, umbral `3`, exportado — no un
+    número mágico duplicado) + `DispatchRouteDispatchReview.test.tsx` (el contador vive en el
+    componente, se incrementa en cada fallo, se pierde al recargar — la Fase 0 ya resolvió que
+    el servidor no expone ningún conteo).
+15. Test: checklist *Antes de reintentar* separa verificado de advertencia. ✅
+    `dispatch-retry-checklist.test.ts` (`buildRetryChecklist`, puro) +
+    `useDispatchRetryChecklist.ts` (nuevo — `dispatches(orders(delivery_address,
+    customer_phone))`, mismo shape que `useRouteDispatches.ts` del escritorio, `operator_id` +
+    `deleted_at is null`), fetcheado sólo cuando `showChecklist` es verdadero (decisión 6: sólo
+    `DT_API_ERROR`).
+
+**Diseño de `2k` — un estado, no una pantalla nueva.** Decisión 6 lo llama "estado de error de
+`2j`": `DispatchRouteDispatchReview` renderiza `DispatchRouteError` (nuevo,
+`components/dispatch/mobile/`) en el lugar de su propio contenido en cuanto `dispatch()` falla —
+para CUALQUIER código, no sólo los tres estados de DT. Los rechazos de validación
+(`EMPTY_ROUTE`/`EMPTY_MANIFEST`/`VEHICLE_NOT_FOUND`/`MISSING_ORDER_NUMBER`) también abren esta
+pantalla (decisión 6 es sobre nombrar qué no cambió, y eso es cierto de un rechazo de validación
+también) pero con `primaryAction: null` — sólo *Volver*, ningún botón de acción porque no hay
+nada que reintentar hasta que la cuadrilla arregle lo que falta. *Reintentar*/*Completar*/
+*Verificar* son, deliberadamente, el mismo botón subyacente (`onRetry` → vuelve a llamar
+`handleDispatch`): el propio endpoint (`spec-79` Fase 4) ya decide del lado del servidor si un
+reintento reusa `external_route_id` persistido, dispara la comprobación previa por `GET`, o
+reclama un intento fresco — este cliente no necesita tres caminos de red distintos, sólo tres
+etiquetas honestas sobre el mismo POST.
+
+**`DISPATCH_IN_PROGRESS`/`RECONCILIATION_REQUIRED` (nuevos desde que se escribió decisión 6).**
+Añadidos a `dispatchErrorCopy` con la misma disciplina: `DISPATCH_IN_PROGRESS` dice que se
+autolibera solo en minutos, nunca "falló" (instrucción explícita de la tarea);
+`RECONCILIATION_REQUIRED` es, en la práctica, el tercer estado de la decisión 6 con una señal
+real de servidor detrás en vez de sólo un timeout de cliente — mismo `primaryAction: 'verify'`
+que el fallo de red sin código.
+
+**Verificación por mutación** (item de Definition of Done): tres mutaciones a mano sobre
+`dispatch-review.ts` (texto de `whatChanged` sin `listo_para_despacho`, `showChecklist` de
+`DT_API_ERROR` invertido, `primaryAction` de `DT_ACCEPTED_LOCAL_FAILED` cambiado a `retry`) y una
+sobre `dispatch-retry-checklist.ts` (el conteo "verificado" deja de exigir teléfono) — las cuatro
+murieron contra tests específicos; revertidas antes de cerrar la tarea, `git status` limpio.
+
+Archivos: `apps/frontend/src/lib/dispatch/mobile/dispatch-review.ts` (extendido, no
+reemplazado), `dispatch-attempt-copy.ts` (nuevo), `dispatch-retry-checklist.ts` (nuevo),
+`apps/frontend/src/hooks/dispatch/mobile/useDispatchRetryChecklist.ts` (nuevo),
+`apps/frontend/src/components/dispatch/mobile/DispatchRouteError.tsx` (nuevo — la pantalla/
+estado `2k`), `DispatchRouteDispatchReview.tsx` (gana `operatorId`, renderiza `DispatchRouteError`
+en vez de un párrafo inline en cualquier fallo, cuenta intentos).
+
+### Fase 4 — `2l` Acta `[done]`
+
+16. Test: acta con el id de DispatchTrack, las 4 cifras y lo que queda en el andén. ✅
+    `dispatch-acta.test.ts` (`buildActaFigures`/`dockLeftLine`, puro) +
+    `DispatchRouteAcceptance.test.tsx`. Las 4 cifras: paradas despachadas y paquetes despachados
+    (ambas de la respuesta del propio endpoint de despacho, `spec-79`) · paquetes que quedan en
+    el andén y órdenes partidas (ambas del **outcome del seal/force**,
+    `forced.released_count`/`forced.split_count`/`forced.split_order_ids.length` — nunca
+    re-derivadas de `packages` del lado del cliente, siguiendo la instrucción explícita de la
+    tarea). **Corrección sobre el copy original de H3/decisión 7:** los bultos liberados por un
+    force vuelven a `sectorizado` (`force-seal-release.ts`/`force-seal-split.ts`), no a
+    `asignado` como decía el mock viejo — `dockLeftLine` lo dice así, y un test pin fija que
+    nunca aparece la palabra "asignado".
+17. Test: ofrece la siguiente carga concreta si existe; si no, no inventa una. ✅
+    `dispatch-acta.test.ts` (`nextLoadLine`, `null` in → `null` out) +
+    `useDispatchNextLoad.test.ts`/`DispatchRouteAcceptance.test.tsx`. Reutiliza la cola de
+    `useCrewLoadingBoard` (`2a`/`2b`, spec-76) en vez de una query nueva — la ruta recién
+    despachada ya cae fuera de `OPEN_ROUTE_STATUSES` así que se excluye sola; el filtro
+    `excludeRouteId` es defensivo para la ventana antes del refetch. El id del usuario se
+    resuelve con `auth.getUser()` dentro del hook (mismo patrón que `useCurrentUserName.ts`) en
+    vez de enhebrarlo por `DispatchRouteSurface` -> ... -> esta pantalla, cadena que hoy no lo
+    lleva y que no vale la pena tocar por una sola línea del acta.
+18. Test: la ruta queda `dispatched` y los paquetes en `en_ruta`. Cubierto del lado del servidor
+    por la propia suite de `spec-79` (`dispatch-local-completion.test.ts`, `route-dispatch.test.ts`,
+    `route-dispatch-phase4.test.ts`) — mismo criterio que la Fase 1 (UI) de `2i` (item 8): esta
+    pantalla no reimplementa esa aserción contra la base, sólo se muestra **después** de que el
+    propio POST devuelve `ok: true`, y consume literalmente lo que la respuesta trae
+    (`external_route_id`, `packages_dispatched`) — nunca un número derivado en el cliente.
+
+**Sin pantalla vacía.** `DispatchRouteScanSession` ya no navega a `/app/dispatch` al despachar
+con éxito (desviación documentada en Fase 2, ahora resuelta): un nuevo componente
+`DispatchRouteHandoff` (extraído de `DispatchRouteScanSession`, que iba a cruzar el límite de
+300 líneas al añadir el estado del acta) posee el `dispatchOutcome` y decide entre `2j`
+(`DispatchRouteDispatchReview`) y `2l` (`DispatchRouteAcceptance`).
+
+Archivos: `apps/frontend/src/lib/dispatch/mobile/dispatch-acta.ts` (nuevo —
+`buildActaFigures`/`dockLeftLine`/`nextLoadLine`), `apps/frontend/src/hooks/dispatch/mobile/useDispatchNextLoad.ts`
+(nuevo), `apps/frontend/src/components/dispatch/mobile/DispatchRouteAcceptance.tsx` (nuevo — la
+pantalla `2l`), `DispatchRouteHandoff.tsx` (nuevo — `2j`→`2l` extraído de
+`DispatchRouteScanSession.tsx`), `DispatchRouteCloseSheet.tsx` (`onSealed` gana
+`packagesLeftAtDock`/`splitOrdersCount`, calculados del `forced` real del seal — nuevo tipo
+exportado `DispatchRouteSealedOutcome`), `DispatchRouteScanSession.tsx` (guarda el outcome del
+seal, lo pasa a `DispatchRouteHandoff`).
+
+**Verificación por mutación:** dos mutaciones a mano sobre `dispatch-acta.ts`
+(`buildActaFigures` — la cifra "en el andén" apuntada a `packagesDispatched` en vez de
+`packagesLeftAtDock`, dos veces con distintas aserciones) — ambas murieron contra
+`dispatch-acta.test.ts`/`DispatchRouteAcceptance.test.tsx`; revertidas, `git status` limpio.
 
 ### Fase 5 — Cierre y E2E `[pending]`
 

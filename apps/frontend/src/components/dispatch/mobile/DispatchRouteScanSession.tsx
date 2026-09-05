@@ -10,8 +10,8 @@ import { DispatchScanHistoryList } from './DispatchScanHistoryList';
 import { DispatchScanRejectionSummary } from './DispatchScanRejectionSummary';
 import { DispatchManualCodeSheet } from './DispatchManualCodeSheet';
 import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
-import { DispatchRouteCloseSheet } from './DispatchRouteCloseSheet';
-import { DispatchRouteDispatchReview } from './DispatchRouteDispatchReview';
+import { DispatchRouteCloseSheet, type DispatchRouteSealedOutcome } from './DispatchRouteCloseSheet';
+import { DispatchRouteHandoff } from './DispatchRouteHandoff';
 import { useSealRoute } from '@/hooks/dispatch/mobile/useSealRoute';
 import { closeButtonLabel, missingOrders } from '@/lib/dispatch/mobile/route-close';
 import { sealErrorCopy } from '@/lib/dispatch/mobile/seal-error-copy';
@@ -88,6 +88,13 @@ export function DispatchRouteScanSession({
   // `useSealRoute`'s own offline message, all resolved to a dead button on
   // dock wifi. Surfaced here, cleared on every new attempt.
   const [closeError, setCloseError] = useState<string | null>(null);
+  // spec-77 Fase 4 (`2l`) — what the seal/force outcome actually released
+  // or split, carried from the close step through to the acta (item 16).
+  // Zero on a direct close: nothing was released.
+  const [sealedOutcome, setSealedOutcome] = useState<{ packagesLeftAtDock: number; splitOrdersCount: number }>({
+    packagesLeftAtDock: 0,
+    splitOrdersCount: 0,
+  });
 
   const {
     submitScan,
@@ -123,6 +130,8 @@ export function DispatchRouteScanSession({
     setCloseError(null);
     const outcome = await seal(routeId);
     if (outcome.ok) {
+      // Direct close: nothing was ever short, so nothing was released.
+      setSealedOutcome({ packagesLeftAtDock: 0, splitOrdersCount: 0 });
       setDispatchReviewOpen(true);
       return;
     }
@@ -131,19 +140,19 @@ export function DispatchRouteScanSession({
 
   if (dispatchReviewOpen) {
     return (
-      <DispatchRouteDispatchReview
+      <DispatchRouteHandoff
         routeId={routeId}
+        operatorId={operatorId}
         routeCode={routeCode}
         driverName={driverName}
         vehicleExternalId={vehicleExternalId}
         routeDate={routeDate}
         stopsCount={stopsCount}
         packagesCount={packagesLoaded}
-        // `2l` (Fase 4) does not exist yet — blocked on spec-79. A
-        // successful dispatch returns the crew to their queue rather than
-        // a screen that isn't built, the same documented interim `2i` used
-        // before `2j` existed.
-        onDispatched={() => router.push('/app/dispatch')}
+        packagesLeftAtDock={sealedOutcome.packagesLeftAtDock}
+        splitOrdersCount={sealedOutcome.splitOrdersCount}
+        onBack={() => router.push('/app/dispatch')}
+        onOpenNextLoad={(nextRouteId) => router.push(`/app/dispatch/${nextRouteId}`)}
       />
     );
   }
@@ -266,7 +275,13 @@ export function DispatchRouteScanSession({
         loadPositionLabel={loadPositionLabel}
         packagesLoaded={packagesLoaded}
         packages={packages}
-        onSealed={() => setDispatchReviewOpen(true)}
+        onSealed={(outcome: DispatchRouteSealedOutcome) => {
+          setSealedOutcome({
+            packagesLeftAtDock: outcome.packagesLeftAtDock,
+            splitOrdersCount: outcome.splitOrdersCount,
+          });
+          setDispatchReviewOpen(true);
+        }}
       />
     </div>
   );

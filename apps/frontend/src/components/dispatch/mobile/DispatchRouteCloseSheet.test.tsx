@@ -167,8 +167,46 @@ describe('DispatchRouteCloseSheet', () => {
       reason_code: 'turno_terminado',
       note: undefined,
     });
-    expect(onSealed).toHaveBeenCalledWith({ sealedStops: 148, ordersClosed: 60 });
+    expect(onSealed).toHaveBeenCalledWith({
+      sealedStops: 148,
+      ordersClosed: 60,
+      packagesLeftAtDock: 0,
+      splitOrdersCount: 0,
+    });
     expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('spec-77 Fase 4 item 16 — a forced close reports what the seal actually released/split, not an inferred count', async () => {
+    const seal = vi.fn().mockResolvedValue({
+      ok: true,
+      sealedStops: 148,
+      ordersClosed: 60,
+      forced: {
+        reason_code: 'turno_terminado',
+        released_count: 20,
+        split_count: 4,
+        split_order_ids: ['o5', 'o6'],
+      },
+    });
+    (useSealRoute as ReturnType<typeof vi.fn>).mockReturnValue({ seal, isSealing: false });
+    const onSealed = vi.fn();
+    render(
+      <DispatchRouteCloseSheet
+        {...BASE_PROPS}
+        onSealed={onSealed}
+        packages={[pkg({ order_id: 'o1', order_number: 'ORD-1', stage: 'planned', boxesTotal: 2, boxesLoaded: 1 })]}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Terminó el turno' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cerrar con 1 sin cargar' }));
+    await waitFor(() => expect(seal).toHaveBeenCalled());
+    expect(onSealed).toHaveBeenCalledWith({
+      sealedStops: 148,
+      ordersClosed: 60,
+      packagesLeftAtDock: 24,
+      splitOrdersCount: 2,
+    });
   });
 
   // MEDIUM (adversarial review) — the close button being disabled must have

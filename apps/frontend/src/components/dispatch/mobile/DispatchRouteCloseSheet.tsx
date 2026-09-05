@@ -27,6 +27,17 @@ const VISIBLE_ROWS = 4;
  * decision 3: the missing list is paginated; decision 4: a note per row is
  * optional and its absence never blocks the close.
  */
+/** spec-77 Fase 4, item 16 — what the seal/force outcome ACTUALLY released
+ *  or split, threaded up to the acta (`2l`) instead of re-derived there
+ *  from package state. Zero on a direct or unforced close: nothing was
+ *  released. */
+export interface DispatchRouteSealedOutcome {
+  sealedStops?: number;
+  ordersClosed?: number;
+  packagesLeftAtDock: number;
+  splitOrdersCount: number;
+}
+
 export interface DispatchRouteCloseSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -35,7 +46,7 @@ export interface DispatchRouteCloseSheetProps {
   loadPositionLabel: string | null;
   packagesLoaded: number;
   packages: RoutePackage[];
-  onSealed: (outcome: { sealedStops?: number; ordersClosed?: number }) => void;
+  onSealed: (outcome: DispatchRouteSealedOutcome) => void;
 }
 
 export function DispatchRouteCloseSheet({
@@ -73,7 +84,7 @@ interface BodyProps {
   loadPositionLabel: string | null;
   packagesLoaded: number;
   packages: RoutePackage[];
-  onSealed: (outcome: { sealedStops?: number; ordersClosed?: number }) => void;
+  onSealed: (outcome: DispatchRouteSealedOutcome) => void;
   onClose: () => void;
 }
 
@@ -140,7 +151,17 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
       setError(sealErrorCopy(outcome.code, outcome.message).text);
       return;
     }
-    onSealed({ sealedStops: outcome.sealedStops, ordersClosed: outcome.ordersClosed });
+    onSealed({
+      sealedStops: outcome.sealedStops,
+      ordersClosed: outcome.ordersClosed,
+      // item 16 — real figures from the force outcome itself, never
+      // re-derived from `missing`/`totalMissingBoxes` (those describe what
+      // the SCREEN saw before sealing, not what the server actually
+      // released — a partially_staged stop only releases its unloaded
+      // portion, which `missing` cannot distinguish on its own).
+      packagesLeftAtDock: (outcome.forced?.released_count ?? 0) + (outcome.forced?.split_count ?? 0),
+      splitOrdersCount: outcome.forced?.split_order_ids?.length ?? 0,
+    });
     onClose();
   };
 
