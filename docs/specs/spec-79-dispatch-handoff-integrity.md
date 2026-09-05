@@ -311,10 +311,19 @@ Se evaluó expresar lo que H5c realmente necesitaba — impedir que el MISMO cam
 
 **Método.** TDD en rojo primero para cada bloqueante (tests de `dispatchtrack-api.test.ts` para B-2/B-3, `dispatch-retry-claim.test.ts` para H-1, `route-dispatch.test.ts`/`route-dispatch-phase4.test.ts` para H-1/H-2). Mutación verificada a mano contra el módulo real (no un alias en scratch, dado el tamaño del cambio): `resolved.release !== false` → `true` (H-2, dos pruebas mueren), `err instanceof DTRejectedError` → `true` (H-1, una prueba muere) — ambas revertidas tras confirmar. pgTAP corrido contra `spec52-pg` (sync + apply + run), TEST 4 demostrado con el índice reintroducido a mano. `npx vitest run --pool=forks` verde (718 pruebas en los directorios de despacho), `npx tsc --noEmit` limpio, `npx eslint` limpio en los archivos tocados. Archivos nuevos: `20260911000003_spec79_b1_withdraw_vehicle_per_day_index.sql`. `DTRejectedError` exportado de `dispatchtrack-api.ts`.
 
-### Fase 5 — Cierre `[pending]`
-18. `npm run test -- --pool=forks` + mutation-test antes de push.
-19. Tests SQL locales con `scripts/pgtap-local.sh` si se toca alguna función — el contenedor es compartido entre worktrees, no correr en paralelo con otra rama.
-20. Verificación en QA con DT mockeado en los tres caminos: rechazo, aceptación, y aceptación con fallo local.
+### Fase 5 — Cierre `[awaiting_user_test]`
+
+_2026-09-05, PR #628._ Ningún cambio de esta fase toca una función SQL, así que el ítem 19 no aplica (nada que correr contra `pgtap-local.sh`).
+
+18. `[done]` `npx vitest run --pool=forks`: 5732 passed, 45 skipped, 0 fallos reales (1 flake preexistente sin relación, confirmado en verde aislado — `src/app/app/pickup/scan/[loadId]/page.test.tsx`, archivo no tocado por esta tarea). `npx tsc --noEmit` limpio. `npm run lint` limpio (sólo warnings preexistentes). Mutation-test manual sobre `dispatch-test-hooks.ts` (las dos ramas del double-gate, ambas mueren, revertidas).
+19. No aplica — sin migraciones ni funciones SQL en esta fase.
+20. `[done, con una desviación honesta documentada]` — el camino real de "DT acepta y la escritura local falla" **no tiene ninguna manera legítima de reproducirse por seed de datos** sin debilitar la aserción o correr una carrera de timing genuina: es una aceptación real de DT compitiendo con un fallo de base local real. Se agregó un seam QA-only, doble-gateado (`ALLOW_E2E_TEST_HOOKS` + un header de request, `dispatch-test-hooks.ts`) que dispara el fallo recién **después** de que `external_route_id` se persiste de verdad — la misma ventana que describe la Fase 0 de este spec, no un atajo que la evite. Los tres caminos (rechazo, aceptación, aceptación+fallo local+reintento) están cubiertos en `apps/frontend/e2e/despacho-close-dispatch.spec.ts` (namespace propio `E2E77`, verificado no-colisionante). DispatchTrack se mockea con un servidor real (`infra/supabase-qa/dispatchtrack-mock/`), no con `context.route()` — el propio `e2e/dispatch-route.spec.ts` nunca ejercitó su mock de red porque el POST a DT ocurre en el servidor, no en el navegador.
+
+   **Hallazgo de seguridad, corregido en la misma tarea (no reportado por nadie más):** `.env.qa` tenía `DISPATCHTRACK_API_KEY` real contra el tenant real de Musan sin ningún `DISPATCHTRACK_BASE_URL` — cualquier despacho disparado en QA (manual o automático) golpeaba producción. Corregido apuntando `DISPATCHTRACK_BASE_URL` al mock nuevo.
+
+   **`[awaiting_user_test]`, no `[done]`, por lo siguiente:** el mock de DT corre en el VPS como proceso en segundo plano (`nohup`), no como unidad systemd — el sandbox de esta tarea no pudo escribir en `/etc/systemd/system` ni llamar `systemctl daemon-reload`/`enable` (bloqueado por el clasificador de permisos). El archivo de unidad queda en el repo (`infra/supabase-qa/systemd/aureon-dt-mock-qa.service`) para quien tenga acceso interactivo. Mientras tanto, el mock **no sobrevive un reinicio del VPS** — verificar `curl -sf http://127.0.0.1:4477/__test__/health` antes de confiar en un run de `e2e-qa`. Documentado en `apps/frontend/docs/deployment-runbook.md`.
+
+   **La corrida real de `e2e-qa` sobre el código de esta rama** sólo puede pasar después de mergear (esa suite corre contra lo que `deploy-qa` ya sincronizó a QA, no contra la rama en revisión) — se reporta el resultado real cuando el job termine, no el check verde de `continue-on-error: true`.
 
 ### Fase 1c — Revisión #2, hallazgos restantes (F3, F5, F6) `[done]`
 
