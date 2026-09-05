@@ -109,10 +109,33 @@ if (LIST_ROUTES_WALK_BUDGET_MS + DT_FETCH_TIMEOUT_MS >= DISPATCH_CLAIM_STALE_MS)
  * trap": swapping them silently returns an empty set, which reads as "no
  * duplicate" — failing open in the one check that must not).
  *
+ * spec-79 M-4 (round 8 mediums): this is an offset walk (`page`/`limit`),
+ * with no cursor and no dedupe key DT offers. `scripts/dt-api-docs.md`
+ * documents an `order` param (default ASC) but never names the field it
+ * sorts by, and List Routes' own envelope carries no `total`/count field at
+ * all — only `status`/`response`/`response.routes[]` — so there is no direct
+ * way to detect "the total changed mid-walk" the way the brief for this item
+ * asks. What the walk sends `order=ASC` for is determinism WITHIN one walk
+ * (an unstated default is not the same thing as a guaranteed one), not proof
+ * against drift. If a route is deleted between two page fetches, every
+ * later route shifts up by one position; offset pagination then silently
+ * SKIPS exactly one route with no signal in either page's contents — this
+ * cannot be detected from the response shape alone, and is registered as an
+ * open risk in this spec's Riesgos section (same category as H5's paging
+ * heuristic, needs real traffic or an API change, not more code). What CAN
+ * be detected and refused on: an INSERTION shifts rows the other way, and
+ * produces a route id repeated across two pages — direct proof the list
+ * moved during this walk. Once the list is known to have moved in one
+ * direction mid-walk, nothing rules out it also moved in the skip direction
+ * elsewhere in the same walk, so ANY repeated id anywhere in the walk
+ * refuses the whole search rather than silently deduping and proceeding as
+ * if the walk were stable — Fase 0's own words again: "a pre-check that
+ * fails open is worse than none."
+ *
  * Throws (never returns a false "not_found") on a non-ok response, a network
- * failure, an unrecognisable body shape, an exhausted search, or an
- * exhausted walk budget — the caller must treat a failed pre-check as
- * unable to confirm safety, not as permission to create.
+ * failure, an unrecognisable body shape, an exhausted search, an exhausted
+ * walk budget, or a route id repeated across pages — the caller must treat a
+ * failed pre-check as unable to confirm safety, not as permission to create.
  */
 export async function findExistingDTRoute(
   params: { routeDate: string; identifiers: Array<string | number> },
@@ -122,6 +145,9 @@ export async function findExistingDTRoute(
 
   type DTListedRoute = { id?: unknown; dispatches?: Array<{ identifier?: unknown }> };
   const allRoutes: DTListedRoute[] = [];
+  // spec-79 M-4: route ids seen so far across the whole walk, to detect a
+  // route reappearing on a later page — see this module's own header.
+  const seenRouteIds = new Set<string>();
 
   // spec-79 B-2 (review round 7): one shared deadline for the ENTIRE walk,
   // not a fresh `DT_FETCH_TIMEOUT_MS` per page — see this module's own
@@ -140,7 +166,7 @@ export async function findExistingDTRoute(
     try {
       response = await fetch(
         `${dtBaseUrl()}/api/external/v1/routes?date=${encodeURIComponent(params.routeDate)}`
-          + `&page=${page}&limit=${LIST_ROUTES_PAGE_LIMIT}`,
+          + `&page=${page}&limit=${LIST_ROUTES_PAGE_LIMIT}&order=ASC`,
         // Each individual fetch is still capped at DT_FETCH_TIMEOUT_MS (a
         // single stuck request must not hang forever either), but never for
         // longer than what remains of the shared walk budget.
@@ -164,6 +190,24 @@ export async function findExistingDTRoute(
     const routes = (json as { response?: { routes?: unknown } } | null)?.response?.routes;
     if (!Array.isArray(routes)) {
       throw new Error(`DT list routes returned an unexpected shape (no response.routes array, page ${page})`);
+    }
+
+    // spec-79 M-4: a route id seen on an earlier page reappearing here is
+    // direct proof the underlying list moved during this walk (an insertion
+    // shifted rows down across the page boundary). See this module's own
+    // header for why that is treated as grounds to refuse the WHOLE walk,
+    // not just to dedupe and continue.
+    for (const r of routes) {
+      const id = (r as { id?: unknown } | null)?.id;
+      if (id === undefined || id === null) continue;
+      const key = String(id);
+      if (seenRouteIds.has(key)) {
+        throw new Error(
+          `DT list routes returned route id ${key} on more than one page (page ${page}) — `
+            + 'the list changed mid-walk, refusing to guess whether another route was skipped',
+        );
+      }
+      seenRouteIds.add(key);
     }
 
     allRoutes.push(...routes);

@@ -14,6 +14,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { LOADABLE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES, type FleetVehicle, type RouteStatus, type TerritoryHistoryEntry } from '@/lib/dispatch/types';
+import type { DispatchErrorInfo } from '@/lib/dispatch/dispatch-review';
 import { TerritoryStability } from './TerritoryStability';
 
 /**
@@ -43,7 +44,11 @@ interface Props {
    */
   routeStatus: RouteStatus | undefined;
   dispatching: boolean;
-  dispatchError: string | null;
+  /** spec-79 M-2 (round 8 mediums): the mapped `dispatchErrorCopy` result,
+   *  not a raw string — a discarded `code` used to surface an untranslated
+   *  internal message (e.g. a fetch/AbortSignal timeout string) for
+   *  `DT_OUTCOME_UNKNOWN`. */
+  dispatchError: DispatchErrorInfo | null;
   onVehicleChange: (v: string) => void;
   onDriverChange: (v: string) => void;
   onClose: () => void;
@@ -173,12 +178,12 @@ export function RoutePanel({
       <div className="mt-auto px-5 py-4 border-t border-border flex flex-col gap-2.5">
         {dispatchError && (
           <div className="bg-status-error-bg border border-status-error-border text-status-error px-3.5 py-2.5 rounded-lg text-xs">
-            ⚠ {dispatchError}{' '}
+            ⚠ {dispatchError.text}{' '}
             <button
               onClick={onRetry}
               className="bg-transparent border-none cursor-pointer text-status-error underline text-xs"
             >
-              Reintentar
+              {dispatchError.primaryLabel ?? 'Reintentar'}
             </button>
           </div>
         )}

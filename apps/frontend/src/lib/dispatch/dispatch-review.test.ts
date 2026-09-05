@@ -97,8 +97,25 @@ describe('dispatchErrorCopy — the codes must not flatten (spec-79 review findi
    */
   it('DT_OUTCOME_UNKNOWN has its own real copy, not the generic default fallback text', () => {
     const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
-    expect(info.text).toBe('No se pudo confirmar si DispatchTrack recibió la ruta. No reintentes sin verificar.');
+    expect(info.text).toBe(
+      'No se pudo confirmar si DispatchTrack recibió la ruta. Tocá «Verificar» — vuelve a intentarlo de forma segura, sin duplicar la ruta.',
+    );
     expect(info.text).not.toBe(dispatchErrorCopy('UNRECOGNISED_CODE_XYZ').text);
+  });
+
+  /**
+   * spec-79 M-1 (round 8 mediums). Every surface that renders
+   * DT_OUTCOME_UNKNOWN wires its "Verificar" button to `primaryAction ===
+   * 'verify'`, which every consumer implements as exactly the same
+   * `POST .../dispatch` request `retry`/`complete` send (see
+   * DispatchRouteError.tsx, RoutePanel.tsx, DispatchTabletActionBar.tsx —
+   * none of them implement a distinct read-only verification call). The
+   * copy must never instruct the crew not to press the button whose only
+   * implemented behaviour is the exact thing the text forbids.
+   */
+  it('M-1: does NOT tell the crew not to retry — pressing "Verificar" IS the retry request on every surface that renders it', () => {
+    const info = dispatchErrorCopy('DT_OUTCOME_UNKNOWN');
+    expect(info.text).not.toMatch(/no reintentes/i);
   });
 });
 

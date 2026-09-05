@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useDispatchRouteToDT } from '@/hooks/dispatch/mobile/useDispatchRouteToDT';
-import { DISPATCH_EFFECTS, NO_VEHICLE_REASON, canDispatch, dispatchErrorCopy, type DispatchErrorInfo } from '@/lib/dispatch/mobile/dispatch-review';
+import { DISPATCH_EFFECTS, NO_VEHICLE_REASON, canDispatch, dispatchErrorCopy, type DispatchErrorInfo } from '@/lib/dispatch/dispatch-review';
 import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
 import { DispatchRouteError } from './DispatchRouteError';
 

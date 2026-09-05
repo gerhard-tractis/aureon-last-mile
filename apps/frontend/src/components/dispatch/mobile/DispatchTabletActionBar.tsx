@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { CLOSE_ROUTE_DISABLED_REASON } from '@/lib/dispatch/mobile/close-route-copy';
 import { refocusPackageField } from '@/lib/scan/refocus-package-field';
+import type { DispatchErrorInfo } from '@/lib/dispatch/dispatch-review';
 
 export interface DispatchTabletActionBarProps {
   packagesLoaded: number;
@@ -24,7 +25,11 @@ export interface DispatchTabletActionBarProps {
   canDispatch: boolean;
   dispatchDisabledReason: string | null;
   dispatching: boolean;
-  dispatchError: string | null;
+  /** spec-79 M-2 (round 8 mediums): the mapped `dispatchErrorCopy` result,
+   *  not a raw string — see `useDispatchRouteToDispatchTrack.ts`'s own
+   *  header for why a discarded `code` surfaced an untranslated internal
+   *  message here for `DT_OUTCOME_UNKNOWN`. */
+  dispatchError: DispatchErrorInfo | null;
   onDispatch: () => void;
 }
 
@@ -78,7 +83,7 @@ function DispatchTabletActionBarImpl({
     <footer className="flex flex-col gap-2 border-t border-border bg-surface px-5 py-3">
       {dispatchError && (
         <p className="rounded-lg border border-status-error-border bg-status-error-bg px-3 py-2 text-[12px] text-status-error-text">
-          {dispatchError}
+          {dispatchError.text}
         </p>
       )}
       <div className="flex gap-3">

@@ -1,10 +1,20 @@
-// apps/frontend/src/lib/dispatch/mobile/dispatch-review.ts
+// apps/frontend/src/lib/dispatch/dispatch-review.ts
 //
 // spec-77 Fase 2 — `2j`, "Despachar a DispatchTrack": pure copy/logic over
 // what `POST /api/dispatch/routes/[id]/dispatch` (read in full before this
 // file was written — see the endpoint's own comments, spec-79) actually
 // does. This is the module's only irreversible action; nothing here may
 // imply it can be undone.
+//
+// spec-79 M-2 (round 8 mediums): moved out of `dispatch/mobile/` — desktop's
+// RoutePanel (`1b`) and the tablet's DispatchTabletActionBar (`3a`) both
+// dispatch through the SAME endpoint via the SAME shared hook
+// (`useDispatchRouteToDispatchTrack`), and both need this exact copy/action
+// mapping, not a second hand-written one (`dispatchErrorCopy`'s own header
+// already deliberately never flattens distinct codes into one string — the
+// whole point of a third copy of that logic would be to lose that on two of
+// its three consumers). `dispatch/mobile/` is for mobile-only screens; this
+// module's callers are no longer only mobile.
 
 /**
  * Decision 5 — the *Qué pasa al despachar* block names all four effects,
@@ -142,10 +152,24 @@ export function dispatchErrorCopy(code: string | null | undefined, message?: str
       // throw that is NOT a definite DT rejection (network failure/timeout
       // before any response, an unparsable body). DT may have received and
       // accepted the route; we simply never found out. Must not read as "DT
-      // rejected" (that's DT_API_ERROR, below) — a retry here could send a
-      // duplicate route to a DT that already has one.
+      // rejected" (that's DT_API_ERROR, below).
+      //
+      // spec-79 M-1 (round 8 mediums): every UI surface that renders this
+      // state wires `primaryAction: 'verify'` to the exact same request the
+      // 'retry' action sends (`POST .../dispatch` again) — there is no
+      // separate read-only "verify" request to send. That request is safe
+      // to press here specifically BECAUSE the claim this endpoint holds is
+      // deliberately NOT released for DT_OUTCOME_UNKNOWN: a press inside the
+      // claim's ~2-minute staleness window gets a harmless `409
+      // DISPATCH_IN_PROGRESS`, and a press after that window runs the stale
+      // reclaim's own pre-check before ever calling DT again — the
+      // sanctioned recovery this whole mechanism exists for. The previous
+      // copy ("No reintentes sin verificar.") told the crew not to do the
+      // one thing the "Verificar" button actually does, on every surface
+      // that renders it — the text must describe the button truthfully
+      // instead of inventing a second action nothing implements.
       return errorInfo(
-        'No se pudo confirmar si DispatchTrack recibió la ruta. No reintentes sin verificar.',
+        'No se pudo confirmar si DispatchTrack recibió la ruta. Tocá «Verificar» — vuelve a intentarlo de forma segura, sin duplicar la ruta.',
         'No sabemos si DispatchTrack alcanzó a recibir la ruta — no llegó una respuesta que lo confirme o la niegue.',
         'verify',
         'Verificar',
