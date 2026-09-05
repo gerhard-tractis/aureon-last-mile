@@ -12,6 +12,7 @@ import {
 import { isConfirmedExternalRouteId } from '@/lib/dispatch/dispatch-external-route-id';
 import { claimDispatchAttempt, releaseDispatchClaim } from '@/lib/dispatch/dispatch-retry-claim';
 import { resolveExternalRouteIdForDispatch } from '@/lib/dispatch/dispatch-resolve-external-route-id';
+import { handleDispatchOuterCatch } from '@/lib/dispatch/dispatch-dt-failure';
 
 const bodySchema = z.object({
   truck_identifier: z.string().min(1),
@@ -23,7 +24,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: routeId } = await params;
-  let claimTaken = false;
+  let claimAttemptToken: string | null = null;
   try {
     const supabase = await createSSRClient();
     const { data: { session }, error: authError } = await supabase.auth.getSession();
@@ -83,12 +84,14 @@ export async function POST(
         { status: 409 },
       );
     }
-    claimTaken = true;
+    claimAttemptToken = claim.attemptToken;
 
     // Releases the claim (best-effort, never throws) before responding,
     // except where `release: false` is passed (RECONCILIATION_REQUIRED).
+    // spec-79 H-1: scoped to THIS request's own attemptToken — see
+    // releaseDispatchClaim's header for the ownership bug this closes.
     const respond = async (body: Record<string, unknown>, status: number, release = true) => {
-      if (release) await releaseDispatchClaim(supabase, { routeId, operatorId });
+      if (release) await releaseDispatchClaim(supabase, { routeId, operatorId, attemptToken: claim.attemptToken });
       return NextResponse.json(body, { status });
     };
 
@@ -262,32 +265,10 @@ export async function POST(
       { status: 200 },
     );
   } catch (err) {
-    // DT rejected, or never got the chance to run — log but don't change
-    // local state.
-    try {
-      const supabase = await createSSRClient();
-      const { data: { session: errSession } } = await supabase.auth.getSession();
-      if (errSession) {
-        const errOperatorId: string | undefined = errSession.user.app_metadata?.claims?.operator_id;
-        if (errOperatorId) {
-          // spec-79 Fase 4: DT definitively rejected (or was never reached),
-          // so this route did not just leave a claim behind — safe to
-          // release now rather than wait out the staleness window.
-          if (claimTaken) {
-            await releaseDispatchClaim(supabase, { routeId, operatorId: errOperatorId });
-          }
-          await supabase.from('audit_logs').insert({
-            operator_id: errOperatorId,
-            user_id: errSession.user.id,
-            action: 'dispatch_failed',
-            resource_type: 'routes',
-            resource_id: routeId,
-            changes_json: { dt_error: String(err) },
-            ip_address: 'unknown',
-          });
-        }
-      }
-    } catch { /* ignore audit failure */ }
+    // spec-79 H-1: only a DEFINITE DT rejection (DTRejectedError) is safe to
+    // release the claim for early — see dispatch-dt-failure.ts's own header
+    // for why every other throw here must leave the claim in place.
+    await handleDispatchOuterCatch({ err, routeId, claimAttemptToken });
 
     console.error('[dispatch/dispatch POST]', err);
     const message = err instanceof Error ? err.message : 'DT API error';

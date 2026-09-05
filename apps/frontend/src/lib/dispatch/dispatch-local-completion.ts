@@ -146,10 +146,11 @@ export async function completeLocalDispatch(
   const { supabase, routeId, operatorId, userId, externalRouteId, vehicleId, driverIdentifier,
     loadPositionId, loadedPackageIds, dispatchCount, truckIdentifier, isRetry } = params;
 
-  // spec-79 H5: this clobbers whatever driver_name the crew already saved at
-  // assignment time (spec-76 2d) with a DT identifier, or null when none is
-  // sent. Out of scope for this review pass — see spec-79 H5a. Left as a
-  // marker so the next reader doesn't have to re-find it.
+  // spec-79 H5a: `driverIdentifier` here is already the RESULT of route.ts's
+  // own fallback (`parsed.data.driver_identifier ?? route.driver_name ??
+  // null`) — it does NOT blindly clobber whatever driver_name the crew
+  // saved at assignment time (spec-76 2d). H5a is fixed; this write simply
+  // persists whatever route.ts already resolved.
   const { error: persistError } = await supabase
     .from('routes')
     .update({

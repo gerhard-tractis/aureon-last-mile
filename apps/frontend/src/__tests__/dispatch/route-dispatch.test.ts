@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/supabase/server', () => ({ createSSRClient: vi.fn() }));
-vi.mock('@/lib/dispatchtrack-api', () => ({ createDTRoute: vi.fn() }));
+vi.mock('@/lib/dispatchtrack-api', () => ({
+  createDTRoute: vi.fn(),
+  DTRejectedError: class DTRejectedError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'DTRejectedError';
+    }
+  },
+}));
 
 import { createSSRClient } from '@/lib/supabase/server';
-import { createDTRoute } from '@/lib/dispatchtrack-api';
+import { createDTRoute, DTRejectedError } from '@/lib/dispatchtrack-api';
 import { POST } from '@/app/api/dispatch/routes/[id]/dispatch/route';
 import { NextRequest } from 'next/server';
 
@@ -119,18 +127,25 @@ function buildSessionClient(overrides: {
  * .is(deleted_at).select(id)` — reporting every requested id as touched, so
  * a test that doesn't care about the F2 mismatch path doesn't have to wire
  * that up by hand (see `packagesEnRutaChain` below for tests that do).
+ *
+ * spec-79 H-1: `releaseDispatchClaim` also funnels through this fallback and
+ * now chains a THIRD `.eq('dispatch_attempt_at', token)` (the ownership
+ * check) before resolving — `eqChain.eq` returns itself so it stays both
+ * awaitable (`{error: null}`) and chainable at any depth, regardless of how
+ * many `.eq()` calls a given write makes.
  */
 function updateChain() {
-  const eqChain = {
-    eq: vi.fn().mockResolvedValue({ error: null }),
-    in: vi.fn((_col: string, ids: string[]) => ({
+  const eqChain: Record<string, unknown> = {};
+  eqChain.eq = vi.fn().mockReturnValue(eqChain);
+  eqChain.then = (resolve: (v: { error: null }) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve({ error: null }).then(resolve, reject);
+  eqChain.in = vi.fn((_col: string, ids: string[]) => ({
       in: vi.fn().mockReturnValue({
         is: vi.fn().mockReturnValue({
           select: vi.fn().mockResolvedValue({ data: ids.map((id) => ({ id })), error: null }),
         }),
       }),
-    })),
-  };
+    }));
   return {
     update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(eqChain) }),
     insert: vi.fn().mockReturnValue({ then: vi.fn((resolve: () => null) => resolve()) }),
@@ -340,6 +355,83 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     // the only audit row written.
     expect(auditInsertSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'dispatch_failed', resource_id: 'r1' }),
+    );
+  });
+
+  /**
+   * spec-79 H-1 (review round 6): the outer catch used to release the claim
+   * on ANY thrown error, including a network failure/timeout where DT may
+   * have received and accepted the request even though no response ever
+   * arrived. `DTRejectedError` (dispatchtrack-api.ts) is thrown ONLY when DT
+   * answered with an explicit HTTP error — a definite "no". Only that case
+   * is safe to release early.
+   */
+  it('H-1: a DTRejectedError (DT definitively rejected) releases the claim immediately', async () => {
+    const primaryFromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain());
+    const primaryClient = buildSessionClient({ fromMock: primaryFromMock });
+
+    const releaseUpdateSpy = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+    });
+    const auditInsertSpy = vi.fn().mockResolvedValue({ error: null });
+    const errorClient = buildSessionClient({
+      fromMock: vi.fn().mockReturnValue({ insert: auditInsertSpy, update: releaseUpdateSpy }),
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(primaryClient)
+      .mockResolvedValueOnce(errorClient);
+    (createDTRoute as ReturnType<typeof vi.fn>).mockRejectedValue(new DTRejectedError('Permission denied'));
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(502);
+    expect(releaseUpdateSpy).toHaveBeenCalledWith({ dispatch_attempt_at: null });
+  });
+
+  it('H-1: a plain Error from DT (e.g. network failure/timeout, outcome unknown) does NOT release the claim', async () => {
+    const primaryFromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain());
+    const primaryClient = buildSessionClient({ fromMock: primaryFromMock });
+
+    const releaseUpdateSpy = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+    });
+    const auditInsertSpy = vi.fn().mockResolvedValue({ error: null });
+    const errorClient = buildSessionClient({
+      fromMock: vi.fn().mockReturnValue({ insert: auditInsertSpy, update: releaseUpdateSpy }),
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(primaryClient)
+      .mockResolvedValueOnce(errorClient);
+    // Not a DTRejectedError — represents createDTRoute's own network-failure
+    // path (dispatchtrack-api.ts), where DT may or may not have received
+    // the request.
+    (createDTRoute as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('DT create route call failed before a response arrived — outcome unknown'),
+    );
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(502);
+    expect(releaseUpdateSpy).not.toHaveBeenCalled();
+    // The audit row still records what happened, tagged as NOT definitely rejected.
+    expect(auditInsertSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'dispatch_failed', changes_json: expect.objectContaining({ definitely_rejected: false }) }),
     );
   });
 
