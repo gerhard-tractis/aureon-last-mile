@@ -400,6 +400,25 @@ describe('validateScan — spec-70 stage decisions', () => {
   );
 
   /**
+   * spec-77 phase 1b. A `force_split` dispatch row is never deleted — part
+   * of the order genuinely travelled with that (now `loaded`) route — but it
+   * must NOT keep blocking the released half from being scanned onto a
+   * DIFFERENT route. Without this, `force-seal-split.ts`'s whole point
+   * ("available to another route") would be false: the box would be
+   * released on paper but permanently unscannable everywhere, since the
+   * old route's dispatch row is alive and `loaded` is an ACTIVE_ROUTE_STATUS.
+   */
+  it('lets a force_split order be re-routed — the released half must not stay stuck on the old route', async () => {
+    const { client } = buildClient([
+      PKG,
+      { data: [{ id: 'd-split', route_id: 'route-old', stage: 'force_split', route: { status: 'loaded' } }], error: null },
+    ]);
+    const result = await validateScan(client, input);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.action).toEqual({ kind: 'adopt' });
+  });
+
+  /**
    * A row whose route cannot be resolved is treated as blocking. Guessing the
    * permissive way here would re-open double-routing, which is the more
    * expensive mistake: a package on two trucks is a lost package.

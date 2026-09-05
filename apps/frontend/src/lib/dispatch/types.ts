@@ -18,7 +18,7 @@ export const ACTIVE_ROUTE_STATUSES = [
   'draft', 'planned', 'loading', 'loaded', 'dispatched', 'in_transit', 'in_progress',
 ] as const satisfies readonly RouteStatus[];
 
-// spec-70/74. The local plan/load axis on `dispatches`, distinct from
+// spec-70/74/77. The local plan/load axis on `dispatches`, distinct from
 // `status`, which belongs to the routing provider. `partially_staged`
 // (spec-74 phase 1 schema, phase 3 writer) sits between `planned` and
 // `staged`: some but not all of the order's live packages are physically
@@ -26,8 +26,13 @@ export const ACTIVE_ROUTE_STATUSES = [
 // — it is recomputed for completeness but the stage value itself is
 // preserved forever (spec-74 phase 2 review item 3); an incomplete adopted
 // order is caught by seal-route.ts reading packages.loaded_at directly, not
-// by this column.
-export type DispatchStage = 'planned' | 'partially_staged' | 'staged' | 'adopted';
+// by this column. `force_split` (spec-77 phase 1b) is reached only from
+// `partially_staged`, only via `sealRoute`'s force path: the crew closed the
+// route short, some of the order's boxes travel and some were released to
+// the dock, and the row is never rewritten to `staged`/`planned` again —
+// `recompute_dispatch_stage` never runs against it (the route is `loaded`,
+// closed to further scans) and `force-seal-split.ts` is the only writer.
+export type DispatchStage = 'planned' | 'partially_staged' | 'staged' | 'adopted' | 'force_split';
 
 /**
  * How the Despacho tabs partition the lifecycle.

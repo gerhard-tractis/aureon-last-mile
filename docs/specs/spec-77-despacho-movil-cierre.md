@@ -146,7 +146,11 @@ va a invocar. Ver decisión 9 arriba para el diseño completo.
    `resource_id` (la ruta), y `changes_json.{reason_code, note, released_count,
    released_order_ids}`.
 7. Test: una parada `partially_staged` entre las pendientes bloquea el force igual que el camino sin
-   forzar — no libera nada, no sella.
+   forzar — no libera nada, no sella. **Corregido en la fase 1b:** este comportamiento resultó
+   bloquear el caso canónico (multi-bulto medio-escaneado) y la decisión del usuario fue que el
+   force debía dividir la parada en vez de rechazar. El test que fijaba este punto fue reemplazado
+   en `seal-route.test.ts`/`route.test.ts` por los casos de división de la fase 1b; no queda un
+   test activo que rechace el force sólo por una parada `partially_staged`.
 8. Test: un fallo en la liberación (`UPDATE dispatches`) se propaga (lanza), no se traga.
 
 Archivos: `apps/frontend/src/lib/dispatch/force-seal-reasons.ts` (nuevo, vocabulario),
@@ -160,7 +164,86 @@ ambos ya existentes desde spec-70. `apps/frontend/src/lib/dispatch/seal-load-pos
 el resultado
 compartido de `sealRoute`.
 
+### Fase 1b (backend) — el force divide una parada `partially_staged` `[done]`
+
+Corrección de alcance sobre decisión 9 tal como se fusionó en el PR anterior: esa versión
+liberaba únicamente paradas `planned` (nunca tocadas) y seguía rechazando el force entero
+(`409 UNSEALED_STOPS`) si CUALQUIER parada pendiente era `partially_staged`. Eso bloquea el
+caso canónico — con órdenes multi-bulto, "24 bultos sin cargar" incluye rutinariamente
+órdenes medio-escaneadas. Decisión del usuario: **el force parte la orden** — los bultos
+escaneados viajan, los no escaneados vuelven al andén, disponibles para otra ruta.
+
+- El discriminador por bulto es `loaded_at IS NOT NULL AND load_inferred = false` (spec-79),
+  nunca `packages.status` — `listo_para_despacho` es también un estado legacy de "en el andén,
+  nunca cargado", y el backfill de spec-74 marcó `loaded_at` con `load_inferred = true` en
+  paquetes jamás escaneados.
+- `dispatches.stage` gana un valor nuevo, `force_split` (`dispatches_stage_check`, migración
+  nueva — a diferencia del resto de la decisión 9, esto SÍ necesita migración: es una
+  funcionalidad nueva, no una reutilización de columnas existentes). La fila de `dispatches`
+  de la orden partida **no se elimina** — parte de la orden sigue viajando en esta ruta — pero
+  su `stage` deja de contar como "todavía miembro del plan" para `get_move_task_snapshot` (que
+  sólo mira `planned`/`staged`) y sí cuenta para el paso final de `sealRoute` que avanza los
+  paquetes cargados a `listo_para_despacho` (ese `IN` se amplía a incluir `force_split`).
+- `get_pre_route_snapshot` deja de excluir la orden completa por tener una fila `dispatches`
+  activa cuando esa fila es `force_split`: sin este cambio los bultos liberados al andén
+  quedarían invisibles para Pre-Ruta (la orden entera seguiría "reservada" por esta ruta ya
+  cerrada). Se añade además un filtro a `ready_pkgs`: un paquete genuinamente cargado
+  (`loaded_at IS NOT NULL AND load_inferred = false`) nunca cuenta como disponible, sin importar
+  la orden — así el resto que ya viajó no reaparece como si estuviera libre.
+- `removal_reason` NO se usa para la mitad partida: ese campo está documentado (spec-70,
+  20260825000002) como "soft-delete plus removal_reason, not a stage". Nada se elimina aquí.
+  El rastro autorizado es el mismo `audit_logs` de decisión 9, con `split_count`/
+  `split_order_ids` añadidos a `changes_json` junto a `released_count`/`released_order_ids`.
+- **Hallazgo propio, no reportado por nadie más:** dejar la fila `dispatches` viva (necesario
+  para que la ruta que se acaba de sellar siga listando la orden en su acta) tiene un efecto
+  secundario que casi se cuela — `scan-validator.ts`'s `ownsTheOrder` bloquea un escaneo en
+  OTRA ruta mientras exista CUALQUIER fila `dispatches` no eliminada en una ruta con estado
+  activo, y `loaded` es un estado activo. Sin el ajuste, la mitad liberada quedaría "disponible
+  para otra ruta" sólo en el papel de Pre-Ruta — cualquier intento real de escanearla en una
+  ruta nueva se habría rechazado con `ALREADY_IN_ROUTE` para siempre, porque la ruta vieja
+  nunca suelta esa fila. `ownsTheOrder` ahora trata `stage = 'force_split'` como que ya no
+  reclama la orden. Cubierto en `scan-validator.test.ts` ("lets a force_split order be
+  re-routed").
+- Test: `force: true` sobre una parada `partially_staged` (sin `planned` alguna) libera los
+  paquetes no cargados, sella la ruta, y devuelve `forced.split_count`/`split_order_ids`.
+- Test: mezcla de `planned` + `partially_staged` en la misma llamada — ambas rutas de
+  liberación corren, un solo `audit_logs`.
+- Test: los paquetes genuinamente cargados de la orden partida avanzan a
+  `listo_para_despacho` (el paso final de `sealRoute`, con el `IN` ampliado).
+- Test SQL (pgTAP, local): `get_pre_route_snapshot` muestra la orden partida con
+  `package_count` igual sólo a los paquetes liberados, nunca a los que ya viajaron.
+
+Archivos: `apps/frontend/src/lib/dispatch/force-seal-split.ts` (nuevo, la división en sí),
+`force-seal-audit.ts` (nuevo — el `audit_logs` único, extraído de `force-seal-release.ts` para
+que un force mixto deje una sola fila, no dos), `force-seal-release.ts` (deja de escribir el
+audit, sólo libera), `seal-pending-stops.ts` (nuevo — la resolución de paradas pendientes
+extraída de `seal-route.ts` para que ese archivo no creciera más allá del límite de 300 líneas
+tras añadir la división: ya estaba en 391 antes de esta fase, ahora en 287),
+`seal-adopted-completeness.ts` (nuevo — el chequeo de completitud `adopted`, extraído por la
+misma razón de tamaño), `seal-route.ts` (orquesta ambos, sin lógica propia de force),
+`apps/frontend/src/lib/dispatch/types.ts` y `apps/frontend/src/lib/types.ts` (`DispatchStage`/
+`dispatch_stage` ganan `force_split`). Migración
+`packages/database/supabase/migrations/20260908000001_spec77_force_split.sql`
+(`dispatches_stage_check`, `route_stop_counts`, `get_pre_route_snapshot` — sí necesitó
+migración, a diferencia del resto de la decisión 9, porque `force_split` es una faceta nueva sin
+columna existente que la cargue). Test SQL nuevo:
+`packages/database/supabase/tests/spec77_force_split.test.sql`.
+`apps/frontend/src/lib/dispatch/scan-validator.ts` (`ownsTheOrder` deja de tratar una fila
+`force_split` como reclamo activo — ver el hallazgo de arriba).
+
 ### Fase 1 (UI) — `2i` Cerrar `[pending]`
+
+**Nota pendiente de la fase 1b, para quien construya esta pantalla:** una vez sellada una orden
+partida, su fila en `RouteBuilder`/`PackageRow.tsx` (`boxesTotal`/`boxesLoaded`, vía
+`useRoutePackages.ts`) sigue leyendo TODOS los paquetes vivos de la orden — incluidos los ya
+liberados a otra ruta — porque la fila `dispatches` (`stage: 'force_split'`) nunca se elimina.
+Eso es correcto para el conteo (de hecho refleja "1 de 2" con precisión), pero
+`unstaged`/`isPartial` en `PackageRow.tsx` no reconocen `force_split` como un tercer caso: la fila
+no se ve "unstaged" (`planned`/`partially_staged`/adopted-incompleto) ni tampoco "completa" — se
+renderiza como si estuviera completa aunque `boxesLoaded < boxesTotal`. Esto no se toca aquí (es
+UI, fuera de alcance de esta fase de backend) pero `2i`/esta pantalla necesita decidir cómo
+mostrar una orden partida ya sellada, no asumir que el componente actual ya lo hace bien.
+
 3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo.
 4. Test: las tres consecuencias aparecen (decisión 2).
 5. Test: *Seguir escaneando* es primaria; el botón de cerrar nombra la cifra exacta.

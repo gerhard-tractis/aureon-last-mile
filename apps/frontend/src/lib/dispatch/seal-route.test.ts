@@ -42,6 +42,10 @@ function buildClient(opts: {
   pendingRows?: PendingRow[];
   adoptedRows?: { order_id: string; orders: { order_number: string } }[];
   outstandingPackages?: { order_id: string }[];
+  /** spec-77 phase 1b — canned rows for `force-seal-split.ts`'s own
+   * packages lookup, distinguished below from the adopted-completeness
+   * query by the absence of a `status` filter (that query always has one). */
+  splitPackages?: { id: string; order_id: string; status: string; loaded_at: string | null; load_inferred: boolean }[];
   adoptedError?: { message: string };
   outstandingError?: { message: string };
   releaseError?: { message: string };
@@ -52,6 +56,7 @@ function buildClient(opts: {
     pendingRows = [],
     adoptedRows = [],
     outstandingPackages = [],
+    splitPackages = [],
     adoptedError,
     outstandingError,
     releaseError,
@@ -89,9 +94,10 @@ function buildClient(opts: {
             : { data: pendingRows, error: null };
         }
       } else if (table === 'packages' && op.kind !== 'update') {
-        result = outstandingError
-          ? { data: null, error: outstandingError }
-          : { data: outstandingPackages, error: null };
+        const isAdoptedCompletenessQuery = op.filters.some(([c]) => c === 'status');
+        result = isAdoptedCompletenessQuery
+          ? (outstandingError ? { data: null, error: outstandingError } : { data: outstandingPackages, error: null })
+          : { data: splitPackages, error: null };
       }
       return Promise.resolve(result).then(res, rej);
     };
@@ -352,10 +358,22 @@ describe('sealRoute — force path (spec-77)', () => {
     expect(rpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
   });
 
-  it('refuses force when a partially_staged (mixed) order is among the pending stops', async () => {
+  /**
+   * spec-77 phase 1b — corrects the phase-1 scope note above (this test used
+   * to assert the OPPOSITE): a `partially_staged` stop no longer blocks the
+   * force. It splits: the packages query below stands in for
+   * `force-seal-split.ts`'s own lookup (unit-tested in
+   * `force-seal-split.test.ts`), returning one genuinely-loaded package (a
+   * real scan) and one that is not, so the split has something real to do.
+   */
+  it('force with a valid reason splits a partially_staged stop', async () => {
     const { client, rpc, ops } = buildClient({
-      counts: { total_stops: 2, pending_stops: 0, partially_staged_stops: 1, staged_stops: 1, adopted_stops: 0 },
+      counts: { total_stops: 1, pending_stops: 0, partially_staged_stops: 1, staged_stops: 0, adopted_stops: 0 },
       pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'partially_staged', orders: { order_number: 'ORD-1' } }],
+      splitPackages: [
+        { id: 'p1', order_id: 'o1', status: 'en_carga', loaded_at: '2026-09-05T10:00:00Z', load_inferred: false },
+        { id: 'p2', order_id: 'o1', status: 'sectorizado', loaded_at: null, load_inferred: false },
+      ],
     });
 
     const result = await sealRoute(client, {
@@ -363,15 +381,63 @@ describe('sealRoute — force path (spec-77)', () => {
       operatorId: 'op-1',
       force: true,
       forceReasonCode: 'turno_terminado',
+      userId: 'u-1',
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe('UNSEALED_STOPS');
-      expect(result.pending_count).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok && !result.already_sealed) {
+      expect(result.forced).toEqual({
+        reason_code: 'turno_terminado',
+        released_count: 0,
+        split_count: 1,
+        split_order_ids: ['o1'],
+      });
     }
-    expect(rpc).not.toHaveBeenCalled();
-    expect(ops.find((o) => o.table === 'dispatches' && o.kind === 'update')).toBeUndefined();
+
+    const dispatchUpdate = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(dispatchUpdate?.payload).toMatchObject({ stage: 'force_split' });
+    expect(dispatchUpdate?.payload?.deleted_at).toBeUndefined();
+
+    const audit = ops.find((o) => o.table === 'audit_logs');
+    expect((audit?.payload?.changes_json as Record<string, unknown>)?.split_count).toBe(1);
+    expect((audit?.payload?.changes_json as Record<string, unknown>)?.split_order_ids).toEqual(['o1']);
+
+    expect(rpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
+  });
+
+  /** A mixed force call — one untouched stop released, one mixed stop split
+   * — leaves exactly one audit row, not two. */
+  it('force with a valid reason handles a planned AND a partially_staged stop in one call', async () => {
+    const { client, ops } = buildClient({
+      counts: { total_stops: 3, pending_stops: 1, partially_staged_stops: 1, staged_stops: 1, adopted_stops: 0 },
+      pendingRows: [
+        { id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+        { id: 'd2', order_id: 'o2', stage: 'partially_staged', orders: { order_number: 'ORD-2' } },
+      ],
+      splitPackages: [
+        { id: 'p1', order_id: 'o2', status: 'en_carga', loaded_at: '2026-09-05T10:00:00Z', load_inferred: false },
+      ],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'vehiculo_lleno',
+      userId: 'u-1',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && !result.already_sealed) {
+      expect(result.forced).toEqual({
+        reason_code: 'vehiculo_lleno',
+        released_count: 1,
+        split_count: 1,
+        split_order_ids: ['o2'],
+      });
+    }
+
+    expect(ops.filter((o) => o.table === 'audit_logs').length).toBe(1);
   });
 
   it('a failed release throws (surfaces as a 500 at the handler, per the shared catch)', async () => {

@@ -91,9 +91,20 @@ const ACTIVE = new Set<string>(ACTIVE_ROUTE_STATUSES);
  * (spec-43) go out again. Anything else blocks, *including a row whose route
  * cannot be resolved*: guessing permissively there would re-open
  * double-routing, and a package on two trucks is a lost package.
+ *
+ * spec-77 phase 1b: a `force_split` row is the one more exception. It is
+ * never soft-deleted (part of its order genuinely travelled with that,
+ * now-`loaded`, route), so without this it would block forever — the
+ * released half of a split order would be "available to another route" on
+ * paper (`get_pre_route_snapshot`) but unscannable everywhere in practice,
+ * since the old route's `dispatches` row stays alive on an ACTIVE status.
+ * `force_split` means this row's claim on the order is already settled (the
+ * loaded half shipped, the rest was deliberately let go); it must not gate a
+ * fresh scan the way an unresolved or still-open row does.
  */
 function ownsTheOrder(row: DispatchRow): boolean {
   if (row.route_id == null) return false;
+  if (row.stage === 'force_split') return false;
   const route = Array.isArray(row.route) ? row.route[0] : row.route;
   if (!route?.status) return true;
   return ACTIVE.has(route.status);

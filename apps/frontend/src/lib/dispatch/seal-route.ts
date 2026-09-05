@@ -1,9 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
 import type { RouteStatus } from './types';
-import { DISPATCHABLE_STATUSES } from './scan-validator';
-import { isForceSealReasonCode, type ForceSealReasonCode } from './force-seal-reasons';
-import { releasePendingForForce, type ForceSealOutcome } from './force-seal-release';
+import type { ForceSealReasonCode } from './force-seal-reasons';
+import { checkAdoptedCompleteness } from './seal-adopted-completeness';
+import { resolvePendingStops } from './seal-pending-stops';
+
+/** What `sealRoute`'s force path did, composed from the fully-`planned` stops
+ * released (`force-seal-release.ts`) and the `partially_staged` stops split
+ * (`force-seal-split.ts`, spec-77 phase 1b). `split_count`/`split_order_ids`
+ * are omitted entirely (not zeroed) when nothing was split, so a
+ * force-on-fully-planned-route caller sees exactly the shape it always has. */
+export interface ForceSealOutcome {
+  reason_code: ForceSealReasonCode;
+  note?: string;
+  released_count: number;
+  split_count?: number;
+  split_order_ids?: string[];
+}
 
 /**
  * spec-71 phase 4 — the route-level seal's core logic, extracted verbatim
@@ -99,15 +112,18 @@ export interface SealRouteInput {
  * `transition_route_status`. Does not touch the request/session — callers
  * own auth and turn this result into an HTTP response.
  *
- * spec-77 — `force` cuts an audited, narrow hole in decision 2: a route may
- * close with boxes still sitting on the dock, but only for stops that were
- * never touched at all (`stage = 'planned'`) and only with a reason from
- * the closed vocabulary. A `partially_staged` stop — one where some of the
- * order's packages are already physically on the truck and some are not —
- * is a mixed state force cannot safely resolve on its own (which half goes
- * and which stays is a manager's call, the same reason spec-70 decision 3
- * restricts removal to a manager), so it keeps refusing exactly like the
- * unforced path even when `force` is set.
+ * spec-77 — `force` cuts an audited hole in decision 2: a route may close
+ * with boxes still sitting on the dock, only with a reason from the closed
+ * vocabulary. Two shapes of pending stop, two outcomes (spec-77 phase 1b):
+ * a `planned` stop — nobody ever touched it — is released outright
+ * (`force-seal-release.ts`); a `partially_staged` stop — some of the order's
+ * packages already physically on the truck, some not — is split
+ * (`force-seal-split.ts`): the loaded half travels on to
+ * `listo_para_despacho`, the rest is released to the dock. (An earlier
+ * version of this decision refused the whole force call on ANY
+ * `partially_staged` stop; that blocked the canonical multi-bulto case, not
+ * an edge one — see spec-77 phase 1b and the widened note on spec-70
+ * decision 2.)
  */
 export async function sealRoute(
   supabase: SupabaseClient<Database>,
@@ -186,160 +202,33 @@ export async function sealRoute(
     };
   }
 
-  let forcedOutcome: ForceSealOutcome | undefined;
+  // spec-70 decision 2 / spec-77 — extracted to `seal-pending-stops.ts`:
+  // refuses (unforced, or forced with no valid reason) or, with a valid
+  // reason, releases the untouched `planned` stops and splits the mixed
+  // `partially_staged` ones (phase 1b). Falls through on success — the
+  // released rows are already deleted_at-stamped and the split rows are now
+  // `force_split`, so the `sealedRows` query below (widened to include
+  // `force_split`) is what advances a split order's own loaded packages the
+  // rest of the way, exactly as it would for a route with nothing pending.
+  const pendingResolution = await resolvePendingStops(supabase, {
+    routeId,
+    operatorId,
+    force,
+    forceReasonCode,
+    forceNote,
+    userId,
+    pendingCount,
+  });
+  if (!pendingResolution.ok) return pendingResolution.refusal;
+  const forcedOutcome = pendingResolution.forcedOutcome;
 
-  if (pendingCount > 0) {
-    // `id` and `stage` are new here (spec-77): the force path needs the row
-    // id to release and needs to tell a fully-`planned` stop apart from a
-    // `partially_staged` one, which the unforced path never had to.
-    const { data: pendingRows } = await supabase
-      .from('dispatches')
-      .select('id, order_id, stage, orders(order_number)')
-      .eq('route_id', routeId)
-      .eq('operator_id', operatorId)
-      // spec-74 phase 3: widened from `.eq('stage', 'planned')` to match
-      // pendingCount above — a partially_staged order must be named in the
-      // refusal too, not just counted.
-      .in('stage', ['planned', 'partially_staged'])
-      .is('deleted_at', null);
-
-    const rows = pendingRows ?? [];
-    const pendingName = (r: { order_id: string | null; orders: unknown }): string => {
-      const ord = Array.isArray(r.orders) ? r.orders[0] : r.orders;
-      return (ord as { order_number?: string } | null)?.order_number ?? r.order_id ?? 'sin id';
-    };
-    const partiallyStagedRows = rows.filter((r) => r.stage === 'partially_staged');
-    const plannedRows = rows.filter((r) => r.stage === 'planned');
-
-    // spec-77 — force only ever widens the door for stops nobody ever
-    // touched. Any partially_staged row among the pending stops keeps this
-    // refusing exactly like the unforced path, force flag or not.
-    if (force && partiallyStagedRows.length === 0 && plannedRows.length > 0) {
-      if (!forceReasonCode || !isForceSealReasonCode(forceReasonCode)) {
-        return {
-          ok: false,
-          status: 400,
-          code: 'FORCE_REASON_REQUIRED',
-          message: 'Se requiere un motivo para cerrar la ruta con paquetes sin cargar.',
-        };
-      }
-
-      forcedOutcome = await releasePendingForForce(supabase, {
-        routeId,
-        operatorId,
-        userId,
-        reasonCode: forceReasonCode,
-        note: forceNote,
-        plannedRows,
-      });
-
-      // Falls through deliberately: the released rows are already
-      // deleted_at-stamped, so the `sealedRows` query below (staged +
-      // adopted only) never sees them again, and the rest of this function
-      // runs exactly as it would for a route with nothing pending.
-    } else {
-      const pending = rows.map(pendingName);
-      return {
-        ok: false,
-        status: 409,
-        code: 'UNSEALED_STOPS',
-        pending_count: pendingCount,
-        pending,
-        // RouteBuilder surfaces `message` verbatim.
-        message:
-          force && partiallyStagedRows.length > 0
-            ? `No se puede forzar el cierre: ${partiallyStagedRows.length} parada(s) están parcialmente ` +
-              'cargadas y necesitan revisión de un responsable, no un cierre forzado.'
-            : `Faltan ${pendingCount} parada(s) por estibar. ` +
-              'Escanéalas o pide a un responsable que las quite de la planificación.',
-      };
-    }
-  }
-
-  // spec-74 phase 3 — the `adopted` finding. `dispatches.stage` for an
-  // adopted row is NEVER rewritten to `partially_staged`/`staged`
-  // (stage-dispatch.ts preserves it forever, spec-74 phase 2 review item 3),
-  // so route_stop_counts' pending_stops/partially_staged_stops — both purely
-  // `stage`-keyed — can never see an adopted order's own incompleteness. An
-  // adopted 2-bulto order where only one box was ever scanned reads as
-  // "adopted_stops: 1" regardless of the sibling still sitting on the andén,
-  // which is the exact QA repro this spec exists to kill, just wearing a
-  // different stage name. So completeness for adopted rows is checked here
-  // directly against the per-package fact (packages.loaded_at), not against
-  // `stage` at all — the only place in this function that reads it that way.
+  // spec-74 phase 3 — the `adopted` finding, extracted to
+  // `seal-adopted-completeness.ts` (see that file's header for the full
+  // reasoning). `dispatches.stage` never tells an incomplete adopted order
+  // apart from a complete one; only `packages.loaded_at` does.
   if ((counts?.adopted_stops ?? 0) > 0) {
-    const { data: adoptedRows, error: adoptedError } = await supabase
-      .from('dispatches')
-      .select('order_id, orders(order_number)')
-      .eq('route_id', routeId)
-      .eq('operator_id', operatorId)
-      .eq('stage', 'adopted')
-      .is('deleted_at', null);
-
-    if (adoptedError) {
-      console.error('[sealRoute] adopted dispatches lookup failed', adoptedError);
-      return {
-        ok: false,
-        status: 500,
-        code: 'QUERY_FAILED',
-        message: 'No se pudo verificar el estado de la ruta',
-      };
-    }
-
-    const adoptedOrderIds = (adoptedRows ?? [])
-      .map((d) => d.order_id)
-      .filter((id): id is string => id != null);
-
-    if (adoptedOrderIds.length > 0) {
-      // spec-74 phase 3 review Fix 1 (BLOCKER), same reasoning as
-      // stage-dispatch.ts's recompute: a package outside DISPATCHABLE_STATUSES
-      // (scan-validator.ts) cannot be scanned, so it must not be able to
-      // block completeness here either — otherwise an adopted order with a
-      // `dañado`/`retenido`/etc. sibling is unsealable forever, with the
-      // refusal pointing at a box the scanner refuses to accept.
-      const { data: outstandingPkgs, error: outstandingError } = await supabase
-        .from('packages')
-        .select('order_id')
-        .eq('operator_id', operatorId)
-        .in('order_id', adoptedOrderIds)
-        .is('deleted_at', null)
-        .is('loaded_at', null)
-        .in('status', [...DISPATCHABLE_STATUSES]);
-
-      if (outstandingError) {
-        console.error('[sealRoute] outstanding adopted packages lookup failed', outstandingError);
-        return {
-          ok: false,
-          status: 500,
-          code: 'QUERY_FAILED',
-          message: 'No se pudo verificar el estado de la ruta',
-        };
-      }
-
-      const outstandingOrderIds = new Set(
-        (outstandingPkgs ?? []).map((p) => p.order_id).filter((id): id is string => id != null),
-      );
-
-      if (outstandingOrderIds.size > 0) {
-        const pending = (adoptedRows ?? [])
-          .filter((d) => d.order_id != null && outstandingOrderIds.has(d.order_id))
-          .map((d) => {
-            const ord = Array.isArray(d.orders) ? d.orders[0] : d.orders;
-            return ord?.order_number ?? d.order_id;
-          });
-
-        return {
-          ok: false,
-          status: 409,
-          code: 'UNSEALED_STOPS',
-          pending_count: outstandingOrderIds.size,
-          pending,
-          message:
-            `Faltan ${outstandingOrderIds.size} parada(s) por estibar. ` +
-            'Escanéalas o pide a un responsable que las quite de la planificación.',
-        };
-      }
-    }
+    const adoptedRefusal = await checkAdoptedCompleteness(supabase, { routeId, operatorId });
+    if (adoptedRefusal) return adoptedRefusal;
   }
 
   // spec-74 phase 3 blocker checklist note: this does NOT need
@@ -350,12 +239,19 @@ export async function sealRoute(
   // package, can exist on this route any more. Adding it here would be
   // dead code, matching nothing; left out deliberately rather than for
   // having been missed.
+  //
+  // spec-77 phase 1b: 'force_split' IS added here. A split order's
+  // `dispatches` row is never soft-deleted (part of it genuinely travels)
+  // and its stage is `force_split`, not `staged` — this is the ONE place
+  // that stage still has to reach: the loaded half of a split order still
+  // has to advance from `en_carga` to `listo_para_despacho`, the same as
+  // any other order this route actually ships.
   const { data: sealedRows } = await supabase
     .from('dispatches')
     .select('order_id')
     .eq('route_id', routeId)
     .eq('operator_id', operatorId)
-    .in('stage', ['staged', 'adopted'])
+    .in('stage', ['staged', 'adopted', 'force_split'])
     .is('deleted_at', null);
 
   const orderIds = (sealedRows ?? [])

@@ -70,16 +70,30 @@ writes one to mean *"physically scanned onto this truck"*. Nothing distinguishes
    accident, and there is no auto-release: a package the manager did not remove has to go on the
    truck.
 
-   > **This is no longer absolute — audited exception added in [spec-77](spec-77-despacho-movil-cierre.md), phase "2i backend".**
+   > **This is no longer absolute — audited exception added in [spec-77](spec-77-despacho-movil-cierre.md), phase "2i backend", then widened in phase "1b".**
    > `sealRoute` (`lib/dispatch/seal-route.ts`) grew a `force` mode: the crew may close a route with
-   > boxes still on the dock, but only for stops that were never touched at all (`stage = 'planned'`,
-   > never `partially_staged`) and only with a reason code from a closed vocabulary
+   > boxes still on the dock, only with a reason code from a closed vocabulary
    > (`lib/dispatch/force-seal-reasons.ts`). The unforced call is unchanged — `409 UNSEALED_STOPS`,
    > nothing written — and this remains the default. What changed is that "a plan is a commitment"
    > is now enforced *unless someone says, on the record, why it wasn't kept*: accountability comes
-   > from the recorded reason (author, time, count, in `audit_logs`), not from a role gate. A reader
-   > relying on this decision as an absolute invariant (e.g. "no route can ever reach `loaded` with a
-   > `planned` dispatch still attached") should read spec-77's decision before assuming that.
+   > from the recorded reason (author, time, count, in `audit_logs`), not from a role gate.
+   >
+   > Phase "2i backend" only opened the door for stops that were never touched at all
+   > (`stage = 'planned'`); it still refused outright (`409 UNSEALED_STOPS`, force or not) the moment
+   > any pending stop was `partially_staged` — some of the order's boxes already on the truck, some
+   > not. Phase "1b" removed that second refusal: force now **splits** a `partially_staged` stop
+   > instead of blocking on it. The boxes already genuinely loaded (`packages.loaded_at IS NOT NULL
+   > AND load_inferred = false` — never `packages.status` alone, which conflates a genuine scan with
+   > spec-74's legacy backfill) continue with the route to `listo_para_despacho`; the rest are
+   > released to the dock, available to another route. The `dispatches` row is **not** soft-deleted
+   > for a split order — part of it genuinely travels — it moves to a new `stage`, `force_split`,
+   > which is why this required a migration where the rest of decision 9 did not (that was pure
+   > column reuse; this is a new fact with no existing column to carry it).
+   >
+   > A reader relying on this decision as an absolute invariant (e.g. "no route can ever reach
+   > `loaded` with a `planned` or `partially_staged` dispatch still attached", or "every live
+   > `dispatches` row implies its order's packages are either all still on the dock or all on the
+   > route") should read spec-77's decision before assuming that.
 
 3. **Removal is a manager action, never the scanner's.** Restricted to `admin` / `ops_leader`,
    requires a reason, soft-deletes the dispatch and writes `audit_logs`. The order returns to the

@@ -2530,6 +2530,7 @@ export type Database = {
         | "partially_staged"
         | "staged"
         | "adopted"
+        | "force_split"
       dispatch_status_enum:
         | "pending"
         | "delivered"
