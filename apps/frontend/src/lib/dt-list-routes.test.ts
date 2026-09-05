@@ -25,7 +25,7 @@ describe('findExistingDTRoute', () => {
     });
     await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token');
     expect(mockFetch.mock.calls[0][0]).toBe(
-      'https://transportesmusan.dispatchtrack.com/api/external/v1/routes?date=2026-03-24&page=1&limit=20',
+      'https://transportesmusan.dispatchtrack.com/api/external/v1/routes?date=2026-03-24&page=1&limit=20&order=ASC',
     );
   });
 
@@ -224,11 +224,79 @@ describe('findExistingDTRoute', () => {
   });
 
   it('refuses (throws) rather than guess when the search never reaches a short page within the page cap', async () => {
-    const fullPage = Array.from({ length: 20 }, (_, i) => ({ id: i, dispatches: [{ identifier: `OTHER-${i}` }] }));
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'ok', response: { routes: fullPage } }) });
+    // Distinct ids per page (offset by page*20) — otherwise every page would
+    // repeat the SAME ids and this test would exercise the M-4 drift guard
+    // instead of the page-cap safety valve it is meant to test.
+    let call = 0;
+    mockFetch.mockImplementation(async () => {
+      call += 1;
+      const page = Array.from({ length: 20 }, (_, i) => ({
+        id: call * 100 + i,
+        dispatches: [{ identifier: `OTHER-${call}-${i}` }],
+      }));
+      return { ok: true, json: async () => ({ status: 'ok', response: { routes: page } }) };
+    });
     await expect(
       findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token'),
     ).rejects.toThrow(/pages/);
+  });
+
+  /**
+   * spec-79 M-4 (round 8 mediums). Offset pagination has no cursor and no
+   * dedupe. `scripts/dt-api-docs.md` documents `order` (default ASC) but
+   * never says WHICH field it sorts by, and List Routes' envelope carries no
+   * `total`/count field at all (verified: only `status`/`response`/
+   * `response.routes[]` are documented) — so a changing total during the
+   * walk cannot be measured directly. What CAN be measured: whether the same
+   * route id shows up on more than one page. A route re-appearing across
+   * pages is direct evidence the underlying list moved during the walk (an
+   * insertion shifted rows down) — and if the list moved in one direction,
+   * nothing rules out it also moved in the OTHER direction elsewhere in the
+   * same walk (a deletion shifting rows up, silently skipping a route this
+   * walk never saw at all, with no signal in the page contents themselves).
+   * Fase 0's own words apply here too: "a pre-check that fails open is worse
+   * than none." Treat ANY duplicate id observed across pages as proof the
+   * walk cannot be trusted, and refuse instead of quietly deduping and
+   * pressing on as if nothing happened.
+   */
+  it('M-4: refuses (throws) when the same route id appears on more than one page — evidence the list changed mid-walk, so a skip elsewhere cannot be ruled out', async () => {
+    const page1Routes = Array.from({ length: 20 }, (_, i) => ({
+      id: 1000 + i,
+      dispatches: [{ identifier: `OTHER-${i}` }],
+    }));
+    // id 1005 (already seen on page 1) shows up again on page 2 — the
+    // signature of a route shifting across the page boundary mid-walk.
+    const page2Routes = [
+      { id: 1005, dispatches: [{ identifier: 'OTHER-5' }] },
+      { id: 555, dispatches: [{ identifier: '4821' }] },
+    ];
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ok', response: { routes: page1Routes } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ok', response: { routes: page2Routes } }) });
+
+    await expect(
+      findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token'),
+    ).rejects.toThrow(/page/i);
+  });
+
+  it('M-4: a normal walk with no id repeated across pages is unaffected by the drift guard', async () => {
+    const page1Routes = Array.from({ length: 20 }, (_, i) => ({
+      id: 1000 + i,
+      dispatches: [{ identifier: `OTHER-${i}` }],
+    }));
+    const page2Routes = [{ id: 2000, dispatches: [{ identifier: '4821' }] }];
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ok', response: { routes: page1Routes } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'ok', response: { routes: page2Routes } }) });
+
+    const result = await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token');
+    expect(result).toEqual({ status: 'found', external_route_id: '2000' });
+  });
+
+  it('M-4: sends order=ASC explicitly on every page — the field it sorts by is undocumented, so relying on an unstated default is not made robust merely by matching it today', async () => {
+    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ status: 'ok', response: { routes: [] } }) });
+    await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token');
+    expect(mockFetch.mock.calls[0][0]).toContain('order=ASC');
   });
 
   /**

@@ -8,7 +8,7 @@ vi.mock('@/hooks/dispatch/mobile/useDispatchRetryChecklist', () => ({
 
 import { useDispatchRetryChecklist } from '@/hooks/dispatch/mobile/useDispatchRetryChecklist';
 import { DispatchRouteError, type DispatchRouteErrorProps } from './DispatchRouteError';
-import { dispatchErrorCopy } from '@/lib/dispatch/mobile/dispatch-review';
+import { dispatchErrorCopy } from '@/lib/dispatch/dispatch-review';
 
 function mockChecklist(overrides: Partial<ReturnType<typeof useDispatchRetryChecklist>> = {}) {
   (useDispatchRetryChecklist as ReturnType<typeof vi.fn>).mockReturnValue({

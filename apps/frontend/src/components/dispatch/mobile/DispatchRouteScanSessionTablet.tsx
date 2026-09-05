@@ -108,8 +108,10 @@ export function DispatchRouteScanSessionTablet({
 
   // spec-78 review I1 — the request itself is shared with desktop's
   // RouteBuilder via this hook; this component owns only its own
-  // confirmation UI and post-success navigation.
-  const { dispatch: dispatchToDispatchTrack, dispatching, error: dispatchError } = useDispatchRouteToDispatchTrack(routeId);
+  // confirmation UI and post-success navigation. spec-79 M-2 (round 8
+  // mediums) — `errorInfo` is the mapped `dispatchErrorCopy` result, not a
+  // raw string; see the hook's own header.
+  const { dispatch: dispatchToDispatchTrack, dispatching, errorInfo: dispatchError } = useDispatchRouteToDispatchTrack(routeId);
 
   const comunaLabel =
     comunas.length === 1 ? comunas[0].comuna : comunas.length > 1 ? `${comunas.length} comunas` : null;

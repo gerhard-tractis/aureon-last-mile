@@ -59,10 +59,13 @@ export function RouteBuilder({ routeId, operatorId, vehicles }: Props) {
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [driverName, setDriverName] = useState('');
   // spec-78 review I1 — the request itself (fetch, payload shape, error
-  // string) now lives in useDispatchRouteToDispatchTrack, shared with the
+  // mapping) now lives in useDispatchRouteToDispatchTrack, shared with the
   // tablet's own dispatch button (DispatchRouteScanSessionTablet) so the
-  // two can't drift.
-  const { dispatch: dispatchToDispatchTrack, dispatching, error: dispatchError } = useDispatchRouteToDispatchTrack(routeId);
+  // two can't drift. spec-79 M-2 (round 8 mediums) — the hook now exposes
+  // `errorInfo` (dispatchErrorCopy's DispatchErrorInfo), not a raw string:
+  // RoutePanel renders `.text`/`.primaryLabel` instead of a discarded
+  // `code` surfacing an untranslated internal message.
+  const { dispatch: dispatchToDispatchTrack, dispatching, errorInfo: dispatchError } = useDispatchRouteToDispatchTrack(routeId);
   const [sealError, setSealError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
 
