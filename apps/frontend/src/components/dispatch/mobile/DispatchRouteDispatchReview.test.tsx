@@ -6,6 +6,10 @@ vi.mock('@/hooks/dispatch/mobile/useDispatchRouteToDT', () => ({
   useDispatchRouteToDT: vi.fn(),
 }));
 
+vi.mock('@/hooks/dispatch/mobile/useDispatchRetryChecklist', () => ({
+  useDispatchRetryChecklist: () => ({ data: { verified: [], warnings: [] }, isLoading: false }),
+}));
+
 import { useDispatchRouteToDT } from '@/hooks/dispatch/mobile/useDispatchRouteToDT';
 import { DispatchRouteDispatchReview, type DispatchRouteDispatchReviewProps } from './DispatchRouteDispatchReview';
 
@@ -17,6 +21,7 @@ function mockDispatch(overrides: Partial<ReturnType<typeof useDispatchRouteToDT>
 
 const BASE_PROPS: DispatchRouteDispatchReviewProps = {
   routeId: 'route-1',
+  operatorId: 'op-1',
   routeCode: 'RUT-0099',
   driverName: 'Mario González',
   vehicleExternalId: 'RTHK-72',
@@ -134,5 +139,52 @@ describe('DispatchRouteDispatchReview', () => {
     await userEvent.click(screen.getByRole('button', { name: /^despachar$/i }));
     await waitFor(() => expect(screen.getByText(/ya recibi[oó] la ruta/i)).toBeInTheDocument());
     expect(screen.queryByText(/no se cre[oó] nada/i)).not.toBeInTheDocument();
+  });
+
+  it('Fase 3 (2k) — Volver on the error screen returns to the review, Despachar reappears', async () => {
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'DT_API_ERROR', message: 'x' });
+    (useDispatchRouteToDT as ReturnType<typeof vi.fn>).mockReturnValue({ dispatch, isDispatching: false });
+    render(<DispatchRouteDispatchReview {...BASE_PROPS} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^despachar$/i }));
+    await waitFor(() => expect(screen.getByTestId('dispatch-route-error')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /volver/i }));
+    expect(screen.getByRole('button', { name: /^despachar$/i })).toBeInTheDocument();
+  });
+
+  it('Fase 3 (2k) — Reintentar on the error screen calls dispatch again', async () => {
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'DT_API_ERROR', message: 'x' });
+    (useDispatchRouteToDT as ReturnType<typeof vi.fn>).mockReturnValue({ dispatch, isDispatching: false });
+    render(<DispatchRouteDispatchReview {...BASE_PROPS} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^despachar$/i }));
+    await waitFor(() => expect(screen.getByTestId('dispatch-route-error')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^reintentar$/i }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
+  });
+
+  it('Fase 3 item 14 — three failed attempts escalate to the shift lead', async () => {
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'DT_API_ERROR', message: 'x' });
+    (useDispatchRouteToDT as ReturnType<typeof vi.fn>).mockReturnValue({ dispatch, isDispatching: false });
+    render(<DispatchRouteDispatchReview {...BASE_PROPS} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^despachar$/i }));
+    await waitFor(() => expect(screen.getByTestId('dispatch-route-error')).toBeInTheDocument());
+    await userEvent.click(screen.getByRole('button', { name: /^reintentar$/i }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole('button', { name: /^reintentar$/i }));
+    await waitFor(() => expect(dispatch).toHaveBeenCalledTimes(3));
+    expect(screen.getByText(/jefe de turno/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^reintentar$/i })).not.toBeInTheDocument();
+  });
+
+  it('a validation refusal (EMPTY_ROUTE) also opens the error screen — Volver, no primary action', async () => {
+    const dispatch = vi.fn().mockResolvedValue({ ok: false, code: 'EMPTY_ROUTE', message: 'x' });
+    (useDispatchRouteToDT as ReturnType<typeof vi.fn>).mockReturnValue({ dispatch, isDispatching: false });
+    render(<DispatchRouteDispatchReview {...BASE_PROPS} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /^despachar$/i }));
+    await waitFor(() => expect(screen.getByTestId('dispatch-route-error')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /volver/i })).toBeInTheDocument();
   });
 });

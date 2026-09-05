@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useDispatchRouteToDT } from '@/hooks/dispatch/mobile/useDispatchRouteToDT';
-import { DISPATCH_EFFECTS, NO_VEHICLE_REASON, canDispatch, dispatchErrorCopy } from '@/lib/dispatch/mobile/dispatch-review';
+import { DISPATCH_EFFECTS, NO_VEHICLE_REASON, canDispatch, dispatchErrorCopy, type DispatchErrorInfo } from '@/lib/dispatch/mobile/dispatch-review';
 import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
+import { DispatchRouteError } from './DispatchRouteError';
 
 /**
  * spec-77 Fase 2 — `2j`, "Despachar a DispatchTrack". The module's only
@@ -20,6 +21,7 @@ import { formatRouteHeaderDate } from '@/lib/utils/dateFormat';
  */
 export interface DispatchRouteDispatchReviewProps {
   routeId: string;
+  operatorId: string;
   routeCode: string;
   driverName: string | null;
   vehicleExternalId: string | null;
@@ -31,6 +33,7 @@ export interface DispatchRouteDispatchReviewProps {
 
 export function DispatchRouteDispatchReview({
   routeId,
+  operatorId,
   routeCode,
   driverName,
   vehicleExternalId,
@@ -40,7 +43,12 @@ export function DispatchRouteDispatchReview({
   onDispatched,
 }: DispatchRouteDispatchReviewProps) {
   const { dispatch, isDispatching } = useDispatchRouteToDT();
-  const [error, setError] = useState<{ text: string } | null>(null);
+  // Fase 3 (`2k`) — a failed attempt opens the dedicated error screen
+  // (decision 6) instead of an inline paragraph; `attempt` is the
+  // client-side counter item 14 asks for (the endpoint exposes none,
+  // spec's own Fase 0) and resets only on remount.
+  const [error, setError] = useState<DispatchErrorInfo | null>(null);
+  const [attempt, setAttempt] = useState(0);
   // Item 12 — a client-side double-tap guard IN ADDITION to
   // `useDispatchRouteToDT`'s own in-flight ref: this is STATE, not a ref,
   // specifically so the button disables (re-renders) before the browser
@@ -65,6 +73,7 @@ export function DispatchRouteDispatchReview({
         driverIdentifier: driverName,
       });
       if (!outcome.ok) {
+        setAttempt((n) => n + 1);
         setError(dispatchErrorCopy(outcome.code, outcome.message));
         return;
       }
@@ -76,6 +85,27 @@ export function DispatchRouteDispatchReview({
       setSending(false);
     }
   };
+
+  // Fase 3 (`2k`) — ANY refusal, validation or DT-related, opens the
+  // dedicated error screen: decision 6 is about naming what did NOT
+  // change, which is true of a pre-flight refusal too (nothing was ever
+  // sent). `DispatchRouteError` itself decides whether a primary action
+  // makes sense (`info.primaryAction`) — a validation refusal shows only
+  // "Volver".
+  if (error) {
+    return (
+      <DispatchRouteError
+        routeId={routeId}
+        operatorId={operatorId}
+        vehicleAssigned={!!vehicleExternalId}
+        driverAssigned={!!driverName}
+        info={error}
+        attempt={attempt}
+        onRetry={handleDispatch}
+        onBack={() => setError(null)}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4" data-testid="dispatch-route-dispatch-review">
@@ -122,12 +152,6 @@ export function DispatchRouteDispatchReview({
       {!vehicleExternalId && (
         <p className="rounded-[10px] border border-status-warning-border bg-status-warning-bg p-3 text-[13px] text-status-warning-text">
           {NO_VEHICLE_REASON}
-        </p>
-      )}
-
-      {error && (
-        <p className="rounded-[10px] border border-status-error-border bg-status-error-bg p-3 text-[13px] text-status-error-text">
-          {error.text}
         </p>
       )}
 
