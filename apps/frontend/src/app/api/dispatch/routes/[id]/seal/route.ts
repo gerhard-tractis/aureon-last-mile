@@ -1,6 +1,8 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { sealRoute } from '@/lib/dispatch/seal-route';
+import { FORCE_SEAL_REASON_CODES } from '@/lib/dispatch/force-seal-reasons';
 
 /**
  * Seal the manifest.
@@ -22,9 +24,29 @@ import { sealRoute } from '@/lib/dispatch/seal-route';
  * that occupies it, the same event, not a parallel one (Decision 3/5). This
  * handler is only auth + params + turning the result into a response —
  * behaviour is unchanged from before the extraction.
+ *
+ * spec-77 — an optional body now carries the force path: `{ force: true,
+ * reason_code, note? }`. Absent or `force: false`, behaviour is byte-for-byte
+ * what it always was — `sealRoute` itself defaults `force` to `false`. This
+ * is deliberately NOT gated by `canRemoveFromPlan` (`lib/permissions.ts`):
+ * the crew is exactly who spec-70 decision 3 denied that door to, and the
+ * user's decision here is that accountability comes from the recorded
+ * reason, not from a role check.
  */
+const bodySchema = z
+  .object({
+    force: z.boolean().optional(),
+    reason_code: z.enum(FORCE_SEAL_REASON_CODES).optional(),
+    note: z.string().trim().optional(),
+  })
+  .refine((b) => b.reason_code !== 'otro' || (b.note && b.note.length > 0), {
+    message: 'Se requiere una nota cuando el motivo es "otro".',
+    path: ['note'],
+  })
+  .optional();
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -35,9 +57,28 @@ export async function POST(
     const operatorId: string | undefined = session.user.app_metadata?.claims?.operator_id;
     if (!operatorId) return NextResponse.json({ code: 'NO_OPERATOR' }, { status: 403 });
 
+    // No body is the common case (the button at the dock, no payload) — a
+    // JSON parse failure on an empty request must not be reported as a
+    // validation error against a body nobody sent.
+    const rawBody = await request.json().catch(() => undefined);
+    const parsed = bodySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { code: 'VALIDATION_ERROR', message: parsed.error.issues[0]?.message ?? 'Cuerpo inválido.' },
+        { status: 400 },
+      );
+    }
+
     const { id: routeId } = await params;
 
-    const result = await sealRoute(supabase, { routeId, operatorId });
+    const result = await sealRoute(supabase, {
+      routeId,
+      operatorId,
+      force: parsed.data?.force ?? false,
+      forceReasonCode: parsed.data?.reason_code,
+      forceNote: parsed.data?.note,
+      userId: session.user.id,
+    });
 
     if (!result.ok) {
       const body: Record<string, unknown> = { code: result.code };
@@ -52,7 +93,12 @@ export async function POST(
     }
 
     return NextResponse.json(
-      { ok: true, sealed_stops: result.sealed_stops, orders_closed: result.orders_closed },
+      {
+        ok: true,
+        sealed_stops: result.sealed_stops,
+        orders_closed: result.orders_closed,
+        ...(result.forced ? { forced: result.forced } : {}),
+      },
       { status: 200 },
     );
   } catch (err) {

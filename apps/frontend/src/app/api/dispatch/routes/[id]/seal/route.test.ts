@@ -39,15 +39,23 @@ interface Counts {
  * pair `sealRoute` only issues when `adopted_stops > 0`, distinguished here
  * from the planned/partially_staged query by its `stage = 'adopted'` filter.
  */
+interface PendingRow {
+  id?: string;
+  order_id: string;
+  stage?: string;
+  orders: { order_number: string };
+}
+
 function buildClient(
   routeStatus: string | null,
   counts: Counts | null = { total_stops: 3, pending_stops: 0, staged_stops: 3, adopted_stops: 0 },
-  pending: { order_id: string; orders: { order_number: string } }[] = [],
+  pending: PendingRow[] = [],
   opts: {
     routeError?: { code: string; message: string };
     countsError?: { code: string; message: string };
     adoptedPending?: { order_id: string; orders: { order_number: string } }[];
     outstandingPackages?: { order_id: string }[];
+    releaseError?: { message: string };
   } = {},
 ) {
   const ops: Op[] = [];
@@ -61,6 +69,7 @@ function buildClient(
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn(self);
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
+    chain.insert = vi.fn((p: Record<string, unknown>) => { op.kind = 'insert'; op.payload = p; return chain; });
     chain.maybeSingle = chain.single = vi.fn(() => {
       if (table === 'routes') {
         return Promise.resolve(
@@ -76,8 +85,12 @@ function buildClient(
     chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
       let result: { data: unknown; error: unknown } = { data: null, error: null };
       if (table === 'dispatches') {
-        const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
-        result = { data: isAdoptedQuery ? (opts.adoptedPending ?? []) : pending, error: null };
+        if (op.kind === 'update') {
+          result = { data: null, error: opts.releaseError ?? null };
+        } else {
+          const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
+          result = { data: isAdoptedQuery ? (opts.adoptedPending ?? []) : pending, error: null };
+        }
       } else if (table === 'packages' && op.kind !== 'update') {
         result = { data: opts.outstandingPackages ?? [], error: null };
       }
@@ -90,7 +103,13 @@ function buildClient(
 }
 
 const params = Promise.resolve({ id: 'route-1' });
-const req = () => new NextRequest('http://localhost/api/dispatch/routes/route-1/seal', { method: 'POST' });
+const req = (body?: unknown) =>
+  new NextRequest('http://localhost/api/dispatch/routes/route-1/seal', {
+    method: 'POST',
+    ...(body !== undefined
+      ? { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' } }
+      : {}),
+  });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -285,5 +304,90 @@ describe('POST /seal — a plan is a commitment', () => {
     const res = await POST(req(), { params });
     expect(res.status).toBe(500);
     expect((await res.json()).code).toBe('QUERY_FAILED');
+  });
+});
+
+/**
+ * spec-77 — `force`. The FIRST test here re-proves, at the HTTP layer, that
+ * an unforced request with pending stops is untouched: this endpoint is
+ * exactly where the invariant being cut a hole in is enforced, so the pin
+ * belongs here too, not only in `seal-route.test.ts`.
+ */
+describe('POST /seal — force (spec-77)', () => {
+  it('PINNED: a plain POST (no body) with pending stops is unchanged', async () => {
+    buildClient('loading', { total_stops: 5, pending_stops: 2, staged_stops: 3, adopted_stops: 0 }, [
+      { order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+      { order_id: 'o2', stage: 'planned', orders: { order_number: 'ORD-2' } },
+    ]);
+
+    const res = await POST(req(), { params });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('UNSEALED_STOPS');
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects force:true with no reason_code — 400 FORCE_REASON_REQUIRED', async () => {
+    buildClient('loading', { total_stops: 1, pending_stops: 1, staged_stops: 0, adopted_stops: 0 }, [
+      { id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req({ force: true }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('FORCE_REASON_REQUIRED');
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reason_code outside the closed vocabulary — 400 VALIDATION_ERROR', async () => {
+    buildClient('loading', { total_stops: 1, pending_stops: 1, staged_stops: 0, adopted_stops: 0 }, [
+      { id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req({ force: true, reason_code: 'porque_si' }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('VALIDATION_ERROR');
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("requires a non-empty note when reason_code is 'otro'", async () => {
+    buildClient('loading', { total_stops: 1, pending_stops: 1, staged_stops: 0, adopted_stops: 0 }, [
+      { id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req({ force: true, reason_code: 'otro' }), { params });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('VALIDATION_ERROR');
+  });
+
+  it('force with a valid reason releases the planned stop and seals', async () => {
+    const ops = buildClient('loading', { total_stops: 2, pending_stops: 1, staged_stops: 1, adopted_stops: 0 }, [
+      { id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req({ force: true, reason_code: 'paquete_no_ubicado', note: 'no está en A3' }), { params });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.forced).toEqual({
+      reason_code: 'paquete_no_ubicado',
+      note: 'no está en A3',
+      released_count: 1,
+    });
+    expect(mockRpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
+
+    const release = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(release?.payload?.removal_reason).toContain('paquete_no_ubicado');
+
+    const audit = ops.find((o) => o.table === 'audit_logs');
+    expect(audit?.payload).toMatchObject({ action: 'force_seal_route', user_id: 'u-1', operator_id: 'op-1' });
+  });
+
+  it('still refuses (UNSEALED_STOPS) when a partially_staged order is among the pending stops, even forced', async () => {
+    buildClient('loading', { total_stops: 2, pending_stops: 0, partially_staged_stops: 1, staged_stops: 1, adopted_stops: 0 }, [
+      { id: 'd1', order_id: 'o1', stage: 'partially_staged', orders: { order_number: 'ORD-1' } },
+    ]);
+
+    const res = await POST(req({ force: true, reason_code: 'turno_terminado' }), { params });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe('UNSEALED_STOPS');
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });

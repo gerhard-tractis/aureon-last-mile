@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
 import type { RouteStatus } from './types';
 import { DISPATCHABLE_STATUSES } from './scan-validator';
+import { isForceSealReasonCode, type ForceSealReasonCode } from './force-seal-reasons';
+import { releasePendingForForce, type ForceSealOutcome } from './force-seal-release';
 
 /**
  * spec-71 phase 4 — the route-level seal's core logic, extracted verbatim
@@ -45,11 +47,23 @@ const SEAL_WALK: Record<string, readonly RouteStatus[]> = {
 
 export type SealRouteResult =
   | { ok: true; already_sealed: true }
-  | { ok: true; already_sealed: false; sealed_stops: number; orders_closed: number }
+  | {
+      ok: true;
+      already_sealed: false;
+      sealed_stops: number;
+      orders_closed: number;
+      forced?: ForceSealOutcome;
+    }
   | {
       ok: false;
       status: number;
-      code: 'NOT_FOUND' | 'QUERY_FAILED' | 'ROUTE_NOT_OPEN' | 'EMPTY_ROUTE' | 'UNSEALED_STOPS';
+      code:
+        | 'NOT_FOUND'
+        | 'QUERY_FAILED'
+        | 'ROUTE_NOT_OPEN'
+        | 'EMPTY_ROUTE'
+        | 'UNSEALED_STOPS'
+        | 'FORCE_REASON_REQUIRED';
       message?: string;
       pending_count?: number;
       pending?: string[];
@@ -58,6 +72,24 @@ export type SealRouteResult =
 export interface SealRouteInput {
   routeId: string;
   operatorId: string;
+  /**
+   * spec-77 — the crew may close a route short (missing boxes stay on the
+   * dock), but only with a reason. Off by default: an unforced call must
+   * behave exactly as it always has, `UNSEALED_STOPS` included — this is
+   * spec-70 decision 2's invariant, and cutting a hole in it is this
+   * field's entire job, not a side effect of it.
+   */
+  force?: boolean;
+  /** Required whenever `force` actually has anything to release. Validated
+   * against the closed set in `force-seal-reasons.ts` — a free-text reason
+   * is refused the same as a missing one. */
+  forceReasonCode?: ForceSealReasonCode | string;
+  /** Optional detail alongside the code (mandatory only for `otro`, enforced
+   * by the API layer's zod schema, not here). */
+  forceNote?: string;
+  /** Author of the force-seal, for the audit row. Not required for the
+   * unforced path — existing callers (`seal-load-position.ts`) never force. */
+  userId?: string;
 }
 
 /**
@@ -66,10 +98,20 @@ export interface SealRouteInput {
  * `listo_para_despacho`, and walks `routes.status` to `loaded` via
  * `transition_route_status`. Does not touch the request/session — callers
  * own auth and turn this result into an HTTP response.
+ *
+ * spec-77 — `force` cuts an audited, narrow hole in decision 2: a route may
+ * close with boxes still sitting on the dock, but only for stops that were
+ * never touched at all (`stage = 'planned'`) and only with a reason from
+ * the closed vocabulary. A `partially_staged` stop — one where some of the
+ * order's packages are already physically on the truck and some are not —
+ * is a mixed state force cannot safely resolve on its own (which half goes
+ * and which stays is a manager's call, the same reason spec-70 decision 3
+ * restricts removal to a manager), so it keeps refusing exactly like the
+ * unforced path even when `force` is set.
  */
 export async function sealRoute(
   supabase: SupabaseClient<Database>,
-  { routeId, operatorId }: SealRouteInput,
+  { routeId, operatorId, force = false, forceReasonCode, forceNote, userId }: SealRouteInput,
 ): Promise<SealRouteResult> {
   const { data: route, error: routeError } = await supabase
     .from('routes')
@@ -144,10 +186,15 @@ export async function sealRoute(
     };
   }
 
+  let forcedOutcome: ForceSealOutcome | undefined;
+
   if (pendingCount > 0) {
+    // `id` and `stage` are new here (spec-77): the force path needs the row
+    // id to release and needs to tell a fully-`planned` stop apart from a
+    // `partially_staged` one, which the unforced path never had to.
     const { data: pendingRows } = await supabase
       .from('dispatches')
-      .select('order_id, orders(order_number)')
+      .select('id, order_id, stage, orders(order_number)')
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       // spec-74 phase 3: widened from `.eq('stage', 'planned')` to match
@@ -156,22 +203,57 @@ export async function sealRoute(
       .in('stage', ['planned', 'partially_staged'])
       .is('deleted_at', null);
 
-    const pending = (pendingRows ?? []).map((r) => {
+    const rows = pendingRows ?? [];
+    const pendingName = (r: { order_id: string | null; orders: unknown }): string => {
       const ord = Array.isArray(r.orders) ? r.orders[0] : r.orders;
-      return ord?.order_number ?? r.order_id;
-    });
-
-    return {
-      ok: false,
-      status: 409,
-      code: 'UNSEALED_STOPS',
-      pending_count: pendingCount,
-      pending,
-      // RouteBuilder surfaces `message` verbatim.
-      message:
-        `Faltan ${pendingCount} parada(s) por estibar. ` +
-        'Escanéalas o pide a un responsable que las quite de la planificación.',
+      return (ord as { order_number?: string } | null)?.order_number ?? r.order_id ?? 'sin id';
     };
+    const partiallyStagedRows = rows.filter((r) => r.stage === 'partially_staged');
+    const plannedRows = rows.filter((r) => r.stage === 'planned');
+
+    // spec-77 — force only ever widens the door for stops nobody ever
+    // touched. Any partially_staged row among the pending stops keeps this
+    // refusing exactly like the unforced path, force flag or not.
+    if (force && partiallyStagedRows.length === 0 && plannedRows.length > 0) {
+      if (!forceReasonCode || !isForceSealReasonCode(forceReasonCode)) {
+        return {
+          ok: false,
+          status: 400,
+          code: 'FORCE_REASON_REQUIRED',
+          message: 'Se requiere un motivo para cerrar la ruta con paquetes sin cargar.',
+        };
+      }
+
+      forcedOutcome = await releasePendingForForce(supabase, {
+        routeId,
+        operatorId,
+        userId,
+        reasonCode: forceReasonCode,
+        note: forceNote,
+        plannedRows,
+      });
+
+      // Falls through deliberately: the released rows are already
+      // deleted_at-stamped, so the `sealedRows` query below (staged +
+      // adopted only) never sees them again, and the rest of this function
+      // runs exactly as it would for a route with nothing pending.
+    } else {
+      const pending = rows.map(pendingName);
+      return {
+        ok: false,
+        status: 409,
+        code: 'UNSEALED_STOPS',
+        pending_count: pendingCount,
+        pending,
+        // RouteBuilder surfaces `message` verbatim.
+        message:
+          force && partiallyStagedRows.length > 0
+            ? `No se puede forzar el cierre: ${partiallyStagedRows.length} parada(s) están parcialmente ` +
+              'cargadas y necesitan revisión de un responsable, no un cierre forzado.'
+            : `Faltan ${pendingCount} parada(s) por estibar. ` +
+              'Escanéalas o pide a un responsable que las quite de la planificación.',
+      };
+    }
   }
 
   // spec-74 phase 3 — the `adopted` finding. `dispatches.stage` for an
@@ -299,5 +381,11 @@ export async function sealRoute(
     if (transitionError) throw transitionError;
   }
 
-  return { ok: true, already_sealed: false, sealed_stops: total, orders_closed: orderIds.length };
+  return {
+    ok: true,
+    already_sealed: false,
+    sealed_stops: total,
+    orders_closed: orderIds.length,
+    ...(forcedOutcome ? { forced: forcedOutcome } : {}),
+  };
 }

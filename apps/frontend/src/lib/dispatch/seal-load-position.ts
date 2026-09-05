@@ -43,7 +43,12 @@ export type SealLoadPositionResult =
         | 'QUERY_FAILED'
         | 'ROUTE_NOT_OPEN'
         | 'EMPTY_ROUTE'
-        | 'UNSEALED_STOPS';
+        | 'UNSEALED_STOPS'
+        // spec-77 — `sealRoute`'s own union grew this for the force path.
+        // The position seal never passes `force`, so this can never
+        // actually occur here; it is only listed so `sealRoute`'s return
+        // type still assigns without a cast.
+        | 'FORCE_REASON_REQUIRED';
       message?: string;
       pending_count?: number;
       pending?: string[];
