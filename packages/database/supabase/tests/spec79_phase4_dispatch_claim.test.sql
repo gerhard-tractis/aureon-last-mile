@@ -169,4 +169,62 @@ END $$;
 
 ROLLBACK TO test_5;
 
+-- =============================================================================
+-- TEST 6 (spec-79 H-1, round 6 / gap noted round 7): the ownership-scoped
+-- release `releaseDispatchClaim` issues — `UPDATE ... SET dispatch_attempt_at
+-- = NULL WHERE id = ? AND operator_id = ? AND dispatch_attempt_at = ?` — using
+-- an APP-SUPPLIED ISO literal for the token, not `now()`. TESTs 1-3 above
+-- only ever use in-SQL `now()`; this is the first test that exercises the
+-- exact string-equality comparison `attemptToken` relies on end to end.
+-- Two parts: (a) a release whose token does NOT match the currently-held
+-- claim is a no-op — proves a superseded caller cannot release someone
+-- else's claim; (b) a release whose token DOES match succeeds.
+-- =============================================================================
+SAVEPOINT test_6;
+
+DO $$
+DECLARE
+  v_op          uuid := 'aaaaaaaa-aaaa-aaaa-aaaa-000000000179';
+  v_route       uuid := '11119006-0000-0000-0000-000000000179';
+  v_true_token  text := '2026-03-24T10:15:30.123Z';
+  v_wrong_token text := '2026-03-24T09:00:00.000Z';
+  v_touched     int;
+  v_got         timestamptz;
+BEGIN
+  INSERT INTO public.routes (id, operator_id, provider, external_route_id, route_date, status, dispatch_attempt_at)
+  VALUES (v_route, v_op, 'dispatchtrack', 'T79B-ROUTE-6', CURRENT_DATE, 'loaded', v_true_token::timestamptz);
+
+  -- (a) release with the WRONG token — a superseded request trying to
+  -- release a claim it no longer owns. Must touch zero rows.
+  UPDATE public.routes SET dispatch_attempt_at = NULL
+   WHERE id = v_route AND operator_id = v_op AND dispatch_attempt_at = v_wrong_token::timestamptz;
+  GET DIAGNOSTICS v_touched = ROW_COUNT;
+  IF v_touched <> 0 THEN
+    RAISE EXCEPTION 'expected a release with the WRONG attemptToken to touch 0 rows, touched %', v_touched;
+  END IF;
+
+  SELECT dispatch_attempt_at INTO v_got FROM public.routes WHERE id = v_route;
+  IF v_got IS NULL THEN
+    RAISE EXCEPTION 'expected the claim to remain held after a wrong-token release attempt';
+  END IF;
+
+  -- (b) release with the TRUE token (the exact ISO string the app would
+  -- have received from claimDispatchAttempt) — must touch exactly 1 row.
+  UPDATE public.routes SET dispatch_attempt_at = NULL
+   WHERE id = v_route AND operator_id = v_op AND dispatch_attempt_at = v_true_token::timestamptz;
+  GET DIAGNOSTICS v_touched = ROW_COUNT;
+  IF v_touched <> 1 THEN
+    RAISE EXCEPTION 'expected a release with the correct attemptToken to touch exactly 1 row, touched %', v_touched;
+  END IF;
+
+  SELECT dispatch_attempt_at INTO v_got FROM public.routes WHERE id = v_route;
+  IF v_got IS NOT NULL THEN
+    RAISE EXCEPTION 'expected dispatch_attempt_at to be NULL after the correct-token release';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 6 PASSED: release is scoped to the exact attemptToken — a mismatched token no-ops, the true one releases';
+END $$;
+
+ROLLBACK TO test_6;
+
 ROLLBACK;
