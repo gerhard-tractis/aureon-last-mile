@@ -727,6 +727,40 @@ SELECT to_regclass('public.routes_one_vehicle_per_day');  -- must return NULL
 
 ---
 
+## spec-77/spec-79 Fase 5 — DispatchTrack mock and the QA-only test hook
+
+**Why this section exists.** Until this pair of specs closed, `/home/aureon/.env.qa` carried a genuine `DISPATCHTRACK_API_KEY` for the real Transportes Musan tenant with **no** `DISPATCHTRACK_BASE_URL` override — `dtBaseUrl()`'s own default (`apps/frontend/src/lib/dispatchtrack-api.ts`) is the real tenant. Any dispatch actually triggered in QA, manual or automated, hit production DispatchTrack. This is now fixed by pointing QA at a standalone mock instead.
+
+**Pieces, all QA-only:**
+
+1. `infra/supabase-qa/dispatchtrack-mock/server.mjs` — a dependency-free Node HTTP server implementing Create Route and List Routes exactly as `dispatchtrack-api.ts`/`dt-list-routes.ts` call them, plus a `/__test__/*` control surface (`despacho-close-dispatch.spec.ts` reads `/__test__/create-calls?identifier=` to assert a retry never creates a second route). Bound to `127.0.0.1` only — never proxied through nginx.
+2. `infra/supabase-qa/systemd/aureon-dt-mock-qa.service` — the intended long-term way to run it (survives reboots). **Not yet installed as a unit** — this task's sandbox could not write to `/etc/systemd/system` or call `systemctl daemon-reload`/`enable`. Until someone with interactive VPS access installs it, the mock runs as a plain background process (`nohup node server.mjs &`, started manually) — it does **not** survive a VPS reboot. Check before relying on it:
+   ```bash
+   curl -sf http://127.0.0.1:4477/__test__/health
+   ```
+   If that fails, restart it manually (`cd /home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock && nohup node server.mjs > /home/aureon/dt-mock.log 2>&1 & disown`) or, better, finish the systemd install:
+   ```bash
+   cp aureon-dt-mock-qa.service /etc/systemd/system/
+   systemctl daemon-reload
+   systemctl enable --now aureon-dt-mock-qa
+   ```
+3. `/home/aureon/.env.qa` gained two lines (a timestamped backup of the file was made before editing):
+   ```
+   DISPATCHTRACK_BASE_URL=http://127.0.0.1:4477
+   ALLOW_E2E_TEST_HOOKS=true
+   ```
+   `aureon-frontend-qa` must be restarted after either changes (`systemctl restart aureon-frontend-qa`) — `EnvironmentFile=` is only read at process start.
+4. `ALLOW_E2E_TEST_HOOKS` gates `apps/frontend/src/lib/dispatch/dispatch-test-hooks.ts`'s `shouldSimulateLocalDispatchFailure` — double-gated with a request header (`x-e2e-simulate-local-failure: true`) so the header alone is inert everywhere this flag is unset, including production. This is what lets `despacho-close-dispatch.spec.ts` reproduce `DT_ACCEPTED_LOCAL_FAILED` (DT genuinely confirms, the local write is then made to fail) deterministically — no legitimate data seeding reaches that window without either a real timing race or this seam. **Never set `ALLOW_E2E_TEST_HOOKS` in production's env file.**
+
+**Verify the whole chain before trusting a dispatch in QA:**
+```bash
+grep -E 'DISPATCHTRACK_BASE_URL|ALLOW_E2E_TEST_HOOKS' /home/aureon/.env.qa
+curl -sf http://127.0.0.1:4477/__test__/health
+systemctl is-active aureon-frontend-qa
+```
+
+---
+
 ## Common Deployment Errors
 
 ### 1. Path Doubling in Vercel

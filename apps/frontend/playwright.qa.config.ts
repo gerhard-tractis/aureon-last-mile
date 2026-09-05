@@ -16,6 +16,9 @@ import { defineConfig } from '@playwright/test';
  * Required env (the workflow sources them from /home/aureon/.env.qa):
  *   E2E_BASE_URL       QA frontend           (default http://localhost:3200)
  *   E2E_DATABASE_URL   QA Postgres on :5433  (read by e2e/support/spec52-fixture.ts)
+ *   DT_MOCK_URL        DispatchTrack mock    (default http://127.0.0.1:4477 —
+ *                      infra/supabase-qa/dispatchtrack-mock/, read by
+ *                      despacho-close-dispatch.spec.ts only)
  */
 export default defineConfig({
   testDir: './e2e',
@@ -41,7 +44,14 @@ export default defineConfig({
   // spec47-pickup has no fixture, and spec47-consolidated-reception is
   // `test.skip`ped pending exactly this environment. Widen this pattern as
   // each grows a fixture.
-  testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile|despacho-tablet-dock)\.spec\.ts$/,
+  //
+  // despacho-close-dispatch (spec-77/79 Fase 5) — its own namespace too
+  // (support/despacho-close-fixture.ts, PREFIX 'E2E77', distinct from
+  // 'E2E76'/'E2E78' for the same collision reason). Unlike every suite
+  // above, this one actually dispatches routes — against the QA-only
+  // DispatchTrack mock (infra/supabase-qa/dispatchtrack-mock/), never the
+  // real tenant. See that spec's own header.
+  testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile|despacho-tablet-dock|despacho-close-dispatch)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
   // workday and polls the database between steps; the per-test timeouts inside
