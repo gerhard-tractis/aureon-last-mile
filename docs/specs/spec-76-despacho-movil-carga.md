@@ -116,16 +116,16 @@ Test primero, en rojo, luego implementación. Cobertura sobre 70 %.
 14. Test: cada uno de los 4 motivos de rechazo (decisión 5) con su color, icono y copy, y el campo sigue armado.
 15. Test: *Ingresar código* manual como salida cuando el código está ilegible.
 
-### Fase 5 — `2g` Cámara `[in_progress]`
+### Fase 5 — `2g` Cámara `[done]`
 16. Test: el visor no ocupa toda la pantalla y el contador permanece visible.
 17. Test: permiso denegado → mensaje y vuelta al lector, no pantalla en blanco.
 
-### Fase 6 — `2h` Paquetes `[in_progress]`
+### Fase 6 — `2h` Paquetes `[done]`
 18. Test: agrupado por parada con su conteo; filtro *Incompletas*.
 19. ~~Test: quitar una fila devuelve el paquete a `asignado` y registra autor y hora (decisión 7).~~ **Tachado en la tarea 4** — no hay control de *Quitar* en `2h`. Ver `### Añadido tras la tarea 4 de spec-76` al final del documento: la remoción es una acción de planificación de un solo responsable (`canRemoveFromPlan`), no de la cuadrilla que escanea, y no vuelve a `asignado`.
 20. Test: paquete `NO EMBARCADO` retenido en consolidación se marca en su parada.
 
-### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario) `[pending]`
+### Fase 7 — Fixture de E2E de Despacho (nueva, decisión del usuario) `[done]`
 
 Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo excluye: su `testMatch` es `/(spec52-.*|reception-mobile)\.spec\.ts$/` y su propio comentario lo dice — *«dispatch-route y spec47-pickup no tienen fixture… Ampliar este patrón cuando cada uno tenga una»*. El E2E de Despacho se concentra aquí y en `spec-77`, no en `spec-75`: es donde hay lector real, dispositivo real y una acción irreversible. En escritorio el E2E sólo repetiría los tests de componente.
 
@@ -134,7 +134,9 @@ Despacho **no tiene fixture de E2E**, y por eso `playwright.qa.config.ts` lo exc
 23. Escribir `e2e/support/despacho-fixture.ts` siguiendo el patrón de `reception-mobile-fixture.ts`: precondición verificada explícitamente (no asumir que `seed()` corrió), y estados alcanzados **conduciendo las pantallas reales**, no con `INSERT` directo — las RPC stampan `auth.uid()` y los triggers leen el estado en vivo, así que una fila insertada a mano produce un estado que el resto del sistema no reconoce.
 24. Ampliar el `testMatch` de `playwright.qa.config.ts` para incluir la suite nueva.
 
-### Fase 8 — Cierre `[pending]`
+### Fase 8 — Cierre `[awaiting_user_test]`
+
+Items 25 a 28 hechos: la suite corrió en el runner del VPS (`e2e:qa`) con 16/16 verdes y se leyó el reporte, no el check. **Queda sólo el item 29**, que no lo puede cerrar un agente: la verificación en el andén con el lector real. El token es `awaiting_user_test` por eso.
 25. `npm run test -- --pool=forks` + mutation-test antes de push.
 26. E2E móvil (390 × 844) del bucle completo: elegir ruta → asignar vehículo → escanear → rechazos → lista por parada.
 27. Ejecutar el E2E **en el runner del VPS** (`e2e:qa`): cada puerto de QA escucha en localhost del VPS, así que no corre desde un runner de GitHub ni desde una máquina local.
