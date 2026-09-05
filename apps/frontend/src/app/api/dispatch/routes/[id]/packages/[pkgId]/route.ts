@@ -2,6 +2,7 @@ import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { canRemoveFromPlan } from '@/lib/permissions';
+import { LOADED_ON_TRUCK_STATUSES } from '@/lib/dispatch/dispatch-local-completion';
 
 const bodySchema = z.object({
   reason: z.string().trim().min(1),
@@ -110,12 +111,22 @@ export async function DELETE(
     if (dispatch.order_id) {
       // 'sectorizado', not 'asignado' — breakage #9. Nothing writes 'asignado'
       // any more; see scan-validator.ts's header comment.
+      //
+      // spec-79 F4: widened from `.eq('status', 'en_carga')` alone. A route
+      // can legally be unsealed `loaded -> loading` (spec-70,
+      // 20260825000002:255), and by then its packages already moved to
+      // `listo_para_despacho` by /seal (seal-route.ts) without moving back to
+      // `en_carga`. Removing a stop only reverted the pre-seal case, so a
+      // package removed from an unsealed-then-reopened route stranded at
+      // `listo_para_despacho` with no route at all — the same status-scope
+      // gap spec-79 H3 found in the dispatch handler
+      // (dispatch-local-completion.ts's LOADED_ON_TRUCK_STATUSES).
       await supabase
         .from('packages')
         .update({ status: 'sectorizado' })
         .eq('operator_id', operatorId)
         .eq('order_id', dispatch.order_id)
-        .eq('status', 'en_carga');
+        .in('status', [...LOADED_ON_TRUCK_STATUSES]);
     }
 
     // Audit log — actual audit_logs schema: operator_id, user_id, action,

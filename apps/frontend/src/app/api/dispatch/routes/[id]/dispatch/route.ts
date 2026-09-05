@@ -11,6 +11,7 @@ import {
   completeLocalDispatch,
   DtAcceptedLocalFailedError,
   loadedPackageIds,
+  logAcceptedLocalFailed,
 } from '@/lib/dispatch/dispatch-local-completion';
 
 const bodySchema = z.object({
@@ -95,11 +96,12 @@ export async function POST(
 
     // orders columns: customer_name, customer_phone, delivery_address (no contact_email).
     // The nested packages embed feeds dispatches.items (the guide's contents)
-    // and, via `status`, spec-79 H3's en_ruta scoping. deleted_at comes along
-    // because a nested embed cannot be filtered from here.
+    // and, via `status`/`loaded_at`/`load_inferred`, spec-79 H3's en_ruta
+    // scoping (dispatch-local-completion.ts's loadedPackageIds). deleted_at
+    // comes along because a nested embed cannot be filtered from here.
     const { data: dispatches, error: dErr } = await supabase
       .from('dispatches')
-      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone, packages(id, label, sku_items, status, deleted_at))')
+      .select('id, order_id, orders(order_number, customer_name, delivery_address, customer_phone, packages(id, label, sku_items, status, deleted_at, loaded_at, load_inferred))')
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null);
@@ -138,9 +140,14 @@ export async function POST(
     // dispatch_attempt_at IS NULL`, refusing when no row comes back) — see
     // spec-79 Phase 4 for the proposed fix. Neither this phase nor Phase 4's
     // GET pre-check closes it.
+    // spec-79 review F3: whether DT was already confirmed on an earlier
+    // attempt is also the signal that distinguishes a sanctioned retry from
+    // a genuinely empty dispatch further down (completeLocalDispatch's
+    // zero-loaded-packages warn).
+    const isRetry = Boolean(route.external_route_id);
     let externalRouteId: string;
-    if (route.external_route_id) {
-      externalRouteId = route.external_route_id;
+    if (isRetry) {
+      externalRouteId = route.external_route_id as string;
     } else {
       const missingOrderNumbers = findMissingOrderNumbers(dispatchRows);
       if (missingOrderNumbers.length) {
@@ -201,6 +208,7 @@ export async function POST(
         loadedPackageIds: loadedIds,
         dispatchCount: dispatchRows.length,
         truckIdentifier: parsed.data.truck_identifier,
+        isRetry,
       });
     } catch (localErr) {
       if (localErr instanceof DtAcceptedLocalFailedError) {
@@ -250,50 +258,5 @@ export async function POST(
     console.error('[dispatch/dispatch POST]', err);
     const message = err instanceof Error ? err.message : 'DT API error';
     return NextResponse.json({ code: 'DT_API_ERROR', message }, { status: 502 });
-  }
-}
-
-/**
- * spec-79 H2/phase 3: its own audit_logs action, distinct from
- * `dispatch_route` and `dispatch_failed`, carrying `external_route_id` so
- * the route is reconcilable against DT even though our local record of it
- * is incomplete. Best-effort — a failure here must not turn a
- * DT_ACCEPTED_LOCAL_FAILED response into an unhandled 500.
- *
- * spec-79 review finding 2: supabase-js RESOLVES `{data, error}` on a DB
- * rejection, it does not reject the promise — a try/catch around the
- * `.insert()` alone never sees an RLS violation, constraint failure, or
- * timeout. This row is the only local trace of a route that exists at
- * DispatchTrack, so its own error must be checked and logged, not just
- * whatever the call throws.
- */
-async function logAcceptedLocalFailed(
-  supabase: Awaited<ReturnType<typeof createSSRClient>>,
-  operatorId: string,
-  userId: string,
-  routeId: string,
-  err: DtAcceptedLocalFailedError,
-): Promise<void> {
-  try {
-    const { error: insertError } = await supabase.from('audit_logs').insert({
-      operator_id: operatorId,
-      user_id: userId,
-      action: 'dispatch_accepted_local_failed',
-      resource_type: 'routes',
-      resource_id: routeId,
-      changes_json: {
-        external_route_id: err.externalRouteId,
-        local_error: String(err.cause),
-      },
-      ip_address: 'unknown',
-    });
-    if (insertError) {
-      console.error('[dispatch/dispatch POST] dispatch_accepted_local_failed audit insert failed', {
-        externalRouteId: err.externalRouteId,
-        insertError,
-      });
-    }
-  } catch (auditErr) {
-    console.error('[dispatch/dispatch POST] dispatch_accepted_local_failed audit insert threw', auditErr);
   }
 }
