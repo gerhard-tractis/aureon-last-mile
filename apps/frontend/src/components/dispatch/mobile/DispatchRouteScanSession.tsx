@@ -11,6 +11,7 @@ import { DispatchScanRejectionSummary } from './DispatchScanRejectionSummary';
 import { DispatchManualCodeSheet } from './DispatchManualCodeSheet';
 import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
 import { DispatchRouteCloseSheet } from './DispatchRouteCloseSheet';
+import { DispatchRouteDispatchReview } from './DispatchRouteDispatchReview';
 import { useSealRoute } from '@/hooks/dispatch/mobile/useSealRoute';
 import { closeButtonLabel } from '@/lib/dispatch/mobile/route-close';
 
@@ -27,6 +28,12 @@ export interface DispatchRouteScanSessionProps {
   loadPositionLabel: string | null;
   driverName: string | null;
   vehicleExternalId: string | null;
+  /** spec-77 Fase 2 — `2j`'s "fecha de reparto"; sourced from
+   *  `useRouteLoadBrief` (the same read this whole crew tree already
+   *  shares), not a second fetch. */
+  routeDate: string | null;
+  /** spec-77 Fase 2 — `2j`'s "paradas" figure; same source as above. */
+  stopsCount: number;
   /** spec-76 task 4 — 2h now exists: "Ver los N" hands control to the
    *  caller (DispatchRouteSurface) instead of navigating, mirroring how
    *  "Empezar a escanear" already swaps this same page's own state rather
@@ -50,6 +57,8 @@ export function DispatchRouteScanSession({
   loadPositionLabel,
   driverName,
   vehicleExternalId,
+  routeDate,
+  stopsCount,
   onViewPackages,
 }: DispatchRouteScanSessionProps) {
   const router = useRouter();
@@ -67,6 +76,11 @@ export function DispatchRouteScanSession({
   // still missing (item 3): a route with nothing outstanding seals directly
   // below, no sheet at all.
   const [closeSheetOpen, setCloseSheetOpen] = useState(false);
+  // spec-77 Fase 2 — `2j`. Set once sealing succeeds (direct OR forced);
+  // this screen then swaps its own render to the dispatch review instead
+  // of navigating away — same pattern as `scanning`/`viewingPackages` in
+  // DispatchRouteSurface.
+  const [dispatchReviewOpen, setDispatchReviewOpen] = useState(false);
 
   const {
     submitScan,
@@ -83,18 +97,36 @@ export function DispatchRouteScanSession({
 
   const missingBoxCount = packagesTotal - packagesLoaded;
 
-  // item 3 — nothing missing closes directly, no confirmation. 2j
-  // (Despachar) does not exist yet on this branch (Fase 2, still
-  // `[pending]`), so a successful direct close returns the crew to their
-  // queue rather than a screen that isn't built.
+  // item 3 — nothing missing closes directly, no confirmation. A
+  // successful seal (direct here, or forced via the sheet below) opens
+  // `2j` in place rather than navigating anywhere.
   const handleCloseRoute = async () => {
     if (missingBoxCount > 0) {
       setCloseSheetOpen(true);
       return;
     }
     const outcome = await seal(routeId);
-    if (outcome.ok) router.push('/app/dispatch');
+    if (outcome.ok) setDispatchReviewOpen(true);
   };
+
+  if (dispatchReviewOpen) {
+    return (
+      <DispatchRouteDispatchReview
+        routeId={routeId}
+        routeCode={routeCode}
+        driverName={driverName}
+        vehicleExternalId={vehicleExternalId}
+        routeDate={routeDate}
+        stopsCount={stopsCount}
+        packagesCount={packagesLoaded}
+        // `2l` (Fase 4) does not exist yet — blocked on spec-79. A
+        // successful dispatch returns the crew to their queue rather than
+        // a screen that isn't built, the same documented interim `2i` used
+        // before `2j` existed.
+        onDispatched={() => router.push('/app/dispatch')}
+      />
+    );
+  }
 
   const metaLine = [loadPositionLabel, driverName ?? 'Sin conductor', vehicleExternalId]
     .filter((v): v is string => !!v)
@@ -206,7 +238,7 @@ export function DispatchRouteScanSession({
         loadPositionLabel={loadPositionLabel}
         packagesLoaded={packagesLoaded}
         packages={packages}
-        onSealed={() => router.push('/app/dispatch')}
+        onSealed={() => setDispatchReviewOpen(true)}
       />
     </div>
   );

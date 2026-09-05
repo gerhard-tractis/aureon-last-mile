@@ -48,6 +48,13 @@ export interface RouteLoadBrief {
   ordersCount: number;
   stopsCount: number;
   pendingOnDock: number;
+  /**
+   * spec-77 Fase 2 (`2j`) — the dispatch review needs "fecha de reparto"
+   * and this hook already reads one row from `routes`; a second query just
+   * for this column would duplicate the fetch `2j` otherwise shares with
+   * `2c`/`2e` via the same react-query cache key.
+   */
+  routeDate: string | null;
   comunas: ComunaCount[];
   incompleteOrders: IncompleteOrder[];
   loadPositionLabel: string | null;
@@ -76,6 +83,7 @@ const EMPTY: RouteLoadBrief = {
   ordersCount: 0,
   stopsCount: 0,
   pendingOnDock: 0,
+  routeDate: null,
   comunas: [],
   incompleteOrders: [],
   loadPositionLabel: null,
@@ -101,7 +109,7 @@ export function useRouteLoadBrief(
 
       const { data: routeRow, error: routeError } = await supabase
         .from('routes')
-        .select('vehicle_id, driver_name, load_position_id, load_position_released_at, load_positions(code, label)')
+        .select('vehicle_id, driver_name, route_date, load_position_id, load_position_released_at, load_positions(code, label)')
         .eq('id', routeId!)
         .eq('operator_id', operatorId!)
         .is('deleted_at', null)
@@ -188,6 +196,7 @@ export function useRouteLoadBrief(
         ordersCount: new Set(dispatches.map((d) => d.order_id)).size,
         stopsCount: countStops(dispatches),
         pendingOnDock: countPendingOnDock(packageRows),
+        routeDate: routeRow.route_date ?? null,
         comunas: comunaBreakdown(dispatches, comunaByOrder),
         incompleteOrders: findIncompleteOrders(dispatches, packagesByOrder),
         loadPositionLabel: position?.label ?? position?.code ?? null,

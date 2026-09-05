@@ -67,6 +67,18 @@ vi.mock('./DispatchRouteCameraViewfinder', () => ({
   },
 }));
 
+// spec-77 Fase 2 — `2j`. Stubbed here the same way DispatchRouteCloseSheet
+// is not (that one IS this file's own concern); the review screen's own
+// content/logic is DispatchRouteDispatchReview.test.tsx's job — this file
+// only proves the SWAP happens once sealing succeeds, never a navigation.
+const dispatchReviewPropsSpy = vi.fn();
+vi.mock('./DispatchRouteDispatchReview', () => ({
+  DispatchRouteDispatchReview: (props: { routeCode: string }) => {
+    dispatchReviewPropsSpy(props);
+    return <div data-testid="stub-dispatch-review">{props.routeCode}</div>;
+  },
+}));
+
 const onViewPackagesMock = vi.fn();
 
 function renderSession(overrides: Partial<DispatchRouteScanSessionProps> = {}) {
@@ -78,6 +90,8 @@ function renderSession(overrides: Partial<DispatchRouteScanSessionProps> = {}) {
       loadPositionLabel={null}
       driverName={null}
       vehicleExternalId={null}
+      routeDate={null}
+      stopsCount={0}
       onViewPackages={onViewPackagesMock}
       {...overrides}
     />,
@@ -164,7 +178,11 @@ describe('DispatchRouteScanSession', () => {
     await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
     await waitFor(() => expect(sealMock).toHaveBeenCalledWith('r1'));
     expect(screen.queryByRole('button', { name: /^cerrar con/i })).not.toBeInTheDocument();
-    await waitFor(() => expect(pushMock).toHaveBeenCalledWith('/app/dispatch'));
+    // spec-77 Fase 2 — `2j` now exists: a successful seal swaps this
+    // screen's own state to the dispatch review instead of navigating away
+    // (same "swap state, don't navigate" pattern as `scanning`/`viewingPackages`).
+    expect(await screen.findByTestId('stub-dispatch-review')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('spec-77 item 3 — with faltantes, Cerrar ruta opens the confirmation sheet instead of sealing', async () => {
@@ -173,6 +191,18 @@ describe('DispatchRouteScanSession', () => {
     await user.click(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i }));
     expect(sealMock).not.toHaveBeenCalled();
     expect(screen.getByText(/cerrar con faltantes/i)).toBeInTheDocument();
+  });
+
+  it('spec-77 Fase 2 — closing WITH faltantes (forced) also swaps to the dispatch review, never navigates away', async () => {
+    const user = userEvent.setup();
+    sealMock.mockResolvedValue({ ok: true, sealedStops: 148, ordersClosed: 60 });
+    renderSession();
+    await user.click(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i }));
+    await user.click(screen.getByRole('radio', { name: 'Terminó el turno' }));
+    await user.click(screen.getByRole('button', { name: /^cerrar con 1 sin cargar$/i }));
+    await waitFor(() => expect(sealMock).toHaveBeenCalled());
+    expect(await screen.findByTestId('stub-dispatch-review')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it('spec-76 task 4 — Cámara and Ver los N are wired, not disabled placeholders any more', () => {

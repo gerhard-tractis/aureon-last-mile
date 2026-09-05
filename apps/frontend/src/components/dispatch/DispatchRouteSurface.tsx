@@ -218,6 +218,8 @@ export function DispatchRouteSurface({ routeId, operatorId, vehicles }: Dispatch
                 loadPositionLabel={loadBrief?.loadPositionLabel ?? null}
                 driverName={loadBrief?.vehicleAssignment?.driverName ?? null}
                 vehicleExternalId={loadBrief?.vehicleAssignment?.externalVehicleId ?? null}
+                routeDate={loadBrief?.routeDate ?? null}
+                stopsCount={loadBrief?.stopsCount ?? 0}
                 onViewPackages={() => setViewingPackages(true)}
               />
             )}
