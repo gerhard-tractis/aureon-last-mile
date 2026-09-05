@@ -71,9 +71,11 @@ function buildClient(opts: {
     eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
   });
 
+  // spec-79 F4: the third filter widened from `.eq('status', 'en_carga')` to
+  // `.in('status', LOADED_ON_TRUCK_STATUSES)`.
   const packagesUpdateSpy = vi.fn().mockReturnValue({
     eq: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+      eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
     }),
   });
   const packagesChain = { update: packagesUpdateSpy };
@@ -161,6 +163,28 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
     expect(packagesUpdateSpy).toHaveBeenCalledWith({ status: 'sectorizado' });
+  });
+
+  /**
+   * spec-79 F4: widened from `.eq('status', 'en_carga')` alone. A route can
+   * legally be unsealed `loaded -> loading` (spec-70,
+   * 20260825000002:255), and by then its packages already moved to
+   * `listo_para_despacho` by /seal without ever moving back to `en_carga`.
+   * Before this fix a package removed from such a route stranded at
+   * `listo_para_despacho` with no route at all.
+   */
+  it('reverts a package at listo_para_despacho (post-seal, then unsealed) back to sectorizado too', async () => {
+    const { client, packagesUpdateSpy } = buildClient();
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await DELETE(buildRequest(), { params });
+    expect(res.status).toBe(200);
+
+    // Third filter on the packages update is now .in('status', [...]),
+    // covering both en_carga and listo_para_despacho.
+    const firstEq = packagesUpdateSpy.mock.results[0].value.eq;
+    const secondEq = firstEq.mock.results[0].value.eq;
+    const inSpy = secondEq.mock.results[0].value.in;
+    expect(inSpy).toHaveBeenCalledWith('status', ['en_carga', 'listo_para_despacho']);
   });
 
   it('inserts an audit_logs row', async () => {
