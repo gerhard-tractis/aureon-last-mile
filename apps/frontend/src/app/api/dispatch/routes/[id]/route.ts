@@ -1,10 +1,9 @@
 import { createSSRClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { ACTIVE_ROUTE_STATUSES, OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types';
+import { OPEN_ROUTE_STATUSES } from '@/lib/dispatch/types';
 import { isCapacityConfigured } from '@/lib/dispatch/mobile/vehicle-picker';
 import { routeCode } from '@/lib/dispatch/mobile/crew-board';
-import { todayISOInTimezone } from '@/lib/utils/dateFormat';
 import { releaseRouteDispatches } from '@/lib/dispatch/dispatch-route-delete-cleanup';
 
 export async function DELETE(
@@ -96,7 +95,11 @@ const patchBodySchema = z.object({
  * VEHICLE_NOT_FOUND, VEHICLE_CAPACITY_NOT_CONFIGURED (capacity_packages not
  * a positive finite number — never a fake bar downstream). 409
  * VEHICLE_ALREADY_ASSIGNED_TODAY when the vehicle already carries a
- * DIFFERENT active route with today's route_date (Santiago civil date).
+ * DIFFERENT, still-OPEN route on the same route_date. spec-79 H6 (review
+ * round 7): NOT any "active" route — a truck can legitimately run two
+ * DISPATCHED-then-new routes the same day (Fase 0 finding 3); only another
+ * route still in OPEN_ROUTE_STATUSES (not yet dispatched) is a genuine
+ * double-booking.
  */
 export async function PATCH(
   request: NextRequest,
@@ -116,9 +119,12 @@ export async function PATCH(
     const parsed = patchBodySchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ code: 'VALIDATION_ERROR' }, { status: 400 });
 
+    // spec-79 M7 (review round 7): `route_date` selected here so the
+    // busy-route lookup below can scope by THIS route's own date instead of
+    // "today" — see that query's own comment.
     const { data: route, error: routeError } = await supabase
       .from('routes')
-      .select('id, status, provider')
+      .select('id, status, provider, route_date')
       .eq('id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null)
@@ -180,15 +186,33 @@ export async function PATCH(
     // DB failure — both then `data: null`. `.limit(1)` makes "more than
     // one" an ordinary array instead of an error; the branch below refuses
     // to fall through to the write on a real error.
+    //
+    // spec-79 H6 (review round 7): this used to filter by
+    // ACTIVE_ROUTE_STATUSES, which includes `dispatched`/`in_transit`/
+    // `in_progress` — Fase 0 finding 3 ("un camión puede legítimamente
+    // correr dos rutas el mismo día") was honoured in the database (B-1,
+    // round 6, withdrew `routes_one_vehicle_per_day`) and violated HERE:
+    // assigning a truck to its afternoon route 409'd against its own
+    // already-dispatched morning route. The only genuine double-booking
+    // this guard can catch without a start/end timestamp `routes` does not
+    // have (B-1's own migration comment) is another route that is STILL
+    // OPEN — two undispatched routes racing for the same truck. Once a
+    // route leaves OPEN_ROUTE_STATUSES it is no longer a conflict for a new
+    // assignment.
+    //
+    // spec-79 M7 (review round 7): scoped by THIS ROUTE'S OWN route_date,
+    // not `todayISOInTimezone()` — now that this is the only guard on this
+    // axis, a route dated for another day must not be checked against
+    // today's bookings.
     const { data: busyRoutes, error: busyRouteError } = await supabase
       .from('routes')
       .select('id')
       .eq('operator_id', operatorId)
-      .eq('route_date', todayISOInTimezone())
+      .eq('route_date', route.route_date)
       .eq('vehicle_id', vehicle.id)
       .is('deleted_at', null)
       .neq('id', routeId)
-      .in('status', ACTIVE_ROUTE_STATUSES)
+      .in('status', OPEN_ROUTE_STATUSES)
       .limit(1);
     if (busyRouteError) {
       console.error('[dispatch/routes PATCH] busy-route lookup failed', busyRouteError);
@@ -220,8 +244,11 @@ export async function PATCH(
     // matched, treated as a 409, not a silent no-op success.
     // spec-79 B-1 (review round 6): there is no longer a database constraint
     // backing the `busyRoutes` check above with a real 23505 — the earlier
-    // `routes_one_vehicle_per_day` index (20260910000002) was withdrawn
-    // (20260911000003): it contradicted Fase 0 finding 3 ("un camión puede
+    // `routes_one_vehicle_per_day` index (spec-79 M5, review round 7: the
+    // real migration filename is `20260911000002_spec79_h5c_vehicle_per_day_
+    // index.sql` — `20260910000002` does not exist; this comment used to
+    // cite it) was withdrawn (`20260911000003`): it contradicted Fase 0
+    // finding 3 ("un camión puede
     // legítimamente correr dos rutas el mismo día") and, once a truck's
     // second-turn route hit it, drove an unbounded DT-route-creation loop on
     // every retry. `busyRoutes` (Review C1, above) remains the only guard

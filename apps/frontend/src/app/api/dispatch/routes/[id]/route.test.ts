@@ -286,6 +286,7 @@ function buildPatchRequest(body: unknown) {
 interface PatchFixture {
   routeStatus: string | null;
   provider?: string;
+  routeDate?: string;
   vehicle?: { id: string; capacity_packages: number | null } | null;
   vehicleError?: { code: string; message: string } | null;
   busyRoutes?: { id: string }[];
@@ -297,6 +298,7 @@ interface PatchFixture {
 function buildPatchClient({
   routeStatus,
   provider = 'dispatchtrack',
+  routeDate = '2026-03-24',
   vehicle = { id: 'veh-1', capacity_packages: 240 },
   vehicleError = null,
   busyRoutes = [],
@@ -310,7 +312,7 @@ function buildPatchClient({
     eq: routeSelectEqSpy,
     is: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({
-      data: routeStatus ? { id: 'r1', status: routeStatus, provider } : null,
+      data: routeStatus ? { id: 'r1', status: routeStatus, provider, route_date: routeDate } : null,
       error: null,
     }),
   };
@@ -324,12 +326,13 @@ function buildPatchClient({
   };
 
   const busyRouteEqSpy = vi.fn().mockReturnThis();
+  const busyRouteInSpy = vi.fn().mockReturnThis();
   const busyRouteChain = {
     select: vi.fn().mockReturnThis(),
     eq: busyRouteEqSpy,
     is: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
-    in: vi.fn().mockReturnThis(),
+    in: busyRouteInSpy,
     limit: vi.fn().mockResolvedValue({ data: busyRouteError ? null : busyRoutes, error: busyRouteError }),
   };
 
@@ -371,6 +374,7 @@ function buildPatchClient({
     routeSelectEqSpy,
     vehicleSelectEqSpy,
     busyRouteEqSpy,
+    busyRouteInSpy,
     updateEqSpy,
   };
 }
@@ -458,6 +462,44 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.code).toBe('VEHICLE_ALREADY_ASSIGNED_TODAY');
+  });
+
+  /**
+   * spec-79 H6 (review round 7): Fase 0 finding 3 says a truck can
+   * legitimately run two routes the same day. The migration and PATCH's
+   * `23505` removal (B-1, round 6) honoured that in the database; this
+   * guard did not — `busyRoutes` filtered by `ACTIVE_ROUTE_STATUSES`, which
+   * includes `dispatched`/`in_transit`/`in_progress`, so assigning a truck
+   * to its AFTERNOON route (a second, still-OPEN route) 409'd against its
+   * already-DISPATCHED morning route. The only genuine double-booking this
+   * guard should catch is another route that is STILL OPEN (not yet
+   * dispatched) — two undispatched routes racing for the same truck on the
+   * same day. Once a route has left OPEN_ROUTE_STATUSES, it is no longer a
+   * conflict for a NEW assignment.
+   */
+  it('H6: does NOT 409 when the vehicle already carries a DISPATCHED route today — a legitimate second turn', async () => {
+    const { client, busyRouteInSpy } = buildPatchClient({ routeStatus: 'planned', busyRoutes: [] });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(res.status).toBe(200);
+    // The busy-route query itself must only ever ask about OPEN statuses —
+    // never ACTIVE_ROUTE_STATUSES (which includes dispatched/in_transit/
+    // in_progress) — or a real dispatched sibling route would still 409.
+    expect(busyRouteInSpy).toHaveBeenCalledWith('status', ['draft', 'planned', 'loading', 'loaded']);
+  });
+
+  /**
+   * spec-79 M7 (review round 7): the busy-route lookup compared against
+   * `todayISOInTimezone()` instead of the ROUTE'S OWN `route_date` — now
+   * that `busyRoutes` is the only guard on this axis (B-1 withdrew the DB
+   * index), that distinction matters: a route dated tomorrow being assigned
+   * today must check for conflicts on ITS OWN date, not today's.
+   */
+  it('M7: scopes the busy-route lookup by the ROUTE\'S OWN route_date, not today', async () => {
+    const { client, busyRouteEqSpy } = buildPatchClient({ routeStatus: 'planned', routeDate: '2026-04-01' });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    expect(busyRouteEqSpy).toHaveBeenCalledWith('route_date', '2026-04-01');
   });
 
   /**
