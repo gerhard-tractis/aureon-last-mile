@@ -297,7 +297,7 @@ comentarios recortados para volver a bajar de 300 líneas tras el fix), `scan-va
 `('planned', 'staged')`), `apps/frontend/src/lib/types.ts` (`route_stop_counts.force_split_stops`,
 faltaba en el tipo hecho a mano).
 
-### Fase 1 (UI) — `2i` Cerrar `[pending]`
+### Fase 1 (UI) — `2i` Cerrar `[done]`
 
 **Nota pendiente de la fase 1b, para quien construya esta pantalla:** una vez sellada una orden
 partida, su fila en `RouteBuilder`/`PackageRow.tsx` (`boxesTotal`/`boxesLoaded`, vía
@@ -310,12 +310,45 @@ renderiza como si estuviera completa aunque `boxesLoaded < boxesTotal`. Esto no 
 UI, fuera de alcance de esta fase de backend) pero `2i`/esta pantalla necesita decidir cómo
 mostrar una orden partida ya sellada, no asumir que el componente actual ya lo hace bien.
 
-3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo.
-4. Test: las tres consecuencias aparecen (decisión 2).
-5. Test: *Seguir escaneando* es primaria; el botón de cerrar nombra la cifra exacta.
-6. Test: lista paginada con *Ver los N restantes* (decisión 3).
-7. Test: nota por fila se persiste; su ausencia no bloquea el cierre (decisión 4).
-8. Test: al cerrar, los cargados pasan a `listo_para_despacho` y la ruta a `loaded`.
+**Verificado y NO tocado a propósito:** `2i` (`DispatchRouteCloseSheet.tsx`) nunca renderiza una
+fila `force_split` — su lista de "sin cargar" viene de `useRouteScanSession`/`useRoutePackages` del
+mismo modo que el contador del propio 2e, y esos rows sólo existen mientras la orden sigue
+`planned`/`partially_staged`/`adopted` en una ruta AÚN sin sellar; `force_split` sólo aparece
+DESPUÉS de un seal exitoso, cuando 2i ya se cerró. La fila que el gap describe sólo se ve en el
+escritorio (`RouteBuilder`/`PackageRow.tsx`, `1c`, para una ruta ya `loaded`) — otra pantalla, otro
+spec de UI (no `2i`). Queda documentado aquí, no arreglado en silencio.
+
+3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo. ✅
+   `DispatchRouteScanSession.test.tsx` ("con nada faltante sella directo" / "con faltantes abre la
+   hoja").
+4. Test: las tres consecuencias aparecen (decisión 2). ✅ `DispatchRouteCloseSheet.test.tsx`.
+5. Test: *Seguir escaneando* es primaria; el botón de cerrar nombra la cifra exacta. ✅ ídem.
+6. Test: lista paginada con *Ver los N restantes* (decisión 3). ✅
+   `route-close.test.ts` (`paginateMissing`) + `DispatchRouteCloseSheet.test.tsx`.
+7. Test: nota por fila se persiste; su ausencia no bloquea el cierre (decisión 4). ✅ con una
+   desviación honesta, documentada en el riesgo 4 (abajo): el endpoint (fase 1) sólo acepta UN
+   `note` por llamada de force, no uno por paquete — no hay columna de nota por orden y esta fase
+   no lleva migración (no-goals). Cada nota de fila que se escribe se pliega en ese único string,
+   con el número de orden como etiqueta (`buildForceSealNote`, `route-close.ts`), así que sí llega
+   a `audit_logs.changes_json.note` — "persiste", aunque no como un hecho por-paquete separado. Una
+   fila sin nota nunca bloquea el cierre. El riesgo 4 sigue abierto para quien le dé a las notas un
+   hogar real por paquete.
+8. Test: al cerrar, los cargados pasan a `listo_para_despacho` y la ruta a `loaded`. ✅ cubierto en
+   el backend (`seal-route.test.ts`, fases 1/1b/1c); esta fase verifica que la UI invoca `POST
+   /seal` (directo o forzado) y reacciona a `ok`/refusal — no reimplementa la aserción de estado en
+   un test de UI que no toca la base.
+
+Archivos: `apps/frontend/src/lib/dispatch/mobile/route-close.ts` (nuevo — `missingOrders`,
+`closeButtonLabel`, `paginateMissing`, `buildForceSealNote`),
+`apps/frontend/src/lib/dispatch/mobile/force-seal-reason-copy.ts` (nuevo — labels ES sobre el MISMO
+vocabulario cerrado de `force-seal-reasons.ts`), `apps/frontend/src/hooks/dispatch/mobile/useSealRoute.ts`
+(nuevo — cliente de `POST /seal`, con/sin force), `apps/frontend/src/hooks/dispatch/mobile/useRouteScanSession.ts`
+(expone `packages`, ya fetched, sin query nueva), `apps/frontend/src/components/dispatch/mobile/DispatchRouteCloseSheet.tsx`
+(nuevo — la hoja `2i`), `apps/frontend/src/components/dispatch/mobile/DispatchRouteScanSession.tsx`
+(el botón "Cerrar ruta" deja de estar deshabilitado: cierra directo sin faltantes, abre la hoja con
+ellos), `apps/frontend/src/lib/dispatch/mobile/close-route-copy.ts` (comentario actualizado — el
+teléfono ya no usa `CLOSE_ROUTE_DISABLED_REASON`; el tablet `3a`, spec-78, sigue pendiente y fuera
+de alcance de este spec).
 
 ### Fase 2 — `2j` Despachar `[pending]`
 9. Test: la revisión muestra camión, conductor, fecha, paradas · paquetes.

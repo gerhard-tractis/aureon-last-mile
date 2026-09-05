@@ -10,7 +10,9 @@ import { DispatchScanHistoryList } from './DispatchScanHistoryList';
 import { DispatchScanRejectionSummary } from './DispatchScanRejectionSummary';
 import { DispatchManualCodeSheet } from './DispatchManualCodeSheet';
 import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
-import { CLOSE_ROUTE_DISABLED_REASON } from '@/lib/dispatch/mobile/close-route-copy';
+import { DispatchRouteCloseSheet } from './DispatchRouteCloseSheet';
+import { useSealRoute } from '@/hooks/dispatch/mobile/useSealRoute';
+import { closeButtonLabel } from '@/lib/dispatch/mobile/route-close';
 
 // spec-76 decision 4 — verbatim in spirit: the camera is a fallback, not an
 // equivalent input. Named here, not buried in a tooltip, because a
@@ -61,6 +63,10 @@ export function DispatchRouteScanSession({
   // the reader: the mock and decision 4 both treat the camera as the
   // fallback, never the default.
   const [inputMode, setInputMode] = useState<'reader' | 'camera'>('reader');
+  // spec-77 Fase 1 (UI) — 2i. Only opened when Cerrar ruta finds something
+  // still missing (item 3): a route with nothing outstanding seals directly
+  // below, no sheet at all.
+  const [closeSheetOpen, setCloseSheetOpen] = useState(false);
 
   const {
     submitScan,
@@ -71,7 +77,24 @@ export function DispatchRouteScanSession({
     packagesLoaded,
     packagesTotal,
     percent,
+    packages,
   } = useRouteScanSession(routeId, operatorId);
+  const { seal, isSealing } = useSealRoute();
+
+  const missingBoxCount = packagesTotal - packagesLoaded;
+
+  // item 3 — nothing missing closes directly, no confirmation. 2j
+  // (Despachar) does not exist yet on this branch (Fase 2, still
+  // `[pending]`), so a successful direct close returns the crew to their
+  // queue rather than a screen that isn't built.
+  const handleCloseRoute = async () => {
+    if (missingBoxCount > 0) {
+      setCloseSheetOpen(true);
+      return;
+    }
+    const outcome = await seal(routeId);
+    if (outcome.ok) router.push('/app/dispatch');
+  };
 
   const metaLine = [loadPositionLabel, driverName ?? 'Sin conductor', vehicleExternalId]
     .filter((v): v is string => !!v)
@@ -166,15 +189,25 @@ export function DispatchRouteScanSession({
         </div>
         <button
           type="button"
-          disabled
-          className="flex min-h-[56px] w-full items-center justify-center rounded-[10px] bg-surface-raised text-[15px] font-semibold text-text-muted disabled:cursor-not-allowed"
+          onClick={handleCloseRoute}
+          disabled={isSealing}
+          className="flex min-h-[56px] w-full items-center justify-center rounded-[10px] bg-surface-raised text-[15px] font-semibold text-text disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Cerrar ruta
+          {isSealing ? 'Cerrando…' : closeButtonLabel(missingBoxCount)}
         </button>
-        <p className="text-center text-[11.5px] text-text-muted">{CLOSE_ROUTE_DISABLED_REASON}</p>
       </footer>
 
       <DispatchManualCodeSheet open={manualOpen} onOpenChange={setManualOpen} onSubmit={submitScan} />
+      <DispatchRouteCloseSheet
+        open={closeSheetOpen}
+        onOpenChange={setCloseSheetOpen}
+        routeId={routeId}
+        routeCode={routeCode}
+        loadPositionLabel={loadPositionLabel}
+        packagesLoaded={packagesLoaded}
+        packages={packages}
+        onSealed={() => router.push('/app/dispatch')}
+      />
     </div>
   );
 }

@@ -166,5 +166,9 @@ export function useRouteScanSession(routeId: string, operatorId: string) {
     packagesLoaded,
     packagesTotal,
     percent,
+    // spec-77 Fase 1 (UI) — 2i's missing-orders list is shaped straight from
+    // these same rows (`route-close.ts`'s `missingOrders`), not a second
+    // query: no new fetch, same load fact already driving the counter above.
+    packages,
   };
 }
