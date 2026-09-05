@@ -13,6 +13,7 @@ import { isConfirmedExternalRouteId } from '@/lib/dispatch/dispatch-external-rou
 import { claimDispatchAttempt, releaseDispatchClaim } from '@/lib/dispatch/dispatch-retry-claim';
 import { resolveExternalRouteIdForDispatch } from '@/lib/dispatch/dispatch-resolve-external-route-id';
 import { handleDispatchOuterCatch } from '@/lib/dispatch/dispatch-dt-failure';
+import { shouldSimulateLocalDispatchFailure } from '@/lib/dispatch/dispatch-test-hooks';
 import { DTRejectedError } from '@/lib/dispatchtrack-api';
 
 const bodySchema = z.object({
@@ -232,6 +233,8 @@ export async function POST(
         dispatchCount: dispatchRows.length,
         truckIdentifier: parsed.data.truck_identifier,
         isRetry,
+        // spec-77/79 Fase 5 — QA-only, double-gated (dispatch-test-hooks.ts).
+        simulateLocalFailure: shouldSimulateLocalDispatchFailure(request),
       }));
     } catch (localErr) {
       if (localErr instanceof DtAcceptedLocalFailedError) {

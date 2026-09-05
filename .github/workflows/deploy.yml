@@ -622,6 +622,13 @@ jobs:
           [ -n "$PGPASS" ] || { echo "::error::POSTGRES_PASSWORD missing from /home/aureon/.env.qa"; exit 1; }
           export E2E_DATABASE_URL="postgresql://postgres:${PGPASS}@localhost:5433/postgres"
           export E2E_BASE_URL="http://localhost:3200"
+          # spec-77/79 Fase 5 — despacho-close-dispatch.spec.ts dispatches
+          # routes for real, against this QA-only mock, never the real DT
+          # tenant (infra/supabase-qa/dispatchtrack-mock/'s own header).
+          # Fail fast with a clear message rather than a mysterious dispatch
+          # timeout if it is not running.
+          curl -sf http://127.0.0.1:4477/__test__/health > /dev/null \
+            || echo "::warning::DispatchTrack mock (127.0.0.1:4477) is not reachable — despacho-close-dispatch.spec.ts will fail"
           npm run e2e:qa
 
       - name: Upload report

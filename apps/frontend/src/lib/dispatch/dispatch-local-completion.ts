@@ -113,6 +113,15 @@ export interface CompleteLocalDispatchParams {
    * wrong, and the zero-loaded warn must not fire for it.
    */
   isRetry: boolean;
+  /**
+   * spec-77/spec-79 Fase 5 (`dispatch-test-hooks.ts`) — QA-only, double-gated
+   * at the route.ts call site. When true, this throws right after
+   * `external_route_id` is genuinely persisted (the write above already
+   * ran), matching the real DT_ACCEPTED_LOCAL_FAILED window this flag
+   * exists to reproduce on demand: DT genuinely confirmed, and the ONLY
+   * thing incomplete is our own local record of it.
+   */
+  simulateLocalFailure?: boolean;
 }
 
 export interface CompleteLocalDispatchResult {
@@ -144,7 +153,7 @@ export async function completeLocalDispatch(
   params: CompleteLocalDispatchParams,
 ): Promise<CompleteLocalDispatchResult> {
   const { supabase, routeId, operatorId, userId, externalRouteId, vehicleId, driverIdentifier,
-    loadPositionId, loadedPackageIds, dispatchCount, truckIdentifier, isRetry } = params;
+    loadPositionId, loadedPackageIds, dispatchCount, truckIdentifier, isRetry, simulateLocalFailure } = params;
 
   // spec-79 H5a: `driverIdentifier` here is already the RESULT of route.ts's
   // own fallback (`parsed.data.driver_identifier ?? route.driver_name ??
@@ -161,6 +170,18 @@ export async function completeLocalDispatch(
     .eq('id', routeId)
     .eq('operator_id', operatorId);
   if (persistError) throw new DtAcceptedLocalFailedError(externalRouteId, persistError);
+
+  // spec-77/79 Fase 5 test hook — see this param's own doc comment. Fires
+  // ONLY after the persist write above has genuinely succeeded, so the
+  // resulting DT_ACCEPTED_LOCAL_FAILED matches the real window: DT
+  // confirmed, external_route_id is on the row, and a retry without the
+  // header completes locally instead of calling DT again.
+  if (simulateLocalFailure) {
+    throw new DtAcceptedLocalFailedError(
+      externalRouteId,
+      new Error('E2E_SIMULATED_LOCAL_FAILURE (spec-77/79 Fase 5 test hook)'),
+    );
+  }
 
   let dispatchedCount: number;
   try {

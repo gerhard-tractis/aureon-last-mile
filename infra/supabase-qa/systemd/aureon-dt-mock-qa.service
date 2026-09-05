@@ -1,0 +1,29 @@
+# aureon-dt-mock-qa.service - DispatchTrack API mock, QA-only (spec-77/79 Fase 5).
+#
+# Exists so QA's frontend never talks to the real DispatchTrack tenant
+# (dispatchtrack-mock/server.mjs's own header explains the risk this closes).
+# Bound to 127.0.0.1 by the script itself; not proxied through nginx.
+#
+# Install (manual, same pattern as the other QA units under this directory):
+#   sudo cp aureon-dt-mock-qa.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now aureon-dt-mock-qa
+
+[Unit]
+Description=DispatchTrack API mock (QA)
+After=network.target
+
+[Service]
+Type=simple
+User=aureon
+WorkingDirectory=/home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock
+Environment=DT_MOCK_PORT=4477
+ExecStart=/usr/bin/node /home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock/server.mjs
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aureon-dt-mock-qa
+
+[Install]
+WantedBy=multi-user.target

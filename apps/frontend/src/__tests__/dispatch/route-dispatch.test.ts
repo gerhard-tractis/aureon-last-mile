@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/lib/supabase/server', () => ({ createSSRClient: vi.fn() }));
 vi.mock('@/lib/dispatchtrack-api', () => ({
@@ -16,11 +16,14 @@ import { createDTRoute, DTRejectedError } from '@/lib/dispatchtrack-api';
 import { POST } from '@/app/api/dispatch/routes/[id]/dispatch/route';
 import { NextRequest } from 'next/server';
 
-function buildRequest(body: Record<string, unknown> = { truck_identifier: 'ZALDUENDO' }) {
+function buildRequest(
+  body: Record<string, unknown> = { truck_identifier: 'ZALDUENDO' },
+  headers: Record<string, string> = {},
+) {
   return new NextRequest('http://localhost/api/dispatch/routes/r1/dispatch', {
     method: 'POST',
     body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
@@ -1374,6 +1377,124 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
 
     expect(createDTRoute).not.toHaveBeenCalled();
     expect(res.status).toBe(200);
+  });
+});
+
+/**
+ * spec-77/spec-79 Fase 5 — the QA-only test hook (`dispatch-test-hooks.ts`)
+ * that lets an E2E harness reproduce DT_ACCEPTED_LOCAL_FAILED on demand: DT
+ * genuinely confirms (createDTRoute resolves), `external_route_id` is
+ * genuinely persisted first, and ONLY THEN does this simulate a local
+ * failure — the real window spec-79's Fase 0 describes, not a stand-in for
+ * "DT rejected". Double-gated: the header alone does nothing without
+ * ALLOW_E2E_TEST_HOOKS also set.
+ */
+describe('POST /routes/[id]/dispatch — spec-77/79 Fase 5 local-failure test hook', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.stubEnv('DISPATCHTRACK_API_KEY', 'test-token');
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: 'ext-hook-1' });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('the header alone does nothing — DT confirms and the dispatch still succeeds', async () => {
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    const client = buildSessionClient({ fromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(
+      buildRequest({ truck_identifier: 'ZALDUENDO' }, { 'x-e2e-simulate-local-failure': 'true' }),
+      { params: Promise.resolve({ id: 'r1' }) },
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  it('with ALLOW_E2E_TEST_HOOKS set, the header forces DT_ACCEPTED_LOCAL_FAILED AFTER external_route_id is persisted', async () => {
+    vi.stubEnv('ALLOW_E2E_TEST_HOOKS', 'true');
+    const persistUpdateSpy = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+    });
+    const packageUpdateSpy = vi.fn();
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce({ update: persistUpdateSpy }) // persist — MUST run and succeed
+      // Nothing past this point should ever be reached — the packages write
+      // would prove the failure happened too late (after writeEnRuta, not
+      // right after persist).
+      .mockReturnValue({ update: packageUpdateSpy, insert: vi.fn().mockResolvedValue({ error: null }) });
+    const client = buildSessionClient({ fromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(
+      buildRequest({ truck_identifier: 'ZALDUENDO' }, { 'x-e2e-simulate-local-failure': 'true' }),
+      { params: Promise.resolve({ id: 'r1' }) },
+    );
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe('DT_ACCEPTED_LOCAL_FAILED');
+    expect(body.external_route_id).toBe('ext-hook-1');
+    expect(persistUpdateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ external_route_id: 'ext-hook-1' }),
+    );
+    // The only writes reachable after the persist above are the dispatch
+    // claim's own release (best-effort, `dispatch_attempt_at: null`) and the
+    // dispatch_accepted_local_failed audit row — never the packages en_ruta
+    // write, which would prove the failure fired too late.
+    expect(packageUpdateSpy.mock.calls.some(
+      (call) => (call[0] as Record<string, unknown>)?.status === 'en_ruta',
+    )).toBe(false);
+  });
+
+  it('ALLOW_E2E_TEST_HOOKS alone, without the header, does not simulate anything', async () => {
+    vi.stubEnv('ALLOW_E2E_TEST_HOOKS', 'true');
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    const client = buildSessionClient({ fromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+  });
+
+  it('a retry WITHOUT the header, after the simulated failure, completes locally and never calls DT a second time', async () => {
+    vi.stubEnv('ALLOW_E2E_TEST_HOOKS', 'true');
+    // Second request: external_route_id is already persisted from the
+    // simulated-failure attempt — same shape spec-79's own retry tests use.
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain({ external_route_id: 'ext-hook-1' }))
+      .mockReturnValueOnce(claimChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
+    const client = buildSessionClient({ fromMock, rpcMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    // No 'x-e2e-simulate-local-failure' header this time.
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(createDTRoute).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.external_route_id).toBe('ext-hook-1');
   });
 });
 
