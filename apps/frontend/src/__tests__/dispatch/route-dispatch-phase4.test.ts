@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/supabase/server', () => ({ createSSRClient: vi.fn() }));
-vi.mock('@/lib/dispatchtrack-api', () => ({ createDTRoute: vi.fn(), findExistingDTRoute: vi.fn() }));
+vi.mock('@/lib/dispatchtrack-api', () => ({
+  createDTRoute: vi.fn(),
+  findExistingDTRoute: vi.fn(),
+  DTRejectedError: class DTRejectedError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = 'DTRejectedError';
+    }
+  },
+}));
 
 import { createSSRClient } from '@/lib/supabase/server';
 import { createDTRoute, findExistingDTRoute } from '@/lib/dispatchtrack-api';
@@ -127,16 +136,23 @@ function oneGoodDispatch() {
 }
 
 /** Generic update/insert fallback for completeLocalDispatch's own writes
- * (persist, en_ruta, audit) once we're past the parts under test. */
+ * (persist, en_ruta, audit) once we're past the parts under test.
+ *
+ * spec-79 H-1: also the fallback `releaseDispatchClaim` funnels through —
+ * it now chains a THIRD `.eq('dispatch_attempt_at', token)` before
+ * resolving, so `eqChain.eq` returns itself (chainable AND awaitable at any
+ * depth) rather than resolving directly on the second call.
+ */
 function genericChain() {
-  const eqChain = {
-    eq: vi.fn().mockResolvedValue({ error: null }),
-    in: vi.fn(() => ({
+  const eqChain: Record<string, unknown> = {};
+  eqChain.eq = vi.fn().mockReturnValue(eqChain);
+  eqChain.then = (resolve: (v: { error: null }) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve({ error: null }).then(resolve, reject);
+  eqChain.in = vi.fn(() => ({
       in: vi.fn().mockReturnValue({
         is: vi.fn().mockReturnValue({ select: vi.fn().mockResolvedValue({ data: [{ id: 'p1' }], error: null }) }),
       }),
-    })),
-  };
+    }));
   return {
     update: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue(eqChain) }),
     insert: vi.fn().mockReturnValue({ then: (r: () => null) => r() }),
@@ -229,7 +245,17 @@ describe('POST /routes/[id]/dispatch — Fase 4: stale reclaim triggers the GET 
     expect(createDTRoute).toHaveBeenCalled();
   });
 
-  it('item 16: ambiguous pre-check refuses RECONCILIATION_REQUIRED (409) and never calls DT', async () => {
+  /**
+   * spec-79 H-2 (review round 6): `route.ts`'s `resolved.release !== false`
+   * survived mutation to a bare `true` — every existing test still passed,
+   * because none of them asserted that the claim was actually left in
+   * place. Pinned here by counting `fromMock` calls: exactly 5 (route,
+   * fresh claim, stale claim, vehicle, dispatches) with NO 6th call for
+   * `releaseDispatchClaim`'s own `.from('routes')` — if the mutant fires,
+   * that 6th call happens and this assertion catches it directly, not via
+   * an incidental side effect.
+   */
+  it('item 16: ambiguous pre-check refuses RECONCILIATION_REQUIRED (409), never calls DT, and does NOT release the claim (H-2)', async () => {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(freshClaimChain(false))
@@ -245,6 +271,7 @@ describe('POST /routes/[id]/dispatch — Fase 4: stale reclaim triggers the GET 
     const body = await res.json();
     expect(body.code).toBe('RECONCILIATION_REQUIRED');
     expect(createDTRoute).not.toHaveBeenCalled();
+    expect(fromMock).toHaveBeenCalledTimes(5);
   });
 
   it('item 16: a failed pre-check (throws) also refuses RECONCILIATION_REQUIRED, never falls back to creating', async () => {
@@ -263,6 +290,9 @@ describe('POST /routes/[id]/dispatch — Fase 4: stale reclaim triggers the GET 
     const body = await res.json();
     expect(body.code).toBe('RECONCILIATION_REQUIRED');
     expect(createDTRoute).not.toHaveBeenCalled();
+    // spec-79 H-2 (review round 6): same pin as the ambiguous case above —
+    // no 6th `.from('routes')` call for a release that must not happen.
+    expect(fromMock).toHaveBeenCalledTimes(5);
   });
 
   it('matches by guide identifier, not by truck+date', async () => {

@@ -1,0 +1,51 @@
+-- =============================================================================
+-- spec-79 B-1 (review round 6, BLOCKER) — withdraws routes_one_vehicle_per_day
+-- (20260911000002). The index contradicted this spec's own Fase 0 finding 3:
+-- "Un camión puede legítimamente correr dos rutas el mismo día" — a truck
+-- running a second turn the SAME day is normal operation, not a defect. The
+-- index's WHERE clause included `dispatched`/`in_transit`/`in_progress`, so
+-- the exact case Fase 0 said was legitimate was the one the constraint
+-- forbade in the database.
+--
+-- The concrete failure this produced (not merely theoretical): once a
+-- truck's morning route (route A) was dispatched, the SAME vehicle_id
+-- persisted for its second turn (route B, assigned earlier via PATCH
+-- /api/dispatch/routes/[id], while A was still open) collided with A's row
+-- under this index. `dispatch-local-completion.ts`'s post-DT persist write
+-- — the ONLY write that stores `external_route_id` — hit `23505`, which this
+-- module maps to `DtAcceptedLocalFailedError`. At that point DispatchTrack
+-- ALREADY has route B (`createDTRoute` succeeded before the persist write
+-- ran — spec-79 Decision 1's own ordering), but `external_route_id` was
+-- never persisted, so `isConfirmedExternalRouteId` on the next request still
+-- reads unconfirmed. A retry re-enters the non-retry branch, calls
+-- `createDTRoute` again, and hits the SAME 23505 again — every press of
+-- "Reintentar" created one more orphaned DT route, unbounded, with no way
+-- to stop except reconciling DT by hand (spec-79 Fase 0 finding 3's own
+-- `DELETE /routes/:id`, out of band).
+--
+-- What H5c actually needed — preventing the SAME truck being double-booked
+-- on two routes running AT THE SAME TIME — cannot be expressed with what
+-- `routes` carries today: there is no start/end timestamp on a route, only
+-- `route_date` (a calendar day). A real overlap constraint needs that data
+-- first; adding it is a product decision (what counts as "the same time"?
+-- shift boundaries? estimated duration?) out of scope for a bug-fix pass.
+--
+-- Decision: withdraw the index outright and keep ONLY the pre-existing
+-- application-level check in `PATCH /api/dispatch/routes/[id]` (its
+-- `busyRoutes` lookup) — which is unaffected by this migration; it was
+-- never scoped to prevent legitimate same-day multi-route assignment via
+-- the dispatch flow itself, only via that one endpoint's own read-then-write
+-- window, and is not touched here. `dispatch-local-completion.ts`'s persist
+-- write no longer has anything in the database that can reject it on this
+-- axis, so the retry-storm above cannot recur through this path.
+--
+-- `PATCH`'s own 23505 branch (mapped to VEHICLE_ALREADY_ASSIGNED_TODAY) is
+-- removed in the same change that ships this migration — see that file's
+-- own history. Nothing in the app still expects this index to exist.
+-- =============================================================================
+
+BEGIN;
+
+DROP INDEX IF EXISTS public.routes_one_vehicle_per_day;
+
+COMMIT;

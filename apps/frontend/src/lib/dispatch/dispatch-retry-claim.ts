@@ -51,7 +51,11 @@ import type { Database } from '@/lib/types';
 export const DISPATCH_CLAIM_STALE_MS = 120_000;
 
 export type DispatchClaimResult =
-  | { claimed: true; wasStale: boolean }
+  // spec-79 H-1 (review round 6): `attemptToken` is the exact value THIS
+  // call stamped into `dispatch_attempt_at`. Callers must pass it back to
+  // `releaseDispatchClaim` so a release only ever undoes the claim IT took —
+  // see that function's own header for the bug this closes.
+  | { claimed: true; wasStale: boolean; attemptToken: string }
   | { claimed: false };
 
 export async function claimDispatchAttempt(
@@ -74,7 +78,7 @@ export async function claimDispatchAttempt(
     return { claimed: false };
   }
   if (fresh.data && fresh.data.length > 0) {
-    return { claimed: true, wasStale: false };
+    return { claimed: true, wasStale: false, attemptToken: nowIso };
   }
 
   // Someone already holds (or held) the claim. Reclaim ONLY if it is old
@@ -94,7 +98,7 @@ export async function claimDispatchAttempt(
     return { claimed: false };
   }
   if (stale.data && stale.data.length > 0) {
-    return { claimed: true, wasStale: true };
+    return { claimed: true, wasStale: true, attemptToken: nowIso };
   }
 
   return { claimed: false };
@@ -103,7 +107,7 @@ export async function claimDispatchAttempt(
 /**
  * Releases a claim taken by {@link claimDispatchAttempt} on any terminal
  * path that did NOT leave DispatchTrack in an unknown state — a definite
- * rejection (`DT_API_ERROR`), a definite local-failure-after-DT-accepted
+ * rejection (`DTRejectedError`), a definite local-failure-after-DT-accepted
  * (`DT_ACCEPTED_LOCAL_FAILED`, which persists `external_route_id` before
  * this ever runs, so a future retry is already safe via the existing
  * `isConfirmedExternalRouteId` check regardless of claim state), or any
@@ -113,25 +117,41 @@ export async function claimDispatchAttempt(
  * (`RECONCILIATION_REQUIRED`) — see route.ts's own comment at that call
  * site: releasing there would let the NEXT request skip straight to a
  * fresh claim and call DT directly, exactly the risk the pre-check exists
- * to intercept.
+ * to intercept. Also NOT called (by route.ts's outer catch) when DT was
+ * called but no response ever arrived (network error/timeout) — see
+ * dispatchtrack-api.ts's `DTRejectedError`.
+ *
+ * spec-79 H-1 (review round 6): `attemptToken` must be the exact value
+ * `claimDispatchAttempt` returned to THIS request. Before this, the release
+ * had no ownership check at all — it blindly nulled `dispatch_attempt_at`
+ * for the route id/operator, so a SUPERSEDED request A (e.g. one that lost
+ * a race, or whose caller gave up and moved on) could release a claim that
+ * a DIFFERENT, currently in-flight request B legitimately holds. B's own
+ * eventual release then no-ops (nothing to release), but in between, a
+ * THIRD request C sees `dispatch_attempt_at IS NULL`, takes a fresh claim,
+ * and calls DispatchTrack while B is still mid-flight — the exact
+ * concurrent-duplicate risk this whole claim mechanism exists to prevent.
+ * Scoping the release to `dispatch_attempt_at = attemptToken` makes a
+ * release a no-op unless the caller is still the current holder.
  *
  * Best-effort — logs, never throws. Same pattern as every other release in
  * this flow (`releaseLoadPosition`).
  */
 export async function releaseDispatchClaim(
   supabase: SupabaseClient<Database>,
-  params: { routeId: string; operatorId: string },
+  params: { routeId: string; operatorId: string; attemptToken: string },
 ): Promise<void> {
   // route.ts calls this from early-exit paths still inside its own outer
   // try/catch — an uncaught throw here (not just an `error` field) would
-  // otherwise propagate up and get misreported as DT_API_ERROR. Wrapped so
+  // otherwise propagate up and get misreported as a DT failure. Wrapped so
   // this can never do that, matching its own "never throws" doc promise.
   try {
     const { error } = await supabase
       .from('routes')
       .update({ dispatch_attempt_at: null })
       .eq('id', params.routeId)
-      .eq('operator_id', params.operatorId);
+      .eq('operator_id', params.operatorId)
+      .eq('dispatch_attempt_at', params.attemptToken);
     if (error) {
       console.error('[dispatch-retry-claim] failed to release dispatch attempt claim', error);
     }

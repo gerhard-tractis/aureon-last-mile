@@ -461,22 +461,27 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
   });
 
   /**
-   * spec-79 H5c: the busyRoutes check above is a read-then-write, not
-   * atomic — it can miss a genuinely concurrent PATCH assigning the same
-   * vehicle to a different route. routes_one_vehicle_per_day
-   * (20260910000002) is the real backstop; this is what the UPDATE itself
-   * does when THAT constraint catches what the read missed.
+   * spec-79 B-1 (review round 6, BLOCKER): `routes_one_vehicle_per_day`
+   * (20260910000002) contradicted Fase 0 finding 3 — "un camión puede
+   * legítimamente correr dos rutas el mismo día" — and, once a truck's
+   * second-turn route hit it, drove an unbounded DT-route-creation loop
+   * (dispatch-local-completion.ts's persist write kept 23505-ing on every
+   * retry). Withdrawn (20260911000003). This UPDATE no longer has any
+   * database constraint on this axis to special-case — a 23505 today would
+   * be some OTHER, unrelated constraint, and must surface as a genuine
+   * 500/thrown error like any other unexpected DB failure, not be
+   * reinterpreted as VEHICLE_ALREADY_ASSIGNED_TODAY.
    */
-  it('409s the same VEHICLE_ALREADY_ASSIGNED_TODAY when the UPDATE itself hits the routes_one_vehicle_per_day unique constraint (23505)', async () => {
+  it('does not special-case 23505 any more — an unexpected UPDATE error propagates instead of being read as VEHICLE_ALREADY_ASSIGNED_TODAY', async () => {
     const { client } = buildPatchClient({
       routeStatus: 'planned',
-      updateError: { code: '23505', message: 'duplicate key value violates unique constraint "routes_one_vehicle_per_day"' },
+      updateError: { code: '23505', message: 'duplicate key value violates some OTHER unique constraint' },
     });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.code).toBe('VEHICLE_ALREADY_ASSIGNED_TODAY');
+    expect(body.code).toBe('INTERNAL_ERROR');
   });
 
   it('401s without a session', async () => {

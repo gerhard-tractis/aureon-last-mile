@@ -16,8 +16,9 @@
 5. [Railway Deployment](#railway-deployment) ← OBSOLETE (2026-02-18)
 6. [Migration Workflow](#migration-workflow)
 7. [spec-79 — `loaded_route_id`: Deploy Order & Manual Recovery](#spec-79--loaded_route_id-deploy-order--manual-recovery)
-8. [Common Deployment Errors](#common-deployment-errors)
-9. [Verification Checklist](#verification-checklist)
+8. [spec-79 Fase 4 — `dispatch_attempt_at` and the withdrawn vehicle-per-day index: Deploy Order](#spec-79-fase-4--dispatch_attempt_at-and-the-withdrawn-vehicle-per-day-index-deploy-order)
+9. [Common Deployment Errors](#common-deployment-errors)
+10. [Verification Checklist](#verification-checklist)
 
 ---
 
@@ -694,6 +695,35 @@ If a package's true route cannot be confirmed (crew unreachable, dock team unsur
 ### Step 5 — Only then deploy the frontend
 
 Once Steps 1-4 are complete (migration applied, backfill run in batches, remainder reconciled), deploy the Vercel bundle. Confirm post-deploy that a real dispatch and a real truck-loading scan both succeed against a route with genuinely loaded packages before considering the rollout done.
+
+---
+
+## spec-79 Fase 4 — `dispatch_attempt_at` and the withdrawn vehicle-per-day index: Deploy Order
+
+**Why this section exists (H-4, review round 6).** `dispatch_attempt_at` is queried on **every** dispatch attempt (`claimDispatchAttempt`, `apps/frontend/src/lib/dispatch/dispatch-retry-claim.ts`) — not just a retry. Migration `20260911000001_spec79_dispatch_attempt_claim.sql` adds that column. If the frontend bundle ships before it is applied, **every dispatch — first attempt or retry — returns `409 DISPATCH_IN_PROGRESS`** (the claim query errors, and `claimDispatchAttempt` fails CLOSED by design). This is the same ordering trap already documented above for `loaded_route_id`, and `deploy.yml`'s path filter can hide it the same way: a green PR does **not** prove the migration ran.
+
+Two related migrations, in this exact order:
+
+1. `20260911000001_spec79_dispatch_attempt_claim.sql` — adds `routes.dispatch_attempt_at`. **Required** before the frontend bundle ships (see above).
+2. `20260911000002_spec79_h5c_vehicle_per_day_index.sql` — added the `routes_one_vehicle_per_day` unique index. **Superseded by (3) below — do not rely on this index existing.**
+3. `20260911000003_spec79_b1_withdraw_vehicle_per_day_index.sql` — **drops** `routes_one_vehicle_per_day`. Spec-79 B-1 (review round 6) found the index contradicted the spec's own Fase 0 finding 3 ("un camión puede legítimamente correr dos rutas el mismo día"): once a truck's second-turn route hit the constraint, every "Reintentar" press created one more orphaned route in DispatchTrack, unbounded. `PATCH /api/dispatch/routes/[id]`'s own `23505` special-case (which assumed the index existed) was removed in the same change — deploy (3) together with the frontend bundle that removes that branch, not separately, so there is never a window where the frontend expects a 409-on-23505 that the database can no longer produce (harmless — it would just fall through to the generic 500 path — but do not leave (2) applied without (3) for longer than necessary).
+
+Confirm before shipping the corresponding frontend bundle — do not trust a green PR check:
+
+```sql
+SELECT version FROM supabase_migrations.schema_migrations
+ WHERE version IN ('20260911000001', '20260911000002', '20260911000003')
+ ORDER BY version;
+
+-- dispatch_attempt_at must exist:
+SELECT column_name FROM information_schema.columns
+ WHERE table_schema = 'public' AND table_name = 'routes' AND column_name = 'dispatch_attempt_at';
+
+-- routes_one_vehicle_per_day must NOT exist (withdrawn):
+SELECT to_regclass('public.routes_one_vehicle_per_day');  -- must return NULL
+```
+
+**Known trap in migration (2)'s own conflict branch, do not repeat it elsewhere.** `20260911000002`'s `DO $$ ... RAISE NOTICE ... END $$` skips `CREATE UNIQUE INDEX` when pre-existing conflicting rows are found, but the migration is still **recorded as applied** in `schema_migrations` either way — the constraint can silently never exist even though the migration "succeeded". This is now moot for `routes_one_vehicle_per_day` itself (withdrawn), but the pattern recurs: any future migration with a conditional `DO` block around DDL must not assume "applied" means "the DDL actually ran" — check the object itself (as above), not just the migrations table.
 
 ---
 

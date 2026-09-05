@@ -218,6 +218,17 @@ export async function PATCH(
     // already told something else. Re-asserting the status filter on the
     // UPDATE itself closes the window: zero rows back means it no longer
     // matched, treated as a 409, not a silent no-op success.
+    // spec-79 B-1 (review round 6): there is no longer a database constraint
+    // backing the `busyRoutes` check above with a real 23505 — the earlier
+    // `routes_one_vehicle_per_day` index (20260910000002) was withdrawn
+    // (20260911000003): it contradicted Fase 0 finding 3 ("un camión puede
+    // legítimamente correr dos rutas el mismo día") and, once a truck's
+    // second-turn route hit it, drove an unbounded DT-route-creation loop on
+    // every retry. `busyRoutes` (Review C1, above) remains the only guard
+    // here — a read-then-write race between two concurrent PATCH requests
+    // for the SAME vehicle is not closed at the database layer; see spec-79
+    // B-1's own migration comment for why a real fix needs a start/end
+    // timestamp `routes` does not have.
     const { data: updatedRows, error: updateError } = await supabase
       .from('routes')
       .update({ vehicle_id: vehicle.id, driver_name: driverName })
@@ -226,21 +237,6 @@ export async function PATCH(
       .is('deleted_at', null)
       .in('status', OPEN_ROUTE_STATUSES)
       .select('id');
-    // spec-79 H5c: routes_one_vehicle_per_day (20260910000002) backs this
-    // handler's own busyRoutes check with a real constraint — that check
-    // reads then writes, not atomically, so two concurrent PATCH requests
-    // assigning the same vehicle to two different routes could both pass
-    // it. 23505 here means the constraint caught what the read missed;
-    // mapped to the same 409 the application-level check already returns.
-    if (updateError?.code === '23505') {
-      return NextResponse.json(
-        {
-          code: 'VEHICLE_ALREADY_ASSIGNED_TODAY',
-          message: 'Este camión ya lleva otra ruta hoy.',
-        },
-        { status: 409 },
-      );
-    }
     if (updateError) throw updateError;
     if (!updatedRows || updatedRows.length === 0) {
       return NextResponse.json(
