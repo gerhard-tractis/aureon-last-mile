@@ -3,6 +3,7 @@ import {
   buildItems,
   buildDtDispatches,
   findMissingOrderNumbers,
+  findDispatchesWithNoLoadedItems,
   type DispatchRow,
   type PackageRow,
 } from '@/lib/dispatch/dispatch-dt-payload';
@@ -119,6 +120,71 @@ describe('findMissingOrderNumbers', () => {
 
   it('does not flag a dispatch with a real order_number', () => {
     expect(findMissingOrderNumbers([dispatchWithOrderNumber('4821')])).toEqual([]);
+  });
+});
+
+/**
+ * spec-79 B-1 (blocker): a dispatch whose order carries zero
+ * genuinely-loaded packages must be flagged BEFORE the route goes to
+ * DispatchTrack — sending it means DT gets a stop with no contents while the
+ * boxes are still on the andén, and the previous handler reported this as
+ * `200 {ok:true}`. `createDTRoute` omits an empty `items` key entirely
+ * (`dispatchtrack-api.ts`'s `if (d.items?.length) dispatch.items = d.items`),
+ * so there was no signal downstream to catch this — it has to be caught
+ * here, on the same input `buildItems` already filters.
+ */
+describe('findDispatchesWithNoLoadedItems', () => {
+  function dispatchWithPackages(id: string, packages: PackageRow[]): DispatchRow {
+    return {
+      id,
+      order_id: `o-${id}`,
+      orders: {
+        order_number: `${id}-000`,
+        customer_name: 'Mario',
+        delivery_address: 'Av Principal 1',
+        customer_phone: null,
+        packages,
+      },
+    };
+  }
+
+  it('flags a dispatch whose every package is legacy load_inferred (pre-spec-74, never re-scanned)', () => {
+    const d = dispatchWithPackages('d1', [
+      pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', load_inferred: true }),
+    ]);
+    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+  });
+
+  it('flags a dispatch whose every package is retenido after staging', () => {
+    const d = dispatchWithPackages('d1', [
+      pkg({ id: 'p1', label: 'CTN-1', status: 'retenido' }),
+    ]);
+    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+  });
+
+  it('flags a dispatch whose every package was soft-deleted after sealing', () => {
+    const d = dispatchWithPackages('d1', [
+      pkg({ id: 'p1', label: 'CTN-1', status: 'en_carga', deleted_at: '2026-09-05T00:00:00Z' }),
+    ]);
+    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+  });
+
+  it('flags a dispatch with no packages at all', () => {
+    const d = dispatchWithPackages('d1', []);
+    expect(findDispatchesWithNoLoadedItems([d])).toEqual([d]);
+  });
+
+  it('does not flag a dispatch that carries at least one genuinely-loaded package', () => {
+    const d = dispatchWithPackages('d1', [pkg({ id: 'p1', label: 'CTN-1' })]);
+    expect(findDispatchesWithNoLoadedItems([d])).toEqual([]);
+  });
+
+  it('flags only the empty stop when other stops are fine (per-stop, not whole-route)', () => {
+    const fine = dispatchWithPackages('d1', [pkg({ id: 'p1', label: 'CTN-1' })]);
+    const empty = dispatchWithPackages('d2', [
+      pkg({ id: 'p2', label: 'CTN-2', status: 'retenido' }),
+    ]);
+    expect(findDispatchesWithNoLoadedItems([fine, empty])).toEqual([empty]);
   });
 });
 

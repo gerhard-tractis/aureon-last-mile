@@ -51,3 +51,17 @@ export function isGenuinelyLoadedPackage(p: PackageRow): boolean {
     p.load_inferred === false
   );
 }
+
+/**
+ * spec-79 review M-1: the same per-box load fact as
+ * {@link isGenuinelyLoadedPackage}, but WITHOUT the status check — used only
+ * to recognize a box already moved to `en_ruta` on an earlier, partially
+ * failed dispatch attempt (the `DT_ACCEPTED_LOCAL_FAILED` retry path).
+ * `loadedPackageIds` (status-scoped) correctly returns nothing for such a
+ * box on retry — it is no longer `en_carga`/`listo_para_despacho`, there is
+ * nothing left to write — but that must not make the retry's reported count
+ * regress to 0 for boxes a previous attempt already dispatched.
+ */
+export function isGenuinelyLoadedByFact(p: PackageRow): boolean {
+  return !p.deleted_at && p.loaded_at != null && p.load_inferred === false;
+}

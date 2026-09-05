@@ -3,7 +3,11 @@ import type { Database } from '@/lib/types';
 import type { DispatchRow } from '@/lib/dispatch/dispatch-dt-payload';
 import { releaseLoadPosition } from '@/lib/dispatch/dispatch-local-release';
 import { writeEnRuta } from '@/lib/dispatch/dispatch-en-ruta-write';
-import { LOADED_ON_TRUCK_STATUSES, isGenuinelyLoadedPackage } from '@/lib/dispatch/dispatch-load-state';
+import {
+  LOADED_ON_TRUCK_STATUSES,
+  isGenuinelyLoadedPackage,
+  isGenuinelyLoadedByFact,
+} from '@/lib/dispatch/dispatch-load-state';
 
 // Re-exported so every existing import site (dispatch-dt-payload.ts,
 // packages/[pkgId]/route.ts, routes/[id]/route.ts) keeps working unchanged —
@@ -40,6 +44,31 @@ export function loadedPackageIds(dispatches: DispatchRow[]): string[] {
     }
   }
   return [...ids];
+}
+
+/**
+ * spec-79 review M-1: how many of this route's boxes were ALREADY moved to
+ * `en_ruta` before this request — i.e. by an earlier, partially-failed
+ * dispatch attempt. `writeEnRuta`'s own return value only ever counts rows
+ * THIS call touched, so on the sanctioned `DT_ACCEPTED_LOCAL_FAILED` retry
+ * (where a previous attempt's `en_ruta` write already succeeded and only a
+ * later step failed) that count is legitimately 0 — every genuinely-loaded
+ * box is already past `en_carga`/`listo_para_despacho`, so `loadedPackageIds`
+ * finds nothing left to write. The caller adds this count to
+ * `writeEnRuta`'s so `packages_dispatched` reports the true total on every
+ * path, first attempt or retry, instead of silently regressing to 0 on a
+ * retry that recovers 40 boxes.
+ */
+export function alreadyDispatchedPackageCount(dispatches: DispatchRow[]): number {
+  const ids = new Set<string>();
+  for (const d of dispatches) {
+    const order = Array.isArray(d.orders) ? (d.orders[0] ?? null) : d.orders;
+    const pkgs = order?.packages ?? [];
+    for (const p of pkgs) {
+      if (p.status === 'en_ruta' && isGenuinelyLoadedByFact(p)) ids.add(p.id);
+    }
+  }
+  return ids.size;
 }
 
 /**
