@@ -350,11 +350,46 @@ ellos), `apps/frontend/src/lib/dispatch/mobile/close-route-copy.ts` (comentario 
 teléfono ya no usa `CLOSE_ROUTE_DISABLED_REASON`; el tablet `3a`, spec-78, sigue pendiente y fuera
 de alcance de este spec).
 
-### Fase 2 — `2j` Despachar `[pending]`
-9. Test: la revisión muestra camión, conductor, fecha, paradas · paquetes.
-10. Test: sin camión asignado → no se puede despachar y se dice por qué (DispatchTrack exige el identificador).
-11. Test: el bloque *Qué pasa al despachar* enumera los cuatro efectos.
-12. Test: doble toque no envía dos veces.
+### Fase 2 — `2j` Despachar `[done]`
+9. Test: la revisión muestra camión, conductor, fecha, paradas · paquetes. ✅
+   `DispatchRouteDispatchReview.test.tsx`.
+10. Test: sin camión asignado → no se puede despachar y se dice por qué (DispatchTrack exige el
+    identificador). ✅ ídem — `canDispatch`/`NO_VEHICLE_REASON` en `dispatch-review.ts`.
+11. Test: el bloque *Qué pasa al despachar* enumera los cuatro efectos. ✅ ídem — `DISPATCH_EFFECTS`.
+12. Test: doble toque no envía dos veces. ✅ dos guardas independientes, ninguna en el servidor:
+    `useDispatchRouteToDT.ts` rechaza sincrónicamente una segunda llamada mientras la primera sigue
+    en vuelo (`inFlight` ref), y `DispatchRouteDispatchReview.tsx` deshabilita el botón con estado
+    (`sending`) apenas se dispara el primer toque — un `dblClick` de `userEvent` no reprodujo el
+    caso real (su demora interna deja resolver el mock antes del segundo evento); el test usa dos
+    `fireEvent.click` sin esperar entre medio, que sí deja el segundo toque llegar mientras el
+    primero está pendiente. **Ninguna de las dos cierra la ventana del servidor** (spec-79 review
+    finding 4, citado también en `dispatch/route.ts`): dos pestañas o dispositivos distintos pueden
+    seguir creando dos rutas en DispatchTrack; ese arreglo es spec-79 Fase 4.
+
+Además de los cuatro ítems: los códigos de respuesta del endpoint (`EMPTY_ROUTE`, `EMPTY_MANIFEST`,
+`VEHICLE_NOT_FOUND`, `MISSING_ORDER_NUMBER`, `QUERY_FAILED`, `DT_API_ERROR`,
+`DT_ACCEPTED_LOCAL_FAILED`) se mapean a copy distinto en `dispatchErrorCopy` (`dispatch-review.ts`),
+nunca a un mensaje genérico — decisión 6 exige que `DT_ACCEPTED_LOCAL_FAILED` no ofrezca nunca
+"Reintentar"; ese código no muestra un botón de reintento aquí (`retryable: false`), sólo el mensaje
+que dirige al jefe de turno — completar el registro local (`2k`'s *Completar*) sigue siendo trabajo
+de Fase 3, bloqueada.
+
+**Desviación documentada — sin `2l` (bloqueado), un despacho exitoso no tiene a dónde ir.**
+`DispatchRouteDispatchReview`'s `onDispatched` hoy sólo devuelve a la cuadrilla a `/app/dispatch`
+(mismo criterio interino que `2i` usó antes de que esta fase existiera). Cuando Fase 4 deje de estar
+bloqueada, ese callback debe apuntar al acta real.
+
+Archivos: `apps/frontend/src/lib/dispatch/mobile/dispatch-review.ts` (nuevo — `DISPATCH_EFFECTS`,
+`NO_VEHICLE_REASON`, `canDispatch`, `dispatchErrorCopy`), `apps/frontend/src/hooks/dispatch/mobile/useDispatchRouteToDT.ts`
+(nuevo — cliente de `POST /dispatch`; deliberadamente NO el mismo hook que `RouteBuilder`/`3a`
+comparten (`useDispatchRouteToDispatchTrack.ts`), que aplana todo error a un solo `message` y
+descarta `code`/`external_route_id` — exactamente lo que esta fase no puede hacer),
+`apps/frontend/src/components/dispatch/mobile/DispatchRouteDispatchReview.tsx` (nuevo — la pantalla
+`2j`), `apps/frontend/src/components/dispatch/mobile/DispatchRouteScanSession.tsx` (un seal exitoso,
+directo o forzado, abre `2j` en el mismo estado en vez de navegar — mismo patrón que
+`scanning`/`viewingPackages`), `apps/frontend/src/components/dispatch/DispatchRouteSurface.tsx`
+(pasa `routeDate`/`stopsCount` hacia abajo), `apps/frontend/src/hooks/dispatch/mobile/useRouteLoadBrief.ts`
+(gana `routeDate` — mismo fetch, sin query nueva).
 
 ### Fase 3 — `2k` Error `[blocked]`
 13. Test: fallo → estado de error que nombra qué no cambió; la ruta sigue `loaded` y los paquetes en `listo_para_despacho`.

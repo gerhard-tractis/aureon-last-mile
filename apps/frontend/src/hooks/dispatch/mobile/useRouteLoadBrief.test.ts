@@ -37,6 +37,7 @@ function buildClient({ routeDriverName, vehicleId = 'veh-1' }: Fixture) {
       data: {
         vehicle_id: vehicleId,
         driver_name: routeDriverName,
+        route_date: '2026-09-05',
         load_position_id: null,
         load_position_released_at: null,
         load_positions: null,
@@ -149,5 +150,18 @@ describe('useRouteLoadBrief — spec-78 additions (vehicleCapacityPackages, orde
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.vehicleCapacityPackages).toBeNull();
+  });
+});
+
+describe('useRouteLoadBrief — spec-77 Fase 2 addition (routeDate)', () => {
+  beforeEach(() => mockFrom.mockReset());
+
+  it('carries routes.route_date, no second query', async () => {
+    buildClient({ routeDriverName: 'Mario González' });
+
+    const { result } = renderHook(() => useRouteLoadBrief('r1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.routeDate).toBe('2026-09-05');
   });
 });
