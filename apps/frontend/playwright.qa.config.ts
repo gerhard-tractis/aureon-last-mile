@@ -22,20 +22,26 @@ export default defineConfig({
 
   // Scoped to the suites that have a real seed/teardown fixture — spec-52,
   // spec-62's reception-mobile (built on spec52-fixture.ts plus
-  // support/reception-mobile-fixture.ts), and now spec-76's
-  // despacho-crew-mobile (its OWN seed namespace — support/despacho-fixture.ts
-  // — not spec-52's; see the `workers: 1` comment below). Of the rest:
-  // auth-pages and branding are screenshot-generation tools rather than
-  // assertions, the old dispatch-route.spec.ts only ever asserted a URL
-  // redirect (`/(app\/dispatch|login)/`, true either way) and is replaced by
-  // despacho-crew-mobile for the behaviour it should have covered — but not
-  // fully: that old spec ran at 1440×900 against the desktop `RouteBuilder`
-  // tree, while despacho-crew-mobile runs only at 390×844 and never mounts
-  // it, so the desktop route-builder path has no E2E coverage here.
+  // support/reception-mobile-fixture.ts), spec-76's despacho-crew-mobile
+  // (its OWN seed namespace — support/despacho-fixture.ts — not spec-52's;
+  // see the `workers: 1` comment below), and now spec-78's
+  // despacho-tablet-dock (its own namespace too —
+  // support/despacho-tablet-fixture.ts, PREFIX 'E2E78', distinct from
+  // despacho-fixture.ts's 'E2E76' for the same collision reason). Of the
+  // rest: auth-pages and branding are screenshot-generation tools rather
+  // than assertions, the old dispatch-route.spec.ts only ever asserted a
+  // URL redirect (`/(app\/dispatch|login)/`, true either way) and is
+  // replaced by despacho-crew-mobile for the behaviour it should have
+  // covered — but not fully: that old spec ran at 1440×900 against the
+  // desktop `RouteBuilder` tree, while despacho-crew-mobile runs only at
+  // 390×844 and never mounts it, so the desktop route-builder path has no
+  // E2E coverage here (despacho-tablet-dock's own first test does assert
+  // it stays on that tree at 1024×768 without `?dock=1`, but does not
+  // exercise RouteBuilder itself beyond that one assertion).
   // spec47-pickup has no fixture, and spec47-consolidated-reception is
   // `test.skip`ped pending exactly this environment. Widen this pattern as
   // each grows a fixture.
-  testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile)\.spec\.ts$/,
+  testMatch: /(spec52-.*|reception-mobile|despacho-crew-mobile|despacho-tablet-dock)\.spec\.ts$/,
 
   // The suite drives two browser contexts through a full pickup + reception
   // workday and polls the database between steps; the per-test timeouts inside
