@@ -225,8 +225,14 @@ export async function PATCH(
     if (busyRoute) {
       return NextResponse.json(
         {
+          // spec-79 round 8 B-1: "hoy" used to be hardcoded here, dating
+          // back to before M7 (round 7) scoped this lookup by the route's
+          // OWN route_date instead of today. A route dated for another
+          // day would still be told "hoy" — false. The code name
+          // (VEHICLE_ALREADY_ASSIGNED_TODAY) is kept as-is; only the
+          // human-facing copy is date-neutral.
           code: 'VEHICLE_ALREADY_ASSIGNED_TODAY',
-          message: `Este camión ya lleva otra ruta hoy (${routeCode(busyRoute.id)})`,
+          message: `Este camión ya lleva otra ruta ese día (${routeCode(busyRoute.id)})`,
           route_id: busyRoute.id,
           route_code: routeCode(busyRoute.id),
         },

@@ -271,5 +271,54 @@ describe('findExistingDTRoute', () => {
       // deadline, not the page-count safety valve.
       expect(mockFetch).toHaveBeenCalledTimes(1);
     });
+
+    /**
+     * spec-79 round 8 H-1 (surviving mutant): `AbortSignal.timeout(Math.min(
+     * DT_FETCH_TIMEOUT_MS, remainingMs))` mutated to
+     * `AbortSignal.timeout(DT_FETCH_TIMEOUT_MS)` left every existing test
+     * passing — the "bounds every page fetch with an AbortSignal" test
+     * (H3) only checks `instanceof AbortSignal`, and this walk-budget
+     * describe block only advances the clock BETWEEN pages, which the
+     * `remainingMs <= 0` refusal catches independently of what value is
+     * passed to `AbortSignal.timeout`. Without the per-page cap, a page
+     * whose fetch itself starts at walk-second 55 could still run a full
+     * 30s (finishing at walk-second 85), well past
+     * LIST_ROUTES_WALK_BUDGET_MS (60s) and eating into the margin the
+     * module-level assertion above claims exists before
+     * DISPATCH_CLAIM_STALE_MS. Spies on the real `AbortSignal.timeout` to
+     * pin the exact ms argument passed for each page, not just that SOME
+     * AbortSignal was passed.
+     */
+    it('caps each page fetch AbortSignal.timeout at whatever remains of the shared walk budget, not the full DT_FETCH_TIMEOUT_MS', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-24T10:00:00.000Z'));
+      const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+
+      const fullPage = Array.from({ length: 20 }, (_, i) => ({ id: i, dispatches: [{ identifier: `OTHER-${i}` }] }));
+      const shortPage = [{ id: 999, dispatches: [{ identifier: '4821' }] }];
+      let call = 0;
+      mockFetch.mockImplementation(async () => {
+        call += 1;
+        if (call === 1) {
+          // Consume 55s of the 60s shared budget during page 1 — leaves
+          // ~5s remaining for page 2, well under DT_FETCH_TIMEOUT_MS (30s).
+          vi.setSystemTime(new Date(Date.now() + 55_000));
+          return { ok: true, json: async () => ({ status: 'ok', response: { routes: fullPage } }) };
+        }
+        return { ok: true, json: async () => ({ status: 'ok', response: { routes: shortPage } }) };
+      });
+
+      await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token');
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      // Page 1: full budget available, capped at DT_FETCH_TIMEOUT_MS.
+      expect(timeoutSpy).toHaveBeenNthCalledWith(1, DT_FETCH_TIMEOUT_MS);
+      // Page 2: only ~5s of budget left — capped at remainingMs, NOT the
+      // full 30s DT_FETCH_TIMEOUT_MS.
+      const page2Ms = timeoutSpy.mock.calls[1][0];
+      expect(page2Ms).toBeLessThan(DT_FETCH_TIMEOUT_MS);
+      expect(page2Ms).toBeLessThanOrEqual(5_000);
+      expect(page2Ms).toBeGreaterThan(0);
+    });
   });
 });

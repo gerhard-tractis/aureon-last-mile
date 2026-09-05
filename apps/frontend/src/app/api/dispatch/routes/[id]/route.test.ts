@@ -465,6 +465,26 @@ describe('PATCH /routes/[id] — assign vehicle + driver before dispatch (spec-7
   });
 
   /**
+   * spec-79 round 8 B-1: the 409 message hardcoded "hoy" from before M7
+   * (round 7) scoped the busy-route lookup by the ROUTE'S OWN route_date
+   * instead of today. A route dated for another day that conflicts with
+   * another same-day-as-ITSELF route got a message claiming "hoy" for a
+   * route that may not be today at all — false, and confusing to a crew
+   * reading it. The message must not claim "hoy" unconditionally.
+   */
+  it('409 message does not hardcode "hoy" — the busy-route lookup is scoped by the route\'s own date, which may not be today', async () => {
+    const { client } = buildPatchClient({
+      routeStatus: 'planned',
+      routeDate: '2026-12-25',
+      busyRoutes: [{ id: 'other-route-id' }],
+    });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    const res = await PATCH(buildPatchRequest({ truck_identifier: 'RTHK-72' }), { params });
+    const body = await res.json();
+    expect(body.message).not.toMatch(/\bhoy\b/i);
+  });
+
+  /**
    * spec-79 H6 (review round 7): Fase 0 finding 3 says a truck can
    * legitimately run two routes the same day. The migration and PATCH's
    * `23505` removal (B-1, round 6) honoured that in the database; this
