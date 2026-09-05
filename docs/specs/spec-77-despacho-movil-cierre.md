@@ -231,6 +231,72 @@ columna existente que la cargue). Test SQL nuevo:
 `apps/frontend/src/lib/dispatch/scan-validator.ts` (`ownsTheOrder` deja de tratar una fila
 `force_split` como reclamo activo — ver el hallazgo de arriba).
 
+### Fase 1c (backend) — corrección de revisión: bloqueo de `retorno_hub`, tests de mutación faltantes, escaneo del bulto ya viajado `[done]`
+
+Tres hallazgos de la revisión de fase 1b, cada uno con su propio fix y test:
+
+1. **BLOQUEANTE — `ready_pkgs`' nuevo predicado escondía `retorno_hub` para siempre.**
+   `20260908000001` agregó `NOT (loaded_at IS NOT NULL AND load_inferred = false)` a
+   `ready_pkgs`, correcto en sí mismo (evita que la mitad ya despachada de una orden
+   partida reaparezca como "disponible"), pero **nada en el camino de retorno lo
+   limpiaba**: `process_failed_delivery` sólo escribe `status`, `complete_return_reception_scan`
+   sólo escribía `status`, y el trigger de dock-scan sólo escribe `status`/`dock_zone_id`. Un
+   bulto que salió, falló la entrega, volvió, fue re-recibido y re-escaneado al andén llega a
+   `sectorizado` con un `loaded_at` viejo de la ruta ya `completed` — y el predicado nuevo lo
+   excluye **para siempre**. Si era el único paquete vivo de la orden, la orden entera
+   desaparecía de Pre-Ruta: el flujo de reingreso de spec-43 quedaba muerto.
+
+   **La corrección NO angosta el filtro** — la razón por la que debe ser global (una vez que
+   `routed_ids` deja de excluir la orden completa) sigue siendo válida. La pieza que faltaba es
+   que el camino de retorno limpie `loaded_at`/`loaded_by`/`load_inferred`, igual que ya hacen
+   los dos endpoints de remoción del plan (`routes/[id]/packages/[pkgId]/route.ts`,
+   `routes/[id]/route.ts`). Se eligió **un solo punto**: `complete_return_reception_scan`
+   (`retorno_hub` → `en_bodega`). Es el único punto de paso garantizado — `SCANNABLE_STATUSES`
+   en `dock-scan-validator.ts` es `['en_bodega', 'sectorizado']`, así que un paquete
+   `retorno_hub` sólo puede volver a `sectorizado` pasando primero por este RPC.
+   `process_failed_delivery` y el trigger de dock-scan quedan sin tocar a propósito: `ready_pkgs`
+   ya excluye `retorno_hub`/`en_bodega` por `status`, así que un `loaded_at` viejo es inerte
+   hasta que este RPC corre. Migración:
+   `packages/database/supabase/migrations/20260908000002_spec77_retorno_hub_clears_load_fact.sql`
+   (`CREATE OR REPLACE`, plantilla `20260512000006` — su única definición previa). Test pgTAP
+   nuevo: `packages/database/supabase/tests/spec77_retorno_hub_load_fact.test.sql` (reproduce el
+   fixture completo — falla contra la definición sin el fix, pasa con él).
+
+2. **ALTO — al test 3 de la fase 1b ("los paquetes cargados avanzan a
+   `listo_para_despacho`") le faltaba la aserción real**, y el mock de `seal-route.test.ts`
+   no distinguía la consulta final de `seal-route.ts` (`.in('stage', ['staged', 'adopted',
+   'force_split'])`) de la consulta de `resolvePendingStops` (`.in('stage', ['planned',
+   'partially_staged'])`) — ambas respondían con el mismo array canned. Un mutante que
+   angostara el `.in(...)` a `['staged', 'adopted']` dejaba 40/40 tests en verde. Corregido:
+   el mock ahora distingue por el contenido del filtro `stage` (`sealedRows`, nuevo, sólo
+   responde a la consulta que incluye `force_split`), y se agregaron aserciones sobre el
+   `UPDATE packages` real, `orders_closed`, y el filtro exacto — probado matando el mutante
+   a mano antes de cerrar la tarea.
+
+3. **MEDIO — escanear el bulto YA viajado de una orden partida en otra ruta dejaba un
+   `dispatches` huérfano y un 500.** `ownsTheOrder` trata una fila `force_split` como
+   "ya no reclama la orden" — correcto para la mitad liberada, pero se aplica a CUALQUIER
+   paquete de la orden, incluida la mitad que sí viajó. El chequeo por-paquete
+   (`ALREADY_STAGED`) sólo corría en la rama `onThisRoute`; escanear el bulto viajado en una
+   ruta nueva caía en `adopt`, `routes/[id]/scan/route.ts` insertaba la fila `dispatches`
+   primero, y `advancePackagesToEnCarga` no encontraba nada que actualizar (el `loaded_at`/
+   `load_inferred` del bulto no satisfacen `.or('loaded_at.is.null,load_inferred.eq.true')`) →
+   lanza → 500, dejando una fila `adopted` viva que ningún seal puede completar. Corregido:
+   el mismo chequeo por-paquete (`found.loaded_at && !found.load_inferred`) ahora también
+   corre en la rama `adopt`, devolviendo el mismo `ALREADY_IN_ROUTE` limpio de antes de
+   `force_split`.
+
+Archivos: `packages/database/supabase/migrations/20260908000002_spec77_retorno_hub_clears_load_fact.sql`
+(nuevo), `packages/database/supabase/tests/spec77_retorno_hub_load_fact.test.sql` (nuevo),
+`apps/frontend/src/lib/dispatch/seal-route.test.ts` (mock corregido + tests nuevos),
+`apps/frontend/src/lib/dispatch/scan-validator.ts` (chequeo por-paquete en la rama `adopt`,
+comentarios recortados para volver a bajar de 300 líneas tras el fix), `scan-validator.test.ts`
+(dos tests nuevos), `apps/frontend/src/lib/dispatch/force-seal-split.ts` y
+`20260908000001_spec77_force_split.sql` (corrección de cita: el filtro de
+`get_move_task_snapshot` es `stage IN ('planned', 'partially_staged', 'staged')`, no
+`('planned', 'staged')`), `apps/frontend/src/lib/types.ts` (`route_stop_counts.force_split_stops`,
+faltaba en el tipo hecho a mano).
+
 ### Fase 1 (UI) — `2i` Cerrar `[pending]`
 
 **Nota pendiente de la fase 1b, para quien construya esta pantalla:** una vez sellada una orden
