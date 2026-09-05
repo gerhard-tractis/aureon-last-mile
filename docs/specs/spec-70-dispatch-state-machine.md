@@ -70,6 +70,17 @@ writes one to mean *"physically scanned onto this truck"*. Nothing distinguishes
    accident, and there is no auto-release: a package the manager did not remove has to go on the
    truck.
 
+   > **This is no longer absolute — audited exception added in [spec-77](spec-77-despacho-movil-cierre.md), phase "2i backend".**
+   > `sealRoute` (`lib/dispatch/seal-route.ts`) grew a `force` mode: the crew may close a route with
+   > boxes still on the dock, but only for stops that were never touched at all (`stage = 'planned'`,
+   > never `partially_staged`) and only with a reason code from a closed vocabulary
+   > (`lib/dispatch/force-seal-reasons.ts`). The unforced call is unchanged — `409 UNSEALED_STOPS`,
+   > nothing written — and this remains the default. What changed is that "a plan is a commitment"
+   > is now enforced *unless someone says, on the record, why it wasn't kept*: accountability comes
+   > from the recorded reason (author, time, count, in `audit_logs`), not from a role gate. A reader
+   > relying on this decision as an absolute invariant (e.g. "no route can ever reach `loaded` with a
+   > `planned` dispatch still attached") should read spec-77's decision before assuming that.
+
 3. **Removal is a manager action, never the scanner's.** Restricted to `admin` / `ops_leader`,
    requires a reason, soft-deletes the dispatch and writes `audit_logs`. The order returns to the
    unrouted pool and reappears in Pre-ruta.

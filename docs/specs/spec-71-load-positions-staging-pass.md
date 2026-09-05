@@ -150,7 +150,11 @@ recorded here so `completed` is not read as "the seal guarantees a complete load
    Once every package meant for a position is physically in it, the operator seals the *position*
    with one scan/tap — not one scan per package again. This mirrors spec-70's route-level `/seal`
    (Decision 2 there: "a route cannot be sealed while any dispatch is still `planned`") one level
-   down: a position cannot be sealed while any dispatch assigned to it is still un-staged.
+   down: a position cannot be sealed while any dispatch assigned to it is still un-staged. The
+   position seal calls the same `sealRoute` the route-level seal does (Decision 3/5 above), so
+   [spec-77](spec-77-despacho-movil-cierre.md)'s audited `force` exception to spec-70 decision 2
+   applies here too — but only through the route-level `/seal` endpoint, which is the only caller
+   that passes `force`; the position-level endpoint does not expose it.
 
 4. **New `load_positions` table, operator-scoped, with assignment and release as first-class
    operations — not an afterthought.** The client is explicit that positions are physically fewer

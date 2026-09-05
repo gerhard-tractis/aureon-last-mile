@@ -2,7 +2,7 @@
 
 > **Related:** [spec-79](spec-79-dispatch-handoff-integrity.md) (**arregla H2 y H3; prerrequisito de `2k` y `2l`**), [spec-76](spec-76-despacho-movil-carga.md) (el bucle de carga que precede a estas pantallas), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
@@ -75,6 +75,16 @@ Van en su propio spec y su propio PR precisamente porque son irreversibles: mezc
 
 8. **`2l` no dice «sincronizado» si no lo está.** A diferencia de Recogida, aquí sí hay red y el despacho es sincrónico: el acta se muestra **después** de la respuesta de DispatchTrack, así que puede afirmar que la ruta quedó registrada. Si el envío fue aceptado pero la confirmación se perdió, el estado es `2k` con reintento, no un acta optimista.
 
+9. **`sealRoute` crece un modo `force`, y cerrar corto exige un motivo — no un rol.** Un implementador anterior se negó a construir `2i` con razón: el backend no podía sostener "cerrar con N paquetes faltantes" — `sealRoute` (`lib/dispatch/seal-route.ts`) implementaba spec-70 decisión 2 al pie de la letra ("un plan es un compromiso") y la única puerta existente, `DELETE /routes/[id]/packages/[pkgId]`, está reservada a `admin`/`ops_leader` (spec-70 decisión 3, `canRemoveFromPlan`) — deliberadamente **no** a la cuadrilla. La decisión, siguiendo la práctica de la industria (Infor/Oracle *short-shipping*: la responsabilidad viene de un **motivo registrado**, no de un filtro de rol):
+
+   - **Apagado por defecto.** Una llamada sin `force` se comporta exactamente igual que hoy — `409 UNSEALED_STOPS` incluido, sin escribir nada. Esto se fijó con un test antes de tocar el código (`seal-route.test.ts` y `route.test.ts`, cada uno con un caso "PINNED").
+   - **Forzar exige un motivo de un vocabulario cerrado.** Sin motivo, `force: true` se rechaza (`400 FORCE_REASON_REQUIRED`), nunca se cierra "por defecto". El vocabulario (`lib/dispatch/force-seal-reasons.ts`) es nuevo — se grepeó el repo primero (`removal_reason`, `adopted_reason`, `return_reason`/discrepancia de Recepción son todos texto libre sin vocabulario detrás) — y es intencionalmente chico: `paquete_no_ubicado`, `turno_terminado`, `vehiculo_lleno`, `paquete_dañado_en_anden`, y `otro` (exige nota no vacía).
+   - **El force NO cubre una parada `partially_staged`.** Una orden con algunos bultos ya físicamente en el camión y otros no es un estado mixto: decidir qué mitad va y cuál se queda es un juicio de responsable (la misma razón por la que spec-70 decisión 3 restringe la remoción a un manager), no algo que este endpoint pueda inferir de un motivo a nivel de ruta. Así que el force sigue rechazando (`409 UNSEALED_STOPS`) si CUALQUIER parada pendiente está `partially_staged` — sólo abre la puerta para paradas 100% `planned` (nadie las tocó nunca). Esto deja **fuera de alcance intencionalmente** el caso de una orden partida con un bulto cargado y otro no; ese caso sigue exigiendo un manager. Si el negocio necesita fuerza sobre órdenes mixtas, es una decisión de producto aparte, no una inferida aquí.
+   - **Qué pasa con lo que nunca se tocó:** la parada `planned` liberada se **soft-elimina** de `dispatches` (mismo mecanismo que la remoción de manager, alcanzado desde dentro de `sealRoute` mismo — nunca a través de `DELETE /packages/[pkgId]`, que sigue siendo la puerta que se le negó a la cuadrilla) con `removal_reason` = el código (+ nota opcional). Esto hace reaparecer la orden en el cohorte no-ruteado de Pre-ruta (`get_pre_route_snapshot` excluye una orden sólo mientras un `dispatches` no eliminado la ata a una ruta en estado activo) — los bultos quedan disponibles para otra ruta, y la fila nunca se elimina físicamente: el rastro es el `removal_reason` más el `audit_logs`.
+   - **Auditoría:** una fila en `audit_logs` (`action: 'force_seal_route'`) con `operator_id`, `user_id` (autor), `timestamp` (hora, default de la tabla) y `changes_json: {reason_code, note, released_count, released_order_ids}` (cifra) — mismo mecanismo que usa la remoción de manager, distinguido por `action`.
+   - **Sin migración.** No hizo falta: `removal_reason` y `audit_logs` ya existen desde spec-70; reutilizarlos evita una migración de una sola fila de trabajo y mantiene "no new tables" del espíritu de spec-70.
+   - **spec-70 decisión 2 deja de ser absoluta** — ver la nota añadida en ese spec. Un lector futuro de spec-70 no debe asumir que ningún `dispatches.stage='planned'` puede sobrevivir a un `loaded`; sí puede, con motivo y auditoría.
+
 ## Fase 0 — Verificación previa: hecha `[done]`
 
 Se leyó `api/dispatch/routes/[id]/dispatch/route.ts`. Resultado: **el copy es correcto para el caso común y falso para un caso de borde real.** Tres hallazgos, todos con consecuencia sobre el diseño:
@@ -116,7 +126,41 @@ H1 se arregla aquí: es UI razonando sobre el estado correcto. **H2 y H3 son def
 
 Esta verificación quedaba pendiente sobre si DT ofrece una clave de idempotencia o un `GET` previo — la pregunta que abría la *Fase 0 (bloqueante para H2)* de [spec-79](spec-79-dispatch-handoff-integrity.md). Esa fase 0 ya corrió y está `[done]`: DT no ofrece idempotencia, sí existe un `GET` previo utilizable sólo en reintentos, y el código tiene un defecto más grave de lo que este spec había registrado (ver la corrección de H2 arriba). Con eso, **`2k` y `2l` siguen `[blocked]`** — bloqueadas en la *implementación* de `spec-79`, no en su verificación, que es lo que este documento y H2/H3 arriba ya reflejan.
 
-### Fase 1 — `2i` Cerrar `[pending]`
+### Fase 1 (backend) — `sealRoute` fuerza el cierre corto `[done]`
+
+La mitad de servidor de `2i`, separada de su UI a propósito (tarea propia, propio PR) porque cambia
+el estado del sistema — la máquina de spec-70 — y eso merece revisión aparte de la pantalla que lo
+va a invocar. Ver decisión 9 arriba para el diseño completo.
+
+1. Test: una llamada sin `force` (o `force: false`) es byte-por-byte idéntica a hoy — `409
+   UNSEALED_STOPS`, nada escrito. Fijado en `seal-route.test.ts` y en
+   `routes/[id]/seal/route.test.ts`, cada uno con un caso rotulado `PINNED`.
+2. Test: `force: true` sin `reason_code` se rechaza (`400 FORCE_REASON_REQUIRED`), sin escribir nada.
+3. Test: `reason_code` fuera del vocabulario cerrado se rechaza (`400`, zod en el endpoint;
+   `FORCE_REASON_REQUIRED` en `sealRoute` como defensa en profundidad).
+4. Test: `reason_code: 'otro'` sin `note` no vacía se rechaza.
+5. Test: `force` con motivo válido libera (soft-delete) la(s) parada(s) `planned`, revierte el
+   paquete a `sectorizado` si hiciera falta (simetría defensiva con `DELETE /packages/[pkgId]`),
+   sella la ruta, y devuelve `forced: {reason_code, note?, released_count}`.
+6. Test: `audit_logs` recibe una fila `action: 'force_seal_route'` con `operator_id`, `user_id`,
+   `resource_id` (la ruta), y `changes_json.{reason_code, note, released_count,
+   released_order_ids}`.
+7. Test: una parada `partially_staged` entre las pendientes bloquea el force igual que el camino sin
+   forzar — no libera nada, no sella.
+8. Test: un fallo en la liberación (`UPDATE dispatches`) se propaga (lanza), no se traga.
+
+Archivos: `apps/frontend/src/lib/dispatch/force-seal-reasons.ts` (nuevo, vocabulario),
+`apps/frontend/src/lib/dispatch/force-seal-release.ts` (nuevo — la liberación + auditoría en sí,
+extraída para que `seal-route.ts` no creciera más de lo estrictamente necesario dentro del límite de
+300 líneas del repo; ya estaba en 303 antes de esta tarea), `apps/frontend/src/lib/dispatch/seal-route.ts`
+(el modo `force`), `apps/frontend/src/app/api/dispatch/routes/[id]/seal/route.ts` (body `{force,
+reason_code, note}`, zod). Sin migración — reutiliza `dispatches.removal_reason` y `audit_logs`,
+ambos ya existentes desde spec-70. `apps/frontend/src/lib/dispatch/seal-load-position.ts` no expone
+`force` (la posición nunca fuerza); su unión de tipos sólo se amplió para que siga compilando contra
+el resultado
+compartido de `sealRoute`.
+
+### Fase 1 (UI) — `2i` Cerrar `[pending]`
 3. Test: con faltantes → pantalla de confirmación; sin faltantes → cierre directo.
 4. Test: las tres consecuencias aparecen (decisión 2).
 5. Test: *Seguir escaneando* es primaria; el botón de cerrar nombra la cifra exacta.

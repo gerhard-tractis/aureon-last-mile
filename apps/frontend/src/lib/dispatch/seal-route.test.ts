@@ -25,6 +25,13 @@ interface Counts {
   adopted_stops: number;
 }
 
+interface PendingRow {
+  id: string;
+  order_id: string;
+  stage?: string;
+  orders: { order_number: string };
+}
+
 const DEFAULT_COUNTS: Counts = {
   total_stops: 1, pending_stops: 0, partially_staged_stops: 0, staged_stops: 1, adopted_stops: 0,
 };
@@ -32,11 +39,12 @@ const DEFAULT_COUNTS: Counts = {
 function buildClient(opts: {
   routeStatus?: string | null;
   counts?: Counts | null;
-  pendingRows?: { order_id: string; orders: { order_number: string } }[];
+  pendingRows?: PendingRow[];
   adoptedRows?: { order_id: string; orders: { order_number: string } }[];
   outstandingPackages?: { order_id: string }[];
   adoptedError?: { message: string };
   outstandingError?: { message: string };
+  releaseError?: { message: string };
 } = {}) {
   const {
     routeStatus = 'loading',
@@ -46,6 +54,7 @@ function buildClient(opts: {
     outstandingPackages = [],
     adoptedError,
     outstandingError,
+    releaseError,
   } = opts;
 
   const ops: Op[] = [];
@@ -59,6 +68,7 @@ function buildClient(opts: {
     chain.in = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.is = vi.fn((c: string, v: unknown) => { op.filters.push([c, v]); return chain; });
     chain.update = vi.fn((p: Record<string, unknown>) => { op.kind = 'update'; op.payload = p; return chain; });
+    chain.insert = vi.fn((p: Record<string, unknown>) => { op.kind = 'insert'; op.payload = p; return chain; });
     chain.maybeSingle = chain.single = vi.fn(() => {
       if (table === 'routes') {
         return Promise.resolve(
@@ -70,10 +80,14 @@ function buildClient(opts: {
     chain.then = (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => {
       let result: { data: unknown; error: unknown } = { data: null, error: null };
       if (table === 'dispatches') {
-        const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
-        result = isAdoptedQuery
-          ? { data: adoptedError ? null : adoptedRows, error: adoptedError ?? null }
-          : { data: pendingRows, error: null };
+        if (op.kind === 'update') {
+          result = { data: null, error: releaseError ?? null };
+        } else {
+          const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
+          result = isAdoptedQuery
+            ? { data: adoptedError ? null : adoptedRows, error: adoptedError ?? null }
+            : { data: pendingRows, error: null };
+        }
       } else if (table === 'packages' && op.kind !== 'update') {
         result = outstandingError
           ? { data: null, error: outstandingError }
@@ -236,5 +250,144 @@ describe('sealRoute — spec-74 phase 3 completeness', () => {
     expect(outstandingOp?.filters).toContainEqual(['status', [...DISPATCHABLE_STATUSES]]);
     expect(outstandingOp?.filters).toContainEqual(['operator_id', 'op-1']);
     expect(outstandingOp?.filters).toContainEqual(['deleted_at', null]);
+  });
+});
+
+/**
+ * spec-77 — the force path. Spec-70 decision 2 ("a plan is a commitment")
+ * is being cut a hole in on purpose, so the FIRST job here is proving the
+ * unforced door is untouched: same status, same code, same refusal, nothing
+ * written. Everything after that pins the new, narrower door.
+ */
+describe('sealRoute — force path (spec-77)', () => {
+  it('PINNED: an unforced call with pending stops is unchanged — 409 UNSEALED_STOPS, nothing released, no audit', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 1, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } }],
+    });
+
+    const result = await sealRoute(client, { routeId: 'route-1', operatorId: 'op-1' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('UNSEALED_STOPS');
+      expect(result.pending_count).toBe(1);
+      expect(result.pending).toEqual(['ORD-1']);
+    }
+    expect(rpc).not.toHaveBeenCalled();
+    expect(ops.find((o) => o.table === 'dispatches' && o.kind === 'update')).toBeUndefined();
+    expect(ops.find((o) => o.table === 'audit_logs')).toBeUndefined();
+  });
+
+  it('refuses force with no reason code — 400 FORCE_REASON_REQUIRED, nothing released', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 1, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } }],
+    });
+
+    const result = await sealRoute(client, { routeId: 'route-1', operatorId: 'op-1', force: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('FORCE_REASON_REQUIRED');
+    expect(rpc).not.toHaveBeenCalled();
+    expect(ops.find((o) => o.table === 'dispatches' && o.kind === 'update')).toBeUndefined();
+  });
+
+  it('refuses force with a reason code outside the closed vocabulary', async () => {
+    const { client, rpc } = buildClient({
+      counts: { total_stops: 1, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } }],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'porque_si',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('FORCE_REASON_REQUIRED');
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('force with a valid reason releases the planned stop, seals, and audits', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 2, pending_stops: 1, partially_staged_stops: 0, staged_stops: 1, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } }],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'paquete_no_ubicado',
+      forceNote: 'no aparece en A3',
+      userId: 'u-1',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && !result.already_sealed) {
+      expect(result.forced).toEqual({
+        reason_code: 'paquete_no_ubicado',
+        note: 'no aparece en A3',
+        released_count: 1,
+      });
+    }
+
+    const release = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(release?.payload?.removal_reason).toContain('paquete_no_ubicado');
+    expect(release?.payload?.deleted_at).toBeTruthy();
+    expect(release?.filters).toContainEqual(['id', ['d1']]);
+    expect(release?.filters).toContainEqual(['operator_id', 'op-1']);
+
+    const audit = ops.find((o) => o.table === 'audit_logs');
+    expect(audit?.payload).toMatchObject({
+      operator_id: 'op-1',
+      user_id: 'u-1',
+      action: 'force_seal_route',
+      resource_type: 'routes',
+      resource_id: 'route-1',
+    });
+    expect((audit?.payload?.changes_json as Record<string, unknown>)?.reason_code).toBe('paquete_no_ubicado');
+    expect((audit?.payload?.changes_json as Record<string, unknown>)?.released_count).toBe(1);
+
+    expect(rpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
+  });
+
+  it('refuses force when a partially_staged (mixed) order is among the pending stops', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 2, pending_stops: 0, partially_staged_stops: 1, staged_stops: 1, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'partially_staged', orders: { order_number: 'ORD-1' } }],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'turno_terminado',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('UNSEALED_STOPS');
+      expect(result.pending_count).toBe(1);
+    }
+    expect(rpc).not.toHaveBeenCalled();
+    expect(ops.find((o) => o.table === 'dispatches' && o.kind === 'update')).toBeUndefined();
+  });
+
+  it('a failed release throws (surfaces as a 500 at the handler, per the shared catch)', async () => {
+    const { client } = buildClient({
+      counts: { total_stops: 1, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },
+      pendingRows: [{ id: 'd1', order_id: 'o1', stage: 'planned', orders: { order_number: 'ORD-1' } }],
+      releaseError: { message: 'connection reset' },
+    });
+
+    await expect(
+      sealRoute(client, {
+        routeId: 'route-1',
+        operatorId: 'op-1',
+        force: true,
+        forceReasonCode: 'paquete_no_ubicado',
+      }),
+    ).rejects.toBeTruthy();
   });
 });
