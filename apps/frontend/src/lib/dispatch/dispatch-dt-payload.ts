@@ -3,15 +3,27 @@ import type { DTDispatch, DTItem } from '@/lib/dispatchtrack-api';
 interface SkuLine { sku?: unknown; description?: unknown; quantity?: unknown }
 
 /** A package as read off the `dispatches -> orders -> packages` embed built
- * by the dispatch handler's own select. `status` and `id` are what spec-79
- * H3 needs to scope the post-DT `en_ruta` write to boxes actually loaded —
- * everything else here is what the DT guide-contents payload needs. */
+ * by the dispatch handler's own select. `status`, `loaded_at` and
+ * `load_inferred` are what spec-79 H3 needs to scope the post-DT `en_ruta`
+ * write to boxes actually loaded — everything else here is what the DT
+ * guide-contents payload needs.
+ *
+ * `loaded_at`/`load_inferred` (spec-74 phase 1) are the per-box load fact:
+ * `loaded_at` set AND `load_inferred` false is the only state that means "a
+ * real scan put this box on a truck" — the same discriminator
+ * scan-validator.ts already relies on for ALREADY_STAGED. A row with
+ * `load_inferred = true` was backfilled by spec-74's migration onto every
+ * live package of an already-staged/adopted order, including ones that
+ * never left the dock, so it is not evidence of loading — see
+ * dispatch-local-completion.ts's loadedPackageIds for the full reasoning. */
 export interface PackageRow {
   id: string;
   label: string | null;
   sku_items: unknown;
   status: string | null;
   deleted_at: string | null;
+  loaded_at: string | null;
+  load_inferred: boolean | null;
 }
 
 export interface OrderRow {

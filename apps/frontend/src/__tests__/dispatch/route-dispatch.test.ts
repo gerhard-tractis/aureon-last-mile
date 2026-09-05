@@ -97,6 +97,63 @@ function updateChain() {
   };
 }
 
+/**
+ * spec-79 review F1: a genuinely loaded package's fixture now needs
+ * loaded_at set and load_inferred false, not just the right `status` — see
+ * dispatch-local-completion.ts's loadedPackageIds. Defaults represent a real
+ * scan; callers only need to override id/label/status.
+ */
+function genuinelyLoadedPkg(overrides: {
+  id: string;
+  label: string;
+  status: string;
+  loaded_at?: string;
+  load_inferred?: boolean;
+  deleted_at?: string | null;
+}) {
+  return {
+    sku_items: [],
+    deleted_at: null,
+    loaded_at: '2026-09-04T09:00:00Z',
+    load_inferred: false,
+    ...overrides,
+  };
+}
+
+/**
+ * spec-79 review F2: the en_ruta write is now `.eq().in('id',...).in('status',...).select('id')`,
+ * not a bare `.eq().in()` resolving `{error}`. By default the terminal
+ * `.select()` reports back exactly the ids the first `.in('id', ids)` call
+ * was given — the ordinary "the write touched everything it asked for" case
+ * — so a test that doesn't care about the F2 count-mismatch path doesn't
+ * have to wire that up by hand. Pass `updatedIdsOverride` to simulate a
+ * status changing out from under the write (fewer rows come back than were
+ * requested).
+ */
+function packagesEnRutaChain(updatedIdsOverride?: string[]) {
+  const selectMock = vi.fn();
+  const statusInMock = vi.fn().mockReturnValue({ select: selectMock });
+  const idInMock = vi.fn((_col: string, ids: string[]) => {
+    const touched = updatedIdsOverride ?? ids;
+    selectMock.mockResolvedValue({ data: touched.map((id) => ({ id })), error: null });
+    return { in: statusInMock };
+  });
+  const eqMock = vi.fn().mockReturnValue({ in: idInMock });
+  const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
+  return { update: updateMock, select: selectMock };
+}
+
+/** Same shape as packagesEnRutaChain, but the terminal `.select()` resolves
+ * an error instead of data — for the packages-write-fails tests. */
+function failingPackagesEnRutaChain(error: unknown) {
+  const selectMock = vi.fn().mockResolvedValue({ data: null, error });
+  const statusInMock = vi.fn().mockReturnValue({ select: selectMock });
+  const idInMock = vi.fn().mockReturnValue({ in: statusInMock });
+  const eqMock = vi.fn().mockReturnValue({ in: idInMock });
+  const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
+  return { update: updateMock };
+}
+
 function routeChain(overrides: Record<string, unknown> = {}) {
   return {
     select: vi.fn().mockReturnThis(),
@@ -204,13 +261,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
         }),
       }),
     };
-    const packagesUpdateChain = {
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({ error: null }),
-        }),
-      }),
-    };
+    const packagesUpdateChain = packagesEnRutaChain();
     const auditInsertSpy = vi.fn().mockReturnValue({
       then: vi.fn((resolve: () => null) => resolve()),
     });
@@ -229,7 +280,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
           customer_name: 'Mario',
           delivery_address: 'Av Principal 1',
           customer_phone: null,
-          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null }],
+          packages: [genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga' })],
         },
       }]))
       .mockReturnValueOnce(routeUpdateChain)   // persist external_route_id/vehicle/driver
@@ -353,13 +404,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
  */
 describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', () => {
   function clientWithPackages(packages: unknown[]) {
-    const packagesUpdateChain = {
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({ error: null }),
-        }),
-      }),
-    };
+    const packagesUpdateChain = packagesEnRutaChain();
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
@@ -388,7 +433,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
 
   it('a split order: only the en_carga package moves to en_ruta, the asignado one stays put', async () => {
     const { client, packagesUpdateChain } = clientWithPackages([
-      { id: 'pkg-loaded', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null },
+      genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'en_carga' }),
       { id: 'pkg-on-dock', label: 'CTN-2', sku_items: [], status: 'asignado', deleted_at: null },
     ]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
@@ -403,8 +448,10 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
 
   it('a retenido package (held back in consolidation) does not move to en_ruta', async () => {
     const { client, packagesUpdateChain } = clientWithPackages([
-      { id: 'pkg-loaded', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null },
-      { id: 'pkg-held', label: 'CTN-2', sku_items: [], status: 'retenido', deleted_at: null },
+      genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'en_carga' }),
+      // spec-79 F2's own scenario: genuinely scanned once, then held back —
+      // status must gate this even though loaded_at is genuine.
+      genuinelyLoadedPkg({ id: 'pkg-held', label: 'CTN-2', status: 'retenido' }),
     ]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -417,8 +464,8 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
 
   it('a fully-loaded order: every en_carga package still moves to en_ruta — no regression', async () => {
     const { client, packagesUpdateChain } = clientWithPackages([
-      { id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null },
-      { id: 'pkg-2', label: 'CTN-2', sku_items: [], status: 'en_carga', deleted_at: null },
+      genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga' }),
+      genuinelyLoadedPkg({ id: 'pkg-2', label: 'CTN-2', status: 'en_carga' }),
     ]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -440,7 +487,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
    */
   it('a post-seal route: packages already moved to listo_para_despacho by /seal still move to en_ruta', async () => {
     const { client, packagesUpdateChain } = clientWithPackages([
-      { id: 'pkg-loaded', label: 'CTN-1', sku_items: [], status: 'listo_para_despacho', deleted_at: null },
+      genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'listo_para_despacho' }),
       { id: 'pkg-on-dock', label: 'CTN-2', sku_items: [], status: 'asignado', deleted_at: null },
     ]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
@@ -451,6 +498,76 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     expect(packagesUpdateChain.update).toHaveBeenCalledWith({ status: 'en_ruta' });
     const inSpy = packagesUpdateChain.update.mock.results[0].value.eq.mock.results[0].value.in;
     expect(inSpy).toHaveBeenCalledWith('id', ['pkg-loaded']);
+  });
+
+  /**
+   * spec-79 review F1 (CRITICAL, second pass): a package backfilled by
+   * spec-74's migration (loaded_at set, load_inferred true) is NOT evidence
+   * this specific box was scanned — the migration set it on every live
+   * package of an already-staged/adopted order, including one that never
+   * left the dock. It must not move to en_ruta alongside a genuinely
+   * scanned sibling.
+   */
+  it('a backfilled (load_inferred) package does not move to en_ruta even at listo_para_despacho', async () => {
+    const { client, packagesUpdateChain } = clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-real-scan', label: 'CTN-1', status: 'listo_para_despacho' }),
+      {
+        id: 'pkg-inferred', label: 'CTN-2', sku_items: [], status: 'listo_para_despacho', deleted_at: null,
+        loaded_at: '2026-09-01T00:00:00Z', load_inferred: true,
+      },
+    ]);
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.packages_dispatched).toBe(1);
+
+    const inSpy = packagesUpdateChain.update.mock.results[0].value.eq.mock.results[0].value.in;
+    expect(inSpy).toHaveBeenCalledWith('id', ['pkg-real-scan']);
+  });
+
+  /**
+   * spec-79 review F2: the write re-asserts the source status and checks
+   * the row count it actually touched. If a package changed underneath it
+   * (e.g. consolidation marked it dañado while DispatchTrack's response was
+   * in flight), fewer rows come back than were requested — this must be
+   * logged, not silently accepted as if everything went through.
+   */
+  it('logs a disagreement when the en_ruta write touches fewer packages than expected (F2 TOCTOU guard)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const packagesUpdateChain = packagesEnRutaChain(['pkg-loaded']); // only 1 of 2 requested comes back
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain([{
+        id: 'd1',
+        order_id: 'o1',
+        orders: {
+          order_number: '4821',
+          customer_name: 'Mario',
+          delivery_address: 'Av Principal 1',
+          customer_phone: null,
+          packages: [
+            genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'en_carga' }),
+            genuinelyLoadedPkg({ id: 'pkg-changed-underneath', label: 'CTN-2', status: 'en_carga' }),
+          ],
+        },
+      }]))
+      .mockReturnValueOnce(updateChain())
+      .mockReturnValueOnce(packagesUpdateChain)
+      .mockReturnValue(updateChain());
+    const client = buildSessionClient({ fromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200); // packages en_ruta write itself did not error
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('en_ruta write touched fewer packages than expected'),
+      expect.objectContaining({ routeId: 'r1', expectedCount: 2, updatedCount: 1 }),
+    );
+    errorSpy.mockRestore();
   });
 
   /**
@@ -638,13 +755,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
   });
 
   it('the packages en_ruta write failing is also DT_ACCEPTED_LOCAL_FAILED, not a silent 200', async () => {
-    const failingPackagesUpdate = {
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({ error: { message: 'packages update failed' } }),
-        }),
-      }),
-    };
+    const failingPackagesUpdate = failingPackagesEnRutaChain({ message: 'packages update failed' });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
@@ -656,7 +767,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
           customer_name: 'Mario',
           delivery_address: 'Av Principal 1',
           customer_phone: null,
-          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null }],
+          packages: [genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga' })],
         },
       }]))
       .mockReturnValueOnce(updateChain())        // persist succeeds
@@ -678,13 +789,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     // route.status !== 'loaded' guard would 409 every future retry attempt
     // — the operator could never reach a retry path that completes the
     // packages write.
-    const failingPackagesUpdate = {
-      update: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          in: vi.fn().mockResolvedValue({ error: { message: 'packages update failed' } }),
-        }),
-      }),
-    };
+    const failingPackagesUpdate = failingPackagesEnRutaChain({ message: 'packages update failed' });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
@@ -696,7 +801,7 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
           customer_name: 'Mario',
           delivery_address: 'Av Principal 1',
           customer_phone: null,
-          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null }],
+          packages: [genuinelyLoadedPkg({ id: 'pkg-1', label: 'CTN-1', status: 'en_carga' })],
         },
       }]))
       .mockReturnValueOnce(updateChain())         // persist succeeds
@@ -766,6 +871,32 @@ describe('POST /routes/[id]/dispatch — retry after DT_ACCEPTED_LOCAL_FAILED', 
       p_operator_id: 'op-1',
       p_to_status: 'dispatched',
     });
+  });
+
+  /**
+   * spec-79 review F3: on this exact path (external_route_id already
+   * persisted, dispatchesChain()'s default fixture carries zero
+   * en_carga/listo_para_despacho packages because the first attempt already
+   * wrote them to en_ruta) loadedPackageIds is legitimately empty. Before
+   * F3 this fired the same warn a genuinely empty dispatch does — a false
+   * alarm on the exact flow spec-79 exists to make safe.
+   */
+  it('does NOT warn about zero loaded packages on the sanctioned retry', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain({ external_route_id: 'ext-already-accepted' }))
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValue(updateChain());
+    const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
+    const client = buildSessionClient({ fromMock, rpcMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(200);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('a retry that fails again stays DT_ACCEPTED_LOCAL_FAILED and still never calls DT', async () => {
