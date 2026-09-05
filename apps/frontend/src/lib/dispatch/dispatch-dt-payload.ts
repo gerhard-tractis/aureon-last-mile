@@ -108,20 +108,3 @@ export function buildDtDispatches(dispatches: DispatchRow[]): DTDispatch[] {
     };
   });
 }
-
-/**
- * spec-79 H3: which packages actually rode the truck. `en_carga` is what
- * `/scan` (spec-74) writes per bulto as it gets loaded — the only direct
- * fact of "this box is on the vehicle". A package still `asignado` (never
- * scanned) or `retenido` (held back in consolidation) must not be counted
- * here, or it will be written to `en_ruta` alongside boxes that never left
- * the dock.
- */
-export function loadedPackageIds(dispatches: DispatchRow[]): string[] {
-  return dispatches.flatMap((d) => {
-    const pkgs = singleOrder(d)?.packages ?? [];
-    return pkgs
-      .filter((p) => !p.deleted_at && p.status === 'en_carga')
-      .map((p) => p.id);
-  });
-}

@@ -25,14 +25,20 @@ function buildRequest(body: Record<string, unknown> = { truck_identifier: 'ZALDU
  *     already set (a retry after DT accepted but local completion failed).
  *  5. supabase.from('routes').update({external_route_id, vehicle_id, driver_name}).eq().eq()
  *     — persisted FIRST, its own write, error checked (spec-79 Decision 2).
- *  6. supabase.rpc('transition_route_status', {..., p_to_status: 'dispatched'}) — error checked.
- *  7. [best-effort, if load_position_id] release_load_position + its audit_logs
+ *  6. supabase.from('packages').update({status:'en_ruta'}).eq().in('id', loadedPackageIds)
+ *     — scoped to boxes actually loaded (spec-79 H3); skipped if none. Runs
+ *     BEFORE the transition below on purpose (test at :508-ish): a failure
+ *     here must leave routes.status still 'loaded', so the retry path (which
+ *     re-enters through the external_route_id check, not through calling DT
+ *     again) can still reach this write. Running it after the transition
+ *     would strand it behind this handler's own 409 guard, unreachable by
+ *     any retry.
+ *  7. supabase.rpc('transition_route_status', {..., p_to_status: 'dispatched'}) — error checked.
+ *  8. [best-effort, if load_position_id] release_load_position + its audit_logs
  *     row + sweep_load_position_assignments + its audit_logs rows.
- *  8. supabase.from('packages').update({status:'en_ruta'}).eq().in('id', loadedPackageIds)
- *     — scoped to en_carga packages only (spec-79 H3); skipped if none.
  *  9. supabase.from('audit_logs').insert() — 'dispatch_route', best-effort.
  *
- * Any error from step 5 onward (except the best-effort ones in step 7) means
+ * Any error from step 5 onward (except the best-effort ones in step 8) means
  * DT already confirmed the route: the handler returns 502
  * DT_ACCEPTED_LOCAL_FAILED (with its own audit_logs row) instead of
  * DT_API_ERROR, and never calls DT again on retry.
@@ -112,6 +118,9 @@ function dispatchesChain(dispatchData: unknown[] = [
       customer_name: 'Mario',
       delivery_address: 'Av Principal 1',
       customer_phone: null,
+      // PostgREST returns [] for a declared embed with no rows, never an
+      // absent key — the real shape this handler actually receives.
+      packages: [],
     },
   },
 ]) {
@@ -195,29 +204,51 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
         }),
       }),
     };
+    const packagesUpdateChain = {
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          in: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+    };
     const auditInsertSpy = vi.fn().mockReturnValue({
       then: vi.fn((resolve: () => null) => resolve()),
     });
     const auditLogsChain = { insert: auditInsertSpy };
 
+    // createDTRoute's external_route_id is always a string (dispatchtrack-api.ts
+    // wraps it in String(routeId)) — never a number.
     const successFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
-      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce(dispatchesChain([{
+        id: 'd1',
+        order_id: 'o1',
+        orders: {
+          order_number: '4821',
+          customer_name: 'Mario',
+          delivery_address: 'Av Principal 1',
+          customer_phone: null,
+          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'en_carga', deleted_at: null }],
+        },
+      }]))
       .mockReturnValueOnce(routeUpdateChain)   // persist external_route_id/vehicle/driver
-      .mockReturnValueOnce(auditLogsChain);    // dispatch_route audit (no packages -> no en_ruta write)
+      .mockReturnValueOnce(packagesUpdateChain) // en_ruta write
+      .mockReturnValueOnce(auditLogsChain);    // dispatch_route audit
 
     const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
     const client = buildSessionClient({ fromMock: successFromMock, rpcMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
-    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: 99999 });
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '99999' });
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.external_route_id).toBe(99999);
+    expect(body.external_route_id).toBe('99999');
+    // spec-79 review finding 9: packages_dispatched is bultos actually
+    // loaded (loadedPackageIds), not stops/orders.
     expect(body.packages_dispatched).toBe(1);
 
     expect(rpcMock).toHaveBeenCalledWith('transition_route_status', {
@@ -227,7 +258,7 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     });
 
     expect(routeUpdateChain.update).toHaveBeenCalledWith(
-      expect.objectContaining({ external_route_id: 99999, vehicle_id: 'fv-1', driver_name: null }),
+      expect.objectContaining({ external_route_id: '99999', vehicle_id: 'fv-1', driver_name: null }),
     );
   });
 
@@ -251,6 +282,32 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       }),
     };
     const primaryFromMock = vi.fn().mockReturnValueOnce(failedRouteChain);
+    const client = buildSessionClient({ fromMock: primaryFromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
+    expect(createDTRoute).not.toHaveBeenCalled();
+  });
+
+  /**
+   * spec-79 review finding 3: `if (dErr) throw dErr` sends a failed dispatches
+   * SELECT into the outer catch, which reports it as a DispatchTrack
+   * rejection (502 DT_API_ERROR + a dispatch_failed audit row) even though DT
+   * was never called. Must mirror the routes lookup above.
+   */
+  it('reports a failed dispatches lookup as QUERY_FAILED, not DT_API_ERROR', async () => {
+    const failedDispatchesChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      is: vi.fn().mockResolvedValue({ data: null, error: { code: '08006', message: 'connection reset' } }),
+    };
+    const primaryFromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(failedDispatchesChain);
     const client = buildSessionClient({ fromMock: primaryFromMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -372,6 +429,63 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     expect(inSpy).toHaveBeenCalledWith('id', ['pkg-1', 'pkg-2']);
   });
 
+  /**
+   * spec-79 review finding 1 (CRITICAL): the only way a route reaches
+   * `loaded` is /seal, and /seal moves every staged package OFF `en_carga`
+   * to `listo_para_despacho` (seal-route.ts:284-288) before it flips
+   * routes.status. So at dispatch time the boxes that actually rode the
+   * truck are `listo_para_despacho`, not `en_carga` — the en_carga-only
+   * filter matched nothing and en_ruta was never written. No test caught
+   * this because none used a post-seal fixture until now.
+   */
+  it('a post-seal route: packages already moved to listo_para_despacho by /seal still move to en_ruta', async () => {
+    const { client, packagesUpdateChain } = clientWithPackages([
+      { id: 'pkg-loaded', label: 'CTN-1', sku_items: [], status: 'listo_para_despacho', deleted_at: null },
+      { id: 'pkg-on-dock', label: 'CTN-2', sku_items: [], status: 'asignado', deleted_at: null },
+    ]);
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(packagesUpdateChain.update).toHaveBeenCalledWith({ status: 'en_ruta' });
+    const inSpy = packagesUpdateChain.update.mock.results[0].value.eq.mock.results[0].value.in;
+    expect(inSpy).toHaveBeenCalledWith('id', ['pkg-loaded']);
+  });
+
+  /**
+   * spec-79 review finding 1: a `loaded` route with zero loaded boxes is not
+   * a normal state. Skipping the write is still correct (an empty .in() is
+   * meaningless), but it must not be silent.
+   */
+  it('warns with the routeId when a loaded route has no en_carga/listo_para_despacho packages', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const packagesFromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain([{
+        id: 'd1',
+        order_id: 'o1',
+        orders: {
+          order_number: '4821',
+          customer_name: 'Mario',
+          delivery_address: 'Av Principal 1',
+          customer_phone: null,
+          packages: [{ id: 'pkg-1', label: 'CTN-1', sku_items: [], status: 'asignado', deleted_at: null }],
+        },
+      }]))
+      .mockReturnValue(updateChain());
+    const client = buildSessionClient({ fromMock: packagesFromMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    (createDTRoute as ReturnType<typeof vi.fn>).mockResolvedValue({ external_route_id: '1' });
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ routeId: 'r1' }));
+    warnSpy.mockRestore();
+  });
+
   it('skips the packages write entirely when nothing is en_carga', async () => {
     const packagesFromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
@@ -435,6 +549,42 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     const body = await res.json();
     expect(body.code).toBe('DT_ACCEPTED_LOCAL_FAILED');
     expect(body.external_route_id).toBe('ext-77');
+  });
+
+  /**
+   * spec-79 review finding 2: supabase-js RESOLVES {data, error} on a DB
+   * rejection, it does not reject the promise. The dispatch_accepted_local_failed
+   * insert wraps its call in try/catch alone, so a DB-rejected insert (RLS,
+   * constraint, timeout) was dropped with no log — the only local trace of a
+   * route that exists at DispatchTrack, gone silently.
+   */
+  it('logs when the dispatch_accepted_local_failed audit insert itself is rejected by the DB', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const rejectedAuditInsert = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'insert violates RLS' },
+    });
+    const fromMock = vi.fn()
+      .mockReturnValueOnce(routeChain())
+      .mockReturnValueOnce(fleetVehicleChain())
+      .mockReturnValueOnce(dispatchesChain())
+      .mockReturnValueOnce(updateChain()) // persist succeeds
+      .mockReturnValueOnce({ insert: rejectedAuditInsert }); // dispatch_accepted_local_failed insert rejected
+    const rpcMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'transition failed' } });
+    const client = buildSessionClient({ fromMock, rpcMock });
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.code).toBe('DT_ACCEPTED_LOCAL_FAILED');
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ externalRouteId: 'ext-77' }),
+    );
+    errorSpy.mockRestore();
   });
 
   it('DT throws (rejection) → 502 DT_API_ERROR, route intact, no packages moved', async () => {
@@ -700,12 +850,17 @@ describe('POST /routes/[id]/dispatch — token resolution', () => {
     expect((createDTRoute as ReturnType<typeof vi.fn>).mock.calls[0][1]).toBe('legacy-token');
   });
 
-  it('returns 502 and never calls DT when no token is configured', async () => {
+  // spec-79 review finding 3: an unconfigured token is a server
+  // misconfiguration, not a DispatchTrack rejection — it must not read as
+  // DT_API_ERROR when DT was never called.
+  it('returns 500 QUERY_FAILED and never calls DT when no token is configured', async () => {
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(loadedRouteClient());
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.code).toBe('QUERY_FAILED');
     expect(createDTRoute).not.toHaveBeenCalled();
   });
 });

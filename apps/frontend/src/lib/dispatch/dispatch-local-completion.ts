@@ -1,5 +1,31 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@/lib/types';
+import type { DispatchRow } from '@/lib/dispatch/dispatch-dt-payload';
+
+/**
+ * spec-79 H3, moved here by review finding 8: which packages actually rode
+ * the truck. This has nothing to do with the DT payload (dispatch-dt-payload.ts)
+ * — it feeds the local `en_ruta` write below.
+ *
+ * Review finding 1 (CRITICAL): the only way a route reaches `loaded` is
+ * /seal, and /seal moves every staged package OFF `en_carga` to
+ * `listo_para_despacho` (seal-route.ts:284-288) before it flips
+ * routes.status. Filtering on `en_carga` alone therefore matched NOTHING at
+ * dispatch time — the premise "a loaded bulto is en_carga" is true when
+ * /scan writes it, and already stale by the time /dispatch reads it. Both
+ * statuses must be scoped in. A package still `asignado` (never scanned) or
+ * `retenido` (held back in consolidation) must not be counted here, or it
+ * will be written to `en_ruta` alongside boxes that never left the dock.
+ */
+export function loadedPackageIds(dispatches: DispatchRow[]): string[] {
+  return dispatches.flatMap((d) => {
+    const order = Array.isArray(d.orders) ? (d.orders[0] ?? null) : d.orders;
+    const pkgs = order?.packages ?? [];
+    return pkgs
+      .filter((p) => !p.deleted_at && (p.status === 'en_carga' || p.status === 'listo_para_despacho'))
+      .map((p) => p.id);
+  });
+}
 
 /**
  * spec-79 H2 / phase 3. Thrown by {@link completeLocalDispatch} for any of
@@ -50,6 +76,10 @@ export async function completeLocalDispatch(params: CompleteLocalDispatchParams)
   const { supabase, routeId, operatorId, userId, externalRouteId, vehicleId, driverIdentifier,
     loadPositionId, loadedPackageIds, dispatchCount, truckIdentifier } = params;
 
+  // spec-79 H5: this clobbers whatever driver_name the crew already saved at
+  // assignment time (spec-76 2d) with a DT identifier, or null when none is
+  // sent. Out of scope for this review pass — see spec-79 H5a. Left as a
+  // marker so the next reader doesn't have to re-find it.
   const { error: persistError } = await supabase
     .from('routes')
     .update({
@@ -61,10 +91,11 @@ export async function completeLocalDispatch(params: CompleteLocalDispatchParams)
     .eq('operator_id', operatorId);
   if (persistError) throw new DtAcceptedLocalFailedError(externalRouteId, persistError);
 
-  // spec-79 H3: scoped to the boxes actually on the truck (`en_carga`), not
-  // every package of every dispatched order. A route with nothing in
-  // `en_carga` (shouldn't happen for a `loaded` route, but defensively)
-  // skips the write rather than sending an empty `.in()`.
+  // spec-79 H3: scoped to the boxes actually on the truck (`en_carga` or,
+  // post-seal, `listo_para_despacho` — see loadedPackageIds above), not
+  // every package of every dispatched order. A `loaded` route with nothing
+  // in either status is not a normal state (review finding 1) — it skips the
+  // write (an empty `.in()` is meaningless) but must not do so silently.
   //
   // Deliberately BEFORE transition_route_status: this is a must-succeed
   // write (spec-79 phase 2), and transition_route_status is what flips
@@ -81,6 +112,10 @@ export async function completeLocalDispatch(params: CompleteLocalDispatchParams)
       .eq('operator_id', operatorId)
       .in('id', loadedPackageIds);
     if (packagesError) throw new DtAcceptedLocalFailedError(externalRouteId, packagesError);
+  } else {
+    console.warn('[dispatch/dispatch POST] loaded route has no en_carga/listo_para_despacho packages', {
+      routeId,
+    });
   }
 
   // The status change goes through the state machine, not a raw UPDATE — the

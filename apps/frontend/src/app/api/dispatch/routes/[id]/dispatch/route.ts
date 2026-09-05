@@ -5,10 +5,13 @@ import { createDTRoute } from '@/lib/dispatchtrack-api';
 import {
   buildDtDispatches,
   findMissingOrderNumbers,
-  loadedPackageIds,
   type DispatchRow,
 } from '@/lib/dispatch/dispatch-dt-payload';
-import { completeLocalDispatch, DtAcceptedLocalFailedError } from '@/lib/dispatch/dispatch-local-completion';
+import {
+  completeLocalDispatch,
+  DtAcceptedLocalFailedError,
+  loadedPackageIds,
+} from '@/lib/dispatch/dispatch-local-completion';
 
 const bodySchema = z.object({
   truck_identifier: z.string().min(1),
@@ -71,6 +74,14 @@ export async function POST(
     // truck_identifier is the vehicle's external_vehicle_id (what the <select>
     // in RoutePanel sends) — resolved here to the fleet_vehicles row so
     // routes.vehicle_id can hold a real foreign key.
+    //
+    // spec-79 H5b (out of scope for this review pass, left as a marker): this
+    // doesn't destructure `error`, and filters only by operator_id though the
+    // real uniqueness constraint is (operator_id, provider,
+    // external_vehicle_id) — two providers can share an external_vehicle_id
+    // for the same operator. With two matching rows, maybeSingle() errors,
+    // `data` comes back null, and this reports VEHICLE_NOT_FOUND for a truck
+    // that exists; any transient DB failure produces the same 422.
     const { data: vehicle } = await supabase
       .from('fleet_vehicles')
       .select('id')
@@ -92,7 +103,17 @@ export async function POST(
       .eq('route_id', routeId)
       .eq('operator_id', operatorId)
       .is('deleted_at', null);
-    if (dErr) throw dErr;
+    // spec-79 review finding 3: a failed query here must not fall into the
+    // outer catch, which reports every error as DT_API_ERROR (a DispatchTrack
+    // rejection) — DT hasn't been called yet at this point. Mirrors the
+    // routes lookup above.
+    if (dErr) {
+      console.error('[dispatch/dispatch POST] dispatches lookup failed', dErr);
+      return NextResponse.json(
+        { code: 'QUERY_FAILED', message: 'No se pudo verificar los despachos' },
+        { status: 500 },
+      );
+    }
     if (!dispatches?.length) {
       return NextResponse.json({ code: 'EMPTY_ROUTE' }, { status: 422 });
     }
@@ -104,6 +125,19 @@ export async function POST(
     // DT has no idempotency key (spec-79 phase 0, finding 1), so calling it
     // again here would create a second route in DispatchTrack. Skip straight
     // to finishing the local work that failed last time.
+    //
+    // spec-79 review finding 4 (open gap, deliberately not closed here): this
+    // guard is a READ acted on further down with nothing claiming the route
+    // in between. It makes a SEQUENTIAL retry safe (DT already confirmed, so
+    // a second attempt sees external_route_id set) but does nothing against
+    // two CONCURRENT POSTs — a double-tap on the crew tablet, or a client
+    // retry racing a slow DT call. Both requests can read external_route_id
+    // as null and both call createDTRoute, creating two routes at DT. Closing
+    // this needs a conditional claim (e.g. `UPDATE routes SET
+    // dispatch_attempt_at = now() WHERE id = ? AND operator_id = ? AND
+    // dispatch_attempt_at IS NULL`, refusing when no row comes back) — see
+    // spec-79 Phase 4 for the proposed fix. Neither this phase nor Phase 4's
+    // GET pre-check closes it.
     let externalRouteId: string;
     if (route.external_route_id) {
       externalRouteId = route.external_route_id;
@@ -126,8 +160,19 @@ export async function POST(
       // handler used to read DT_API_KEY, which nothing sets anywhere. The
       // old name stays as a fallback in case a deployed environment still
       // carries it.
+      //
+      // spec-79 review finding 3: a missing token is a server
+      // misconfiguration, not a DispatchTrack rejection — `throw` here used
+      // to fall into the outer catch and report DT_API_ERROR though DT was
+      // never called. Mirrors the routes/dispatches lookups above.
       const apiToken = process.env.DISPATCHTRACK_API_KEY || process.env.DT_API_KEY;
-      if (!apiToken) throw new Error('DISPATCHTRACK_API_KEY not configured');
+      if (!apiToken) {
+        console.error('[dispatch/dispatch POST] DISPATCHTRACK_API_KEY not configured');
+        return NextResponse.json(
+          { code: 'QUERY_FAILED', message: 'DispatchTrack no está configurado' },
+          { status: 500 },
+        );
+      }
 
       // Call DT API — if this throws, nothing local has changed yet.
       const created = await createDTRoute({
@@ -142,6 +187,7 @@ export async function POST(
     // DT has confirmed this route — now or on a previous attempt. Every
     // error from here on means "DT accepted, our record of it is
     // incomplete", never "DT rejected" — see the catch block below.
+    const loadedIds = loadedPackageIds(dispatchRows);
     try {
       await completeLocalDispatch({
         supabase,
@@ -152,7 +198,7 @@ export async function POST(
         vehicleId: vehicle.id,
         driverIdentifier: parsed.data.driver_identifier ?? null,
         loadPositionId: route.load_position_id,
-        loadedPackageIds: loadedPackageIds(dispatchRows),
+        loadedPackageIds: loadedIds,
         dispatchCount: dispatchRows.length,
         truckIdentifier: parsed.data.truck_identifier,
       });
@@ -171,8 +217,12 @@ export async function POST(
       throw localErr;
     }
 
+    // spec-79 review finding 9: no consumer of this field was found outside
+    // this handler's own test — dispatchRows.length was stops/orders, not
+    // bultos. loadedPackageIds is the count of boxes actually written to
+    // en_ruta above, which is what "packages_dispatched" claims to mean.
     return NextResponse.json(
-      { ok: true, external_route_id: externalRouteId, packages_dispatched: dispatchRows.length },
+      { ok: true, external_route_id: externalRouteId, packages_dispatched: loadedIds.length },
       { status: 200 },
     );
   } catch (err) {
@@ -209,6 +259,13 @@ export async function POST(
  * the route is reconcilable against DT even though our local record of it
  * is incomplete. Best-effort — a failure here must not turn a
  * DT_ACCEPTED_LOCAL_FAILED response into an unhandled 500.
+ *
+ * spec-79 review finding 2: supabase-js RESOLVES `{data, error}` on a DB
+ * rejection, it does not reject the promise — a try/catch around the
+ * `.insert()` alone never sees an RLS violation, constraint failure, or
+ * timeout. This row is the only local trace of a route that exists at
+ * DispatchTrack, so its own error must be checked and logged, not just
+ * whatever the call throws.
  */
 async function logAcceptedLocalFailed(
   supabase: Awaited<ReturnType<typeof createSSRClient>>,
@@ -218,7 +275,7 @@ async function logAcceptedLocalFailed(
   err: DtAcceptedLocalFailedError,
 ): Promise<void> {
   try {
-    await supabase.from('audit_logs').insert({
+    const { error: insertError } = await supabase.from('audit_logs').insert({
       operator_id: operatorId,
       user_id: userId,
       action: 'dispatch_accepted_local_failed',
@@ -230,6 +287,12 @@ async function logAcceptedLocalFailed(
       },
       ip_address: 'unknown',
     });
+    if (insertError) {
+      console.error('[dispatch/dispatch POST] dispatch_accepted_local_failed audit insert failed', {
+        externalRouteId: err.externalRouteId,
+        insertError,
+      });
+    }
   } catch (auditErr) {
     console.error('[dispatch/dispatch POST] dispatch_accepted_local_failed audit insert threw', auditErr);
   }
