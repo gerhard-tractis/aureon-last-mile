@@ -46,6 +46,15 @@ function buildClient(opts: {
    * packages lookup, distinguished below from the adopted-completeness
    * query by the absence of a `status` filter (that query always has one). */
   splitPackages?: { id: string; order_id: string; status: string; loaded_at: string | null; load_inferred: boolean }[];
+  /** spec-77 review (HIGH) — the seal's OWN final lookup: dispatches with
+   * `stage IN ('staged','adopted','force_split')`, whose order_ids drive the
+   * `packages` -> `listo_para_despacho` advance and `orders_closed`. Kept
+   * distinct from `pendingRows` (which stands in for the OTHER
+   * `dispatches` select, `stage IN ('planned','partially_staged')`) so a
+   * test can prove the two queries are genuinely independent — before this,
+   * the mock answered both with the same array, so a mutant that dropped
+   * `force_split` from the real `.in(...)` filter went undetected. */
+  sealedRows?: { order_id: string }[];
   adoptedError?: { message: string };
   outstandingError?: { message: string };
   releaseError?: { message: string };
@@ -57,6 +66,7 @@ function buildClient(opts: {
     adoptedRows = [],
     outstandingPackages = [],
     splitPackages = [],
+    sealedRows = [],
     adoptedError,
     outstandingError,
     releaseError,
@@ -89,15 +99,27 @@ function buildClient(opts: {
           result = { data: null, error: releaseError ?? null };
         } else {
           const isAdoptedQuery = op.filters.some(([c, v]) => c === 'stage' && v === 'adopted');
+          // The seal's own final lookup is the ONLY one that filters on the
+          // 3-value stage set including 'force_split' — distinguishing it
+          // from resolvePendingStops' 2-value ('planned'/'partially_staged')
+          // set is what lets this mock (and the tests below) tell the two
+          // real, independently-behaving queries apart.
+          const isSealedRowsQuery = op.filters.some(
+            ([c, v]) => c === 'stage' && Array.isArray(v) && (v as string[]).includes('force_split'),
+          );
           result = isAdoptedQuery
             ? { data: adoptedError ? null : adoptedRows, error: adoptedError ?? null }
-            : { data: pendingRows, error: null };
+            : isSealedRowsQuery
+              ? { data: sealedRows, error: null }
+              : { data: pendingRows, error: null };
         }
       } else if (table === 'packages' && op.kind !== 'update') {
         const isAdoptedCompletenessQuery = op.filters.some(([c]) => c === 'status');
         result = isAdoptedCompletenessQuery
           ? (outstandingError ? { data: null, error: outstandingError } : { data: outstandingPackages, error: null })
           : { data: splitPackages, error: null };
+      } else if (table === 'packages' && op.kind === 'update') {
+        result = { data: null, error: null };
       }
       return Promise.resolve(result).then(res, rej);
     };
@@ -374,6 +396,10 @@ describe('sealRoute — force path (spec-77)', () => {
         { id: 'p1', order_id: 'o1', status: 'en_carga', loaded_at: '2026-09-05T10:00:00Z', load_inferred: false },
         { id: 'p2', order_id: 'o1', status: 'sectorizado', loaded_at: null, load_inferred: false },
       ],
+      // The split row's own dispatch becomes `force_split` (force-seal-split.ts's
+      // job), so it is exactly what the seal's OWN final lookup — the one
+      // widened to `stage IN (..., 'force_split')` — must find.
+      sealedRows: [{ order_id: 'o1' }],
     });
 
     const result = await sealRoute(client, {
@@ -392,6 +418,10 @@ describe('sealRoute — force path (spec-77)', () => {
         split_count: 1,
         split_order_ids: ['o1'],
       });
+      // spec-77 phase 1b test 3 (was missing — HIGH review finding). The
+      // split order's own loaded packages must reach the seal's final
+      // advance, proven by orders_closed actually counting it.
+      expect(result.orders_closed).toBe(1);
     }
 
     const dispatchUpdate = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
@@ -402,7 +432,50 @@ describe('sealRoute — force path (spec-77)', () => {
     expect((audit?.payload?.changes_json as Record<string, unknown>)?.split_count).toBe(1);
     expect((audit?.payload?.changes_json as Record<string, unknown>)?.split_order_ids).toEqual(['o1']);
 
+    // spec-77 phase 1b test 3 (was missing). The `packages` write that
+    // actually advances the split order's loaded packages must have run,
+    // scoped to `en_carga` and the sealed order id — never a blanket update.
+    const pkgUpdate = ops.find((o) => o.table === 'packages' && o.kind === 'update');
+    expect(pkgUpdate?.payload).toEqual({ status: 'listo_para_despacho' });
+    expect(pkgUpdate?.filters).toContainEqual(['operator_id', 'op-1']);
+    expect(pkgUpdate?.filters).toContainEqual(['status', 'en_carga']);
+    expect(pkgUpdate?.filters).toContainEqual(['order_id', ['o1']]);
+
     expect(rpc).toHaveBeenCalledWith('transition_route_status', expect.objectContaining({ p_to_status: 'loaded' }));
+  });
+
+  /**
+   * spec-77 review (HIGH) — mutation kill for `seal-route.ts`'s own
+   * `.in('stage', ['staged', 'adopted', 'force_split'])` filter. The
+   * reviewer proved changing it to `['staged', 'adopted']` left 40/40 tests
+   * passing; this asserts the filter's exact shape AND (via `sealedRows`,
+   * which the mock only returns for a filter containing 'force_split') that
+   * a `force_split`-only route still advances its packages and reports the
+   * closed order — a mutant dropping the value fails both assertions.
+   */
+  it('the final seal lookup queries staged/adopted/force_split, not a narrower set', async () => {
+    const { client, ops } = buildClient({
+      counts: { total_stops: 1, pending_stops: 0, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },
+      sealedRows: [{ order_id: 'o-split-only' }],
+    });
+
+    const result = await sealRoute(client, { routeId: 'route-1', operatorId: 'op-1' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && !result.already_sealed) {
+      expect(result.orders_closed).toBe(1);
+    }
+
+    const sealedLookup = ops.find(
+      (o) =>
+        o.table === 'dispatches' &&
+        o.kind === 'select' &&
+        o.filters.some(([c, v]) => c === 'stage' && Array.isArray(v) && (v as string[]).includes('force_split')),
+    );
+    expect(sealedLookup?.filters).toContainEqual(['stage', ['staged', 'adopted', 'force_split']]);
+
+    const pkgUpdate = ops.find((o) => o.table === 'packages' && o.kind === 'update');
+    expect(pkgUpdate?.filters).toContainEqual(['order_id', ['o-split-only']]);
   });
 
   /** A mixed force call — one untouched stop released, one mixed stop split
