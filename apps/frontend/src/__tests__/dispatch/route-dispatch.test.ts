@@ -341,13 +341,17 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       .mockResolvedValueOnce(primaryClient)
       .mockResolvedValueOnce(errorClient);
 
+    // spec-79 H1 (review round 7): a plain Error (not DTRejectedError) is
+    // an AMBIGUOUS outcome — DT_OUTCOME_UNKNOWN, not DT_API_ERROR. See the
+    // dedicated H1 tests below for the code split itself; this test only
+    // cares that no local write is attempted either way.
     (createDTRoute as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Permission denied'));
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.code).toBe('DT_API_ERROR');
+    expect(body.code).toBe('DT_OUTCOME_UNKNOWN');
     expect(body.message).toBe('Permission denied');
 
     expect(packageUpdateSpy).not.toHaveBeenCalled();
@@ -394,6 +398,11 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
 
     expect(res.status).toBe(502);
     expect(releaseUpdateSpy).toHaveBeenCalledWith({ dispatch_attempt_at: null });
+    // spec-79 H1 (review round 7): only a DEFINITE rejection answers
+    // DT_API_ERROR — the code the crew screen reads as "DT said no, safe
+    // to retry" (dispatch-review.ts).
+    const body = await res.json();
+    expect(body.code).toBe('DT_API_ERROR');
   });
 
   it('H-1: a plain Error from DT (e.g. network failure/timeout, outcome unknown) does NOT release the claim', async () => {
@@ -433,9 +442,15 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(auditInsertSpy).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'dispatch_failed', changes_json: expect.objectContaining({ definitely_rejected: false }) }),
     );
+    // spec-79 H1 (review round 7): an ambiguous throw must NOT answer
+    // DT_API_ERROR — "DispatchTrack rechazó el despacho. No se creó nada."
+    // is false here; DT may have accepted the route. dispatch-review.ts
+    // maps this new code to a "verify" action, never a plain retry.
+    const body = await res.json();
+    expect(body.code).toBe('DT_OUTCOME_UNKNOWN');
   });
 
-  it('returns 200 and external_route_id on success', async () => {
+  it('returns 200 and external_route_id on success, AND releases the dispatch claim (spec-79 M2, review round 7)', async () => {
     const routeUpdateChain = {
       update: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({
@@ -448,6 +463,17 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       then: vi.fn((resolve: () => null) => resolve()),
     });
     const auditLogsChain = { insert: auditInsertSpy };
+    // spec-79 M2 (review round 7): the success path used to return directly
+    // instead of going through `respond`, so `dispatch_attempt_at` was NEVER
+    // released on a successful dispatch — releaseDispatchClaim's own header
+    // documents this as its invariant ("on any terminal path that did NOT
+    // leave DispatchTrack in an unknown state"), and success is the
+    // clearest such path there is.
+    const releaseEqTokenMock = vi.fn().mockResolvedValue({ error: null });
+    const releaseEqOperatorMock = vi.fn().mockReturnValue({ eq: releaseEqTokenMock });
+    const releaseEqIdMock = vi.fn().mockReturnValue({ eq: releaseEqOperatorMock });
+    const releaseUpdateMock = vi.fn().mockReturnValue({ eq: releaseEqIdMock });
+    const releaseChain = { update: releaseUpdateMock };
 
     // createDTRoute's external_route_id is always a string (dispatchtrack-api.ts
     // wraps it in String(routeId)) — never a number.
@@ -468,7 +494,8 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
       }]))
       .mockReturnValueOnce(routeUpdateChain)   // persist external_route_id/vehicle/driver
       .mockReturnValueOnce(packagesUpdateChain) // en_ruta write
-      .mockReturnValueOnce(auditLogsChain);    // dispatch_route audit
+      .mockReturnValueOnce(auditLogsChain)     // dispatch_route audit
+      .mockReturnValueOnce(releaseChain);      // dispatch claim release
 
     const rpcMock = vi.fn().mockResolvedValue({ data: 'dispatched', error: null });
     const client = buildSessionClient({ fromMock: successFromMock, rpcMock });
@@ -494,6 +521,9 @@ describe('POST /routes/[id]/dispatch — DT failure', () => {
     expect(routeUpdateChain.update).toHaveBeenCalledWith(
       expect.objectContaining({ external_route_id: '99999', vehicle_id: 'fv-1', driver_name: null }),
     );
+
+    expect(releaseUpdateMock).toHaveBeenCalledWith({ dispatch_attempt_at: null });
+    expect(successFromMock).toHaveBeenCalledTimes(8);
   });
 
   it('returns 409 when route status is not loaded', async () => {
@@ -1095,7 +1125,10 @@ describe('POST /routes/[id]/dispatch — H2 persist-first and failure classifica
     (createSSRClient as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(buildSessionClient({ fromMock }))
       .mockResolvedValueOnce(errorClient);
-    (createDTRoute as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('DT rejected the request'));
+    // spec-79 H1 (review round 7): must be a DEFINITE DTRejectedError to
+    // legitimately answer DT_API_ERROR — a plain Error is ambiguous and
+    // gets DT_OUTCOME_UNKNOWN instead (see the H-1 tests above).
+    (createDTRoute as ReturnType<typeof vi.fn>).mockRejectedValue(new DTRejectedError('DT rejected the request'));
 
     const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
 

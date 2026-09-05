@@ -137,6 +137,19 @@ export function dispatchErrorCopy(code: string | null | undefined, message?: str
         'Reintentar',
         true,
       );
+    case 'DT_OUTCOME_UNKNOWN':
+      // 502 — spec-79 H1 (review round 7): the outer catch reached here on a
+      // throw that is NOT a definite DT rejection (network failure/timeout
+      // before any response, an unparsable body). DT may have received and
+      // accepted the route; we simply never found out. Must not read as "DT
+      // rejected" (that's DT_API_ERROR, below) — a retry here could send a
+      // duplicate route to a DT that already has one.
+      return errorInfo(
+        'No se pudo confirmar si DispatchTrack recibió la ruta. No reintentes sin verificar.',
+        'No sabemos si DispatchTrack alcanzó a recibir la ruta — no llegó una respuesta que lo confirme o la niegue.',
+        'verify',
+        'Verificar',
+      );
     case 'DT_ACCEPTED_LOCAL_FAILED':
       // 502, DT accepted and the local write failed — decision 6's second
       // state. Never "Reintentar": a retry that skips straight to

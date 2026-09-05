@@ -32,12 +32,22 @@
 --
 -- Decision: withdraw the index outright and keep ONLY the pre-existing
 -- application-level check in `PATCH /api/dispatch/routes/[id]` (its
--- `busyRoutes` lookup) — which is unaffected by this migration; it was
--- never scoped to prevent legitimate same-day multi-route assignment via
--- the dispatch flow itself, only via that one endpoint's own read-then-write
--- window, and is not touched here. `dispatch-local-completion.ts`'s persist
--- write no longer has anything in the database that can reject it on this
--- axis, so the retry-storm above cannot recur through this path.
+-- `busyRoutes` lookup) — which is unaffected by THIS migration.
+--
+-- Correction (spec-79 H6, review round 7): the paragraph above used to claim
+-- `busyRoutes` "was never scoped to prevent legitimate same-day multi-route
+-- assignment via the dispatch flow itself" — that was FALSE. `PATCH
+-- /api/dispatch/routes/[id]` is the ONLY assignment endpoint, so its
+-- `busyRoutes` guard IS "the dispatch flow itself." It filtered by
+-- `ACTIVE_ROUTE_STATUSES` (same set this index's WHERE clause used, the
+-- very thing this migration exists to withdraw) and so reproduced the exact
+-- bug this migration describes ABOVE, one layer up: assigning a truck to
+-- its afternoon route 409'd against its own already-dispatched morning
+-- route. Fixed separately (not in this migration — no schema change needed)
+-- by scoping `busyRoutes` to `OPEN_ROUTE_STATUSES` instead — see that file's
+-- own H6 comment. `dispatch-local-completion.ts`'s persist write no longer
+-- has anything in the database that can reject it on this axis, so the
+-- retry-storm above cannot recur through this path.
 --
 -- `PATCH`'s own 23505 branch (mapped to VEHICLE_ALREADY_ASSIGNED_TODAY) is
 -- removed in the same change that ships this migration — see that file's

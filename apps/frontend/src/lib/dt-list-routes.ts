@@ -1,4 +1,9 @@
-import { dtBaseUrl, DT_FETCH_TIMEOUT_MS } from '@/lib/dispatchtrack-api';
+// spec-79 M1 (review round 7): imported from the leaf config module, NOT
+// from '@/lib/dispatchtrack-api' — that file re-exports `findExistingDTRoute`
+// FROM this one, so importing back from it here would be the circular import
+// this fix exists to avoid. See dispatchtrack-config.ts's own header.
+import { dtBaseUrl, DT_FETCH_TIMEOUT_MS } from '@/lib/dispatchtrack-config';
+import { DISPATCH_CLAIM_STALE_MS } from '@/lib/dispatch/dispatch-retry-claim';
 
 export type DTRouteMatch =
   | { status: 'not_found' }
@@ -14,6 +19,41 @@ const LIST_ROUTES_PAGE_LIMIT = 20;
 // page that never shrinks below the limit this many times in a row, refuse
 // rather than loop forever or silently give up and read as "not found".
 const LIST_ROUTES_MAX_PAGES = 25;
+
+/**
+ * spec-79 B-2 (review round 7): H-1.3's argument for `DT_FETCH_TIMEOUT_MS`
+ * bounding a SINGLE fetch used to be enough to justify `DISPATCH_CLAIM_
+ * STALE_MS` — "each DT call is bounded at 30s, comfortably under the claim's
+ * 2-minute window". That stopped being true the moment one fetch became a
+ * serial loop of up to `LIST_ROUTES_MAX_PAGES` (25) — worst case 750s, six
+ * times the claim window, and just 5 slow pages (150s) already exceeds it.
+ * Two POSTs can then both stale-reclaim, both see `not_found`, and both call
+ * `createDTRoute` — two routes at DispatchTrack for one manifest.
+ *
+ * The fix bounds the WHOLE WALK with a single shared deadline, not each
+ * fetch individually: `walkDeadline` is computed once before the loop, and
+ * every page's own `AbortSignal.timeout` is capped to whatever remains of
+ * it. Budget left deliberately generous below `DISPATCH_CLAIM_STALE_MS` —
+ * `createDTRoute` still has to run afterward on a `not_found` result (also
+ * `DT_FETCH_TIMEOUT_MS`-bounded), plus this handler's own DB writes. The
+ * assertion right below makes that margin explicit and CHECKED, not just
+ * documented, so a future change to either constant cannot silently reopen
+ * B-2 — see this module's own file-level assertion.
+ */
+export const LIST_ROUTES_WALK_BUDGET_MS = 60_000;
+
+// Checked relationship, not merely a comment: the walk budget plus one
+// subsequent createDTRoute call must stay comfortably under the claim's
+// staleness window, with margin left over for the handler's own local DB
+// writes — or the entire premise of bounding page fetches by a shared
+// deadline (instead of trusting DISPATCH_CLAIM_STALE_MS to outlive an
+// unbounded serial loop) is gone. Throws at import time, not silently.
+if (LIST_ROUTES_WALK_BUDGET_MS + DT_FETCH_TIMEOUT_MS >= DISPATCH_CLAIM_STALE_MS) {
+  throw new Error(
+    'dt-list-routes: LIST_ROUTES_WALK_BUDGET_MS + DT_FETCH_TIMEOUT_MS must stay under DISPATCH_CLAIM_STALE_MS '
+      + '(spec-79 B-2, review round 7) — a future change to one of these three constants broke that relationship.',
+  );
+}
 
 /**
  * spec-79 Fase 0 finding 3 / Fase 4: `GET /api/external/v1/routes?date=`
@@ -33,20 +73,31 @@ const LIST_ROUTES_MAX_PAGES = 25;
  * exhausted search (more pages than that) REFUSES (throws), it does not fall
  * back to "not found" — Fase 0's own words, "a pre-check that fails open is
  * worse than none," apply just as much to an exhausted search as to a
- * network error.
+ * network error. spec-79 B-2 (review round 7): the walk as a whole is ALSO
+ * bounded by a single shared deadline (`LIST_ROUTES_WALK_BUDGET_MS`, see
+ * this module's own top-level comment) — a per-page `DT_FETCH_TIMEOUT_MS`
+ * alone let a slow-but-not-hung series of pages outlive
+ * `DISPATCH_CLAIM_STALE_MS`.
  *
- * spec-79 B-3 (review round 6): a route is only ever considered a match when
- * it contains EVERY one of our guide identifiers (a superset, not merely an
- * intersection) — this identifies a specific ROUTE, not one of its orders.
- * `force_split` (spec-77 1b) deliberately lets one order hold live dispatches
- * on two routes at once, so the same guide identifier can legitimately
- * appear on an unrelated DT route that is not a duplicate of the one being
- * recovered; matching on "any shared identifier" aliased that unrelated
- * route's id onto ours. A DT route that only carries SOME of our
- * identifiers is not a candidate at all — it says nothing about whether OUR
- * route was already created. `ambiguous` now means "more than one DT route
- * fully contains our manifest," which should be near-impossible outside of
- * DT itself double-creating on its own end — still refused, never guessed.
+ * spec-79 B-3 (review round 6) / B-1 (review round 7): a route is only ever
+ * considered a match when its set of guide identifiers is EXACTLY EQUAL to
+ * ours — mutual containment, not containment in either direction alone —
+ * this identifies a specific ROUTE, not one of its orders. `force_split`
+ * (spec-77 1b) deliberately lets one order hold live dispatches on two
+ * routes at once, so the same guide identifier can legitimately appear on
+ * an unrelated DT route that is not a duplicate of the one being recovered.
+ * Round 6 fixed the "any shared identifier" direction (a DT route carrying
+ * only SOME of our identifiers) but left the opposite direction open: a DT
+ * route carrying ALL of ours PLUS more (ours a subset of theirs) was still
+ * accepted as `found` — and that is exactly the shape `force_split`
+ * produces in practice, since the route being recovered is typically the
+ * small remainder and the already-dispatched sibling is the larger route
+ * that happens to superset it. Neither direction of pure containment is
+ * safe; only equality identifies the SAME route rather than a route that
+ * merely overlaps ours. `ambiguous` now means "more than one DT route has a
+ * guide-identifier set exactly equal to ours," which should be
+ * near-impossible outside of DT itself double-creating on its own end —
+ * still refused, never guessed.
  *
  * Matched by GUIDE identifier (`dispatches[].identifier`, the same value
  * `buildDtDispatches` sends as `identifier`), never by truck+date — a truck
@@ -59,9 +110,9 @@ const LIST_ROUTES_MAX_PAGES = 25;
  * duplicate" — failing open in the one check that must not).
  *
  * Throws (never returns a false "not_found") on a non-ok response, a network
- * failure, an unrecognisable body shape, or an exhausted search — the
- * caller must treat a failed pre-check as unable to confirm safety, not as
- * permission to create.
+ * failure, an unrecognisable body shape, an exhausted search, or an
+ * exhausted walk budget — the caller must treat a failed pre-check as
+ * unable to confirm safety, not as permission to create.
  */
 export async function findExistingDTRoute(
   params: { routeDate: string; identifiers: Array<string | number> },
@@ -72,13 +123,28 @@ export async function findExistingDTRoute(
   type DTListedRoute = { id?: unknown; dispatches?: Array<{ identifier?: unknown }> };
   const allRoutes: DTListedRoute[] = [];
 
+  // spec-79 B-2 (review round 7): one shared deadline for the ENTIRE walk,
+  // not a fresh `DT_FETCH_TIMEOUT_MS` per page — see this module's own
+  // header for why a per-page timeout alone let the walk outlive
+  // `DISPATCH_CLAIM_STALE_MS`.
+  const walkDeadline = Date.now() + LIST_ROUTES_WALK_BUDGET_MS;
+
   for (let page = 1; page <= LIST_ROUTES_MAX_PAGES; page += 1) {
+    const remainingMs = walkDeadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error(
+        `DT list routes exceeded its ${LIST_ROUTES_WALK_BUDGET_MS}ms shared walk budget (page ${page}) — refusing to guess`,
+      );
+    }
     let response: Response;
     try {
       response = await fetch(
         `${dtBaseUrl()}/api/external/v1/routes?date=${encodeURIComponent(params.routeDate)}`
           + `&page=${page}&limit=${LIST_ROUTES_PAGE_LIMIT}`,
-        { headers: { 'X-AUTH-TOKEN': apiToken }, signal: AbortSignal.timeout(DT_FETCH_TIMEOUT_MS) },
+        // Each individual fetch is still capped at DT_FETCH_TIMEOUT_MS (a
+        // single stuck request must not hang forever either), but never for
+        // longer than what remains of the shared walk budget.
+        { headers: { 'X-AUTH-TOKEN': apiToken }, signal: AbortSignal.timeout(Math.min(DT_FETCH_TIMEOUT_MS, remainingMs)) },
       );
     } catch (networkErr) {
       throw new Error(`DT list routes call failed before a response arrived (page ${page}): ${String(networkErr)}`);
@@ -117,10 +183,13 @@ export async function findExistingDTRoute(
   for (const r of allRoutes) {
     const dispatches = Array.isArray(r?.dispatches) ? r.dispatches : [];
     const routeIdentifiers = new Set(dispatches.map((d) => String(d?.identifier)));
-    // B-3: a candidate must carry EVERY one of our identifiers, not merely
-    // one — see this function's own header.
-    const isFullMatch = [...identifierSet].every((id) => routeIdentifiers.has(id));
-    if (isFullMatch && r?.id !== undefined && r?.id !== null) {
+    // B-1 (round 7): a candidate must carry EXACTLY our set of identifiers —
+    // same size, mutual containment — not merely a superset or a subset.
+    // See this function's own header.
+    const isExactMatch =
+      routeIdentifiers.size === identifierSet.size
+      && [...identifierSet].every((id) => routeIdentifiers.has(id));
+    if (isExactMatch && r?.id !== undefined && r?.id !== null) {
       matchedRouteIds.add(String(r.id));
     }
   }

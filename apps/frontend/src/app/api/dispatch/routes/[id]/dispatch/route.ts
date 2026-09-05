@@ -13,6 +13,7 @@ import { isConfirmedExternalRouteId } from '@/lib/dispatch/dispatch-external-rou
 import { claimDispatchAttempt, releaseDispatchClaim } from '@/lib/dispatch/dispatch-retry-claim';
 import { resolveExternalRouteIdForDispatch } from '@/lib/dispatch/dispatch-resolve-external-route-id';
 import { handleDispatchOuterCatch } from '@/lib/dispatch/dispatch-dt-failure';
+import { DTRejectedError } from '@/lib/dispatchtrack-api';
 
 const bodySchema = z.object({
   truck_identifier: z.string().min(1),
@@ -260,9 +261,17 @@ export async function POST(
     // route carrying 40 boxes. `alreadyDispatchedPackageCount` adds those
     // already-written boxes so the total is honest on every path.
     const dispatchedCount = alreadyDispatchedPackageCount(dispatchRows, routeId) + writtenCount;
-    return NextResponse.json(
+    // spec-79 M2 (review round 7): this used to return `NextResponse.json`
+    // directly instead of going through `respond`, so `dispatch_attempt_at`
+    // was never released on the one path that matters most — every
+    // successfully dispatched route left its claim set FOREVER, breaking
+    // this module's own documented invariant (releaseDispatchClaim's own
+    // header: "on any terminal path that did NOT leave DispatchTrack in an
+    // unknown state"). Success is exactly that: a definite, known-good
+    // terminal state.
+    return respond(
       { ok: true, external_route_id: externalRouteId, packages_dispatched: dispatchedCount },
-      { status: 200 },
+      200,
     );
   } catch (err) {
     // spec-79 H-1: only a DEFINITE DT rejection (DTRejectedError) is safe to
@@ -272,6 +281,17 @@ export async function POST(
 
     console.error('[dispatch/dispatch POST]', err);
     const message = err instanceof Error ? err.message : 'DT API error';
-    return NextResponse.json({ code: 'DT_API_ERROR', message }, { status: 502 });
+    // spec-79 H1 (review round 7): this used to answer DT_API_ERROR —
+    // "DispatchTrack rechazó el despacho. No se creó nada." — for EVERY
+    // throw reaching here, including the ambiguous ones a bare fetch can
+    // produce (30s abort, network failure before any response, an
+    // unparsable body). Those are not a rejection: DT may have received and
+    // accepted the route and we simply never found out. Only a definite
+    // DTRejectedError — DT answered with an explicit HTTP error — is safe
+    // to report as a rejection the crew can retry without risk. Everything
+    // else gets its own code so `2k` (dispatch-review.ts) can say "we don't
+    // know" instead of a false "DT said no" that invites a duplicate.
+    const code = err instanceof DTRejectedError ? 'DT_API_ERROR' : 'DT_OUTCOME_UNKNOWN';
+    return NextResponse.json({ code, message }, { status: 502 });
   }
 }

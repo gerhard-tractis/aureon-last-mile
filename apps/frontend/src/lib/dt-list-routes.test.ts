@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { findExistingDTRoute } from './dt-list-routes';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { findExistingDTRoute, LIST_ROUTES_WALK_BUDGET_MS } from './dt-list-routes';
+import { DISPATCH_CLAIM_STALE_MS } from '@/lib/dispatch/dispatch-retry-claim';
+import { DT_FETCH_TIMEOUT_MS } from '@/lib/dispatchtrack-api';
 
 const mockFetch = vi.fn();
 beforeEach(() => {
@@ -34,6 +36,21 @@ describe('findExistingDTRoute', () => {
     });
     await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'my-token');
     expect(mockFetch.mock.calls[0][1]).toMatchObject({ headers: { 'X-AUTH-TOKEN': 'my-token' } });
+  });
+
+  /**
+   * spec-79 H3 (review round 6, still surviving at round 7): removing
+   * `signal: AbortSignal.timeout(...)` from this fetch left every existing
+   * test passing.
+   */
+  it('bounds every page fetch with an AbortSignal (H3)', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'ok', response: { routes: [] } }),
+    });
+    await findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token');
+    const options = mockFetch.mock.calls[0][1];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('returns not_found when no route in the response carries any of our guide identifiers', async () => {
@@ -106,7 +123,7 @@ describe('findExistingDTRoute', () => {
     expect(result).toEqual({ status: 'not_found' });
   });
 
-  it('returns ambiguous when more than one DT route fully contains our guide identifiers', async () => {
+  it('returns ambiguous when more than one DT route has a guide-identifier set exactly equal to ours', async () => {
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -114,7 +131,7 @@ describe('findExistingDTRoute', () => {
         response: {
           routes: [
             { id: 111, dispatches: [{ identifier: '4821' }, { identifier: '4822' }] },
-            { id: 222, dispatches: [{ identifier: '4821' }, { identifier: '4822' }, { identifier: '4823' }] },
+            { id: 222, dispatches: [{ identifier: '4821' }, { identifier: '4822' }] },
           ],
         },
       }),
@@ -124,6 +141,40 @@ describe('findExistingDTRoute', () => {
       'token',
     );
     expect(result).toEqual({ status: 'ambiguous' });
+  });
+
+  /**
+   * spec-79 B-1 (review round 7): round 6's B-3 fix required a DT route to
+   * carry every one of our identifiers, but never checked the OPPOSITE
+   * direction — a DT route carrying ALL of ours PLUS more (ours a subset of
+   * theirs) was still accepted as `found`. That is exactly the shape
+   * `force_split` produces in practice: the route being recovered (B) is
+   * the small remainder, and the already-dispatched sibling (A) is the
+   * LARGER route that happens to superset it. Aliasing A's external_route_id
+   * onto B means B's manifest never reaches DispatchTrack.
+   */
+  it('does NOT match a DT route that carries all of our identifiers PLUS more (force_split: ours is the subset)', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: 'ok',
+        response: {
+          // Route A (already dispatched, DT id 88001): G-4471, G-5000, G-5001
+          routes: [
+            {
+              id: 88001,
+              dispatches: [{ identifier: 'G-4471' }, { identifier: 'G-5000' }, { identifier: 'G-5001' }],
+            },
+          ],
+        },
+      }),
+    });
+    // Route B (force_split remainder, recovering): G-4471 only.
+    const result = await findExistingDTRoute(
+      { routeDate: '2026-03-24', identifiers: ['G-4471'] },
+      'token',
+    );
+    expect(result).toEqual({ status: 'not_found' });
   });
 
   it('throws (never fails open) on a non-ok response — Fase 0 finding 3: a failed pre-check must not read as "no duplicate"', async () => {
@@ -178,5 +229,47 @@ describe('findExistingDTRoute', () => {
     await expect(
       findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token'),
     ).rejects.toThrow(/pages/);
+  });
+
+  /**
+   * spec-79 B-2 (review round 7): H-1.3's argument for the 2-minute claim
+   * window ("each DT call is bounded at 30s, comfortably shorter") stopped
+   * being true once one fetch became a serial loop of up to
+   * LIST_ROUTES_MAX_PAGES (25) — worst case 750s. The walk must be bounded
+   * by ONE shared deadline, not a fresh per-page timeout, so it cannot
+   * outlive DISPATCH_CLAIM_STALE_MS (120s) and let two POSTs both stale-
+   * reclaim and both call createDTRoute.
+   */
+  describe('B-2 (round 7): shared walk deadline, not a per-page timeout', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('the walk budget plus one createDTRoute call stays under DISPATCH_CLAIM_STALE_MS — checked, not just documented', () => {
+      expect(LIST_ROUTES_WALK_BUDGET_MS + DT_FETCH_TIMEOUT_MS).toBeLessThan(DISPATCH_CLAIM_STALE_MS);
+    });
+
+    it('refuses (throws) once elapsed wall-clock time exceeds the shared walk budget, even though each individual page is well under DT_FETCH_TIMEOUT_MS', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-03-24T10:00:00.000Z'));
+
+      const fullPage = Array.from({ length: 20 }, (_, i) => ({ id: i, dispatches: [{ identifier: `OTHER-${i}` }] }));
+      // Each page "fetch" resolves instantly but simulates elapsed time by
+      // advancing the system clock past the shared budget after page 1 —
+      // exactly what a slow (but individually sub-30s) DT response would do
+      // in production, without this test actually taking a minute.
+      mockFetch.mockImplementation(async () => {
+        vi.setSystemTime(new Date(Date.now() + LIST_ROUTES_WALK_BUDGET_MS + 1_000));
+        return { ok: true, json: async () => ({ status: 'ok', response: { routes: fullPage } }) };
+      });
+
+      await expect(
+        findExistingDTRoute({ routeDate: '2026-03-24', identifiers: ['4821'] }, 'token'),
+      ).rejects.toThrow(/budget/);
+      // Refuses after the SECOND page's deadline check — never reaches
+      // LIST_ROUTES_MAX_PAGES (25) pages, proving the bound is the shared
+      // deadline, not the page-count safety valve.
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
   });
 });
