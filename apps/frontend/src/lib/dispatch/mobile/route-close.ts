@@ -2,11 +2,32 @@
 //
 // spec-77 Fase 1 (UI) — `2i`, "Cerrar con faltantes". Pure row-shaping over
 // the same `RoutePackage[]` `useRouteScanSession`/`useRoutePackages` already
-// fetch — no new query. An order counts as "sin cargar" the same way
-// `PackageRow.tsx`/`seal-route.ts` already do: `boxesLoaded < boxesTotal`
-// (both already filtered to the seal's DISPATCHABLE_STATUSES upstream in
-// `useRoutePackages.ts`), never `dispatches.status`/`packages.status`
-// directly — this module never re-derives the load fact, only sums it.
+// fetch — no new query.
+//
+// B3 (adversarial review of `2i`) — an order counts as "sin cargar" by
+// `dispatches.stage`, the same fact the server's own pending definition
+// (`route_stop_counts.pending_stops + partially_staged_stops`, read by
+// `sealRoute`/`resolvePendingStops`) reduces to: `stage IN ('planned',
+// 'partially_staged')`. This module used to decide via `boxesLoaded <
+// boxesTotal` instead — a second, independent count that diverges from the
+// server's in both directions:
+//   - an order with a sibling bulto at `en_bodega` (not in
+//     DISPATCHABLE_STATUSES, so `useRoutePackages` never counts it into
+//     `boxesTotal` at all) can read "N of N" here while `dispatches.stage`
+//     is still `partially_staged` server-side — the screen said "nothing
+//     missing", took the direct-close path, and the server's `409
+//     UNSEALED_STOPS` fired into what was (B2) a silently discarded
+//     outcome.
+//   - an `adopted`/`force_split` order with no countable live package gets
+//     `boxesTotal` floored to 1 by `useRoutePackages` (so a non-`staged`
+//     order never reads "0 of 0") — read via `boxesLoaded < boxesTotal`
+//     that floor manufactured a phantom missing box for an order the
+//     server has already resolved and will never refuse over.
+// `stage` is a fact the server itself writes (`recompute_dispatch_stage`)
+// and `useRoutePackages` already returns unmodified on every `RoutePackage`
+// — reading it here needs no change to that hook (owned by a concurrent
+// branch right now), and removes this module's own copy of a rule that
+// only the server should define.
 import type { RoutePackage } from '@/lib/dispatch/types';
 import type { ForceSealReasonCode } from '@/lib/dispatch/force-seal-reasons';
 
@@ -17,18 +38,43 @@ export interface MissingOrder {
   missingCount: number;
 }
 
-/** decision 3 / item 3 & 8 — one row per order still short a box, with the
- * exact shortfall so the confirmation screen can both list it and sum the
- * total that drives `closeButtonLabel`. */
+const PENDING_STAGES: ReadonlySet<RoutePackage['stage']> = new Set(['planned', 'partially_staged']);
+
+/** decision 3 / item 3 & 8 — one row per order the server still considers
+ * pending, with a shortfall count so the confirmation screen can both list
+ * it and sum the total that drives `closeButtonLabel`. Floored at 1: a
+ * pending stage is itself proof at least one box is outstanding, even when
+ * the box-level arithmetic (which counts a narrower status set than
+ * `recompute_dispatch_stage` does) happens to read zero for this order —
+ * "0 sin cargar" on a row the sheet is about to force past would be a lie. */
 export function missingOrders(packages: readonly RoutePackage[]): MissingOrder[] {
   return packages
-    .filter((p) => p.boxesLoaded < p.boxesTotal)
+    .filter((p) => PENDING_STAGES.has(p.stage))
     .map((p) => ({
       orderId: p.order_id,
       orderNumber: p.order_number,
       contactName: p.contact_name,
-      missingCount: p.boxesTotal - p.boxesLoaded,
+      missingCount: Math.max(p.boxesTotal - p.boxesLoaded, 1),
     }));
+}
+
+/** MEDIUM (adversarial review) — grammatical singular/plural, and the dock
+ * phrase built once instead of interpolated inside a literal that already
+ * said "el andén" (which produced "el andén el andén" whenever the route
+ * has no load position). */
+export function missingBoxesLine(missingBoxCount: number, loadPositionLabel: string | null): string {
+  const dockPhrase = loadPositionLabel ? `el andén ${loadPositionLabel}` : 'el andén';
+  return missingBoxCount === 1
+    ? `El paquete se queda en ${dockPhrase} y hay que meterlo en otra ruta.`
+    : `Los ${missingBoxCount} paquetes se quedan en ${dockPhrase} y hay que meterlos en otra ruta.`;
+}
+
+/** MEDIUM (adversarial review) — same singular fix for the second
+ * consequence line. */
+export function loadedBoxesLine(packagesLoaded: number): string {
+  return packagesLoaded === 1
+    ? 'El paquete cargado pasa a listo para despacho.'
+    : `Los ${packagesLoaded} cargados pasan a listo para despacho.`;
 }
 
 /** decision 1 — the destructive action names the exact figure, never a bare

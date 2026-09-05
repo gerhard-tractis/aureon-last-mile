@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { useSealRoute } from '@/hooks/dispatch/mobile/useSealRoute';
-import { missingOrders, closeButtonLabel, paginateMissing, buildForceSealNote } from '@/lib/dispatch/mobile/route-close';
+import {
+  missingOrders,
+  closeButtonLabel,
+  paginateMissing,
+  buildForceSealNote,
+  missingBoxesLine,
+  loadedBoxesLine,
+} from '@/lib/dispatch/mobile/route-close';
+import { sealErrorCopy } from '@/lib/dispatch/mobile/seal-error-copy';
 import { FORCE_SEAL_REASON_CODES, type ForceSealReasonCode } from '@/lib/dispatch/force-seal-reasons';
 import { FORCE_SEAL_REASON_LABELS, requiresNote } from '@/lib/dispatch/mobile/force-seal-reason-copy';
 import type { RoutePackage } from '@/lib/dispatch/types';
@@ -81,9 +89,21 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
   const [reasonNote, setReasonNote] = useState('');
   const [rowNotes, setRowNotes] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  // LOW (adversarial review, WAI-ARIA radiogroup pattern) — roving
+  // tabindex needs each radio's DOM node to move focus programmatically.
+  const reasonRefs = useRef<Partial<Record<ForceSealReasonCode, HTMLButtonElement | null>>>({});
 
   const noteOk = !reasonCode || !requiresNote(reasonCode) || reasonNote.trim().length > 0;
   const canClose = reasonCode !== null && noteOk && !isSealing;
+
+  // MEDIUM (adversarial review) — the close button being disabled must say
+  // why, as visible text (no hover on a touchscreen) — same convention as
+  // `close-route-copy.ts`/`DispatchTabletActionBar`.
+  const disabledReason = !canClose
+    ? reasonCode === null
+      ? 'Elegí un motivo para habilitar el cierre.'
+      : 'Agregá el detalle del motivo para habilitar el cierre.'
+    : null;
 
   const handleRowNote = (orderId: string, value: string) => {
     setRowNotes((prev) => {
@@ -94,20 +114,35 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
     });
   };
 
+  const handleReasonKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const codes = FORCE_SEAL_REASON_CODES;
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowRight') nextIndex = (index + 1) % codes.length;
+    else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') nextIndex = (index - 1 + codes.length) % codes.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = codes.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextCode = codes[nextIndex];
+    setReasonCode(nextCode);
+    reasonRefs.current[nextCode]?.focus();
+  };
+
   const handleClose = async () => {
     if (!reasonCode) return;
     setError(null);
     const note = buildForceSealNote(reasonCode, reasonNote, rowNotes, missing);
     const outcome = await seal(routeId, { force: true, reason_code: reasonCode, note });
     if (!outcome.ok) {
-      setError(outcome.message ?? 'No se pudo cerrar la ruta');
+      // B2 (adversarial review) — the same distinct-code copy the direct
+      // close path now surfaces, rather than the raw server `message` (or a
+      // generic fallback) shown ad hoc.
+      setError(sealErrorCopy(outcome.code, outcome.message).text);
       return;
     }
     onSealed({ sealedStops: outcome.sealedStops, ordersClosed: outcome.ordersClosed });
     onClose();
   };
-
-  const dockLabel = loadPositionLabel ?? 'el andén';
 
   return (
     <div className="flex flex-col gap-4 pt-2">
@@ -118,10 +153,8 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
 
       {/* decision 2 — las tres consecuencias, nunca un resumen. */}
       <ul className="flex flex-col gap-2 rounded-[10px] border border-status-warning-border bg-status-warning-bg p-3.5 text-[13px] text-status-warning-text">
-        <li>
-          Los {totalMissingBoxes} paquetes se quedan en el andén {dockLabel} y hay que meterlos en otra ruta.
-        </li>
-        <li>Los {packagesLoaded} cargados pasan a listo para despacho.</li>
+        <li>{missingBoxesLine(totalMissingBoxes, loadPositionLabel)}</li>
+        <li>{loadedBoxesLine(packagesLoaded)}</li>
         <li>La ruta no se puede volver a abrir.</li>
       </ul>
 
@@ -165,15 +198,26 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
 
       <div className="flex flex-col gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-[.06em] text-text-muted">Motivo</span>
+        {/* LOW (adversarial review, WAI-ARIA radiogroup pattern) — roving
+            tabindex: exactly one radio is a tab stop at a time (the
+            selected one, or the first before anything is chosen), and
+            arrow/Home/End keys move focus AND selection together, per the
+            spec pattern — five independently-tabbable buttons is not a
+            radiogroup, it just looks like one. */}
         <div role="radiogroup" aria-label="Motivo del cierre" className="flex flex-col gap-1.5">
-          {FORCE_SEAL_REASON_CODES.map((code) => (
+          {FORCE_SEAL_REASON_CODES.map((code, index) => (
             <button
               key={code}
+              ref={(el) => {
+                reasonRefs.current[code] = el;
+              }}
               type="button"
               role="radio"
               aria-checked={reasonCode === code}
               aria-label={FORCE_SEAL_REASON_LABELS[code]}
+              tabIndex={reasonCode === code || (reasonCode === null && index === 0) ? 0 : -1}
               onClick={() => setReasonCode(code)}
+              onKeyDown={(e) => handleReasonKeyDown(e, index)}
               className={`flex min-h-[44px] w-full items-center rounded-[10px] border px-3 text-left text-[13px] font-medium active:opacity-90 ${
                 reasonCode === code ? 'border-accent bg-accent-light text-accent' : 'border-border bg-surface text-text'
               }`}
@@ -212,10 +256,16 @@ function Body({ routeId, routeCode, loadPositionLabel, packagesLoaded, packages,
           type="button"
           onClick={handleClose}
           disabled={!canClose}
+          aria-describedby={disabledReason ? 'close-sheet-disabled-reason' : undefined}
           className="min-h-[48px] w-full rounded-[10px] border border-status-error-border text-[13.5px] font-semibold text-status-error-text disabled:cursor-not-allowed disabled:opacity-50 active:opacity-90"
         >
           {isSealing ? 'Cerrando…' : closeButtonLabel(totalMissingBoxes)}
         </button>
+        {disabledReason && (
+          <p id="close-sheet-disabled-reason" className="text-center text-[11.5px] text-text-muted">
+            {disabledReason}
+          </p>
+        )}
       </div>
     </div>
   );

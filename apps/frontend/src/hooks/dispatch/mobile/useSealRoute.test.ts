@@ -91,6 +91,43 @@ describe('useSealRoute', () => {
     expect(outcome).toEqual({ ok: false, code: null, message: 'Error al cerrar la ruta — intenta de nuevo' });
   });
 
+  // MEDIUM (adversarial review) — `isSealing` used to be set inside `seal`
+  // AFTER the guard check but the state update itself only commits on the
+  // next render, so two taps dispatched in the same synchronous handler
+  // (a double-tap on a touchscreen, or two click handlers firing in one
+  // React commit) could both read `isSealing === false` and both reach
+  // `fetch`. Mirrors `useDispatchRouteToDT`'s own `inFlight` ref fix
+  // (item 12 there) — checked and set synchronously inside `seal` itself,
+  // not merely relied on via the caller's disabled button.
+  it('a second call while the first is still in flight never reaches fetch a second time', async () => {
+    let resolveFetch: (v: unknown) => void = () => {};
+    (fetch as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useSealRoute());
+
+    let first!: Promise<unknown>;
+    let second!: Promise<unknown>;
+    act(() => {
+      first = result.current.seal('route-1');
+      second = result.current.seal('route-1');
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    resolveFetch({ ok: true, json: async () => ({ ok: true, sealed_stops: 1, orders_closed: 1 }) });
+    let firstOutcome, secondOutcome;
+    await act(async () => {
+      [firstOutcome, secondOutcome] = await Promise.all([first, second]);
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(firstOutcome).toEqual({ ok: true, sealedStops: 1, ordersClosed: 1, forced: undefined });
+    expect(secondOutcome).toEqual({ ok: false, code: null, message: 'Ya se está cerrando' });
+  });
+
   it('tracks isSealing across the call', async () => {
     let resolveFetch: (v: unknown) => void = () => {};
     (fetch as ReturnType<typeof vi.fn>).mockReturnValue(
