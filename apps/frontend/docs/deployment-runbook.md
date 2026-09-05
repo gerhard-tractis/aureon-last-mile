@@ -15,8 +15,9 @@
 4. [VPS Deployment (Hostinger)](#vps-deployment-hostinger) ← Story 2.3+
 5. [Railway Deployment](#railway-deployment) ← OBSOLETE (2026-02-18)
 6. [Migration Workflow](#migration-workflow)
-7. [Common Deployment Errors](#common-deployment-errors)
-8. [Verification Checklist](#verification-checklist)
+7. [spec-79 — `loaded_route_id`: Deploy Order & Manual Recovery](#spec-79--loaded_route_id-deploy-order--manual-recovery)
+8. [Common Deployment Errors](#common-deployment-errors)
+9. [Verification Checklist](#verification-checklist)
 
 ---
 
@@ -600,6 +601,99 @@ supabase db remote list
    ```
 
 **Lesson Learned (Epic 1):** We had a migration conflict where remote had `20260209_multi_tenant_rls` but local had a different version. We renamed the local file to `.bak` and marked the remote as applied.
+
+---
+
+## spec-79 — `loaded_route_id`: Deploy Order & Manual Recovery
+
+**Why this section exists.** Migration `20260909000001_spec79_loaded_route_id.sql` adds `packages.loaded_route_id`, and the frontend now names that column explicitly in two places: the dispatch handler's packages `select()` (`apps/frontend/src/app/api/dispatch/routes/[id]/dispatch/route.ts`, `loadedPackageIds`/`buildItems` call sites) and the truck-loading scan write in `apps/frontend/src/lib/dispatch/stage-dispatch.ts` (`advancePackagesToEnCarga`). **If the frontend bundle ships before the migration is applied, every dispatch call and every truck-loading scan returns `500 QUERY_FAILED`** — the column simply does not exist yet. This repo's own known trap applies here too: `deploy.yml`'s path filter can skip the DB migrations job on a green PR, so a green check does **not** prove the migration ran. Confirm it directly (see step 1).
+
+There is also **no in-app recovery** for a box left stranded with `loaded_route_id IS NULL` after a genuine scan: a re-scan is refused by `scan-validator.ts`'s `ALREADY_STAGED` check (`loaded_at` set, `load_inferred` false — exactly the stranded shape); `stage-dispatch.ts`'s `.or('loaded_at.is.null,load_inferred.eq.true')` guard then matches nothing for it either; removing the stop is barred once the route is `loaded` (`409 ROUTE_SEALED`, `REMOVABLE_FROM = ['draft','planned','loading']`); there is no unseal/reopen endpoint; and an order left ambiguous by the backfill (more than one live route at once) is excluded from it by design. **The only exit for a stranded box is a manual `UPDATE`, run before the frontend ships** — follow the steps below in order.
+
+### Step 1 — Apply the migration only (no data touched)
+
+```bash
+supabase db push   # or the project's standard migration deploy path
+```
+
+Confirm it landed — do not trust a green PR check:
+
+```sql
+SELECT version FROM supabase_migrations.schema_migrations
+ WHERE version IN ('20260909000001', '20260910000001')
+ ORDER BY version;
+```
+
+Both must be present. `20260909000001` adds the column, the index, and defines `spec79_backfill_loaded_route_id()`. `20260910000001` (Fase 1g) replaces that function with the route-scoped fix (H-2) — apply both together; do not ship the old backfill definition.
+
+### Step 2 — Measure before running the backfill
+
+The backfill aggregates the full `dispatches` table (`GROUP BY order_id`) before joining to `packages` — the same table pair that has already caused two `statement_timeout`s in this series at production scale (~112k dispatches / ~61k packages). Measure the blast radius first:
+
+```sql
+-- How many packages would the backfill touch?
+SELECT COUNT(*)
+  FROM public.packages p
+  JOIN (
+    SELECT dd.order_id, MIN(dd.route_id::text)::uuid AS route_id
+      FROM public.dispatches dd
+      JOIN public.routes r ON r.id = dd.route_id
+     WHERE dd.deleted_at IS NULL
+       AND r.deleted_at  IS NULL
+       AND r.status IN ('draft', 'planned', 'loading', 'loaded',
+                         'dispatched', 'in_transit', 'in_progress')
+     GROUP BY dd.order_id
+    HAVING COUNT(DISTINCT dd.route_id) = 1
+  ) d ON d.order_id = p.order_id
+ WHERE p.deleted_at      IS NULL
+   AND p.loaded_at       IS NOT NULL
+   AND p.load_inferred   = false
+   AND p.loaded_route_id IS NULL;
+```
+
+If that count is large, run the backfill in batches (add a `LIMIT`/`id` range to a copy of the function, or wrap the `UPDATE` in a loop keyed on `packages.id`) rather than a single unbounded call. With the old frontend still live, the backfill is inert to it — nothing reads `loaded_route_id` yet, so there is no rush and no risk in running it in small batches over time:
+
+```sql
+SELECT public.spec79_backfill_loaded_route_id();
+```
+
+### Step 3 — Measure the remainder that the backfill cannot resolve
+
+The backfill only ever fixes the **unambiguous** case (exactly one live route for the order at run time). Every other genuinely-loaded package is left `loaded_route_id IS NULL` by design (a false negative is chosen over a guessed route — see the migration's own header and spec-79 Fase 1f). Those are the boxes that will 500 or silently vanish from a manifest once the frontend ships. Measure them:
+
+```sql
+-- Boxes that will strand once the frontend starts requiring loaded_route_id.
+SELECT p.id, p.order_id, p.label, p.status, p.loaded_at, p.loaded_route_id
+  FROM public.packages p
+ WHERE p.deleted_at      IS NULL
+   AND p.loaded_at       IS NOT NULL
+   AND p.load_inferred   = false
+   AND p.loaded_route_id IS NULL
+   AND p.status IN ('en_carga', 'listo_para_despacho')
+ ORDER BY p.loaded_at;
+```
+
+### Step 4 — Reconcile the remainder by hand, BEFORE shipping the bundle
+
+For each package in the Step 3 result, look up which route it is physically on (the crew, the dock team, or the route's own `dispatches` row if only one candidate remains after excluding routes that have already completed/cancelled) and write it directly:
+
+```sql
+-- Run per-package, after confirming the physical route with the crew/dock
+-- team. Never guess from the query alone if more than one live route
+-- remains for the order — that is exactly the ambiguity the backfill
+-- refuses to resolve automatically.
+UPDATE public.packages
+   SET loaded_route_id = '<confirmed-route-uuid>'
+ WHERE id = '<package-uuid>'
+   AND operator_id = '<operator-uuid>'   -- never omit; multi-tenant table
+   AND deleted_at IS NULL;
+```
+
+If a package's true route cannot be confirmed (crew unreachable, dock team unsure), do **not** guess — leave it `NULL` and track it separately. It will surface as `packages_dispatched` undercounting on that route's next dispatch attempt (an honest false negative, not a silent wrong manifest) until someone reconciles it.
+
+### Step 5 — Only then deploy the frontend
+
+Once Steps 1-4 are complete (migration applied, backfill run in batches, remainder reconciled), deploy the Vercel bundle. Confirm post-deploy that a real dispatch and a real truck-loading scan both succeed against a route with genuinely loaded packages before considering the rollout done.
 
 ---
 
