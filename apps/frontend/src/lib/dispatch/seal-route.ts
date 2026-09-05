@@ -3,7 +3,7 @@ import type { Database } from '@/lib/types';
 import type { RouteStatus } from './types';
 import type { ForceSealReasonCode } from './force-seal-reasons';
 import { checkAdoptedCompleteness } from './seal-adopted-completeness';
-import { resolvePendingStops } from './seal-pending-stops';
+import { planPendingStopsResolution, applyPendingStopsPlan } from './seal-pending-stops';
 
 /** What `sealRoute`'s force path did, composed from the fully-`planned` stops
  * released (`force-seal-release.ts`) and the `partially_staged` stops split
@@ -203,33 +203,44 @@ export async function sealRoute(
   }
 
   // spec-70 decision 2 / spec-77 — extracted to `seal-pending-stops.ts`:
-  // refuses (unforced, or forced with no valid reason) or, with a valid
-  // reason, releases the untouched `planned` stops and splits the mixed
-  // `partially_staged` ones (phase 1b). Falls through on success — the
-  // released rows are already deleted_at-stamped and the split rows are now
-  // `force_split`, so the `sealedRows` query below (widened to include
-  // `force_split`) is what advances a split order's own loaded packages the
-  // rest of the way, exactly as it would for a route with nothing pending.
-  const pendingResolution = await resolvePendingStops(supabase, {
+  // computes a PLAN for whatever is still `planned`/`partially_staged` —
+  // refuse (unforced, or forced with no valid reason) or a plan to release
+  // the untouched stops and split the mixed ones (phase 1b). Writes NOTHING
+  // — see the B1 note below for why that matters.
+  const pendingPlan = await planPendingStopsResolution(supabase, {
     routeId,
     operatorId,
     force,
     forceReasonCode,
-    forceNote,
-    userId,
     pendingCount,
   });
-  if (!pendingResolution.ok) return pendingResolution.refusal;
-  const forcedOutcome = pendingResolution.forcedOutcome;
+  if (!pendingPlan.ok) return pendingPlan.refusal;
 
-  // spec-74 phase 3 — the `adopted` finding, extracted to
-  // `seal-adopted-completeness.ts` (see that file's header for the full
-  // reasoning). `dispatches.stage` never tells an incomplete adopted order
-  // apart from a complete one; only `packages.loaded_at` does.
+  // spec-74 phase 3 — the `adopted` finding (`seal-adopted-completeness.ts`).
+  // `dispatches.stage` never tells an incomplete adopted order apart from a
+  // complete one; only `packages.loaded_at` does.
+  //
+  // spec-77 review B1 (BLOCKER, fixed here): this MUST run before
+  // `applyPendingStopsPlan` below. It used to run AFTER the release/split/
+  // audit had already committed, so a refusal here left them permanently
+  // stuck — the released row soft-deleted and out of `pendingCount`'s reach,
+  // the split row's `force_split` stage excluded from this same lookup's
+  // `.in('planned','partially_staged')` — neither retryable. Every
+  // refusal-capable gate (this one and the plan above) must run before the
+  // one write step, not after.
   if ((counts?.adopted_stops ?? 0) > 0) {
     const adoptedRefusal = await checkAdoptedCompleteness(supabase, { routeId, operatorId });
     if (adoptedRefusal) return adoptedRefusal;
   }
+
+  // Both gates passed — only now may the plan write anything.
+  const { forcedOutcome } = await applyPendingStopsPlan(supabase, {
+    routeId,
+    operatorId,
+    userId,
+    forceNote,
+    plan: pendingPlan.plan,
+  });
 
   // spec-74 phase 3 blocker checklist note: this does NOT need
   // 'partially_staged' added. By the time execution reaches here, both

@@ -513,6 +513,85 @@ describe('sealRoute — force path (spec-77)', () => {
     expect(ops.filter((o) => o.table === 'audit_logs').length).toBe(1);
   });
 
+  /**
+   * B1 (spec-77 review) — the exact spec-74 QA repro shape: a `planned` stop
+   * (ORD-A, force-releasable) alongside an `adopted` stop with an
+   * outstanding package (ORD-B, blocks on `checkAdoptedCompleteness`). A
+   * force call used to release ORD-A (soft-delete + audit, both committed)
+   * BEFORE the adopted gate ran, so a refusal here left ORD-A permanently
+   * off the plan even though the whole call failed. Nothing may be written
+   * — dispatches update, packages revert, or audit — until every gate that
+   * can refuse has already run and passed.
+   */
+  it('B1: refuses on an incomplete adopted stop WITHOUT releasing a planned stop force already resolved to proceed', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 2, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 1 },
+      pendingRows: [{ id: 'd1', order_id: 'o-a', stage: 'planned', orders: { order_number: 'ORD-A' } }],
+      adoptedRows: [{ order_id: 'o-b', orders: { order_number: 'ORD-B' } }],
+      outstandingPackages: [{ order_id: 'o-b' }],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'turno_terminado',
+      userId: 'u-1',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('UNSEALED_STOPS');
+      expect(result.pending).toEqual(['ORD-B']);
+    }
+    expect(rpc).not.toHaveBeenCalled();
+    // The load-bearing assertion: ORD-A's dispatches row must NOT have been
+    // soft-deleted/released, and no audit trail for a force that ultimately
+    // failed may exist — a retry (forced or not) must still see ORD-A as
+    // pending, never silently gone.
+    expect(ops.find((o) => o.table === 'dispatches' && o.kind === 'update')).toBeUndefined();
+    expect(ops.find((o) => o.table === 'audit_logs')).toBeUndefined();
+    expect(ops.find((o) => o.table === 'packages' && o.kind === 'update')).toBeUndefined();
+  });
+
+  /**
+   * B4 (spec-77 review) — same shape as B1 but the pending stop is
+   * `partially_staged` (splits, rather than releases). A `force_split` row
+   * survives a refusal the same way a released `planned` row must not: it
+   * would strand a live `force_split` `dispatches` row on a route that never
+   * sealed, invisible to a future `resolvePendingStops` pass (which only
+   * looks at `planned`/`partially_staged`). The split write must not happen
+   * either, for the same reason.
+   */
+  it('B4: refuses on an incomplete adopted stop WITHOUT splitting a partially_staged stop force already resolved to proceed', async () => {
+    const { client, rpc, ops } = buildClient({
+      counts: { total_stops: 2, pending_stops: 0, partially_staged_stops: 1, staged_stops: 0, adopted_stops: 1 },
+      pendingRows: [{ id: 'd1', order_id: 'o-a', stage: 'partially_staged', orders: { order_number: 'ORD-A' } }],
+      adoptedRows: [{ order_id: 'o-b', orders: { order_number: 'ORD-B' } }],
+      outstandingPackages: [{ order_id: 'o-b' }],
+      splitPackages: [
+        { id: 'p1', order_id: 'o-a', status: 'en_carga', loaded_at: '2026-09-05T10:00:00Z', load_inferred: false },
+        { id: 'p2', order_id: 'o-a', status: 'sectorizado', loaded_at: null, load_inferred: false },
+      ],
+    });
+
+    const result = await sealRoute(client, {
+      routeId: 'route-1',
+      operatorId: 'op-1',
+      force: true,
+      forceReasonCode: 'turno_terminado',
+      userId: 'u-1',
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('UNSEALED_STOPS');
+    expect(rpc).not.toHaveBeenCalled();
+    const dispatchUpdate = ops.find((o) => o.table === 'dispatches' && o.kind === 'update');
+    expect(dispatchUpdate).toBeUndefined();
+    expect(ops.find((o) => o.table === 'audit_logs')).toBeUndefined();
+    expect(ops.find((o) => o.table === 'packages' && o.kind === 'update')).toBeUndefined();
+  });
+
   it('a failed release throws (surfaces as a 500 at the handler, per the shared catch)', async () => {
     const { client } = buildClient({
       counts: { total_stops: 1, pending_stops: 1, partially_staged_stops: 0, staged_stops: 0, adopted_stops: 0 },

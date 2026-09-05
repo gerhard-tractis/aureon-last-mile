@@ -297,6 +297,82 @@ comentarios recortados para volver a bajar de 300 líneas tras el fix), `scan-va
 `('planned', 'staged')`), `apps/frontend/src/lib/types.ts` (`route_stop_counts.force_split_stops`,
 faltaba en el tipo hecho a mano).
 
+### Fase 1d (backend) — corrección de revisión adversarial de PR #616: B1/B4, orden de escritura antes de la refutación `[done]`
+
+Hallazgo bloqueante de una revisión adversarial del PR #616 (post-fase 1c): **el force liberaba/dividía la(s) parada(s) pendiente(s) — escritura ya comprometida — y sólo DESPUÉS corría `checkAdoptedCompleteness`, que puede rechazar.** Con una ruta `loading` que tiene a la vez una parada `planned` (ORD-A) forzable y una parada `adopted` incompleta (ORD-B, un bulto sin escanear), la secuencia era:
+
+1. `resolvePendingStops` libera (soft-delete) ORD-A, escribe `audit_logs` — ambos comprometidos.
+2. `checkAdoptedCompleteness` rechaza (`409 UNSEALED_STOPS`, por ORD-B).
+3. La cuadrilla ve "faltan 1 parada(s)"; la ruta sigue `loading`.
+4. **ORD-A ya no existe en el plan de esta ruta** (fila `dispatches` con `deleted_at`) y `pendingCount` en cualquier reintento (forzado o no) ya no la ve — el force nunca vuelve a encontrarla para liberarla "de nuevo" porque ya está liberada. La orden queda fuera del plan para siempre, y la ruta queda sin poder sellarse hasta que alguien complete ORD-B — momento en el cual la cuenta de bultos de la ruta ya no cuadra con lo que salió: ORD-A desapareció sin ningún acta.
+
+Dos comentarios en el código afirmaban que esto no podía pasar, y ambos eran falsos:
+`seal-pending-stops.ts:31` ("nunca ambas cosas — rechazar Y escribir") y `force-seal-audit.ts`
+("el seal mismo ya tuvo éxito para cuando esto corre"). Corregidos como parte de este fix (ver
+"Archivos" abajo) — ahora describen lo que el código realmente hace.
+
+**Fix: separar "decidir" de "escribir".** `seal-pending-stops.ts` se dividió en dos funciones:
+
+- `planPendingStopsResolution` — sólo lectura. Corre las mismas refutaciones de siempre
+  (sin `force`, o `force` sin motivo válido → rechaza igual que antes) pero, si el force
+  procede, devuelve un **plan** (`{ kind: 'apply', reasonCode, plannedRows,
+  partiallyStagedRows }`) en vez de escribir nada.
+- `applyPendingStopsPlan` — sólo escritura (`releasePendingForForce` +
+  `splitPartiallyStagedForForce` + `writeForceSealAudit`, en ese orden, un solo `audit_logs`).
+  Nunca decide si debe correr — eso ya lo decidió el plan.
+
+`seal-route.ts` ahora ordena así: `planPendingStopsResolution` (puede rechazar, no escribe) →
+`checkAdoptedCompleteness` (puede rechazar, no escribe) → `applyPendingStopsPlan` (escribe,
+nunca rechaza) → avance de `packages` a `listo_para_despacho` → `transition_route_status`
+(el único paso que puede lanzar después de escrituras ya comprometidas — invariante que ya
+existía y que este fix no toca: el guard del handler de `/dispatch` sigue siendo lo que
+protege una ruta que dejó `loaded`).
+
+**Por qué esto también cierra B4 (rows `force_split` huérfanas) por construcción:** el mismo
+reordenamiento hace que un `force_split` sólo se escriba después de que `checkAdoptedCompleteness`
+ya pasó — la única refutación alcanzable después de decidir el plan queda eliminada. Lo que
+puede fallar después de `applyPendingStopsPlan` (el `UPDATE packages` final y
+`transition_route_status`) ya no son refutaciones sino errores genuinos (`throw`), y son
+auto-recuperables: un reintento (forzado o no) recalcula `pendingCount` en 0 para la fila ya
+liberada/dividida (el force_split ya no cuenta como `planned`/`partially_staged`), así que
+`planPendingStopsResolution` devuelve `noop` y la ejecución llega directo a la consulta final
+(`stage IN ('staged','adopted','force_split')`, ya ampliada desde la fase 1b) — el mismo camino
+que sella una ruta sin nada pendiente. No queda ningún camino donde una fila `force_split`
+sobreviva a una refutación real; sólo puede sobrevivir a un error de escritura genuino, y ese
+caso converge solo en el reintento siguiente.
+
+Tests (TDD, rojo antes del fix): `seal-route.test.ts` — "B1: refuses on an incomplete adopted
+stop WITHOUT releasing a planned stop force already resolved to proceed" y "B4: ... WITHOUT
+splitting a partially_staged stop ...", ambos con las mismas aserciones cero-escritura que
+"PINNED" ya usaba (`dispatches` update ausente, `audit_logs` ausente, `packages` update
+ausente). **Verificado por mutación**: se clonó `seal-route.ts` a un archivo de scratch con el
+orden viejo (aplicar el plan ANTES del chequeo adopted) y se corrió `seal-route.test.ts` contra
+él vía un `vitest.config` de scratch con un alias que sólo sustituye ese import — el resto de la
+suite (mocks compartidos incluidos) corrió sin tocar. Resultado: exactamente los dos tests
+nuevos (B1, B4) fallan contra la mutación; los 17 restantes siguen en verde — confirma que estos
+dos tests, y sólo ellos, pinan el orden correcto. Ningún archivo del repo se tocó para esta
+verificación.
+
+**MEDIO, mismo hallazgo de revisión — `useRoutePackages.ts` contaba "cargado" con el discriminador
+equivocado.** `if (p.loaded_at)` sin mirar `load_inferred` cuenta un bulto backfillado por
+spec-74 (`loaded_at` seteado, `load_inferred: true`, status real `sectorizado`) como "cargado" en
+pantalla — no lo es: el `UPDATE packages ... WHERE status = 'en_carga'` final del seal lo deja en
+el andén. Corregido: la consulta ahora trae `load_inferred` y el conteo usa
+`loaded_at IS NOT NULL AND load_inferred = false`, el mismo discriminador que
+`force-seal-split.ts`/`seal-adopted-completeness.ts` ya usaban — nunca `packages.status` solo.
+Test: "does not count a load_inferred (backfilled) package as loaded"
+(`useRoutePackages.test.ts`).
+
+Archivos: `apps/frontend/src/lib/dispatch/seal-pending-stops.ts` (dividido en
+`planPendingStopsResolution`/`applyPendingStopsPlan`, comentario falso corregido),
+`apps/frontend/src/lib/dispatch/seal-route.ts` (reordena las tres etapas; comentario de la
+`adopted`-completeness explica ahora por qué su posición es load-bearing),
+`apps/frontend/src/lib/dispatch/force-seal-audit.ts` (comentario falso corregido — ya no afirma
+que el seal "ya tuvo éxito" para cuando el audit corre), `apps/frontend/src/lib/dispatch/seal-route.test.ts`
+(tests B1/B4), `apps/frontend/src/hooks/dispatch/useRoutePackages.ts` +
+`useRoutePackages.test.ts` (discriminador `load_inferred`). Sin migración — mismo cambio de
+orden de lectura/escritura sobre las tablas y columnas ya existentes.
+
 ### Fase 1 (UI) — `2i` Cerrar `[done]`
 
 **Nota pendiente de la fase 1b, para quien construya esta pantalla:** una vez sellada una orden
