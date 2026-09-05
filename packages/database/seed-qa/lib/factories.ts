@@ -384,6 +384,35 @@ export async function resetOrderPackages(
 }
 
 /**
+ * spec-79 review F3: stamp the same per-box load fact a real scan does
+ * (`loaded_at`/`loaded_by` set, `load_inferred = false`) — see
+ * `stage-dispatch.ts`'s `advancePackagesToEnCarga`, which is the only
+ * writer of these columns in production. This seed generator has no HTTP
+ * server to drive that endpoint through, so it replicates the columns that
+ * write leaves behind directly, the same way it already replicates the
+ * `/close` endpoint's raw UPDATE elsewhere in this file — but scoped to
+ * `en_carga` only, mirroring the one status the real write ever targets.
+ *
+ * Without this, `dispatch-local-completion.ts`'s `loadedPackageIds`
+ * (spec-79 H3/F1) finds `loaded_at IS NULL` on every package this generator
+ * creates, so dispatching a route built from these packages in QA always
+ * writes zero `en_ruta` rows — the exact code path spec-79 exists to fix
+ * would show a green 200 in QA whether or not it actually worked.
+ */
+export async function markPackagesLoaded(
+  db: SeedClient,
+  orderId: string,
+  scannedBy: string,
+): Promise<void> {
+  await db.query(
+    `UPDATE public.packages
+        SET loaded_at = NOW(), loaded_by = $2, load_inferred = false
+      WHERE order_id = $1 AND deleted_at IS NULL AND status = 'en_carga'::package_status_enum`,
+    [orderId, scannedBy],
+  );
+}
+
+/**
  * Force the trigger to re-derive an order's status.
  *
  * Needed when packages were inserted by an earlier run (ON CONFLICT DO NOTHING

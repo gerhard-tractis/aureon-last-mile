@@ -15,6 +15,7 @@ import type { SeedClient } from '../lib/db';
 import { AssertionCollector, assertOrderStatus } from '../lib/assert';
 import {
   createOrderWithPackages,
+  markPackagesLoaded,
   resetOrderPackages,
   resettleOrderStatus,
   resolveUserId,
@@ -165,11 +166,21 @@ async function journeyPartialDelivery(
  * The production regression, driven the way the application drives it:
  * closing a dispatch route stages every en_carga package for dispatch. Before
  * 20260810000001 this cancelled the order.
+ *
+ * spec-79 review F3: `markPackagesLoaded` stamps the same per-box load fact
+ * (`loaded_at`/`loaded_by` set, `load_inferred = false`) a real scan leaves
+ * on an `en_carga` package, BEFORE the raw close-simulation moves it to
+ * listo_para_despacho — mirroring the real order of writes (scan first,
+ * seal/close second, seal never touches loaded_at). Without this, a route
+ * built from QA-JRN-003 and dispatched in QA always found zero genuinely
+ * loaded packages (loaded_at IS NULL), so `en_ruta` was never written and a
+ * green 200 in QA proved nothing about spec-79's fix.
  */
 async function journeyDispatchClose(
   db: SeedClient,
   collector: AssertionCollector,
   operatorId: string,
+  scannedBy: string,
 ): Promise<void> {
   const scenario = 'journeys/dispatch-close';
   const orderNumber = 'QA-JRN-003';
@@ -182,6 +193,7 @@ async function journeyDispatchClose(
     packageStatuses: ['en_carga', 'en_carga'],
   });
   await resetOrderPackages(db, order.orderId, ['en_carga', 'en_carga']);
+  await markPackagesLoaded(db, order.orderId, scannedBy);
   await resettleOrderStatus(db, order.orderId);
 
   // Exactly what POST /api/dispatch/routes/[id]/close does.
@@ -219,7 +231,7 @@ export async function seedJourneys(
 
   await journeyFailedDeliveryAndReturn(db, collector, operatorId, scannedBy);
   await journeyPartialDelivery(db, collector, operatorId);
-  await journeyDispatchClose(db, collector, operatorId);
+  await journeyDispatchClose(db, collector, operatorId, scannedBy);
 
   return 3;
 }

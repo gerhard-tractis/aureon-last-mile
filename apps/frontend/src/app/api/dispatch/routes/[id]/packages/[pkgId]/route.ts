@@ -121,12 +121,27 @@ export async function DELETE(
       // `listo_para_despacho` with no route at all — the same status-scope
       // gap spec-79 H3 found in the dispatch handler
       // (dispatch-local-completion.ts's LOADED_ON_TRUCK_STATUSES).
+      //
+      // spec-79 review F6: `.is('deleted_at', null)` re-asserted on the
+      // write itself, matching the same standard dispatch-local-completion.ts
+      // applies to its own en_ruta write — a package soft-deleted during the
+      // request should not be resurrected back to `sectorizado`.
+      //
+      // spec-79 review F7: `loaded_at`/`loaded_by`/`load_inferred` reset here
+      // too. Leaving `loaded_at` set with `load_inferred = false` after this
+      // write freed the box back to `sectorizado` but left scan-validator.ts's
+      // ALREADY_STAGED check (`loaded_at && !load_inferred`) believing it was
+      // already scanned — a box removed from route A and re-planned onto
+      // route B could never be scanned again, permanently unloadable. This
+      // write releases the box, so the per-box load fact must be released
+      // with it.
       await supabase
         .from('packages')
-        .update({ status: 'sectorizado' })
+        .update({ status: 'sectorizado', loaded_at: null, loaded_by: null, load_inferred: false })
         .eq('operator_id', operatorId)
         .eq('order_id', dispatch.order_id)
-        .in('status', [...LOADED_ON_TRUCK_STATUSES]);
+        .in('status', [...LOADED_ON_TRUCK_STATUSES])
+        .is('deleted_at', null);
     }
 
     // Audit log — actual audit_logs schema: operator_id, user_id, action,

@@ -16,7 +16,11 @@ function pkg(overrides: Partial<PackageRow> & { id: string }): PackageRow {
     sku_items: [],
     status: 'en_carga',
     deleted_at: null,
-    loaded_at: null,
+    // spec-79 review F5: buildItems now shares isGenuinelyLoadedPackage with
+    // loadedPackageIds, so a default fixture must represent a genuine scan
+    // (loaded_at set, load_inferred false) — the same default
+    // dispatch-local-completion.test.ts uses.
+    loaded_at: '2026-09-04T10:00:00Z',
     load_inferred: false,
     ...overrides,
   };
@@ -57,6 +61,34 @@ describe('buildItems', () => {
   it('handles null/undefined input', () => {
     expect(buildItems(null)).toEqual([]);
     expect(buildItems(undefined)).toEqual([]);
+  });
+
+  /**
+   * spec-79 review F5: the DT guide must not list a box our own database
+   * refuses to mark en_ruta. Before this, a retenido sibling (held back in
+   * consolidation, which does not block the seal) still made it into the
+   * guide sent to DispatchTrack.
+   */
+  it('excludes a retenido sibling even though it is not soft-deleted and carries a label', () => {
+    const items = buildItems([
+      pkg({ id: 'p1', label: 'CTN-1', status: 'en_carga' }),
+      pkg({ id: 'p2', label: 'CTN-2', status: 'retenido' }),
+    ]);
+    expect(items.map((i) => i.code)).toEqual(['CTN-1']);
+  });
+
+  it('excludes a package never genuinely scanned (loaded_at null)', () => {
+    const items = buildItems([
+      pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', loaded_at: null }),
+    ]);
+    expect(items).toEqual([]);
+  });
+
+  it('excludes a backfilled (load_inferred) package — not evidence of a real scan', () => {
+    const items = buildItems([
+      pkg({ id: 'p1', label: 'CTN-1', status: 'listo_para_despacho', load_inferred: true }),
+    ]);
+    expect(items).toEqual([]);
   });
 });
 

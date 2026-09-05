@@ -1,4 +1,5 @@
 import type { DTDispatch, DTItem } from '@/lib/dispatchtrack-api';
+import { isGenuinelyLoadedPackage } from '@/lib/dispatch/dispatch-load-state';
 
 interface SkuLine { sku?: unknown; description?: unknown; quantity?: unknown }
 
@@ -15,7 +16,15 @@ interface SkuLine { sku?: unknown; description?: unknown; quantity?: unknown }
  * `load_inferred = true` was backfilled by spec-74's migration onto every
  * live package of an already-staged/adopted order, including ones that
  * never left the dock, so it is not evidence of loading — see
- * dispatch-local-completion.ts's loadedPackageIds for the full reasoning. */
+ * dispatch-local-completion.ts's loadedPackageIds for the full reasoning.
+ *
+ * spec-79 review F8: `load_inferred` is `boolean`, not `boolean | null` — the
+ * column is `NOT NULL DEFAULT false` (20260901000001:67) and lib/types.ts
+ * agrees. `isGenuinelyLoadedPackage` compares with `=== false`;
+ * scan-validator.ts's ALREADY_STAGED check compares with `!load_inferred` —
+ * on a `null` those two disagree in opposite directions. A type that admits
+ * `null` here would let a caller construct exactly that disagreement instead
+ * of the compiler catching it. */
 export interface PackageRow {
   id: string;
   label: string | null;
@@ -23,7 +32,7 @@ export interface PackageRow {
   status: string | null;
   deleted_at: string | null;
   loaded_at: string | null;
-  load_inferred: boolean | null;
+  load_inferred: boolean;
 }
 
 export interface OrderRow {
@@ -55,10 +64,21 @@ function singleOrder(d: DispatchRow): OrderRow | null {
  *
  * A package with no SKU data still produces an item, so a guide always lists
  * the packages it consists of.
+ *
+ * spec-79 review F5: filtered by `isGenuinelyLoadedPackage` (the same
+ * predicate `dispatch-local-completion.ts`'s `loadedPackageIds` uses for the
+ * `en_ruta` write), not just `!deleted_at && label`. Before this, an order
+ * with box A genuinely scanned and box B `retenido` in consolidation sealed
+ * fine (seal-route.ts excludes non-dispatchable statuses so a held-back
+ * sibling can't deadlock the seal) and DT's guide then listed BOTH boxes
+ * while our own database marked only A `en_ruta` — the driver's manifest
+ * claimed a box that was sitting on the andén. The DT guide and the local
+ * `en_ruta` set must describe the same physical load; this makes that
+ * explicit instead of incidental.
  */
 export function buildItems(packages: PackageRow[] | null | undefined): DTItem[] {
   return (packages ?? [])
-    .filter((p) => !p.deleted_at && p.label)
+    .filter((p) => isGenuinelyLoadedPackage(p) && p.label)
     .map((p) => {
       const lines: SkuLine[] = Array.isArray(p.sku_items) ? p.sku_items : [];
       const names: string[] = [];

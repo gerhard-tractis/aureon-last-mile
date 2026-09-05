@@ -110,6 +110,7 @@ function genuinelyLoadedPkg(overrides: {
   loaded_at?: string;
   load_inferred?: boolean;
   deleted_at?: string | null;
+  sku_items?: unknown;
 }) {
   return {
     sku_items: [],
@@ -130,9 +131,23 @@ function genuinelyLoadedPkg(overrides: {
  * status changing out from under the write (fewer rows come back than were
  * requested).
  */
+/**
+ * spec-79 review F1 (CRITICAL): the write chain is
+ * `.eq('operator_id',...).in('id',...).in('status', LOADED_ON_TRUCK_STATUSES)
+ * .is('deleted_at', null).select('id')`. `statusInMock` and `isMock` are
+ * returned so a test can assert the EXACT argument each was called with —
+ * not just that some `.in('status', …)`/`.is('deleted_at', …)` exists in the
+ * chain. Two realistic regressions both left every OTHER test in this suite
+ * green: widening the status set to admit `dañado`/`retenido` (the exact
+ * overwrite the TOCTOU guard exists to refuse), and narrowing it to
+ * `['en_carga']` alone (matches nothing on any post-seal route — round 1's
+ * bug reintroduced at the UPDATE layer). Only an assertion on the argument
+ * itself catches either.
+ */
 function packagesEnRutaChain(updatedIdsOverride?: string[]) {
   const selectMock = vi.fn();
-  const statusInMock = vi.fn().mockReturnValue({ select: selectMock });
+  const isMock = vi.fn().mockReturnValue({ select: selectMock });
+  const statusInMock = vi.fn().mockReturnValue({ is: isMock });
   const idInMock = vi.fn((_col: string, ids: string[]) => {
     const touched = updatedIdsOverride ?? ids;
     selectMock.mockResolvedValue({ data: touched.map((id) => ({ id })), error: null });
@@ -140,14 +155,15 @@ function packagesEnRutaChain(updatedIdsOverride?: string[]) {
   });
   const eqMock = vi.fn().mockReturnValue({ in: idInMock });
   const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
-  return { update: updateMock, select: selectMock };
+  return { update: updateMock, select: selectMock, statusInMock, isMock };
 }
 
 /** Same shape as packagesEnRutaChain, but the terminal `.select()` resolves
  * an error instead of data — for the packages-write-fails tests. */
 function failingPackagesEnRutaChain(error: unknown) {
   const selectMock = vi.fn().mockResolvedValue({ data: null, error });
-  const statusInMock = vi.fn().mockReturnValue({ select: selectMock });
+  const isMock = vi.fn().mockReturnValue({ select: selectMock });
+  const statusInMock = vi.fn().mockReturnValue({ is: isMock });
   const idInMock = vi.fn().mockReturnValue({ in: statusInMock });
   const eqMock = vi.fn().mockReturnValue({ in: idInMock });
   const updateMock = vi.fn().mockReturnValue({ eq: eqMock });
@@ -446,6 +462,30 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     expect(inSpy).toHaveBeenCalledWith('id', ['pkg-loaded']);
   });
 
+  /**
+   * spec-79 review F1 (CRITICAL): the TOCTOU guard's own filter argument was
+   * never asserted anywhere in this suite — only that some `.in('status',
+   * …)` existed in the mock chain. Widening the set to admit
+   * `dañado`/`retenido` (the exact overwrite this guard exists to refuse) or
+   * narrowing it to `['en_carga']` alone (matches nothing on a post-seal
+   * route) both left every other test green. This asserts the exact value.
+   */
+  it('F1: the en_ruta write re-asserts status with exactly LOADED_ON_TRUCK_STATUSES, and deleted_at null', async () => {
+    const { client, packagesUpdateChain } = clientWithPackages([
+      genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'en_carga' }),
+    ]);
+    (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const res = await POST(buildRequest(), { params: Promise.resolve({ id: 'r1' }) });
+    expect(res.status).toBe(200);
+
+    expect(packagesUpdateChain.statusInMock).toHaveBeenCalledWith(
+      'status',
+      ['en_carga', 'listo_para_despacho'],
+    );
+    expect(packagesUpdateChain.isMock).toHaveBeenCalledWith('deleted_at', null);
+  });
+
   it('a retenido package (held back in consolidation) does not move to en_ruta', async () => {
     const { client, packagesUpdateChain } = clientWithPackages([
       genuinelyLoadedPkg({ id: 'pkg-loaded', label: 'CTN-1', status: 'en_carga' }),
@@ -537,6 +577,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
   it('logs a disagreement when the en_ruta write touches fewer packages than expected (F2 TOCTOU guard)', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const packagesUpdateChain = packagesEnRutaChain(['pkg-loaded']); // only 1 of 2 requested comes back
+    const mismatchAuditInsert = vi.fn().mockReturnValue({ then: (r: () => null) => r() });
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
       .mockReturnValueOnce(fleetVehicleChain())
@@ -556,6 +597,7 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
       }]))
       .mockReturnValueOnce(updateChain())
       .mockReturnValueOnce(packagesUpdateChain)
+      .mockReturnValueOnce({ insert: mismatchAuditInsert }) // spec-79 F2: the mismatch's own audit row
       .mockReturnValue(updateChain());
     const client = buildSessionClient({ fromMock });
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
@@ -566,6 +608,23 @@ describe('POST /routes/[id]/dispatch — H3 en_ruta scoped to loaded packages', 
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('en_ruta write touched fewer packages than expected'),
       expect.objectContaining({ routeId: 'r1', expectedCount: 2, updatedCount: 1 }),
+    );
+
+    // spec-79 review F2: packages_dispatched must report what was actually
+    // WRITTEN (1), never what was merely REQUESTED (2) — the whole point of
+    // this guard is that those two can disagree.
+    const body = await res.json();
+    expect(body.packages_dispatched).toBe(1);
+
+    // spec-79 review F2: every other notable event in this flow gets its own
+    // audit_logs row; this disagreement must too, not just a console.error.
+    expect(mismatchAuditInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'dispatch_en_ruta_count_mismatch',
+        resource_type: 'routes',
+        resource_id: 'r1',
+        changes_json: { expected_count: 2, updated_count: 1 },
+      }),
     );
     errorSpy.mockRestore();
   });
@@ -1085,6 +1144,18 @@ describe('POST /routes/[id]/dispatch — dispatch identifier', () => {
  * folded into name/description/quantity.
  */
 describe('POST /routes/[id]/dispatch — items', () => {
+  // spec-79 review F5: these fixtures now use genuinelyLoadedPkg (status
+  // en_carga, loaded_at set, load_inferred false) so buildItems' shared
+  // isGenuinelyLoadedPackage predicate includes them — which means
+  // loadedPackageIds includes them too, and the en_ruta write actually runs
+  // for every case except the empty-packages one. This fallback supports
+  // both shapes (packagesEnRutaChain's `.in().in().is().select()` write and
+  // a plain `.insert()` audit row) so it works whichever one actually fires.
+  function universalChain() {
+    const { update } = packagesEnRutaChain();
+    return { update, insert: vi.fn().mockReturnValue({ then: (r: () => null) => r() }) };
+  }
+
   function clientWithPackages(packages: unknown[]) {
     const fromMock = vi.fn()
       .mockReturnValueOnce(routeChain())
@@ -1100,7 +1171,8 @@ describe('POST /routes/[id]/dispatch — items', () => {
           packages,
         },
       }]))
-      .mockReturnValue(updateChain());
+      .mockReturnValueOnce(updateChain()) // persist external_route_id
+      .mockReturnValue(universalChain()); // en_ruta write and/or audit rows
     return buildSessionClient({ fromMock });
   }
 
@@ -1120,8 +1192,14 @@ describe('POST /routes/[id]/dispatch — items', () => {
 
   it('sends one item per package, keyed by the package label', async () => {
     const items = await itemsFor([
-      { label: 'CTN-1', sku_items: [{ sku: 'SKU-1', description: 'Caja QA', quantity: 1 }], deleted_at: null },
-      { label: 'CTN-2', sku_items: [{ sku: 'SKU-2', description: 'Caja QA', quantity: 2 }], deleted_at: null },
+      genuinelyLoadedPkg({
+        id: 'p1', label: 'CTN-1', status: 'en_carga',
+        sku_items: [{ sku: 'SKU-1', description: 'Caja QA', quantity: 1 }],
+      }),
+      genuinelyLoadedPkg({
+        id: 'p2', label: 'CTN-2', status: 'en_carga',
+        sku_items: [{ sku: 'SKU-2', description: 'Caja QA', quantity: 2 }],
+      }),
     ]);
     expect(items).toEqual([
       { code: 'CTN-1', name: 'SKU-1', description: 'Caja QA', quantity: '1' },
@@ -1131,14 +1209,13 @@ describe('POST /routes/[id]/dispatch — items', () => {
 
   it('folds a multi-SKU package into one item', async () => {
     const items = await itemsFor([
-      {
-        label: 'CTN-3',
+      genuinelyLoadedPkg({
+        id: 'p3', label: 'CTN-3', status: 'en_carga',
         sku_items: [
           { sku: 'SKU-A', description: 'Taladro', quantity: 1 },
           { sku: 'SKU-B', description: 'Broca', quantity: 3 },
         ],
-        deleted_at: null,
-      },
+      }),
     ]);
     expect(items).toEqual([
       { code: 'CTN-3', name: 'SKU-A, SKU-B', description: 'Taladro, Broca', quantity: '4' },
@@ -1146,14 +1223,16 @@ describe('POST /routes/[id]/dispatch — items', () => {
   });
 
   it('still lists a package that carries no SKU data', async () => {
-    const items = await itemsFor([{ label: 'CTN-4', sku_items: null, deleted_at: null }]);
+    const items = await itemsFor([
+      genuinelyLoadedPkg({ id: 'p4', label: 'CTN-4', status: 'en_carga', sku_items: [] }),
+    ]);
     expect(items).toEqual([{ code: 'CTN-4', quantity: '1' }]);
   });
 
   it('leaves soft-deleted packages out', async () => {
     const items = await itemsFor([
-      { label: 'CTN-5', sku_items: [], deleted_at: '2026-08-01T00:00:00Z' },
-      { label: 'CTN-6', sku_items: [], deleted_at: null },
+      genuinelyLoadedPkg({ id: 'p5', label: 'CTN-5', status: 'en_carga', deleted_at: '2026-08-01T00:00:00Z' }),
+      genuinelyLoadedPkg({ id: 'p6', label: 'CTN-6', status: 'en_carga' }),
     ]);
     expect(items.map((i: { code: string }) => i.code)).toEqual(['CTN-6']);
   });
@@ -1161,6 +1240,20 @@ describe('POST /routes/[id]/dispatch — items', () => {
   it('sends no items for an order with no packages', async () => {
     const items = await itemsFor([]);
     expect(items).toEqual([]);
+  });
+
+  /**
+   * spec-79 review F5: the driver's guide must not list a box our own
+   * database refuses to mark en_ruta. A retenido sibling passes the seal
+   * (seal-route.ts excludes non-dispatchable statuses so it can't deadlock
+   * it) but must not appear in the payload sent to DispatchTrack.
+   */
+  it('excludes a retenido sibling from the DT guide even though it is not soft-deleted', async () => {
+    const items = await itemsFor([
+      genuinelyLoadedPkg({ id: 'p7', label: 'CTN-7', status: 'en_carga' }),
+      genuinelyLoadedPkg({ id: 'p8', label: 'CTN-8', status: 'retenido' }),
+    ]);
+    expect(items.map((i: { code: string }) => i.code)).toEqual(['CTN-7']);
   });
 });
 

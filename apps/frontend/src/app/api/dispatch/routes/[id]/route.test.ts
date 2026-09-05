@@ -37,8 +37,12 @@ function buildClient(
       in: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
     }),
   };
-  // .update({status}).in('order_id', orderIds).eq('operator_id', operatorId).in('status', [...])
-  const packagesStatusInSpy = vi.fn().mockResolvedValue({ error: null });
+  // .update({status,...}).in('order_id', orderIds).eq('operator_id', operatorId)
+  //  .in('status', [...]).is('deleted_at', null)
+  // spec-79 review F6: `.is('deleted_at', null)` re-asserted after the
+  // status `.in()`, matching the same standard as the en_ruta write.
+  const packagesIsSpy = vi.fn().mockResolvedValue({ error: null });
+  const packagesStatusInSpy = vi.fn().mockReturnValue({ is: packagesIsSpy });
   const packagesUpdateSpy = vi.fn().mockReturnValue({
     in: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({ in: packagesStatusInSpy }),
@@ -75,6 +79,7 @@ function buildClient(
     },
     packagesUpdateSpy,
     packagesStatusInSpy,
+    packagesIsSpy,
   };
 }
 
@@ -100,12 +105,20 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
     },
   );
 
-  it('resets affected packages to sectorizado, not asignado', async () => {
+  it('resets affected packages to sectorizado, not asignado, and clears the per-box load fact', async () => {
     const { client, packagesUpdateSpy } = buildClient('planned', [{ id: 'd1', order_id: 'o1' }]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
-    expect(packagesUpdateSpy).toHaveBeenCalledWith({ status: 'sectorizado' });
+    // spec-79 review F7: loaded_at/loaded_by/load_inferred reset alongside
+    // status — otherwise a box released this way could never be scanned
+    // again (scan-validator.ts's ALREADY_STAGED check).
+    expect(packagesUpdateSpy).toHaveBeenCalledWith({
+      status: 'sectorizado',
+      loaded_at: null,
+      loaded_by: null,
+      load_inferred: false,
+    });
   });
 
   /**
@@ -116,11 +129,13 @@ describe('DELETE /routes/[id] — release is a one-way door (spec-70 decision 6)
    * were stranded at listo_para_despacho with no route at all.
    */
   it('resets a sealed route\'s packages too (listo_para_despacho, not just en_carga)', async () => {
-    const { client, packagesStatusInSpy } = buildClient('loaded', [{ id: 'd1', order_id: 'o1' }]);
+    const { client, packagesStatusInSpy, packagesIsSpy } = buildClient('loaded', [{ id: 'd1', order_id: 'o1' }]);
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
     expect(packagesStatusInSpy).toHaveBeenCalledWith('status', ['en_carga', 'listo_para_despacho']);
+    // spec-79 review F6.
+    expect(packagesIsSpy).toHaveBeenCalledWith('deleted_at', null);
   });
 
   it('404s for another operator\'s route', async () => {
