@@ -195,8 +195,9 @@ export async function POST(
     // error from here on means "DT accepted, our record of it is
     // incomplete", never "DT rejected" — see the catch block below.
     const loadedIds = loadedPackageIds(dispatchRows);
+    let dispatchedCount: number;
     try {
-      await completeLocalDispatch({
+      ({ dispatchedCount } = await completeLocalDispatch({
         supabase,
         routeId,
         operatorId,
@@ -209,7 +210,7 @@ export async function POST(
         dispatchCount: dispatchRows.length,
         truckIdentifier: parsed.data.truck_identifier,
         isRetry,
-      });
+      }));
     } catch (localErr) {
       if (localErr instanceof DtAcceptedLocalFailedError) {
         await logAcceptedLocalFailed(supabase, operatorId, session.user.id, routeId, localErr);
@@ -227,10 +228,12 @@ export async function POST(
 
     // spec-79 review finding 9: no consumer of this field was found outside
     // this handler's own test — dispatchRows.length was stops/orders, not
-    // bultos. loadedPackageIds is the count of boxes actually written to
-    // en_ruta above, which is what "packages_dispatched" claims to mean.
+    // bultos. spec-79 review F2: `dispatchedCount` (what completeLocalDispatch
+    // actually wrote to en_ruta) is reported here, not `loadedIds.length`
+    // (what was merely requested) — the TOCTOU guard above exists precisely
+    // because those two can differ.
     return NextResponse.json(
-      { ok: true, external_route_id: externalRouteId, packages_dispatched: loadedIds.length },
+      { ok: true, external_route_id: externalRouteId, packages_dispatched: dispatchedCount },
       { status: 200 },
     );
   } catch (err) {

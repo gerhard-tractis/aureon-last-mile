@@ -71,23 +71,24 @@ export async function DELETE(
         .eq('operator_id', operatorId);
 
       // 3. Reset packages back to 'sectorizado' — breakage #9. Nothing writes
-      // 'asignado' any more; the dock-scan trigger (see scan-validator.ts's
-      // header comment) is what puts a package on an andén, and that is the
-      // state it should return to once its route is gone.
-      //
-      // Both 'en_carga' and 'listo_para_despacho' are matched: OPEN_ROUTE_STATUSES
-      // admits `loaded`, and /seal has already moved every staged package from
-      // en_carga to listo_para_despacho by the time a loaded route reaches here.
-      // Filtering on en_carga alone matched nothing for a sealed-then-deleted
-      // route, stranding its packages at listo_para_despacho with no route.
+      // 'asignado' any more (scan-validator.ts). Both 'en_carga' and
+      // 'listo_para_despacho' match: OPEN_ROUTE_STATUSES admits `loaded`, and
+      // /seal already moved staged packages to listo_para_despacho by then —
+      // en_carga alone stranded a sealed-then-deleted route's packages.
+      // spec-79 review F6: `.is('deleted_at', null)` re-asserted, same
+      // standard as the en_ruta write. spec-79 review F7:
+      // loaded_at/loaded_by/load_inferred reset too — leaving loaded_at set
+      // made a released box permanently unloadable (scan-validator.ts's
+      // ALREADY_STAGED check).
       const orderIds = dispatches.map((d) => d.order_id).filter((id): id is string => id != null);
       if (orderIds.length > 0) {
         await supabase
           .from('packages')
-          .update({ status: 'sectorizado' })
+          .update({ status: 'sectorizado', loaded_at: null, loaded_by: null, load_inferred: false })
           .in('order_id', orderIds)
           .eq('operator_id', operatorId)
-          .in('status', ['en_carga', 'listo_para_despacho']);
+          .in('status', ['en_carga', 'listo_para_despacho'])
+          .is('deleted_at', null);
       }
     }
 

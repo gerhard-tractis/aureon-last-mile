@@ -147,4 +147,32 @@ describe('loadedPackageIds', () => {
   it('LOADED_ON_TRUCK_STATUSES is exactly en_carga and listo_para_despacho', () => {
     expect(LOADED_ON_TRUCK_STATUSES).toEqual(['en_carga', 'listo_para_despacho']);
   });
+
+  /**
+   * spec-79 review F4: two live dispatches for the same order_id on one
+   * route are explicitly permitted (20260901000001…:186-190), and the same
+   * package then embeds under both dispatch rows. Before the Set, the same
+   * id came back twice: `.in('id', [x, x])` still only touches one row, so a
+   * perfectly healthy write reported "expected 2 / updated 1" — tripping the
+   * F2 mismatch alarm on a route that had nothing wrong with it — and
+   * packages_dispatched was reported as double the true count.
+   */
+  it('dedupes a package id that appears under two dispatches for the same order', () => {
+    const pkgShared = pkg({ id: 'p-shared', status: 'en_carga', loaded_at: '2026-09-04T10:00:00Z', load_inferred: false });
+    const d1: DispatchRow = {
+      id: 'd1', order_id: 'o1',
+      orders: {
+        order_number: '4821', customer_name: 'Mario', delivery_address: 'Av 1', customer_phone: null,
+        packages: [pkgShared],
+      },
+    };
+    const d2: DispatchRow = {
+      id: 'd2', order_id: 'o1',
+      orders: {
+        order_number: '4821', customer_name: 'Mario', delivery_address: 'Av 1', customer_phone: null,
+        packages: [pkgShared],
+      },
+    };
+    expect(loadedPackageIds([d1, d2])).toEqual(['p-shared']);
+  });
 });

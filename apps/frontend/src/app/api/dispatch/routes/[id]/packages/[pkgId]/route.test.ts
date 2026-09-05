@@ -73,9 +73,13 @@ function buildClient(opts: {
 
   // spec-79 F4: the third filter widened from `.eq('status', 'en_carga')` to
   // `.in('status', LOADED_ON_TRUCK_STATUSES)`.
+  // spec-79 review F6: `.is('deleted_at', null)` re-asserted after the
+  // status `.in()`, so the chain gets one level deeper.
+  const packagesIsSpy = vi.fn().mockResolvedValue({ error: null });
+  const packagesInSpy = vi.fn().mockReturnValue({ is: packagesIsSpy });
   const packagesUpdateSpy = vi.fn().mockReturnValue({
     eq: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({ in: vi.fn().mockResolvedValue({ error: null }) }),
+      eq: vi.fn().mockReturnValue({ in: packagesInSpy }),
     }),
   });
   const packagesChain = { update: packagesUpdateSpy };
@@ -103,6 +107,8 @@ function buildClient(opts: {
     },
     dispatchUpdateSpy,
     packagesUpdateSpy,
+    packagesInSpy,
+    packagesIsSpy,
     auditInsertSpy,
     rpcMock,
   };
@@ -157,12 +163,21 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
     );
   });
 
-  it('resets the package to sectorizado, not asignado', async () => {
+  it('resets the package to sectorizado, not asignado, and clears the per-box load fact', async () => {
     const { client, packagesUpdateSpy } = buildClient();
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
-    expect(packagesUpdateSpy).toHaveBeenCalledWith({ status: 'sectorizado' });
+    // spec-79 review F7: loaded_at/loaded_by/load_inferred are reset here
+    // too — leaving loaded_at set made the box permanently unloadable if
+    // re-planned onto another route (scan-validator.ts's ALREADY_STAGED
+    // check reads loaded_at && !load_inferred).
+    expect(packagesUpdateSpy).toHaveBeenCalledWith({
+      status: 'sectorizado',
+      loaded_at: null,
+      loaded_by: null,
+      load_inferred: false,
+    });
   });
 
   /**
@@ -172,19 +187,24 @@ describe('DELETE /routes/[id]/packages/[pkgId] — manager-only removal (spec-70
    * `listo_para_despacho` by /seal without ever moving back to `en_carga`.
    * Before this fix a package removed from such a route stranded at
    * `listo_para_despacho` with no route at all.
+   *
+   * spec-79 review F9: this test's title used to claim it reverted "a
+   * package at listo_para_despacho" — but `buildClient()` carries no package
+   * fixture at all; this handler blind-UPDATEs by `order_id` and a status
+   * filter, with no per-package SELECT to fixture in a unit test. What this
+   * actually proves — and all it can prove without a live DB — is that the
+   * status FILTER SENT includes `listo_para_despacho`, which is the real
+   * fix. Retitled to say exactly that, not more.
    */
-  it('reverts a package at listo_para_despacho (post-seal, then unsealed) back to sectorizado too', async () => {
-    const { client, packagesUpdateSpy } = buildClient();
+  it('sends listo_para_despacho (not just en_carga) in the status filter of the packages revert', async () => {
+    const { client, packagesInSpy, packagesIsSpy } = buildClient();
     (createSSRClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
     const res = await DELETE(buildRequest(), { params });
     expect(res.status).toBe(200);
 
-    // Third filter on the packages update is now .in('status', [...]),
-    // covering both en_carga and listo_para_despacho.
-    const firstEq = packagesUpdateSpy.mock.results[0].value.eq;
-    const secondEq = firstEq.mock.results[0].value.eq;
-    const inSpy = secondEq.mock.results[0].value.in;
-    expect(inSpy).toHaveBeenCalledWith('status', ['en_carga', 'listo_para_despacho']);
+    expect(packagesInSpy).toHaveBeenCalledWith('status', ['en_carga', 'listo_para_despacho']);
+    // spec-79 review F6: deleted_at re-asserted after the status filter.
+    expect(packagesIsSpy).toHaveBeenCalledWith('deleted_at', null);
   });
 
   it('inserts an audit_logs row', async () => {
