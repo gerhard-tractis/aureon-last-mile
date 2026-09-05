@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DispatchRouteScanSession, type DispatchRouteScanSessionProps } from './DispatchRouteScanSession';
 import { buildAcceptedEntry, buildRejectedEntry } from '@/lib/dispatch/mobile/scan-session';
@@ -39,7 +39,12 @@ function baseSession() {
     packagesLoaded: 148,
     packagesTotal: 172,
     percent: 86,
-    packages: [pkg({ order_id: 'o1', boxesTotal: 2, boxesLoaded: 1 })] as RoutePackage[],
+    // B3 (adversarial review) — the "missing" figure is now derived from
+    // `packages` (via `missingOrders`, stage-based) everywhere on this
+    // screen, not from `packagesTotal - packagesLoaded`. One pending order
+    // with 24 outstanding boxes keeps every existing "24 sin cargar"
+    // assertion below true while exercising the real derivation path.
+    packages: [pkg({ order_id: 'o1', stage: 'planned', boxesTotal: 25, boxesLoaded: 1 })] as RoutePackage[],
   };
 }
 
@@ -172,7 +177,12 @@ describe('DispatchRouteScanSession', () => {
 
   it('spec-77 item 3 — with nothing missing, Cerrar ruta seals directly (no confirmation sheet)', async () => {
     const user = userEvent.setup();
-    mockSession = { ...baseSession(), packagesLoaded: 172, packagesTotal: 172, packages: [pkg({ boxesTotal: 1, boxesLoaded: 1 })] };
+    mockSession = {
+      ...baseSession(),
+      packagesLoaded: 172,
+      packagesTotal: 172,
+      packages: [pkg({ stage: 'staged', boxesTotal: 1, boxesLoaded: 1 })],
+    };
     sealMock.mockResolvedValue({ ok: true, sealedStops: 172, ordersClosed: 60 });
     renderSession();
     await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
@@ -182,6 +192,69 @@ describe('DispatchRouteScanSession', () => {
     // screen's own state to the dispatch review instead of navigating away
     // (same "swap state, don't navigate" pattern as `scanning`/`viewingPackages`).
     expect(await screen.findByTestId('stub-dispatch-review')).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  // B3 (adversarial review) — the direct-close decision now comes from
+  // `packages`' own `stage` (matching the server's pending definition),
+  // never `packagesTotal - packagesLoaded`. A `partially_staged` order
+  // (its en_bodega sibling box is not counted into boxesTotal/boxesLoaded
+  // at all) must still open the confirmation sheet, even though the box
+  // arithmetic alone reads "complete".
+  it('B3 — a partially_staged order opens the sheet even when its own box count reads complete', async () => {
+    const user = userEvent.setup();
+    mockSession = {
+      ...baseSession(),
+      packagesLoaded: 172,
+      packagesTotal: 172,
+      packages: [pkg({ order_id: 'o1', stage: 'partially_staged', boxesTotal: 1, boxesLoaded: 1 })],
+    };
+    renderSession();
+    await user.click(screen.getByRole('button', { name: /cerrar con 1 sin cargar/i }));
+    expect(sealMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/cerrar con faltantes/i)).toBeInTheDocument();
+  });
+
+  // B3 — the reverse direction: an `adopted`/`force_split` order with no
+  // countable live package (`useRoutePackages` floors its `boxesTotal` to
+  // 1) must NOT be treated as missing — the server's pending definition
+  // never includes either stage, so this route seals directly.
+  it('B3 — an adopted order with a phantom-floored box count does not block the direct close', async () => {
+    const user = userEvent.setup();
+    mockSession = {
+      ...baseSession(),
+      packagesLoaded: 172,
+      packagesTotal: 172,
+      packages: [pkg({ order_id: 'o1', stage: 'adopted', boxesTotal: 1, boxesLoaded: 0 })],
+    };
+    sealMock.mockResolvedValue({ ok: true, sealedStops: 172, ordersClosed: 60 });
+    renderSession();
+    await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await waitFor(() => expect(sealMock).toHaveBeenCalledWith('r1'));
+    expect(screen.queryByText(/cerrar con faltantes/i)).not.toBeInTheDocument();
+  });
+
+  // B2 (adversarial review) — the direct-close path used to discard every
+  // seal refusal with no `else` branch at all: a dock-wifi 409 was a dead
+  // button. Every refusal must now render as real text on screen.
+  it('B2 — a refused direct close surfaces the server refusal, never silently does nothing', async () => {
+    const user = userEvent.setup();
+    mockSession = {
+      ...baseSession(),
+      packagesLoaded: 172,
+      packagesTotal: 172,
+      packages: [pkg({ stage: 'staged', boxesTotal: 1, boxesLoaded: 1 })],
+    };
+    sealMock.mockResolvedValue({
+      ok: false,
+      code: 'UNSEALED_STOPS',
+      message: 'Faltan 1 parada(s) por estibar.',
+    });
+    renderSession();
+    await user.click(screen.getByRole('button', { name: 'Cerrar ruta' }));
+    await waitFor(() => expect(sealMock).toHaveBeenCalledWith('r1'));
+    expect(await screen.findByText('Faltan 1 parada(s) por estibar.')).toBeInTheDocument();
+    expect(screen.queryByTestId('stub-dispatch-review')).not.toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
   });
 
@@ -198,8 +271,9 @@ describe('DispatchRouteScanSession', () => {
     sealMock.mockResolvedValue({ ok: true, sealedStops: 148, ordersClosed: 60 });
     renderSession();
     await user.click(screen.getByRole('button', { name: /cerrar con 24 sin cargar/i }));
-    await user.click(screen.getByRole('radio', { name: 'Terminó el turno' }));
-    await user.click(screen.getByRole('button', { name: /^cerrar con 1 sin cargar$/i }));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('radio', { name: 'Terminó el turno' }));
+    await user.click(within(dialog).getByRole('button', { name: /^cerrar con 24 sin cargar$/i }));
     await waitFor(() => expect(sealMock).toHaveBeenCalled());
     expect(await screen.findByTestId('stub-dispatch-review')).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();

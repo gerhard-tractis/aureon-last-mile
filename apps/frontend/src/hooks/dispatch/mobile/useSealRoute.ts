@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ForceSealReasonCode } from '@/lib/dispatch/force-seal-reasons';
 
 /**
@@ -28,8 +28,21 @@ export interface SealOutcome {
 
 export function useSealRoute() {
   const [isSealing, setIsSealing] = useState(false);
+  // MEDIUM (adversarial review) — a plain `isSealing` boolean read by the
+  // caller is a guard the CALLER can still race: two taps dispatched in the
+  // same synchronous handler both read `isSealing === false` before either
+  // `setState` call commits (React batches the re-render). This ref is
+  // checked and set synchronously inside `seal` itself, so a second call in
+  // the same tick is refused here, not merely discouraged by a disabled
+  // button upstream — same pattern as `useDispatchRouteToDT`'s own
+  // `inFlight` ref (spec-77 Fase 2, item 12).
+  const inFlight = useRef(false);
 
   const seal = async (routeId: string, force?: SealForceInput): Promise<SealOutcome> => {
+    if (inFlight.current) {
+      return { ok: false, code: null, message: 'Ya se está cerrando' };
+    }
+    inFlight.current = true;
     setIsSealing(true);
     try {
       const res = await fetch(`/api/dispatch/routes/${routeId}/seal`, {
@@ -53,6 +66,7 @@ export function useSealRoute() {
     } catch {
       return { ok: false, code: null, message: 'Error al cerrar la ruta — intenta de nuevo' };
     } finally {
+      inFlight.current = false;
       setIsSealing(false);
     }
   };

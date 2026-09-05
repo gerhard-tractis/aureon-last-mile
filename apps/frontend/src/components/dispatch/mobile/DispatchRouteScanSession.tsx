@@ -13,7 +13,8 @@ import { DispatchRouteCameraViewfinder } from './DispatchRouteCameraViewfinder';
 import { DispatchRouteCloseSheet } from './DispatchRouteCloseSheet';
 import { DispatchRouteDispatchReview } from './DispatchRouteDispatchReview';
 import { useSealRoute } from '@/hooks/dispatch/mobile/useSealRoute';
-import { closeButtonLabel } from '@/lib/dispatch/mobile/route-close';
+import { closeButtonLabel, missingOrders } from '@/lib/dispatch/mobile/route-close';
+import { sealErrorCopy } from '@/lib/dispatch/mobile/seal-error-copy';
 
 // spec-76 decision 4 — verbatim in spirit: the camera is a fallback, not an
 // equivalent input. Named here, not buried in a tooltip, because a
@@ -81,6 +82,12 @@ export function DispatchRouteScanSession({
   // of navigating away — same pattern as `scanning`/`viewingPackages` in
   // DispatchRouteSurface.
   const [dispatchReviewOpen, setDispatchReviewOpen] = useState(false);
+  // B2 (adversarial review) — the direct-close path used to await `seal`
+  // and discard any `!outcome.ok` result outright: no `else`, so a `409
+  // UNSEALED_STOPS`/`422 EMPTY_ROUTE`/`409 ROUTE_NOT_OPEN`/`500`, or
+  // `useSealRoute`'s own offline message, all resolved to a dead button on
+  // dock wifi. Surfaced here, cleared on every new attempt.
+  const [closeError, setCloseError] = useState<string | null>(null);
 
   const {
     submitScan,
@@ -95,18 +102,31 @@ export function DispatchRouteScanSession({
   } = useRouteScanSession(routeId, operatorId);
   const { seal, isSealing } = useSealRoute();
 
-  const missingBoxCount = packagesTotal - packagesLoaded;
+  // B3 (adversarial review) — derived from `packages`' own `dispatches.stage`
+  // (via `missingOrders`, `route-close.ts`), the same fact the server's
+  // pending definition (`route_stop_counts.pending_stops +
+  // partially_staged_stops`) is built from — never `packagesTotal -
+  // packagesLoaded`, which counts a narrower package-status set than
+  // `recompute_dispatch_stage` does and drifts from the server in both
+  // directions (see `route-close.ts`'s header for the two concrete cases).
+  const missing = missingOrders(packages);
+  const missingBoxCount = missing.reduce((sum, m) => sum + m.missingCount, 0);
 
   // item 3 — nothing missing closes directly, no confirmation. A
   // successful seal (direct here, or forced via the sheet below) opens
   // `2j` in place rather than navigating anywhere.
   const handleCloseRoute = async () => {
-    if (missingBoxCount > 0) {
+    if (missing.length > 0) {
       setCloseSheetOpen(true);
       return;
     }
+    setCloseError(null);
     const outcome = await seal(routeId);
-    if (outcome.ok) setDispatchReviewOpen(true);
+    if (outcome.ok) {
+      setDispatchReviewOpen(true);
+      return;
+    }
+    setCloseError(sealErrorCopy(outcome.code, outcome.message).text);
   };
 
   if (dispatchReviewOpen) {
@@ -203,6 +223,14 @@ export function DispatchRouteScanSession({
       </div>
 
       <footer className="mt-2 flex flex-col gap-2 p-4 pt-0">
+        {closeError && (
+          <p
+            role="alert"
+            className="rounded-[10px] border border-status-error-border bg-status-error-bg px-3 py-2 text-[12.5px] text-status-error-text"
+          >
+            {closeError}
+          </p>
+        )}
         <div className="flex gap-2">
           <button
             type="button"
