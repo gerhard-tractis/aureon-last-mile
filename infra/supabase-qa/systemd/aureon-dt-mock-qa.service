@@ -19,7 +19,7 @@ User=aureon
 WorkingDirectory=/home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock
 Environment=DT_MOCK_PORT=4477
 ExecStart=/usr/bin/node /home/aureon/aureon-qa/infra/supabase-qa/dispatchtrack-mock/server.mjs
-Restart=on-failure
+Restart=always
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
