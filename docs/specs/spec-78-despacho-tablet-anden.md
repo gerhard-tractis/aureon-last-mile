@@ -2,7 +2,8 @@
 
 > **Related:** [spec-76](spec-76-despacho-movil-carga.md) (el mismo bucle en 390 px), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio)
 
-**Status:** in progress
+**Status:** awaiting_user_test
+**Falta:** sólo los ítems 11 y 12 — medir el espacio real con el sidebar fijado (808 × 712) en el dispositivo montado, y la legibilidad a tres metros con el lector real. Las cierra una persona con el hardware, no un agente.
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_

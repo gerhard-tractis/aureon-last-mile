@@ -19,7 +19,8 @@ Every spec file must have a `**Status:**` line at the top. Keep it updated.
 | State | When |
 |---|---|
 | `backlog` | Spec written, not yet started |
-| `in progress` | Implementation has begun |
+| `in progress` | Implementation has begun, y queda trabajo que un agente puede tomar |
+| `awaiting_user_test` | No queda nada que un agente pueda hacer: toda fase restante espera a una persona |
 | `completed` | Las cuatro pruebas de abajo pasaron. No hace falta que el usuario confirme |
 | `superseded` | The feature was removed or replaced — the spec is history, not live behaviour |
 
@@ -32,6 +33,16 @@ Rules:
   3. **PR mergeado** — `gh pr view <N> --json state,mergedAt` lo confirma.
   4. **E2E en QA verde** — leyendo el reporte, no el check: el job `e2e-qa` es
      `continue-on-error: true`, así que un pipeline verde no prueba nada.
+- Set to `awaiting_user_test` cuando **ninguna fase restante la puede tomar un
+  agente**: todas están en `awaiting_user_test` (algo que sólo cierra una persona
+  con el hardware o con acceso a producción) o en `blocked` (espera una decisión
+  del usuario). Es el estado honesto para un spec terminado por nuestro lado:
+  `in progress` dice «hay trabajo en curso» y hace que el spec se lea como activo
+  cuando en realidad la pelota es del usuario. Junto al `**Status:**`, una línea
+  diciendo **qué falta y quién puede cerrarlo** — sin eso el estado no sirve.
+- De `awaiting_user_test` se sale en dos direcciones: a `completed` cuando la
+  persona cierra lo que faltaba, o de vuelta a `in progress` si su respuesta abre
+  trabajo nuevo.
 - **Ninguna fase en `awaiting_user_test` puede quedar abierta.** Ese token existe
   para lo que sólo cierra una persona con el hardware o con acceso a producción
   (legibilidad a tres metros, una medición en el dispositivo real, un conteo en
@@ -77,7 +88,9 @@ Los dos hacen que el hook se salte trabajo disponible, que es justo lo que exist
 
 ## `**Verify:**`, junto al `**Status:**`
 
-Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término y `scripts/check-spec-fields.sh` falla el PR.
+Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término.
+
+> **Ojo:** este documento afirmaba que `scripts/check-spec-fields.sh` falla el PR cuando falta. **Ese script no existe** — nunca se escribió, y `git log` no lo encuentra en ninguna rama. La regla es real pero **no está aplicada por nada**: hoy la sostiene quien escribe el spec. Es el mismo error que `pgtap-local.sh` (daba PASS a archivos inexistentes) y que el comentario de `spec76` que citaba tests que no existían: una afirmación de verificación sin verificación detrás. Escribir el script, o borrar la promesa.
 
 ```
 **Status:** in progress
