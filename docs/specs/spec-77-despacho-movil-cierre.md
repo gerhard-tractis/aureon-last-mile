@@ -2,7 +2,7 @@
 
 > **Related:** [spec-79](spec-79-dispatch-handoff-integrity.md) (**arregla H2 y H3; prerrequisito de `2k` y `2l`**), [spec-76](spec-76-despacho-movil-carga.md) (el bucle de carga que precede a estas pantallas), [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta)
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
@@ -578,7 +578,7 @@ seal, lo pasa a `DispatchRouteHandoff`).
 `packagesLeftAtDock`, dos veces con distintas aserciones) — ambas murieron contra
 `dispatch-acta.test.ts`/`DispatchRouteAcceptance.test.tsx`; revertidas, `git status` limpio.
 
-### Fase 5 — Cierre y E2E `[awaiting_user_test]`
+### Fase 5 — Cierre y E2E `[done]`
 
 El E2E de Despacho se concentra en `spec-76` y aquí (decisión del usuario). Este spec es el objetivo de mayor valor de los cuatro: es la única acción irreversible del módulo, y un fallo suyo manda un camión a la calle con una ruta mal despachada.
 
