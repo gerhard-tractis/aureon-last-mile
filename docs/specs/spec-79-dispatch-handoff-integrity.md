@@ -383,7 +383,7 @@ _2026-09-05. Cuarta tarea sobre Fase 4, esta vez sobre los MEDIUM que round 8 re
 
 **Método.** TDD en rojo primero para los cuatro (M-4: reproducción del escenario de ids repetidos entre páginas antes del guard; M-3: los tres casos del camino stale antes del reordenamiento; M-2: `DT_OUTCOME_UNKNOWN` mostrando el string crudo antes del mapeo; M-1: el texto contradictorio antes del cambio de copy). Mutación verificada a mano contra los módulos reales para los cuatro guards nuevos o movidos: el chequeo de duplicado de `dt-list-routes.ts` (M-4, muere), el `if (wasStale)` de `dispatch-resolve-external-route-id.ts` (M-3, muere en 5 pruebas), el mapeo `dispatchErrorCopy(json.code, ...)` de `useDispatchRouteToDispatchTrack.ts` (M-2, muere en 2 pruebas) — las tres revertidas tras confirmar. M-1 es un cambio de copy puro, sin guard de comportamiento que mutar; su test nuevo (`not.toMatch(/no reintentes/i)`) se confirmó rojo contra el texto viejo antes del cambio. `npx vitest run --pool=forks` completo: 608 archivos, 5752 pasan / 45 skip (los skip son preexistentes — RLS/audit tests que requieren variables de entorno de Supabase no disponibles en este entorno), 0 fallos. `npx tsc --noEmit` limpio. `npx eslint` limpio en los quince archivos tocados. No se tocó SQL — sin pgTAP esta ronda.
 
-### Fase 5 — Cierre `[done, salvo instalación systemd — ver spec-77 ítem 25]`
+### Fase 5 — Cierre `[awaiting_user_test]`
 
 _2026-09-05, PR #628._ Ningún cambio de esta fase toca una función SQL, así que el ítem 19 no aplica (nada que correr contra `pgtap-local.sh`).
 

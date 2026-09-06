@@ -578,7 +578,7 @@ seal, lo pasa a `DispatchRouteHandoff`).
 `packagesLeftAtDock`, dos veces con distintas aserciones) — ambas murieron contra
 `dispatch-acta.test.ts`/`DispatchRouteAcceptance.test.tsx`; revertidas, `git status` limpio.
 
-### Fase 5 — Cierre y E2E `[done, salvo ítem 25]`
+### Fase 5 — Cierre y E2E `[awaiting_user_test]`
 
 El E2E de Despacho se concentra en `spec-76` y aquí (decisión del usuario). Este spec es el objetivo de mayor valor de los cuatro: es la única acción irreversible del módulo, y un fallo suyo manda un camión a la calle con una ruta mal despachada.
 
