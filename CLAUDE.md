@@ -40,6 +40,6 @@ Read `docs/architecture.md` before any implementation task. Full stack and rules
 
 `brainstorming` → `writing-plans` (spec in `docs/specs/spec-XX-*.md`) → implement (TDD) → `requesting-code-review` → keep the spec's `**Status:**` line current
 
-**Status lives in the spec file**, not a tracker: `backlog` → `in progress` (first implementation commit) → `completed` (only when the user confirms). See `docs/specs/CLAUDE.md`.
+**Status lives in the spec file**, not a tracker: `backlog` → `in progress` (first implementation commit) → `awaiting_user_test` (nothing left an agent can take — every remaining phase waits on a person) → `completed` (code review done + CI green + PR merged + E2E QA green, verified — no user confirmation needed; but never while a phase sits at `awaiting_user_test`). See `docs/specs/CLAUDE.md`.
 
 > `docs/sprint-status.yaml` was deliberately removed in `45d9d1d` and is gitignored (`.gitignore:36`) — parallel branches editing it caused constant merge conflicts. Do not recreate it. `docs/stories/` holds only a template and one 2026-03 file; new work goes in `docs/specs/`.

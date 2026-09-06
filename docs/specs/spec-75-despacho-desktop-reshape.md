@@ -2,7 +2,8 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (rebranding, fase 4 «Módulos, uno por PR»), [spec-70](spec-70-dispatch-state-machine.md) (máquina de estados de ruta), [spec-71](spec-71-load-positions-staging-pass.md) (`get_pre_route_snapshot`, posiciones de carga), [spec-72](spec-72-blocks-delivery-sequence.md) (secuencia de paradas), [spec-73](spec-73-capacity-ladder-truck-topup.md) (`fleet_vehicles.capacity_packages`), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto), [spec-76](spec-76-despacho-movil-carga.md) (móvil de cuadrilla)
 
-**Status:** in progress
+**Status:** awaiting_user_test
+**Falta:** una decisión del usuario, no trabajo pendiente. Los ítems 17 y 18 están hechos; el 19 se verificó y produjo un hallazgo: las pestañas que el handoff describe no existen y nunca existieron. Falta decidir si se construyen de verdad o si se corrige el ítem para describir el apilado que sí se entrega. Nadie más que el usuario puede resolverlo.
 **Verify:** unit
 
 _Date: 2026-09-03_
@@ -154,7 +155,7 @@ Cada paso: test primero, en rojo, luego implementación. Cobertura sobre 70 % (`
     - La pestaña **Completadas** (`DispatchCompletadasTab`) muestra los últimos 7 días (`completadasSemana`), igual que la `DispatchCompletedRoutesTab` retirada — decisión 5 gobierna sólo la sección al pie de la tabla en vivo (`completadasHoy`), no el historial de la pestaña.
     - La celda `RUTA` de cada fila es ahora un `<Link>` real a `/app/dispatch/[routeId]` — sin él, la pantalla construida para señalar la peor ruta no dejaba abrirla. El enlace vive dentro de la celda, no como `onClick` de fila (la forma anidada que ya rompió accesibilidad cuatro veces en este módulo).
 
-### Fase 6 — Cierre `[pending]`
+### Fase 6 — Cierre `[blocked]`
 17. `npm run test -- --pool=forks` y mutation-test antes de push. No hay prettier en este repo.
 18. **Sin E2E nuevo.** Decisión del usuario: el E2E de Despacho se concentra en `spec-76` y `spec-77`, donde hay lector real, dispositivo real y una acción irreversible. Aquí el E2E sólo repetiría lo que ya cubren los tests de componente, y Despacho todavía no tiene fixture de E2E — construirla es tarea de `spec-76`. `e2e/dispatch-route.spec.ts` se deja como está (hoy sólo afirma una redirección de URL, no comportamiento).
 19. Verificación responsive: las tres columnas colapsan a pestañas bajo 1024px (regla del handoff, *Interactions & Behavior*). **Verificado — parcialmente cierto, con un hallazgo.**

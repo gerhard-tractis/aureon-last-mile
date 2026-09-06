@@ -2,7 +2,8 @@
 
 > **Related:** [spec-75](spec-75-despacho-desktop-reshape.md) (escritorio del mismo módulo), [spec-77](spec-77-despacho-movil-cierre.md) (cierre y despacho), [spec-78](spec-78-despacho-tablet-anden.md) (tablet del andén), [spec-61](spec-61-pickup-route-crew.md) (precedente de móvil de cuadrilla en Recogida), [spec-62](spec-62-reception-mobile.md) (precedente de móvil de andén en Recepción), [spec-68](spec-68-distribution-mobile.md) (`BatchScanner`, `QuickSortMobile`), [spec-70](spec-70-dispatch-state-machine.md) (estados de ruta y de paquete), [spec-74](spec-74-per-bulto-staging.md) (staging por bulto)
 
-**Status:** in progress
+**Status:** awaiting_user_test
+**Falta:** sólo el ítem 29 — verificación en el andén con el lector real. La cierra una persona con el hardware, no un agente.
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-03_
