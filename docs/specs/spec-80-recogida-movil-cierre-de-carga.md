@@ -107,6 +107,14 @@ Cada fase es un PR revisable por separado.
 
 ### Fase 0 — Reconectar la Firma (hotfix) `[done]`
 
+> Implementado por: **el orquestador en sesión, no `implementer`** — los tres
+> subagentes estaban caídos ese día (ver `scripts/check-harness-present.sh`).
+> Rama `feat/spec-80-fase-0-reconectar-firma`, SHA `bfb98e2`, PR #642.
+> Review: **no se hizo.** Se lanzó un `reviewer` adversarial y el usuario lo
+> detuvo antes de que devolviera hallazgos; el PR se mergeó igual. Queda
+> declarado como hueco, no como aprobado.
+> QA: PR #642 merged 2026-09-07T19:33:27Z. `e2e-qa` **no leído** para este PR —
+> el job venía rojo por tres specs de Despacho ajenas a este cambio.
 > Downstream: revisado spec-81, spec-82, spec-83 y spec-84 — **sin cambios**. Esta
 > fase sólo repunta una navegación y quita un paso fantasma del breadcrumb; no
 > toca ni el esquema, ni un RPC, ni ninguna firma que esos specs asuman.

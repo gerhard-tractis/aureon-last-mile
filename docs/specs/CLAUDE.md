@@ -105,6 +105,69 @@ Rules:
 
 Los dos hacen que el hook se salte trabajo disponible, que es justo lo que existe para evitar.
 
+## Evidencia por fase — quién implementó, quién revisó, qué dijo QA
+
+El flujo de implementación es **determinista y delegado**. La sesión principal
+orquesta; no escribe código:
+
+```
+orquestador   lee el spec, toma LA fase [pending], la pasa a [in_progress]
+    ↓
+implementer   worktree propio, TDD de superpowers, UNA fase, commitea
+    ↓
+reviewer      opus, sólo lectura, adversarial sobre ese rango de SHAs
+    ↓
+implementer   corrige (el orquestador nunca parchea el trabajo del otro)
+    ↓
+orquestador   abre PR + auto-merge
+    ↓
+qa-e2e        gh pr checks + estado de merge + LEE el reporte de e2e
+    ↓
+orquestador   pasa la fase a [done] con la evidencia
+```
+
+Nada de eso se puede comprobar leyendo el spec… salvo que el spec cargue los
+identificadores. Por eso **una fase `[done]` necesita tres líneas en su cuerpo**:
+
+```
+### Fase 1 — close_manifest RPC `[done]`
+
+> Implementado por: implementer — rama feat/spec-80-fase-1, SHA abc1234
+> Review: reviewer — 2 hallazgos, cerrados en def5678
+> QA: PR #643 merged 2026-09-08T10:12Z, e2e-qa leído en el reporte: 14 passed
+> Downstream: revisado spec-81, spec-83 — sin cambios
+```
+
+Rama, SHA y número de PR se verifican contra `git` y contra `gh`. **No dependen
+de que un subagente diga «listo»** — que es precisamente lo que no vale como
+evidencia.
+
+**El hueco se declara, no se maquilla.** Si no hubo review, la línea lo dice y
+por qué. La fase 0 de spec-80 es el ejemplo vivo: se mergeó sin review porque el
+review se detuvo a medias, y así está escrito. Un hueco declarado se puede
+cerrar después; una casilla marcada en falso, no.
+
+`scripts/check-spec-fields.sh` lo aplica en CI. Exentos `closed` y `superseded`:
+son historia, y pedirles evidencia obligaría a inventarla.
+
+## El harness tiene que existir en el repo
+
+`scripts/check-harness-present.sh` verifica que los tres agentes
+(`implementer`, `reviewer`, `qa-e2e`), los dos hooks y `.claude/settings.json`
+estén **trackeados**, con el `name:` del frontmatter igual al del archivo — el
+runtime resuelve por ese campo.
+
+Existe porque el 2026-09-07 los tres agentes desaparecieron a mitad de sesión.
+No los borró nadie a propósito: vivían **sólo como archivos sin trackear** en un
+checkout 106 commits por detrás de `main`. `git restore` no recupera lo que no
+está trackeado, un worktree nuevo no lo hereda, y el runtime —que escanea el
+directorio de trabajo— dejó de ofrecerlos sin avisar. El orquestador se quedó
+sin a quién delegar y siguió implementando él mismo.
+
+Ningún guard puede impedir que alguien borre archivos de su disco. Lo que sí
+impide es que salgan del repo: mientras estén trackeados y CI lo verifique,
+cualquier checkout limpio los recupera.
+
 ## `**Downstream:**` — los specs que dependen de lo que éste implemente
 
 Un spec se escribe contra el estado del código **del día en que se escribió**.
