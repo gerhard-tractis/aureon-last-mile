@@ -75,6 +75,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: MOCK_AUDIT_ENTRIES, error: null }),
         };
       }
@@ -128,6 +129,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: null, error: { message: 'Audit error' } }),
         };
       }
@@ -152,6 +154,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -177,6 +180,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -215,6 +219,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -239,6 +244,7 @@ describe('useOrderDetail', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }

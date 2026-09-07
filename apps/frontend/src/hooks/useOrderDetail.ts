@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
+import { ORDER_AUDIT_RESOURCE_TYPES } from '@/lib/orders/audit-decoder';
 
 export type PackageDetail = {
   id: string;
@@ -14,6 +15,14 @@ export type AuditEntry = {
   action: string;
   timestamp: string | null;
   changes_json: Record<string, unknown> | null;
+  /** Raw `audit_logs.user_id`; `actorName` is the resolved, displayable form. */
+  user_id?: string | null;
+  /**
+   * Who performed the action — 'Sistema' for trigger-written rows with no
+   * auth session, and null when the user cannot be resolved (deleted, or
+   * invisible under RLS). Never a fabricated name.
+   */
+  actorName?: string | null;
 };
 
 export type OrderDetailData = {
@@ -77,11 +86,15 @@ export function useOrderDetail(orderId: string | null) {
         manifestId = (manifestData as { id: string } | null)?.id ?? null;
       }
 
-      // 2. Fetch audit logs
+      // 2. Fetch audit logs.
+      // `resource_type` is read as a SET, not a single value: the DB trigger
+      // writes 'orders' and the bulk importer writes 'order'. Matching only
+      // the singular — as this did until the bitácora hotfix — silently
+      // returned zero rows for every trigger-written status change.
       const { data: auditData, error: auditError } = await client
         .from('audit_logs')
-        .select('id, action, timestamp, changes_json')
-        .eq('resource_type', 'order')
+        .select('id, action, timestamp, changes_json, user_id')
+        .in('resource_type', ORDER_AUDIT_RESOURCE_TYPES)
         .eq('resource_id', orderId!)
         .order('timestamp', { ascending: false });
 

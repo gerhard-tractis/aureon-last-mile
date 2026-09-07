@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { createSPAClient } from '@/lib/supabase/client';
 import type { AuditEntry, OrderDetailData, PackageDetail } from './useOrderDetail';
 import type { Json } from '@/lib/types';
+import { ORDER_AUDIT_RESOURCE_TYPES } from '@/lib/orders/audit-decoder';
+import { actorIdsToResolve, actorLabel, fetchActorDirectory } from '@/lib/orders/audit-actors';
 
 /**
  * spec-65 Task 7 — a package as the dossier needs it: `useOrderDetail`'s
@@ -133,15 +135,33 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
         manifestId = (manifestData as { id: string } | null)?.id ?? null;
       }
 
+      // `resource_type` is read as a SET, not a single value: the DB trigger
+      // (`audit_orders_changes` → `audit_trigger_func`) writes TG_TABLE_NAME,
+      // i.e. 'orders', while `api/orders/bulk-import` writes 'order'. This
+      // filtered on the singular alone and so matched none of the trigger's
+      // rows — the whole reason the bitácora rendered empty.
       const { data: auditData, error: auditError } = await client
         .from('audit_logs')
-        .select('id, action, timestamp, changes_json')
-        .eq('resource_type', 'order')
+        .select('id, action, timestamp, changes_json, user_id')
+        .in('resource_type', ORDER_AUDIT_RESOURCE_TYPES)
         .eq('resource_id', orderId!)
         .eq('operator_id', operatorId!)
         .order('timestamp', { ascending: false });
 
       if (auditError) throw auditError;
+
+      // Who did it. Resolved in a second query because `audit_logs.user_id`
+      // has no FK to `users`, so PostgREST cannot embed it.
+      const auditRows = (auditData as AuditEntry[] | null) ?? [];
+      const actorDirectory = await fetchActorDirectory(
+        client,
+        operatorId!,
+        actorIdsToResolve(auditRows.map((row) => ({ user_id: row.user_id ?? null }))),
+      );
+      const auditLogs: AuditEntry[] = auditRows.map((row) => ({
+        ...row,
+        actorName: actorLabel(row.user_id ?? null, actorDirectory),
+      }));
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: dispatchData, error: dispatchError } = await (client.from('dispatches') as any)
@@ -203,7 +223,7 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
       return {
         ...orderFields,
         packages,
-        auditLogs: (auditData as AuditEntry[] | null) ?? [],
+        auditLogs,
         manifestId,
         dispatches,
         delivered_at: deliveredAt,

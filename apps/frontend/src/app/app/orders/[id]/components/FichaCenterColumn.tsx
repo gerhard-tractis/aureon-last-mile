@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { UnifiedEventLog, type EventSourceFilter } from '@/components/orders/UnifiedEventLog';
+import { meaningfulAuditEntries } from '@/lib/orders/audit-decoder';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
@@ -38,7 +39,9 @@ const FILTERS: { id: EventSourceFilter; label: string }[] = [
 
 export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
   const [source, setSource] = useState<EventSourceFilter>('all');
-  const totalEvents = auditLogs.length + dispatches.length;
+  // Counted through the same filter `UnifiedEventLog` renders through, so
+  // the header can never claim more events than the list shows.
+  const totalEvents = meaningfulAuditEntries(auditLogs).length + dispatches.length;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-b border-border bg-surface lg:border-b-0">

@@ -113,6 +113,39 @@ Mitigación en pantalla, no en datos: cuando una orden no tiene eventos de couri
 >
 > El texto que se renderiza es *"Sin eventos de courier registrados."*, sin la frase con fecha que este párrafo describía: sin tabla no hay fecha de inicio del registro que nombrar. `UnifiedEventLog` distingue además ese caso de *"eventos de courier ocultos por el filtro"*, que es una situación distinta y se redacta distinto.
 
+> **Corrección (2026-09-07) — la mitad Aureon tampoco se veía.** Todo lo
+> anterior da por hecho que al menos las entradas AUREON llegaban a la
+> bitácora. No llegaban: `useOrderDetail` y `useOrderDossier` filtraban
+> `resource_type = 'order'` (singular), mientras que quien escribe las
+> transiciones de estado es el trigger `audit_orders_changes` →
+> `audit_trigger_func()`, que guarda `resource_type = TG_TABLE_NAME`, o sea
+> **`'orders'`**. El filtro no casaba con ninguna fila y la bitácora salía
+> vacía para *toda* orden. Medido en Musan QA: 19.922 filas bajo `'orders'`
+> y **0** bajo `'order'`.
+>
+> Contrato, para quien lea `audit_logs` en el futuro: **hay dos grafías y
+> ambas son reales.** El trigger genérico escribe el nombre de la tabla en
+> plural; `api/orders/bulk-import` escribe `'order'` en singular. Se leen
+> como conjunto — `ORDER_AUDIT_RESOURCE_TYPES` en `lib/orders/audit-decoder.ts`.
+>
+> Dos consecuencias más, ya resueltas en el mismo arreglo:
+> - El título de cada fila era `audit_logs.action`, es decir el literal
+>   `UPDATE_orders`. Ahora `decodeAuditEntry` nombra la transición real
+>   ("Estado: Ingresado → Verificado").
+> - El trigger dispara en *cada* `UPDATE`, cambie algo de negocio o no: de
+>   las 18 filas de una orden verificada, 14 solo movían
+>   `updated_at`/`status_updated_at`. Esas se ocultan (`meaningfulAuditEntries`),
+>   y el contador "N eventos" de `FichaCenterColumn` cuenta a través del
+>   mismo filtro para no prometer eventos que no se ven. Las filas escritas
+>   por la aplicación (`CSV_IMPORT`, …) nunca se ocultan: no traen
+>   `before`/`after` que comparar y existen porque alguien decidió que
+>   importaban.
+>
+> Pendiente, no resuelto aquí: el **ID de ruta** asociado a la verificación.
+> Las filas de `audit_logs` sobre `orders` no lo llevan, y la cadena
+> `reception_scans → route_receptions → pickup_routes` está vacía para las
+> órdenes de Musan (se verificaron sin escaneo de recepción).
+
 ---
 
 ## Modelo de datos
