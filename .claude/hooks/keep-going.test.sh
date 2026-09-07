@@ -144,6 +144,25 @@ check "con una tomada, sigue reclamando la libre" 2 "$r9"
 case "$r9" in *"Fase 2"*) echo "  ok   nombra la fase libre, no la tomada"; PASS=$((PASS+1));;
   *) echo "  FAIL nombra la fase libre, no la tomada"; FAIL=$((FAIL+1));; esac
 
+# --- El matcher: dos fallos reales del 2026-09-07 ---------------------------
+d10="$(setup feat/spec-100-x)"; touch "$d10/.claude/keep-going.on"
+spec "$d10" spec-100 "Fase 1 \`[pending]\`"
+( cd "$d10" && git branch -q feat/spec-100-fase1-sin-guion )
+check "sin guion (fase1) tambien cuenta como tomada" 0 "$(run "$d10" '{}')"
+
+# Una rama docs/ habla DE la fase, no la construye. Marcarla como tomada dejo
+# spec-80 fase 1 invisible para el hook mientras nadie la implementaba.
+d11="$(setup feat/spec-101-x)"; touch "$d11/.claude/keep-going.on"
+spec "$d11" spec-101 "Fase 1 \`[pending]\`"
+( cd "$d11" && git branch -q docs/spec-101-fase-1-alcance )
+check "una rama docs/ NO marca la fase como tomada" 2 "$(run "$d11" '{}')"
+
+# El limite del numero sigue firme con el separador opcional.
+d12="$(setup feat/spec-102-x)"; touch "$d12/.claude/keep-going.on"
+spec "$d12" spec-102 "Fase 10 \`[pending]\`"
+( cd "$d12" && git branch -q feat/spec-102-fase1-algo )
+check "fase1 sin guion tampoco silencia a fase-10" 2 "$(run "$d12" '{}')"
+
 echo
 echo "  $PASS ok, $FAIL fail"
 [ "$FAIL" -eq 0 ]

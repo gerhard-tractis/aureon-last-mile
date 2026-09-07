@@ -99,10 +99,23 @@ first_token() {
 # este hook no puede hacer red (dispara en cada fin de turno).
 ALL_BRANCHES="$(git branch -a --format='%(refname:short)' 2>/dev/null || true)"
 
+# Dos fallos reales del matcher original, los dos vistos el 2026-09-07:
+#
+#   FALSO POSITIVO  docs/spec-80-fase-1-alcance era un PR que corregia el TEXTO
+#                   del spec, no una implementacion — y marcaba la fase como
+#                   tomada. Una rama docs/ habla DE la fase; no la construye.
+#
+#   FALSO NEGATIVO  feat/spec-87-fase1-cuarentena no casaba, porque el patron
+#                   exigia separador entre "fase" y el numero. El implementer
+#                   escribio "fase1" y la fase quedo invisible.
+#
+# El separador pasa a ser opcional, y las ramas docs/ dejan de contar. Lo que NO
+# se relaja es el limite del numero: fase-1 no puede casar fase-10, o delegar la
+# 1 silenciaria la 10.
 phase_taken() { # $1 = numero de fase
   [ -n "${1:-}" ] || return 1
   printf '%s
-' "$ALL_BRANCHES"     | grep -qiE "${SPEC_ID}[-_](fase|phase)[-_]$1([^0-9]|$)"
+' "$ALL_BRANCHES"     | grep -viE '(^|/)docs/'     | grep -qiE "${SPEC_ID}[-_](fase|phase)[-_]?$1([^0-9]|$)"
 }
 
 # Cuenta las [pending] que NADIE tiene tomada.
