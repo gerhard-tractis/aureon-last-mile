@@ -74,6 +74,8 @@ Ordered. Each step is independently deployable; do not batch them into one migra
 
 `20260812000005_spec52_receptionist_trigger.sql` carries deploy-time post-conditions that **abort the migration** if `close_pickup_route` or the trigger's `route_receptions` insert has already been removed. That tripwire exists to catch steps landing out of order — expect it to fire if you do (3) before its dependants are ready, and read it rather than working around it.
 
+Ops Control's **Recogida** panel no longer depends on `close_pickup_route` at all. Until `20260912000001_recogida_visible_when_carga_verified.sql` the `get_ops_control_snapshot` manifests key read only `manifests.reception_status`, which nothing but `close_pickup_route()`/`open_route_reception()` writes — so the control tower saw a finished carga only after the crew pressed "Cerrar ruta y entregar" (QA, Musan, 2026-09-07). It now also admits a carga closed out on a route still `in_progress`. Deleting the close path in step (3) therefore costs the tower nothing; do not "restore" a reception_status writer to compensate.
+
 `scripts/check-migration-versions.sh` (CI) fails on duplicate migration version prefixes. Two collisions happened on 2026-08-13, one of which blocked production deploys for 43 minutes. Check the guard locally before choosing a number, and check `origin/main`, not just your branch — `ls | tail` shows the highest number on *your* branch, not the highest about to exist.
 
 ## Verification
