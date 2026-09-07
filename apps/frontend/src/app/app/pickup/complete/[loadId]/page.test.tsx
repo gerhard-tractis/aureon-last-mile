@@ -75,7 +75,7 @@ vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
 }));
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const mockPush = vi.fn();
@@ -164,15 +164,53 @@ describe('CompletionPage', () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
+      // H5 (fix round 1): operator_name is no longer sent — the RPC derives
+      // the signer's name server-side from the JWT actor. A client-supplied
+      // name would be worthless as custody-transfer evidence.
       expect(mockRpc).toHaveBeenCalledWith('close_manifest', {
         p_manifest_id: 'm1',
         p_signatures: {
           operator_signature: 'data:image/png;base64,FAKE',
-          operator_name: 'Test User',
           client_signature: null,
           client_name: null,
         },
       });
+    });
+  });
+
+  it('surfaces an RPC rejection to the operator instead of failing silently (H2)', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'manifest already signed' },
+    });
+    const { toast } = await import('sonner');
+
+    render(<CompletionPage />);
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(sigPad);
+
+    const submitButton = await screen.findByRole('button', {
+      name: /completar y generar recibo/i,
+    });
+    fireEvent.click(submitButton);
+
+    const confirmButton = await screen.findByRole('button', {
+      name: /confirmar y completar/i,
+    });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        expect.stringContaining('manifest already signed')
+      );
+    });
+
+    // The button must be re-enabled so the operator can retry or investigate
+    // instead of being stuck on a spinner forever.
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /completar y generar recibo/i })
+      ).not.toBeDisabled();
     });
   });
 });

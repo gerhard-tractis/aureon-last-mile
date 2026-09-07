@@ -2246,9 +2246,11 @@ export type Database = {
       close_manifest: {
         Args: {
           p_manifest_id: string
+          // fix round 1 (H5): the signer's name is derived server-side from
+          // public.users via the JWT actor, never accepted from the client —
+          // it is custody-transfer evidence.
           p_signatures: {
             operator_signature: string
-            operator_name: string
             client_signature?: string | null
             client_name?: string | null
           }

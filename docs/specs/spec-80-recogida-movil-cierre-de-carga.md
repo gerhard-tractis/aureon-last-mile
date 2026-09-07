@@ -176,6 +176,38 @@ cuatro columnas de firma, y devuelve el resumen que consume `5i`.
 
 Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
 
+> **Fix round 1 (2026-09-07) — el guard de "ya cerrado" cambió de eje.**
+> `trg_route_receptions_status_sync` (`20260812000006`) es un **segundo
+> cerrador**: cuando la recepción del hub termina, marca `status='completed'`
+> y `completed_at` en todos los manifiestos de la ruta **sin ninguna firma** —
+> existe justamente porque durante meses la cuadrilla se saltaba esta
+> pantalla. Rechazar por `status='completed'` (como hacía la primera versión
+> de esta fase) deja esa firma **inalcanzable para siempre**: es la evidencia
+> contra una indemnización, perdida sin vuelta atrás.
+>
+> El guard real es `signature_operator IS NOT NULL` — eso sigue impidiendo el
+> doble cierre (el camino feliz escribe la firma en el mismo `UPDATE`) sin
+> bloquear el rescate de un manifiesto que el otro cerrador ya completó sin
+> firma. Se añadió además un guard de estado separado
+> (`status NOT IN ('in_progress', 'completed')`) para rechazar un manifiesto
+> `pending` — el que `remove_manifest_from_route` (`20260824000004`) deja sin
+> `started_at`, que nunca se trabajó de verdad.
+>
+> `signature_operator_name` también dejó de venir de `p_signatures`: se
+> deriva server-side desde `public.users` por el actor del JWT — es evidencia
+> de transferencia de custodia, y un nombre que controla el cliente no sirve
+> como tal.
+>
+> **Deuda declarada, no resuelta en esta fase:** `manifests` sigue con
+> `GRANT UPDATE` a `authenticated` (heredado de `20260310100000`, lo usa
+> `openPendingManifest.ts` para transiciones `pending → in_progress` fuera
+> del alcance de este RPC). Un conductor autenticado puede seguir escribiendo
+> `PATCH /rest/v1/manifests` directamente y saltarse `close_manifest` por
+> completo, incluyendo las firmas. El cierre real sería acotar ese grant por
+> columna (`GRANT UPDATE (status, started_at, total_orders, total_packages)`)
+> una vez `openPendingManifest.ts` sea la única vía de escritura fuera del
+> RPC. No se hizo aquí para no tocar ese flujo, fuera de alcance de esta fase.
+
 - [ ] Test pgTAP primero, incluyendo el rechazo cross-tenant. Correr con `scripts/pgtap-local.sh` (los tests SQL **no** corren en CI; ver spec-51).
 - [ ] Implementar. Migración con prefijo de versión único.
 - [ ] Repuntar `complete/[loadId]` al RPC, borrando el `.update()` crudo.

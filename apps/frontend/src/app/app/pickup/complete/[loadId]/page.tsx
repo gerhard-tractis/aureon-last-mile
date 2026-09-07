@@ -113,11 +113,14 @@ export default function CompletionPage() {
 
     try {
       const supabase = createSPAClient();
+      // H5 (fix round 1): operator_name is NOT sent — close_manifest derives
+      // the signer's name server-side from the JWT actor's public.users row.
+      // A client-supplied name would be worthless as custody-transfer
+      // evidence.
       const { error } = await supabase.rpc('close_manifest', {
         p_manifest_id: manifestId,
         p_signatures: {
           operator_signature: operatorSignature,
-          operator_name: operatorName,
           client_signature: clientSignature,
           client_name: clientName || null,
         },
@@ -127,7 +130,20 @@ export default function CompletionPage() {
       toast.success('Manifiesto completado exitosamente');
       router.push('/app/pickup');
     } catch (err) {
+      // H2 (fix round 1): close_manifest now has three hard rejections
+      // (cross-tenant, non-closable status, already signed) where the old
+      // raw .update() almost always just succeeded. Swallowing the error
+      // left the operator staring at a re-enabled button with no idea
+      // whether the signature was captured — surface it.
+      // Supabase RPC errors (PostgrestError) are plain objects with a
+      // `message`, not `Error` instances — check for the property directly
+      // rather than `instanceof Error`.
+      const message =
+        (typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message: unknown }).message)
+          : null) || 'No se pudo completar el manifiesto';
       console.error('Failed to complete manifest:', err);
+      toast.error(message);
       setIsSubmitting(false);
     }
   };
