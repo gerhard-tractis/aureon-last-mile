@@ -45,3 +45,12 @@ test-results/
 # drops mid-session). Never a deliberate artefact -- 78 of these had accumulated
 # untracked at the repo root by 2026-08.
 .playwright-mcp/
+
+# Estado de ejecucion de los hooks de .claude/hooks/. Cambian en cada fin de
+# turno y son propios de cada worktree: versionarlos produce conflictos en
+# cada merge. El interruptor .claude/keep-going.on SI se versiona, para que
+# todo worktree nazca armado.
+.claude/.keep-going-count
+.claude/.keep-going-fp
+.claude/BLOCKED.md
+.claude/active-spec

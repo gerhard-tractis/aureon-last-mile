@@ -554,12 +554,15 @@ jobs:
   # Drives the real screens in the QA environment with Playwright, on the commit
   # QA was just synced to (spec-57 phase 2).
   #
-  # ADVISORY FOR NOW — it reports, it does not block. `approve-production`
-  # deliberately does NOT list this job in its `needs:`, and
-  # scripts/check-deploy-gating.sh does not assert it. A suite that gates
-  # production before its flakiness and runtime are known just trains you to
-  # click through red. Make it blocking once it has a track record: add `e2e-qa`
-  # to approve-production's needs, extend the guard, and drop continue-on-error.
+  # BLOCKING. `approve-production` lists this job in its `needs:` and asserts
+  # its result, and scripts/check-deploy-gating.mjs fails CI if either wiring is
+  # removed. A red E2E against QA stops the production deploy.
+  #
+  # It was advisory until 2026-09-03 (continue-on-error + absent from the gate)
+  # while its flakiness and runtime were unknown. If it starts failing for
+  # reasons that are not the code — QA seed drift, VPS flakiness — fix the cause
+  # or quarantine the individual test. Do NOT restore continue-on-error: a suite
+  # that cannot veto is telemetry, not a gate, and the guard will fail CI anyway.
   #
   # Must run on the VPS: every QA port binds to localhost there.
   e2e-qa:
@@ -577,7 +580,6 @@ jobs:
     if: always() && !failure() && !cancelled() && needs.deploy-qa.result == 'success'
     runs-on: [self-hosted, vps]
     timeout-minutes: 30
-    continue-on-error: true
     defaults:
       run:
         working-directory: apps/frontend
@@ -671,8 +673,11 @@ jobs:
   # depending on this one. Do not remove that check.
   approve-production:
     name: Approve Production Deploy
-    needs: [changes, deploy-qa]
-    if: always() && !failure() && !cancelled() && needs.deploy-qa.result == 'success'
+    needs: [changes, deploy-qa, e2e-qa]
+    if: |
+      always() && !failure() && !cancelled()
+      && needs.deploy-qa.result == 'success'
+      && needs.e2e-qa.result == 'success'
     environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 5

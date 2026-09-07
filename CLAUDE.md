@@ -2,8 +2,6 @@
 
 ## ⚠️ CRITICAL Rules
 
-**Never modify:** `.claude/settings.local.json`, `.claude/settings.json`, `.claude/keybindings.json`
-
 **Never deploy** to Vercel/Supabase/VPS unless user says "deploy" or "push to production".
 
 **Always create a PR with auto-merge after every push** — run `gh pr create` followed by `gh pr merge --auto --squash` as part of the same step. Never skip the auto-merge command.
