@@ -140,7 +140,7 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 | **2 — RPCs** | `record_discrepancies`, `resolve_discrepancy`, lectura |
 | **3 — `lost` e indemnización** | qué pasa con el bulto y con `exceptions` |
 
-### Fase 1 — Esquema `[pending]`
+### Fase 1 — Esquema `[in_progress]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
