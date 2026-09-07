@@ -83,6 +83,18 @@ jobs:
       - name: Test the spec-fields guard
         run: bash ./scripts/check-spec-fields.test.sh
 
+      # El harness de orquestación tiene que seguir existiendo EN EL REPO.
+      # El 2026-09-07 los tres subagentes desaparecieron a mitad de sesión
+      # porque vivían sólo como archivos sin trackear en un checkout viejo:
+      # nada los podía recuperar y el orquestador se quedó sin a quién delegar.
+      # Corre en todos los eventos, no sólo en PRs: un push directo que los
+      # borre es exactamente el caso que hay que atrapar.
+      - name: Check the orchestration harness is present
+        run: bash ./scripts/check-harness-present.sh
+
+      - name: Test the harness guard
+        run: bash ./scripts/check-harness-present.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

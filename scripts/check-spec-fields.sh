@@ -126,6 +126,46 @@ for f in $FILES; do
       ;;
   esac
 
+  # Evidencia por fase: quién la implementó, quién la revisó, qué dijo QA.
+  #
+  # El flujo determinista es orquestador -> implementer -> reviewer -> qa-e2e,
+  # y nada de eso se puede comprobar leyendo el spec... salvo que el spec cargue
+  # los identificadores. Por eso se piden rama, SHA y número de PR: se verifican
+  # contra git y contra `gh`, y no dependen de que un subagente diga "listo".
+  # Un review que NO se hizo se declara igual, con esas palabras — el hueco
+  # honesto vale más que la casilla marcada.
+  #
+  # Exentos `closed` y `superseded`: son historia, y exigirles evidencia
+  # obligaría a inventarla para trabajo de hace meses.
+  case "$status" in
+    closed|superseded) ;;
+    *)
+      awk '
+        function flush() {
+          if (pend) {
+            miss = ""
+            if (!impl) miss = miss " Implementado-por"
+            if (!rev)  miss = miss " Review"
+            if (!qa)   miss = miss " QA"
+            if (miss != "") print lineno "	" miss "	" head
+          }
+        }
+        /^#{2,4} .*\[done\]`?[ 	]*$/ { flush(); pend=1; impl=0; rev=0; qa=0; head=$0; lineno=NR; next }
+        /^#{2,4} /            { flush(); pend=0; next }
+        /^> Implementado por:/ { if (pend) impl=1 }
+        /^> Review:/           { if (pend) rev=1 }
+        /^> QA:/               { if (pend) qa=1 }
+        END { flush() }
+      ' "$f" > "/tmp/_ev_$$" 2>/dev/null || true
+      if [ -s "/tmp/_ev_$$" ]; then
+        echo "::error file=$f::Fase(s) [done] sin evidencia. Cada fase cerrada necesita en su cuerpo: '> Implementado por:' (agente + rama + SHA), '> Review:' (hallazgos, o 'sin revisión' y por qué) y '> QA:' (PR y resultado leido del reporte)."
+        while IFS="$(printf '	')" read -r ln miss head; do echo "    $f:$ln: falta$miss — $head"; done < "/tmp/_ev_$$"
+        FAILED=1
+      fi
+      rm -f "/tmp/_ev_$$"
+      ;;
+  esac
+
   phases="$(grep -cE "^#{2,4} .*\[($VALID)${TOKEN_END}" "$f" 2>/dev/null || true)"
   [ -n "$phases" ] || phases=0
 

@@ -24,7 +24,7 @@ check "fases sin Verify falla" 1 "$(mk noverify.md '# S' '**Status:** in progres
 check "sin Status falla" 1 "$(mk nostatus.md '# S' '**Verify:** unit' '### Fase 1 `[done]`')"
 check "token mal escrito falla" 1 "$(mk typo.md '# S' '**Status:** in progress' '**Verify:** unit' '### Fase 1 `[in progress]`')"
 check "token inventado falla" 1 "$(mk typo2.md '# S' '**Status:** in progress' '**Verify:** unit' '### Fase 1 `[pendign]`')"
-check "todos los tokens validos pasan" 0 "$(mk all.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[pending]`' '### F2 `[in_progress]`' '### F3 `[blocked]`' '### F4 `[awaiting_user_test]`' '### F5 `[done]`' '### F6 `[parked]`')"
+check "todos los tokens validos pasan" 0 "$(mk all.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[pending]`' '### F2 `[in_progress]`' '### F3 `[blocked]`' '### F4 `[awaiting_user_test]`' '### F5 `[done]`' '> Implementado por: implementer — rama x, SHA abc1234' '> Review: reviewer — sin hallazgos' '> QA: PR #1 merged, e2e verde' '### F6 `[parked]`')"
 check "archivo inexistente no rompe" 0 "$D/no-existe.md"
 
 # closed / completed no pueden dejar fases abiertas — el hook Stop lee los tokens,
@@ -40,13 +40,23 @@ check "in progress con fase abierta pasa" 0 "$(mk inprog.md '# S' '**Status:** i
 # de fallo que dejan al spec siguiente construyendo sobre una suposición vieja.
 check "downstream a spec inexistente falla" 1 "$(mk down-dangling.md '# S' '**Status:** in progress' '**Verify:** unit' '**Downstream:** spec-99-no-existe.md' '### F1 `[pending]`')"
 check "fase done sin reconciliacion falla" 1 "$(mk down-norec.md '# S' '**Status:** in progress' '**Verify:** unit' '**Downstream:** down-target.md' '### F1 `[done]`' 'prosa cualquiera')"
-check "fase done con reconciliacion pasa" 0 "$(mk down-ok.md '# S' '**Status:** in progress' '**Verify:** unit' '**Downstream:** down-target.md' '### F1 `[done]`' '> Downstream: revisado down-target (PR #1) — sin cambios')"
-check "sin Downstream no exige reconciliacion" 0 "$(mk down-absent.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`')"
+check "fase done con reconciliacion pasa" 0 "$(mk down-ok.md '# S' '**Status:** in progress' '**Verify:** unit' '**Downstream:** down-target.md' '### F1 `[done]`' '> Downstream: revisado down-target (PR #1) — sin cambios' '> Implementado por: implementer — rama x, SHA abc1234' '> Review: reviewer — sin hallazgos' '> QA: PR #1 merged, e2e verde')"
+check "sin Downstream no exige reconciliacion" 0 "$(mk down-absent.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`' '> Implementado por: implementer — rama x, SHA abc1234' '> Review: reviewer — sin hallazgos' '> QA: PR #1 merged, e2e verde')"
 check "reconciliacion de otra fase no cuenta" 1 "$(mk down-wrongphase.md '# S' '**Status:** in progress' '**Verify:** unit' '**Downstream:** down-target.md' '### F1 `[done]`' '### F2 `[done]`' '> Downstream: revisado (PR #1) — sin cambios')"
 
 # un heading con corchetes que NO es fase (link markdown) no debe fallar
 check "link markdown en heading no confunde" 0 "$(mk link.md '# S' '**Status:** backlog' '### Ver [spec-42](spec-42.md)')"
 
+
+# Evidencia de fase: el flujo orquestador -> implementer -> reviewer -> qa-e2e
+# sólo es comprobable si la fase carga rama, SHA y PR. Sin eso, "listo" es la
+# palabra de un subagente y nada más.
+check "done sin evidencia falla" 1 "$(mk ev-none.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`')"
+check "done con evidencia parcial falla" 1 "$(mk ev-partial.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`' '> Implementado por: implementer — SHA abc1234')"
+check "done con evidencia completa pasa" 0 "$(mk ev-full.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`' '> Implementado por: implementer — rama x, SHA abc1234' '> Review: reviewer — 2 hallazgos cerrados' '> QA: PR #9 merged, e2e verde')"
+check "evidencia de otra fase no cuenta" 1 "$(mk ev-leak.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[done]`' '> Implementado por: x' '> Review: y' '> QA: z' '### F2 `[done]`')"
+check "spec closed exento de evidencia" 0 "$(mk ev-closed.md '# S' '**Status:** closed' '**Verify:** unit' '### F1 `[done]`')"
+check "fases no-done no exigen evidencia" 0 "$(mk ev-open.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[pending]`' '### F2 `[parked]`')"
 echo
 echo "  $PASS ok, $FAIL fail"
 [ "$FAIL" -eq 0 ]
