@@ -73,7 +73,12 @@ Aquí alguien ya aprendió esa lección: la migración **cuenta los conflictos p
 | **4 — Desplegar el backlog por lotes** | Producción al día | agente (aprobación incluida) |
 | **5 — Guardarraíles** | Que no vuelva a acumularse | agente |
 
-### Fase 1 — Cuarentena del gate `[pending]`
+### Fase 1 — Cuarentena del gate `[in_progress]`
+
+> Delegada a un `implementer` el 2026-09-07. El token se marca **aquí, en la rama
+> del spec, al delegar** — no en el worktree del implementer: hasta que su rama
+> mergee, `main` seguiría diciendo `[pending]` y tanto el hook `Stop` como otra
+> sesión la tomarían por segunda vez.
 
 **Archivos:** `.github/workflows/deploy.yml`, `apps/frontend/e2e/quarantine.json` (nuevo), `scripts/check-quarantine.sh` + su test
 
