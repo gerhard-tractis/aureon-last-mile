@@ -631,7 +631,22 @@ jobs:
           # timeout if it is not running.
           curl -sf http://127.0.0.1:4477/__test__/health > /dev/null \
             || echo "::warning::DispatchTrack mock (127.0.0.1:4477) is not reachable — despacho-close-dispatch.spec.ts will fail"
-          npm run e2e:qa
+          # spec-87 fase 1 — this step must not fail the job on a raw red
+          # suite: whether that is allowed through is decided by the
+          # "Check quarantine" step below, which reads the JSON report this
+          # produces. `|| true` here is NOT continue-on-error (that swallows
+          # the result at the job level and disappears silently) — the suite
+          # still vetoes production, just one step later, against the
+          # quarantine list rather than against a bare exit code.
+          npm run e2e:qa || true
+
+      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == 'true'
+        working-directory: .
+        run: |
+          bash scripts/check-quarantine.sh \
+            apps/frontend/e2e/quarantine.json \
+            apps/frontend/playwright-report-qa/results.json
 
       - name: Upload report
         if: always() && steps.qa.outputs.provisioned == 'true'
