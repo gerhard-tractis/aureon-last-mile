@@ -671,8 +671,8 @@ ROLLBACK TO test_15;
 -- a GRANT denial "permission denied for table ...". Verified directly
 -- against this container before writing this test. So the two causes are
 -- told apart by GET STACKED DIAGNOSTICS ... MESSAGE_TEXT, not by exception
--- class — `WHEN check_violation` (as in TEST 11/12) never actually fires
--- for an RLS rejection; it only look like a stricter check because
+-- class — `WHEN check_violation` never fires for RLS: PostgreSQL raises 42501 for a WITH CHECK rejection, not 23514
+-- for an RLS rejection; it only looked like a stricter check because
 -- `insufficient_privilege` on its own already covers both causes.
 -- =============================================================================
 SAVEPOINT test_16;
