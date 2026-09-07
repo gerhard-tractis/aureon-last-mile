@@ -83,6 +83,14 @@ export default defineConfig({
   // parses to decide whether a red suite is entirely declared quarantine or
   // has an undeclared failure. Written inside playwright-report-qa/ so it
   // ships in the same uploaded artifact as the HTML report.
+  //
+  // ARRAY ORDER IS LOAD-BEARING (review round 1). Reporters' onEnd() hooks
+  // run in array order, and the html reporter's onEnd does
+  // `removeFolders([outputFolder])` before it rebuilds the report — verified
+  // against @playwright/test 1.58.2's reporters/html.js. 'html' MUST stay
+  // before 'json': swap them and results.json gets deleted the instant it is
+  // written, because json's onEnd would then run BEFORE html's onEnd wipes
+  // the folder.
   reporter: [
     ['list'],
     ['html', { open: 'never', outputFolder: 'playwright-report-qa' }],

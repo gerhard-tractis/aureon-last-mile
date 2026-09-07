@@ -661,7 +661,11 @@ jobs:
         if: failure()
         run: |
           echo "::error::E2E against QA failed on ${DEPLOY_SHA}."
-          echo "This is ADVISORY — it does not block the production deploy."
+          # False since 2026-09-03: approve-production requires
+          # needs.e2e-qa.result == 'success' (see check-deploy-gating.mjs),
+          # and since spec-87 fase 1 "failed" here means an undeclared
+          # failure, an expired quarantine entry, or a stale one — not a raw
+          # red exit code. This DOES block the production deploy.
           echo "Download the 'e2e-qa-report-*' artifact for traces and video."
 
   # ─── 8. Production approval gate ─────────────────────────────────────────────

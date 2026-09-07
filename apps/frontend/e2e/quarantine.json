@@ -9,7 +9,7 @@
   {
     "spec": "e2e/despacho-close-dispatch.spec.ts",
     "test": "Route L — DT accepts, local write fails, retry completes WITHOUT a second DT route",
-    "reason": "expect(count).toBe(1) falla con Received: 7 sobre createRouteCallCount — el mock de DispatchTrack registra múltiples rutas creadas en vez de una sola tras el reintento. Falla igual en cada run reciente (34162307152, 34161210381, 34137968772, 34136587520). No coincide con la narrativa de spec-87 sobre el afordance móvil de las otras dos entradas; requiere su propio diagnóstico, no cubierto por la fase 2 tal como está descrita.",
+    "reason": "expect(count).toBe(1) falla, pero el contador SUBE de run en run (6, 7, 8…) — es artefacto de fixture, no bug de producto: L_ORDER es la constante fija E2E77-L-ORD, el mock de DispatchTrack es un systemd de larga vida con createdRoutes en memoria, y POST /__test__/reset existe pero no lo llama nadie en el repo. El incremento es siempre +1 por ejecución, nunca +2 — el reintento no duplica la ruta. No coincide con la narrativa de spec-87 sobre el afordance móvil de las otras dos entradas; necesita su propio arreglo (llamar /__test__/reset antes del test, o parametrizar L_ORDER por run), no cubierto por la fase 2 tal como está descrita.",
     "owner": "spec-79",
     "expires": "2026-09-21"
   }

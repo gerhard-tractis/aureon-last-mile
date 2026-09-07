@@ -91,8 +91,8 @@ El gate falla ante **cualquier fallo fuera de la lista**, y ante **cualquier ent
 
 **Esto NO es `continue-on-error`**, que `deploy.yml` prohíbe explícitamente y con razón: *«una suite que no puede vetar es telemetría, no un gate»*. Aquí la suite conserva el veto para todo lo que no esté declarado.
 
-- [ ] Tests del parser y de la caducidad primero.
-- [ ] Cablear en `e2e-qa` y comprobar que `scripts/check-deploy-gating.mjs` sigue verde: **falla CI si alguien desconecta el gate**, y esta fase lo toca.
+- [x] Tests del parser y de la caducidad primero.
+- [x] Cablear en `e2e-qa` y comprobar que `scripts/check-deploy-gating.mjs` sigue verde: **falla CI si alguien desconecta el gate**, y esta fase lo toca. Extendido en fix round 1 para exigir el propio step `check-quarantine.sh` dentro de `e2e-qa` — antes sólo miraba `needs:`/`continue-on-error` a nivel de job y no veía el veto que vive en un step.
 
 ### Fase 2 — Arreglar la aserción de Despacho `[pending]`
 
