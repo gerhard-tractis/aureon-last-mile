@@ -13,6 +13,11 @@
  * The operator and its clients already exist — the migrations create them.
  * This adds only what they do not: pickup points, cargas, and logins.
  *
+ * Four cargas — two Easy, two Paris — each holding the same ten orders, two of
+ * each of the five package shapes in lib/composition.ts. All four are seeded
+ * PENDING, so every one of them can be collected from scratch; the shapes are
+ * what make the four cargas worth having rather than one.
+ *
  * NOTE the QA database's Musan is NOT production Musan. Production's operator
  * id 92dc5797-047d-458d-bbdb-63f18c0dd1e7 is hardcoded in beetrack-webhook and
  * the Easy WMS n8n workflow; lib/guards.ts refuses to seed any database
@@ -20,64 +25,12 @@
  */
 
 import type { SeedClient } from '../lib/db';
-import { AssertionCollector, assertCount } from '../lib/assert';
-import {
-  createLoginUser,
-  createOrderWithPackages,
-  resettleOrderStatus,
-} from '../lib/factories';
+import { AssertionCollector } from '../lib/assert';
+import { createOrderWithPackages, resettleOrderStatus } from '../lib/factories';
+import { COMPOSITION_LABELS, buildCargaOrders, toPackageRows } from '../lib/composition';
 import { ScenarioGroup, qaId } from '../lib/ids';
-
-/**
- * Logins for Musan. Permissions are in the vocabulary the APPLICATION checks —
- * pickup, reception, distribution, dispatch, customer_service, admin — which
- * migration 20260811000001 made authoritative and handle_new_user now assigns
- * per role (pickup_leader added to that CASE by 20260820000002).
- *
- * These used to carry the database's legacy tokens (warehouse / loading /
- * operations). Nothing in the app reads those, so a user holding them could
- * never see Recepción or Distribución. 20260811000001 translated the rows
- * already in QA, but the values here were left behind — and createLoginUser
- * repairs an existing login by overwriting permissions, so the next seed run
- * would have written the legacy tokens straight back over the translation.
- * Keeping this list in the app's vocabulary is what stops that regression.
- *
- * Password is the shared QA one: QaTest123!
- */
-const MUSAN_LOGINS = [
-  {
-    seq: 20,
-    email: 'admin@musan.com',
-    role: 'admin',
-    fullName: 'Musan Admin',
-    permissions: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service', 'admin'],
-  },
-  {
-    seq: 21,
-    email: 'operaciones@musan.com',
-    role: 'operations_manager',
-    fullName: 'Musan Operaciones',
-    permissions: ['pickup', 'reception', 'distribution', 'dispatch', 'customer_service'],
-  },
-  {
-    seq: 22,
-    email: 'bodega@musan.com',
-    role: 'warehouse_staff',
-    fullName: 'Musan Bodega',
-    permissions: ['reception', 'distribution'],
-  },
-  {
-    // spec-61 — Musan needs someone who can OPEN a pickup route, not just work
-    // one. start_pickup_route gates route creation by ROLE (ROUTE_LEADER_ROLES
-    // in lib/permissions.ts), never by a permission token, so the token set is
-    // deliberately identical to pickup_crew's: the role is what grants it.
-    seq: 23,
-    email: 'lider@musan.com',
-    role: 'pickup_leader',
-    fullName: 'Musan Líder de Recogida',
-    permissions: ['pickup'],
-  },
-] as const;
+import { seedMusanLogins } from './musan-logins';
+import { assertMusan, type CargaSummary } from './musan-assertions';
 
 /**
  * Musan is NOT created here — the migrations already create it:
@@ -100,25 +53,6 @@ export const MUSAN_QA = {
   parisPickupPointId: qaId(ScenarioGroup.MUSAN, 5),
 } as const;
 
-/**
- * Which Pickup tab a carga lands in. The three RPCs behind that screen split on
- * the manifest row, not on the orders:
- *
- *   get_pending_manifests     built FROM ORDERS; excludes any load whose
- *                             manifest has reception_status IS NOT NULL,
- *                             status = 'completed', or (spec-61 Task 7)
- *                             pickup_route_id IS NOT NULL
- *   get_in_transit_manifests  manifest.reception_status IS NOT NULL
- *                             AND status <> 'completed'
- *   get_completed_manifests   manifest.status = 'completed'
- *
- * So a load awaiting collection must have NO manifest row, or one with a NULL
- * reception_status — as the RPC itself notes, "pending loads may not have a
- * manifest row until the operator opens the scan flow". Setting
- * reception_status on every carga hides all of them from the Pickup screen.
- */
-type CargaStage = 'pending' | 'scanning' | 'in_transit' | 'completed';
-
 interface Carga {
   /** external_load_id — how orders, packages and the manifest are tied together. */
   loadId: string;
@@ -126,53 +60,48 @@ interface Carga {
   clientSlug: string;
   clientName: string;
   pickupPointId: string;
-  stage: CargaStage;
-  /** One entry per order; each entry lists that order's package statuses. */
-  orders: string[][];
+  pickupLocation: string;
+  comuna: string;
 }
 
-/**
- * Cargas span the pickup lifecycle so every stage has something to look at:
- * one waiting to be collected, one mid-pickup, one already received at the hub.
- */
 const CARGAS: Carga[] = [
   {
     loadId: 'CARGA-EASY-001',
     clientSlug: 'easy',
     clientName: 'Easy',
     pickupPointId: MUSAN_QA.easyPickupPointId,
-    // Awaiting collection — no manifest row at all.
-    stage: 'pending',
-    orders: [['ingresado'], ['ingresado', 'ingresado'], ['ingresado']],
+    pickupLocation: 'Easy Bodega Central',
+    comuna: 'Pudahuel',
   },
   {
     loadId: 'CARGA-EASY-002',
     clientSlug: 'easy',
     clientName: 'Easy',
     pickupPointId: MUSAN_QA.easyPickupPointId,
-    // Scan flow opened: manifest exists, reception_status still NULL, so it
-    // stays on the pending tab with a partial verified count.
-    stage: 'scanning',
-    orders: [['verificado'], ['verificado', 'ingresado']],
+    pickupLocation: 'Easy Bodega Central',
+    comuna: 'Pudahuel',
   },
   {
     loadId: 'CARGA-PARIS-001',
     clientSlug: 'paris',
     clientName: 'Paris',
     pickupPointId: MUSAN_QA.parisPickupPointId,
-    stage: 'completed',
-    orders: [['en_bodega'], ['en_bodega', 'en_bodega'], ['en_bodega'], ['en_bodega']],
+    pickupLocation: 'Paris CD Norte',
+    comuna: 'Quilicura',
   },
   {
     loadId: 'CARGA-PARIS-002',
     clientSlug: 'paris',
     clientName: 'Paris',
     pickupPointId: MUSAN_QA.parisPickupPointId,
-    // Collected and on its way to the hub.
-    stage: 'in_transit',
-    orders: [['verificado', 'verificado']],
+    pickupLocation: 'Paris CD Norte',
+    comuna: 'Quilicura',
   },
 ];
+
+/** Ten order sequences per carga, so a carga's rows sit in one contiguous block. */
+const SEQUENCES_PER_CARGA = 10;
+const FIRST_ORDER_SEQUENCE = 100;
 
 async function createPickupPoint(
   db: SeedClient,
@@ -197,6 +126,54 @@ async function createPickupPoint(
       args.name,
       args.code,
       JSON.stringify([{ name: args.name, address: `Av. ${args.name} 100`, comuna: args.comuna }]),
+    ],
+  );
+}
+
+/**
+ * The carga's manifest row, created PENDING so the load shows on the Recogida
+ * pending tab and can be collected.
+ *
+ * Conflict on (operator_id, external_load_id), NOT on id: since 20260814000001
+ * trg_ensure_manifest_for_order creates a manifest the moment an order carrying
+ * a new external_load_id is inserted — with gen_random_uuid(), not this
+ * scenario's fixed qaId — so an ON CONFLICT (id) clause never fires and the
+ * insert dies on unique_manifest_per_operator instead.
+ *
+ * The DO UPDATE deliberately touches only the descriptive and denormalised
+ * columns. `status`, `reception_status` and `pickup_route_id` are what a tester
+ * changes by USING the carga, and a re-run that reset them would throw away a
+ * half-finished collection — the reason PR #491 was closed. Only the one-time
+ * purge (infra/supabase-qa/reset-musan.sql) puts a carga back to pending.
+ */
+async function upsertPendingManifest(
+  db: SeedClient,
+  args: {
+    id: string;
+    operatorId: string;
+    carga: Carga;
+    totalOrders: number;
+    totalPackages: number;
+  },
+): Promise<void> {
+  await db.query(
+    `INSERT INTO public.manifests
+       (id, operator_id, external_load_id, retailer_name, pickup_location,
+        total_orders, total_packages, status, reception_status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending'::manifest_status_enum, NULL)
+     ON CONFLICT ON CONSTRAINT unique_manifest_per_operator DO UPDATE
+        SET retailer_name   = EXCLUDED.retailer_name,
+            pickup_location = EXCLUDED.pickup_location,
+            total_orders    = EXCLUDED.total_orders,
+            total_packages  = EXCLUDED.total_packages`,
+    [
+      args.id,
+      args.operatorId,
+      args.carga.loadId,
+      args.carga.clientName,
+      args.carga.pickupLocation,
+      args.totalOrders,
+      args.totalPackages,
     ],
   );
 }
@@ -256,260 +233,61 @@ export async function seedMusan(
     comuna: 'Quilicura',
   });
 
-  for (const login of MUSAN_LOGINS) {
-    await createLoginUser(db, {
-      id: qaId(ScenarioGroup.MUSAN, login.seq),
-      operatorId,
-      email: login.email,
-      role: login.role,
-      fullName: login.fullName,
-      permissions: [...login.permissions],
-    });
-  }
+  await seedMusanLogins(db, operatorId);
 
-  let orderSequence = 100;
+  const cargaOrders = buildCargaOrders();
+  const packagesPerCarga = cargaOrders.reduce((n, o) => n + o.packages.length, 0);
+  const summaries: CargaSummary[] = [];
   let orderCount = 0;
 
   for (let c = 0; c < CARGAS.length; c++) {
     const carga = CARGAS[c];
-    const totalPackages = carga.orders.reduce((sum, pkgs) => sum + pkgs.length, 0);
 
-    // 'pending' deliberately gets no manifest row — that is what puts a load
-    // on the pending tab.
-    if (carga.stage !== 'pending') {
-      const manifestStatus =
-        carga.stage === 'completed' ? 'completed'
-        : carga.stage === 'in_transit' ? 'in_progress'
-        : 'in_progress';
-      const receptionStatus =
-        carga.stage === 'completed' ? 'received'
-        : carga.stage === 'in_transit' ? 'awaiting_reception'
-        : null; // 'scanning' keeps it NULL so the load stays pending
+    // Before the orders: on a clean database this INSERT wins and sets the
+    // carga pending. Let an order go first and the trigger's bare row takes
+    // the load id, leaving totals NULL and the scan denominator blank.
+    await upsertPendingManifest(db, {
+      id: qaId(ScenarioGroup.MUSAN, 10 + c),
+      operatorId,
+      carga,
+      totalOrders: cargaOrders.length,
+      totalPackages: packagesPerCarga,
+    });
 
-      // Conflict on (operator_id, external_load_id), NOT on id. Since
-      // 20260814000001 the trg_ensure_manifest_for_order trigger creates a
-      // manifest row the moment an order carrying a new external_load_id is
-      // inserted -- with gen_random_uuid(), not this scenario's fixed qaId. So
-      // on any re-run the orders seeded below already exist, their trigger-made
-      // manifest already holds the load id, and an ON CONFLICT (id) clause
-      // never fires: the insert dies on unique_manifest_per_operator instead.
-      // DO UPDATE rather than DO NOTHING so the scenario's descriptive fields
-      // and its deliberate status/reception_status pairings win over the
-      // trigger's bare row -- which is the whole point of seeding them.
-      await db.query(
-        `INSERT INTO public.manifests
-           (id, operator_id, external_load_id, retailer_name, pickup_location,
-            total_orders, total_packages, status, reception_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::manifest_status_enum, $9::reception_status_enum)
-         ON CONFLICT ON CONSTRAINT unique_manifest_per_operator DO UPDATE
-            SET retailer_name    = EXCLUDED.retailer_name,
-                pickup_location  = EXCLUDED.pickup_location,
-                total_orders     = EXCLUDED.total_orders,
-                total_packages   = EXCLUDED.total_packages,
-                status           = EXCLUDED.status,
-                reception_status = EXCLUDED.reception_status`,
-        [
-          qaId(ScenarioGroup.MUSAN, 10 + c),
-          operatorId,
-          carga.loadId,
-          carga.clientName,
-          carga.clientName === 'Easy' ? 'Easy Bodega Central' : 'Paris CD Norte',
-          carga.orders.length,
-          totalPackages,
-          manifestStatus,
-          receptionStatus,
-        ],
-      );
-    }
+    for (const cargaOrder of cargaOrders) {
+      const sequence = FIRST_ORDER_SEQUENCE + c * SEQUENCES_PER_CARGA + cargaOrder.ordinal;
+      const orderNumber = `${carga.loadId}-ORD-${String(cargaOrder.ordinal).padStart(2, '0')}`;
 
-    for (const packageStatuses of carga.orders) {
-      orderSequence++;
       const order = await createOrderWithPackages(db, {
         group: ScenarioGroup.MUSAN,
-        sequence: orderSequence,
+        sequence,
         operatorId,
-        orderNumber: `${carga.loadId}-ORD-${orderSequence}`,
-        packageStatuses,
+        orderNumber,
+        // The shape is what this scenario is for, so it describes every box.
+        packageStatuses: [],
+        packageRows: toPackageRows(orderNumber, cargaOrder.packages),
+        // The composition is named on the row a tester actually sees, so the
+        // shape under test is identifiable without opening the database.
+        customerName: `${carga.clientName} — ${COMPOSITION_LABELS[cargaOrder.composition]}`,
         externalLoadId: carga.loadId,
         tenantClientId: clientIdBySlug.get(carga.clientSlug) ?? null,
         pickupPointId: carga.pickupPointId,
         retailerName: carga.clientName,
-        comuna: carga.clientName === 'Easy' ? 'Pudahuel' : 'Quilicura',
+        comuna: carga.comuna,
       });
+
       await resettleOrderStatus(db, order.orderId);
       orderCount++;
     }
-  }
 
-  // ── Assertions ────────────────────────────────────────────────────────────
-  await assertCount(db, collector, {
-    scenario: 'musan/clients',
-    detail: 'Easy and Paris both present (migrations also add easy-webhook)',
-    sql: `SELECT count(*) AS count FROM public.tenant_clients
-           WHERE operator_id = $1 AND slug IN ('easy','paris') AND deleted_at IS NULL`,
-    params: [operatorId],
-    expected: 2,
-  });
-
-  // The empty-sidebar symptom: a tenant with no enabled modules shows only the
-  // ungated pages. Musan's nine come from migration 20260709000001.
-  await assertCount(db, collector, {
-    scenario: 'musan/modules',
-    detail: 'modules enabled for Musan (drives the sidebar)',
-    // Counts the nine core keys specifically, rather than every enabled row.
-    // A super_admin enabling a tenth module through the Modules UI is a normal
-    // thing to do in QA -- package_labels was switched on that way on
-    // 2026-08-14 -- and it does not mean the sidebar is broken. What would
-    // matter is one of the nine going missing, which this still catches.
-    sql: `SELECT count(*) AS count FROM public.operator_enabled_modules
-           WHERE operator_id = $1 AND disabled_at IS NULL
-             AND module_key IN ('ops_control','late_order_alerts','pickup','reception',
-                                'distribution','pre_route','dispatch','returns','conversations')`,
-    params: [operatorId],
-    expected: 9,
-  });
-
-  // EVERY carga has a manifest row, pending included. This used to read "only
-  // non-pending cargas have one -- a load awaiting collection deliberately has
-  // none, which is what puts it on the pending tab", and that stopped being
-  // true when 20260814000001 added trg_ensure_manifest_for_order, which creates
-  // the row the moment an order carrying a new external_load_id is inserted.
-  // What puts a load on the pending tab is its manifest's status/reception_status
-  // and now its pickup_route_id -- never the absence of the row.
-  await assertCount(db, collector, {
-    scenario: 'musan/cargas',
-    detail: 'manifest rows for Musan (pending cargas have none)',
-    sql: `SELECT count(*) AS count FROM public.manifests
-           WHERE operator_id = $1 AND deleted_at IS NULL`,
-    params: [operatorId],
-    expected: CARGAS.length,
-  });
-
-  // The point of a carga: every order in it carries the same external_load_id,
-  // so the manifest and its orders can actually be joined.
-  for (const carga of CARGAS) {
-    await assertCount(db, collector, {
-      scenario: `musan/carga/${carga.loadId}`,
-      detail: `orders aggregated under ${carga.loadId}`,
-      sql: `SELECT count(*) AS count FROM public.orders
-             WHERE operator_id = $1 AND external_load_id = $2 AND deleted_at IS NULL`,
-      params: [operatorId, carga.loadId],
-      expected: carga.orders.length,
+    summaries.push({
+      loadId: carga.loadId,
+      orderCount: cargaOrders.length,
+      packageCount: packagesPerCarga,
     });
   }
 
-  await assertCount(db, collector, {
-    scenario: 'musan/logins',
-    detail: 'Musan logins able to sign in',
-    sql: `SELECT count(*) AS count FROM public.users
-           WHERE operator_id = $1 AND deleted_at IS NULL`,
-    params: [operatorId],
-    expected: MUSAN_LOGINS.length,
-  });
-
-  await assertCount(db, collector, {
-    scenario: 'musan/admin-permissions',
-    detail: 'admin@musan.com carries the admin permission',
-    sql: `SELECT count(*) AS count FROM public.users
-           WHERE email = 'admin@musan.com'
-             AND role = 'admin'::user_role
-             AND 'admin' = ANY(permissions)
-             AND deleted_at IS NULL`,
-    expected: 1,
-  });
-
-  // spec-61 — the leader is only useful if the ROLE landed: start_pickup_route
-  // reads users.role, so a row carrying 'pickup' but the wrong role can open
-  // Recogida and still be unable to start a route.
-  await assertCount(db, collector, {
-    scenario: 'musan/pickup-leader',
-    detail: 'lider@musan.com can lead a pickup route',
-    sql: `SELECT count(*) AS count FROM public.users
-           WHERE email = 'lider@musan.com'
-             AND role = 'pickup_leader'::user_role
-             AND 'pickup' = ANY(permissions)
-             AND deleted_at IS NULL`,
-    expected: 1,
-  });
-
-  // A login is unusable without its auth.identities row — GoTrue v2 matches
-  // the password against the identity, not auth.users alone.
-  await assertCount(db, collector, {
-    scenario: 'musan/pickup-leader-identity',
-    detail: 'lider@musan.com has the email identity password login needs',
-    sql: `SELECT count(*) AS count FROM auth.identities i
-            JOIN auth.users au ON au.id = i.user_id
-           WHERE au.email = 'lider@musan.com' AND i.provider = 'email'`,
-    expected: 1,
-  });
-
-  // Mirror the three Pickup RPCs' predicates. The screen showed zeros because
-  // every carga carried a reception_status, so none reached the pending tab —
-  // assert each tab has something rather than only that rows exist.
-  await assertCount(db, collector, {
-    scenario: 'musan/pickup-pending',
-    detail: 'nothing already being collected shows on the Pickup PENDING tab',
-    // This used to assert a fixed count of 2 pending loads, which cannot hold in
-    // a shared QA stack: the moment a tester opens a route against a carga, that
-    // load is legitimately no longer pending. All four Musan cargas are
-    // currently attached to real app-created routes (PR-2026-0001..0003), so the
-    // old assertion read 0 and failed -- reporting correct behaviour as a defect.
-    //
-    // The invariant that actually matters is the one spec-61 Task 7 added: a
-    // load already on a route must never be offered again, or two crews collect
-    // it. That holds no matter how much testing has happened, so it is what is
-    // asserted here -- the count of routed loads still on the pending tab, which
-    // must be zero. The predicate mirrors get_pending_manifests' exclusion; keep
-    // the two in step (see also the comment on the in-transit assertion below).
-    sql: `SELECT count(DISTINCT o.external_load_id) AS count
-            FROM orders o
-           WHERE o.operator_id = $1
-             AND o.external_load_id IS NOT NULL
-             AND o.deleted_at IS NULL
-             AND o.external_load_id NOT IN (
-               SELECT m.external_load_id FROM manifests m
-                WHERE m.operator_id = $1 AND m.deleted_at IS NULL
-                  AND (m.status = 'completed'
-                       OR m.reception_status IS NOT NULL
-                       OR m.pickup_route_id IS NOT NULL)
-             )
-             AND EXISTS (
-               SELECT 1 FROM manifests m2
-                WHERE m2.operator_id = $1 AND m2.deleted_at IS NULL
-                  AND m2.external_load_id = o.external_load_id
-                  AND m2.pickup_route_id IS NOT NULL
-             )`,
-    params: [operatorId],
-    expected: 0,
-  });
-
-  await assertCount(db, collector, {
-    scenario: 'musan/pickup-in-transit',
-    detail: 'loads on the Pickup IN TRANSIT tab (get_in_transit_manifests)',
-    sql: `SELECT count(*) AS count FROM manifests m
-           WHERE m.operator_id = $1 AND m.deleted_at IS NULL
-             AND m.reception_status IS NOT NULL AND m.status <> 'completed'`,
-    params: [operatorId],
-    expected: 1,
-  });
-
-  await assertCount(db, collector, {
-    scenario: 'musan/pickup-completed',
-    detail: 'loads on the Pickup COMPLETED tab (get_completed_manifests)',
-    sql: `SELECT count(*) AS count FROM manifests m
-           WHERE m.operator_id = $1 AND m.deleted_at IS NULL AND m.status = 'completed'`,
-    params: [operatorId],
-    expected: 1,
-  });
-
-  await assertCount(db, collector, {
-    scenario: 'musan/isolation',
-    detail: 'Musan orders that leaked onto another operator',
-    sql: `SELECT count(*) AS count FROM public.orders
-           WHERE external_load_id LIKE 'CARGA-%' AND operator_id <> $1`,
-    params: [operatorId],
-    expected: 0,
-  });
+  await assertMusan(db, collector, operatorId, summaries);
 
   return orderCount;
 }
