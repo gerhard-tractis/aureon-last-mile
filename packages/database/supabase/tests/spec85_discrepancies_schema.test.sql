@@ -453,9 +453,16 @@ END $$;
 ROLLBACK TO test_10;
 
 -- =============================================================================
--- TEST 11 (C3) — RLS WITH CHECK, exercised under role='authenticated', not
--- the owner. Operator A cannot INSERT a row carrying operator B's
--- operator_id (fabricating evidence in someone else's file).
+-- TEST 11 (C3) — end-to-end smoke test under role='authenticated' (the real
+-- client role), not the owner: operator A cannot INSERT a row carrying
+-- operator B's operator_id (fabricating evidence in someone else's file).
+--
+-- This only proves the write is denied SOMEHOW — `authenticated` has no
+-- INSERT grant at all (I2), so this never reaches WITH CHECK, and Postgres
+-- gives both causes the same SQLSTATE (42501/insufficient_privilege; see
+-- the note above TEST 16). Which layer actually fired is TEST 15 (the GRANT)
+-- and TEST 16 (WITH CHECK, under a role that has the grant and isn't
+-- bypassing RLS) — do not read this test as proof of either on its own.
 -- =============================================================================
 SAVEPOINT test_11;
 
@@ -472,7 +479,7 @@ BEGIN
             'A intenta fabricar evidencia contra B');
     RAISE EXCEPTION 'TEST 11 FAILED: operator A inserted a row with operator B''s operator_id';
   EXCEPTION
-    WHEN insufficient_privilege OR check_violation THEN
+    WHEN insufficient_privilege THEN
       RAISE NOTICE '✓ TEST 11 PASSED: cross-tenant INSERT rejected (%)', SQLSTATE;
   END;
   RESET role;
@@ -482,8 +489,9 @@ RESET role;
 ROLLBACK TO test_11;
 
 -- =============================================================================
--- TEST 12 (C3) — under authenticated, operator A cannot move one of its own
--- rows to operator B (making its own shrinkage disappear from its ledger).
+-- TEST 12 (C3) — same caveat as TEST 11: under authenticated (no INSERT/
+-- UPDATE grant at all), operator A cannot move one of its own rows to
+-- operator B. Layer attribution is TEST 15/16, not this one.
 -- =============================================================================
 SAVEPOINT test_12;
 
@@ -503,7 +511,7 @@ BEGIN
      WHERE note = 'A''s own row';
     RAISE EXCEPTION 'TEST 12 FAILED: operator A moved its own row to operator B';
   EXCEPTION
-    WHEN insufficient_privilege OR check_violation THEN
+    WHEN insufficient_privilege THEN
       RAISE NOTICE '✓ TEST 12 PASSED: moving a row to another operator rejected (%)', SQLSTATE;
   END;
   RESET role;
@@ -612,5 +620,165 @@ BEGIN
 END $$;
 
 ROLLBACK TO test_14;
+
+-- =============================================================================
+-- TEST 15 (I2, round 2) — direct ACL assert, independent of RLS. TEST 11/12
+-- catch a rejected write under role=authenticated, but their broad
+-- `WHEN insufficient_privilege OR check_violation` cannot tell WHICH layer
+-- fired: with the REVOKE removed, RLS alone still raises 42501 and the same
+-- tests pass — so the REVOKE was never actually being tested. This checks
+-- the GRANT layer by itself, with has_table_privilege(), which does not
+-- consult any RLS policy at all.
+-- =============================================================================
+SAVEPOINT test_15;
+
+DO $$
+DECLARE
+  v_insert BOOLEAN;
+  v_update BOOLEAN;
+  v_delete BOOLEAN;
+  v_select BOOLEAN;
+BEGIN
+  v_insert := has_table_privilege('authenticated', 'public.discrepancies', 'INSERT');
+  v_update := has_table_privilege('authenticated', 'public.discrepancies', 'UPDATE');
+  v_delete := has_table_privilege('authenticated', 'public.discrepancies', 'DELETE');
+  v_select := has_table_privilege('authenticated', 'public.discrepancies', 'SELECT');
+
+  IF v_insert OR v_update OR v_delete THEN
+    RAISE EXCEPTION 'TEST 15 FAILED (I2): authenticated still holds a write privilege at the GRANT layer (insert=%, update=%, delete=%) — the base image''s default ACL grants these unless explicitly revoked',
+      v_insert, v_update, v_delete;
+  END IF;
+  IF NOT v_select THEN
+    RAISE EXCEPTION 'TEST 15 FAILED: authenticated lost SELECT too — it needs to read discrepancies';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 15 PASSED: authenticated is SELECT-only at the ACL layer (has_table_privilege, not RLS)';
+END $$;
+
+ROLLBACK TO test_15;
+
+-- =============================================================================
+-- TEST 16 (C3, round 2) — WITH CHECK exercised under a role that actually
+-- HAS the INSERT/UPDATE grant and does NOT bypass RLS (service_role has
+-- BYPASSRLS, so it cannot stand in for this). Proves the policy itself
+-- rejects a cross-tenant row, not just the missing GRANT — kills the mutant
+-- where both policies read WITH CHECK (true) but TEST 11/12 still "pass"
+-- because the GRANT layer denies the write first.
+--
+-- Postgres does NOT give RLS its own SQLSTATE: a WITH CHECK failure and a
+-- plain GRANT denial both raise 42501 (insufficient_privilege) — RLS's is
+-- just worded "new row violates row-level security policy for table ...",
+-- a GRANT denial "permission denied for table ...". Verified directly
+-- against this container before writing this test. So the two causes are
+-- told apart by GET STACKED DIAGNOSTICS ... MESSAGE_TEXT, not by exception
+-- class — `WHEN check_violation` (as in TEST 11/12) never actually fires
+-- for an RLS rejection; it only look like a stricter check because
+-- `insufficient_privilege` on its own already covers both causes.
+-- =============================================================================
+SAVEPOINT test_16;
+
+-- postgres in this harness is NOT a superuser (rolsuper=false, only
+-- rolbypassrls=true) — SET ROLE still needs explicit membership, unlike a
+-- real superuser session.
+CREATE ROLE spec85_rls_probe NOLOGIN;
+GRANT spec85_rls_probe TO postgres;
+GRANT USAGE ON SCHEMA public TO spec85_rls_probe;
+GRANT SELECT, INSERT, UPDATE ON public.discrepancies TO spec85_rls_probe;
+GRANT EXECUTE ON FUNCTION public.get_operator_id() TO spec85_rls_probe;
+
+DO $$
+DECLARE
+  v_message TEXT;
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0000-4000-a000-000000000185","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000085","role":"authenticated"}', true);
+  SET LOCAL ROLE spec85_rls_probe;
+
+  -- Sanity: this role can legitimately write ITS OWN operator's row — proves
+  -- any rejection below is RLS, not a grant this probe never had.
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085',
+          'probe: legitimate own-operator insert');
+
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+    VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-000000000085', 'missing', 'pickup',
+            '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085',
+            'probe: cross-tenant insert attempt');
+    RAISE EXCEPTION 'TEST 16 FAILED (a): a role with a REAL INSERT grant (no BYPASSRLS) inserted a cross-tenant row — WITH CHECK did not fire';
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_message = MESSAGE_TEXT;
+      IF v_message NOT ILIKE '%row-level security policy%' THEN
+        RAISE EXCEPTION 'TEST 16 FAILED (a): rejected by the GRANT layer (%), not by WITH CHECK — this role has INSERT, so a plain permission-denied here proves nothing about RLS', v_message;
+      END IF;
+      RAISE NOTICE '✓ TEST 16 PASSED (a): WITH CHECK rejects the cross-tenant INSERT (%), independent of any GRANT', v_message;
+  END;
+
+  BEGIN
+    UPDATE public.discrepancies SET operator_id = 'bbbbbbbb-bbbb-bbbb-bbbb-000000000085'
+     WHERE note = 'probe: legitimate own-operator insert';
+    RAISE EXCEPTION 'TEST 16 FAILED (b): a role with a REAL UPDATE grant moved a row to another operator — WITH CHECK did not fire';
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      GET STACKED DIAGNOSTICS v_message = MESSAGE_TEXT;
+      IF v_message NOT ILIKE '%row-level security policy%' THEN
+        RAISE EXCEPTION 'TEST 16 FAILED (b): rejected by the GRANT layer (%), not by WITH CHECK', v_message;
+      END IF;
+      RAISE NOTICE '✓ TEST 16 PASSED (b): WITH CHECK rejects the cross-tenant UPDATE (%), independent of any GRANT', v_message;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_16;
+
+-- =============================================================================
+-- TEST 17 (minor) — the backfill's silent swallow is COUNTED, not just
+-- silent: two live notes on the SAME package_id AND the SAME manifest_id
+-- (a genuine duplicate — e.g. a read-then-write retry with no unique
+-- constraint on discrepancy_notes itself) collide on
+-- uniq_open_discrepancy_per_package. ON CONFLICT DO NOTHING must still
+-- swallow it (the deploy cannot abort), but the function's return value
+-- must reflect that fewer rows landed than notes existed, so the RAISE
+-- NOTICE inside it (not capturable from SQL, but visible in deploy logs)
+-- has something correct to compare.
+-- =============================================================================
+SAVEPOINT test_17;
+
+DO $$
+DECLARE
+  v_live_before INT;
+  v_inserted    INT;
+  v_landed      INT;
+BEGIN
+  INSERT INTO public.discrepancy_notes (id, operator_id, manifest_id, package_id, note, created_by_user_id)
+  VALUES
+    ('77770004-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+     '44440001-0000-0000-0000-000000000085', '33330001-0000-0000-0000-000000000085',
+     'nota duplicada 1', 'aaaaaaaa-0000-4000-a000-000000000185'),
+    ('77770005-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+     '44440001-0000-0000-0000-000000000085', '33330001-0000-0000-0000-000000000085',
+     'nota duplicada 2 (mismo package, mismo manifest)', 'aaaaaaaa-0000-4000-a000-000000000185');
+
+  SELECT COUNT(*) INTO v_live_before FROM public.discrepancy_notes WHERE deleted_at IS NULL;
+  SELECT public.spec85_backfill_discrepancy_notes() INTO v_inserted;
+
+  SELECT COUNT(*) INTO v_landed FROM public.discrepancies
+   WHERE migrated_from_note_id IN ('77770004-0000-0000-0000-000000000085', '77770005-0000-0000-0000-000000000085');
+
+  IF v_landed <> 1 THEN
+    RAISE EXCEPTION 'TEST 17 FAILED: expected exactly 1 of the 2 duplicate notes to land (ON CONFLICT DO NOTHING), got %', v_landed;
+  END IF;
+  IF v_inserted >= v_live_before THEN
+    RAISE EXCEPTION 'TEST 17 FAILED: the function''s own return value (%) does not reflect the swallowed duplicate against % live notes', v_inserted, v_live_before;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 17 PASSED: duplicate swallowed by ON CONFLICT DO NOTHING, AND the function''s count reflects it (% live vs % inserted)', v_live_before, v_inserted;
+END $$;
+
+ROLLBACK TO test_17;
 
 ROLLBACK;
