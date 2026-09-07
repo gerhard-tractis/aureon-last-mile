@@ -113,17 +113,15 @@ export default function CompletionPage() {
 
     try {
       const supabase = createSPAClient();
-      const { error } = await supabase
-        .from('manifests')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          signature_operator: operatorSignature,
-          signature_operator_name: operatorName,
-          signature_client: clientSignature,
-          signature_client_name: clientName || null,
-        })
-        .eq('id', manifestId);
+      const { error } = await supabase.rpc('close_manifest', {
+        p_manifest_id: manifestId,
+        p_signatures: {
+          operator_signature: operatorSignature,
+          operator_name: operatorName,
+          client_signature: clientSignature,
+          client_name: clientName || null,
+        },
+      });
 
       if (error) throw error;
       toast.success('Manifiesto completado exitosamente');

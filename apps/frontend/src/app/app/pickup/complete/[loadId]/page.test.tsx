@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import CompletionPage from './page';
 
 const mockUsePickupScans = vi.fn();
@@ -16,6 +16,7 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+const mockRpc = vi.fn(() => Promise.resolve({ data: [{ out_verified_count: 2 }], error: null }));
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => {
     const makeSingle = (data: unknown) => ({
@@ -41,9 +42,9 @@ vi.mock('@/lib/supabase/client', () => ({
         }
         return {
           select: () => makeEq({ id: 'm1', started_at: new Date().toISOString() }),
-          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
         };
       },
+      rpc: mockRpc,
       auth: {
         getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }),
       },
@@ -52,7 +53,21 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 vi.mock('@/components/pickup/SignaturePad', () => ({
-  SignaturePad: ({ label }: { label: string }) => <div data-testid="signature-pad">{label}</div>,
+  SignaturePad: ({
+    label,
+    onChange,
+  }: {
+    label: string;
+    onChange: (sig: string) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid={`signature-pad-${label}`}
+      onClick={() => onChange('data:image/png;base64,FAKE')}
+    >
+      {label}
+    </button>
+  ),
 }));
 
 vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
@@ -131,5 +146,33 @@ describe('CompletionPage', () => {
     const { container } = render(<CompletionPage />);
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain('sm:p-6');
+  });
+
+  it('calls close_manifest RPC (not a raw update) with p_manifest_id and p_signatures on confirm', async () => {
+    render(<CompletionPage />);
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(sigPad);
+
+    const submitButton = await screen.findByRole('button', {
+      name: /completar y generar recibo/i,
+    });
+    fireEvent.click(submitButton);
+
+    const confirmButton = await screen.findByRole('button', {
+      name: /confirmar y completar/i,
+    });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockRpc).toHaveBeenCalledWith('close_manifest', {
+        p_manifest_id: 'm1',
+        p_signatures: {
+          operator_signature: 'data:image/png;base64,FAKE',
+          operator_name: 'Test User',
+          client_signature: null,
+          client_name: null,
+        },
+      });
+    });
   });
 });

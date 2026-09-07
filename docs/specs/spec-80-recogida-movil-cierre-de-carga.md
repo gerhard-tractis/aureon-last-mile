@@ -151,7 +151,7 @@ Cada fase es un PR revisable por separado.
 
 **No** se toca `complete/[loadId]` en esta fase. Sigue siendo la pantalla de spec-19, sin fotos. Es deuda declarada que la fase 3 sustituye.
 
-### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[pending]`
+### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[in_progress]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
