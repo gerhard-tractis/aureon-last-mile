@@ -2,7 +2,7 @@
 
 > **Related:** [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (**su fase 2 consume esta tabla en vez de decidir un estado de bulto**), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (la merma de «Cierres de hoy» se lee de aquí), [spec-62](spec-62-reception-mobile.md) (recepción móvil, el otro productor), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (recepción consolidada por ruta), [spec-43](spec-43-failed-delivery-return-flow.md) (entrega fallida y retorno), [spec-55](spec-55-carton-expansion.md) (bultos minteados que también pueden faltar)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, sql, e2e-qa
 **Downstream:** spec-80-recogida-movil-cierre-de-carga.md, spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -59,14 +59,37 @@ Y por eso **se resuelve, no se borra**: en Recepción el bulto puede aparecer f�
 - **`missing`** — declarado en el manifiesto y nunca escaneado. Hay `package_id`; no hay código leído.
 - **`unexpected`** — escaneado y no pertenece a esta carga/recepción. **No hay `package_id`** — el bulto es ajeno, sólo existe el código de barras leído.
 
-Un `CHECK` obliga a esa asimetría en vez de dejarla a la convención:
+Un `CHECK` obliga a esa asimetría en vez de dejarla a la convención — cerrada
+en las dos ramas: una `unexpected` con `package_id` no es sólo redundante, es
+peligrosa (ver más abajo, por qué):
 
 ```sql
 CONSTRAINT discrepancy_shape CHECK (
   (kind = 'missing'    AND package_id IS NOT NULL) OR
-  (kind = 'unexpected' AND barcode    IS NOT NULL)
+  (kind = 'unexpected' AND barcode IS NOT NULL AND package_id IS NULL)
 )
 ```
+
+### Una discrepancia abierta, por EVENTO — no una por bulto en toda su vida
+
+El spec original decía «dos discrepancias abiertas en la misma operación» y
+era ambiguo: ¿la misma *operación* como tipo (`pickup`/`reception`), o el
+mismo *evento* (esta carga, esta recepción)? La implementación inicial lo leyó
+como tipo; la decisión correcta es evento.
+
+**Un bulto puede faltar el lunes en la carga A y otra vez el martes en la
+carga B — son dos hechos distintos, y ambos son evidencia.** Bloquear la
+segunda porque ya existe una discrepancia abierta sobre el mismo `package_id`
+perdería la merma de la carga B.
+
+Por eso la tabla tiene una columna generada que resuelve el origen sin
+polimorfismo, indexable directamente:
+
+```sql
+source_id UUID GENERATED ALWAYS AS (COALESCE(manifest_id, route_reception_id)) STORED
+```
+
+Y el índice único de abiertas la incluye — ver más abajo.
 
 ### Tabla
 
@@ -92,6 +115,10 @@ CREATE TABLE public.discrepancies (
   manifest_id        UUID REFERENCES public.manifests(id),
   route_reception_id UUID REFERENCES public.route_receptions(id),
 
+  -- Origen indexable sin polimorfismo — ver "Una discrepancia abierta, por
+  -- EVENTO" arriba.
+  source_id UUID GENERATED ALWAYS AS (COALESCE(manifest_id, route_reception_id)) STORED,
+
   detected_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   detected_by_user_id UUID REFERENCES public.users(id),
   note                TEXT,
@@ -100,29 +127,79 @@ CREATE TABLE public.discrepancies (
   resolved_at      TIMESTAMPTZ,
   resolved_by_user_id UUID REFERENCES public.users(id),
 
+  -- Trazabilidad del backfill de discrepancy_notes: no comparar por el texto
+  -- de `note`, que el frontend deja editar.
+  migrated_from_note_id UUID REFERENCES public.discrepancy_notes(id),
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
 
   CONSTRAINT discrepancy_shape CHECK (
     (kind = 'missing'    AND package_id IS NOT NULL) OR
-    (kind = 'unexpected' AND barcode    IS NOT NULL)
+    (kind = 'unexpected' AND barcode IS NOT NULL AND package_id IS NULL)
   ),
   CONSTRAINT discrepancy_resolved_has_when CHECK (
     (status = 'open') OR (resolved_at IS NOT NULL)
+  ),
+  -- operation_type tiene que coincidir con qué columna de origen está
+  -- poblada, o entra una fila que no cuelga de ninguna operación real:
+  -- ninguna pantalla la lista y la merma de spec-83 no la cuenta.
+  CONSTRAINT discrepancy_source_matches_operation CHECK (
+    (operation_type = 'pickup'    AND manifest_id        IS NOT NULL AND route_reception_id IS NULL) OR
+    (operation_type = 'reception' AND route_reception_id IS NOT NULL AND manifest_id        IS NULL)
   )
 );
 ```
 
 `operator_id` en la tabla y en la RLS, como toda tabla del repo. Borrado suave.
 
-**Un bulto no puede tener dos discrepancias abiertas en la misma operación** — si no, cerrar dos veces duplica la merma y el cliente firma dos veces sobre lo mismo:
+**Un bulto no puede tener dos discrepancias `missing` abiertas en el MISMO evento** — si no, cerrar dos veces duplica la merma y el cliente firma dos veces sobre lo mismo. Dos eventos distintos sobre el mismo bulto sí coexisten (ver arriba):
 
 ```sql
 CREATE UNIQUE INDEX uniq_open_discrepancy_per_package
-  ON public.discrepancies (operator_id, package_id, operation_type)
+  ON public.discrepancies (operator_id, package_id, operation_type, source_id)
   WHERE status = 'open' AND package_id IS NOT NULL AND deleted_at IS NULL;
 ```
+
+Y lo mismo para `unexpected`, que nunca tiene `package_id` y por eso necesita
+su propio índice — sin él, un reintento de la cola offline (spec-81) duplica
+el sobrante contra el papel que el local ya firmó:
+
+```sql
+CREATE UNIQUE INDEX uniq_open_discrepancy_per_barcode
+  ON public.discrepancies (operator_id, barcode, operation_type, source_id)
+  WHERE status = 'open' AND package_id IS NULL AND deleted_at IS NULL;
+```
+
+### Escritura y auditoría
+
+`GRANT SELECT` a `authenticated`, nada más. La fase 2 escribe con
+`SECURITY DEFINER` (`record_discrepancies`, `resolve_discrepancy`), que corre
+con los privilegios del dueño de la función y no necesita el `GRANT` de
+escritura. **Ojo con el default ACL de la imagen base:** cualquier tabla nueva
+en `public` creada por `postgres` recibe por defecto `arwdDxt` (todo) para
+`authenticated` — un `GRANT SELECT` no resta nada de eso, sólo suma. Hace
+falta el `REVOKE` explícito de `INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES,
+TRIGGER` para que el grant efectivo sea de verdad sólo lectura (verificado
+contra `pg_class.relacl`, no contra el texto de la migración).
+
+Con la escritura de cliente cerrada, un `audit_trigger_func` (plantilla:
+`20260903000001_spec72_route_blocks.sql`) registra cada `INSERT`/`UPDATE`/
+`DELETE` que sí llegue a pasar (por `service_role` o por un RPC
+`SECURITY DEFINER`) — sin esto cualquier autenticado podía antes reabrir o
+borrar una fila sin dejar rastro, sobre una tabla que existe para ser
+evidencia.
+
+### La costura entre esta fase y spec-80 fase 2
+
+Entre este merge y spec-80 fase 2, **el frontend de Recogida sigue
+escribiendo en `discrepancy_notes`**, no en `discrepancies` — esta fase migra
+lo que ya existía, no cambia dónde escribe la pantalla de Revisión. Las notas
+que se creen en esa ventana no llegan a `discrepancies` hasta que alguien
+corra el backfill de nuevo o hasta que spec-80 fase 2 apunte la escritura al
+RPC nuevo. No hay pérdida de datos (siguen en `discrepancy_notes`), pero
+tampoco hay lectura consolidada de esas filas nuevas hasta entonces.
 
 ### El estado del bulto
 
@@ -144,11 +221,24 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
-- [ ] Test pgTAP primero: aislamiento por operador, el `CHECK` de forma (un `missing` sin `package_id` y un `unexpected` sin `barcode` deben fallar), y el índice único de abiertas.
-- [ ] Migración con prefijo de versión único (`scripts/check-migration-versions.sh`).
-- [ ] Migrar las 5 filas vivas de `discrepancy_notes` → `discrepancies` con `kind='missing'`, `operation_type='pickup'`, `status='open'`, conservando `note`, `manifest_id`, `package_id` y `created_by_user_id`.
-- [ ] **No borrar `discrepancy_notes` todavía.** Queda leída por la pantalla de Revisión hasta que spec-80 fase 2 la sustituya; borrarla ahora rompe Recogida. Se elimina en un contract phase posterior, como spec-56 hizo con spec-52.
-- [ ] Correr con `scripts/pgtap-local.sh` — los tests SQL **no** corren en CI, y el contenedor es **compartido entre worktrees**: no correr dos fases SQL en paralelo.
+- [x] Test pgTAP primero: aislamiento por operador, el `CHECK` de forma (un `missing` sin `package_id` y un `unexpected` sin `barcode` deben fallar), y el índice único de abiertas.
+- [x] Migración con prefijo de versión único (`scripts/check-migration-versions.sh`).
+- [x] Migrar las filas vivas de `discrepancy_notes` → `discrepancies` con `kind='missing'`, `operation_type='pickup'`, `status='open'`, conservando `note`, `manifest_id`, `package_id`, `created_by_user_id` y `detected_at ← created_at`. Envuelto en `public.spec85_backfill_discrepancy_notes()` (`ON CONFLICT DO NOTHING`, sin target — cubre los dos índices únicos) para que no pueda tumbar el deploy, y para que el pgTAP la ejerza directamente sobre fixtures en vez de sólo comprobar que la tabla existe.
+- [x] **No borrar `discrepancy_notes` todavía.** Queda leída por la pantalla de Revisión hasta que spec-80 fase 2 la sustituya; borrarla ahora rompe Recogida. Se elimina en un contract phase posterior, como spec-56 hizo con spec-52.
+- [x] Correr con `scripts/pgtap-local.sh` — los tests SQL **no** corren en CI, y el contenedor es **compartido entre worktrees**: no correr dos fases SQL en paralelo.
+
+**Ronda de code review (adversarial), cerrada:** C1 (backfill sin `ON CONFLICT`
+podía abortar el deploy), C2 (`unexpected` sin barrera de duplicación), C3/C3b
+(RLS y backfill sin tests que los ejercieran de verdad — 14 tests pgTAP en
+total ahora, 8 nuevos), I1 (`detected_at` perdido), I2 (grant de escritura +
+sin auditoría), I3 (`operation_type` sin atar a su columna de origen), I5
+(`unexpected` con `package_id` colaba). Todos cerrados en el mismo commit;
+detalle de cada uno en "El modelo" arriba. Un hallazgo no listado en el
+review original salió al verificar I2: la imagen base otorga por defecto
+`arwdDxt` a `authenticated` en toda tabla nueva, así que el `GRANT SELECT`
+por sí solo no restringía nada — hizo falta el `REVOKE` explícito, verificado
+contra `pg_class.relacl`. El mismo patrón (falta el REVOKE) puede estar en
+otras tablas del repo; no se tocó ninguna fuera de ésta.
 
 ### Fase 2 — RPCs `[pending]`
 
