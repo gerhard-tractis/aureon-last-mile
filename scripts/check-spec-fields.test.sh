@@ -26,6 +26,14 @@ check "token inventado falla" 1 "$(mk typo2.md '# S' '**Status:** in progress' '
 check "todos los tokens validos pasan" 0 "$(mk all.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[pending]`' '### F2 `[in_progress]`' '### F3 `[blocked]`' '### F4 `[awaiting_user_test]`' '### F5 `[done]`' '### F6 `[parked]`')"
 check "archivo inexistente no rompe" 0 "$D/no-existe.md"
 
+# closed / completed no pueden dejar fases abiertas — el hook Stop lee los tokens,
+# no el **Status:**, así que la cabecera y las fases tienen que coincidir.
+check "closed con fase blocked falla" 1 "$(mk closed-open.md '# S' '**Status:** closed' '**Verify:** unit' '### F1 `[done]`' '### F2 `[blocked]`')"
+check "closed con fase pending falla" 1 "$(mk closed-pending.md '# S' '**Status:** closed' '**Verify:** unit' '### F1 `[pending]`')"
+check "closed todo done pasa" 0 "$(mk closed-ok.md '# S' '**Status:** closed' '**Verify:** unit' '### F1 `[done]`' '### F2 `[parked]`')"
+check "completed con fase abierta falla" 1 "$(mk comp-open.md '# S' '**Status:** completed' '**Verify:** unit' '### F1 `[awaiting_user_test]`')"
+check "in progress con fase abierta pasa" 0 "$(mk inprog.md '# S' '**Status:** in progress' '**Verify:** unit' '### F1 `[blocked]`')"
+
 # un heading con corchetes que NO es fase (link markdown) no debe fallar
 check "link markdown en heading no confunde" 0 "$(mk link.md '# S' '**Status:** backlog' '### Ver [spec-42](spec-42.md)')"
 

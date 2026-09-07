@@ -22,6 +22,7 @@ Every spec file must have a `**Status:**` line at the top. Keep it updated.
 | `in progress` | Implementation has begun, y queda trabajo que un agente puede tomar |
 | `awaiting_user_test` | No queda nada que un agente pueda hacer: toda fase restante espera a una persona |
 | `completed` | Las cuatro pruebas de abajo pasaron. No hace falta que el usuario confirme |
+| `closed` | Entregó lo suyo y **no queda nada abierto en él**: lo que faltaba se movió a specs nombrados o se descartó explícitamente. No se vuelve a abrir |
 | `superseded` | The feature was removed or replaced — the spec is history, not live behaviour |
 
 Rules:
@@ -52,6 +53,24 @@ Rules:
   `completed` — se dice qué falta. La regla vieja («esperar a que el usuario
   confirme») se cambió porque el usuario ya no es el cuello de botella cuando hay
   evidencia; la evidencia sí es el requisito.
+- Set to `closed` cuando el spec **ya no tiene nada abierto** y no queremos volver a
+  verlo: entregó lo que le tocaba, y cada fase que quedaba o se **movió a un spec
+  nombrado** o se marcó `[parked]` con la razón escrita. Junto al `**Status:**`,
+  una línea diciendo **a dónde se fue lo que faltaba**.
+
+  No es `completed`: eso afirma las cuatro pruebas sobre *todo* el spec, y aquí
+  hay partes que deliberadamente no se construyeron. No es `superseded`: eso dice
+  que lo descrito ya no es el comportamiento vivo, y lo entregado por un spec
+  `closed` **sí** está corriendo en producción. Tampoco es `dropped` — nada se
+  tiró — ni `deferred`, que promete una vuelta que no va a ocurrir.
+
+  **Un spec `closed` no puede tener ninguna fase en `pending`, `in_progress`,
+  `blocked` ni `awaiting_user_test`.** Ésa es la parte que hace verdad el «no lo
+  vemos más»: el estado de cabecera no basta, porque el hook `Stop` lee los
+  tokens de fase, no el `**Status:**`. Un spec `closed` con una fase `[blocked]`
+  seguiría apareciendo como trabajo declarado. `scripts/check-spec-fields.sh` lo
+  aplica en CI, con la misma regla para `completed`.
+
 - Set to `superseded` when later work removes or replaces what the spec describes,
   and say so in a note at the top: what replaced it, which PR, and what a revival
   would actually require. A `completed` spec reads as a description of the running

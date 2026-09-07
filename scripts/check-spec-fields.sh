@@ -62,6 +62,25 @@ for f in $FILES; do
     FAILED=1
   fi
 
+  # Un spec cerrado o completado no puede dejar fases abiertas.
+  #
+  # El `**Status:**` de cabecera no es lo que lee el hook Stop: lee los tokens de
+  # fase. Así que un spec marcado `closed` con una fase `[blocked]` dentro sigue
+  # apareciendo como trabajo declarado y sin tomar — justo lo que ese estado
+  # existe para evitar. La cabecera y las fases tienen que decir lo mismo.
+  status="$(grep -m1 -E '^\*\*Status:\*\*' "$f" 2>/dev/null             | sed -e 's/^\*\*Status:\*\*[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '')"
+  case "$status" in
+    closed|completed)
+      OPEN='pending|in_progress|blocked|awaiting_user_test'
+      still_open="$(grep -nE "^#{2,4} .*\[($OPEN)${TOKEN_END}" "$f" 2>/dev/null || true)"
+      if [ -n "$still_open" ]; then
+        echo "::error file=$f::Status '$status' pero quedan fases abiertas. Muévelas a otro spec o márcalas [parked] con la razón. Ver docs/specs/CLAUDE.md."
+        echo "$still_open" | while IFS= read -r l; do echo "    $f:$l"; done
+        FAILED=1
+      fi
+      ;;
+  esac
+
   phases="$(grep -cE "^#{2,4} .*\[($VALID)${TOKEN_END}" "$f" 2>/dev/null || true)"
   [ -n "$phases" ] || phases=0
 
