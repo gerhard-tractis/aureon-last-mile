@@ -71,7 +71,12 @@ export function OrderFichaContent({ orderId }: Props) {
           importedVia={data.imported_via}
         />
 
-        <FichaCenterColumn auditLogs={data.auditLogs} dispatches={data.dispatches} />
+        <FichaCenterColumn
+          auditLogs={data.auditLogs}
+          dispatches={data.dispatches}
+          pickupScans={data.pickupScans}
+          packageLabels={Object.fromEntries(data.packages.map((p) => [p.id, p.label]))}
+        />
 
         <div className="flex w-full flex-none flex-col gap-4 overflow-y-auto bg-surface p-4 lg:w-[330px] lg:border-l lg:border-border">
           <ProofOfDelivery dispatch={pod} />

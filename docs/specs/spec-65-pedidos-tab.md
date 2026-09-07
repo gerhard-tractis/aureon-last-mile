@@ -141,10 +141,31 @@ Mitigación en pantalla, no en datos: cuando una orden no tiene eventos de couri
 >   `before`/`after` que comparar y existen porque alguien decidió que
 >   importaban.
 >
-> Pendiente, no resuelto aquí: el **ID de ruta** asociado a la verificación.
-> Las filas de `audit_logs` sobre `orders` no lo llevan, y la cadena
-> `reception_scans → route_receptions → pickup_routes` está vacía para las
-> órdenes de Musan (se verificaron sin escaneo de recepción).
+> **Corrección inmediata (2026-09-07, mismo día).** La nota anterior decía
+> que el **ID de ruta** de la verificación no era obtenible. Era falso, y
+> por haber mirado la tabla equivocada: se comprobó `reception_scans` — la
+> recepción *en hub* — cuando quien verifica en recogida escanea contra
+> `pickup_scans`. La ruta sí está, por otra cadena:
+>
+> ```
+> packages → pickup_scans.manifest_id → manifests.pickup_route_id → pickup_routes.code
+> ```
+>
+> Medido en Musan QA para CARGA-EASY-001-ORD-09: cuatro escaneos `verified`
+> de "Musan Líder de Recogida" en la ruta **PR-2026-2298**, a las
+> 17:11:40/47/57/59 — intercalados con las mismas filas de `audit_logs` que
+> muestran la orden llegando a `verificado` a las 17:11:58.
+>
+> Así que la bitácora incorpora `pickup_scans` como tercera fuente, con
+> badge **AUREON** (no un tercer origen: es sistema propio, como
+> `audit_logs`; solo DispatchTrack es ajeno). Cada escaneo muestra hora,
+> quién escaneó, el paquete y el **código de ruta**. Sin ruta no se inventa
+> chip: `pickup_routes` puede faltar y eso es un estado real.
+>
+> Lección, más allá de este spec: `reception_scans` (recepción en hub, vía
+> `route_receptions`) y `pickup_scans` (recogida en origen, vía `manifests`)
+> son dos tablas distintas para dos etapas distintas. Estar vacía una no
+> dice nada sobre la otra.
 
 ---
 

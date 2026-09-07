@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { UnifiedEventLog, type EventSourceFilter } from '@/components/orders/UnifiedEventLog';
-import { meaningfulAuditEntries } from '@/lib/orders/audit-decoder';
+import { aureonEventCount } from '@/lib/orders/unified-events';
+import type { DossierPickupScan } from '@/lib/orders/pickup-scan-events';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
@@ -29,6 +30,8 @@ import type { DossierDispatch } from '@/hooks/useOrderDossier';
 interface Props {
   auditLogs: AuditEntry[];
   dispatches: DossierDispatch[];
+  pickupScans?: DossierPickupScan[];
+  packageLabels?: Record<string, string>;
 }
 
 const FILTERS: { id: EventSourceFilter; label: string }[] = [
@@ -37,11 +40,16 @@ const FILTERS: { id: EventSourceFilter; label: string }[] = [
   { id: 'dispatchtrack', label: 'DispatchTrack' },
 ];
 
-export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
+export function FichaCenterColumn({
+  auditLogs,
+  dispatches,
+  pickupScans = [],
+  packageLabels = {},
+}: Props) {
   const [source, setSource] = useState<EventSourceFilter>('all');
   // Counted through the same filter `UnifiedEventLog` renders through, so
   // the header can never claim more events than the list shows.
-  const totalEvents = meaningfulAuditEntries(auditLogs).length + dispatches.length;
+  const totalEvents = aureonEventCount(auditLogs, pickupScans) + dispatches.length;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-b border-border bg-surface lg:border-b-0">
@@ -71,7 +79,13 @@ export function FichaCenterColumn({ auditLogs, dispatches }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-3">
-        <UnifiedEventLog auditLogs={auditLogs} dispatches={dispatches} sourceFilter={source} />
+        <UnifiedEventLog
+          auditLogs={auditLogs}
+          dispatches={dispatches}
+          pickupScans={pickupScans}
+          packageLabels={packageLabels}
+          sourceFilter={source}
+        />
       </div>
     </div>
   );

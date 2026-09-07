@@ -99,6 +99,19 @@ function dispatchesChain(data: unknown[], error: unknown = null) {
   return chain;
 }
 
+function pickupScansChain(data: unknown[], error: unknown = null) {
+  const chain: Record<string, unknown> = {
+    then: (resolve: (v: { data: unknown[]; error: unknown }) => void) =>
+      resolve({ data, error }),
+  };
+  chain.select = vi.fn().mockReturnValue(chain);
+  chain.eq = vi.fn().mockReturnValue(chain);
+  chain.in = vi.fn().mockReturnValue(chain);
+  chain.is = vi.fn().mockReturnValue(chain);
+  chain.order = vi.fn().mockReturnValue(chain);
+  return chain;
+}
+
 function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
   return (table: string) => {
     if (table === 'orders') {
@@ -128,6 +141,7 @@ function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
         maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
       };
     }
+    if (table === 'pickup_scans') return overrides.pickup_scans ?? pickupScansChain([]);
     return overrides[table] ?? {};
   };
 }
@@ -207,7 +221,8 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') return dispatchesChain([]);
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
@@ -301,7 +316,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return dispatchesChain([{ ...MOCK_DISPATCH_ROWS[0], routes: null }]);
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
@@ -332,7 +348,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return chain;
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
@@ -370,7 +387,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return chain;
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
@@ -436,7 +454,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return dispatchesChain([]);
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
@@ -473,7 +492,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return dispatchesChain([]);
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
@@ -505,7 +525,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return dispatchesChain([]);
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
@@ -537,7 +558,8 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') return dispatchesChain([]);
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
@@ -583,7 +605,8 @@ describe('useOrderDossier', () => {
         };
       }
       if (table === 'dispatches') return dispatchesChain([]);
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
@@ -592,6 +615,100 @@ describe('useOrderDossier', () => {
     const logs = result.current.data!.auditLogs;
     expect(logs.find((l) => l.id === 'a1')!.actorName).toBe('Ana Líder');
     expect(logs.find((l) => l.id === 'a2')!.actorName).toBe('Sistema');
+  });
+
+  // The verification's route lives here and nowhere else: order audit rows
+  // carry no route reference at all.
+  it('resolves the pickup route through the scan manifest', async () => {
+    mockFrom.mockImplementation(
+      buildFromMock({
+        pickup_scans: pickupScansChain([
+          {
+            id: 'ps-1',
+            scanned_at: '2026-09-07T17:11:57',
+            scan_result: 'verified',
+            barcode_scanned: 'CTN001',
+            package_id: 'pkg-1',
+            scanned_by_user_id: 'u-1',
+            manifests: { pickup_routes: { id: 'route-uuid', code: 'PR-2026-2298' } },
+          },
+        ]),
+        users: {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockResolvedValue({
+            data: [{ id: 'u-1', full_name: 'Musan Líder de Recogida', email: null }],
+            error: null,
+          }),
+        },
+      }),
+    );
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const scan = result.current.data!.pickupScans[0];
+    expect(scan.route_code).toBe('PR-2026-2298');
+    expect(scan.route_id).toBe('route-uuid');
+    expect(scan.actorName).toBe('Musan Líder de Recogida');
+  });
+
+  it('leaves the route null when the scan manifest has no pickup route', async () => {
+    mockFrom.mockImplementation(
+      buildFromMock({
+        pickup_scans: pickupScansChain([
+          {
+            id: 'ps-1',
+            scanned_at: '2026-09-07T17:11:57',
+            scan_result: 'verified',
+            barcode_scanned: 'CTN001',
+            package_id: 'pkg-1',
+            scanned_by_user_id: null,
+            manifests: { pickup_routes: null },
+          },
+        ]),
+      }),
+    );
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.pickupScans[0].route_code).toBeNull();
+    expect(result.current.data!.pickupScans[0].route_id).toBeNull();
+  });
+
+  it('returns no pickup scans, and does not query for them, when the order has no packages', async () => {
+    const scans = pickupScansChain([]);
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({
+            data: { ...MOCK_ORDER_ROW, packages: [] },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') return dispatchesChain([]);
+      if (table === 'pickup_scans') return scans;
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data!.pickupScans).toEqual([]);
+    expect(scans.select).not.toHaveBeenCalled();
   });
 
   it('excludes a soft-deleted package from the returned dossier', async () => {
@@ -624,7 +741,8 @@ describe('useOrderDossier', () => {
       if (table === 'dispatches') {
         return dispatchesChain([]);
       }
-      return {};
+      if (table === 'pickup_scans') return pickupScansChain([]);
+    return {};
     });
 
     const { result } = renderHook(() => useOrderDossier('order-1', 'op-1'), { wrapper: wrapper() });
