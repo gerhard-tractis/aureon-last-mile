@@ -48,6 +48,26 @@ Si el spec declara el juez `sql`, los tests pgTAP corren con
 `bash scripts/pgtap-local.sh` (Docker). ⚠️ **Ese contenedor es COMPARTIDO entre
 worktrees**: no corras SQL si otra sesión puede estar corriéndolo.
 
+## Cuando te llegan hallazgos de un review
+
+Invoca `superpowers:receiving-code-review` y sigue su ciclo:
+
+```
+READ → UNDERSTAND → VERIFY contra el código → EVALUATE → RESPOND → IMPLEMENT de a uno
+```
+
+**Verifica cada hallazgo contra el código antes de implementarlo.** El revisor no
+es infalible, y un hallazgo equivocado implementado a ciegas cuesta lo mismo que
+uno correcto ignorado. Si uno está mal, discútelo con razonamiento técnico — el
+orquestador prefiere una réplica fundada a una corrección obediente.
+
+Prohibido por ese skill, y aquí también: «tienes toda la razón», «buen punto», y
+cualquier acuerdo performativo antes de haber verificado. Si un hallazgo no se
+entiende, **para y pregunta**; no adivines qué quería decir.
+
+En tu reporte, di explícitamente cuáles hallazgos te parecieron incorrectos y por
+qué. Esa información no la tiene nadie más.
+
 ## Cuándo detenerte
 
 Si el spec pide algo que el código no puede sostener honestamente y resolverlo

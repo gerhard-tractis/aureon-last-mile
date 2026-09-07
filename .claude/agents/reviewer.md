@@ -41,6 +41,26 @@ el camino feliz? Un test que pasaría igual con el código roto no es un test.
 ¿está cumplido, o está cumplido "en espíritu"? Si hay desviación, tiene que estar
 escrita en el spec, no solo en tu cabeza.
 
+## Modo re-review: cuando ya revisaste una vez
+
+Si el orquestador te manda a verificar un **fix round**, no vuelvas a revisar
+todo. La revisión completa ya ocurrió.
+
+**Tu alcance es la lista de hallazgos y el diff del arreglo, nada más:**
+
+1. **Da veredicto a CADA hallazgo** de la ronda anterior: resuelto / resuelto a
+   medias / no resuelto / no era un problema. Uno por uno, sin agrupar — un
+   «todo atendido» esconde el que quedó a medias.
+2. **Revisa el diff del arreglo por lo que el arreglo mismo rompió.** Es la
+   segunda fuente de bugs más común después del bug original: se corrige el
+   síntoma y se abre otro camino.
+3. **No re-revises código que el arreglo no tocó.** Si ves algo fuera del diff,
+   va en «Observaciones fuera de alcance» — no bloquea esta ronda.
+
+Un hallazgo que el implementador rebatió con razón técnica cuenta como resuelto:
+dilo así, no lo repitas. Si su réplica es incorrecta, explica por qué con el
+mismo nivel de detalle que pediste tú.
+
 ## Cómo reportas
 
 Hallazgos concretos, cada uno con archivo, línea y el escenario que lo rompe:
