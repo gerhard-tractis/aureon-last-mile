@@ -151,13 +151,28 @@ Cada fase es un PR revisable por separado.
 
 **No** se toca `complete/[loadId]` en esta fase. Sigue siendo la pantalla de spec-19, sin fotos. Es deuda declarada que la fase 3 sustituye.
 
-### Fase 1 — `close_manifest(p_manifest_id, p_signatures, p_missing, p_notes)` `[pending]`
+### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[pending]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
 `SECURITY DEFINER`, `operator_id` desde `public.get_operator_id()` y nunca desde un argumento del cliente — el patrón de `expand_carton` (`20260814000002`) es la plantilla.
 
-Hace, en una transacción: fija `status='completed'` y `completed_at`; escribe las cuatro columnas de firma; marca los bultos sin verificar según la decisión del enum; inserta las `discrepancy_notes`; devuelve el resumen que consume `5i`.
+Hace, en una transacción: fija `status='completed'` y `completed_at`, escribe las
+cuatro columnas de firma, y devuelve el resumen que consume `5i`.
+
+> **Alcance corregido (2026-09-07).** Este párrafo decía «marca los bultos sin
+> verificar según la decisión del enum; inserta las `discrepancy_notes`». Las dos
+> cosas quedaron obsoletas cuando se decidió que una discrepancia es una **fila
+> con ciclo de vida** ([spec-85](spec-85-discrepancias.md)), no un estado de bulto
+> ni una nota suelta.
+>
+> **Los faltantes NO se manejan en esta fase.** Van en la fase 2, que es donde
+> vive `5e`, y se registran llamando a `record_discrepancies` (spec-85 fase 2).
+> Por eso la firma del RPC pierde `p_missing` y `p_notes`.
+>
+> El beneficio de partirlo así es real: **la fase 1 deja de depender de spec-85**
+> y se puede construir en paralelo. Cerrar un manifiesto sin faltantes es un
+> cierre válido y completo por sí solo.
 
 Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
 
