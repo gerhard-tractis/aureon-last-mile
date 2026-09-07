@@ -156,6 +156,123 @@ else
   fail=$((fail + 1)); echo "  FAIL missing report file should not exit 0"
 fi
 
+# ── report.errors: a file that fails to LOAD produces no failing specs ──────
+# review round 1, blocker 1 — demonstrated against a real Playwright 1.58.2
+# run: a broken import shows up ONLY in report.errors + report.stats.unexpected,
+# never as a failing spec. Confirmed the reverse too: with a good report.errors
+# check but no cross-check on stats.unexpected, a partial suites[] (only the
+# files that DID load) plus a non-empty errors[] must still fail the gate even
+# when every visible spec is declared.
+BROKEN_LOAD_REPORT='{
+  "errors": [ { "message": "Cannot find module '"'"'./support/reception-mobile-fixture'"'"'" } ],
+  "stats": { "unexpected": 2 },
+  "suites": [
+    {
+      "title": "despacho-tablet-dock.spec.ts",
+      "suites": [
+        {
+          "title": "spec-78 Despacho dock tablet — 3a",
+          "specs": [
+            {
+              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
+              "ok": false,
+              "tests": [ { "results": [ { "status": "failed" } ] } ]
+            }
+          ]
+        }
+      ],
+      "specs": []
+    }
+  ]
+}'
+assert_exit 1 "report.errors non-empty -> gate fails even if every visible spec is declared" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$BROKEN_LOAD_REPORT"
+assert_contains "Cannot find module" "surfaces the load error" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$BROKEN_LOAD_REPORT"
+
+# ── stats.unexpected > failing specs found -> something didn't surface ──────
+STATS_MISMATCH_REPORT='{
+  "errors": [],
+  "stats": { "unexpected": 3 },
+  "suites": [
+    {
+      "title": "despacho-tablet-dock.spec.ts",
+      "suites": [
+        {
+          "title": "spec-78 Despacho dock tablet — 3a",
+          "specs": [
+            {
+              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
+              "ok": false,
+              "tests": [ { "results": [ { "status": "failed" } ] } ]
+            }
+          ]
+        }
+      ],
+      "specs": []
+    }
+  ]
+}'
+assert_exit 1 "stats.unexpected greater than failing specs found -> gate fails" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$STATS_MISMATCH_REPORT"
+assert_contains "stats.unexpected" "names the stats mismatch" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$STATS_MISMATCH_REPORT"
+
+# ── Ambiguous entry: "test" text matches more than one spec ─────────────────
+# An entry with a text loose enough to match two real tests could silently
+# absorb a second, unrelated regression.
+TWO_ROUTE_TESTS_REPORT='{
+  "suites": [
+    {
+      "title": "despacho-close-dispatch.spec.ts",
+      "suites": [
+        {
+          "title": "spec-77/79",
+          "specs": [
+            { "file": "e2e/despacho-close-dispatch.spec.ts", "title": "Route H — load, force-close a split order, dispatch: full path + H3", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] },
+            { "file": "e2e/despacho-close-dispatch.spec.ts", "title": "Route R — DispatchTrack rejects: 2k names what did NOT change, Reintentar is primary", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] }
+          ]
+        }
+      ],
+      "specs": []
+    }
+  ]
+}'
+AMBIGUOUS_ENTRY='[
+  { "spec": "e2e/despacho-close-dispatch.spec.ts", "test": "Route",
+    "reason": "too broad on purpose for this test", "owner": "spec-79", "expires": "2026-09-21" }
+]'
+assert_exit 1 "quarantine entry matching more than one spec -> gate fails" \
+  "2026-09-07" "$AMBIGUOUS_ENTRY" "$TWO_ROUTE_TESTS_REPORT"
+assert_contains "matches 2 tests" "names the ambiguity" \
+  "2026-09-07" "$AMBIGUOUS_ENTRY" "$TWO_ROUTE_TESTS_REPORT"
+
+# ── Date sanity: passes the YYYY-MM-DD shape but is not a real date ─────────
+BAD_CALENDAR_DATE='[
+  { "spec": "e2e/despacho-tablet-dock.spec.ts", "test": "2d — assigns the seeded truck",
+    "reason": "x", "owner": "spec-78", "expires": "2026-99-99" }
+]'
+assert_exit 2 "expires with an impossible calendar date fails loudly" \
+  "2026-09-07" "$BAD_CALENDAR_DATE" "$PASSING_REPORT"
+assert_contains "not a real date" "names the bad calendar date" \
+  "2026-09-07" "$BAD_CALENDAR_DATE" "$PASSING_REPORT"
+
+# ── Date sanity: quarantine cannot be renewed into the far future ───────────
+FAR_FUTURE_DATE='[
+  { "spec": "e2e/despacho-tablet-dock.spec.ts", "test": "2d — assigns the seeded truck",
+    "reason": "x", "owner": "spec-78", "expires": "9999-12-31" }
+]'
+assert_exit 2 "expires more than 30 days out fails loudly" \
+  "2026-09-07" "$FAR_FUTURE_DATE" "$PASSING_REPORT"
+assert_contains "30 days" "names the horizon cap" \
+  "2026-09-07" "$FAR_FUTURE_DATE" "$PASSING_REPORT"
+
+# ── Success message names what it forgave, not just a count ────────────────
+assert_contains "despacho-tablet-dock.spec.ts" "success message names the forgiven spec" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$ONE_FAILING_REPORT"
+
 echo
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
