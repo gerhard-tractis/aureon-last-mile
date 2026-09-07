@@ -320,7 +320,7 @@ valor de retorno y deja un `RAISE NOTICE` si `ON CONFLICT DO NOTHING` tragó
 alguna — tragar sigue siendo correcto (el backfill de una tabla de evidencia
 no puede tumbar un deploy), pero ya no es silencioso en los logs.
 
-### Fase 2 — RPCs `[pending]`
+### Fase 2 — RPCs `[in_progress]`
 
 **Archivos:** migración nueva, test pgTAP
 
