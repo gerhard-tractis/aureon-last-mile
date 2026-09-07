@@ -4,6 +4,7 @@ import type { AuditEntry, OrderDetailData, PackageDetail } from './useOrderDetai
 import type { Json } from '@/lib/types';
 import { ORDER_AUDIT_RESOURCE_TYPES } from '@/lib/orders/audit-decoder';
 import { actorIdsToResolve, actorLabel, fetchActorDirectory } from '@/lib/orders/audit-actors';
+import type { DossierPickupScan } from '@/lib/orders/pickup-scan-events';
 
 /**
  * spec-65 Task 7 — a package as the dossier needs it: `useOrderDetail`'s
@@ -52,6 +53,13 @@ export type DossierDispatch = {
 export type OrderDossierData = Omit<OrderDetailData, 'packages'> & {
   packages: DossierPackage[];
   dispatches: DossierDispatch[];
+  /**
+   * The order's pickup-leg scans. This is where the verification's route
+   * lives — `audit_logs` rows on `orders` carry no route reference, so
+   * without these the bitácora can say an order was verified but never on
+   * whose route.
+   */
+  pickupScans: DossierPickupScan[];
   /** orders.imported_via - spec-65 Task 9, ORIGEN DE LOS DATOS Canal. */
   imported_via: string;
   rescheduled_delivery_date: string | null;
@@ -80,6 +88,13 @@ type DossierOrderRow = Omit<OrderDetailData, 'auditLogs' | 'manifestId' | 'packa
     deleted_at: string | null;
     dock_zone: { name: string } | { name: string }[] | null;
   })[];
+};
+
+type PickupScanRow = Omit<DossierPickupScan, 'route_id' | 'route_code' | 'actorName'> & {
+  manifests:
+    | { pickup_routes: { id: string; code: string | null } | { id: string; code: string | null }[] | null }
+    | { pickup_routes: { id: string; code: string | null } | { id: string; code: string | null }[] | null }[]
+    | null;
 };
 
 type DossierDispatchRow = Omit<DossierDispatch, 'external_route_id' | 'driver_name' | 'route_id'> & {
@@ -150,18 +165,53 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
 
       if (auditError) throw auditError;
 
-      // Who did it. Resolved in a second query because `audit_logs.user_id`
-      // has no FK to `users`, so PostgREST cannot embed it.
+      // The pickup leg. Queried by package id rather than through an
+      // embedded `packages.order_id` filter because the order's packages are
+      // already in hand, and `pickup_scans` reaches the route only through
+      // its manifest: manifest_id → manifests.pickup_route_id → pickup_routes.
+      const packageIds = order.packages.map((pkg) => pkg.id);
+      let scanRows: PickupScanRow[] = [];
+      if (packageIds.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: scanData, error: scanError } = await (client.from('pickup_scans') as any)
+          .select(
+            'id, scanned_at, scan_result, barcode_scanned, package_id, scanned_by_user_id, manifests(pickup_routes(id, code))',
+          )
+          .eq('operator_id', operatorId!)
+          .in('package_id', packageIds)
+          .is('deleted_at', null)
+          .order('scanned_at', { ascending: false });
+
+        if (scanError) throw scanError;
+        scanRows = (scanData as PickupScanRow[] | null) ?? [];
+      }
+
+      // Who did it. Resolved in a second query because neither
+      // `audit_logs.user_id` nor `pickup_scans.scanned_by_user_id` is a FK
+      // PostgREST can embed — one directory serves both.
       const auditRows = (auditData as AuditEntry[] | null) ?? [];
       const actorDirectory = await fetchActorDirectory(
         client,
         operatorId!,
-        actorIdsToResolve(auditRows.map((row) => ({ user_id: row.user_id ?? null }))),
+        actorIdsToResolve([
+          ...auditRows.map((row) => ({ user_id: row.user_id ?? null })),
+          ...scanRows.map((row) => ({ user_id: row.scanned_by_user_id ?? null })),
+        ]),
       );
       const auditLogs: AuditEntry[] = auditRows.map((row) => ({
         ...row,
         actorName: actorLabel(row.user_id ?? null, actorDirectory),
       }));
+      const pickupScans: DossierPickupScan[] = scanRows.map((row) => {
+        const { manifests, ...rest } = row;
+        const route = firstOf(firstOf(manifests)?.pickup_routes ?? null);
+        return {
+          ...rest,
+          route_id: route?.id ?? null,
+          route_code: route?.code ?? null,
+          actorName: actorLabel(row.scanned_by_user_id ?? null, actorDirectory),
+        };
+      });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: dispatchData, error: dispatchError } = await (client.from('dispatches') as any)
@@ -224,6 +274,7 @@ export function useOrderDossier(orderId: string | null, operatorId: string | nul
         ...orderFields,
         packages,
         auditLogs,
+        pickupScans,
         manifestId,
         dispatches,
         delivered_at: deliveredAt,

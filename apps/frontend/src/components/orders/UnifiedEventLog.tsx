@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { decodeEvent } from '@/lib/orders/event-decoder';
-import { decodeAuditEntry, meaningfulAuditEntries } from '@/lib/orders/audit-decoder';
+import { buildUnifiedEvents, aureonEventCount } from '@/lib/orders/unified-events';
+import type { DossierPickupScan } from '@/lib/orders/pickup-scan-events';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
 
@@ -39,45 +40,14 @@ import type { DossierDispatch } from '@/hooks/useOrderDossier';
 interface Props {
   auditLogs: AuditEntry[];
   dispatches: DossierDispatch[];
+  /** The pickup leg — where the verification's route comes from. */
+  pickupScans?: DossierPickupScan[];
+  /** package id → operator-facing label, for naming a scanned package. */
+  packageLabels?: Record<string, string>;
   sourceFilter?: EventSourceFilter;
 }
 
 export type EventSourceFilter = 'all' | 'aureon' | 'dispatchtrack';
-
-type UnifiedEvent =
-  | { source: 'aureon'; id: string; timestamp: string | null; title: string; actor: string | null; raw: unknown }
-  | { source: 'dispatchtrack'; id: string; timestamp: string | null; dispatch: DossierDispatch };
-
-function dispatchTimestamp(d: DossierDispatch): string | null {
-  return d.completed_at ?? d.arrived_at ?? d.estimated_at ?? null;
-}
-
-function buildEvents(auditLogs: AuditEntry[], dispatches: DossierDispatch[]): UnifiedEvent[] {
-  const auditEvents: UnifiedEvent[] = meaningfulAuditEntries(auditLogs).map((log) => ({
-    source: 'aureon',
-    id: log.id,
-    timestamp: log.timestamp,
-    // `log.action` is the trigger's own "UPDATE_orders" string, which told
-    // an operator nothing. The decoder turns it into the transition it
-    // actually was ("Estado: Ingresado → Verificado").
-    title: decodeAuditEntry(log).title,
-    actor: log.actorName ?? null,
-    raw: log.changes_json,
-  }));
-  const dispatchEvents: UnifiedEvent[] = dispatches.map((d) => ({
-    source: 'dispatchtrack',
-    id: d.id,
-    timestamp: dispatchTimestamp(d),
-    dispatch: d,
-  }));
-
-  return [...auditEvents, ...dispatchEvents].sort((a, b) => {
-    if (!a.timestamp && !b.timestamp) return 0;
-    if (!a.timestamp) return 1;
-    if (!b.timestamp) return -1;
-    return b.timestamp.localeCompare(a.timestamp);
-  });
-}
 
 function GridField({ label, value }: { label: string; value: string }) {
   return (
@@ -159,22 +129,33 @@ function hiddenByFilterMessage(count: number, source: 'courier' | 'aureon'): str
   return `${count} evento${count === 1 ? '' : 's'} ${noun} ${ending} por el filtro actual.`;
 }
 
-export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }: Props) {
+export function UnifiedEventLog({
+  auditLogs,
+  dispatches,
+  pickupScans = [],
+  packageLabels = {},
+  sourceFilter = 'all',
+}: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // The housekeeping rows are dropped before any counting happens, so the
   // "N hidden by the filter" notices below can never promise events that
   // turning the filter off would not actually reveal.
-  const realAuditLogs = meaningfulAuditEntries(auditLogs);
-  const visibleAuditLogs = sourceFilter === 'dispatchtrack' ? [] : realAuditLogs;
+  const aureonCount = aureonEventCount(auditLogs, pickupScans);
+  const showAureon = sourceFilter !== 'dispatchtrack';
   const visibleDispatches = sourceFilter === 'aureon' ? [] : dispatches;
-  const events = buildEvents(visibleAuditLogs, visibleDispatches);
+  const events = buildUnifiedEvents(
+    showAureon ? auditLogs : [],
+    visibleDispatches,
+    showAureon ? pickupScans : [],
+    packageLabels,
+  );
 
   // Ground truth, always read off the real (unfiltered) props — "no
   // courier/Aureon events exist" must never flip just because the active
   // filter happens to be hiding them (see the class doc comment above).
   const noCourierEventsExist = dispatches.length === 0;
   const courierHiddenByFilter = sourceFilter === 'aureon' && dispatches.length > 0;
-  const aureonHiddenByFilter = sourceFilter === 'dispatchtrack' && realAuditLogs.length > 0;
+  const aureonHiddenByFilter = sourceFilter === 'dispatchtrack' && aureonCount > 0;
 
   if (events.length === 0) {
     // Controller-flagged Critical, round 3 — this branch used to return
@@ -196,7 +177,7 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
     if (aureonHiddenByFilter) {
       return (
         <p className="px-4 py-6 text-center text-[12px] text-text-secondary" data-testid="event-log-hidden">
-          {hiddenByFilterMessage(realAuditLogs.length, 'aureon')}
+          {hiddenByFilterMessage(aureonCount, 'aureon')}
         </p>
       );
     }
@@ -249,7 +230,11 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
                   onClick={() => toggle(event.id)}
                   className="text-left text-[12px] font-medium text-text-body"
                 >
-                  {event.source === 'aureon' ? event.title : event.dispatch.substatus || 'Actualización de courier'}
+                  {event.source === 'dispatchtrack'
+                    ? event.dispatch.substatus || 'Actualización de courier'
+                    : event.kind === 'pickup'
+                      ? `${event.title} · ${event.packageLabel}`
+                      : event.title}
                 </button>
                 <span
                   className={cn(
@@ -261,6 +246,14 @@ export function UnifiedEventLog({ auditLogs, dispatches, sourceFilter = 'all' }:
                 >
                   {event.source === 'aureon' ? 'AUREON' : 'DISPATCHTRACK'}
                 </span>
+                {event.source === 'aureon' && event.kind === 'pickup' && event.routeLabel && (
+                  <span
+                    className="rounded-sm border border-border bg-surface-raised px-1.5 py-0.5 font-mono text-[8.5px] font-semibold tracking-wide text-text-secondary"
+                    data-testid={`event-route-${event.id}`}
+                  >
+                    {event.routeLabel}
+                  </span>
+                )}
                 {event.source === 'aureon' && event.actor && (
                   <span className="truncate text-[10.5px] text-text-secondary" data-testid={`event-actor-${event.id}`}>
                     por {event.actor}

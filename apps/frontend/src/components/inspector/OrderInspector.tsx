@@ -223,7 +223,12 @@ function OrderInspectorBody({
           value="historial"
           className="px-6 py-4 flex flex-col gap-3 data-[state=inactive]:hidden"
         >
-          <UnifiedEventLog auditLogs={data.auditLogs} dispatches={data.dispatches} />
+          <UnifiedEventLog
+            auditLogs={data.auditLogs}
+            dispatches={data.dispatches}
+            pickupScans={data.pickupScans}
+            packageLabels={Object.fromEntries(data.packages.map((p) => [p.id, p.label]))}
+          />
           <ProofOfDelivery dispatch={pod} />
         </TabsContent>
 

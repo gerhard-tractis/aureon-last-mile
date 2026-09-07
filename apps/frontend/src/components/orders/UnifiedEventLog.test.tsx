@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { UnifiedEventLog } from './UnifiedEventLog';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 import type { DossierDispatch } from '@/hooks/useOrderDossier';
+import type { DossierPickupScan } from '@/lib/orders/pickup-scan-events';
 import { dossierDispatchFixture } from '@/test/fixtures/dossierDispatch';
 
 function auditEntry(overrides: Partial<AuditEntry> = {}): AuditEntry {
@@ -293,5 +294,92 @@ describe('UnifiedEventLog — order status history (bitácora hotfix)', () => {
   it('keeps an application-written import event, which has no before/after diff', () => {
     render(<UnifiedEventLog auditLogs={[auditEntry({ action: 'CSV_IMPORT' })]} dispatches={[]} />);
     expect(screen.getByText('CSV_IMPORT')).toBeInTheDocument();
+  });
+});
+
+describe('UnifiedEventLog — pickup verification and its route', () => {
+  function pickupScan(overrides: Partial<DossierPickupScan> = {}): DossierPickupScan {
+    return {
+      id: 'ps-1',
+      scanned_at: '2026-09-07T17:11:57',
+      scan_result: 'verified',
+      barcode_scanned: 'CTN001',
+      package_id: 'pkg-1',
+      scanned_by_user_id: 'u-1',
+      route_id: 'route-uuid',
+      route_code: 'PR-2026-2298',
+      actorName: 'Musan Líder de Recogida',
+      ...overrides,
+    };
+  }
+
+  it('shows the route the verification happened on', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[]} pickupScans={[pickupScan()]} />);
+    expect(screen.getByTestId('event-route-ps-1')).toHaveTextContent('PR-2026-2298');
+  });
+
+  it('shows who scanned it and when', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[]} pickupScans={[pickupScan()]} />);
+    expect(screen.getByText(/por Musan Líder de Recogida/)).toBeInTheDocument();
+    expect(screen.getByText('07/09 17:11:57')).toBeInTheDocument();
+  });
+
+  it('names the package by its label rather than the raw barcode', () => {
+    render(
+      <UnifiedEventLog
+        auditLogs={[]}
+        dispatches={[]}
+        pickupScans={[pickupScan({ barcode_scanned: 'RAW-9' })]}
+        packageLabels={{ 'pkg-1': 'CTN001' }}
+      />,
+    );
+    expect(screen.getByText(/Paquete verificado en recogida · CTN001/)).toBeInTheDocument();
+  });
+
+  it('omits the route chip rather than inventing one when the scan has no route', () => {
+    render(
+      <UnifiedEventLog
+        auditLogs={[]}
+        dispatches={[]}
+        pickupScans={[pickupScan({ route_code: null, route_id: null })]}
+      />,
+    );
+    expect(screen.queryByTestId('event-route-ps-1')).not.toBeInTheDocument();
+  });
+
+  it('badges a pickup scan as AUREON, not as a third foreign source', () => {
+    render(<UnifiedEventLog auditLogs={[]} dispatches={[]} pickupScans={[pickupScan()]} />);
+    expect(screen.getByText('AUREON')).toBeInTheDocument();
+  });
+
+  it('hides pickup scans under the DispatchTrack filter, and says they are hidden', () => {
+    render(
+      <UnifiedEventLog
+        auditLogs={[]}
+        dispatches={[]}
+        pickupScans={[pickupScan()]}
+        sourceFilter="dispatchtrack"
+      />,
+    );
+    expect(screen.getByTestId('event-log-hidden')).toHaveTextContent(/1 evento de Aureon oculto/i);
+  });
+
+  it('interleaves the scan with the audit rows by timestamp, newest first', () => {
+    const verified = auditEntry({
+      id: 'audit-verificado',
+      action: 'UPDATE_orders',
+      timestamp: '2026-09-07T17:11:58',
+      changes_json: { before: { status: 'ingresado' }, after: { status: 'verificado' } },
+    });
+    render(
+      <UnifiedEventLog
+        auditLogs={[verified]}
+        dispatches={[]}
+        pickupScans={[pickupScan({ scanned_at: '2026-09-07T17:11:57' })]}
+      />,
+    );
+    const titles = screen.getAllByRole('button', { expanded: false }).map((b) => b.textContent);
+    expect(titles[0]).toContain('Estado: Ingresado → Verificado');
+    expect(titles[1]).toContain('Paquete verificado en recogida');
   });
 });
