@@ -306,6 +306,27 @@ Devuelve `null` —y la tarjeta oculta la línea— cuando ningún ítem de la e
 
 ## Fase 4.4 — Recogida (escritorio)
 
+> **Alcance real, anotado el 2026-09-07.** Esta fase cubrió **sólo la pantalla
+> de escritorio**. El flujo móvil de recogida — escaneo, revisión, entrega y
+> firma — nunca estuvo en el alcance de este spec: `grep` de `pickup/scan`,
+> `pickup/review`, `pickup/complete`, `Firma` y `handoff` sobre este archivo no
+> devuelve nada. Esas pantallas siguen siendo de spec-19 y spec-47, y una de
+> ellas (`/app/pickup/complete/[loadId]`, la Firma) quedó **huérfana**: spec-47
+> borró la pantalla de Entrega y repuntó la revisión al listado de ruta, así que
+> desde entonces no hay forma de llegar a firmar un manifiesto.
+>
+> Además apareció una ronda de diseño posterior — `Recogida.dc.html`, pantallas
+> `5a`–`5i` — que este spec no conocía. Sus propias etiquetas dicen «el paso que
+> faltaba» y «el bloqueo que faltaba»: es la ronda que documenta los huecos
+> funcionales que quedaron aquí.
+>
+> El trabajo restante vive en cuatro specs nuevos, no en éste:
+> [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (`5e`–`5i`, cierre de carga),
+> [spec-81](spec-81-recogida-cola-offline.md) (cola offline),
+> [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`),
+> [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (`5a`, los tres datos
+> que esta fase difirió con razón escrita).
+
 **Ruta:** `/app/pickup` · **Mock:** `1l`
 
 Corrección al plan: la primera versión de este spec decía que Recogida no tenía mock. Sí lo tiene — `1l`, añadido al archivo de diseño después del handoff original. El plan de fase 4 lo omitía por error, igual que a `1f` (Order Inspector). **`1f` ya está entregado**, en [spec-65](spec-65-pedidos-tab.md) fase 4: `OrderInspector` se reconstruyó sobre `useOrderDossier` y los cinco bloques compartidos de `components/orders/`, y `OrderLifecycleRibbon` se eliminó al quedarse sin llamadores.
