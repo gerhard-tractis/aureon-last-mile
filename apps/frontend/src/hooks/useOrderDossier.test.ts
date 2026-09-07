@@ -113,6 +113,7 @@ function buildFromMock(overrides: Partial<Record<string, unknown>> = {}) {
       return {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
         order: vi.fn().mockResolvedValue({ data: MOCK_AUDIT_ENTRIES, error: null }),
       };
     }
@@ -201,6 +202,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -292,6 +294,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -322,6 +325,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -359,6 +363,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -424,6 +429,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -460,6 +466,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -491,6 +498,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: auditEq,
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }
@@ -504,6 +512,86 @@ describe('useOrderDossier', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(auditEq).toHaveBeenCalledWith('operator_id', 'op-42');
+  });
+
+  // The bitácora bug: the DB trigger writes resource_type 'orders' and the
+  // bulk importer writes 'order'. Filtering on the singular alone matched
+  // none of the trigger's rows, so every order's bitácora came back empty.
+  it('reads BOTH resource_type spellings, not just the singular', async () => {
+    const auditIn = vi.fn().mockReturnThis();
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: auditIn,
+          order: vi.fn().mockResolvedValue({ data: [], error: null }),
+        };
+      }
+      if (table === 'dispatches') return dispatchesChain([]);
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const [column, values] = auditIn.mock.calls[0];
+    expect(column).toBe('resource_type');
+    expect([...values]).toEqual(expect.arrayContaining(['order', 'orders']));
+  });
+
+  it('resolves the actor name for each audit entry', async () => {
+    mockFrom.mockImplementation((table: string) => {
+      if (table === 'orders') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          is: vi.fn().mockReturnThis(),
+          single: vi.fn().mockResolvedValue({ data: MOCK_ORDER_ROW, error: null }),
+        };
+      }
+      if (table === 'audit_logs') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue({
+            data: [
+              { id: 'a1', action: 'UPDATE_orders', timestamp: '2026-09-07T17:11:58', changes_json: null, user_id: 'u-1' },
+              { id: 'a2', action: 'INSERT_orders', timestamp: '2026-09-07T15:13:48', changes_json: null, user_id: null },
+            ],
+            error: null,
+          }),
+        };
+      }
+      if (table === 'users') {
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockResolvedValue({
+            data: [{ id: 'u-1', full_name: 'Ana Líder', email: 'lider@musan.com' }],
+            error: null,
+          }),
+        };
+      }
+      if (table === 'dispatches') return dispatchesChain([]);
+      return {};
+    });
+
+    const { result } = renderHook(() => useOrderDossier('order-1', 'op-42'), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    const logs = result.current.data!.auditLogs;
+    expect(logs.find((l) => l.id === 'a1')!.actorName).toBe('Ana Líder');
+    expect(logs.find((l) => l.id === 'a2')!.actorName).toBe('Sistema');
   });
 
   it('excludes a soft-deleted package from the returned dossier', async () => {
@@ -529,6 +617,7 @@ describe('useOrderDossier', () => {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           order: vi.fn().mockResolvedValue({ data: [], error: null }),
         };
       }

@@ -231,3 +231,67 @@ describe('UnifiedEventLog — zero visible events under a filter (critical fix)'
     expect(screen.queryByTestId('unified-event-log')).not.toBeInTheDocument();
   });
 });
+
+describe('UnifiedEventLog — order status history (bitácora hotfix)', () => {
+  function statusChange(overrides: Partial<AuditEntry> = {}): AuditEntry {
+    return auditEntry({
+      id: 'audit-status',
+      action: 'UPDATE_orders',
+      changes_json: {
+        before: { status: 'ingresado', updated_at: 'a' },
+        after: { status: 'verificado', updated_at: 'b' },
+      },
+      ...overrides,
+    });
+  }
+
+  it('names the transition instead of showing the raw UPDATE_orders action', () => {
+    render(<UnifiedEventLog auditLogs={[statusChange()]} dispatches={[]} />);
+    expect(screen.getByText('Estado: Ingresado → Verificado')).toBeInTheDocument();
+    expect(screen.queryByText('UPDATE_orders')).not.toBeInTheDocument();
+  });
+
+  it('shows who performed the change', () => {
+    render(<UnifiedEventLog auditLogs={[statusChange({ actorName: 'Ana Líder' })]} dispatches={[]} />);
+    expect(screen.getByText(/por Ana Líder/)).toBeInTheDocument();
+  });
+
+  it('omits the actor rather than inventing one when it could not be resolved', () => {
+    render(<UnifiedEventLog auditLogs={[statusChange({ actorName: null })]} dispatches={[]} />);
+    expect(screen.queryByTestId('event-actor-audit-status')).not.toBeInTheDocument();
+  });
+
+  it('shows the verification timestamp', () => {
+    render(
+      <UnifiedEventLog auditLogs={[statusChange({ timestamp: '2026-09-07T17:11:58' })]} dispatches={[]} />,
+    );
+    expect(screen.getByText('07/09 17:11:58')).toBeInTheDocument();
+  });
+
+  // Musan QA: 14 of an order's 18 rows moved nothing but updated_at.
+  it('hides the housekeeping rows that changed nothing but timestamps', () => {
+    const noise = auditEntry({
+      id: 'audit-noise',
+      action: 'UPDATE_orders',
+      changes_json: { before: { updated_at: 'a' }, after: { updated_at: 'b' } },
+    });
+    render(<UnifiedEventLog auditLogs={[noise, statusChange()]} dispatches={[]} />);
+    expect(screen.getByText('Estado: Ingresado → Verificado')).toBeInTheDocument();
+    expect(screen.queryByTestId('event-toggle-audit-noise')).not.toBeInTheDocument();
+  });
+
+  it('says there are no events when every row was housekeeping', () => {
+    const noise = auditEntry({
+      id: 'audit-noise',
+      action: 'UPDATE_orders',
+      changes_json: { before: { updated_at: 'a' }, after: { updated_at: 'b' } },
+    });
+    render(<UnifiedEventLog auditLogs={[noise]} dispatches={[]} />);
+    expect(screen.getByTestId('event-log-empty')).toBeInTheDocument();
+  });
+
+  it('keeps an application-written import event, which has no before/after diff', () => {
+    render(<UnifiedEventLog auditLogs={[auditEntry({ action: 'CSV_IMPORT' })]} dispatches={[]} />);
+    expect(screen.getByText('CSV_IMPORT')).toBeInTheDocument();
+  });
+});
