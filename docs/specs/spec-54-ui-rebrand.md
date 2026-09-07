@@ -2,7 +2,9 @@
 
 > **Related:** [spec-42](spec-42-order-inspector.md) (Order Inspector), [spec-29](spec-29-ops-control-mission-deck.md) (Ops Control), [spec-45](spec-45-module-activation-layer.md) (module activation drives nav visibility), `docs/architecture/phased-rollout-strategy.md`
 
-**Status:** in progress
+**Status:** awaiting_user_test
+**Falta:** sólo `1g` (Home del operario) y `1j` (prueba de entrega), ambas bloqueadas por datos que no existen — el vínculo usuario↔conductor y dónde guardar la prueba. Las desbloquea una decisión del usuario, no un agente. Todo el trabajo restante de Recogida se movió a [spec-80](spec-80-recogida-movil-cierre-de-carga.md)–[spec-83](spec-83-recogida-escritorio-datos-faltantes.md).
+**Verify:** unit, e2e-qa
 
 _Date: 2026-08-13_
 
@@ -74,7 +76,7 @@ Cada fase es un PR revisable por separado. El handoff advierte explícitamente c
 
 ---
 
-## Fase 1 — Tokens y tipografía
+## Fase 1 — Tokens y tipografía `[done]`
 
 **Archivos:** `src/app/globals.css`, `tailwind.config.ts`, `src/app/layout.tsx`
 
@@ -122,7 +124,7 @@ Tres familias vía `next/font/google`, cargadas en `layout.tsx`:
 
 ---
 
-## Fase 2 — Shell
+## Fase 2 — Shell `[done]`
 
 **Archivos:** `src/components/AppLayout.tsx`, `src/components/sidebar/SidebarNavItem.tsx`, `src/components/sidebar/SidebarBrand.tsx` (nuevo), `src/components/sidebar/navigation.ts` (nuevo), `src/components/TopBar.tsx` (nuevo), `src/components/ThemeToggle.tsx`, `src/hooks/useNavCounts.ts` (nuevo)
 
@@ -203,7 +205,7 @@ Reglas que aplican a todas ellas y que se verifican en review:
 
 ---
 
-## Fase 4.1 — Torre de control
+## Fase 4.1 — Torre de control `[done]`
 
 **Ruta:** `/app/operations-control` · **Mock:** `2a`
 
@@ -232,7 +234,7 @@ La página monta su propio `OrderInspector` para el clic en fila, y `AppLayout` 
 
 ---
 
-## Fase 4.2 — Despacho
+## Fase 4.2 — Despacho `[done]`
 
 **Ruta:** `/app/dispatch` · **Mock:** `1c`
 
@@ -263,7 +265,7 @@ Una comuna puede aparecer bajo más de un andén — eso es justo lo que marca `
 
 ---
 
-## Fase 4.3 — Distribución / modo rápido
+## Fase 4.3 — Distribución / modo rápido `[done]`
 
 **Ruta:** `/app/distribution/quicksort` · **Mock:** `1d`
 
@@ -291,7 +293,7 @@ Ese segundo paso es un control de verificación real, no un rodeo de UI. Adoptar
 
 ---
 
-## Fase 4.1b — Paquetes en las tarjetas del flujo
+## Fase 4.1b — Paquetes en las tarjetas del flujo `[done]`
 
 Cambio de diseño posterior: las tarjetas del rail de la Torre ganan una línea con el conteo de paquetes bajo el conteo de órdenes (mono 10px, `--color-text-muted`, `white-space:nowrap`, entre la cifra y la barra de salud).
 
@@ -304,7 +306,7 @@ Devuelve `null` —y la tarjeta oculta la línea— cuando ningún ítem de la e
 
 ---
 
-## Fase 4.4 — Recogida (escritorio)
+## Fase 4.4 — Recogida (escritorio) `[done]`
 
 > **Alcance real, anotado el 2026-09-07.** Esta fase cubrió **sólo la pantalla
 > de escritorio**. El flujo móvil de recogida — escaneo, revisión, entrega y
@@ -358,7 +360,7 @@ Marcar manifiestos → `start_pickup_route(vehicleId)` → `add_manifest_to_rout
 
 ---
 
-## Fase 4.5 — Recepción
+## Fase 4.5 — Recepción `[done]`
 
 **Ruta:** `/app/reception/route/[routeId]` · **Mock:** `1e`
 
@@ -386,7 +388,7 @@ El chip **no renderiza nada** estando en línea y con la cola vacía — el esta
 
 ---
 
-## Fase 4.6 — Ruta activa del conductor (móvil)
+## Fase 4.6 — Ruta activa del conductor (móvil) `[done]`
 
 **Ruta:** `/app/pickup/route/active` · **Mock:** `1i`
 
@@ -419,7 +421,7 @@ El mock pone la lista completa de paradas detrás de "Ver las 24 paradas". Se im
 
 ---
 
-## Fase 4.7 — Distribución (estado inicial del módulo)
+## Fase 4.7 — Distribución (estado inicial del módulo) `[done]`
 
 **Ruta:** `/app/distribution` · **Mock:** `3d`
 
@@ -474,7 +476,7 @@ entrega, ni plazo SLA por ruta.
 salida, manifiestos verificados sobre esperados) en lugar de forzar la pantalla
 hacia semántica de reparto. Las omisiones concretas están en la Fase 4.6.
 
-### `1g` — Home del operario: falta el vínculo usuario ↔ conductor
+### `1g` — Home del operario: falta el vínculo usuario ↔ conductor `[blocked]`
 
 El elemento dominante del mock es la tarjeta "TU TAREA AHORA": la siguiente
 tarea **de esta persona**. No es construible.
@@ -499,7 +501,7 @@ de ser de la pantalla.
 `users` ↔ `drivers`), más una superficie de administración para mantener ese
 mapeo. Es trabajo de esquema con su propio spec, no un rediseño.
 
-### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba
+### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba `[blocked]`
 
 Pide foto, firma y RUT al entregar. No existe flujo de entrega en el frontend
 y, sobre todo, no hay dónde guardar la prueba: `delivery_attempts` es una tabla
