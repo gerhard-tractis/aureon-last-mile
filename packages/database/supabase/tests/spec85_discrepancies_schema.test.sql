@@ -68,7 +68,27 @@ VALUES
   ('44440001-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
    'T85-LOAD-A', 'pending'),
   ('44440002-0000-0000-0000-000000000085', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000085',
-   'T85-LOAD-B', 'pending');
+   'T85-LOAD-B', 'pending'),
+  -- A second, later event for operator A: same package can be missing on
+  -- Monday's carga A and again on Tuesday's carga A2 — two distinct facts.
+  ('44440003-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+   'T85-LOAD-A2', 'pending');
+
+-- A pickup_route + route_reception for operator A, so the operation/source
+-- CHECK (I3) and source_id (reception branch) have something real to point at.
+INSERT INTO public.vehicles (id, operator_id, plate)
+VALUES
+  ('88880001-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'T85-PLATE');
+
+INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
+VALUES
+  ('55550001-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+   'PR-T85-0001', 'aaaaaaaa-0000-4000-a000-000000000185', '88880001-0000-0000-0000-000000000085', 'in_progress');
+
+INSERT INTO public.route_receptions (id, pickup_route_id, operator_id, delivered_by, status)
+VALUES
+  ('66660001-0000-0000-0000-000000000085', '55550001-0000-0000-0000-000000000085',
+   'aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'aaaaaaaa-0000-4000-a000-000000000185', 'pending');
 
 -- =============================================================================
 -- TEST 1: RLS isolation — operator B cannot see operator A's discrepancies.
@@ -279,5 +299,318 @@ BEGIN
 END $$;
 
 ROLLBACK TO test_6;
+
+-- =============================================================================
+-- TEST 7 (I3) — discrepancy_source_matches_operation CHECK: operation_type
+-- must agree with which source column is populated.
+-- =============================================================================
+SAVEPOINT test_7;
+
+DO $$
+BEGIN
+  -- pickup without manifest_id: rejected.
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+            '33330001-0000-0000-0000-000000000085', 'pickup sin manifest_id');
+    RAISE EXCEPTION 'TEST 7 FAILED (a): pickup without manifest_id was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '✓ TEST 7 PASSED (a): pickup without manifest_id rejected';
+  END;
+
+  -- pickup with route_reception_id instead of manifest_id: rejected.
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, route_reception_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+            '33330001-0000-0000-0000-000000000085', '66660001-0000-0000-0000-000000000085',
+            'pickup con route_reception_id');
+    RAISE EXCEPTION 'TEST 7 FAILED (b): pickup with route_reception_id instead of manifest_id was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '✓ TEST 7 PASSED (b): pickup with route_reception_id rejected';
+  END;
+
+  -- reception without route_reception_id: rejected.
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'reception',
+            '33330001-0000-0000-0000-000000000085', 'reception sin route_reception_id');
+    RAISE EXCEPTION 'TEST 7 FAILED (c): reception without route_reception_id was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '✓ TEST 7 PASSED (c): reception without route_reception_id rejected';
+  END;
+
+  -- reception with manifest_id instead of route_reception_id: rejected.
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'reception',
+            '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085',
+            'reception con manifest_id');
+    RAISE EXCEPTION 'TEST 7 FAILED (d): reception with manifest_id instead of route_reception_id was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '✓ TEST 7 PASSED (d): reception with manifest_id rejected';
+  END;
+
+  -- Sanity: the valid shape of each operation is accepted.
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085', 'ok pickup');
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, route_reception_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'reception',
+          '33330001-0000-0000-0000-000000000085', '66660001-0000-0000-0000-000000000085', 'ok reception');
+  RAISE NOTICE '✓ TEST 7 PASSED (e): valid pickup/reception shapes accepted';
+END $$;
+
+ROLLBACK TO test_7;
+
+-- =============================================================================
+-- TEST 8 (I5) — discrepancy_shape CHECK closes the 'unexpected' branch: a
+-- barcode read that resolves to a real package_id must NOT pass as
+-- 'unexpected', or it would collide with (and block) a legitimate 'missing'
+-- on that same package.
+-- =============================================================================
+SAVEPOINT test_8;
+
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, barcode, package_id, manifest_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'unexpected', 'pickup',
+            'BARCODE-XYZ', '33330001-0000-0000-0000-000000000085',
+            '44440001-0000-0000-0000-000000000085', 'unexpected con package_id');
+    RAISE EXCEPTION 'TEST 8 FAILED: an unexpected discrepancy with package_id was accepted';
+  EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE '✓ TEST 8 PASSED: unexpected with package_id rejected by discrepancy_shape';
+  END;
+END $$;
+
+ROLLBACK TO test_8;
+
+-- =============================================================================
+-- TEST 9 — "one open discrepancy per EVENT, not per operation lifetime": the
+-- same package missing on two different cargas (different manifest_id, same
+-- operation_type) must be able to coexist as two open rows, because the
+-- unique index now carries source_id.
+-- =============================================================================
+SAVEPOINT test_9;
+
+DO $$
+DECLARE c INT;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085', 'falta lunes carga A');
+
+  -- Same package, same operator, same operation_type, DIFFERENT manifest
+  -- (source_id): must be accepted, not collide.
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000085', '44440003-0000-0000-0000-000000000085', 'falta martes carga A2');
+
+  SELECT COUNT(*) INTO c FROM public.discrepancies
+   WHERE package_id = '33330001-0000-0000-0000-000000000085' AND status = 'open';
+  IF c <> 2 THEN
+    RAISE EXCEPTION 'TEST 9 FAILED: expected 2 open discrepancies (one per event), got %', c;
+  END IF;
+
+  -- But a THIRD open one on the SAME manifest (same source_id) must still
+  -- collide — this is the original per-package-per-open guarantee, not
+  -- weakened by adding source_id.
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+            '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085', 'duplicado lunes carga A');
+    RAISE EXCEPTION 'TEST 9 FAILED: a second open discrepancy on the SAME event was accepted';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE '✓ TEST 9 PASSED: one open discrepancy per event, not per operation lifetime';
+  END;
+END $$;
+
+ROLLBACK TO test_9;
+
+-- =============================================================================
+-- TEST 10 (C2) — uniq_open_discrepancy_per_barcode: two open 'unexpected'
+-- rows for the same barcode + operation_type + source collide. Without this,
+-- an offline-queue retry (spec-81) duplicates the surplus.
+-- =============================================================================
+SAVEPOINT test_10;
+
+DO $$
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, barcode, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'unexpected', 'pickup',
+          'BARCODE-DUP', '44440001-0000-0000-0000-000000000085', 'first unexpected');
+
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, barcode, manifest_id, note)
+    VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'unexpected', 'pickup',
+            'BARCODE-DUP', '44440001-0000-0000-0000-000000000085', 'retry duplicate');
+    RAISE EXCEPTION 'TEST 10 FAILED: a duplicate open ''unexpected'' on the same event was accepted';
+  EXCEPTION WHEN unique_violation THEN
+    RAISE NOTICE '✓ TEST 10 PASSED: duplicate open unexpected on the same event rejected';
+  END;
+END $$;
+
+ROLLBACK TO test_10;
+
+-- =============================================================================
+-- TEST 11 (C3) — RLS WITH CHECK, exercised under role='authenticated', not
+-- the owner. Operator A cannot INSERT a row carrying operator B's
+-- operator_id (fabricating evidence in someone else's file).
+-- =============================================================================
+SAVEPOINT test_11;
+
+DO $$
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0000-4000-a000-000000000185","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000085","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+
+  BEGIN
+    INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+    VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-000000000085', 'missing', 'pickup',
+            '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085',
+            'A intenta fabricar evidencia contra B');
+    RAISE EXCEPTION 'TEST 11 FAILED: operator A inserted a row with operator B''s operator_id';
+  EXCEPTION
+    WHEN insufficient_privilege OR check_violation THEN
+      RAISE NOTICE '✓ TEST 11 PASSED: cross-tenant INSERT rejected (%)', SQLSTATE;
+  END;
+  RESET role;
+END $$;
+RESET role;
+
+ROLLBACK TO test_11;
+
+-- =============================================================================
+-- TEST 12 (C3) — under authenticated, operator A cannot move one of its own
+-- rows to operator B (making its own shrinkage disappear from its ledger).
+-- =============================================================================
+SAVEPOINT test_12;
+
+INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000085', 'missing', 'pickup',
+        '33330001-0000-0000-0000-000000000085', '44440001-0000-0000-0000-000000000085', 'A''s own row');
+
+DO $$
+DECLARE v_still_a INT;
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0000-4000-a000-000000000185","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000085","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+
+  BEGIN
+    UPDATE public.discrepancies SET operator_id = 'bbbbbbbb-bbbb-bbbb-bbbb-000000000085'
+     WHERE note = 'A''s own row';
+    RAISE EXCEPTION 'TEST 12 FAILED: operator A moved its own row to operator B';
+  EXCEPTION
+    WHEN insufficient_privilege OR check_violation THEN
+      RAISE NOTICE '✓ TEST 12 PASSED: moving a row to another operator rejected (%)', SQLSTATE;
+  END;
+  RESET role;
+END $$;
+RESET role;
+
+DO $$
+DECLARE v_owner UUID;
+BEGIN
+  SELECT operator_id INTO v_owner FROM public.discrepancies WHERE note = 'A''s own row';
+  IF v_owner IS DISTINCT FROM 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085'::uuid THEN
+    RAISE EXCEPTION 'TEST 12 FAILED: row operator_id changed despite the rejected UPDATE (got %)', v_owner;
+  END IF;
+  RAISE NOTICE '✓ TEST 12 PASSED: row still belongs to operator A after the rejected UPDATE';
+END $$;
+
+ROLLBACK TO test_12;
+
+-- =============================================================================
+-- TEST 13 (C3b, I1) — the backfill: fixture discrepancy_notes rows, run
+-- public.spec85_backfill_discrepancy_notes(), and check the fields actually
+-- arrived (not just that the table exists). Also checks idempotency: running
+-- it twice does not duplicate.
+-- =============================================================================
+SAVEPOINT test_13;
+
+DO $$
+DECLARE
+  v_count_first  INT;
+  v_count_second INT;
+  v_row RECORD;
+BEGIN
+  INSERT INTO public.discrepancy_notes (id, operator_id, manifest_id, package_id, note, created_by_user_id, created_at, updated_at)
+  VALUES (
+    '77770001-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+    '44440001-0000-0000-0000-000000000085', '33330001-0000-0000-0000-000000000085',
+    'nota de marzo', 'aaaaaaaa-0000-4000-a000-000000000185',
+    '2026-03-15 10:00:00+00', '2026-03-15 10:00:00+00'
+  );
+
+  SELECT public.spec85_backfill_discrepancy_notes() INTO v_count_first;
+  IF v_count_first < 1 THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: backfill inserted % rows, expected >= 1', v_count_first;
+  END IF;
+
+  SELECT * INTO v_row FROM public.discrepancies WHERE migrated_from_note_id = '77770001-0000-0000-0000-000000000085';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: no discrepancies row traces back to the fixture note via migrated_from_note_id';
+  END IF;
+  IF v_row.kind <> 'missing' OR v_row.operation_type <> 'pickup' OR v_row.status <> 'open' THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: wrong kind/operation_type/status on the backfilled row';
+  END IF;
+  IF v_row.package_id <> '33330001-0000-0000-0000-000000000085' THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: package_id not carried over';
+  END IF;
+  IF v_row.note <> 'nota de marzo' THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: note not carried over';
+  END IF;
+  -- I1: detected_at must be the ORIGINAL note's created_at, not NOW().
+  IF v_row.detected_at <> '2026-03-15 10:00:00+00'::timestamptz THEN
+    RAISE EXCEPTION 'TEST 13 FAILED (I1): detected_at is %, expected the note''s original created_at', v_row.detected_at;
+  END IF;
+
+  -- Idempotency: running it again must not duplicate this row.
+  SELECT public.spec85_backfill_discrepancy_notes() INTO v_count_second;
+  IF (SELECT COUNT(*) FROM public.discrepancies WHERE migrated_from_note_id = '77770001-0000-0000-0000-000000000085') <> 1 THEN
+    RAISE EXCEPTION 'TEST 13 FAILED: a second backfill run duplicated the row';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 13 PASSED: backfill copies real fields (incl. detected_at) and is idempotent';
+END $$;
+
+ROLLBACK TO test_13;
+
+-- =============================================================================
+-- TEST 14 (C1) — the ORIGINAL backfill scenario that can abort a deploy: two
+-- live discrepancy_notes for the same package but in DIFFERENT manifests.
+-- Before the source_id-aware index this collided inside the same INSERT
+-- (unique_violation, no ON CONFLICT); now it must not, AND even if it did
+-- collide, ON CONFLICT DO NOTHING must swallow it rather than abort.
+-- =============================================================================
+SAVEPOINT test_14;
+
+DO $$
+DECLARE v_count INT;
+BEGIN
+  INSERT INTO public.discrepancy_notes (id, operator_id, manifest_id, package_id, note, created_by_user_id)
+  VALUES
+    ('77770002-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+     '44440001-0000-0000-0000-000000000085', '33330001-0000-0000-0000-000000000085',
+     'nota carga A', 'aaaaaaaa-0000-4000-a000-000000000185'),
+    ('77770003-0000-0000-0000-000000000085', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000085',
+     '44440003-0000-0000-0000-000000000085', '33330001-0000-0000-0000-000000000085',
+     'nota carga A2', 'aaaaaaaa-0000-4000-a000-000000000185');
+
+  -- Must not raise. If it does, this whole test errors out (uncaught) and
+  -- pgtap-local.sh reports it as a hard FAIL — exactly the deploy-aborting
+  -- shape C1 describes.
+  SELECT public.spec85_backfill_discrepancy_notes() INTO v_count;
+
+  IF v_count < 2 THEN
+    RAISE EXCEPTION 'TEST 14 FAILED: expected both notes to backfill (got %)', v_count;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 14 PASSED: two notes on the same package in different manifests backfill without aborting';
+END $$;
+
+ROLLBACK TO test_14;
 
 ROLLBACK;
