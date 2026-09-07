@@ -99,7 +99,9 @@ DELETE FROM public.assignments             WHERE operator_id IN (SELECT id FROM 
 DELETE FROM public.dispatches              WHERE operator_id IN (SELECT id FROM musan_target);
 DELETE FROM public.route_blocks            WHERE operator_id IN (SELECT id FROM musan_target);
 DELETE FROM public.vehicle_load_samples    WHERE operator_id IN (SELECT id FROM musan_target);
-DELETE FROM public.route_stop_counts       WHERE operator_id IN (SELECT id FROM musan_target);
+-- route_stop_counts is a VIEW (GROUP BY over routes), not a table — it empties
+-- itself when the routes below go. information_schema.columns lists views
+-- alongside tables, which is how it got into this list in the first place.
 DELETE FROM public.load_positions          WHERE operator_id IN (SELECT id FROM musan_target);
 DELETE FROM public.driver_availabilities   WHERE operator_id IN (SELECT id FROM musan_target);
 DELETE FROM public.capacity_alerts         WHERE operator_id IN (SELECT id FROM musan_target);
@@ -135,7 +137,9 @@ DECLARE
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
     'orders', 'packages', 'manifests', 'routes', 'dispatches', 'pickup_routes',
-    'pickup_scans', 'reception_scans', 'pickup_points', 'audit_logs'
+    'pickup_scans', 'reception_scans', 'pickup_points', 'audit_logs',
+    -- the view, asserted for the same reason: it is what Ops Control reads.
+    'route_stop_counts'
   ] LOOP
     EXECUTE format('SELECT count(*) FROM public.%I WHERE operator_id = $1', v_table)
        INTO v_left USING v_operator;
