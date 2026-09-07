@@ -2,8 +2,8 @@
 
 > **Related:** [spec-42](spec-42-order-inspector.md) (Order Inspector), [spec-29](spec-29-ops-control-mission-deck.md) (Ops Control), [spec-45](spec-45-module-activation-layer.md) (module activation drives nav visibility), `docs/architecture/phased-rollout-strategy.md`
 
-**Status:** awaiting_user_test
-**Falta:** sólo `1g` (Home del operario) y `1j` (prueba de entrega), ambas bloqueadas por datos que no existen — el vínculo usuario↔conductor y dónde guardar la prueba. Las desbloquea una decisión del usuario, no un agente. Todo el trabajo restante de Recogida se movió a [spec-80](spec-80-recogida-movil-cierre-de-carga.md)–[spec-83](spec-83-recogida-escritorio-datos-faltantes.md).
+**Status:** closed
+**Lo que faltaba, y dónde está ahora:** Recogida → [spec-80](spec-80-recogida-movil-cierre-de-carga.md)–[spec-83](spec-83-recogida-escritorio-datos-faltantes.md). `1g` y `1j` → [spec-84](spec-84-movil-conductor-home-y-prueba-de-entrega.md). No queda nada abierto en este spec y no se vuelve a abrir.
 **Verify:** unit, e2e-qa
 
 _Date: 2026-08-13_
@@ -476,7 +476,9 @@ entrega, ni plazo SLA por ruta.
 salida, manifiestos verificados sobre esperados) en lugar de forzar la pantalla
 hacia semántica de reparto. Las omisiones concretas están en la Fase 4.6.
 
-### `1g` — Home del operario: falta el vínculo usuario ↔ conductor `[blocked]`
+### `1g` — Home del operario: falta el vínculo usuario ↔ conductor `[parked]`
+
+> Movida a [spec-84](spec-84-movil-conductor-home-y-prueba-de-entrega.md). El token va al final del heading a propósito: el hook lo lee ahí, y cualquier cosa después (un link, una nota) lo deja invisible.
 
 El elemento dominante del mock es la tarjeta "TU TAREA AHORA": la siguiente
 tarea **de esta persona**. No es construible.
@@ -501,7 +503,9 @@ de ser de la pantalla.
 `users` ↔ `drivers`), más una superficie de administración para mantener ese
 mapeo. Es trabajo de esquema con su propio spec, no un rediseño.
 
-### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba `[blocked]`
+### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba `[parked]`
+
+> Movida a [spec-84](spec-84-movil-conductor-home-y-prueba-de-entrega.md). El token va al final del heading a propósito: el hook lo lee ahí, y cualquier cosa después (un link, una nota) lo deja invisible.
 
 Pide foto, firma y RUT al entregar. No existe flujo de entrega en el frontend
 y, sobre todo, no hay dónde guardar la prueba: `delivery_attempts` es una tabla

@@ -95,7 +95,7 @@ Rules:
 | `blocked` | el usuario, para poder continuar | no |
 | `awaiting_user_test` | el usuario, para poder cerrar | no |
 | `done` | nadie | no |
-| `parked` | decisión tomada de no construirla | no |
+| `parked` | no se construye **aquí**: se descartó, o se movió a un spec nombrado (dilo en la línea de al lado) | no |
 
 **Por qué importa.** Lo lee una máquina: el hook `Stop` (`.claude/hooks/keep-going.sh`) usa estos tokens para decidir si queda trabajo declarado y sin tomar. Un spec con el estado sólo en prosa — «fase 4 aparcada», «esta ya está hecha» — es invisible para él, así que el agente termina el turno y pregunta en vez de seguir. Los specs 75–79 nacieron así y hubo que retrofitearlos.
 
