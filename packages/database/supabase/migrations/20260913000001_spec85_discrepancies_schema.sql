@@ -184,10 +184,10 @@ END $$;
 -- cualquier tabla nueva en public creada por postgres — un GRANT SELECT no
 -- resta nada, sólo suma sobre ese default. Sin el REVOKE explícito de abajo,
 -- authenticated conserva INSERT/UPDATE/DELETE aunque nunca se le hayan
--- otorgado por nombre: verificado contra pg_class.relacl en este mismo
--- pgTAP run, y el mismo patrón (GRANT sin REVOKE) está en otras tablas del
--- repo, p.ej. route_blocks conserva DELETE pese a que su migración sólo
--- nombra SELECT/INSERT/UPDATE.
+-- otorgado por nombre: TEST 15 del pgTAP de esta fase lo comprueba con
+-- has_table_privilege(), no leyendo el texto de esta migración. El mismo
+-- patrón (GRANT sin REVOKE, con el default ACL rellenando el resto) aparece
+-- en otras tablas del repo — issue aparte, fuera del alcance de esta fase.
 GRANT SELECT ON public.discrepancies TO authenticated;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON public.discrepancies FROM authenticated;
@@ -243,8 +243,11 @@ RETURNS INTEGER
 LANGUAGE plpgsql
 AS $fn$
 DECLARE
-  v_count INTEGER;
+  v_count      INTEGER;
+  v_live_notes INTEGER;
 BEGIN
+  SELECT COUNT(*) INTO v_live_notes FROM public.discrepancy_notes WHERE deleted_at IS NULL;
+
   INSERT INTO public.discrepancies (
     operator_id, kind, operation_type, status,
     package_id, manifest_id, note, detected_by_user_id, detected_at,
@@ -261,6 +264,18 @@ BEGIN
   ON CONFLICT DO NOTHING;
 
   GET DIAGNOSTICS v_count = ROW_COUNT;
+
+  -- ON CONFLICT DO NOTHING traga en silencio cualquier nota que colisione
+  -- (p.ej. dos notas vivas del mismo package_id en el MISMO manifest_id —
+  -- posible si el frontend hace read-then-write sin constraint única). Tragar
+  -- es lo correcto para que el backfill nunca tumbe un deploy; que nadie note
+  -- la diferencia no lo es. Esto no falla el deploy: sólo dice cuántas notas
+  -- vivas había contra cuántas realmente entraron.
+  IF v_count < v_live_notes THEN
+    RAISE NOTICE 'spec85_backfill_discrepancy_notes: % nota(s) viva(s) en discrepancy_notes, % insertada(s) en discrepancies — % descartada(s) por ON CONFLICT DO NOTHING (colisión con una fila existente)',
+      v_live_notes, v_count, (v_live_notes - v_count);
+  END IF;
+
   RETURN v_count;
 END;
 $fn$;
