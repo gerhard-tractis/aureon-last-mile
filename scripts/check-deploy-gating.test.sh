@@ -470,6 +470,148 @@ assert_exit 1 "fails when deploy-supabase is path-filtered" "$PATH_FILTERED"
 assert_contains "path-filtered on changes.outputs.database" \
   "explains why the filter is the bug" "$PATH_FILTERED"
 
+# ── e2e-qa must keep a step that enforces the quarantine list (spec-87) ──────
+# check-deploy-gating.mjs asserts needs:/continue-on-error/if: at JOB
+# granularity. The quarantine veto (spec-87 fase 1) lives inside a STEP —
+# "Run E2E against QA" no longer fails the job on a raw red exit code
+# (`|| true`), and "Check quarantine" is what decides pass/fail instead.
+# Deleting that step, or giving it its own continue-on-error, leaves e2e-qa
+# green no matter what failed, and this guard was blind to both until now.
+E2E_WITH_QUARANTINE_STEP='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  e2e-qa:
+    needs: [changes, deploy-qa]
+    steps:
+      - name: Run E2E against QA
+        run: npm run e2e:qa || true
+      - name: Check quarantine
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+  approve-production:
+    needs: [changes, deploy-qa, e2e-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 0 "accepts e2e-qa with a check-quarantine.sh step" "$E2E_WITH_QUARANTINE_STEP"
+
+E2E_MISSING_QUARANTINE_STEP='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  e2e-qa:
+    needs: [changes, deploy-qa]
+    steps:
+      - name: Run E2E against QA
+        run: npm run e2e:qa || true
+      - name: Upload report
+        run: echo done
+  approve-production:
+    needs: [changes, deploy-qa, e2e-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when e2e-qa has no check-quarantine.sh step" "$E2E_MISSING_QUARANTINE_STEP"
+assert_contains "check-quarantine.sh" "names the missing quarantine step" "$E2E_MISSING_QUARANTINE_STEP"
+
+E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR='jobs:
+  changes:
+    runs-on: ubuntu-latest
+  deploy-qa:
+    needs: [changes]
+    concurrency:
+      group: qa-deploy
+  e2e-qa:
+    needs: [changes, deploy-qa]
+    steps:
+      - name: Run E2E against QA
+        run: npm run e2e:qa || true
+      - name: Check quarantine
+        continue-on-error: true
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+  approve-production:
+    needs: [changes, deploy-qa, e2e-qa]
+    environment: production
+  deploy-supabase:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-supabase
+  deploy-edge-functions:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-edge-functions
+  deploy-vercel:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-vercel
+  deploy-worker:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-worker
+  deploy-agents:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-agents
+  deploy-solver:
+    needs: [changes, approve-production]
+    concurrency:
+      group: production-deploy-solver'
+
+assert_exit 1 "fails when the quarantine step itself has continue-on-error" "$E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR"
+assert_contains "Check quarantine" "names the offending step" "$E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR"
+
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then
   fail=$((fail + 1)); echo "  FAIL exits non-zero on a missing workflow file"

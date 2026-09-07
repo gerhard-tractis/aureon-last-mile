@@ -125,6 +125,34 @@ for (const job of PROD_JOBS) {
   }
 }
 
+// ── The quarantine veto (spec-87 fase 1) lives inside a STEP, not a job ──────
+// e2e-qa no longer fails on npm run e2e:qa's raw exit code (`|| true` —
+// deliberately not the job-level continue-on-error checked above). Instead a
+// "Check quarantine" step runs scripts/check-quarantine.sh against the JSON
+// report and IS what passes or fails the job. The needs:/continue-on-error/
+// if: checks above are blind to this: they only see the job as a whole.
+// Deleting that step, or giving it its own continue-on-error, leaves e2e-qa
+// green regardless of what actually failed, with every check above still
+// green too.
+if (jobs['e2e-qa']) {
+  const steps = jobs['e2e-qa'].steps || [];
+  const quarantineStep = steps.find(
+    (s) => typeof s.run === 'string' && s.run.includes('check-quarantine.sh')
+  );
+  if (!quarantineStep) {
+    errors.push(
+      'e2e-qa has no step running scripts/check-quarantine.sh — without it a failure ' +
+        'outside the quarantine list, an expired entry, or a stale entry cannot fail the job'
+    );
+  } else if (quarantineStep['continue-on-error']) {
+    errors.push(
+      'the "Check quarantine" step in e2e-qa must not set continue-on-error — that ' +
+        'reports success to the job even when the quarantine check failed, the exact ' +
+        'silent-pass this step exists to prevent'
+    );
+  }
+}
+
 // ── needs: is not enough once if: opts into always() ─────────────────────────
 // Normally a skipped dependency skips the dependent job, which is what makes
 // `needs: [approve-production]` a gate at all. `always()` throws that away: it
