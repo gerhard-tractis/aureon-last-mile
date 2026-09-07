@@ -62,6 +62,27 @@ jobs:
           bash ./infra/supabase-qa/deploy-qa.sql-tests.test.sh
           bash ./infra/supabase-qa/deploy-qa.functions.test.sh
 
+      # Los tokens de fase y el campo **Verify:** de un spec son leidos por
+      # maquina: los hooks de .claude/hooks/ deciden si queda trabajo y
+      # scripts/verify.sh decide que jueces correr. Un spec con fases pero sin
+      # **Verify:** deja al runner sin criterio de termino, y un token mal
+      # escrito ([in progress], [pendign]) es invisible al grep: la fase
+      # desaparece de la cola sin que nadie avise. Solo valida los specs
+      # tocados en este PR — los antiguos migran cuando se los toca.
+      - name: Check spec fields on touched specs
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then
+            echo "No es un pull_request; este guard valida los specs del PR. Saltando."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
+          bash ./scripts/check-spec-fields.sh --base "$BASE"
+
+      # Guards de scripts/: si el guard se rompe, falla en silencio.
+      - name: Test the spec-fields guard
+        run: bash ./scripts/check-spec-fields.test.sh
+
       - name: Lint
         run: npx turbo run lint
 

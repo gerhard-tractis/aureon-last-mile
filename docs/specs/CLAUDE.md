@@ -90,7 +90,12 @@ Los dos hacen que el hook se salte trabajo disponible, que es justo lo que exist
 
 Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término.
 
-> **Ojo:** este documento afirmaba que `scripts/check-spec-fields.sh` falla el PR cuando falta. **Ese script no existe** — nunca se escribió, y `git log` no lo encuentra en ninguna rama. La regla es real pero **no está aplicada por nada**: hoy la sostiene quien escribe el spec. Es el mismo error que `pgtap-local.sh` (daba PASS a archivos inexistentes) y que el comentario de `spec76` que citaba tests que no existían: una afirmación de verificación sin verificación detrás. Escribir el script, o borrar la promesa.
+`scripts/check-spec-fields.sh` lo aplica en CI, sólo sobre los specs que toca el
+PR — los antiguos migran cuando alguien los toca. El script se escribió para
+cerrar exactamente este agujero: este documento afirmaba durante meses que la
+regla estaba aplicada cuando no existía nada que la aplicara, el mismo error que
+`pgtap-local.sh` (daba PASS a archivos inexistentes). Una afirmación de
+verificación sin verificación detrás es peor que no tener la regla.
 
 ```
 **Status:** in progress
@@ -98,6 +103,25 @@ Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nom
 ```
 
 Ejemplos por tipo de spec: `unit` (lógica pura), `unit, e2e-qa` (pantallas), `unit, sql, e2e-qa` (cambios de schema o RPC), `unit, golden, invariants` (lógica pesada).
+
+`scripts/verify.sh` consume estos nombres para decidir qué jueces correr. `unit`
+va siempre incluido; `e2e-qa` corre sólo en CI y se reporta como diferido;
+cualquier otro nombre tiene que existir como `scripts/judges/<nombre>.sh`. Un
+juez desconocido falla ruidosamente — un skip silencioso es peor que un build
+rojo, porque el agente cree que el árbol está verde.
+
+No condiciones la verificación a los paths tocados. Un cambio en una RPC de
+Supabase rompe una pantalla sin tocar `apps/frontend/`, y un refactor de tipos
+toca cuarenta ficheros de frontend sin cambiar comportamiento. Los paths son una
+optimización de coste; el spec es el criterio de corrección.
+
+Una fase cuyo spec declara un juez que sólo corre en CI no pasa a `[done]` hasta
+que `gh pr checks` esté verde.
+
+**El sustantivo da igual.** Este repo ha usado Fase, Phase, Step, Story y «PR N»
+para lo mismo. Lo que importa es que el heading termine en el token. Un spec cuyo
+trabajo es un bloque indivisible no necesita tokens: entonces el `**Status:**` del
+spec lo lleva todo.
 
 ## Required Skills — In Order
 

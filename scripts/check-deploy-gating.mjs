@@ -62,6 +62,7 @@ const needsOf = (name) => {
   return Array.isArray(n) ? n : [n];
 };
 
+const USES_ALWAYS = /\balways\s*\(\s*\)/;
 const gate = jobs[GATE];
 if (!gate) {
   errors.push(`missing job: ${GATE}`);
@@ -78,6 +79,41 @@ if (!gate) {
   }
   if (!needsOf(GATE).includes('deploy-qa')) {
     errors.push(`${GATE} must depend on deploy-qa — QA green is the gate's precondition`);
+  }
+
+  // Un workflow sin job e2e-qa no es problema de este guard — misma regla que
+  // PROD_JOBS más abajo. Los fixtures de los tests son mínimos a propósito.
+  //
+  // e2e-qa became blocking on 2026-09-03. Before that it ran with
+  // continue-on-error and was absent from this gate, so a red suite shipped
+  // green. Both halves are asserted: dropping the `needs:` entry OR letting
+  // always() swallow the result would silently restore the old behaviour.
+  if (jobs['e2e-qa'] && !needsOf(GATE).includes('e2e-qa')) {
+    errors.push(
+      `${GATE} must depend on e2e-qa — without it a red E2E against QA cannot ` +
+      `stop a production deploy`
+    );
+  }
+  // `continue-on-error: true` en un job hace que sus dependientes lean
+  // `needs.<job>.result == 'success'` aunque haya fallado. Sin esta comprobación
+  // las dos de arriba se pueden dejar intactas y seguir enviando a producción
+  // con el E2E rojo — que es exactamente el estado previo a 2026-09-03.
+  if (jobs['e2e-qa'] && jobs['e2e-qa']['continue-on-error']) {
+    errors.push(
+      `e2e-qa must not set continue-on-error — a job with it reports ` +
+      `result == 'success' to ${GATE} even when it failed, so the E2E gate ` +
+      `silently stops gating`
+    );
+  }
+
+  const gateIf = String(gate.if ?? '');
+  const ASSERTS_E2E =
+    /needs\s*(?:\.\s*e2e-qa|\[\s*['"]e2e-qa['"]\s*\])\s*\.\s*result\s*==\s*'success'/;
+  if (jobs['e2e-qa'] && USES_ALWAYS.test(gateIf) && !ASSERTS_E2E.test(gateIf)) {
+    errors.push(
+      `${GATE}'s if: uses always() but does not assert ` +
+      `needs.e2e-qa.result == 'success' — always() runs the job even when e2e-qa failed`
+    );
   }
 }
 
@@ -108,7 +144,6 @@ const ifOf = (name) => {
   return v == null ? '' : String(v);
 };
 
-const USES_ALWAYS = /\balways\s*\(\s*\)/;
 // Accept both `needs.approve-production.result` and the bracket form.
 const ASSERTS_GATE = new RegExp(
   String.raw`needs\s*(?:\.\s*${GATE}|\[\s*['"]${GATE}['"]\s*\])\s*\.\s*result\s*==\s*['"]success['"]`
