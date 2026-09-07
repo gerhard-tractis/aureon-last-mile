@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS public.discrepancies (
   manifest_id        UUID REFERENCES public.manifests(id),
   route_reception_id UUID REFERENCES public.route_receptions(id),
 
+  -- Origen sin polimorfismo, indexable: "un bulto puede tener una
+  -- discrepancia abierta por EVENTO, no una en toda su vida" — faltar el
+  -- lunes en la carga A y otra vez el martes en la carga B son dos hechos
+  -- distintos, y el índice único de abajo necesita distinguirlos. Generada,
+  -- no escrita a mano, porque no puede desincronizarse de manifest_id/
+  -- route_reception_id.
+  source_id UUID GENERATED ALWAYS AS (COALESCE(manifest_id, route_reception_id)) STORED,
+
   detected_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   detected_by_user_id UUID REFERENCES public.users(id),
   note                TEXT,
@@ -71,16 +79,29 @@ CREATE TABLE IF NOT EXISTS public.discrepancies (
   resolved_at         TIMESTAMPTZ,
   resolved_by_user_id UUID REFERENCES public.users(id),
 
+  -- Trazabilidad del backfill (ver sección 6): qué discrepancy_notes row
+  -- originó esta fila, para poder reconciliar sin comparar por el texto de
+  -- `note`, que el frontend deja editar.
+  migrated_from_note_id UUID REFERENCES public.discrepancy_notes(id),
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ,
 
   CONSTRAINT discrepancy_shape CHECK (
     (kind = 'missing'    AND package_id IS NOT NULL) OR
-    (kind = 'unexpected' AND barcode    IS NOT NULL)
+    (kind = 'unexpected' AND barcode IS NOT NULL AND package_id IS NULL)
   ),
   CONSTRAINT discrepancy_resolved_has_when CHECK (
     (status = 'open') OR (resolved_at IS NOT NULL)
+  ),
+  -- I3: nada ata operation_type a su columna de origen si no se fuerza aquí.
+  -- Sin esto se puede insertar 'pickup' sin manifest_id, o 'reception' con
+  -- manifest_id — la fila entra y no cuelga de ninguna operación real:
+  -- ninguna pantalla la lista y la merma de spec-83 no la cuenta.
+  CONSTRAINT discrepancy_source_matches_operation CHECK (
+    (operation_type = 'pickup'    AND manifest_id        IS NOT NULL AND route_reception_id IS NULL) OR
+    (operation_type = 'reception' AND route_reception_id IS NOT NULL AND manifest_id        IS NULL)
   )
 );
 
@@ -107,17 +128,29 @@ CREATE INDEX IF NOT EXISTS idx_discrepancies_route_reception_id
   ON public.discrepancies(route_reception_id);
 CREATE INDEX IF NOT EXISTS idx_discrepancies_package_id
   ON public.discrepancies(package_id);
+-- Cubre tanto (operator_id, status) como el filtro por operation_type +
+-- detected_at que usan la lectura de fase 2 y "Cierres de hoy" de spec-83.
 CREATE INDEX IF NOT EXISTS idx_discrepancies_operator_status
-  ON public.discrepancies(operator_id, status);
+  ON public.discrepancies(operator_id, status, operation_type, detected_at);
 CREATE INDEX IF NOT EXISTS idx_discrepancies_deleted_at
   ON public.discrepancies(deleted_at);
 
--- Un bulto no puede tener dos discrepancias abiertas en la misma operación —
--- si no, cerrar dos veces duplica la merma y el cliente firma dos veces sobre
--- lo mismo.
+-- Un bulto no puede tener dos discrepancias 'missing' abiertas en el MISMO
+-- evento (misma carga o misma recepción) — si no, cerrar dos veces duplica la
+-- merma y el cliente firma dos veces sobre lo mismo. Dos eventos distintos
+-- (la carga del lunes y la del martes) SÍ pueden tener, cada uno, su propia
+-- discrepancia abierta sobre el mismo bulto: son dos hechos, no uno.
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_open_discrepancy_per_package
-  ON public.discrepancies (operator_id, package_id, operation_type)
+  ON public.discrepancies (operator_id, package_id, operation_type, source_id)
   WHERE status = 'open' AND package_id IS NOT NULL AND deleted_at IS NULL;
+
+-- Lo mismo para 'unexpected': el índice de arriba exige package_id IS NOT
+-- NULL, así que una 'unexpected' (que nunca lo tiene) nunca entraba en
+-- ninguna barrera de duplicación. Un reintento de la cola offline (spec-81)
+-- duplicaba el sobrante contra el papel que el local ya firmó.
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_open_discrepancy_per_barcode
+  ON public.discrepancies (operator_id, barcode, operation_type, source_id)
+  WHERE status = 'open' AND package_id IS NULL AND deleted_at IS NULL;
 
 -- -----------------------------------------------------------------------------
 -- 4. RLS — mismo patrón que discrepancy_notes (20260310100000)
@@ -141,17 +174,44 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.discrepancies TO authenticated;
+-- I2: sólo SELECT para authenticated. La fase 2 escribe con SECURITY DEFINER
+-- (record_discrepancies, resolve_discrepancy), que no necesita el GRANT de
+-- escritura — corre con los privilegios del dueño de la función. Dejar
+-- INSERT/UPDATE/DELETE abiertos al cliente, sin trigger de auditoría, permite
+-- hoy un UPDATE ... SET status='open' o un DELETE sin dejar rastro sobre una
+-- fila que el spec llama "evidencia contra una indemnización".
+-- La imagen base otorga por DEFAULT ACL arwdDxt (todo) a authenticated sobre
+-- cualquier tabla nueva en public creada por postgres — un GRANT SELECT no
+-- resta nada, sólo suma sobre ese default. Sin el REVOKE explícito de abajo,
+-- authenticated conserva INSERT/UPDATE/DELETE aunque nunca se le hayan
+-- otorgado por nombre: verificado contra pg_class.relacl en este mismo
+-- pgTAP run, y el mismo patrón (GRANT sin REVOKE) está en otras tablas del
+-- repo, p.ej. route_blocks conserva DELETE pese a que su migración sólo
+-- nombra SELECT/INSERT/UPDATE.
+GRANT SELECT ON public.discrepancies TO authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.discrepancies FROM authenticated;
 REVOKE ALL ON public.discrepancies FROM anon;
 GRANT ALL ON public.discrepancies TO service_role;
 
 -- -----------------------------------------------------------------------------
--- 5. updated_at trigger — mismo helper que el resto del repo
+-- 5. Triggers — updated_at y auditoría (I2)
 -- -----------------------------------------------------------------------------
 DO $$ BEGIN
   CREATE TRIGGER set_discrepancies_updated_at
     BEFORE UPDATE ON public.discrepancies
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Plantilla: 20260903000001_spec72_route_blocks.sql. service_role (fase 2's
+-- SECURITY DEFINER RPCs) sigue pudiendo escribir; queda registrado quién y
+-- cuándo, en vez de nadie.
+DO $$ BEGIN
+  CREATE TRIGGER audit_discrepancies_changes
+    AFTER INSERT OR UPDATE OR DELETE ON public.discrepancies
+    FOR EACH ROW EXECUTE FUNCTION public.audit_trigger_func();
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -162,29 +222,52 @@ END $$;
 -- kind='missing' (discrepancy_notes sólo documentaba bultos declarados y no
 -- escaneados durante la verificación de recogida), operation_type='pickup',
 -- status='open' (nunca tuvieron resolución). Conserva note, manifest_id,
--- package_id y created_by_user_id -> detected_by_user_id.
-INSERT INTO public.discrepancies (
-  operator_id, kind, operation_type, status,
-  package_id, manifest_id, note, detected_by_user_id,
-  created_at, updated_at, deleted_at
-)
-SELECT
-  dn.operator_id, 'missing', 'pickup', 'open',
-  dn.package_id, dn.manifest_id, dn.note, dn.created_by_user_id,
-  dn.created_at, dn.updated_at, dn.deleted_at
-FROM public.discrepancy_notes dn
-WHERE dn.deleted_at IS NULL
-  AND NOT EXISTS (
-    -- Idempotencia: si esta migración corre dos veces (o parcialmente en un
-    -- entorno con retries), no duplicar filas ya migradas.
-    SELECT 1 FROM public.discrepancies d
-     WHERE d.operator_id = dn.operator_id
-       AND d.package_id  = dn.package_id
-       AND d.manifest_id = dn.manifest_id
-       AND d.kind = 'missing'
-       AND d.operation_type = 'pickup'
-       AND d.note = dn.note
-  );
+-- package_id, created_by_user_id -> detected_by_user_id, y created_at ->
+-- detected_at (I1: sin esto una nota de marzo aparece detectada el día del
+-- deploy, y "cuándo se detectó" es la columna que importa en una discusión
+-- de indemnización).
+--
+-- Envuelta en una función (no un INSERT suelto) para que el pgTAP de esta
+-- fase pueda invocarla directamente sobre fixtures y comprobar que las
+-- columnas realmente llegan (C3b) — borrar el cuerpo de este INSERT dejaba
+-- los tests en verde antes porque nada lo ejercía.
+--
+-- C1: nadie sabe cuántas notas hay en prod (las 5 conocidas son de QA). Dos
+-- notas vivas del mismo package_id en manifiestos DISTINTOS ya no colisionan
+-- (el índice único ahora incluye source_id), pero el ON CONFLICT DO NOTHING
+-- se deja de todos modos — sin target, así que cubre cualquiera de los dos
+-- índices únicos de la tabla — porque el backfill de una tabla de evidencia
+-- no puede tumbar un deploy si algo que no anticipamos sí colisiona.
+CREATE OR REPLACE FUNCTION public.spec85_backfill_discrepancy_notes()
+RETURNS INTEGER
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  v_count INTEGER;
+BEGIN
+  INSERT INTO public.discrepancies (
+    operator_id, kind, operation_type, status,
+    package_id, manifest_id, note, detected_by_user_id, detected_at,
+    migrated_from_note_id,
+    created_at, updated_at
+  )
+  SELECT
+    dn.operator_id, 'missing', 'pickup', 'open',
+    dn.package_id, dn.manifest_id, dn.note, dn.created_by_user_id, dn.created_at,
+    dn.id,
+    dn.created_at, dn.updated_at
+  FROM public.discrepancy_notes dn
+  WHERE dn.deleted_at IS NULL
+  ON CONFLICT DO NOTHING;
+
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION public.spec85_backfill_discrepancy_notes() FROM PUBLIC;
+
+SELECT public.spec85_backfill_discrepancy_notes();
 
 -- -----------------------------------------------------------------------------
 -- 7. Verification
