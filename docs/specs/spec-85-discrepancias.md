@@ -211,9 +211,10 @@ para eso insertaría evidencia en el expediente de otro operador.
 mientras ambas tablas coexisten, pero **bloquea el `DROP TABLE
 discrepancy_notes`** que esta misma spec promete para más adelante (fase de
 contrato, como spec-56 hizo con spec-52): el `DROP TABLE` fallará por esa
-dependencia, y un `DROP TABLE ... CASCADE` se llevaría con él la columna de
-procedencia — justo la que existe para poder reconciliar sin comparar por el
-texto de `note`. Esa fase de contrato tiene que primero
+dependencia. Un `DROP TABLE ... CASCADE` **no** borra la columna: elimina el
+objeto dependiente —la constraint FK— y lo avisa con un `NOTICE`; la columna y
+sus valores sobreviven. Postgres nunca borra columnas de otra tabla por CASCADE.
+Aun así, esa fase de contrato tiene que primero
 `ALTER TABLE public.discrepancies DROP CONSTRAINT <fk_de_migrated_from_note_id>`
 y dejar la columna como un UUID suelto (ya no referenciable, pero el valor
 histórico se conserva) antes de tocar `discrepancy_notes`.
