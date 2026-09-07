@@ -4,6 +4,7 @@
 
 **Status:** backlog
 **Verify:** unit, e2e-qa
+**Downstream:** spec-82-recogida-movil-asignacion-y-ruta.md
 
 _Date: 2026-09-07_
 

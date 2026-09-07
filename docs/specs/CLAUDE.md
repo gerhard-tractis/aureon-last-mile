@@ -105,6 +105,50 @@ Rules:
 
 Los dos hacen que el hook se salte trabajo disponible, que es justo lo que existe para evitar.
 
+## `**Downstream:**` — los specs que dependen de lo que éste implemente
+
+Un spec se escribe contra el estado del código **del día en que se escribió**.
+Cuando la fase de la que depende se implementa, lo que se mergeó casi nunca es
+idéntico a lo planeado: un RPC cambia de firma, una columna se llama distinto,
+una decisión de las que quedaron abiertas se resuelve al revés de lo previsto.
+El spec siguiente sigue afirmando lo viejo, y quien lo tome construye sobre una
+suposición que dejó de ser cierta.
+
+**No es hipotético.** spec-54 daba por implementado un flujo de Recogida que
+spec-47 había cambiado — borró la pantalla de Entrega y dejó la de Firma
+inalcanzable — y nadie lo notó durante semanas, hasta que un tester intentó
+firmar un manifiesto y no pudo.
+
+Un spec que tenga dependientes los declara junto al `**Status:**`:
+
+```
+**Status:** backlog
+**Verify:** unit, e2e-qa
+**Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md
+```
+
+**La regla: una fase no pasa a `[done]` hasta que cada spec downstream se haya
+releído contra lo que REALMENTE se mergeó**, y quede dicho dentro de esa fase:
+
+```
+### Fase 1 — `close_manifest` RPC `[done]`
+
+> Downstream: revisado spec-81 y spec-83 (PR #641) — spec-83 fase 1 asumía que
+> el RPC devolvía el conteo de faltantes; devuelve el id del cierre. Corregido allí.
+```
+
+Si de verdad no cambió nada, se dice igual: `> Downstream: revisado spec-82
+(PR #641) — sin cambios`. El silencio no distingue «lo revisé y está bien» de
+«no lo revisé», y esa diferencia es justamente la que cuesta semanas.
+
+`scripts/check-spec-fields.sh` lo aplica en CI: rechaza una referencia colgada
+(un spec downstream que no existe) y una fase `[done]` sin su línea de
+reconciliación. La línea se busca **dentro del cuerpo de esa fase**, hasta el
+siguiente heading — la de otra fase no cuenta.
+
+Declararlo es del que escribe el spec: si al escribirlo tienes que leer otro
+spec para saber qué asumir, ese otro spec te tiene a ti como downstream.
+
 ## `**Verify:**`, junto al `**Status:**`
 
 Un spec que declara fases con token **debe** llevar una línea `**Verify:**` nombrando los jueces de aceptación. Sin ella no hay criterio de término.

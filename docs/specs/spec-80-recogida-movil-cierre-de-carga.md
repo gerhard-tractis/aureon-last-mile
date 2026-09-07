@@ -4,6 +4,7 @@
 
 **Status:** backlog
 **Verify:** unit, e2e-qa
+**Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md
 
 _Date: 2026-09-07_
 
