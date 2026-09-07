@@ -4,7 +4,16 @@
 
 **Status:** in progress
 **Verify:** unit, e2e-qa
-**Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md
+**Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md, spec-86-discrepancias-de-recepcion.md
+
+> **Nota (2026-09-07).** La decisión de enum que la fase 1 tenía abierta
+> (`faltante_en_origen` vs `extraviado` vs sólo `discrepancy_notes`) **ya no se
+> toma aquí**: spec-85 crea una tabla única de discrepancias con un campo
+> `source_process` que distingue `pickup` de `reception`. Esta fase pasa a
+> escribir en ella con `source_process = 'pickup'`, y spec-86 escribe el lado
+> recepción. Motivo: el mismo faltante se registraba en dos sitios distintos
+> según la etapa que lo detectara. Ver spec-86 para el hueco medido en QA que
+> lo motivó.
 
 _Date: 2026-09-07_
 
