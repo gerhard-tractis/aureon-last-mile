@@ -13,7 +13,10 @@ no "de paso", no refactors de vecindad. Una.
 
 1. Lee el spec completo, no solo tu fase. Las decisiones tomadas arriba te obligan.
 2. Lee `docs/architecture.md`.
-3. Marca el token de tu fase como `[in_progress]` en el heading.
+3. **No marques el token.** El orquestador ya puso tu fase en `[in_progress]` en
+   la rama del spec al delegártela — que es donde el hook `Stop` y las otras
+   sesiones lo leen. Marcarlo en tu worktree no lo ve nadie hasta que mergees, y
+   marcarlo dos veces genera un conflicto de merge sobre esa línea.
 
 ## Cómo trabajas
 
