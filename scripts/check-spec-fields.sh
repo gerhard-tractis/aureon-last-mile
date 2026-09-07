@@ -62,13 +62,58 @@ for f in $FILES; do
     FAILED=1
   fi
 
+  # Downstream: los specs que dependen de LA IMPLEMENTACIÓN de éste.
+  #
+  # Por qué existe: un spec se escribe contra el estado del código de ese día.
+  # Cuando la fase de la que depende se implementa de verdad, lo implementado
+  # casi nunca es idéntico a lo planeado — un RPC cambia de firma, una columna
+  # se llama distinto, una decisión se resuelve al revés. El spec siguiente
+  # sigue afirmando lo viejo, y quien lo tome construye sobre una suposición
+  # que dejó de ser cierta. Ya pasó en este repo: spec-54 daba por hecho un
+  # flujo de Recogida que spec-47 había cambiado, y nadie lo notó durante
+  # semanas.
+  #
+  # La regla: una fase no pasa a [done] hasta que cada spec downstream se haya
+  # releído contra lo que REALMENTE se mergeó, y quede dicho — con cambios o
+  # con un "sin cambios" explícito.
+  down_raw="$(grep -m1 -E '^\*\*Downstream:\*\*' "$f" 2>/dev/null || true)"
+  if [ -n "$down_raw" ]; then
+    # 1) cada spec nombrado tiene que existir: una referencia colgada es peor
+    #    que ninguna, porque promete una revisión que nadie puede hacer.
+    for ref in $(printf '%s' "$down_raw" | grep -oE 'spec-[0-9]+[a-z]?-[a-z0-9-]+\.md'); do
+      if [ ! -f "$(dirname "$f")/$ref" ]; then
+        echo "::error file=$f::**Downstream:** nombra $ref, que no existe en docs/specs/."
+        FAILED=1
+      fi
+    done
+
+    # 2) toda fase [done] necesita su línea de reconciliación dentro del cuerpo
+    #    de la fase. Se busca hasta el siguiente heading, no N líneas fijas.
+    awk -v file="$f" '
+      /^#{2,4} .*\[done\]`?[[:space:]]*$/ {
+        if (pend && !seen) { print lineno "	" head; }
+        pend=1; seen=0; head=$0; lineno=NR; next
+      }
+      /^#{2,4} / { if (pend && !seen) { print lineno "	" head; } pend=0; seen=0; next }
+      /^> Downstream:/ { if (pend) seen=1 }
+      END { if (pend && !seen) print lineno "	" head }
+    ' "$f" > /tmp/_down_missing.$$ 2>/dev/null || true
+    if [ -s /tmp/_down_missing.$$ ]; then
+      echo "::error file=$f::Fase(s) [done] sin línea de reconciliación downstream. Añade dentro de la fase: \`> Downstream: revisado spec-NN (PR #X) — sin cambios\` (o describe el cambio)."
+      while IFS=$'	' read -r ln head; do echo "    $f:$ln: $head"; done < /tmp/_down_missing.$$
+      FAILED=1
+    fi
+    rm -f /tmp/_down_missing.$$
+  fi
+
   # Un spec cerrado o completado no puede dejar fases abiertas.
   #
   # El `**Status:**` de cabecera no es lo que lee el hook Stop: lee los tokens de
   # fase. Así que un spec marcado `closed` con una fase `[blocked]` dentro sigue
   # apareciendo como trabajo declarado y sin tomar — justo lo que ese estado
   # existe para evitar. La cabecera y las fases tienen que decir lo mismo.
-  status="$(grep -m1 -E '^\*\*Status:\*\*' "$f" 2>/dev/null             | sed -e 's/^\*\*Status:\*\*[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '')"
+  status="$(grep -m1 -E '^\*\*Status:\*\*' "$f" 2>/dev/null             | sed -e 's/^\*\*Status:\*\*[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '
+')"
   case "$status" in
     closed|completed)
       OPEN='pending|in_progress|blocked|awaiting_user_test'

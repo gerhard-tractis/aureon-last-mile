@@ -4,6 +4,7 @@
 
 **Status:** backlog
 **Verify:** unit, e2e-qa
+**Downstream:** spec-83-recogida-escritorio-datos-faltantes.md
 
 _Date: 2026-09-07_
 
