@@ -25,7 +25,14 @@ export const EXPECTED_ENUMS: Record<string, readonly string[]> = {
     'asignado', 'en_carga', 'listo_para_despacho', 'en_ruta', 'retorno_hub',
     'entregado', 'cancelado', 'devuelto', 'dañado', 'extraviado',
   ],
-  route_status_enum: ['planned', 'in_progress', 'completed', 'cancelled', 'draft'],
+  route_status_enum: [
+    // loading / loaded / dispatched / in_transit: added by migration
+    // 20260825000001 (spec-70). They sat in the database and not here for
+    // two weeks, and because unexpected-in-DB values are drift too, the guard
+    // refused to run — blocking EVERY scenario, not just the dispatch ones.
+    'planned', 'in_progress', 'completed', 'cancelled', 'draft',
+    'loading', 'loaded', 'dispatched', 'in_transit',
+  ],
   dispatch_status_enum: ['pending', 'delivered', 'failed', 'partial'],
   pickup_route_status_enum: ['draft', 'in_progress', 'in_transit', 'received', 'cancelled'],
   manifest_status_enum: ['pending', 'in_progress', 'completed', 'cancelled'],

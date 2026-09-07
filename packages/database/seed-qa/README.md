@@ -56,6 +56,33 @@ exactly the check that would have caught `listo` → `listo_para_despacho`
 `create-qa-users.sh` depend on survives. The group code is embedded in each id,
 so a row says which scenario built it.
 
+## Resetting one tenant
+
+`--reset` is generator-wide and deletes only `packages`/`orders`/`operators` in
+the `9000` range — it leaves manifests, routes, dispatches and scans behind, and
+it cannot single out a tenant. To put **Musan** back to an empty tenant (its
+logins, clients, modules, trucks and andenes kept), run
+`infra/supabase-qa/reset-musan.sql` by hand, then re-run
+`--only=musan`. That script is the only thing here that is destructive; the
+generator itself never resets a carga a tester is halfway through collecting.
+
+## The Musan carga composition
+
+`scenarios/musan.ts` seeds four cargas — two Easy, two Paris — each holding the
+same ten orders, two of each shape in `lib/composition.ts`:
+
+| shape | SKUs | boxes |
+|---|---|---|
+| `mono` | 1 | 1 |
+| `repeated_sku_three_boxes` | 1 | 3, each its own declared carton |
+| `three_distinct_skus` | 3 | 3 |
+| `multi_box_sku` | 1 | 3, one declared carton expanded (spec-55) |
+| `multi_box_sku_plus_mono` | 2 | 4 |
+
+The middle pair is the one worth testing against itself: both are three rows
+carrying one SKU, and only `package_number` / `declared_box_count` /
+`is_generated_label` tell them apart.
+
 ## Layout
 
 ```

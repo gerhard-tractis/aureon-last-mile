@@ -8,6 +8,7 @@
 
 import type { SeedClient } from './db';
 import { qaId, type ScenarioGroup } from './ids';
+import type { PackageRow } from './composition';
 
 // spec-79 review L-4: the QA login-user machinery moved to seed-users.ts —
 // re-exported here so no existing import site (journeys.ts, musan.ts,
@@ -19,8 +20,18 @@ export interface OrderSpec {
   sequence: number;
   operatorId: string;
   orderNumber: string;
-  /** Package statuses to create. The order's status is derived from these. */
+  /**
+   * Package statuses to create. The order's status is derived from these.
+   * One single-SKU box per entry — ignored when `packageRows` is given.
+   */
   packageStatuses: string[];
+  /**
+   * Fully described package rows, for scenarios whose point IS the package
+   * composition (labels, sku_items, the spec-55 parent/sibling columns).
+   * `packageStatuses` cannot express any of that, and defaulting those columns
+   * is what made every seeded box look like a one-box one-SKU carton.
+   */
+  packageRows?: PackageRow[];
   customerName?: string;
   comuna?: string;
   deliveryDate?: string;
@@ -127,27 +138,65 @@ export async function createOrderWithPackages(
     ],
   );
 
+  // A scenario either describes its boxes fully (packageRows) or just names
+  // their statuses, in which case each one is a plain one-box one-SKU carton —
+  // the shape every scenario written before spec-51's composition matrix
+  // assumed.
+  const rows: PackageRow[] =
+    spec.packageRows ??
+    spec.packageStatuses.map((status, i) => ({
+      label: `${spec.orderNumber}-CTN-${i + 1}`,
+      parentLabel: null,
+      skuItems: [{ sku: `QA-SKU-${i + 1}`, description: 'Caja QA', quantity: 1 }],
+      declaredBoxCount: 1,
+      packageNumber: '1 de 1',
+      isGeneratedLabel: false,
+      status,
+    }));
+
   const packageIds: string[] = [];
 
-  for (let i = 0; i < spec.packageStatuses.length; i++) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     // Package sequence is derived from the order's so ids stay deterministic
     // and cannot collide with another order in the same group.
     const packageId = qaId(spec.group, spec.sequence * 100 + i + 1);
     packageIds.push(packageId);
 
+    // DO UPDATE on the descriptive columns for the same reason the order above
+    // does: package ids are deterministic, so editing a composition re-points
+    // an existing id at a different shape. DO NOTHING would leave the old box
+    // in place and the scenario's own assertions would fail against data they
+    // could not correct. `status` is deliberately NOT updated — it is what a
+    // tester changes by using the app, and re-running the seed must not undo
+    // their work mid-test.
     await db.query(
       `INSERT INTO public.packages (
-         id, operator_id, order_id, label, status, sku_items, raw_data
-       ) VALUES ($1, $2, $3, $4, $5::package_status_enum, $6::jsonb, $7::jsonb)
-       ON CONFLICT (id) DO NOTHING`,
+         id, operator_id, order_id, label, status, sku_items, raw_data,
+         package_number, declared_box_count, is_generated_label, parent_label
+       ) VALUES (
+         $1, $2, $3, $4, $5::package_status_enum, $6::jsonb, $7::jsonb,
+         $8, $9, $10, $11
+       )
+       ON CONFLICT (id) DO UPDATE SET
+         label              = EXCLUDED.label,
+         sku_items          = EXCLUDED.sku_items,
+         package_number     = EXCLUDED.package_number,
+         declared_box_count = EXCLUDED.declared_box_count,
+         is_generated_label = EXCLUDED.is_generated_label,
+         parent_label       = EXCLUDED.parent_label`,
       [
         packageId,
         spec.operatorId,
         orderId,
-        `${spec.orderNumber}-CTN-${i + 1}`,
-        spec.packageStatuses[i],
-        JSON.stringify([{ sku: `QA-SKU-${i + 1}`, description: 'Caja QA', quantity: 1 }]),
+        row.label,
+        row.status,
+        JSON.stringify(row.skuItems),
         JSON.stringify({ source: 'seed-qa-generator' }),
+        row.packageNumber,
+        row.declaredBoxCount,
+        row.isGeneratedLabel,
+        row.parentLabel,
       ],
     );
   }
