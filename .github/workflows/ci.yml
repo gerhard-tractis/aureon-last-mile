@@ -46,6 +46,16 @@ jobs:
       - name: Test the deploy-gating guard
         run: bash ./scripts/check-deploy-gating.test.sh
 
+      # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
+      # by then it has already re-blocked production, the exact state spec-87
+      # fase 1 exists to end. Catch a bad entry (missing field, impossible
+      # date, expiry renewed past the 30-day horizon) on the PR instead.
+      - name: Validate quarantine.json
+        run: node ./scripts/check-quarantine.mjs --validate-only apps/frontend/e2e/quarantine.json
+
+      - name: Test the quarantine guard
+        run: bash ./scripts/check-quarantine.test.sh
+
       # The watchdog is the only thing that notices QA going stale, so its
       # decision logic is unit-tested like any other guard.
       - name: Test the QA drift watchdog
