@@ -198,6 +198,39 @@ export async function assertMusan(
     expected: 1,
   });
 
+  // The leader needs someone to take. This mirrors useCrewCandidates' OWN
+  // predicate rather than counting logins: that hook reads `users` directly
+  // and filters on ROLE, so a rider carrying the 'pickup' permission under
+  // the wrong role exists in the database and is still invisible in the
+  // ACOMPAÑANTES sheet. Counting rows the picker would actually offer is the
+  // only version of this assertion that can fail for the real reason.
+  const crewRiders = MUSAN_LOGINS.filter((l) => l.role === 'pickup_crew').length;
+  await assertCount(db, collector, {
+    scenario: 'musan/crew-candidates',
+    detail: 'riders the leader can put on a route (useCrewCandidates predicate)',
+    sql: `SELECT count(*) AS count FROM public.users
+           WHERE operator_id = $1
+             AND role IN ('pickup_crew'::user_role, 'pickup_leader'::user_role,
+                          'ops_leader'::user_role)
+             AND deleted_at IS NULL`,
+    params: [operatorId],
+    // The leader is in this list too, but CrewSelect filters the signed-in
+    // user out client-side, so the sheet shows exactly the riders.
+    expected: crewRiders + 1,
+  });
+
+  // Both riders must be able to sign in, for the same identity reason as the
+  // leader above — the whole point is watching what each of them sees.
+  await assertCount(db, collector, {
+    scenario: 'musan/crew-identities',
+    detail: 'pickup1/pickup2@musan.com can actually log in',
+    sql: `SELECT count(*) AS count FROM auth.identities i
+            JOIN auth.users au ON au.id = i.user_id
+           WHERE au.email IN ('pickup1@musan.com', 'pickup2@musan.com')
+             AND i.provider = 'email'`,
+    expected: crewRiders,
+  });
+
   // ── Invariants that survive a tester using the data ───────────────────────
   // spec-61 Task 7: a load already on a route must never be offered on the
   // pending tab, or two crews collect it. Mirrors get_pending_manifests'
