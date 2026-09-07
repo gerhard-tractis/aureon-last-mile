@@ -2,7 +2,7 @@
 
 > **Related:** [spec-57](spec-57-qa-gate-before-production.md) (hizo de QA la precondición de producción), [spec-56](spec-56-pickup-contract-phase.md) (**el precedente: un índice único que pasa CI y muere con datos de producción**), [spec-79](spec-79-dispatch-handoff-integrity.md) (dueña de 5 de las 9 migraciones pendientes), [spec-78](spec-78-despacho-tablet-anden.md) y [spec-76](spec-76-despacho-movil-carga.md) (dueñas de los tests E2E en rojo)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 _Date: 2026-09-07_
@@ -73,7 +73,7 @@ Aquí alguien ya aprendió esa lección: la migración **cuenta los conflictos p
 | **4 — Desplegar el backlog por lotes** | Producción al día | **sólo el usuario puede aprobar** |
 | **5 — Guardarraíles** | Que no vuelva a acumularse | agente |
 
-### Fase 1 — Cuarentena del gate `[pending]`
+### Fase 1 — Cuarentena del gate `[in_progress]`
 
 **Archivos:** `.github/workflows/deploy.yml`, `apps/frontend/e2e/quarantine.json` (nuevo), `scripts/check-quarantine.sh` + su test
 
