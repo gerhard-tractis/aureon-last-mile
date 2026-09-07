@@ -1,0 +1,16 @@
+[
+  {
+    "spec": "e2e/despacho-tablet-dock.spec.ts",
+    "test": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
+    "reason": "carga /app/dispatch/<id> a 1024x768 sin ?dock=1, afirma que renderiza el árbol de escritorio y pulsa 'Asignar camión y conductor', que sólo existe en el componente móvil (verificado en DispatchRouteSurface.tsx). El producto está bien; la aserción es incorrecta (spec-87 fase 2).",
+    "owner": "spec-78",
+    "expires": "2026-09-21"
+  },
+  {
+    "spec": "e2e/despacho-close-dispatch.spec.ts",
+    "test": "Route L — DT accepts, local write fails, retry completes WITHOUT a second DT route",
+    "reason": "expect(count).toBe(1) falla con Received: 7 sobre createRouteCallCount — el mock de DispatchTrack registra múltiples rutas creadas en vez de una sola tras el reintento. Falla igual en cada run reciente (34162307152, 34161210381, 34137968772, 34136587520). No coincide con la narrativa de spec-87 sobre el afordance móvil de las otras dos entradas; requiere su propio diagnóstico, no cubierto por la fase 2 tal como está descrita.",
+    "owner": "spec-79",
+    "expires": "2026-09-21"
+  }
+]
