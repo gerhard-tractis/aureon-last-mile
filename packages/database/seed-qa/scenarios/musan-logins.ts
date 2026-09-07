@@ -57,6 +57,34 @@ export const MUSAN_LOGINS = [
     fullName: 'Musan Líder de Recogida',
     permissions: ['pickup'],
   },
+  // The acompañantes. A leader with nobody to put on the route can tick no
+  // boxes, so CrewSelect renders "No hay compañeros registrados" and the
+  // ACOMPAÑANTES half of spec-61 was untestable on Musan — the operator that
+  // carries the realistic data everyone actually tests against.
+  //
+  // The ROLE is what matters here, not the token: useCrewCandidates reads
+  // `users` directly and filters `role IN ('pickup_crew','pickup_leader',
+  // 'ops_leader')`, so a rider carrying the 'pickup' permission under any
+  // other role is invisible to the picker. `pickup_crew` maps to exactly
+  // ['pickup'] in PERMISSIONS (lib/permissions.ts) — the same token set as
+  // the leader above, which is deliberate: leading is granted by the role.
+  //
+  // full_name is the display AND the sort key in that sheet, so the two are
+  // named to land in a predictable order.
+  {
+    seq: 24,
+    email: 'pickup1@musan.com',
+    role: 'pickup_crew',
+    fullName: 'Musan Recogida 1',
+    permissions: ['pickup'],
+  },
+  {
+    seq: 25,
+    email: 'pickup2@musan.com',
+    role: 'pickup_crew',
+    fullName: 'Musan Recogida 2',
+    permissions: ['pickup'],
+  },
 ] as const;
 
 /**
