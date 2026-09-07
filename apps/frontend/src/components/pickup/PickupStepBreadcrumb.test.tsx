@@ -3,13 +3,19 @@ import { render, screen } from '@testing-library/react';
 import { PickupStepBreadcrumb } from './PickupStepBreadcrumb';
 
 describe('PickupStepBreadcrumb', () => {
-  it('renders all five step labels in Spanish', () => {
+  it('renders the four real step labels in Spanish', () => {
     render(<PickupStepBreadcrumb current="scan" />);
     expect(screen.getByText('Recogida')).toBeInTheDocument();
     expect(screen.getByText('Escaneo')).toBeInTheDocument();
     expect(screen.getByText('Revisión')).toBeInTheDocument();
-    expect(screen.getByText('Entrega')).toBeInTheDocument();
     expect(screen.getByText('Firma')).toBeInTheDocument();
+  });
+
+  // spec-80 fase 0: the Entrega screen was deleted by spec-47. Advertising a
+  // step the crew cannot reach is what made the missing Firma look intentional.
+  it('does not advertise Entrega, which no longer exists', () => {
+    render(<PickupStepBreadcrumb current="review" />);
+    expect(screen.queryByText('Entrega')).not.toBeInTheDocument();
   });
 
   it('marks current step with aria-current="step"', () => {
@@ -23,8 +29,8 @@ describe('PickupStepBreadcrumb', () => {
   });
 
   it('applies accent style to current step', () => {
-    render(<PickupStepBreadcrumb current="handoff" />);
-    const el = screen.getByText('Entrega');
+    render(<PickupStepBreadcrumb current="complete" />);
+    const el = screen.getByText('Firma');
     expect(el.className).toMatch(/text-accent/);
     expect(el.className).toMatch(/font-semibold/);
   });

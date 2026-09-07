@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import DiscrepancyReviewPage from './page';
 
 const mockUsePickupScans = vi.fn();
@@ -69,6 +69,7 @@ describe('DiscrepancyReviewPage', () => {
     });
     mockUseDiscrepancyNotes.mockReturnValue({ data: [] });
     mockUseSaveDiscrepancyNote.mockReturnValue({ mutate: vi.fn() });
+    mockPush.mockClear();
   });
 
   it('renders Spanish labels in MetricCards', async () => {
@@ -93,9 +94,46 @@ describe('DiscrepancyReviewPage', () => {
     expect(await screen.findByText('Revisión')).toBeInTheDocument();
   });
 
-  it('renders "Continuar a ruta" button', async () => {
+  // spec-80 fase 0. This used to assert "Continuar a ruta" -> /app/pickup/route/active,
+  // which is the spec-47 regression: it skipped the Firma step entirely, so no
+  // manifest was ever signed or completed. The DESTINATION is what matters here,
+  // not the label — a test that only checked the wording would have passed
+  // throughout the whole period the step was unreachable.
+  it('sends the crew on to Firma, not back to the route', async () => {
+    // The CTA is gated on every missing package carrying a note, so the note
+    // has to be present for this to test navigation rather than the gate.
+    mockUseDiscrepancyNotes.mockReturnValue({
+      data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
+    });
+
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByRole('button', { name: /continuar a ruta/i })).toBeInTheDocument();
+    const cta = await screen.findByRole('button', { name: /continuar a firma/i });
+
+    fireEvent.click(cta);
+
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
+  });
+
+  it('never routes the crew straight to the active route from Revisión', async () => {
+    mockUseDiscrepancyNotes.mockReturnValue({
+      data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
+    });
+
+    render(<DiscrepancyReviewPage />);
+    fireEvent.click(await screen.findByRole('button', { name: /continuar a firma/i }));
+
+    expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/route/active');
+  });
+
+  // Pinning the gate spec-80 fase 0 must not weaken: a missing package without
+  // a note cannot be signed over, because the client signs against that count.
+  it('keeps Firma unreachable while a missing package has no note', async () => {
+    render(<DiscrepancyReviewPage />);
+    const cta = await screen.findByRole('button', { name: /continuar a firma/i });
+
+    expect(cta).toBeDisabled();
+    fireEvent.click(cta);
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('renders "Volver" back button', async () => {

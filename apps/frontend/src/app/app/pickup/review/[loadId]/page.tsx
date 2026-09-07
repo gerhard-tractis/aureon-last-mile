@@ -173,11 +173,24 @@ export default function DiscrepancyReviewPage() {
             Volver
           </Button>
           <Button
-            onClick={() => router.push('/app/pickup/route/active')}
+            // spec-80 fase 0 — Revisión vuelve a llevar a la Firma.
+            //
+            // spec-47 (3a61572, PR #349) cambió este destino de
+            // `/app/pickup/handoff/<loadId>` a la ruta activa cuando introdujo
+            // el modelo centrado en ruta y borró la pantalla de Entrega. La de
+            // Firma sobrevivió pero se quedó sin ningún enlace: es la única que
+            // escribe `signature_operator` / `signature_client` y pone el
+            // manifiesto en `completed`, así que desde entonces ninguna carga
+            // podía cerrarse. Verificado en QA sobre CARGA-PARIS-002: 28/28
+            // bultos verificados y el manifiesto todavía `in_progress`, sin
+            // firmas.
+            onClick={() =>
+              router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`)
+            }
             disabled={!allNotesComplete}
             className="flex-1 disabled:opacity-50"
           >
-            Continuar a ruta
+            Continuar a firma
           </Button>
         </div>
       </div>
