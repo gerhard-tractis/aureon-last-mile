@@ -62,17 +62,24 @@ Tres, y ninguno es cosmético.
 
 `5e` es explícito: *«Si cierras ahora, los 3 quedan registrados como faltantes a tu nombre y el cliente firma sobre esa cifra.»*
 
-**`package_status_enum` no tiene `faltante`.** Sus valores son `ingresado, verificado, en_bodega, asignado, en_carga, listo_para_despacho, en_ruta, entregado, retorno_hub, cancelado, devuelto, dañado, extraviado, sectorizado, retenido`.
+**Decidido (2026-09-07): no es un estado de bulto, es una fila con ciclo de vida.**
+Va a la tabla `discrepancies` de [spec-85](spec-85-discrepancias.md), no a un valor
+nuevo de `package_status_enum`. Las tres opciones que este spec barajaba —
+`discrepancy_notes` a secas, reusar `extraviado`, o añadir `faltante_en_origen` —
+quedan descartadas: ninguna permite **resolver** la discrepancia, que es lo que el
+negocio necesita. Un bulto que falta en Recepción puede aparecer físicamente y
+recibirse; uno que no aparece pasa a `lost` y dispara la indemnización.
 
-**Decisión requerida antes de la fase 2** — tres opciones, con lo que cuesta cada una:
+Recogida y Recepción producen exactamente la misma discrepancia, así que el
+registro es compartido y su esquema lo posee spec-85. **Esta fase lo consume, no
+lo define.**
 
-- **(a) Dejar el estado en `ingresado` y registrar el faltante sólo en `discrepancy_notes`.** Cero migración. Pero entonces «faltante» no es consultable como estado y los tableros no lo ven; la merma sólo existe como texto libre.
-- **(b) Usar `extraviado`.** Ya existe y ya significa «no aparece». Riesgo: hoy lo escribe el flujo de devoluciones, así que un `extraviado` dejaría de identificar unívocamente su origen sin mirar el historial.
-- **(c) Añadir `faltante_en_origen` al enum.** Es lo más honesto semánticamente — el bulto nunca entró a la red, que no es lo mismo que perderse dentro de ella. Coste: `ALTER TYPE ... ADD VALUE`, actualizar `EXPECTED_ENUMS` en `seed-qa/lib/enums.ts` (**omitirlo deja inservible el generador entero**, ver spec-51), y revisar cada `CASE` sobre el enum.
+Al cerrar, `close_manifest` llama a `record_discrepancies` con:
+- una `missing` por cada bulto declarado y no verificado (con su nota),
+- una `unexpected` por cada `pickup_scans.scan_result = 'not_found'`.
 
-**Recomendación: (c).** La distinción origen/red es real y aparece en facturación. Pero es una decisión de producto y va al usuario antes de migrar.
-
-`discrepancy_notes` ya soporta la nota por bulto de `5e` sin cambios: `(operator_id, manifest_id, package_id, note, created_by_user_id)`.
+`discrepancy_notes` sigue existiendo mientras la pantalla de Revisión la lea;
+se retira en un contract phase posterior.
 
 ### 2. Fotos del manifiesto firmado — falta dónde apuntarlas
 
@@ -100,7 +107,7 @@ Cada fase es un PR revisable por separado.
 |---|---|---|
 | **0 — Reconectar la Firma** | La revisión vuelve a llevar a Firma. Sin diseño nuevo. | — |
 | **1 — `close_manifest` RPC** | El cierre pasa a ser atómico y servidor-side | — |
-| **2 — `5e` bloqueo por faltantes** | No se cierra a ciegas | 1, decisión del enum |
+| **2 — `5e` bloqueo por faltantes** | No se cierra a ciegas | 1, **spec-85 fase 2** |
 | **3 — `5f` firma + fotos** | Respaldo fotográfico | 1, 2 |
 | **4 — `5g`/`5h` cámara y revisión** | Captura y control de calidad de la foto | 3 |
 | **5 — `5i` carga cerrada** | Cierre del proceso, vuelve a `5c` | 3 |
@@ -150,7 +157,12 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 - [ ] Repuntar `complete/[loadId]` al RPC, borrando el `.update()` crudo.
 - [ ] Verificar con `--only=musan` reseteado que un cierre completo deja el manifiesto consistente.
 
-### Fase 2 — `5e` cerrar con faltantes `[blocked]`
+### Fase 2 — `5e` cerrar con faltantes `[pending]`
+
+> **No empezar hasta que [spec-85](spec-85-discrepancias.md) fase 2 esté en `[done]`.**
+> Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC
+> no hay dónde registrar la merma.
+
 
 **Archivos:** `apps/frontend/src/app/app/pickup/review/[loadId]/page.tsx` (sustituye a la pantalla de revisión actual), componente nuevo `components/pickup/UnverifiedPackagesBlock.tsx`
 
@@ -213,5 +225,5 @@ El bloque «Guardado en el teléfono — N registros y N fotos esperan señal» 
 ## Riesgos
 
 - **La fase 0 cambia el flujo bajo los pies de quien esté probando en QA.** Es el objetivo, pero conviene avisar antes de mergear.
-- **La decisión del enum bloquea la fase 2.** Si se elige (c), el PR de la migración y el de `EXPECTED_ENUMS` van juntos o el generador de seed queda inservible para todos.
+- **La fase 2 depende de spec-85.** Se decidió no tocar `package_status_enum`: la discrepancia es una fila resoluble, no un estado. Empezar la fase 2 antes de que exista `record_discrepancies` obliga a inventar un registro provisional que habría que migrar después.
 - **`5a`–`5d` se construyeron contra los mocks viejos** (`1l`, `1h`, `1i`, `3j`). Este spec no los revalida; eso es spec-82 y spec-83.
