@@ -181,8 +181,10 @@ escritura. **Ojo con el default ACL de la imagen base:** cualquier tabla nueva
 en `public` creada por `postgres` recibe por defecto `arwdDxt` (todo) para
 `authenticated` — un `GRANT SELECT` no resta nada de eso, sólo suma. Hace
 falta el `REVOKE` explícito de `INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES,
-TRIGGER` para que el grant efectivo sea de verdad sólo lectura (verificado
-contra `pg_class.relacl`, no contra el texto de la migración).
+TRIGGER` para que el grant efectivo sea de verdad sólo lectura (verificado con
+`has_table_privilege()` en el pgTAP de esta fase, no leyendo el texto de la
+migración — round 2 del review encontró que la primera versión de este REVOKE
+no tenía ningún test que lo comprobara de forma aislada de RLS).
 
 Con la escritura de cliente cerrada, un `audit_trigger_func` (plantilla:
 `20260903000001_spec72_route_blocks.sql`) registra cada `INSERT`/`UPDATE`/
@@ -190,6 +192,31 @@ Con la escritura de cliente cerrada, un `audit_trigger_func` (plantilla:
 `SECURITY DEFINER`) — sin esto cualquier autenticado podía antes reabrir o
 borrar una fila sin dejar rastro, sobre una tabla que existe para ser
 evidencia.
+
+**La RLS efectiva de esta tabla, una vez cerrado el `GRANT`, es sólo el
+`SELECT`.** Las únicas escrituras que quedan pasan por `service_role`
+(`BYPASSRLS`) o por los RPC `SECURITY DEFINER` de fase 2, propiedad de
+`postgres` — que también salta la política porque la tabla no tiene
+`FORCE ROW LEVEL SECURITY`. Nada por debajo de esos RPC va a filtrar por
+`operator_id` en su lugar: **`record_discrepancies` y `resolve_discrepancy`
+tienen que comprobar ellos mismos, dentro del cuerpo de la función, que el
+`manifest_id`/`route_reception_id` que reciben pertenece al operador del JWT**
+(vía `public.get_operator_id()`), igual que hace `expand_carton`
+(`20260814000002`). Un `record_discrepancies` que confíe en la RLS de la tabla
+para eso insertaría evidencia en el expediente de otro operador.
+
+### `migrated_from_note_id` y el contract phase futuro
+
+`migrated_from_note_id` tiene una FK a `discrepancy_notes(id)` — necesaria
+mientras ambas tablas coexisten, pero **bloquea el `DROP TABLE
+discrepancy_notes`** que esta misma spec promete para más adelante (fase de
+contrato, como spec-56 hizo con spec-52): el `DROP TABLE` fallará por esa
+dependencia, y un `DROP TABLE ... CASCADE` se llevaría con él la columna de
+procedencia — justo la que existe para poder reconciliar sin comparar por el
+texto de `note`. Esa fase de contrato tiene que primero
+`ALTER TABLE public.discrepancies DROP CONSTRAINT <fk_de_migrated_from_note_id>`
+y dejar la columna como un UUID suelto (ya no referenciable, pero el valor
+histórico se conserva) antes de tocar `discrepancy_notes`.
 
 ### La costura entre esta fase y spec-80 fase 2
 
@@ -229,16 +256,45 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 
 **Ronda de code review (adversarial), cerrada:** C1 (backfill sin `ON CONFLICT`
 podía abortar el deploy), C2 (`unexpected` sin barrera de duplicación), C3/C3b
-(RLS y backfill sin tests que los ejercieran de verdad — 14 tests pgTAP en
-total ahora, 8 nuevos), I1 (`detected_at` perdido), I2 (grant de escritura +
-sin auditoría), I3 (`operation_type` sin atar a su columna de origen), I5
-(`unexpected` con `package_id` colaba). Todos cerrados en el mismo commit;
-detalle de cada uno en "El modelo" arriba. Un hallazgo no listado en el
-review original salió al verificar I2: la imagen base otorga por defecto
-`arwdDxt` a `authenticated` en toda tabla nueva, así que el `GRANT SELECT`
-por sí solo no restringía nada — hizo falta el `REVOKE` explícito, verificado
-contra `pg_class.relacl`. El mismo patrón (falta el REVOKE) puede estar en
-otras tablas del repo; no se tocó ninguna fuera de ésta.
+(RLS y backfill sin tests que los ejercieran de verdad), I1 (`detected_at`
+perdido), I2 (grant de escritura + sin auditoría), I3 (`operation_type` sin
+atar a su columna de origen), I5 (`unexpected` con `package_id` colaba).
+Detalle de cada uno en "El modelo" arriba. Un hallazgo no listado en el review
+original salió al verificar I2: la imagen base otorga por defecto `arwdDxt` a
+`authenticated` en toda tabla nueva, así que el `GRANT SELECT` por sí solo no
+restringía nada — hizo falta el `REVOKE` explícito. El mismo patrón (falta el
+REVOKE) puede estar en otras tablas del repo — confirmado en `route_blocks`
+por el revisor en la ronda 2, va a su propio spec de auditoría, no se tocó
+aquí.
+
+**Ronda 2, acotada al REVOKE de I2 y a C3:** el primer arreglo de I2 desactivó
+sin querer los propios tests de C3 — TEST 11/12 entran con
+`role='authenticated'`, que ya no tiene `INSERT`/`UPDATE`, así que Postgres
+rechaza en el chequeo de privilegios **antes** de evaluar ninguna política
+RLS, y el `EXCEPTION WHEN insufficient_privilege OR check_violation` acepta
+ambas causas sin distinguir cuál disparó. Dos mutantes sobrevivían con la
+suite en verde: (1) las dos políticas a `WITH CHECK (true)` — sigue dando
+42501 por privilegio, TEST 11/12 pasan igual; (2) borrar el `REVOKE` —
+entonces la RLS da el mismo 42501, TEST 11/12 pasan igual. Corregido con dos
+tests nuevos: TEST 15 (`has_table_privilege()`, ACL puro, sin RLS de por
+medio) y TEST 16 (un rol de prueba creado dentro de la transacción, con
+`GRANT INSERT, UPDATE` real y sin `BYPASSRLS`, que sí llega al `WITH CHECK`).
+Total 17 tests pgTAP.
+
+**Corrección técnica encontrada al escribir TEST 16:** Postgres no tiene un
+SQLSTATE propio para una violación de `WITH CHECK` — tanto un rechazo de RLS
+como un rechazo de `GRANT` levantan `42501` (`insufficient_privilege`); sólo
+el texto del mensaje distingue "new row violates row-level security policy"
+de "permission denied for table". El `WHEN check_violation` que TEST 11/12
+tenían desde la ronda 1 nunca disparaba — es rama muerta, se dejó sólo
+`WHEN insufficient_privilege` ahí y se documentó que esos dos tests prueban
+sólo que el rechazo ocurre, no en qué capa; TEST 15/16 son los que atribuyen
+la capa, comparando el texto del mensaje con `GET STACKED DIAGNOSTICS`.
+
+Además: el backfill ahora compara `COUNT(*)` de notas vivas contra su propio
+valor de retorno y deja un `RAISE NOTICE` si `ON CONFLICT DO NOTHING` tragó
+alguna — tragar sigue siendo correcto (el backfill de una tabla de evidencia
+no puede tumbar un deploy), pero ya no es silencioso en los logs.
 
 ### Fase 2 — RPCs `[pending]`
 
