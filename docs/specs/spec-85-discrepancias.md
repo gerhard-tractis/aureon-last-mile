@@ -245,7 +245,30 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 | **2 — RPCs** | `record_discrepancies`, `resolve_discrepancy`, lectura |
 | **3 — `lost` e indemnización** | qué pasa con el bulto y con `exceptions` |
 
-### Fase 1 — Esquema `[in_progress]`
+### Fase 1 — Esquema `[done]`
+
+> Implementado por: implementer — rama `feat/spec-85-fase-1-esquema`, SHA `771dc6e`, PR #651.
+> Review: reviewer (opus), **dos rondas adversariales**. Ronda 1: 8 bloqueantes
+> (backfill sin `ON CONFLICT` que podía abortar el deploy; `unexpected` sin barrera
+> de duplicación; RLS probada sólo en lectura; backfill sin test; `detected_at`
+> perdido; sin audit trigger con UPDATE/DELETE abiertos; `operation_type` sin atar
+> a su origen; CHECK de forma permitiendo `unexpected` con `package_id`). Ronda 2:
+> el `REVOKE` del arreglo había desactivado los tests de RLS — cerrado con
+> `has_table_privilege` y un rol de prueba sin BYPASSRLS. Veredicto final:
+> mergeable. El revisor **se retractó** de un hallazgo propio: pidió distinguir
+> `check_violation` de `insufficient_privilege`, y el implementador demostró que
+> RLS levanta `42501` igual que un GRANT denegado.
+> QA: PR #651 merged 2026-09-07T21:55:32Z, CI verde. **Hueco declarado:** el juez
+> `e2e-qa` NO se leyó verde — lleva días rojo por tres specs de Despacho ajenas
+> (spec-87 fase 1/2 lo aborda). Esta fase es sólo esquema y no tiene cobertura
+> e2e propia; el juez `sql` sí se verificó: 17 tests pgTAP en contenedor
+> reconstruido desde cero, con los mutantes matados sobre el contenedor en vivo.
+> Downstream: revisado spec-80 y spec-83. **Sí hubo cambios**: el cuerpo de
+> spec-80 fase 1 seguía describiendo la decisión del enum ya revertida — corregido
+> en PR #653; y `spec-83:74` afirmaba que spec-80 fase 1 persistiría el conteo de
+> faltantes, que con el alcance corregido es falso — corregido en la rama de
+> spec-80 fase 1. spec-84 y spec-86 no requieren cambios: consumen la tabla, no
+> su forma interna.
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
