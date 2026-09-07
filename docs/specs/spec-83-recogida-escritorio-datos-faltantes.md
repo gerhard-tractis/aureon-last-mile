@@ -65,7 +65,7 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 
 **Este es el más fácil de los tres, y spec-80 lo habilita.** Hoy `get_completed_manifests` da totales pero no verificados, y derivar la merma exige una consulta por manifiesto. Cuando spec-80 fase 1 registre los faltantes al cerrar (`close_manifest`), la cifra queda escrita en el cierre y `TodayClosuresPanel` sólo tiene que leerla.
 
-**Depende de la decisión del enum en spec-80** (`faltante_en_origen` vs `extraviado` vs sólo `discrepancy_notes`). Si se elige la tercera, la merma no es consultable como estado y esta parte no se puede hacer sin una consulta por manifiesto.
+**Resuelto (2026-09-07): la merma se lee de `discrepancies`** ([spec-85](spec-85-discrepancias.md)) — `kind='missing'`, `operation_type='pickup'`, agrupado por manifiesto. No se añadió ningún valor a `package_status_enum`; la discrepancia es una fila con ciclo de vida propio, así que la cifra es consultable y además dice si se resolvió.
 
 ---
 
@@ -73,12 +73,12 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 
 | Fase | Qué entrega | Depende de |
 |---|---|---|
-| **1 — Merma en cierres** | «2 faltantes de 44» | spec-80 fase 1 + decisión del enum |
+| **1 — Merma en cierres** | «2 faltantes de 44» | spec-85 fase 2 + spec-80 fase 2 |
 | **2 — Ventana de retiro** | Columna VENTANA y semáforo de cierre | decisión (a)/(b)/(c) |
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
-### Fase 1 — Merma `[blocked]`
+### Fase 1 — Merma `[pending]`
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
