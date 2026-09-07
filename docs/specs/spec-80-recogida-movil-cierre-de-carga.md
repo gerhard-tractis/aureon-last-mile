@@ -2,7 +2,7 @@
 
 > **Related:** [spec-81](spec-81-recogida-cola-offline.md) (la cola que cumple el «SIN RED» que estas pantallas prometen), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`, lo que precede a este cierre), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-54](spec-54-ui-rebrand.md) (rebranding; su fase 4.4 cubrió sólo el escritorio de Recogida), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (**introdujo la regresión que este spec cierra**), [spec-19](spec-19-pickup-visual-polish.md) (dueño actual de la pantalla de Firma), [spec-55](spec-55-carton-expansion.md) (bultos generados que cuentan como verificables)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 **Downstream:** spec-81-recogida-cola-offline.md, spec-82-recogida-movil-asignacion-y-ruta.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-84-movil-conductor-home-y-prueba-de-entrega.md
 
@@ -49,7 +49,7 @@ Las etiquetas de `5b` y `5e` en el propio diseño dicen «el paso que faltaba» 
 | Mock | Pantalla | Estado hoy |
 |---|---|---|
 | `5e` | Cerrar carga con paquetes sin verificar | ❌ no existe — hoy se cierra sin aviso |
-| `5f` | Confirmar recepción: firma del local + tu firma + **fotos del manifiesto firmado** | ⚠️ existe sin fotos, y es inalcanzable |
+| `5f` | Confirmar recepción: firma del local + tu firma + **fotos del manifiesto firmado** | ⚠️ existe sin fotos. Alcanzable desde la fase 0; sigue siendo la pantalla de spec-19 |
 | `5g` | Cámara para el manifiesto firmado | ❌ no existe |
 | `5h` | Revisión de la foto antes de guardarla | ❌ no existe |
 | `5i` | Carga cerrada, resumen y vuelta a `5c` | ❌ hoy hace `router.push('/app/pickup')` |
@@ -105,7 +105,14 @@ Cada fase es un PR revisable por separado.
 | **4 — `5g`/`5h` cámara y revisión** | Captura y control de calidad de la foto | 3 |
 | **5 — `5i` carga cerrada** | Cierre del proceso, vuelve a `5c` | 3 |
 
-### Fase 0 — Reconectar la Firma (hotfix) `[pending]`
+### Fase 0 — Reconectar la Firma (hotfix) `[done]`
+
+> Downstream: revisado spec-81, spec-82, spec-83 y spec-84 — **sin cambios**. Esta
+> fase sólo repunta una navegación y quita un paso fantasma del breadcrumb; no
+> toca ni el esquema, ni un RPC, ni ninguna firma que esos specs asuman.
+> **Sí cambió una afirmación de ESTE spec**: `5f` ya no es inalcanzable, y la
+> tabla de pantallas de arriba está corregida.
+
 
 **Se despliega sola y antes que todo lo demás.** Hoy QA no puede completar una carga; esto lo desbloquea sin esperar al rediseño.
 

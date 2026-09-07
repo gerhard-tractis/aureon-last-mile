@@ -1,10 +1,16 @@
-export type PickupStep = 'pickup' | 'scan' | 'review' | 'handoff' | 'complete';
+// spec-80 fase 0 — `handoff` (Entrega) se elimina del contrato.
+//
+// spec-47 borró esa pantalla al pasar al modelo centrado en ruta, pero el
+// breadcrumb siguió anunciándola durante meses: el operario veía `Entrega` y
+// `Firma` como pasos por venir y no había forma de llegar a ninguno de los dos.
+// Un paso dibujado que no existe es peor que un paso ausente — hace que el
+// operario espere una pantalla y crea que se la saltó.
+export type PickupStep = 'pickup' | 'scan' | 'review' | 'complete';
 
 const STEPS: { key: PickupStep; label: string }[] = [
   { key: 'pickup', label: 'Recogida' },
   { key: 'scan', label: 'Escaneo' },
   { key: 'review', label: 'Revisión' },
-  { key: 'handoff', label: 'Entrega' },
   { key: 'complete', label: 'Firma' },
 ];
 
