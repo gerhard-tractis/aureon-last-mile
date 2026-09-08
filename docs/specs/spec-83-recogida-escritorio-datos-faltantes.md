@@ -43,17 +43,25 @@ Vale la pena citarlo entero, porque el razonamiento sigue vigente y la decisión
 
 `5a`: columna `VENTANA` con `09:00–13:00`, y `cierra 12:30` en rojo cuando aprieta. Subtítulo «cierre de retiros 18:00». El borde izquierdo de la fila se tiñe por proximidad al cierre.
 
-**Dónde vive.** La ventana es del **punto de recogida**, no del manifiesto: el local abre y cierra a la misma hora todos los días. `pickup_points.pickup_locations` es un JSONB `{name, address, comuna}` — el sitio natural es ampliarlo, o una tabla de horarios si se quiere variación por día de la semana.
+**Dónde vive.** La ventana es del **punto de recogida**, no del manifiesto: el local abre y cierra a la misma hora todos los días.
 
-Es una decisión de modelo, no de pantalla:
+**Corrección (2026-09-08).** Esto decía que `pickup_points.pickup_locations`
+es un JSONB `{name, address, comuna}` y presentaba la ventana como una decisión
+de modelo abierta entre tres opciones — (a) fija por punto, (b) por punto y
+día, (c) por manifiesto. Es falso, y la opción (a) **ya está elegida por el
+esquema**: `20260318000004_agent_suite_tables.sql:68-69` declara
+`pickup_locations` como `[{name, address, comuna, lat, lng, contact_name,
+contact_phone, operating_hours}]` — `operating_hours` es exactamente la
+ventana fija por punto de (a). Y `sla_config` (`:64-66` del mismo archivo)
+declara `pickup_cutoff_time`, que es el «cierre de retiros 18:00» del
+subtítulo. Ninguno de los dos campos lo puebla nadie hoy, pero el modelo de
+datos no es la decisión pendiente — poblarlos y leerlos sí lo es.
 
-- **(a) Ventana fija por punto de recogida.** Simple, cubre el 90% (un local tiene horario estable).
-- **(b) Ventana por punto y día de la semana.** Correcto para sábados, más tabla.
-- **(c) Ventana por manifiesto.** Sólo si el retailer la manda en el ingreso, y hoy no la manda.
-
-**Recomendación: (a)**, con (b) como evolución si aparece el caso. Empezar por (c) es modelar una excepción que nadie ha pedido.
-
-Una vez exista, `get_pending_manifests` la devuelve y el borde de la fila deja de ser progreso de escaneo para ser proximidad al cierre — **ojo, es un cambio de significado en un elemento que ya se usa**, no una columna nueva. Hay que decidir cuál gana o dar dos señales distintas.
+La única decisión que sigue abierta, y que sí le toca al usuario: **el
+conflicto del borde izquierdo de la fila.** Hoy significa progreso de escaneo;
+si además debe señalar proximidad al cierre, hay que decidir si se cambia el
+significado o se añade una segunda señal visual. Eso no lo resuelve el
+esquema.
 
 ### 2. Ocupación estimada del vehículo
 
@@ -85,7 +93,7 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 | Fase | Qué entrega | Depende de |
 |---|---|---|
 | **1 — Merma en cierres** | «2 faltantes de 44» | spec-85 fase 2 + spec-80 fase 2 |
-| **2 — Ventana de retiro** | Columna VENTANA y semáforo de cierre | decisión (a)/(b)/(c) |
+| **2 — Ventana de retiro** | Columna VENTANA y semáforo de cierre | decisión sobre el borde izquierdo de la fila (progreso vs. proximidad al cierre) |
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
@@ -93,7 +101,23 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
-Al reescribir el RPC con `CREATE OR REPLACE`, **usar como plantilla la definición de la migración más reciente**, nunca la original (regla de `CLAUDE.md`). La última es `20260428000001_sort_manifests_by_created_at.sql` salvo que algo posterior la haya tocado — comprobar antes de escribir.
+Al reescribir el RPC con `CREATE OR REPLACE`, **usar como plantilla la definición de la migración más reciente**, nunca la original (regla de `CLAUDE.md`).
+
+**Corrección (2026-09-08).** Esto decía que la última era
+`20260428000001_sort_manifests_by_created_at.sql` «salvo que algo posterior la
+haya tocado». Sí la ha tocado, y seguir la instrucción literal habría sido la
+trampa: `20260813000001_spec53_package_labels.sql:234-314` hace `DROP
+FUNCTION` + `CREATE OR REPLACE` de `get_completed_manifests`, añadiendo
+`labels_printed_at` y `labels_printed_by_name` (impresión de etiquetas,
+spec-53). Verificado con `git grep -l get_completed_manifests
+packages/database/supabase/migrations/` (2026-09-08): las cuatro migraciones
+que la tocan son `20260310100002`, `20260427000001`, `20260428000001` y
+`20260813000001`, en ese orden — **`20260813000001` es la plantilla correcta
+hoy**, no `20260428000001`. Usar la de abril habría borrado las dos columnas
+de spec-53 y hecho desaparecer la impresión de etiquetas del panel de cierres.
+Quien tome esta fase debe repetir el `git grep` antes de escribir la
+migración — puede haber otra posterior a `20260813000001` para cuando se lea
+esto.
 
 - [ ] Test pgTAP del RPC con un manifiesto cerrado con faltantes y otro limpio.
 - [ ] Test del panel: paleta warning sólo cuando hay merma.
@@ -101,9 +125,17 @@ Al reescribir el RPC con `CREATE OR REPLACE`, **usar como plantilla la definici�
 
 ### Fase 2 — Ventana `[blocked]`
 
-- [ ] Migración del modelo elegido + test de aislamiento por operador.
-- [ ] `get_pending_manifests` devuelve la ventana.
-- [ ] Columna y semáforo; resolver el conflicto del borde izquierdo (progreso vs proximidad) **explícitamente**, no por accidente.
+**Corrección (2026-09-08):** el modelo (a) — ventana fija por punto de
+recogida — ya lo eligió el esquema (`pickup_locations[].operating_hours`,
+`sla_config.pickup_cutoff_time`); no hay migración de modelo que decidir. Esta
+fase sigue `[blocked]`, pero sólo por la decisión real: qué gana en el borde
+izquierdo de la fila.
+
+- [ ] Decidir con el usuario: el borde izquierdo cambia de significado
+      (progreso → proximidad al cierre) o se añaden dos señales distintas.
+- [ ] Poblar `operating_hours` / `pickup_cutoff_time` donde falten (nadie los
+      escribe hoy) y hacer que `get_pending_manifests` los devuelva.
+- [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
 
 ### Fase 3 — Ocupación `[pending]`
 
