@@ -4,12 +4,24 @@
 -- Fixture: one operator, one manifest (CARGA-80B-1) with:
 --   CTN80B-1 — scanned 'verified'                              -> not missing
 --   CTN80B-2 — declared, never scanned, has a discrepancy_notes -> missing, WITH note
---   CTN80B-3 — declared, never scanned, no note at all          -> missing, NULL note
+--   CTN80B-3 — declared, never scanned, a note exists but for a
+--              DIFFERENT manifest (CARGA-80B-2)                 -> missing, NULL note
+--              (mutation guard: sin `dn.manifest_id = v_manifest.id` esta
+--              nota ajena se filtraría igual)
+--   CTN80B-5 — declared, never scanned, its only note is
+--              soft-deleted                                     -> missing, NULL note
+--              (mutation guard: sin `dn.deleted_at IS NULL` esa nota
+--              borrada se filtraría igual)
+--   CTN80B-6 — declared, never scanned, but the PACKAGE ITSELF is
+--              soft-deleted                                     -> NOT missing at all
+--              (mutation guard: sin `p.deleted_at IS NULL` (en ambas
+--              consultas) un bulto borrado contaría como faltante — choca
+--              de frente con el no-negociable de soft deletes del repo)
 --   'CTN-AJENO-1' scanned twice as 'not_found' (same barcode)   -> one unexpected
 -- A second manifest (CARGA-80B-2), fully verified, 0 missing, 0 unexpected,
 -- proves the empty-p_items path (spec-85's M5) does not fail the close.
 BEGIN;
-SELECT plan(11);
+SELECT plan(13);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -56,8 +68,20 @@ VALUES
   ('00000000-0000-4000-8000-0000000080d2','00000000-0000-4000-8000-0000000080b0',
    '00000000-0000-4000-8000-0000000080c0','CTN80B-3','[]'::jsonb,'{}'::jsonb,'ingresado'),
   ('00000000-0000-4000-8000-0000000080d3','00000000-0000-4000-8000-0000000080b0',
-   '00000000-0000-4000-8000-0000000080c1','CTN80B-4','[]'::jsonb,'{}'::jsonb,'ingresado')
+   '00000000-0000-4000-8000-0000000080c1','CTN80B-4','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-0000000080d5','00000000-0000-4000-8000-0000000080b0',
+   '00000000-0000-4000-8000-0000000080c0','CTN80B-5','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-0000000080d6','00000000-0000-4000-8000-0000000080b0',
+   '00000000-0000-4000-8000-0000000080c0','CTN80B-6','[]'::jsonb,'{}'::jsonb,'ingresado')
 ON CONFLICT (id) DO NOTHING;
+
+-- CTN80B-6: the package itself is soft-deleted. Mutation guard for
+-- `p.deleted_at IS NULL` in BOTH the p_items query and the
+-- v_missing_count query below — without it, a soft-deleted package would
+-- still count and record as an open 'missing' discrepancy.
+UPDATE public.packages
+   SET deleted_at = NOW()
+ WHERE id = '00000000-0000-4000-8000-0000000080d6';
 
 -- 20260814000001's trg_ensure_manifest_for_order already created a manifests
 -- row per load the moment its order was inserted (ids unpredictable).
@@ -82,13 +106,26 @@ VALUES
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-2'),
    '00000000-0000-4000-8000-0000000080d3', 'CTN80B-4', 'verified', NOW());
 
--- CTN80B-2 already has a note from the review screen (5e); CTN80B-3 does not.
-INSERT INTO public.discrepancy_notes (operator_id, manifest_id, package_id, note, created_by_user_id)
+-- CTN80B-2 has a note from the review screen (5e), for THIS manifest
+-- (CARGA-80B-1). CTN80B-3's note below is for the OTHER manifest
+-- (CARGA-80B-2) — same package_id column value doesn't apply here since
+-- it's a different package, but the guard under test is `dn.manifest_id =
+-- v_manifest.id`: without it, ANY note for that package_id would join in,
+-- regardless of which manifest wrote it. CTN80B-5's note is soft-deleted.
+INSERT INTO public.discrepancy_notes (operator_id, manifest_id, package_id, note, created_by_user_id, deleted_at)
 VALUES
   ('00000000-0000-4000-8000-0000000080b0',
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-1'),
    '00000000-0000-4000-8000-0000000080d1', 'El local no lo encontró en bodega.',
-   '00000000-0000-4000-8000-0000000080b1');
+   '00000000-0000-4000-8000-0000000080b1', NULL),
+  ('00000000-0000-4000-8000-0000000080b0',
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-2'),
+   '00000000-0000-4000-8000-0000000080d2', 'Nota de OTRO manifiesto — no debe aparecer en CARGA-80B-1.',
+   '00000000-0000-4000-8000-0000000080b1', NULL),
+  ('00000000-0000-4000-8000-0000000080b0',
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-1'),
+   '00000000-0000-4000-8000-0000000080d5', 'Nota BORRADA — no debe aparecer.',
+   '00000000-0000-4000-8000-0000000080b1', NOW());
 
 SELECT set_config(
   'request.jwt.claims',
@@ -97,14 +134,15 @@ SELECT set_config(
 );
 
 -- ── 1. Closing with gaps records exactly the right discrepancies ───────────
+-- Missing: CTN80B-2, CTN80B-3, CTN80B-5 (CTN80B-6 is soft-deleted, excluded).
 SELECT is(
   (SELECT (out_verified_count, out_missing_count, out_unexpected_count)
      FROM public.close_manifest(
        (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-1'),
        '{"operator_signature":"data:image/png;base64,AAA"}'::jsonb
      )),
-  (1, 2, 1),
-  'close_manifest still returns verified=1, missing=2, unexpected=1'
+  (1, 3, 1),
+  'close_manifest still returns verified=1, missing=3, unexpected=1 (a soft-deleted declared package does not count)'
 );
 
 SELECT is(
@@ -113,8 +151,8 @@ SELECT is(
       AND operation_type = 'pickup'
       AND manifest_id = (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND external_load_id = 'CARGA-80B-1')
       AND deleted_at IS NULL),
-  3,
-  'close_manifest recorded 3 open discrepancies for this manifest (2 missing + 1 unexpected)'
+  4,
+  'close_manifest recorded 4 open discrepancies for this manifest (3 missing + 1 unexpected)'
 );
 
 SELECT is(
@@ -133,12 +171,36 @@ SELECT is(
   'the missing discrepancy carries the note the crew wrote on 5e'
 );
 
+-- Mutation guard: sin `dn.manifest_id = v_manifest.id` en el LEFT JOIN de
+-- close_manifest, la nota de CARGA-80B-2 para este mismo package_id se
+-- colaría aquí.
 SELECT is(
   (SELECT note FROM public.discrepancies
     WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND package_id = '00000000-0000-4000-8000-0000000080d2'
       AND kind = 'missing' AND deleted_at IS NULL),
   NULL,
-  'CTN80B-3 (missing, no note ever saved) still gets recorded, with a NULL note'
+  'CTN80B-3 (missing, its only note belongs to a DIFFERENT manifest) gets recorded with a NULL note, not the other manifest''s note'
+);
+
+-- Mutation guard: sin `dn.deleted_at IS NULL`, la nota borrada de CTN80B-5
+-- se colaría aquí en su lugar.
+SELECT is(
+  (SELECT note FROM public.discrepancies
+    WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND package_id = '00000000-0000-4000-8000-0000000080d5'
+      AND kind = 'missing' AND deleted_at IS NULL),
+  NULL,
+  'CTN80B-5 (missing, its only note is soft-deleted) gets recorded with a NULL note, not the deleted note'
+);
+
+-- Mutation guard: sin `p.deleted_at IS NULL` en la consulta de p_items Y en
+-- v_missing_count, CTN80B-6 (soft-deleted) contaría y se registraría como
+-- faltante — choca de frente con el no-negociable de soft deletes.
+SELECT is(
+  (SELECT COUNT(*)::int FROM public.discrepancies
+    WHERE operator_id = '00000000-0000-4000-8000-0000000080b0' AND package_id = '00000000-0000-4000-8000-0000000080d6'
+      AND deleted_at IS NULL),
+  0,
+  'CTN80B-6 (the PACKAGE ITSELF is soft-deleted) is never recorded as missing'
 );
 
 SELECT is(
