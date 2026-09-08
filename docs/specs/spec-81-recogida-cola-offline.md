@@ -8,6 +8,23 @@
 
 _Date: 2026-09-07_
 
+## Mock de diseño
+
+Este spec valida contra **`docs/design/Recogida.dc.html`, pantallas `5d`, `5f` e `5i`** — las
+tres citadas arriba con sus textos literales («GUARDADO EN EL DISPOSITIVO…», «Todo queda en el
+teléfono…», «Guardado en el teléfono — 6 registros y 2 fotos esperan señal»). El mock manda en
+diseño; este spec manda en comportamiento — si discrepan, se implementa el mock y la
+discrepancia se escribe aquí, no se resuelve en silencio.
+
+Este spec no dibuja pantalla propia: construye el escritor de la cola detrás del badge "COLA N"
+y de las leyendas SIN RED que esas tres pantallas ya prometen. Si al implementar aparece un
+caso que el mock no contempla — qué ve el operario si un reintento agota sus tres intentos, por
+ejemplo — es un hallazgo para escalar al usuario, no algo que inventar.
+
+Esta referencia caduca con el diseño: si el usuario actualiza los mocks, hay que volver a bajar
+el fichero (`docs/design/README.md`) y comprobar que `5d`/`5f`/`5i` siguen siendo las mismas
+pantallas.
+
 ---
 
 ## Goal
