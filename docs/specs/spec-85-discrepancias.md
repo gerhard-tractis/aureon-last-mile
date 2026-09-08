@@ -599,7 +599,7 @@ lo que queda por decidir.
 Por eso la fase se parte en dos: el guard de permiso es backend puro y se puede construir
 ya; la pantalla y el workflow siguen esperando diseño.
 
-### Fase 3a — Solo el jefe de operaciones puede declarar `lost` `[in_progress]`
+### Fase 3a — Solo el jefe de operaciones puede declarar `lost` `[done]`
 
 **Archivos:** migración nueva sobre `resolve_discrepancy`, test pgTAP.
 
@@ -670,6 +670,52 @@ alguien sin autoridad, que es el caso que importa.
 > TEST 26/27, que corren después vía `ROLLBACK TO` y no se ven afectados por el abort de la
 > transacción interna de TEST 25). Función real restaurada y reconfirmada: 41 `PASSED`, 0
 > `ERROR`.
+>
+> Review: adversarial, **post-merge** (el PR #670 entró con auto-merge sin revisar antes de
+> mergear). Verificó el guard fail-closed sobre los seis roles reales del RBAC probándolos
+> uno a uno contra la función instalada, confirmó que TEST 25 tiene la forma probatoria
+> correcta y que el reclamo de mutación de arriba es exacto, y comprobó carácter por
+> carácter que el precedente citado (`operations_manager` deja pasar también `admin`/
+> `super_admin`) existe literal en las cuatro funciones citadas
+> (`20260821000001:131`, `20260822000001:93`, `20260824000004:141`,
+> `20260824000003:84`). Respaldó las tres decisiones de diseño: ampliar a `admin`/
+> `super_admin`, dejar `resolved` sin restringir, y el orden del guard (después de
+> "ya resuelta" 23505, antes del UPDATE) — verificado con dos mutantes que confirman que ese
+> orden es load-bearing. También descartó que el `23505` antes del `42501` filtre estado: no
+> lo hace, porque `pickup_crew` ya puede leer ese `status` bajo la RLS con un `SELECT`
+> directo. Encontró un hallazgo real (MEDIO): el mutante que estrecha la lista de roles a
+> sólo `operations_manager` sobrevivía — ningún test cubría `admin` ni `super_admin`, y el
+> bloque de verificación de la propia migración (`20260913000005:207-209`) era vacuo porque
+> el texto del `RAISE EXCEPTION` también contiene las palabras "admin"/"super_admin",
+> pasando los tres `LIKE` sin importar qué tan corta quedara la lista real. Cerrado en
+> `fix/spec-85-fase-3a-seguimiento`: TEST 28 (admin) y TEST 29 (super_admin) añadidos, RED
+> verificado contra el mutante estrechado (41 `PASSED`, TEST 28 falla por la razón correcta
+> — `LOST_REQUIRES_OPERATIONS_MANAGER` con `caller role: admin`), GREEN contra la función
+> real (43 `PASSED`, 0 `ERROR`); el `LIKE` de verificación se cambió para apuntar al literal
+> `('operations_manager', 'admin', 'super_admin')` en vez de a las palabras sueltas, y se
+> confirmó por mutación que ahora sí detecta el estrechamiento (el mismo mutante que antes
+> pasaba en silencio ahora aborta la migración con `RAISE EXCEPTION`). Tres mutantes
+> adicionales que el reviewer dejó constancia de que sobreviven y son equivalentes —quitar
+> `v_actor_role IS NULL`, quitar `operator_id = v_operator`, o quitar `deleted_at IS NULL`
+> del lookup de `public.users`— no se tocaron: son defensa en profundidad idéntica a los
+> cuatro precedentes, y el caso que cubrirían (`v_operator` no NULL pero sin fila viva) es
+> inalcanzable porque `get_operator_id()` ya resuelve por una fila viva de `auth.uid()`.
+>
+> QA: n/a por capa. Es un guard de backend sobre una RPC que hoy no tiene ningún caller en
+> el frontend con `p_status='lost'` — la pantalla que lo llamaría es la fase 3b, bloqueada
+> por diseño (`git grep 'LOST_REQUIRES_OPERATIONS_MANAGER' -- apps/frontend` sin resultados).
+> No hay E2E que inventar aquí; el juez `sql` (pgTAP local) es la capa que corresponde y ya
+> está verde arriba.
+>
+> Downstream: revisado spec-86-discrepancias-de-recepcion.md — su fase 2b (`[blocked]`)
+> tenía un párrafo, escrito antes de que existiera esta fase 3a (PR #664), que afirmaba que
+> el guard de rol no existía y que la 2b estaba bloqueada por eso. Corregido en
+> `fix/spec-85-fase-3a-seguimiento`: el guard existe y qué roles admite; la 2b sigue
+> `[blocked]`, pero sólo por la decisión de producto sobre el efecto aguas abajo, no por
+> falta de guard. También se anotó en fase 3b (esta misma spec) el hueco pendiente de
+> traducción al español del centinela `LOST_REQUIRES_OPERATIONS_MANAGER:` y de
+> ocultar/deshabilitar la acción en la UI para roles no autorizados — hoy sin caller, así que
+> radio de impacto cero, pero documentado donde se va a necesitar.
 
 ### Fase 3b — La pantalla y el workflow de indemnización `[blocked]`
 
@@ -682,6 +728,20 @@ Bloqueada por diseño, no por dependencia técnica. Falta decidir:
       discrepancia es el único registro.
 - [ ] **Si se abre una fila de `exceptions` con `settlement_id`**, o el enganche de
       indemnización es otro. La tabla ya reserva una referencia nullable para esto.
+- [ ] **Handoff del guard de fase 3a, pendiente para cuando exista un caller.**
+      `resolve_discrepancy` lanza `LOST_REQUIRES_OPERATIONS_MANAGER:` **en inglés** —
+      distinto de los cuatro precedentes citados en `20260913000005` (`cancel_pickup_route`
+      y compañía), que lanzan su mensaje en español porque el hook que los llama
+      (`useCancelPickupRoute.ts` y equivalentes) re-lanza `SQLERRM` literal. Hoy
+      (`git grep 'DISCREPANCY_ALREADY_RESOLVED\|RESOLUTION_REQUIRED' -- apps/frontend` sin
+      resultados) no existe ningún mapeador de los centinelas de `resolve_discrepancy` en el
+      frontend — radio de impacto cero porque no hay caller todavía. Cuando esta fase
+      construya la pantalla, el hook que llame a `resolve_discrepancy(..., 'lost', ...)`
+      necesita: (a) traducir `LOST_REQUIRES_OPERATIONS_MANAGER:` (y los demás centinelas de
+      esta RPC) al español antes de mostrarlo, en vez de re-lanzar `SQLERRM`; y (b) ocultar o
+      deshabilitar la acción «declarar perdido» en la UI para cualquier rol que no sea
+      `operations_manager`/`admin`/`super_admin`, no depender sólo del rechazo 42501 del
+      backend como única defensa.
 
 ---
 
