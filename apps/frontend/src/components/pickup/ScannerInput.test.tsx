@@ -122,4 +122,41 @@ describe('ScannerInput', () => {
     expect(onScan).toHaveBeenCalledTimes(1);
     expect(onScan).toHaveBeenCalledWith('CTN12345');
   });
+
+  it('does not double-submit when Enter arrives after the debounce already auto-submitted (spec-54 race)', () => {
+    // Same production race as ScanField.test.tsx: fireScan runs from both
+    // the debounce timer and the Enter keydown handler with no guard
+    // between them today, so a debounce fire followed by a still-attached
+    // Enter keydown (the gap plausible under load, e.g. two Playwright
+    // round trips) submits the same code twice.
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScannerInput onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CTN99999' } });
+    // Outside act() on purpose — leaves the debounce fire's setValue('')
+    // uncommitted when the Enter keydown below runs.
+    vi.advanceTimersByTime(150);
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith('CTN99999');
+  });
+
+  it('still submits two distinct scans in a row after the race guard fires', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScannerInput onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CTN00001' } });
+    act(() => vi.advanceTimersByTime(150));
+    fireEvent.change(input, { target: { value: 'CTN00002' } });
+    act(() => vi.advanceTimersByTime(150));
+
+    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenNthCalledWith(1, 'CTN00001');
+    expect(onScan).toHaveBeenNthCalledWith(2, 'CTN00002');
+  });
 });

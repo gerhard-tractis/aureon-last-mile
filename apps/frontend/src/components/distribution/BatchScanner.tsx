@@ -22,17 +22,31 @@ export function BatchScanner({ onScan, lastResult, disabled }: BatchScannerProps
     }
   }, [disabled, lastResult]);
 
+  // spec-54 race guard — see ScanField.tsx for the full explanation. The
+  // auto-submit debounce and the Enter keydown handler both call fireScan()
+  // with the same code; without this, a debounce fire whose setValue('')
+  // hasn't committed yet when Enter's keydown arrives lets the still-stale
+  // closure submit the same scan a second time.
+  const submittedRef = useRef(false);
+
   const fireScan = (submitValue: string) => {
     if (disabled || !submitValue.trim()) return;
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     autoSubmit.reset();
-    onScan(submitValue.trim());
-    setValue('');
-    setTimeout(() => inputRef.current?.focus(), 50);
+    try {
+      onScan(submitValue.trim());
+    } finally {
+      setValue('');
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
   };
 
   const autoSubmit = useScannerAutoSubmit(fireScan);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Re-arm unconditionally on every keystroke — see ScanField.tsx.
+    submittedRef.current = false;
     setValue(e.target.value);
     autoSubmit.handleValueChange(e.target.value);
   };
