@@ -44,11 +44,23 @@ jobs:
       # older migrations that predate this guard and legitimately mix DDL
       # with a top-level backfill; scanning the whole history would reject
       # the build forever on files nobody is touching.
+      # m10 (review round 1): the merge queue dispatches `merge_group`, not
+      # `pull_request` — `github.event.pull_request.base.sha` is empty
+      # there, so this used to silently exit 0 on the exact run that gates
+      # the merge queue's required check. Fall back to
+      # `github.event.merge_group.base_sha`, then to `github.event.before`
+      # (a plain branch push) — only skip when none of the three exist.
       - name: Check new migrations for unsafe patterns
         run: |
           BASE="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE" ]; then
-            echo "No es un pull_request; este guard compara contra el base del PR. Saltando."
+            BASE="${{ github.event.merge_group.base_sha }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="${{ github.event.before }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "No hay base determinable (ni pull_request, ni merge_group, ni push con before) — saltando."
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true

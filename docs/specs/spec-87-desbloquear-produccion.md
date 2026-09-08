@@ -400,9 +400,11 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 > adversarial y QA antes de `[done]`.
 
 **Archivos:** `scripts/check-migration-safety.sh` (wrapper) + `scripts/check-migration-safety.mjs`
-(lógica) + `scripts/check-migration-safety.test.sh`/`-index.test.sh`/`-unique.test.sh`/
-`-real.test.sh` (suite partida en 4, cada una bajo 300 líneas, como `check-quarantine*.test.sh`),
-cableado en `ci.yml`.
+(reglas 2/3 + CLI) + `scripts/check-migration-safety-rule1.mjs` (regla 1, ronda 1) +
+`scripts/check-migration-safety-git.mjs` (git diff/show, ronda 1) +
+`scripts/check-migration-safety.test.sh`/`-index.test.sh`/`-unique.test.sh`/`-real.test.sh`
+(suite partida en 4, cada una bajo 300 líneas, como `check-quarantine*.test.sh`), cableado en
+`ci.yml`.
 
 - [x] Rechazar una migración que mezcle **DDL y un backfill no acotado** en el mismo fichero. Son dos cosas con perfiles de riesgo opuestos: el esquema es rápido y debe ir en el deploy; el backfill es lento y debe ir aparte. Distingue un `UPDATE`/`INSERT ... SELECT` **a nivel superior** de uno dentro de `CREATE FUNCTION … $$ … $$` (blanquea el cuerpo dollar-quoted antes de buscar) — el patrón de `20260909000001` (spec-79: función con `UPDATE` dentro, nunca invocada) **no se marca peligroso**, confirmado corriendo el script contra las 12 migraciones reales.
 - [x] Avisar (`::warning::`, nunca `exit 1`) ante `CREATE INDEX`/`CREATE UNIQUE INDEX` sin `CONCURRENTLY` sobre tablas grandes conocidas (`packages`, `orders`, `dispatches`, `routes`). Corrido contra las 12: avisa exactamente sobre `20260909000001` (packages) y `20260911000002` (routes) — las dos que fase 3 ya marcó "medio" riesgo por esta misma razón.
@@ -433,6 +435,95 @@ ninguno más.
 
 **No verificado por este agente:** review adversarial (lo hace `reviewer`) y `gh pr checks`/merge
 (los confirma el orquestador tras abrir el PR).
+
+**Ronda de arreglos 1 (post-review, PR #672 → seguimiento, aditivo, sin revert).** El review
+confirmó `stripDollarQuotedBodies` y las 5 aserciones cableadas de verdad, pero encontró la
+regla 1 (la única bloqueante) ciega a la forma en que este repo escribe backfills, más 8
+hallazgos menores. Todos corregidos con RED real primero:
+
+- **B1** — un `UPDATE` dentro de un `DO $$ ... $$` de nivel superior SÍ corre en el deploy, a
+  diferencia de un cuerpo de función; blanquear los dos por igual (el `stripDollarQuotedBodies`
+  original) lo escondía. Nueva `stripFunctionBodies` sólo blanquea cuerpos precedidos de `AS`
+  (`CREATE FUNCTION`/`PROCEDURE`); un `DO $$` (precedido de `DO`, sin `AS`) queda visible.
+- **B2** — declarar una función es inerte, pero declarar **e invocar** en el mismo fichero corre
+  el backfill al deploy. `findInvokedBackfillFunction` detecta el patrón y rechaza.
+- **B3** — un `$$` dentro de un comentario `-- ...` emparejaba con el `$$` real de una función y
+  blanqueaba el `ALTER TABLE` de por medio. Los comentarios se despojan **antes** del parseo
+  dollar-quoted, no después.
+- **B4** — `--diff-filter=A` no veía una migración **editada** (16 eventos `M` reales desde
+  junio). Ahora `--diff-filter=AMR`; un fichero **modificado** cuya violación ya existía en
+  `base` se degrada a `::warning::` (no bloquea); una violación **nueva** introducida por la
+  edición sí bloquea.
+- **M5** — el mensaje decía "no acotado" pero la regla rechazaba cualquier `UPDATE` de nivel
+  superior, incluida una fila única por `id`. `isBoundedUpdateStatement` acota el rechazo a un
+  `WHERE` sin `id = '<literal>'` como única condición.
+- **M6** — el guardia de la regla 3 buscaba `SELECT COUNT(*)` en cualquier punto anterior del
+  fichero; un `COUNT(*)` de una función sin relación lo satisfacía. Ahora usa el `IF` **más
+  cercano** al índice y exige que no esté ya cerrado (`END IF`) antes de llegar al índice.
+- **m7** — la ventana de 80 caracteres tras `CREATE TABLE` contaba una columna o un
+  `REFERENCES` con el mismo nombre que la tabla del índice como "creada aquí". Ahora exige que
+  `CREATE TABLE` nombre exactamente esa tabla.
+- **m8** — `ON "public"."packages"` (ambas partes citadas) se leía como tabla `public`; el
+  regex de statement exigía `;` y perdía la última sentencia sin punto y coma. Corregidos ambos.
+- **m9** — las reglas 2/3 corrían sobre texto con comentarios; un `-- ...` con "CREATE UNIQUE
+  INDEX" en prosa emitía un warning falso (caso real: `20260903000003`). Ahora corren sobre
+  texto sin comentarios.
+- **m10** — el guard no calculaba una base en `merge_group` ni en `push` (`github.event
+  .pull_request.base.sha` vacío ahí) y salía 0 sin comprobar nada. `ci.yml` ahora intenta
+  `pull_request.base.sha` → `merge_group.base_sha` → `push` (`github.event.before`) antes de
+  saltar.
+- **m11** — el fallback de tres-puntos/dos-puntos nunca se ejercitaba de verdad en CI (con
+  `checkout@v4` a profundidad 1, el tres-puntos siempre falla). Se quitó el intento de
+  tres-puntos: un único método de dos puntos, el mismo patrón que `check-spec-fields.sh`.
+- **m12** — el test de las 12 migraciones reales degradaba a `skip` (exit 0) si el directorio
+  cambiaba de sitio — la forma exacta del fallo de la fase 1. Ahora es `FAIL`.
+- **m13** — eran 9 migraciones viejas rechazadas, no 8 (`20260304000001` faltaba en el conteo
+  original).
+- **Visibilidad** — pendiente: los `::warning::` siguen sin `file=`/`line=`; anotado como hueco
+  abierto, no bloqueante (regla 2/3 nunca fallan el build).
+
+**Hallazgo NO implementado, a propósito** (dictamen del reviewer): el `REVOKE` por firma que no
+alcanza a un overload nuevo pertenece a la capa pgTAP (una aserción sobre `pg_proc` × privilegios
+por firma), no a este script textual y por fichero. Vive fuera de esta fase.
+
+**Efecto colateral real, no un bug:** al arreglar B1 (visibilidad de `DO $$`) y B2
+(declarar+invocar), el veredicto contra las 12 migraciones de fase 3 cambió: `20260913000001`
+(spec-85, `CREATE TABLE discrepancies` + `CREATE FUNCTION spec85_backfill_discrepancy_notes()`
+declarada e invocada con `SELECT public.spec85_backfill_discrepancy_notes();` de nivel superior)
+ahora se rechaza — exactamente el patrón B2 existe para atrapar. Ya corrió y funcionó en
+producción (el backfill llena una tabla recién creada, vacía); no es una regresión de
+seguridad, es la regla viendo un caso real que antes no veía. No bloquea nada retroactivamente
+porque CI sólo mira `--base` (ficheros nuevos del PR). Al arreglar M5 (UPDATE acotado por
+`id`), `20260304000001` deja de rechazarse — es literalmente un seed de una sola fila por
+`WHERE id = '<uuid>'`, no un backfill.
+
+**Vuelto a correr contra las 194 migraciones del repo tras cada cambio:** `20260909000001`
+sigue sin marcarse (criterio de no-regresión), y `20260810000002` ahora **sí** se marca — tenía
+un `CREATE TEMP TABLE` de staging + un `UPDATE` no acotado dentro del mismo `DO $$` de nivel
+superior (`DDL_RE` no reconocía `CREATE TEMP TABLE`, sólo `CREATE TABLE`; corregido). Verdicto
+final: 11 migraciones viejas rechazadas (9 originales − 1 por M5 + 2 por B1 + 1 por B2).
+
+**Mutation-testing, ronda 1** (desactivar cada regla/exclusión nueva → correr la suite → ver el
+flip esperado y **sólo** en los tests que le tocan → revertir): B1, B2, B3 (parcial — ver nota
+abajo), B4 (`--diff-filter` y `rejectedAtBase`), M5, M6 (mutante equivalente: la búsqueda del
+"último `IF` sin cerrar" ya blinda el resultado incluso con la primera coincidencia de
+`COUNT(*)` en vez de la más cercana — documentado, no un hueco), m7, m8, m9, DDL_RE
+(`CREATE TEMP TABLE`) — cada mutante murió exactamente en los tests de su hallazgo, ninguno más.
+**Nota sobre B3:** el mutante de "orden invertido" aislado no reprodujo el fallo original,
+porque el chequeo `AS`-token de `stripFunctionBodies` (fix de B1) ya actúa como red de
+seguridad incidental contra un `$$` de comentario desalineado — el orden correcto de
+comment-stripping-primero se mantiene por ser semánticamente correcto, y el RED original (con
+el código real pre-fix, algoritmo Y orden viejos juntos) sí reprodujo el bug tal cual lo
+describió el review.
+
+**Reorganización de ficheros (regla del repo: <300 líneas):** `check-migration-safety.mjs`
+creció a 504 líneas tras estos cambios. Partido en tres: `check-migration-safety-rule1.mjs`
+(regla 1 completa), `check-migration-safety-git.mjs` (listado de ficheros + diff/show de git),
+`check-migration-safety.mjs` (reglas 2/3 + CLI/orquestación, 239 líneas). Mismo patrón que
+`check-quarantine*.test.sh`.
+
+**No verificado por este agente (ronda 1):** review adversarial de esta ronda y `gh pr
+checks`/merge (los confirma el orquestador tras abrir el PR, sin auto-merge).
 
 ---
 

@@ -129,6 +129,52 @@ COMMIT;
 SQL
 assert_not_contains "::warning::" "does not warn about a CREATE UNIQUE INDEX on a table created in the same file" accept-unique-index-new-table
 
+# ── M6 (review round 1): the guard search was global to the file and
+# trivial to satisfy — any COUNT(*) anywhere earlier, followed by any IF
+# anywhere later, "guarded" an unrelated CREATE UNIQUE INDEX further down.
+write_fixture warn-unique-index-unrelated-guard-does-not-count <<'SQL'
+BEGIN;
+
+CREATE OR REPLACE FUNCTION public.unrelated_helper() RETURNS BIGINT
+LANGUAGE plpgsql AS $fn$
+DECLARE
+  v_count BIGINT;
+BEGIN
+  SELECT COUNT(*) INTO v_count FROM public.orders WHERE deleted_at IS NULL;
+  IF v_count > 0 THEN
+    RAISE NOTICE 'orders present';
+  END IF;
+  RETURN v_count;
+END;
+$fn$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_return_receptions_session
+  ON public.return_receptions (session_id)
+  WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_contains "no preceding COUNT" "an unrelated function's own COUNT(*)+IF does not guard a later, unrelated CREATE UNIQUE INDEX" warn-unique-index-unrelated-guard-does-not-count
+
+# ── m7 (review round 1): the "created in this file" check used an 80-char
+# window instead of matching the actual table name after CREATE TABLE, so
+# a column happening to share the index's table name silenced the guard.
+write_fixture warn-unique-index-column-name-collision <<'SQL'
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.routes_audit (
+  id UUID PRIMARY KEY,
+  routes TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_routes_audit_id
+  ON public.routes (id)
+  WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_contains "no preceding COUNT" "a column named like the index's table does not count as the table being created in this file" warn-unique-index-column-name-collision
+
 echo ""
 echo "check-migration-safety.sh (rule 3): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
