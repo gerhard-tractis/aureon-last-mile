@@ -95,6 +95,20 @@ vi.mock('@/lib/offline/queue', () => ({
   enqueue: (...args: unknown[]) => mockEnqueue(...args),
 }));
 
+// Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1 y
+// menor 5) — `5f` no montaba ningún indicador de bloqueo ni afordancia de
+// reintento; es justo la pantalla que hace la promesa "se sube al recuperar
+// señal".
+const mockUseSyncQueue = vi.fn();
+vi.mock('@/hooks/useSyncQueue', () => ({
+  useSyncQueue: (...args: unknown[]) => mockUseSyncQueue(...args),
+}));
+
+const mockRetryBlockedManifest = vi.fn();
+vi.mock('@/hooks/useOfflineQueue', () => ({
+  retryBlockedManifest: (...args: unknown[]) => mockRetryBlockedManifest(...args),
+}));
+
 describe('CompletionPage', () => {
   beforeEach(() => {
     mockUsePickupScans.mockReturnValue({
@@ -105,6 +119,14 @@ describe('CompletionPage', () => {
     });
     mockUseMissingPackages.mockReturnValue({
       data: [{ id: 'pkg1', label: 'PKG-001' }],
+    });
+    mockUseSyncQueue.mockReturnValue({
+      status: 'online',
+      queuedCount: 0,
+      blockedCount: 0,
+      recent: [],
+      retryNow: vi.fn(),
+      isRetrying: false,
     });
   });
 
@@ -160,6 +182,55 @@ describe('CompletionPage', () => {
         'Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.',
       ),
     ).toBeInTheDocument();
+  });
+
+  // Menor 1, ronda 4 de review del PR #679 — el test anterior sólo hacía
+  // `findByText` de la línea, sin comprobar su posición: mover el bloque
+  // debajo de la firma habría pasado igual, y "antes de firmar" era el
+  // criterio del propio mock (`docs/design/Recogida.dc.html`). Ancla el
+  // orden con `compareDocumentPosition`.
+  it('places the offline-safety line before the operator SignaturePad in document order', async () => {
+    render(<CompletionPage />);
+    const line = await screen.findByText(
+      'Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.',
+    );
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+
+    // Bit 4 (DOCUMENT_POSITION_FOLLOWING) set on sigPad relative to line
+    // means line comes first in the document.
+    expect(line.compareDocumentPosition(sigPad) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1 y
+  // menor 5) — `5f` monta ahora un indicador de bloqueo con reintento, igual
+  // que `PickupFlowHeader` en `5c`.
+  describe('blocked entries (B-1, menor 5, ronda 4 de review del PR #679)', () => {
+    it('shows nothing extra when nothing is blocked', async () => {
+      render(<CompletionPage />);
+      await screen.findByText('Firma y finalización');
+      expect(screen.queryByTestId('blocked-badge')).not.toBeInTheDocument();
+    });
+
+    it('shows a retryable blocked indicator when something is blocked, and retries on tap', async () => {
+      mockUseSyncQueue.mockReturnValue({
+        status: 'online',
+        queuedCount: 0,
+        blockedCount: 1,
+        recent: [],
+        retryNow: vi.fn(),
+        isRetrying: false,
+      });
+      render(<CompletionPage />);
+
+      const badge = await screen.findByTestId('blocked-badge');
+      expect(badge).toHaveTextContent(/requiere ayuda/i);
+
+      fireEvent.click(badge);
+
+      await waitFor(() => {
+        expect(mockRetryBlockedManifest).toHaveBeenCalledWith('op-1', 'm1');
+      });
+    });
   });
 
   it('renders Spanish checkbox label', async () => {

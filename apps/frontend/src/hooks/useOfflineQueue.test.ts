@@ -16,7 +16,8 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { db } from '@/lib/db';
 import { enqueue, listPending } from '@/lib/offline/queue';
 import * as queueLib from '@/lib/offline/queue';
-import { useOfflineQueue, type OfflineQueueSender } from './useOfflineQueue';
+import * as queueBlockingLib from '@/lib/offline/queue-blocking';
+import { useOfflineQueue, MAX_RETRY_ATTEMPTS, type OfflineQueueSender } from './useOfflineQueue';
 
 const OPERATOR_A = 'operator-a';
 const USER_A = 'user-a';
@@ -67,10 +68,18 @@ describe('useOfflineQueue', () => {
 
     renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
-    await waitFor(async () => {
-      const pending = await listPending(db, OPERATOR_A);
-      expect(pending).toHaveLength(0);
-    });
+    // M-3, ronda 4 de review del PR #679 — uno de los 4 tests que fallaron
+    // bajo caché fría + contención alta (2/5 ejecuciones de los 10 ficheros
+    // del área juntos). Mismo ensanche que M6/M5 en este mismo archivo, misma
+    // razón: contención de CPU entre ficheros en paralelo, no el mecanismo
+    // bajo prueba.
+    await waitFor(
+      async () => {
+        const pending = await listPending(db, OPERATOR_A);
+        expect(pending).toHaveLength(0);
+      },
+      { timeout: 5_000 },
+    );
 
     expect(sentOrder).toEqual([
       first.clientOperationId,
@@ -381,15 +390,48 @@ describe('useOfflineQueue', () => {
     const { result } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     // Mount's own drain pass produces the first failure for real.
-    await waitFor(async () => {
-      const stored = await db.pickup_queue.get(first.id!);
-      expect(stored?.retryCount).toBe(1);
-    });
+    //
+    // M-3, ronda 4 de review del PR #679 — este test aparece en la lista de
+    // 4 fallando bajo caché fría + contención alta (los 10 ficheros del área
+    // juntos, 2/5 ejecuciones). Diagnosticado, no etiquetado "flaky": el
+    // trabajo real aquí (fake-indexeddb) es de escala de microtarea, pero el
+    // `waitFor` de la línea de abajo usaba el timeout por defecto (1000ms) —
+    // el mismo margen que M6 (más abajo en este archivo) ya había tenido que
+    // ensanchar por la misma razón (contención de CPU entre ficheros de test
+    // corriendo en paralelo bajo `--pool=forks`, no un fallo del mecanismo
+    // bajo prueba). Mismo ensanche, misma razón.
+    await waitFor(
+      async () => {
+        const stored = await db.pickup_queue.get(first.id!);
+        expect(stored?.retryCount).toBe(1);
+      },
+      { timeout: 5_000 },
+    );
 
-    // Drive the rest of the retries directly through `drainNow`, clearing
-    // the backoff each time instead of waiting real wall-clock seconds for
-    // it — this test asserts the CAP exists, not the backoff timing (that's
-    // M2's test).
+    // M-3, ronda 4 de review del PR #679 — diagnóstico del fallo real (no
+    // sólo "flaky"): la primera falla de mount deja un `setTimeout` REAL de
+    // 1000ms vivo (`scheduleRetry`, `nextBackoffAt(0)`), y nada lo cancela
+    // hasta desmontar. Con 9 vueltas más de `drainNow()` conduciendo el
+    // resto de los reintentos —cada una rápida en circunstancias normales,
+    // pero bajo la contención de CPU real de correr los 10 ficheros del área
+    // en paralelo, el conjunto puede tardar más de esos 1000ms—, ese timer
+    // de fondo puede disparar A MITAD del bucle manual, competir por
+    // `drainingRef` con la llamada manual en curso, y hacer que esa vuelta
+    // sea un no-op (`rerunRequestedRef` en vez de una pasada real) — 9
+    // oportunidades de colisión eran, medido, suficientes para que 20
+    // vueltas no bastaran siempre. La costura no es el techo (correcto), es
+    // que esta prueba dependía de 9 pasadas reales sucesivas SIN colisión.
+    //
+    // Arreglo real: sembrar `retryCount` cerca del techo directamente reduce
+    // a UNA sola pasada real necesaria — el propio test ya declara que mide
+    // "que el techo existe, no el temporizado del backoff" (comentario
+    // original de M2), así que conducir cada paso intermedio nunca fue parte
+    // de lo que esto necesitaba probar. El bucle de abajo sigue siendo una
+    // red de seguridad (idempotente si una vuelta se pierde por la misma
+    // colisión), pero ahora sólo necesita UNA vuelta que sí llegue a
+    // ejecutarse de verdad, no nueve.
+    await db.pickup_queue.update(first.id!, { retryCount: MAX_RETRY_ATTEMPTS - 1 });
+
     for (let i = 0; i < 20; i++) {
       const stored = await db.pickup_queue.get(first.id!);
       if (stored?.status === 'dead') break;
@@ -421,10 +463,16 @@ describe('useOfflineQueue', () => {
 
     renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
-    await waitFor(async () => {
-      const stored = await db.pickup_queue.get(first.id!);
-      expect(stored?.status).toBe('dead');
-    });
+    // M-3, ronda 4 de review del PR #679 — uno de los 4 tests que fallaron
+    // bajo caché fría + contención alta. Mismo ensanche, misma razón que los
+    // otros tres en este archivo.
+    await waitFor(
+      async () => {
+        const stored = await db.pickup_queue.get(first.id!);
+        expect(stored?.status).toBe('dead');
+      },
+      { timeout: 5_000 },
+    );
 
     // Give the drainer every chance to (wrongly) keep going past the dead
     // entry — if it does, `close_manifest` would show up in sentOrder.
@@ -785,6 +833,200 @@ describe('useOfflineQueue', () => {
       renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
       await waitFor(() => expect(sent).toEqual([aEntry.clientOperationId]));
+    });
+  });
+
+  // Ronda 4 de review del PR #679 — las cuatro mediciones del reviewer,
+  // reproducidas como tests deterministas ANTES de arreglar (ver el reporte
+  // de la ronda). Los cuatro fallaban contra el código de la ronda 3.
+  describe('ronda 4 — reproducciones deterministas de E1-E4', () => {
+    const USER_B = 'user-b';
+
+    // E1 — costura 2. Medido por el reviewer: "listPending passes in 1s: 90
+    // sends: 0". Escenario exacto: A encola en M y su entrada queda
+    // `sending` (pestaña muerta a mitad de envío); B drena lo suyo en M y
+    // falla una vez (backoff vencido). `reclaimStale` (corre en el drain()
+    // de B, no filtra por usuario) devuelve la entrada de A a `pending`, y
+    // pasa a ser cabeza del FIFO — todavía "fresca" para el reclamo
+    // cross-user (`CROSS_USER_RECLAIM_MS`), así que sigue bloqueando a B.
+    // Sin costura 2 cerrada, el filtro de `remaining`/`soonest` sólo miraba
+    // `manifestHasDeadEntry` (no este bloqueo), así que el backoff ya
+    // vencido de la entrada de B seguía alimentando `soonest` con
+    // `delay === 0` en cada pasada — spin sin techo.
+    it('E1 — a manifest blocked by manifestBlockedForUser (not dead) does not busy-loop the retry scheduler', async () => {
+      const aStuck = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'A-STUCK' },
+      });
+      await db.pickup_queue.update(aStuck.id!, {
+        status: 'sending',
+        claimToken: 'zombie-token',
+        // Older than RECLAIM_STALE_MS (90s) so reclaimStale recovers it —
+        // but nowhere near CROSS_USER_RECLAIM_MS (15min), so it keeps
+        // blocking B once reclaimed back to `pending`.
+        lastAttemptAt: new Date(Date.now() - 91_000).toISOString(),
+      });
+      const bOwn = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_B,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'B-OWN' },
+      });
+      // B's own entry already failed once, with an expired backoff — the
+      // exact fuel that fed the busy loop before costura 2 closed.
+      await db.pickup_queue.update(bOwn.id!, {
+        nextAttemptAt: new Date(Date.now() - 1_000).toISOString(),
+        retryCount: 1,
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      // `listPending`, not `manifestHead` — `drain()` calls `listPending`
+      // directly, in both the pre-costura-2 and post-costura-2 code, once
+      // per pass to build `pending`/`remaining`. A pass count that spikes
+      // under the bug and stays low after the fix shows up here regardless
+      // of which internal helper the blocking check itself happens to call
+      // — spying on `manifestHead` specifically would silently read 0 under
+      // the OLD code (it doesn't exist there) and prove nothing.
+      const listPendingSpy = vi.spyOn(queueLib, 'listPending');
+      void queueBlockingLib;
+
+      const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_B, send));
+
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      unmount();
+
+      // Never touches anything — B is blocked behind A's (still-fresh)
+      // entry the whole time.
+      expect(send).not.toHaveBeenCalled();
+      // Reviewer's own bound (measured ~45 passes/s under the bug): a
+      // correct drainer settles after a handful of passes instead of
+      // spinning at delay=0.
+      expect(listPendingSpy.mock.calls.length).toBeLessThan(15);
+    });
+
+    // E2 — M-1. Medido por el reviewer: "sends after unmount: [ 'S1', 'S2',
+    // 'close' ]" — el bucle `for(;;)` de `drainManifest` no consultaba
+    // `mountedRef`, así que seguía enviando el resto del manifiesto después
+    // de que el componente se desmontara (cerrar sesión).
+    it("E2 — unmounting mid-manifest stops the drain loop before the next entry ever sends", async () => {
+      const { first, second, close } = await seed();
+      const sentIds: string[] = [];
+      let unmountFn: (() => void) | undefined;
+      const send: OfflineQueueSender = vi.fn(async (entry) => {
+        sentIds.push(entry.clientOperationId);
+        if (entry.clientOperationId === first.clientOperationId) {
+          // Unmount right as the first entry's send is about to resolve —
+          // before `drainManifest`'s loop gets a chance to claim `second`.
+          unmountFn?.();
+        }
+        return { outcome: 'sent' };
+      });
+
+      const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+      unmountFn = unmount;
+
+      await waitFor(() => expect(sentIds).toContain(first.clientOperationId));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      expect(sentIds).toEqual([first.clientOperationId]);
+      void second;
+      void close;
+    });
+
+    // E3 — M-1, seguimiento. Medido por el reviewer: un `online` que llega
+    // MIENTRAS `drain()` sigue en vuelo marca `rerunRequestedRef`; el
+    // `finally` ejecutaba esa pasada nueva SIN mirar si el componente ya se
+    // había desmontado — recogiendo incluso entradas encoladas DESPUÉS del
+    // desmontaje, con el `send` (JWT) de la sesión que acaba de cerrar.
+    it('E3 — a rerun requested mid-drain does not run after unmount, even for entries enqueued later', async () => {
+      const { first } = await seed();
+      let releaseFirst: (() => void) | undefined;
+      const gate = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const send: OfflineQueueSender = vi.fn(async (entry) => {
+        if (entry.clientOperationId === first.clientOperationId) {
+          // Marks rerunRequestedRef: drain() is still in flight (drainingRef
+          // is true) when this online event fires.
+          window.dispatchEvent(new Event('online'));
+          await gate;
+        }
+        return { outcome: 'sent' };
+      });
+
+      const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+      await waitFor(() => expect(send).toHaveBeenCalled());
+
+      unmount();
+      releaseFirst?.();
+
+      const afterUnmount = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'AFTER-UNMOUNT' },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 150));
+
+      expect(send).not.toHaveBeenCalledWith(
+        expect.objectContaining({ clientOperationId: afterUnmount.clientOperationId }),
+      );
+    });
+
+    // E4 — costura 1. Medido por el reviewer: 149s de backoff real (10
+    // intentos) bastan para que una caída de señal en el muelle agote
+    // `MAX_RETRY_ATTEMPTS` y `markDead` bloquee el manifiesto entero — la
+    // promesa de `5f` ("se sube al recuperar señal") se vuelve falsa. Aquí
+    // se conduce el mismo número de fallos vía `drainNow` (mismo patrón que
+    // el test de M5 para el techo), pero con `outcome: 'offline'` en vez de
+    // `'retry'`.
+    it('E4 — a sustained offline outage never dead-letters the entry, and it drains once signal returns', async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+      let offline = true;
+      const send: OfflineQueueSender = vi.fn(async () =>
+        offline
+          ? { outcome: 'offline', reason: 'Sin conexión. Se subirá al recuperar señal.' }
+          : { outcome: 'sent' },
+      );
+
+      const { result } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      await waitFor(async () => {
+        const stored = await db.pickup_queue.get(entry.id!);
+        expect(stored?.retryCount).toBe(1);
+      });
+
+      // Drive well past MAX_RETRY_ATTEMPTS (10) worth of offline failures.
+      for (let i = 0; i < 14; i++) {
+        const stored = await db.pickup_queue.get(entry.id!);
+        if (stored?.status === 'dead') break;
+        await db.pickup_queue.update(entry.id!, { nextAttemptAt: null });
+        await result.current.drainNow();
+      }
+
+      const afterOutage = await db.pickup_queue.get(entry.id!);
+      expect(afterOutage?.status).toBe('pending');
+      expect(afterOutage?.retryCount).toBeGreaterThanOrEqual(10);
+
+      // Signal returns — it must actually drain, exactly as `5f` promises.
+      offline = false;
+      await db.pickup_queue.update(entry.id!, { nextAttemptAt: null });
+      await result.current.drainNow();
+
+      const afterSignalReturns = await db.pickup_queue.get(entry.id!);
+      expect(afterSignalReturns).toBeUndefined(); // sent, then purged
     });
   });
 });

@@ -18,6 +18,7 @@ import {
   claimPending,
   markDead,
   reclaimStale,
+  retryDead,
 } from "./queue";
 
 const OPERATOR_A = "operator-a";
@@ -1078,6 +1079,72 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
+    });
+  });
+
+  // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —
+  // "el operario puede reintentar desde la app": el botón "REQUIERE AYUDA"
+  // de `PickupFlowHeader` devuelve las entradas `dead` de un manifiesto a
+  // `pending`, reseteando el contador de reintentos — la afordancia mínima
+  // que convierte "muerto" en "atascado", y lo que hace defendible el techo
+  // de `MAX_RETRY_ATTEMPTS` (si agotarlo fuera un callejón sin salida, el
+  // techo sería sólo un modo distinto de perder el escaneo).
+  describe("retryDead (B-1, ronda 4 de review del PR #679)", () => {
+    it("returns dead entries in a manifest to pending, with retryCount reset to 0", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await markDead(db, entry.id!, "PACKAGE_NOT_IN_MANIFEST");
+      await db.pickup_queue.update(entry.id!, { retryCount: 9 });
+
+      const count = await retryDead(db, OPERATOR_A, MANIFEST_1);
+      expect(count).toBe(1);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("pending");
+      expect(stored?.retryCount).toBe(0);
+      expect(stored?.nextAttemptAt).toBeNull();
+      expect(stored?.claimToken).toBeNull();
+    });
+
+    it("does not touch dead entries in a different manifest", async () => {
+      const inScope = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const otherManifest = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_2,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-2" },
+      });
+      await markDead(db, inScope.id!, "PACKAGE_NOT_IN_MANIFEST");
+      await markDead(db, otherManifest.id!, "PACKAGE_NOT_IN_MANIFEST");
+
+      await retryDead(db, OPERATOR_A, MANIFEST_1);
+
+      const untouched = await db.pickup_queue.get(otherManifest.id!);
+      expect(untouched?.status).toBe("dead");
+    });
+
+    it("does not touch non-dead entries in the same manifest", async () => {
+      const stillPending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      await retryDead(db, OPERATOR_A, MANIFEST_1);
+
+      const stored = await db.pickup_queue.get(stillPending.id!);
+      expect(stored?.status).toBe("pending");
+      expect(stored?.retryCount).toBe(0);
     });
   });
 

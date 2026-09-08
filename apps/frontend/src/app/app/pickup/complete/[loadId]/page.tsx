@@ -12,6 +12,8 @@ import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
+import { useSyncQueue } from '@/hooks/useSyncQueue';
+import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
 import { createSPAClient } from '@/lib/supabase/client';
 import { db } from '@/lib/db';
 import { enqueue } from '@/lib/offline/queue';
@@ -48,6 +50,14 @@ export default function CompletionPage() {
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Menor 5, ronda 4 de review del PR #679 — `5f` es la pantalla que hace la
+  // promesa "se sube al recuperar señal" (la línea estática de más abajo) y
+  // era la única del flujo de Recogida sin ningún indicador de bloqueo:
+  // `PickupFlowHeader` (montado en `5c`/scan) no vive aquí. Sin esto, un
+  // operario que llega a esta pantalla con algo ya bloqueado no tiene forma
+  // de saberlo ni de reintentar.
+  const sync = useSyncQueue(operatorId);
 
   useEffect(() => {
     if (!operatorId) return;
@@ -259,6 +269,22 @@ export default function CompletionPage() {
           sobre la mercancía.
         </p>
       </div>
+
+      {/* Menor 5, ronda 4 de review del PR #679 — ver el comentario junto a
+          `sync` más arriba. */}
+      {sync.blockedCount > 0 && (
+        <button
+          type="button"
+          data-testid="blocked-badge"
+          onClick={() => {
+            if (manifestId && operatorId) void retryBlockedManifest(operatorId, manifestId);
+          }}
+          className="flex w-full items-center justify-between gap-2 rounded-lg border border-status-error-border bg-status-error-bg p-3 text-left text-sm font-medium text-status-error-text"
+        >
+          <span>{sync.blockedCount} REQUIERE AYUDA</span>
+          <span className="text-xs font-normal">Toca para reintentar</span>
+        </button>
+      )}
 
       {/*
         Decisión del usuario, 2026-09-08 (ronda 3 de review del PR #679) —

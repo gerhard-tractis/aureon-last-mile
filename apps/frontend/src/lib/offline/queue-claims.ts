@@ -263,3 +263,29 @@ export async function markDead(
     .and((entry) => matchesClaim(entry, claimedAt) && entry.status !== "sent")
     .modify({ status: "dead", lastError: reason });
 }
+
+/**
+ * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —
+ * "el operario puede reintentar desde la app". Devuelve a `pending`, con el
+ * contador de reintentos a 0, toda entrada `dead` de UN manifiesto — nunca
+ * de todo el operador, para no reabrir el bloqueo de un manifiesto distinto
+ * que el operario no tiene delante. Es la afordancia mínima que convierte
+ * "muerto" en "atascado": sin ella, `MAX_RETRY_ATTEMPTS` (`useOfflineQueue.ts`)
+ * es un callejón sin salida más, no un techo defendible.
+ *
+ * `nextAttemptAt`/`claimToken` se limpian a `null` — sin backoff pendiente
+ * de antes de morir, listo para que el próximo `drain()` la recoja de
+ * inmediato en vez de esperar un retroceso calculado contra un fallo que ya
+ * se está reintentando a propósito.
+ */
+export async function retryDead(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+): Promise<number> {
+  return db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.manifestId === manifestId && entry.status === "dead")
+    .modify({ status: "pending", retryCount: 0, nextAttemptAt: null, claimToken: null });
+}

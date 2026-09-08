@@ -24,6 +24,11 @@ vi.mock('@/hooks/useSyncQueue', () => ({
   useSyncQueue: (...args: unknown[]) => mockUseSyncQueue(...args),
 }));
 
+const mockRetryBlockedManifest = vi.fn();
+vi.mock('@/hooks/useOfflineQueue', () => ({
+  retryBlockedManifest: (...args: unknown[]) => mockRetryBlockedManifest(...args),
+}));
+
 const mockToastError = vi.fn();
 vi.mock('sonner', () => ({
   toast: { error: (...args: unknown[]) => mockToastError(...args), success: vi.fn() },
@@ -91,8 +96,14 @@ vi.mock('@/components/pickup/ManifestDetailList', () => ({
 }));
 
 vi.mock('@/components/pickup/PickupFlowHeader', () => ({
-  PickupFlowHeader: (props: { queuedCount: number }) => (
-    <div data-testid="flow-header" data-queued-count={props.queuedCount} />
+  PickupFlowHeader: (props: { queuedCount: number; onRetryBlocked?: () => void }) => (
+    <div data-testid="flow-header" data-queued-count={props.queuedCount}>
+      {props.onRetryBlocked && (
+        <button data-testid="retry-blocked" onClick={props.onRetryBlocked}>
+          retry
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -189,6 +200,14 @@ describe('ScanningPage', () => {
       });
       render(<ScanningPage />);
       expect(screen.getByTestId('flow-header')).toHaveAttribute('data-queued-count', '27');
+    });
+
+    // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1)
+    // — "el operario puede reintentar desde la app".
+    it('calls retryBlockedManifest with the loaded manifest when the header requests a retry', async () => {
+      render(<ScanningPage />);
+      (await screen.findByTestId('retry-blocked')).click();
+      expect(mockRetryBlockedManifest).toHaveBeenCalledWith('op-1', 'm1');
     });
   });
 

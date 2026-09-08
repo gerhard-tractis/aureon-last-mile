@@ -7,6 +7,7 @@
  */
 
 import Dexie, { type EntityTable } from 'dexie';
+import { manifestIsBlocked } from './offline/queue-blocking';
 
 // Scan Queue Interface (Task 3.1)
 export interface ScanQueue {
@@ -159,12 +160,36 @@ export const db = new AureonOfflineDB();
  * necesita ayuda humana, y mezclarlo con lo reintentable lo disfrazaba de
  * éxito para siempre. Ver `getBlockedPickupCount`, su contador hermano.
  */
+/**
+ * M-2, ronda 4 de review del PR #679 — una entrada `pending` cuyo manifiesto
+ * está bloqueado (`manifestIsBlocked`: un `dead` en cualquier lugar, o un
+ * `pending`/`sending` fresco de otro usuario por delante) no cuenta aquí —
+ * pasa a `getBlockedPickupCount`. Sin esto, el badge "COLA N" pintaba en
+ * verde de éxito algo que no iba a salir hasta que el otro usuario volviera
+ * o pasaran `CROSS_USER_RECLAIM_MS` — la misma mentira que B3 corrigió para
+ * `dead` en la ronda 2 (B2 lo había movido de `dead` a `pending` en vez de
+ * eliminarlo), reintroducida por el bloqueo cross-user.
+ *
+ * `sending` siempre cuenta como pendiente (nunca bloqueada): es la entrada
+ * activamente en vuelo, no una que espera detrás de otra.
+ */
 export async function getPendingPickupCount(operatorId: string): Promise<number> {
-  return db.pickup_queue
+  const entries = await db.pickup_queue
     .where('operatorId')
     .equals(operatorId)
     .and((entry) => entry.status === 'pending' || entry.status === 'sending')
-    .count();
+    .toArray();
+
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.status === 'sending') {
+      count += 1;
+      continue;
+    }
+    const blocked = await manifestIsBlocked(db, operatorId, entry.manifestId, entry.userId);
+    if (!blocked) count += 1;
+  }
+  return count;
 }
 
 /**
@@ -175,11 +200,22 @@ export async function getPendingPickupCount(operatorId: string): Promise<number>
  * bloqueado, alguien tiene que intervenir".
  */
 export async function getBlockedPickupCount(operatorId: string): Promise<number> {
-  return db.pickup_queue
+  const entries = await db.pickup_queue
     .where('operatorId')
     .equals(operatorId)
-    .and((entry) => entry.status === 'dead')
-    .count();
+    .and((entry) => entry.status === 'dead' || entry.status === 'pending')
+    .toArray();
+
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.status === 'dead') {
+      count += 1;
+      continue;
+    }
+    const blocked = await manifestIsBlocked(db, operatorId, entry.manifestId, entry.userId);
+    if (blocked) count += 1;
+  }
+  return count;
 }
 
 /**

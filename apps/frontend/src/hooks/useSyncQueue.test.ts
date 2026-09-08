@@ -98,7 +98,16 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
 
     const { result } = renderHook(() => useSyncQueue('op-1'));
 
-    await waitFor(() => expect(result.current.queuedCount).toBe(3));
+    // M-3, ronda 4 de review del PR #679 — este test aparece en la lista de
+    // 4 fallando bajo caché fría + contención alta (los 10 ficheros del área
+    // juntos, 2/5 ejecuciones). Diagnosticado: `getPendingPickupCount`
+    // (`db.ts`) pasó de un único `count()` a una comprobación de bloqueo por
+    // entrada (`manifestIsBlocked`, costura 2 de esta ronda) — más rondas de
+    // IndexedDB por lectura, que bajo contención de CPU entre ficheros de
+    // test en paralelo pueden superar el timeout por defecto de `waitFor`
+    // (1000ms) sin que el mecanismo bajo prueba esté roto. Mismo ensanche
+    // que ya usan M5/M6 en `useOfflineQueue.test.ts` por la misma razón.
+    await waitFor(() => expect(result.current.queuedCount).toBe(3), { timeout: 5_000 });
     expect(result.current.scanQueueCount).toBe(1);
   });
 
@@ -173,10 +182,19 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     // A new pending entry arrives on this device (e.g. a fresh scan)
     // without any `online`/`offline` event firing — only the poll interval
     // (real time; `POLL_MS` = 2000ms) can pick it up.
+    //
+    // M-2, ronda 4 de review del PR #679 — deliberadamente en un manifiesto
+    // DISTINTO de la entrada `dead` (`manifest-2`, no `manifest-1`): un
+    // `dead` bloquea TODO el manifiesto que lo contiene
+    // (`manifestHasDeadEntry`, "deliberadamente permanente"), así que una
+    // entrada `pending` nueva en ESE MISMO manifiesto cuenta ahora, con
+    // razón, como bloqueada — no en cola. Ese es precisamente el
+    // comportamiento que M-2 pide; no lo que este test mide (que el polling
+    // recoge trabajo pendiente nuevo y sin bloquear).
     await db.pickup_queue.add({
       clientOperationId: 'client-op-new',
       operatorId: 'op-1',
-      manifestId: 'manifest-1',
+      manifestId: 'manifest-2',
       type: 'pickup_scan',
       payload: { barcode: 'SCAN-NEW' },
       status: 'pending',

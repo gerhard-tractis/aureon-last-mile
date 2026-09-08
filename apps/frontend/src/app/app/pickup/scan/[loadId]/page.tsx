@@ -10,6 +10,7 @@ import { ScanResultCard } from '@/components/pickup/ScanResultCard';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
+import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
 import { createSPAClient } from '@/lib/supabase/client';
 import { XCircle, Clock, ArrowLeft, Printer } from 'lucide-react';
 import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
@@ -229,6 +230,15 @@ export default function ScanningPage() {
           total={totalPackages}
           queuedCount={sync.queuedCount}
           blockedCount={sync.blockedCount}
+          // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679,
+          // B-1) — "el operario puede reintentar desde la app". Sólo se
+          // ofrece una vez que el manifiesto cargó: sin `manifestId` no hay
+          // a qué carga aplicar el reintento.
+          onRetryBlocked={
+            manifestId && operatorId
+              ? () => void retryBlockedManifest(operatorId, manifestId)
+              : undefined
+          }
         />
 
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />

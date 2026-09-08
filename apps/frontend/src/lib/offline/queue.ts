@@ -25,6 +25,7 @@ export {
   markFailed,
   markSent,
   reclaimStale,
+  retryDead,
 } from "./queue-claims";
 
 export interface EnqueueInput {

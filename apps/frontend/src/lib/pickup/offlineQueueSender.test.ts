@@ -131,7 +131,17 @@ describe('createPickupQueueSender — close_manifest', () => {
     }
   });
 
-  it('reports retry (not dead) on the postgrest-js network-fallback shape', async () => {
+  // Costura 1, ronda 4 de review del PR #679 — `offline` deja de colapsar en
+  // `'retry'`. El hook (`useOfflineQueue.ts`) necesitaba distinguir "el
+  // servidor devolvió algo raro" (transient, cuenta para MAX_RETRY_ATTEMPTS)
+  // de "el operario está en un sótano" (offline, no debe agotar el techo de
+  // reintentos) — el sender ya clasificaba las dos formas por separado
+  // (`classifyCloseManifestError`); colapsarlas aquí en el mismo `'retry'`
+  // era donde esa información se perdía. Medido por el reviewer: 149s de
+  // backoff real (~10 intentos) bastan para que una caída de señal de 3
+  // minutos en el muelle mate el manifiesto entero vía `manifestHasDeadEntry`
+  // — y ese bloqueo es permanente, sin nada que lo reabra.
+  it('reports offline (not retry) on the postgrest-js network-fallback shape', async () => {
     const { rpc } = rpcMock({
       error: { message: 'TypeError: Failed to fetch', details: '', hint: '', code: '' },
       data: null,
@@ -141,10 +151,10 @@ describe('createPickupQueueSender — close_manifest', () => {
 
     const result = await send(closeManifestEntry());
 
-    expect(result.outcome).toBe('retry');
+    expect(result.outcome).toBe('offline');
   });
 
-  it('reports retry (not dead or sent) when its own timeout aborts the request', async () => {
+  it('reports offline (not retry, not dead or sent) when its own timeout aborts the request', async () => {
     // What postgrest-js actually resolves with when AbortSignal.timeout()
     // fires — same fetch-catch fallback as a real network failure (B1/B4),
     // just with an Abort/Timeout-named DOMException behind the message.
@@ -157,7 +167,7 @@ describe('createPickupQueueSender — close_manifest', () => {
 
     const result = await send(closeManifestEntry());
 
-    expect(result.outcome).toBe('retry');
+    expect(result.outcome).toBe('offline');
   });
 
   it('reports dead on an irrecoverable business rejection (MANIFEST_NOT_CLOSABLE)', async () => {

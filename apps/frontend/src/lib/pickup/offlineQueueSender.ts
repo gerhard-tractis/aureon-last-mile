@@ -88,7 +88,19 @@ async function sendCloseManifest(
 
   const classified = classifyCloseManifestError(error);
   switch (classified.kind) {
+    // Costura 1, ronda 4 de review del PR #679 — `offline` deja de colapsar
+    // en el mismo `'retry'` que `transient`. El hook (`useOfflineQueue.ts`)
+    // aplica `MAX_RETRY_ATTEMPTS` a cualquier `'retry'`; sin esta rama
+    // separada, un operario sin señal en el muelle agotaba el techo por
+    // pura ausencia de red (~149s medidos, no un rechazo del servidor) y
+    // `markDead` bloqueaba el manifiesto entero para siempre —
+    // exactamente lo que la promesa "se sube al recuperar señal" (`5f`)
+    // dice que no va a pasar. `offline` sigue reintentando con el mismo
+    // retroceso exponencial que `transient`; el hook es quien decide no
+    // contarlo contra el techo (ver `MAX_RETRY_ATTEMPTS` en
+    // `useOfflineQueue.ts`).
     case 'offline':
+      return { outcome: 'offline', reason: classified.message };
     case 'transient':
       // B2, ronda 2 de review del PR #679: cualquier cosa que no sea uno
       // de los cuatro rechazos que close_manifest declara explícitamente
