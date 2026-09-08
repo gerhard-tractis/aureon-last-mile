@@ -428,9 +428,27 @@ la reemplazó antes de usarla como base), con:
 
 Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 
-- [ ] Tests de la lógica pura de conteo en `lib/pickup/` — verificados, faltantes, ajenos — antes de la UI.
-- [ ] Componente + tests, incluyendo el caso 0 faltantes.
-- [ ] Cablear al RPC de la fase 1.
+- [x] Tests de la lógica pura de conteo en `lib/pickup/` — verificados, faltantes, ajenos — antes de la UI.
+- [x] Componente + tests, incluyendo el caso 0 faltantes.
+- [x] Cablear al RPC de la fase 1.
+
+> Implementado por: sesión de agente, rama `feat/spec-80-fase-2-bloqueo-faltantes`.
+> `lib/pickup/reviewCloseGate.ts` (conteo puro), `components/pickup/UnverifiedPackagesBlock.tsx`
+> (advertencia + `SIN VERIFICAR` + `NO ESTABAN EN LA CARGA`), y `review/[loadId]/page.tsx`
+> reescrito contra `5e`. El "cablear al RPC de la fase 1" resultó ser cambio de SQL, no de
+> frontend: `close_manifest` (migración `20260916000001`, `CREATE OR REPLACE` sobre la
+> última, `20260913000004`) ahora construye `p_items` desde los paquetes
+> declarados-y-no-verificados (con su nota de `discrepancy_notes` si la hay) y los barcodes
+> `not_found` deduplicados, y llama a `record_discrepancies('pickup', manifest_id, items)`
+> en la MISMA transacción que fija status/firmas — así lo pedía la sección "Cambios de
+> flujo de datos #1" del spec. `complete/[loadId]/page.tsx` (5f, fase 3) no se tocó — sigue
+> llamando a `close_manifest` sin pasar faltantes, que ya no acepta. No se tocó ningún
+> fichero de la cola offline (spec-81, en su tercera ronda en paralelo) ni `PickupFlowHeader`.
+> pgTAP: `spec80_fase2_close_manifest_discrepancies.test.sql`, 11/11 vía `pgtap-local.sh`
+> (más `spec80_close_manifest.sql`, `spec80_close_manifest_acl.test.sql`,
+> `spec85_discrepancies_rpcs.test.sql`, `spec85_discrepancies_schema.test.sql`,
+> `spec81_fase3_close_manifest_idempotency.test.sql` re-corridos en verde). Review y QA
+> pendientes — no se marca `[done]` aquí.
 
 ### Fase 3 — `5f` firma y fotos `[pending]`
 
