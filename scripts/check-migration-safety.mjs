@@ -38,8 +38,12 @@
  *   2  input error
  */
 import { readFileSync } from 'node:fs';
-import { checkDdlBackfillMix } from './check-migration-safety-rule1.mjs';
-import { listSqlFiles, changedFilesSince, rejectedAtBase } from './check-migration-safety-git.mjs';
+import {
+  checkDdlBackfillMix,
+  findRule1Violations,
+  findRule1Warnings,
+} from './check-migration-safety-rule1.mjs';
+import { listSqlFiles, changedFilesSince, newViolationsSinceBase } from './check-migration-safety-git.mjs';
 
 export { checkDdlBackfillMix } from './check-migration-safety-rule1.mjs';
 export { stripDollarQuotedBodies, stripFunctionBodies } from './check-migration-safety-rule1.mjs';
@@ -140,7 +144,11 @@ export function checkUniqueIndexGuard(rawSql) {
       const between = before.slice(countIdx);
       // Exclude the "IF" inside "END IF" itself — otherwise the closing
       // token of an already-closed guard is mistaken for the opening one.
-      const lastIfIdx = lastMatchIndex(between, /(?<!END\s)\bIF\b/i);
+      // m9 (review round 2): `(?<!END\s)` only excludes a SINGLE space/
+      // newline between END and IF — `END  IF` or `END\nIF` still matched
+      // as if it were the opening IF. `(?<!END\s+)` is a variable-width
+      // lookbehind, which V8 supports.
+      const lastIfIdx = lastMatchIndex(between, /(?<!END\s+)\bIF\b/i);
       if (lastIfIdx !== -1) {
         // Guarded only if that IF has not already closed (no END IF yet)
         // by the time we reach the index — i.e. the index still sits
@@ -160,11 +168,16 @@ export function checkUniqueIndexGuard(rawSql) {
 function checkFile(filePath) {
   const rawSql = readFileSync(filePath, 'utf8');
   const rejectReason = checkDdlBackfillMix(rawSql);
+  // B3: the BLOCKING (not M6-downgraded) violations, kept per-statement so
+  // --base scoping can diff against base by statement identity, not by the
+  // generic reject-reason string every UPDATE-shaped violation shares.
+  const blockingViolations = findRule1Violations(rawSql).filter((v) => !v.destinationCreatedHere);
   const warnings = [
+    ...findRule1Warnings(rawSql),
     ...checkIndexConcurrency(rawSql),
     ...checkUniqueIndexGuard(rawSql),
   ];
-  return { filePath, rejectReason, warnings };
+  return { filePath, rejectReason, blockingViolations, warnings };
 }
 
 function main(argv) {
@@ -184,11 +197,15 @@ function main(argv) {
 
   let files;
   let fileStatus = new Map();
+  let fileOldPath = new Map();
   if (base) {
     if (positional.length !== 1) usageError('--base takes exactly one migrations directory');
     const changed = changedFilesSince(base, positional[0], usageError);
     files = changed.map((f) => f.filePath);
     fileStatus = new Map(changed.map((f) => [f.filePath, f.status]));
+    // m8: the OLD path (pre-rename) is what `git show base:<path>` needs —
+    // the new path never existed under that name at base.
+    fileOldPath = new Map(changed.map((f) => [f.filePath, f.oldPath]));
   } else {
     files = positional.flatMap(listSqlFiles);
   }
@@ -211,13 +228,24 @@ function main(argv) {
       // B4: a pre-existing violation merely being touched (M/R) does not
       // hard-reject the build — only a NEW violation does. Added files
       // always reject; there is no "before" for them to have been safe at.
-      if (base && (status === 'M' || status === 'R') && rejectedAtBase(base, f)) {
+      // B3: "pre-existing" is decided per VIOLATING STATEMENT (statement
+      // identity), not by whether the file rejected at all at base — two
+      // different unbounded UPDATEs produce the identical generic reason
+      // string, so a message-text or boolean compare would exempt a
+      // brand-new violation forever just because SOME violation predates
+      // the PR.
+      const newOnes =
+        base && (status === 'M' || status === 'R')
+          ? newViolationsSinceBase(base, f, fileOldPath.get(f), result.blockingViolations)
+          : result.blockingViolations;
+      if (base && (status === 'M' || status === 'R') && newOnes.length === 0) {
         console.log(
           `::warning::${f} — ${result.rejectReason} (already present before this PR at ${base}; not blocking, but worth fixing while the file is being touched)`
         );
       } else {
         rejected = true;
-        console.error(`::error::${f} — ${result.rejectReason}`);
+        const reason = newOnes.length ? newOnes[0].message : result.rejectReason;
+        console.error(`::error::${f} — ${reason}`);
       }
     }
     for (const w of result.warnings) {
@@ -236,4 +264,12 @@ function main(argv) {
   return 0;
 }
 
-process.exit(main(process.argv.slice(2)));
+// m12 (review round 1/2): this used to call `process.exit(main(...))`
+// unconditionally at module scope, so merely IMPORTING this file (e.g. to
+// reuse `checkIndexConcurrency`/`checkUniqueIndexGuard` elsewhere) aborted
+// the whole process — the exported functions were effectively unimportable.
+// Only run (and exit) when this file is the CLI entrypoint.
+import { pathToFileURL } from 'node:url';
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  process.exit(main(process.argv.slice(2)));
+}

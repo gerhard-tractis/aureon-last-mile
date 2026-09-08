@@ -75,7 +75,7 @@ assert_contains "::error::" "prints ::error:: for the DDL+backfill mix" reject-d
 write_fixture reject-ddl-plus-insert-select <<'SQL'
 BEGIN;
 
-CREATE TABLE public.foo_cache (id UUID PRIMARY KEY, val TEXT);
+ALTER TABLE public.foo_cache ADD COLUMN val TEXT;
 
 INSERT INTO public.foo_cache (id, val)
   SELECT id, val FROM public.foo_source WHERE deleted_at IS NULL;
@@ -83,6 +83,24 @@ INSERT INTO public.foo_cache (id, val)
 COMMIT;
 SQL
 assert_exit 1 "rejects DDL + top-level INSERT...SELECT backfill in the same file" reject-ddl-plus-insert-select
+
+# M6 (review round 2): the ORIGINAL version of this fixture had
+# `CREATE TABLE public.foo_cache` — i.e. the destination IS a table created
+# earlier in the same file, which M6 correctly downgrades to a warning (see
+# check-migration-safety-rule1b.test.sh). Kept here, corrected, so this file
+# still documents that specific transition instead of silently going stale.
+write_fixture warn-ddl-plus-insert-select-into-table-created-here <<'SQL'
+BEGIN;
+
+CREATE TABLE public.foo_cache (id UUID PRIMARY KEY, val TEXT);
+
+INSERT INTO public.foo_cache (id, val)
+  SELECT id, val FROM public.foo_source WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_exit 0 "M6: does not reject a top-level INSERT...SELECT into a table CREATE TABLE'd earlier in the same file" warn-ddl-plus-insert-select-into-table-created-here
+assert_contains "::warning::" "M6: still warns about the INSERT...SELECT into the newly-created table" warn-ddl-plus-insert-select-into-table-created-here
 
 # ── The pattern that must NOT be rejected: spec79_backfill_loaded_route_id ──
 # (20260909000001) — ADD COLUMN + CREATE INDEX, and a function that CONTAINS
@@ -228,6 +246,30 @@ UPDATE public.dock_zones SET sort_order = 1
 COMMIT;
 SQL
 assert_exit 0 "does not reject DDL + a single-row UPDATE bounded by an id literal" accept-ddl-plus-bounded-single-row-update
+
+# ── m12 (review round 1/2): `check-migration-safety.mjs` used to call
+# `process.exit(main(...))` at MODULE TOP LEVEL, so merely `import`-ing the
+# module (e.g. to reuse `checkIndexConcurrency`/`checkUniqueIndexGuard`
+# elsewhere) aborted the whole process. Importing the module must be a
+# no-op; only running it as the CLI entrypoint should exit.
+IMPORT_PROBE="$TMP/m12_import_probe.mjs"
+cat > "$IMPORT_PROBE" <<'JS'
+import { pathToFileURL } from 'node:url';
+const target = pathToFileURL(process.argv[2]).href;
+const m = await import(target);
+if (typeof m.checkIndexConcurrency !== 'function') throw new Error('checkIndexConcurrency not exported');
+if (typeof m.checkUniqueIndexGuard !== 'function') throw new Error('checkUniqueIndexGuard not exported');
+console.log('IMPORT_OK');
+JS
+IMPORT_ONLY_OUTPUT=$(node "$IMPORT_PROBE" "$(dirname "$SCRIPT")/check-migration-safety.mjs" 2>&1)
+if printf '%s' "$IMPORT_ONLY_OUTPUT" | grep -q "IMPORT_OK"; then
+  pass=$((pass + 1))
+  echo "  ok   m12: importing check-migration-safety.mjs does not abort the process, and rule 2/3 checks are importable"
+else
+  fail=$((fail + 1))
+  echo "  FAIL m12: importing check-migration-safety.mjs failed or aborted the process"
+  printf '%s\n' "$IMPORT_ONLY_OUTPUT" | sed 's/^/         /'
+fi
 
 echo ""
 echo "check-migration-safety.sh (rule 1): $pass passed, $fail failed"

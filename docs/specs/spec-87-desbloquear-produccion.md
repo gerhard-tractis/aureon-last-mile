@@ -400,10 +400,12 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 > adversarial y QA antes de `[done]`.
 
 **Archivos:** `scripts/check-migration-safety.sh` (wrapper) + `scripts/check-migration-safety.mjs`
-(reglas 2/3 + CLI) + `scripts/check-migration-safety-rule1.mjs` (regla 1, ronda 1) +
-`scripts/check-migration-safety-git.mjs` (git diff/show, ronda 1) +
+(reglas 2/3 + CLI) + `scripts/check-migration-safety-rule1.mjs` (regla 1) +
+`scripts/check-migration-safety-rule1-match.mjs` (helpers de matching de la regla 1, ronda 2) +
+`scripts/check-migration-safety-git.mjs` (git diff/show) +
 `scripts/check-migration-safety.test.sh`/`-index.test.sh`/`-unique.test.sh`/`-real.test.sh`
-(suite partida en 4, cada una bajo 300 líneas, como `check-quarantine*.test.sh`), cableado en
+(suite ronda 1, partida en 4, cada una bajo 300 líneas, como `check-quarantine*.test.sh`) +
+`scripts/check-migration-safety-rule1b.test.sh`/`-basediff.test.sh` (suite ronda 2), cableado en
 `ci.yml`.
 
 - [x] Rechazar una migración que mezcle **DDL y un backfill no acotado** en el mismo fichero. Son dos cosas con perfiles de riesgo opuestos: el esquema es rápido y debe ir en el deploy; el backfill es lento y debe ir aparte. Distingue un `UPDATE`/`INSERT ... SELECT` **a nivel superior** de uno dentro de `CREATE FUNCTION … $$ … $$` (blanquea el cuerpo dollar-quoted antes de buscar) — el patrón de `20260909000001` (spec-79: función con `UPDATE` dentro, nunca invocada) **no se marca peligroso**, confirmado corriendo el script contra las 12 migraciones reales.
@@ -500,21 +502,39 @@ porque CI sólo mira `--base` (ficheros nuevos del PR). Al arreglar M5 (UPDATE a
 **Vuelto a correr contra las 194 migraciones del repo tras cada cambio:** `20260909000001`
 sigue sin marcarse (criterio de no-regresión), y `20260810000002` ahora **sí** se marca — tenía
 un `CREATE TEMP TABLE` de staging + un `UPDATE` no acotado dentro del mismo `DO $$` de nivel
-superior (`DDL_RE` no reconocía `CREATE TEMP TABLE`, sólo `CREATE TABLE`; corregido). Verdicto
-final: 11 migraciones viejas rechazadas (9 originales − 1 por M5 + 2 por B1 + 1 por B2).
+superior (`DDL_RE` no reconocía `CREATE TEMP TABLE`, sólo `CREATE TABLE`; corregido). **Corrección
+(ronda 2, M7): el conteo de esta sección estaba mal.** Eran **12** migraciones viejas rechazadas
+tras ronda 1, no 11, y el desglose es **9 originales − 1 por M5 + 3 por B1 (`CREATE TEMP TABLE`/
+`DO $$` visibles: `20260625000001`, `20260810000002`, `20260825000002`) + 1 por B2
+(`20260913000001`)** — la aritmética original («+2 por B1») contaba mal, no «+3».
 
 **Mutation-testing, ronda 1** (desactivar cada regla/exclusión nueva → correr la suite → ver el
 flip esperado y **sólo** en los tests que le tocan → revertir): B1, B2, B3 (parcial — ver nota
-abajo), B4 (`--diff-filter` y `rejectedAtBase`), M5, M6 (mutante equivalente: la búsqueda del
-"último `IF` sin cerrar" ya blinda el resultado incluso con la primera coincidencia de
-`COUNT(*)` en vez de la más cercana — documentado, no un hueco), m7, m8, m9, DDL_RE
+corregida abajo), B4 (`--diff-filter` y `rejectedAtBase`), M5, M6 (mutante equivalente: la
+búsqueda del "último `IF` sin cerrar" ya blinda el resultado incluso con la primera coincidencia
+de `COUNT(*)` en vez de la más cercana — documentado, no un hueco), m7, m8, m9, DDL_RE
 (`CREATE TEMP TABLE`) — cada mutante murió exactamente en los tests de su hallazgo, ninguno más.
-**Nota sobre B3:** el mutante de "orden invertido" aislado no reprodujo el fallo original,
-porque el chequeo `AS`-token de `stripFunctionBodies` (fix de B1) ya actúa como red de
-seguridad incidental contra un `$$` de comentario desalineado — el orden correcto de
-comment-stripping-primero se mantiene por ser semánticamente correcto, y el RED original (con
-el código real pre-fix, algoritmo Y orden viejos juntos) sí reprodujo el bug tal cual lo
-describió el review.
+
+**Nota sobre B3 — corregida en ronda 2 (era falsa).** La nota original de ronda 1 afirmaba que
+el mutante de "orden invertido" (`stripFunctionBodies` antes de `stripLineComments`) era
+equivalente, porque el chequeo `AS`-token de B1 ya lo blindaba incidentalmente. El review de
+ronda 2 lo reprodujo **aislado**, dejando intactos B1/B2, con este fixture — cuyo comentario
+**no** termina en el token `AS`:
+```sql
+-- this migration uses a $$-quoted body below
+BEGIN;
+ALTER TABLE public.orders ADD COLUMN bar TEXT;
+CREATE FUNCTION public.f() RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN RETURN; END; $$;
+UPDATE public.orders SET bar = 'x';
+COMMIT;
+```
+Código arreglado (orden correcto) → `REJECT`. Con el orden invertido (mutante) → `PASS`: el
+`$$` del comentario empareja con el `$$` real de la función y blanquea el `ALTER TABLE` +
+`UPDATE` de por medio. **No era un mutante equivalente** — era un hueco de cobertura: la
+suite de ronda 1 no tenía ningún fixture que aislara el orden por sí solo. El test
+`"a $$ inside a line comment does not blank out the DDL that follows it"` en
+`check-migration-safety.test.sh` es exactamente ese fixture, y mata el mutante de orden
+invertido de forma aislada (verificado en ronda 2).
 
 **Reorganización de ficheros (regla del repo: <300 líneas):** `check-migration-safety.mjs`
 creció a 504 líneas tras estos cambios. Partido en tres: `check-migration-safety-rule1.mjs`
@@ -523,6 +543,113 @@ creció a 504 líneas tras estos cambios. Partido en tres: `check-migration-safe
 `check-quarantine*.test.sh`.
 
 **No verificado por este agente (ronda 1):** review adversarial de esta ronda y `gh pr
+checks`/merge (los confirma el orquestador tras abrir el PR, sin auto-merge).
+
+---
+
+**Ronda de arreglos 2 (post-review, PR #676 → seguimiento, aditivo, sin revert).** El review
+confirmó B1, B4, M5, M6, m7, m8, m9, m12 y el `TEMP` de `DDL_RE` de ronda 1 sólidos con mutación
+propia, pero encontró cuatro bloqueantes nuevos en la costura entre B1/B2 (atribución de la
+función invocada) y B3/B4 (exención por base), más ajustes en M5/M6/M7 y varios menores. Todos
+corregidos con RED real primero (fixtures literales del review):
+
+- **B1** — `findInvokedBackfillFunction` atribuía el cuerpo `$$` a la **primera** declaración de
+  función en la ventana de 400 caracteres, no a la más cercana. Declarar una función corta e
+  inocua justo antes del backfill real dejaba pasar el backfill como `PASS`.
+  `nearestFuncDeclName` (en el nuevo `check-migration-safety-rule1-match.mjs`) usa el **último**
+  match dentro de la ventana, el mismo patrón `lastMatchIndex` que M6 (ronda 1) ya usaba para la
+  regla 3.
+- **B2** — el regex de invocación (`callRe`) corría sobre el texto **completo** tras el cuerpo,
+  cuerpos de OTRAS funciones incluidos — un `PERFORM public.bf()` dentro del cuerpo declarado
+  (pero nunca invocado) de una función ajena contaba como invocación de nivel superior. Como
+  `PERFORM` sólo es válido dentro de un cuerpo plpgsql, esa mitad del detector nunca podía ser
+  "de nivel superior" salvo dentro de un `DO`. Ahora la búsqueda corre sobre `topLevel` (cuerpos
+  `AS $$` de otras funciones blanqueados, bloques `DO $$` visibles), no sobre el texto crudo.
+- **B3** — `rejectedAtBase` era un booleano («¿violaba algo en base?»), así que un fichero con
+  **cualquier** violación en base quedaba exento **para siempre**, incluso si el PR añadía una
+  violación nueva y distinta junto a la vieja. Reemplazado por `findRule1Violations`/
+  `newViolationsSinceBase`: cada violación lleva un `statement` (el texto de la sentencia
+  ofensora, o `INVOKE:<nombre>` para el caso B2), y sólo se exime lo que coincide **por
+  identidad de sentencia** con algo que ya existía en base — cualquier sentencia nueva rechaza,
+  aunque el fichero ya tuviera otra violación distinta.
+- **B4 (el "mutante equivalente" de B3, ronda 1)** — no era equivalente. Aislado (dejando
+  intactos `stripFunctionBodies` de B1 y la entrada de B2), el mutante de orden invertido
+  sobrevivía 34/34 porque ningún fixture de ronda 1 aislaba el orden por sí solo. Corregido
+  arriba, en la "Nota sobre B3".
+- **M5** — `findInvokedBackfillFunction` sólo reconocía `SELECT|PERFORM name(`. Una función
+  `RETURNS TABLE(...)` se invoca idiomáticamente como `SELECT * FROM name()` o
+  `SELECT count(*) FROM name()`, que no matcheaban — bypass trivial. `invokesFunction` añade un
+  tercer patrón, `SELECT ... FROM name(`, acotado a una sola sentencia (`[^;]*`) para no cruzar
+  a un `SELECT` posterior no relacionado.
+- **M6** — `20260913000001` es falso positivo a nivel `::error::` y verdadero positivo a nivel
+  `::warning::`: escribir en una tabla `CREATE TABLE`'d vacía en el mismo fichero no puede
+  bloquear a nadie (ningún backend tiene el OID, no hay lectores), que es justo el daño que la
+  regla existe para prevenir — pero forzar dos migraciones separadas para ese caso es ceremonia
+  sin riesgo evitado. La exclusión es **por tabla de destino**, no por fichero: cada violación
+  (`findRule1Violations`) extrae la tabla destino (`extractDestinationTable`, de `UPDATE
+  <tabla>`/`INSERT INTO <tabla>`, incluida la del cuerpo en el caso B2) y comprueba si un
+  `CREATE TABLE` la nombra **antes** en el mismo fichero (`isTableCreatedBefore`). Sólo esa
+  violación concreta degrada a `::warning::` (`findRule1Warnings`); si el mismo fichero tiene
+  OTRA violación cuyo destino no fue creado ahí, esa otra sigue rechazando — verificado con
+  `20260321000001` y `20260625000001`, que tienen ambos casos a la vez y siguen en `::error::`
+  por su segunda violación aunque la primera degrade.
+- **M7** — corregido arriba (era 9−1+3+1=12, no 9−1+2+1=11).
+- **m8** — `changedFilesSince` devolvía la ruta **nueva** también como "ruta en base" para un
+  rename puro, así que `git show base:<ruta-nueva>` fallaba siempre (`fatal: path '...' exists
+  on disk, but not in <sha>`) y la `R` de `--diff-filter=AMR` nunca degradaba de verdad — sólo
+  fail-safeaba a "no exento" sin comparar nunca. Ahora cada fichero cambiado lleva `oldPath`
+  (`parts[1]` cuando `status === 'R'`), usado por `violationsAtBase`/`newViolationsSinceBase`.
+- **m9** — `(?<!END\s)` en la regla 3 sólo excluía **un** espacio; `END  IF` (dos espacios) o
+  `END\nIF` seguían leyéndose como el `IF` de apertura. `(?<!END\s+)` (lookbehind de ancho
+  variable, válido en V8).
+- **m11** — se añadió el fixture que faltaba (última sentencia sin `;`, fin de fichero real) a
+  las reglas 2 y 3; revertir `[\s\S]*?(?:;|$)` a `[\s\S]*?;` ahora sí falla la suite (verificado
+  con mutación manual: sólo los dos tests `m11` fallan, revertido).
+- **m12** — `process.exit(main(...))` corría a nivel de módulo incondicionalmente, así que
+  **importar** `check-migration-safety.mjs` (no sólo ejecutarlo) abortaba el proceso —
+  `checkIndexConcurrency`/`checkUniqueIndexGuard` eran inimportables. Ahora sólo se ejecuta
+  cuando el módulo es el entrypoint CLI (`import.meta.url === pathToFileURL(process.argv[1]).href`).
+- **m13, m14 — anotados, NO implementados esta ronda** (instrucción explícita del review): un
+  `DELETE FROM packages WHERE ...` de nivel superior, un `CREATE TABLE x AS SELECT * FROM
+  packages`, o un `EXECUTE '...'` dentro de un `DO` que corre un `UPDATE` no se detectan como
+  backfill de deploy-time — mismo perfil de riesgo que `UPDATE`/`INSERT...SELECT`, pero la fase
+  sólo nombra esos dos. `github.event.before` en un segundo push a la misma rama es el tip
+  anterior de la rama, no `main`, así que migraciones añadidas en pushes previos de la misma
+  rama quedan fuera de `--base` en ese run — `pull_request`/`merge_group` sí usan la base
+  correcta. Ninguno de los dos es un bloqueante de esta ronda.
+- **m10 — anotado, NO implementado esta ronda** (sin arreglo concreto propuesto por el review, a
+  diferencia de m8/m9/m12): `stripLineComments` borra desde el primer `--` sin conocer comillas,
+  así que `VALUES ('a--b'); UPDATE orders SET bar='x';` hace desaparecer el `UPDATE` que le
+  sigue en la misma línea → `PASS`. Requiere un parser consciente de literales de cadena, que es
+  una pieza de trabajo mayor que un `Arreglo:` de una línea — se deja fuera a propósito, igual
+  que m13/m14, hasta que alguien lo priorice explícitamente.
+
+**Verdicto final contra las 194 migraciones (ronda 2):** `10` ficheros con `::error::` (los 12
+de ronda 1 menos `20260306000001` y `20260913000001`, ambos degradados a `::warning::` por M6 —
+sus únicas violaciones escriben en una tabla creada en el mismo fichero). `20260321000001` y
+`20260625000001` siguen en `::error::` porque, además de una violación M6-degradable, tienen
+otra hacia una tabla existente que M6 no toca. `20260909000001` sigue sin marcarse (no
+regresión) y `20260810000002` sigue marcado (no regresión).
+
+**Mutation-testing, ronda 2** (desactivar cada arreglo → correr la suite completa → ver el flip
+esperado y **sólo** en los tests que le tocan → revertir): B1 (`nearestFuncDeclName` a primer
+match), B2 (`afterBody` sin acotar a `topLevel`), M5 (quitar el patrón `SELECT ... FROM`), M6
+(`isTableCreatedBefore` siempre `false`), B3 (`newViolationsSinceBase` de vuelta a booleano),
+m8 (`oldPath` de vuelta a la ruta nueva), m9 (lookbehind de un espacio), m11 (`(?:;|$)` de
+vuelta a `;` en reglas 2 y 3), m12 (quitar el guard `import.meta.url`) — cada mutante murió
+exactamente en los tests de su hallazgo, ninguno más, en las seis suites completas.
+
+**Reorganización de ficheros (regla del repo: <300 líneas), ronda 2:**
+`check-migration-safety-rule1.mjs` creció de nuevo tras B1/B2/M6. Partido en dos:
+`check-migration-safety-rule1.mjs` (274 líneas: constantes, blanqueo de cuerpos, las tres formas
+de violación, `findRule1Violations`/`findRule1Warnings`/`checkDdlBackfillMix`) y el nuevo
+`check-migration-safety-rule1-match.mjs` (112 líneas: helpers de matching puros —
+`stripDollarQuotedBodies`, `lastMatchIndex`, `nearestFuncDeclName`, `extractDestinationTable`,
+`isTableCreatedBefore`, `splitStatementsWithIndex`, `invokesFunction`). Nuevos ficheros de test:
+`check-migration-safety-rule1b.test.sh` (B1/B2/M5/M6, 204 líneas) y
+`check-migration-safety-basediff.test.sh` (B3/m8, 168 líneas) — cableados en `ci.yml`.
+
+**No verificado por este agente (ronda 2):** review adversarial de esta ronda y `gh pr
 checks`/merge (los confirma el orquestador tras abrir el PR, sin auto-merge).
 
 ---

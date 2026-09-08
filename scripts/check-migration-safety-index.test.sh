@@ -125,6 +125,18 @@ COMMIT;
 SQL
 assert_not_contains "::warning::" "a CREATE INDEX mentioned only in a comment does not produce a warning" accept-index-mentioned-only-in-comment
 
+# ── m11 (review round 2): reverting `[\s\S]*?(?:;|$)` to `[\s\S]*?;` in this
+# statement regex survives the rest of the suite unnoticed, because no
+# existing fixture has the LAST statement in the file end at true EOF with
+# no trailing `;` at all. This fixture's last (and only) line has no
+# semicolon and nothing follows it.
+mkdir -p "$TMP/warn-index-no-trailing-semicolon"
+# printf, not a heredoc, so the fixture file truly has no trailing `;` and
+# no trailing newline after it — the last statement ends at raw EOF.
+printf '%s' 'CREATE INDEX IF NOT EXISTS idx_packages_foo ON public.packages (foo)' > "$TMP/warn-index-no-trailing-semicolon/0000000001_fixture.sql"
+assert_contains "::warning::" "m11: warns even when the last statement in the file has no trailing ; at all" warn-index-no-trailing-semicolon
+assert_contains "packages" "m11: the semicolon-less last statement still names the table" warn-index-no-trailing-semicolon
+
 echo ""
 echo "check-migration-safety.sh (rule 2): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

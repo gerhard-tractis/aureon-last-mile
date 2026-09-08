@@ -28,7 +28,28 @@
  *     and blanks out the DDL this rule exists to see.
  *   - M5: the rejection message says "unbounded" — a single-row UPDATE by
  *     an `id` literal is not a backfill and must not reject.
+ *
+ * Review round 2 (see spec-87 fase 5, "Ronda de arreglos 2"):
+ *   - B1: attribution used the FIRST `CREATE FUNCTION` in a 400-char
+ *     lookback window, not the one NEAREST the `$$` — see
+ *     check-migration-safety-rule1-match.mjs's `nearestFuncDeclName`.
+ *   - B2: the invocation search ran over ALL text, including other
+ *     functions' own bodies — now scoped to `topLevel` (AS $$ bodies
+ *     blanked, DO blocks visible).
+ *   - M5: `SELECT * FROM name()` / `SELECT count(*) FROM name()` — the
+ *     idiomatic way to call a `RETURNS TABLE(...)` function — didn't count
+ *     as an invocation.
+ *   - M6: a backfill into a table `CREATE TABLE`'d earlier in the SAME file
+ *     cannot lock anyone out (no OID yet, no readers) — downgraded to a
+ *     warning via `findRule1Warnings`, not a hard reject.
  */
+import {
+  nearestFuncDeclName,
+  extractDestinationTable,
+  isTableCreatedBefore,
+  splitStatementsWithIndex,
+  invokesFunction,
+} from './check-migration-safety-rule1-match.mjs';
 
 // A `CREATE TEMP[ORARY] TABLE` staged for a backfill's own bookkeeping
 // (20260810000002's shape: stage matching rows, then UPDATE off it) is
@@ -55,36 +76,7 @@ function stripLineComments(sql) {
     .join('\n');
 }
 
-/**
- * Blanks out the contents of every dollar-quoted body ($$...$$, $fn$...$fn$,
- * any tag). Kept for anyone reasoning about the nesting/tag-matching
- * behaviour on its own; `checkDdlBackfillMix` no longer uses it directly
- * (see `stripFunctionBodies` below — review round 1, B1).
- */
-export function stripDollarQuotedBodies(sql) {
-  const tagRe = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/g;
-  let result = '';
-  let i = 0;
-  let match;
-  while ((match = tagRe.exec(sql))) {
-    const tag = match[0];
-    const startIdx = match.index;
-    const searchFrom = tagRe.lastIndex;
-    const closeIdx = sql.indexOf(tag, searchFrom);
-    if (closeIdx === -1) {
-      result += sql.slice(i);
-      i = sql.length;
-      break;
-    }
-    result += sql.slice(i, startIdx);
-    const body = sql.slice(startIdx, closeIdx + tag.length);
-    result += body.replace(/[^\n]/g, ' ');
-    i = closeIdx + tag.length;
-    tagRe.lastIndex = i;
-  }
-  result += sql.slice(i);
-  return result;
-}
+export { stripDollarQuotedBodies } from './check-migration-safety-rule1-match.mjs';
 
 /**
  * Blanks out only the bodies that do NOT run at deploy time on their own:
@@ -140,11 +132,21 @@ function isBoundedUpdateStatement(stmt) {
   return /^id\s*=\s*'[^']+'\s*$/i.test(whereClause);
 }
 
-/** Any top-level (semicolon-delimited) UPDATE statement that isn't bounded. */
-function hasUnboundedTopLevelUpdate(topLevel) {
-  return topLevel
-    .split(';')
-    .some((stmt) => TOP_LEVEL_UPDATE_RE.test(stmt) && !isBoundedUpdateStatement(stmt));
+/**
+ * Any top-level (semicolon-delimited) UPDATE statement that isn't bounded —
+ * scoped per-statement so it cannot match across a `;` boundary.
+ */
+function unboundedTopLevelUpdateViolations(topLevel) {
+  return splitStatementsWithIndex(topLevel)
+    .filter(({ stmt }) => TOP_LEVEL_UPDATE_RE.test(stmt) && !isBoundedUpdateStatement(stmt))
+    .map(({ stmt, startIdx }) => ({
+      kind: 'update',
+      statement: stmt.trim(),
+      destinationTable: extractDestinationTable(stmt),
+      startIdx,
+      message:
+        'contains DDL and a top-level, unbounded UPDATE (a backfill outside any function body) in the same file',
+    }));
 }
 
 /**
@@ -152,20 +154,38 @@ function hasUnboundedTopLevelUpdate(topLevel) {
  * `INSERT INTO ... SELECT ...` backfill — scoped per-statement so it
  * cannot match across a `;` boundary into an unrelated later statement.
  */
-function hasTopLevelInsertSelect(topLevel) {
-  return topLevel.split(';').some((stmt) => INSERT_SELECT_RE.test(stmt));
+function topLevelInsertSelectViolations(topLevel) {
+  return splitStatementsWithIndex(topLevel)
+    .filter(({ stmt }) => INSERT_SELECT_RE.test(stmt))
+    .map(({ stmt, startIdx }) => ({
+      kind: 'insert_select',
+      statement: stmt.trim(),
+      destinationTable: extractDestinationTable(stmt),
+      startIdx,
+      message:
+        'contains DDL and a top-level INSERT ... SELECT (a bulk backfill outside any function body) in the same file',
+    }));
 }
 
 /**
  * B2: declaring a function is inert (spec-79's pattern, which must not be
  * flagged), but a migration that ALSO invokes it at the top level runs its
  * body at deploy time — that's exactly equivalent to inlining the
- * backfill. Returns the function name if one is both declared (with a
- * backfill-shaped body) and invoked later in the same file, else null.
- * Runs on comment-stripped, NOT function-body-blanked text, so it can see
- * inside the body it's inspecting.
+ * backfill. Returns a violation object if one is both declared (with a
+ * backfill-shaped body) and invoked, else null.
+ *
+ * B1: attributes the `$$` body to the NEAREST preceding `CREATE FUNCTION`
+ * declaration, not the first one in the lookback window.
+ *
+ * B2: the invocation search runs against `topLevel` (every OTHER
+ * `CREATE FUNCTION`/`PROCEDURE` body blanked), not the raw comment-stripped
+ * text — a `SELECT`/`PERFORM` inside an UNRELATED function's own declared
+ * body can no longer masquerade as a top-level call. A `DO $$` block is
+ * never blanked in `topLevel`, so `PERFORM` inside one still counts — SQL
+ * only allows `PERFORM` inside a plpgsql body in the first place, so that is
+ * the only place a bare top-level `PERFORM` can legitimately occur.
  */
-function findInvokedBackfillFunction(commentsStripped) {
+function findInvokedBackfillViolation(commentsStripped, topLevel) {
   const tagRe = /\$([A-Za-z_][A-Za-z0-9_]*)?\$/g;
   let match;
   while ((match = tagRe.exec(commentsStripped))) {
@@ -179,14 +199,21 @@ function findInvokedBackfillFunction(commentsStripped) {
     const prevToken = prevTokenMatch ? prevTokenMatch[1].toUpperCase() : '';
     if (prevToken === 'AS') {
       const header = before.slice(Math.max(0, before.length - 400));
-      FUNC_DECL_RE.lastIndex = 0;
-      const nameMatch = FUNC_DECL_RE.exec(header);
+      const name = nearestFuncDeclName(header, FUNC_DECL_RE);
       const body = commentsStripped.slice(startIdx, closeIdx + tag.length);
-      if (nameMatch && (BODY_UPDATE_RE.test(body) || BODY_INSERT_SELECT_RE.test(body))) {
-        const name = nameMatch[1];
-        const afterBody = commentsStripped.slice(closeIdx + tag.length);
-        const callRe = new RegExp(`\\b(SELECT|PERFORM)\\s+(?:"?public"?\\.)?"?${name}"?\\s*\\(`, 'i');
-        if (callRe.test(afterBody)) return name;
+      if (name && (BODY_UPDATE_RE.test(body) || BODY_INSERT_SELECT_RE.test(body))) {
+        const afterBody = topLevel.slice(closeIdx + tag.length);
+        if (invokesFunction(afterBody, name)) {
+          return {
+            kind: 'invoke',
+            statement: `INVOKE:${name}`,
+            destinationTable: extractDestinationTable(body),
+            startIdx,
+            message:
+              `contains DDL and both declares AND invokes "${name}", whose body performs a backfill — ` +
+              'declaring alone is inert, but calling it runs the backfill at deploy time',
+          };
+        }
       }
     }
     tagRe.lastIndex = closeIdx + tag.length;
@@ -195,25 +222,53 @@ function findInvokedBackfillFunction(commentsStripped) {
 }
 
 /**
- * Rule 1. Returns a reason string if this file mixes DDL with a top-level,
- * unbounded backfill; null if it does not.
+ * Rule 1's full list of violations in this file, each tagged with whether
+ * its destination table was CREATE TABLE'd earlier in the SAME file (M6:
+ * `destinationCreatedHere` — a backfill into a table with no OID any other
+ * backend could have opened, and no readers yet, cannot lock anyone out).
+ * Returns `[]` when there is no DDL at all, regardless of any UPDATE/INSERT
+ * present (rule 1 only fires on the DDL+backfill MIX).
  */
-export function checkDdlBackfillMix(rawSql) {
+export function findRule1Violations(rawSql) {
   // B3: comments are stripped BEFORE dollar-quote parsing.
   const commentsStripped = stripLineComments(rawSql);
   // B1: only CREATE FUNCTION/PROCEDURE bodies are blanked; a DO $$ ... $$
   // block runs at deploy time and must stay visible to the scans below.
   const topLevel = stripFunctionBodies(commentsStripped);
-  if (!DDL_RE.test(topLevel)) return null;
-  if (hasUnboundedTopLevelUpdate(topLevel)) {
-    return 'contains DDL and a top-level, unbounded UPDATE (a backfill outside any function body) in the same file';
+  if (!DDL_RE.test(topLevel)) return [];
+  const violations = [
+    ...unboundedTopLevelUpdateViolations(topLevel),
+    ...topLevelInsertSelectViolations(topLevel),
+  ];
+  const invoked = findInvokedBackfillViolation(commentsStripped, topLevel);
+  if (invoked) violations.push(invoked);
+  for (const v of violations) {
+    v.destinationCreatedHere =
+      v.destinationTable != null && isTableCreatedBefore(v.destinationTable, topLevel.slice(0, v.startIdx));
   }
-  if (hasTopLevelInsertSelect(topLevel)) {
-    return 'contains DDL and a top-level INSERT ... SELECT (a bulk backfill outside any function body) in the same file';
-  }
-  const invokedFn = findInvokedBackfillFunction(commentsStripped);
-  if (invokedFn) {
-    return `contains DDL and both declares AND invokes "${invokedFn}", whose body performs a backfill — declaring alone is inert, but calling it runs the backfill at deploy time`;
-  }
-  return null;
+  return violations;
+}
+
+/**
+ * M6: violations whose destination table was created earlier in the same
+ * file — downgraded to a warning message instead of a hard reject.
+ */
+export function findRule1Warnings(rawSql) {
+  return findRule1Violations(rawSql)
+    .filter((v) => v.destinationCreatedHere)
+    .map(
+      (v) =>
+        `${v.message} — downgraded: destination table "${v.destinationTable}" was CREATE TABLE'd earlier ` +
+        'in this same file, so no other backend can have it open and nothing can be locked out (warning, not error)'
+    );
+}
+
+/**
+ * Rule 1. Returns a reason string if this file mixes DDL with a top-level,
+ * unbounded backfill whose destination is NOT a table created earlier in
+ * this same file (M6); null if it does not.
+ */
+export function checkDdlBackfillMix(rawSql) {
+  const blocking = findRule1Violations(rawSql).filter((v) => !v.destinationCreatedHere);
+  return blocking.length ? blocking[0].message : null;
 }

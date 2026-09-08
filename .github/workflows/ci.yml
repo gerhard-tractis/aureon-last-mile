@@ -78,6 +78,12 @@ jobs:
       - name: Test the migration-safety guard — real migrations + --base scoping
         run: bash ./scripts/check-migration-safety-real.test.sh
 
+      - name: Test the migration-safety guard — rule 1, round 2 (B1, B2, M5, M6)
+        run: bash ./scripts/check-migration-safety-rule1b.test.sh
+
+      - name: Test the migration-safety guard — B3 per-violation base diff + m8 rename
+        run: bash ./scripts/check-migration-safety-basediff.test.sh
+
       # The production gate is only as good as its wiring, and this file has a
       # history of gating bugs that shipped green. Fails the build if any prod
       # deploy job stops depending on approve-production (spec-57).

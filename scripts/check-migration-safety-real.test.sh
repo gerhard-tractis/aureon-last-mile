@@ -24,16 +24,17 @@ echo "check-migration-safety.sh — real migrations + --base scoping"
 # files nobody is touching. Scoping to new files only (see the --base
 # section below) is what makes rule 1 enforceable without relitigating
 # history.
-# 20260913000001 is a documented exception, added by review round 1 (B2):
-# it CREATE TABLEs `discrepancies` and, at the top level, both declares AND
-# invokes a function whose body backfills it from `discrepancy_notes` —
-# exactly the pattern B2 exists to catch. It already shipped and ran safely
-# under fase 3/4's separate by-hand review (the backfill targets a
-# brand-new, empty table), so rejecting it here is not a regression: it is
-# the guard correctly seeing a real pattern it was blind to before. It does
-# not retroactively block anything in CI — `--base` scoping only checks
-# files new to a PR (see the B4 tests below), and this one predates the
-# guard.
+# 20260913000001 is a documented exception, added by review round 1 (B2)
+# and refined by review round 2 (M6): it CREATE TABLEs `discrepancies` and,
+# at the top level, both declares AND invokes a function whose body
+# backfills it from `discrepancy_notes` — exactly the pattern B2 exists to
+# catch. But the destination table (`discrepancies`) is itself CREATE
+# TABLE'd earlier in this SAME file — no other backend can have its OID
+# open, no readers exist yet, so it cannot lock anyone out. M6 degrades
+# this to a ::warning:: instead of a hard ::error::. It already shipped and
+# ran safely under fase 3/4's separate by-hand review; this is not a
+# regression either way — it is the guard correctly seeing a real pattern
+# (B2) and correctly recognising it as low-risk (M6).
 MIGRATIONS_DIR="$(cd "$(dirname "$0")/.." && pwd)/packages/database/supabase/migrations"
 TWELVE="
 20260907000001_spec76_en_bodega_not_dock_ready.sql
@@ -56,20 +57,27 @@ if [ -d "$MIGRATIONS_DIR" ]; then
   done
   output=$(bash "$SCRIPT" "${TWELVE_PATHS[@]}" 2>&1)
   actual=$?
-  if [ "$actual" -eq 1 ]; then
+  # M6 (review round 2): 20260913000001's only violation degrades to a
+  # warning, so the batch as a whole now exits 0 — none of the 12 hard-reject.
+  if [ "$actual" -eq 0 ]; then
     pass=$((pass + 1))
-    echo "  ok   the batch rejects (only 20260913000001, correctly, per B2)"
+    echo "  ok   the batch does not hard-reject (20260913000001's only violation is a M6-downgraded ::warning::)"
   else
     fail=$((fail + 1))
-    echo "  FAIL expected exit 1 (20260913000001 correctly caught by B2) — got $actual"
+    echo "  FAIL expected exit 0 — got $actual"
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
-  if printf '%s' "$output" | grep -q "::error::.*20260913000001.*declares AND invokes"; then
+  if printf '%s' "$output" | grep -q "::warning::.*20260913000001.*declares AND invokes.*downgraded"; then
     pass=$((pass + 1))
-    echo "  ok   20260913000001 (spec85_discrepancies_schema) is rejected — declares AND invokes a backfill function (B2)"
+    echo "  ok   20260913000001 (spec85_discrepancies_schema) is a ::warning:: — declares AND invokes a backfill (B2), into a table created in the same file (M6)"
   else
     fail=$((fail + 1))
-    echo "  FAIL 20260913000001 was not rejected by name for declaring+invoking a backfill function"
+    echo "  FAIL 20260913000001 was not warned-about by name for declaring+invoking a backfill function"
+    printf '%s\n' "$output" | sed 's/^/         /'
+  fi
+  if printf '%s' "$output" | grep -q "::error::.*20260913000001"; then
+    fail=$((fail + 1))
+    echo "  FAIL 20260913000001 was hard-rejected (::error::) — M6 must degrade this to a warning"
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
   # 20260909000001 is the exact pattern this phase exists to stop
@@ -81,9 +89,8 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     pass=$((pass + 1))
     echo "  ok   20260909000001 (spec79_loaded_route_id) is not flagged dangerous"
   fi
-  # None of the OTHER eleven should be rejected.
+  # None of the twelve should hard-reject (::error::).
   for name in $TWELVE; do
-    [ "$name" = "20260913000001_spec85_discrepancies_schema.sql" ] && continue
     if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
       fail=$((fail + 1))
       echo "  FAIL $name was unexpectedly rejected"

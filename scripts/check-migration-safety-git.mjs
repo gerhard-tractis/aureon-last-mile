@@ -8,7 +8,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
-import { checkDdlBackfillMix } from './check-migration-safety-rule1.mjs';
+import { findRule1Violations } from './check-migration-safety-rule1.mjs';
 
 export function listSqlFiles(target) {
   const st = statSync(target);
@@ -37,6 +37,14 @@ export function listSqlFiles(target) {
  * untested — the live path in CI was always the untested one. One method,
  * matching the fallback check-spec-fields.sh already uses for the same
  * shallow-fetch reason.
+ *
+ * m8 (review round 2): a plain rename's `--name-status` line is
+ * `R100\t<old path>\t<new path>` — three columns, not two. The OLD `oldPath`
+ * (`parts[1]`) is what existed at `baseSha`; the NEW path
+ * (`parts[parts.length - 1]`) is what exists now and is what gets checked.
+ * Using the new path for BOTH used to make `git show base:<new path>`
+ * always fail (the new path never existed under that name at base), which
+ * fail-safed to "not exempt" instead of ever actually comparing.
  */
 export function changedFilesSince(baseSha, dir, onError) {
   let out = '';
@@ -57,25 +65,42 @@ export function changedFilesSince(baseSha, dir, onError) {
       const parts = line.split(/\s+/);
       const status = parts[0][0]; // e.g. "R100" -> "R"
       const filePath = parts[parts.length - 1]; // renames: NEW path is last column
-      return { status, filePath };
+      const oldPath = status === 'R' && parts.length >= 3 ? parts[1] : filePath;
+      return { status, filePath, oldPath };
     })
     .filter((f) => f.filePath.endsWith('.sql'));
 }
 
 /**
- * B4: whether `filePath`, as it existed at `baseSha`, already rejected
- * under rule 1. Used to downgrade a rejection on a MODIFIED/RENAMED file
- * to a non-blocking warning when the violation predates this PR — the
- * guard should catch a NEW violation an edit introduces, not punish
- * touching a migration that was already unsafe before this guard existed.
+ * B3: the list of rule-1 violations `filePath` (as it existed at `baseSha`,
+ * under `oldPathAtBase` — see m8) already had. Used to tell a genuinely NEW
+ * violation an edit introduces from one that predates this PR.
+ *
+ * Deliberately returns the full violation LIST, not a boolean. A boolean
+ * (or a bare rejection-message compare — the message text is the same
+ * generic string for every unbounded UPDATE, regardless of which statement
+ * caused it) exempts a file FOREVER the moment it had ANY violation at
+ * base, even if the PR adds a brand-new, unrelated one alongside it.
  */
-export function rejectedAtBase(baseSha, filePath) {
+export function violationsAtBase(baseSha, filePath, oldPathAtBase) {
   try {
-    const content = execFileSync('git', ['show', `${baseSha}:${filePath}`], {
+    const content = execFileSync('git', ['show', `${baseSha}:${oldPathAtBase ?? filePath}`], {
       encoding: 'utf8',
     });
-    return checkDdlBackfillMix(content) !== null;
+    return findRule1Violations(content);
   } catch {
-    return false; // file did not exist at base -> nothing to have been "already rejecting"
+    return []; // file did not exist at base under that path -> nothing pre-existed
   }
+}
+
+/**
+ * B3: which of `currentViolations` are genuinely NEW relative to `baseSha`
+ * — i.e. no violation at base has the same `statement` identity. A
+ * violation identical (by statement text) to one already at base is not
+ * new; anything else is, even when the file already had a DIFFERENT
+ * violation at base.
+ */
+export function newViolationsSinceBase(baseSha, filePath, oldPathAtBase, currentViolations) {
+  const baseStatements = new Set(violationsAtBase(baseSha, filePath, oldPathAtBase).map((v) => v.statement));
+  return currentViolations.filter((v) => !baseStatements.has(v.statement));
 }
