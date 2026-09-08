@@ -39,7 +39,7 @@
 -- package.
 
 BEGIN;
-SELECT plan(13);
+SELECT plan(20);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -71,62 +71,83 @@ ON CONFLICT (id) DO NOTHING;
 -- =============================================================================
 -- TEST 1 — the column exists and is nullable (no backfill required, no
 -- NOT NULL — existing rows predate this migration).
+--
+-- M-6/m4 (round 2 of review): these used to be a `DO $$ … RAISE EXCEPTION
+-- $$` block. A RAISE aborts the whole transaction — no `not ok` is printed,
+-- `plan()` never closes, and every assertion after it (TEST 3-19 as
+-- renumbered) never runs, so a mutation-test run that only mutates TEST 1/2
+-- and sees the transaction abort has NOT exercised anything past them.
+-- Plain pgTAP assertions (`ok`/`is`) report `not ok` on failure and let the
+-- rest of the file keep running, same as every other test below.
 -- =============================================================================
-DO $$
-DECLARE
-  v_nullable TEXT;
-BEGIN
-  SELECT is_nullable INTO v_nullable
-    FROM information_schema.columns
-   WHERE table_schema = 'public' AND table_name = 'pickup_scans'
-     AND column_name = 'client_operation_id';
+SELECT ok(
+  EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'pickup_scans'
+       AND column_name = 'client_operation_id'
+  ),
+  'TEST 1a: public.pickup_scans.client_operation_id exists'
+);
 
-  IF v_nullable IS NULL THEN
-    RAISE EXCEPTION 'TEST 1 FAILED: public.pickup_scans.client_operation_id does not exist';
-  END IF;
-  IF v_nullable <> 'YES' THEN
-    RAISE EXCEPTION 'TEST 1 FAILED: client_operation_id must be nullable (no backfill of pre-existing rows)';
-  END IF;
-END $$;
-SELECT pass('TEST 1 PASSED: pickup_scans.client_operation_id exists and is nullable');
+SELECT is(
+  (SELECT is_nullable FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'pickup_scans'
+      AND column_name = 'client_operation_id'),
+  'YES',
+  'TEST 1b: client_operation_id is nullable (no backfill of pre-existing rows)'
+);
 
 -- =============================================================================
 -- TEST 2 — a UNIQUE index covers (operator_id, client_operation_id,
 -- package_id) NULLS NOT DISTINCT, partial on client_operation_id IS NOT NULL
 -- AND deleted_at IS NULL. Read from pg_index directly (not just "an insert
 -- fails") so a mutation that widens/narrows the predicate, drops a column,
--- or drops the NULLS NOT DISTINCT modifier is caught even before TEST 3-13
+-- or drops the NULLS NOT DISTINCT modifier is caught even before TEST 3-19
 -- run.
 -- =============================================================================
-DO $$
-DECLARE
-  v_indexdef TEXT;
-BEGIN
-  SELECT indexdef INTO v_indexdef
-    FROM pg_indexes
-   WHERE schemaname = 'public' AND tablename = 'pickup_scans'
-     AND indexdef ILIKE '%UNIQUE%client_operation_id%';
+SELECT ok(
+  EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+       AND indexdef ILIKE '%UNIQUE%client_operation_id%'
+  ),
+  'TEST 2a: a unique index on pickup_scans covers client_operation_id'
+);
 
-  IF v_indexdef IS NULL THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: no unique index on pickup_scans covers client_operation_id';
-  END IF;
-  IF v_indexdef NOT ILIKE '%operator_id%' THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: unique index on client_operation_id does not include operator_id — % ', v_indexdef;
-  END IF;
-  IF v_indexdef NOT ILIKE '%package_id%' THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: unique index does not include package_id — a batch insert of N rows sharing one client_operation_id (order-number scan) collides with itself — %', v_indexdef;
-  END IF;
-  IF v_indexdef NOT ILIKE '%NULLS NOT DISTINCT%' THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: unique index is missing NULLS NOT DISTINCT — a retried not_found/duplicate scan (package_id IS NULL) would not collide with itself — %', v_indexdef;
-  END IF;
-  IF v_indexdef NOT ILIKE '%WHERE%client_operation_id IS NOT NULL%' THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: unique index is not partial on client_operation_id IS NOT NULL — %', v_indexdef;
-  END IF;
-  IF v_indexdef NOT ILIKE '%deleted_at IS NULL%' THEN
-    RAISE EXCEPTION 'TEST 2 FAILED: unique index does not exclude soft-deleted rows — %', v_indexdef;
-  END IF;
-END $$;
-SELECT pass('TEST 2 PASSED: unique partial index on (operator_id, client_operation_id, package_id) NULLS NOT DISTINCT WHERE client_operation_id IS NOT NULL AND deleted_at IS NULL');
+SELECT ok(
+  (SELECT indexdef FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+      AND indexdef ILIKE '%UNIQUE%client_operation_id%') ILIKE '%operator_id%',
+  'TEST 2b: the unique index includes operator_id'
+);
+
+SELECT ok(
+  (SELECT indexdef FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+      AND indexdef ILIKE '%UNIQUE%client_operation_id%') ILIKE '%package_id%',
+  'TEST 2c: the unique index includes package_id — a batch insert of N rows sharing one client_operation_id (order-number scan) collides with itself without it'
+);
+
+SELECT ok(
+  (SELECT indexdef FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+      AND indexdef ILIKE '%UNIQUE%client_operation_id%') ILIKE '%NULLS NOT DISTINCT%',
+  'TEST 2d: the unique index has NULLS NOT DISTINCT — a retried not_found/duplicate scan (package_id IS NULL) would not collide with itself without it'
+);
+
+SELECT ok(
+  (SELECT indexdef FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+      AND indexdef ILIKE '%UNIQUE%client_operation_id%') ILIKE '%WHERE%client_operation_id IS NOT NULL%',
+  'TEST 2e: the unique index is partial on client_operation_id IS NOT NULL'
+);
+
+SELECT ok(
+  (SELECT indexdef FROM pg_indexes
+    WHERE schemaname = 'public' AND tablename = 'pickup_scans'
+      AND indexdef ILIKE '%UNIQUE%client_operation_id%') ILIKE '%deleted_at IS NULL%',
+  'TEST 2f: the unique index excludes soft-deleted rows'
+);
 
 -- =============================================================================
 -- TEST 3-5 — the retry itself: same client_operation_id, second insert
@@ -188,6 +209,17 @@ SELECT is(
 -- operator's device colliding with another's by construction of a test)
 -- must not block each other.
 -- =============================================================================
+-- M-1 (round 2 of review): package_id must be the SAME as op_A's live row
+-- (…8140) — with package_id in the key, two DIFFERENT package_ids already
+-- discriminate the tuples regardless of operator_id, so this assertion would
+-- pass even if operator_id were dropped from the index entirely (verified:
+-- mutating the index to (client_operation_id, package_id) NULLS NOT
+-- DISTINCT left zero behavioral `not ok` across all 12 assertions in this
+-- file — only TEST 2's textual ILIKE check on the index definition caught
+-- it). Matching package_id makes operator_id the ONLY column that still
+-- discriminates op_A's row from this insert, so a mutant dropping
+-- operator_id from the index now fails this assertion, not just TEST 2's
+-- string check.
 SELECT lives_ok(
   $$ INSERT INTO public.pickup_scans (
        operator_id, manifest_id, package_id, barcode_scanned, scan_result,
@@ -195,10 +227,10 @@ SELECT lives_ok(
      ) VALUES (
        '00000000-0000-4000-8000-000000008101',
        (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1' LIMIT 1),
-       NULL, 'CTN-OTRO', 'not_found', NOW(),
+       '00000000-0000-4000-8000-000000008140', 'CTN-OTRO', 'verified', NOW(),
        '00000000-0000-4000-8000-000000008199'
      ) $$,
-  'the same client_operation_id under a DIFFERENT operator_id does not collide — the unique key is per-operator'
+  'the same (client_operation_id, package_id) under a DIFFERENT operator_id does not collide — the unique key is per-operator'
 );
 
 -- =============================================================================
@@ -330,6 +362,44 @@ SELECT throws_ok(
   '23505',
   NULL,
   'TEST 13: a retried not_found scan (package_id IS NULL) collides with itself thanks to NULLS NOT DISTINCT — without it this insert would silently succeed'
+);
+
+-- =============================================================================
+-- TEST 14 — M-3 (round 2 of review): the auto-collision that B1 fixed for
+-- package_id does NOT go away in general once NULLS NOT DISTINCT is active
+-- — it moves to the NULL lane. A single statement inserting TWO rows that
+-- share the same client_operation_id AND both have package_id IS NULL
+-- collides with ITSELF on the first attempt, exactly like the pre-B1 batch
+-- did. This is real at the SQL layer (verified against the base: a 2-row
+-- batch, one client_operation_id, both not_found, throws 23505 on its own
+-- first INSERT). It is NOT reachable through usePickupScans.ts today:
+-- scan-validator.ts's packageIds only has length > 1 on the order-number
+-- branch, whose ids all come from packages.id (NOT NULL) — see
+-- scan-validator.test.ts's "freezes the M-3 premise" test — and no write
+-- path ever batches two not_found/duplicate results (each of those is a
+-- single-row insert) under one client_operation_id. The migration header
+-- and this fase's spec document this as a scoped, not general, invariant —
+-- a future writer that batches not_found results (e.g. a bulk not_found
+-- report) would need to generate a distinct client_operation_id per row,
+-- or this collides on its own first attempt.
+-- =============================================================================
+SELECT throws_ok(
+  $$ INSERT INTO public.pickup_scans (
+       operator_id, manifest_id, package_id, barcode_scanned, scan_result,
+       scanned_at, client_operation_id
+     ) VALUES
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      NULL, 'CTN-NF-A', 'not_found', NOW(),
+      '00000000-0000-4000-8000-000000008400'),
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      NULL, 'CTN-NF-B', 'not_found', NOW(),
+      '00000000-0000-4000-8000-000000008400')
+  $$,
+  '23505',
+  NULL,
+  'TEST 14: a same-statement batch of two rows sharing one client_operation_id, BOTH package_id IS NULL, auto-collides on its own first attempt under NULLS NOT DISTINCT — real at the SQL layer, not reachable via usePickupScans.ts today (M-3)'
 );
 
 SELECT * FROM finish();
