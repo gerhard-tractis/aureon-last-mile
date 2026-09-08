@@ -19,6 +19,10 @@
  *   0  sin conflicto duro (puede haber acoplamiento blando — se imprime, no bloquea)
  *   1  conflicto duro: dos targets escriben el mismo fichero
  *   2  error de uso (menos de 2 targets, spec o fase no encontrados)
+ *   3  no se puede juzgar: algún target no declara **Archivos:** y su rama
+ *      (si se dio) no tiene commits — no hay ninguna superficie con la que
+ *      comparar. Nunca se informa como "disjunto": eso sería decir "lo
+ *      comprobé y está limpio" cuando en realidad no se comprobó nada.
  */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -183,6 +187,25 @@ function main() {
   }
 
   const targets = targetStrs.map((s) => buildTarget(s, { repo, base, maxDepth }));
+
+  // Blocker 3 (review round 1): a target with no **Archivos:** and no
+  // committed branch has an EMPTY write set — there is nothing to compare it
+  // against, and computeOverlap would silently report "disjoint" for lack of
+  // anything to find. That is not "checked, and clean" — it is "not
+  // checked", and printing the same verdict as a real clean run erases the
+  // difference. Verified against real data: spec-80 fase 1b (no
+  // **Archivos:**, no branch given) reported "despachable en paralelo —
+  // superficies disjuntas" while the real branches collided on two files.
+  const unjudgeable = targets.filter((t) => t.writeSet.size === 0);
+  if (unjudgeable.length > 0) {
+    console.error('check-phase-overlap: no puedo juzgar — target(s) sin superficie alguna:');
+    for (const t of unjudgeable) {
+      console.error(`  ${t.name} — sin **Archivos:** en el spec y sin rama (o rama sin commits todavía).`);
+    }
+    console.error('Declara **Archivos:** en el spec, o pasa la rama una vez tenga commits, antes de dispatchar en paralelo.');
+    process.exit(3);
+  }
+
   const overlap = computeOverlap(targets);
   printReport(targets, overlap);
 

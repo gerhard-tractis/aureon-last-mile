@@ -55,7 +55,15 @@ mkdir -p "$REPO/apps/frontend/src/hooks" "$REPO/apps/frontend/src/lib/offline" \
   git config user.name test
 
   cat > apps/frontend/src/lib/offline/queue.ts <<'TS'
+import { db } from './db';
 export function enqueue() {}
+TS
+  cat > apps/frontend/src/lib/offline/db.ts <<'TS'
+import { deepest } from './deepest';
+export const db = {};
+TS
+  cat > apps/frontend/src/lib/offline/deepest.ts <<'TS'
+export const deepest = true;
 TS
   cat > apps/frontend/src/hooks/useOfflineQueue.ts <<'TS'
 import { enqueue } from '@/lib/offline/queue';
@@ -94,6 +102,12 @@ MD
 **Archivos:** `apps/frontend/src/lib/offline/queue.ts`
 MD
 
+  cat > docs/specs/spec-91-x.md <<'MD'
+### Fase 1 — toca el leaf más profundo `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+
   git add -A
   git commit -q -m base
   echo "$(git symbolic-ref --short HEAD)" > "$TMP/base_ref"
@@ -103,6 +117,11 @@ MD
   git checkout -qb feat/spec-82-fase-1
   git checkout -q "$(cat "$TMP/base_ref")"
   git checkout -qb feat/spec-88-fase-2
+  git checkout -q "$(cat "$TMP/base_ref")"
+  git checkout -qb feat/spec-91-fase-1
+  echo "export const deepest = 'changed';" > apps/frontend/src/lib/offline/deepest.ts
+  git add -A
+  git commit -q -m "spec-91 fase-1: touches the deepest leaf"
   git checkout -q "$(cat "$TMP/base_ref")"
 )
 
@@ -179,9 +198,73 @@ assert_contains "apps/frontend/src/lib/offline/queue.ts" "soft coupling names th
   "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
   "docs/specs/spec-90-x.md#Fase 1@feat/spec-90-fase-1"
 
+# ── Medium 6 (review round 1): the CLI's own DEFAULT --max-depth (2, applied
+# when the flag is omitted) needs an end-to-end test, not just the unit test
+# on buildClosure's parameter default. Chain: useOfflineQueue.ts (seed, depth
+# 0) -> queue.ts (1) -> db.ts (2) -> deepest.ts (3, excluded by DEFAULT).
+assert_exit 0 "DEFAULT depth (flag omitted): the 3rd-hop leaf stays unreached — no coupling" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-91-x.md#Fase 1@feat/spec-91-fase-1"
+
+assert_contains "ACOPLAMIENTO BLANDO: ninguno" "DEFAULT depth: verdict is clean, not just exit 0" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-91-x.md#Fase 1@feat/spec-91-fase-1"
+
+assert_contains "apps/frontend/src/lib/offline/deepest.ts" "--max-depth 3 DOES reach the same 3rd-hop leaf (proves it's the cap, not a broken chain)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" --max-depth 3 \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-91-x.md#Fase 1@feat/spec-91-fase-1"
+
 # ── Usage error: fewer than two targets ─────────────────────────────────────
 assert_exit 2 "fewer than two targets is a usage error" \
   bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2"
+
+# ── Blocker 3 (review round 1): an empty write set — no **Archivos:**
+# declared AND no branch (or a branch with zero commits) — must refuse to
+# judge, loudly, not report "disjoint". Verified against real specs/branches:
+# spec-80 fase 1b has no **Archivos:** and was given with no branch; the
+# guard silently said "despachable en paralelo" while the real branches
+# collided on two files. Silence there is a false "safe to dispatch".
+cat > "$REPO/docs/specs/spec-92-sin-archivos.md" <<'MD'
+### Fase 1 — sin declarar todavía `[pending]`
+
+Prosa nada más — nadie escribió **Archivos:** para esta fase.
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-92 with an undeclared phase")
+
+assert_exit 3 "empty write set (no Archivos, no branch): refuses to judge (exit 3, not 0)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1"
+
+assert_contains "no puedo juzgar" "empty write set: message says it explicitly, not just an exit code" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1"
+
+assert_contains "spec-92-sin-archivos.md#Fase 1" "empty write set: message names WHICH target is unjudgeable" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1"
+
+# A target with NO **Archivos:** but a branch that DOES have real commits is
+# still judgeable — the real diff is a legitimate write set on its own
+# (spec-88 fase 2 in the real acceptance run: undeclared, but its branch has
+# 4 real files). Must NOT be refused.
+(
+  cd "$REPO"
+  git checkout -qb feat/spec-92-fase-1 "$BASE_REF"
+  echo "select 2;" > packages/database/supabase/migrations/0002_y.sql
+  git add -A
+  git commit -q -m "spec-92 fase-1: undeclared in the spec, but this branch has a real diff"
+  git checkout -q "$BASE_REF"
+)
+assert_exit 0 "undeclared Archivos but a real branch diff IS judgeable (not refused)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1@feat/spec-92-fase-1"
 
 echo
 echo "$pass passed, $fail failed"
