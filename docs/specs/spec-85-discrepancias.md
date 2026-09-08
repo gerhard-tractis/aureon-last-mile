@@ -4,7 +4,7 @@
 
 **Status:** in progress
 **Verify:** unit, sql, e2e-qa
-**Downstream:** spec-80-recogida-movil-cierre-de-carga.md, spec-83-recogida-escritorio-datos-faltantes.md
+**Downstream:** spec-80-recogida-movil-cierre-de-carga.md, spec-83-recogida-escritorio-datos-faltantes.md, spec-86-discrepancias-de-recepcion.md
 
 _Date: 2026-09-07_
 
@@ -263,12 +263,18 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 > (spec-87 fase 1/2 lo aborda). Esta fase es sólo esquema y no tiene cobertura
 > e2e propia; el juez `sql` sí se verificó: 17 tests pgTAP en contenedor
 > reconstruido desde cero, con los mutantes matados sobre el contenedor en vivo.
-> Downstream: revisado spec-80 y spec-83. **Sí hubo cambios**: el cuerpo de
-> spec-80 fase 1 seguía describiendo la decisión del enum ya revertida — corregido
-> en PR #653; y `spec-83:74` afirmaba que spec-80 fase 1 persistiría el conteo de
-> faltantes, que con el alcance corregido es falso — corregido en la rama de
-> spec-80 fase 1. spec-84 y spec-86 no requieren cambios: consumen la tabla, no
-> su forma interna.
+> Downstream: revisado spec-80, spec-83 y spec-86. **Sí hubo cambios**: el cuerpo
+> de spec-80 fase 1 seguía describiendo la decisión del enum ya revertida —
+> corregido en PR #653; `spec-83:74` afirmaba que spec-80 fase 1 persistiría el
+> conteo de faltantes, que con el alcance corregido es falso — corregido en la
+> rama de spec-80 fase 1. spec-84 no requiere cambios: consume la tabla, no su
+> forma interna. **spec-86 sí los requería y no se habían hecho** (hallazgo de
+> la ronda de arreglos 2 de fase 2, B-3): estaba escrito contra `source_process`,
+> un nombre que nunca existió — la columna real es `operation_type`
+> (`discrepancy_operation_enum`), y el spec tampoco mencionaba
+> `route_reception_id`, `source_id` ni los tres RPCs. Corregido en la fase 2 de
+> esta spec, no aquí — la fase 1 ya estaba `[done]` y mergeada; se deja esta nota
+> para que la reconciliación quede completa.
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
@@ -334,7 +340,7 @@ no puede tumbar un deploy), pero ya no es silencioso en los logs.
 - [x] Implementar.
 
 Migración `20260913000003_spec85_discrepancies_rpcs.sql`, tests en
-`spec85_discrepancies_rpcs.test.sql` (22 tests, tras la ronda de arreglos 1).
+`spec85_discrepancies_rpcs.test.sql` (29 tests, tras la ronda de arreglos 2).
 `record_discrepancies` valida que `p_source_id` (manifiesto o recepción según
 `p_operation_type`) y cada `package_id` pertenezcan al operador del JWT antes
 de insertar — nada por debajo lo hace, porque la RLS efectiva de la tabla es
@@ -354,6 +360,34 @@ validación (`P0001`).
 directa ya queda acotada por tenant; el filtro explícito por
 `get_operator_id()` en el cuerpo es defensa en profundidad, no lo único que
 impide una fuga cross-tenant.
+
+**Contrato de errores (B-3, ronda de arreglos 2):** las tres RPCs comparten
+`ERRCODE 42501` para tres causas distintas (sin operador resoluble, fuente
+— manifiesto/recepción — ajena, bulto ajeno), y un frontend no puede
+distinguirlas por `SQLSTATE` solo. Siguiendo el patrón de `close_manifest`
+(`20260913000002`, prefijos `MANIFEST_ALREADY_SIGNED:` etc.), cada mensaje
+lleva un prefijo centinela antes del `:`:
+
+| RPC | Prefijo | ERRCODE |
+|---|---|---|
+| `record_discrepancies` | `NO_OPERATOR_IN_JWT` | 42501 |
+| | `INVALID_ITEMS` | P0001 |
+| | `MANIFEST_NOT_FOUND` | 42501 |
+| | `ROUTE_RECEPTION_NOT_FOUND` | 42501 |
+| | `UNKNOWN_OPERATION_TYPE` | P0001 |
+| | `MISSING_REQUIRES_PACKAGE_ID` | P0001 |
+| | `PACKAGE_NOT_FOUND` | 42501 |
+| | `UNEXPECTED_REQUIRES_BARCODE` | P0001 |
+| | `UNKNOWN_KIND` | P0001 |
+| `resolve_discrepancy` | `NO_OPERATOR_IN_JWT` | 42501 |
+| | `INVALID_STATUS` | P0001 |
+| | `RESOLUTION_REQUIRED` | P0001 |
+| | `DISCREPANCY_NOT_FOUND` | 42501 |
+| | `DISCREPANCY_ALREADY_RESOLVED` | 23505 |
+| `get_discrepancies` | (ninguna — no lanza) | — |
+
+Un consumidor de frontend hace `message.startsWith('PACKAGE_NOT_FOUND:')`,
+no `LIKE 'package %'` sobre texto en inglés con un UUID interpolado.
 
 **Nota sobre `p_resolution`:** el spec no decía si es obligatorio.
 `expand_carton`/`delete_minted_carton` exigen `p_reason` no vacío para
@@ -396,6 +430,72 @@ siempre da `true` sin importar el `REVOKE`), m10 (TEST 16: `get_discrepancies`
 es `SECURITY INVOKER` vía `pg_proc.prosecdef`). Los 22 tests se verificaron
 con **mutación real** sobre el contenedor pgTAP en vivo para cada hallazgo de
 B1/B2/M3/M6/M7/m2/m5/m7/m10 — no sólo lectura del texto de la migración.
+
+**Ronda de arreglos 2 (adversarial, re-review), cerrada:** el re-review
+re-verificó por su cuenta cada mutación de la ronda 1 y confirmó B1, M3, M4,
+M7, m2, m3, m5, m6, m10 y la documentación de m4/m8/m9/m12; quedaron tres
+bloqueantes y dos mayores:
+
+- **B-1 — B2 quedó a medias.** La rama `reception` de `record_discrepancies`
+  tenía el guard de tenencia cubierto (TEST 4b), pero el `INSERT` en sí
+  (forma `unexpected`) y su idempotencia (`ON CONFLICT ... DO NOTHING`) nunca
+  se ejercían: TEST 4b/5c revientan *antes* del `INSERT`, y TEST 5b sólo cubre
+  `missing`. TEST 2b (mirror de TEST 2, `unexpected` en `reception`) y TEST 3c
+  (mirror de TEST 3, idempotencia en `reception`) cierran el hueco.
+  Mutación confirmada: `'MUTANTE-' || v_barcode` en el `VALUES` de esa rama, y
+  borrar los dos `ON CONFLICT` de `reception` dejando los de `pickup` —
+  ambos mueren ahora.
+- **B-2 — TEST 8(a) probaba otra cosa de la que decía.** `p_status = 'open'`
+  sobre una fila `resolved` nunca llega al guard de "evidencia cerrada"
+  (`mig:264`) — lo rechaza la validación de enum (`mig:233`) treinta líneas
+  antes. Renombrado para decir lo que prueba de verdad, con `GET STACKED
+  DIAGNOSTICS` pineando `P0001`. TEST 8c añade el caso real que faltaba:
+  `p_status = 'open'` sobre una fila YA `open` — con la mutación
+  `p_status NOT IN ('resolved', 'lost', 'open')`, una fila resuelta sigue
+  rechazándose (el guard de reapertura la atrapa igual, con `23505`), pero
+  una fila `open` NO — el `UPDATE` corre en silencio y deja
+  `status='open', resolved_at=NOW()`. TEST 8c mata esa mutación y afirma que
+  la fila queda intacta, no sólo que "algo" se lanzó.
+- **B-3 — el contrato de `reception` y de errores no estaba firme.**
+  (1) `**Downstream:**` no listaba spec-86 — añadido arriba. (2) spec-86
+  estaba escrito contra `source_process`, un nombre que nunca existió —
+  reconciliado en spec-86 contra `operation_type`/`route_reception_id`/
+  `source_id` y los tres RPCs reales, sin implementar nada de spec-86 (sigue
+  `[blocked]`). (3) contrato de errores sin prefijos centinela — añadidos,
+  tabla completa arriba.
+- **M-4 — el reorden de M5 no tenía test.** TEST 14b: `p_items = '[]']` con
+  un `p_source_id` ajeno (`44440002-…`) sigue esperando `42501`. Mutación
+  confirmada: mover el `RETURN` temprano de vuelta a *antes* del guard de
+  tenencia (la disposición original, rechazada en la ronda 1) hacía pasar la
+  suite entera; con TEST 14b, no.
+- **M-5 — dos `42501` sin cobertura y `anon` con `EXECUTE` real.** TEST 10b/
+  10c llaman ambas RPCs de escritura con un `sub` sin fila en `public.users`
+  (mismo patrón sintético que `20260813000002:110` — el guard NO lee un
+  claim `operator_id` del JWT: `get_operator_id()` resuelve por
+  `id = auth.uid()` contra `public.users`). Mutación confirmada: bajar el
+  ERRCODE a `P0001`, y quitar el prefijo centinela — ambas mueren ahora.
+  Y el ACL real de las tres funciones incluía `anon=X` por default privilege
+  de Supabase, no heredado de `PUBLIC` — `REVOKE ALL ... FROM PUBLIC` no lo
+  tocaba. Añadido `REVOKE ALL ... FROM anon` explícito en las tres, patrón de
+  `20260812000003:298`/`20260812000005:273`/`20260820000003:316`/
+  `20260820000005:110`. TEST 15b (`aclexplode` contra el rol `anon`, no sólo
+  grantee 0/`PUBLIC`) verificado por mutación: quitar los tres `REVOKE ...
+  FROM anon` con las funciones recién creadas (ACL en blanco, `CREATE OR
+  REPLACE` sobre una función existente no resetea el ACL) revive el default
+  grant y el test lo atrapa.
+
+Menor: **m-6 — `RETURN QUERY` final de `record_discrepancies` (`mig:190`)
+sin `operator_id`/`deleted_at`.** Mismo criterio que m1 de la ronda 1: sin
+fuga alcanzable hoy (`v_ids` sólo contiene ids ya filtrados por `v_operator`
+en los `SELECT` de arriba), pero incoherente con haber añadido esos mismos
+filtros al `UPDATE` de `resolve_discrepancy` argumentando que es
+no-negociable del repo. Añadido sin test propio — no distinguible por
+mutación, misma clase que m1.
+
+Los 7 tests nuevos (2b, 3c, 8c, 14b, 15b, 10b, 10c) se verificaron con
+**mutación real** sobre el contenedor pgTAP en vivo para cada hallazgo de
+B-1/B-2/M-4/M-5 — no sólo lectura del texto de la migración. Suite completa:
+29/29 en verde tras cada fix.
 
 **Documentado, no codificado (aplazamiento deliberado):**
 - **m4 — cardinalidad de retorno.** `record_discrepancies` hace
