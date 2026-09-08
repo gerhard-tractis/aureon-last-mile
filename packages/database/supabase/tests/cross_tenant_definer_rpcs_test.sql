@@ -111,23 +111,48 @@ END;
 $$;
 
 -- =============================================================================
--- TEST 4: service-role context (no auth.uid()) is still allowed cross-tenant
+-- TEST 4: a CONFIRMED service-role context is still allowed cross-tenant
 -- =============================================================================
-
+-- spec-88 fase 2 (20260913000008) rewrote assert_operator_access: an
+-- auth.uid() IS NULL caller must now prove it is really service_role via
+-- the JWT's own role claim — no 'sub' claim alone is no longer sufficient
+-- (that was precisely the bug spec-88 closes: an anon caller with no JWT at
+-- all is ALSO auth.uid() IS NULL, and used to pass through the same way).
 DO $$
 BEGIN
-  -- No 'sub' claim => auth.uid() is NULL, which is the service-role shape.
-  -- Use '{}' rather than NULL: an empty setting fails the ::json cast.
+  PERFORM set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+  PERFORM public.get_active_routes_with_dispatches(
+    'bbbbbbbb-0000-4000-b000-00000000c401'::uuid,
+    CURRENT_DATE
+  );
+  RAISE NOTICE 'TEST 4 PASS: confirmed service-role context may still query any tenant';
+EXCEPTION
+  WHEN insufficient_privilege THEN
+    RAISE EXCEPTION 'TEST 4 FAIL: guard blocked a legitimate, confirmed service-role call';
+END;
+$$;
+
+-- =============================================================================
+-- TEST 5: auth.uid() IS NULL WITHOUT a service_role claim (the anon shape —
+-- no session at all) must now be REJECTED, not silently let through. This is
+-- the regression test for the class of bug spec-88 fase 2 closes.
+-- =============================================================================
+DO $$
+BEGIN
+  -- Empty claims: no 'sub', no 'role' — exactly what an anon caller with no
+  -- Authorization header presents. Use '{}' rather than NULL: an empty
+  -- setting fails the ::json cast.
   PERFORM set_config('request.jwt.claims', '{}', true);
 
   PERFORM public.get_active_routes_with_dispatches(
     'bbbbbbbb-0000-4000-b000-00000000c401'::uuid,
     CURRENT_DATE
   );
-  RAISE NOTICE 'TEST 4 PASS: service-role context may still query any tenant';
+  RAISE EXCEPTION 'TEST 5 FAIL: an unconfirmed no-session caller was allowed cross-tenant — the class of bug is back';
 EXCEPTION
   WHEN insufficient_privilege THEN
-    RAISE EXCEPTION 'TEST 4 FAIL: guard blocked a legitimate service-role call';
+    RAISE NOTICE 'TEST 5 PASS: no-session caller without a service_role claim is rejected with 42501';
 END;
 $$;
 
