@@ -1055,6 +1055,7 @@ export type Database = {
       pickup_scans: {
         Row: {
           barcode_scanned: string
+          client_operation_id: string | null
           created_at: string
           deleted_at: string | null
           id: string
@@ -1068,6 +1069,7 @@ export type Database = {
         }
         Insert: {
           barcode_scanned: string
+          client_operation_id?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
@@ -1081,6 +1083,7 @@ export type Database = {
         }
         Update: {
           barcode_scanned?: string
+          client_operation_id?: string | null
           created_at?: string
           deleted_at?: string | null
           id?: string
