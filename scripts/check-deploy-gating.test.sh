@@ -475,142 +475,84 @@ assert_contains "path-filtered on changes.outputs.database" \
 # granularity. The quarantine veto (spec-87 fase 1) lives inside a STEP —
 # "Run E2E against QA" no longer fails the job on a raw red exit code
 # (`|| true`), and "Check quarantine" is what decides pass/fail instead.
-# Deleting that step, or giving it its own continue-on-error, leaves e2e-qa
-# green no matter what failed, and this guard was blind to both until now.
-E2E_WITH_QUARANTINE_STEP='jobs:
-  changes:
-    runs-on: ubuntu-latest
-  deploy-qa:
-    needs: [changes]
-    concurrency:
-      group: qa-deploy
-  e2e-qa:
-    needs: [changes, deploy-qa]
-    steps:
-      - name: Run E2E against QA
-        run: npm run e2e:qa || true
-      - name: Check quarantine
-        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
-  approve-production:
-    needs: [changes, deploy-qa, e2e-qa]
-    environment: production
-  deploy-supabase:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-supabase
-  deploy-edge-functions:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-edge-functions
-  deploy-vercel:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-vercel
-  deploy-worker:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-worker
-  deploy-agents:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-agents
-  deploy-solver:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-solver'
+# Deleting that step, giving it its own continue-on-error, gating it behind
+# an if: other than the provisioning check, adding `|| true`/`|| :` to its
+# run:, or wrapping the invocation in `echo` all leave e2e-qa green no
+# matter what failed. review round 2, H1 — the guard only caught the first
+# two of these five vectors; the fixture factory below drives all five off
+# one skeleton so adding a sixth is a one-line diff, not forty.
+#
+# wf_with_e2e_step <step-yaml-indented-6-spaces> -> full workflow on stdout
+wf_with_e2e_step() {
+  local step="$1"
+  printf 'jobs:\n'
+  printf '  changes:\n    runs-on: ubuntu-latest\n'
+  printf '  deploy-qa:\n    needs: [changes]\n    concurrency:\n      group: qa-deploy\n'
+  printf '  e2e-qa:\n    needs: [changes, deploy-qa]\n    steps:\n'
+  printf '      - name: Run E2E against QA\n        run: npm run e2e:qa || true\n'
+  printf '%s\n' "$step"
+  printf '  approve-production:\n    needs: [changes, deploy-qa, e2e-qa]\n    environment: production\n'
+  for j in supabase edge-functions vercel worker agents solver; do
+    printf '  deploy-%s:\n    needs: [changes, approve-production]\n    concurrency:\n      group: production-deploy-%s\n' "$j" "$j"
+  done
+}
 
-assert_exit 0 "accepts e2e-qa with a check-quarantine.sh step" "$E2E_WITH_QUARANTINE_STEP"
+BASELINE_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+assert_exit 0 "accepts e2e-qa with a check-quarantine.sh step" "$(wf_with_e2e_step "$BASELINE_STEP")"
 
-E2E_MISSING_QUARANTINE_STEP='jobs:
-  changes:
-    runs-on: ubuntu-latest
-  deploy-qa:
-    needs: [changes]
-    concurrency:
-      group: qa-deploy
-  e2e-qa:
-    needs: [changes, deploy-qa]
-    steps:
-      - name: Run E2E against QA
-        run: npm run e2e:qa || true
-      - name: Upload report
-        run: echo done
-  approve-production:
-    needs: [changes, deploy-qa, e2e-qa]
-    environment: production
-  deploy-supabase:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-supabase
-  deploy-edge-functions:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-edge-functions
-  deploy-vercel:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-vercel
-  deploy-worker:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-worker
-  deploy-agents:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-agents
-  deploy-solver:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-solver'
+NO_STEP='      - name: Upload report
+        run: echo done'
+WF=$(wf_with_e2e_step "$NO_STEP")
+assert_exit 1 "fails when e2e-qa has no check-quarantine.sh step" "$WF"
+assert_contains "check-quarantine.sh" "names the missing quarantine step" "$WF"
 
-assert_exit 1 "fails when e2e-qa has no check-quarantine.sh step" "$E2E_MISSING_QUARANTINE_STEP"
-assert_contains "check-quarantine.sh" "names the missing quarantine step" "$E2E_MISSING_QUARANTINE_STEP"
-
-E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR='jobs:
-  changes:
-    runs-on: ubuntu-latest
-  deploy-qa:
-    needs: [changes]
-    concurrency:
-      group: qa-deploy
-  e2e-qa:
-    needs: [changes, deploy-qa]
-    steps:
-      - name: Run E2E against QA
-        run: npm run e2e:qa || true
-      - name: Check quarantine
+CONTINUE_ON_ERROR_STEP='      - name: Check quarantine
         continue-on-error: true
-        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
-  approve-production:
-    needs: [changes, deploy-qa, e2e-qa]
-    environment: production
-  deploy-supabase:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-supabase
-  deploy-edge-functions:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-edge-functions
-  deploy-vercel:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-vercel
-  deploy-worker:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-worker
-  deploy-agents:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-agents
-  deploy-solver:
-    needs: [changes, approve-production]
-    concurrency:
-      group: production-deploy-solver'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$CONTINUE_ON_ERROR_STEP")
+assert_exit 1 "fails when the quarantine step itself has continue-on-error" "$WF"
+assert_contains "Check quarantine" "names the offending step" "$WF"
 
-assert_exit 1 "fails when the quarantine step itself has continue-on-error" "$E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR"
-assert_contains "Check quarantine" "names the offending step" "$E2E_QUARANTINE_STEP_CONTINUE_ON_ERROR"
+# H1 vector: `|| true` appended to the run: — the step still "runs" and still
+# "succeeds", having checked nothing.
+OR_TRUE_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json || true'
+WF=$(wf_with_e2e_step "$OR_TRUE_STEP")
+assert_exit 1 "fails when the quarantine step's run has || true appended" "$WF"
+
+# H1 vector: `|| :` — the POSIX no-op, same effect as || true. Block scalar
+# (run: |) because a trailing bare `:` breaks YAML's plain-scalar parsing.
+OR_COLON_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json || :'
+WF=$(wf_with_e2e_step "$OR_COLON_STEP")
+assert_exit 1 "fails when the quarantine step's run has || : appended" "$WF"
+
+# H1 vector: if: false — the step never runs, and no report is ever checked.
+IF_FALSE_STEP='      - name: Check quarantine
+        if: false
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$IF_FALSE_STEP")
+assert_exit 1 "fails when the quarantine step's if: is not the provisioning check" "$WF"
+
+# H1 vector: if: some other condition entirely — same effect as if: false in
+# every run where that condition is not met, but reads like a legitimate guard.
+IF_WRONG_STEP='      - name: Check quarantine
+        if: github.event_name == '"'"'never'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$IF_WRONG_STEP")
+assert_exit 1 "fails when the quarantine step's if: is an unrelated condition" "$WF"
+
+# H1 vector: the invocation itself is echoed instead of run.
+ECHO_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: echo bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$ECHO_STEP")
+assert_exit 1 "fails when the quarantine step's run only echoes the invocation" "$WF"
 
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then

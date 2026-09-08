@@ -134,6 +134,30 @@ for (const job of PROD_JOBS) {
 // Deleting that step, or giving it its own continue-on-error, leaves e2e-qa
 // green regardless of what actually failed, with every check above still
 // green too.
+// The one condition allowed to gate this step at all: the same provisioning
+// check every other step in the job uses. Anything else — false, an
+// unrelated condition, or even a WEAKENED version of this same check — can
+// skip the veto on runs where it matters, while reading like a legitimate
+// guard in a diff.
+const QUARANTINE_STEP_IF = "steps.qa.outputs.provisioned == 'true'";
+
+/** A run: that "checks" quarantine without actually vetoing anything. */
+function neutralisesQuarantineCheck(run) {
+  // `|| true` / `|| :` anywhere lets the step "succeed" having checked
+  // nothing — the exact trick used on "Run E2E against QA" itself, just
+  // moved one step over to swallow the thing that is supposed to replace it.
+  if (/\|\|\s*(true\b|:(\s|$))/.test(run)) return true;
+  // Wrapping the invocation in `echo` (or commenting it out) means the line
+  // never actually executes check-quarantine.sh.
+  return run.split('\n').some((line) => {
+    if (!line.includes('check-quarantine.sh')) return false;
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#')) return true;
+    const echoIdx = trimmed.search(/\becho\b/);
+    return echoIdx !== -1 && echoIdx < trimmed.indexOf('check-quarantine.sh');
+  });
+}
+
 if (jobs['e2e-qa']) {
   const steps = jobs['e2e-qa'].steps || [];
   const quarantineStep = steps.find(
@@ -144,12 +168,28 @@ if (jobs['e2e-qa']) {
       'e2e-qa has no step running scripts/check-quarantine.sh — without it a failure ' +
         'outside the quarantine list, an expired entry, or a stale entry cannot fail the job'
     );
-  } else if (quarantineStep['continue-on-error']) {
-    errors.push(
-      'the "Check quarantine" step in e2e-qa must not set continue-on-error — that ' +
-        'reports success to the job even when the quarantine check failed, the exact ' +
-        'silent-pass this step exists to prevent'
-    );
+  } else {
+    if (quarantineStep['continue-on-error']) {
+      errors.push(
+        'the "Check quarantine" step in e2e-qa must not set continue-on-error — that ' +
+          'reports success to the job even when the quarantine check failed, the exact ' +
+          'silent-pass this step exists to prevent'
+      );
+    }
+    if (quarantineStep.if != null && String(quarantineStep.if).trim() !== QUARANTINE_STEP_IF) {
+      errors.push(
+        `the "Check quarantine" step's if: must be exactly "${QUARANTINE_STEP_IF}" when present ` +
+          `(found: ${JSON.stringify(quarantineStep.if)}) — any other condition, including false or ` +
+          'one that merely looks unrelated, can skip the veto on a run where it matters'
+      );
+    }
+    if (neutralisesQuarantineCheck(quarantineStep.run)) {
+      errors.push(
+        'the "Check quarantine" step\'s run: neutralises the check it claims to run — `|| true`, ' +
+          '`|| :`, a commented-out line, or `echo`ing the invocation instead of running it all let ' +
+          'the step "succeed" having checked nothing'
+      );
+    }
   }
 }
 
