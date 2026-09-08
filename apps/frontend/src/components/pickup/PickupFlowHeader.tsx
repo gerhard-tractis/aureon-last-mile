@@ -23,6 +23,26 @@ interface PickupFlowHeaderProps {
    * queued work.
    */
   queuedCount: number;
+  /**
+   * m6, ronda 3 de review del PR #679 (menor) — entradas de `pickup_queue`
+   * que agotaron los reintentos con un rechazo irrecuperable
+   * (`useSyncQueue().blockedCount`, B3). B3 sacó `dead` de `queuedCount` a
+   * propósito (no es "sigue en cola", es un bloqueo que necesita ayuda
+   * humana) pero dejó esta pantalla sin ningún lugar donde mostrarlo: una
+   * entrada bloqueada pasaba de "COLA 1" a no mostrarse en absoluto en la
+   * pantalla que el conductor tiene delante mientras escanea.
+   */
+  blockedCount: number;
+  /**
+   * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —
+   * "el operario puede reintentar desde la app". Cuando se pasa, el badge
+   * "REQUIERE AYUDA" se vuelve pulsable y esta función es quien devuelve las
+   * entradas `dead` de este manifiesto a `pending` (ver
+   * `retryBlockedManifest`, `hooks/useOfflineQueue.ts`). Sin esta prop el
+   * badge se queda como texto plano — la pantalla que lo monta decide si
+   * tiene a dónde reintentar.
+   */
+  onRetryBlocked?: () => void;
 }
 
 export function PickupFlowHeader({
@@ -32,6 +52,8 @@ export function PickupFlowHeader({
   scanned,
   total,
   queuedCount,
+  blockedCount,
+  onRetryBlocked,
 }: PickupFlowHeaderProps) {
   // Floor, not round: 199/200 must read 99%, not a false 100% while a
   // package is still missing. The min-clamp still lets a true 100% (or an
@@ -56,13 +78,39 @@ export function PickupFlowHeader({
           )}
         </div>
 
-        {queuedCount > 0 && (
-          <span
-            data-testid="queue-badge"
-            className="flex-none rounded-full border border-status-warning-border bg-status-warning-bg px-2.5 py-1 font-mono text-[11px] font-semibold leading-none text-status-warning-text"
-          >
-            COLA {queuedCount}
-          </span>
+        {(queuedCount > 0 || blockedCount > 0) && (
+          <div className="flex flex-none flex-col items-end gap-1">
+            {queuedCount > 0 && (
+              <span
+                data-testid="queue-badge"
+                className="rounded-full border border-status-warning-border bg-status-warning-bg px-2.5 py-1 font-mono text-[11px] font-semibold leading-none text-status-warning-text"
+              >
+                COLA {queuedCount}
+              </span>
+            )}
+            {blockedCount > 0 &&
+              // menor 5, ronda 4 de review del PR #679 — clases distintas de
+              // "COLA N" (`status-warning-*`): dos severidades opuestas no
+              // pueden compartir color. `status-error-*` es el mismo par que
+              // ya usa `AtRiskPanel` para "atrasado" frente a "en riesgo".
+              (onRetryBlocked ? (
+                <button
+                  type="button"
+                  data-testid="blocked-badge"
+                  onClick={onRetryBlocked}
+                  className="rounded-full border border-status-error-border bg-status-error-bg px-2.5 py-1 font-mono text-[11px] font-semibold leading-none text-status-error-text"
+                >
+                  {blockedCount} REQUIERE AYUDA
+                </button>
+              ) : (
+                <span
+                  data-testid="blocked-badge"
+                  className="rounded-full border border-status-error-border bg-status-error-bg px-2.5 py-1 font-mono text-[11px] font-semibold leading-none text-status-error-text"
+                >
+                  {blockedCount} REQUIERE AYUDA
+                </span>
+              ))}
+          </div>
         )}
       </div>
 

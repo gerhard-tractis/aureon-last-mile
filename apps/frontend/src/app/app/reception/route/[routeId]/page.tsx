@@ -51,7 +51,7 @@ export default function RouteReceptionPage() {
   const { data: incoming = [] } = useIncomingRoutes(operatorId, 'in_progress');
   const { data: unloading = [] } = useIncomingRoutes(operatorId, 'in_transit');
   const { data: closed = [] } = useIncomingRoutes(operatorId, 'received');
-  const sync = useSyncQueue();
+  const sync = useSyncQueue(operatorId);
   const scanMutation = useReceptionScan();
   const completeMutation = useCompleteRouteReception();
 
