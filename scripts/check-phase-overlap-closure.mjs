@@ -172,6 +172,36 @@ function isIgnoredForOverlap(file) {
   return file.startsWith('docs/');
 }
 
+/**
+ * A directory declaration ("`packages/database/supabase/tests/`" — a phase
+ * will write SOME new file under here, name unknown) vs another target's
+ * CONCRETE files. Two directory declarations — even the identical string —
+ * never collide with each other: this exact phrase is how the corpus
+ * declares "a new pgTAP test", every phase's file is uniquely named, and a
+ * false hard conflict here would permanently block the most common
+ * pgTAP-authoring parallel-dispatch pattern in this repo (coordinator
+ * escalation, review round 2: spec-86 fase 1 vs fase 2a, both declaring
+ * `packages/database/supabase/tests/`).
+ *
+ * A directory declaration DOES collide with a concrete file the other
+ * target actually writes under it — that real file's name might turn out to
+ * be exactly the one the open-ended phase eventually picks (real risk for
+ * timestamp-named migrations dispatched close together), and unlike two
+ * bare directory strings, one side here has REAL information to compare
+ * against.
+ */
+function directoryConflicts(a, b, hard) {
+  for (const dir of a.directories ?? []) {
+    if (isIgnoredForOverlap(dir)) continue;
+    for (const file of b.writeSet) {
+      if (isIgnoredForOverlap(file)) continue;
+      if (file.startsWith(dir)) {
+        hard.push({ file, targets: [a.name, b.name], kind: 'directory', declaredDir: dir, declaredBy: a.name });
+      }
+    }
+  }
+}
+
 export function computeOverlap(targets) {
   const hard = [];
   const soft = [];
@@ -187,6 +217,9 @@ export function computeOverlap(targets) {
           hard.push({ file, targets: [a.name, b.name] });
         }
       }
+
+      directoryConflicts(a, b, hard);
+      directoryConflicts(b, a, hard);
 
       for (const [file, info] of a.closure) {
         if (isIgnoredForOverlap(file)) continue;

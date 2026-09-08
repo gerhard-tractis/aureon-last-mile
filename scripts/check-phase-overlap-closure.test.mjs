@@ -143,10 +143,11 @@ test('buildClosure does not apply the layout-ancestor rule to a non-page file', 
 });
 
 // ── computeOverlap ───────────────────────────────────────────────────────
-function target(name, writeFiles, seedForClosure = writeFiles, maxDepth = 2) {
+function target(name, writeFiles, seedForClosure = writeFiles, maxDepth = 2, directories = []) {
   return {
     name,
     writeSet: new Set(writeFiles),
+    directories,
     closure: buildClosure(seedForClosure, { resolveContent, maxDepth }),
   };
 }
@@ -246,6 +247,48 @@ test('buildClosure DEFAULT maxDepth (no override) does not reach a 3rd hop', () 
   const c = buildClosure(['apps/frontend/src/hooks/useOfflineQueue.ts'], { resolveContent });
   assert.ok(c.has('apps/frontend/src/lib/db.ts'), 'depth 2 (default) should be included');
   assert.ok(!c.has('apps/frontend/src/lib/offline/deepest.ts'), 'depth 3 must be excluded by the DEFAULT cap');
+});
+
+// ── Directory declarations (review round 2, coordinator escalation of
+// blocker 5): "test pgTAP en `packages/database/supabase/tests/`" is a real,
+// intentional phrase the corpus already uses — nobody knows the test's
+// filename before writing it. Two phases both saying that must NOT collide
+// (spec-86 fase 1 and fase 2a create DIFFERENT test files under the same
+// directory — a false hard conflict would block the single most common
+// pgTAP-authoring pattern in this repo, permanently). But a directory
+// declaration is not nothing either: if another phase's REAL diff already
+// writes a concrete file under that directory, that IS worth flagging — the
+// open-ended phase's eventual filename could still collide with it.
+test('computeOverlap: two targets both declaring the SAME directory do not conflict', () => {
+  const a = target('spec-86-fase-1', [], [], 2, ['packages/database/supabase/tests/']);
+  const b = target('spec-86-fase-2a', [], [], 2, ['packages/database/supabase/tests/']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 0);
+  assert.equal(r.soft.length, 0);
+});
+
+test('computeOverlap: a directory declaration vs a DIFFERENT directory does not conflict', () => {
+  const a = target('A', [], [], 2, ['packages/database/supabase/tests/']);
+  const b = target('B', [], [], 2, ['packages/database/supabase/migrations/']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 0);
+});
+
+test('computeOverlap: a directory declaration DOES conflict with a concrete file under it from the other target', () => {
+  const a = target('A', [], [], 2, ['packages/database/supabase/tests/']);
+  const b = target('B', ['packages/database/supabase/tests/spec99_fase1.test.sql']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 1);
+  assert.equal(r.hard[0].file, 'packages/database/supabase/tests/spec99_fase1.test.sql');
+  assert.equal(r.hard[0].kind, 'directory');
+  assert.deepEqual(r.hard[0].targets.sort(), ['A', 'B']);
+});
+
+test('computeOverlap: a directory declaration does NOT conflict with a concrete file OUTSIDE it', () => {
+  const a = target('A', [], [], 2, ['packages/database/supabase/tests/']);
+  const b = target('B', ['packages/database/supabase/migrations/spec99_fase1.sql']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 0);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
