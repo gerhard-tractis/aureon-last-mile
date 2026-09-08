@@ -127,14 +127,72 @@ Reglas añadidas durante los fix rounds, no cubiertas por el texto original de e
 
 **Deuda conocida, preexistente de spec-57, NO arreglada aquí (fuera de alcance de fase 1):** cada step de `e2e-qa` — incluido `Check quarantine` — cuelga de `if: steps.qa.outputs.provisioned == 'true'`. Un runner sin `/home/aureon/.env.qa` deja el job entero en verde sin ejecutar ni un test, y `approve-production` lo acepta igual. Es el mismo agujero que H2 (informe vacío = verde) mostraba dentro del propio reporte, pero por una puerta distinta: aquí no llega a generarse ningún reporte. Necesita su propia fase o su propio spec — no es un fix de una línea dentro de fase 1. En `origin/main` el `Run E2E against QA` que *era* el veto ya colgaba de la misma condición: el agujero tiene el mismo diámetro antes y después de esta fase — no es una regresión introducida aquí. Matiz para quien lo arregle: `check-deploy-gating.mjs` ya cementa `steps.qa.outputs.provisioned == 'true'` como el único `if:` permitido en el step `Check quarantine` — el fix futuro tendrá que ser un step separado tipo "fail si no está provisionado", no endurecer ese `if:`.
 
-### Fase 2 — Arreglar la aserción de Despacho `[pending]`
+### Fase 2 — Arreglar la aserción de Despacho `[in_progress]`
 
 **Archivos:** `apps/frontend/e2e/despacho-tablet-dock.spec.ts`, `despacho-crew-mobile.spec.ts`, `despacho-close-dispatch.spec.ts`
 
 Las tres referencian `«Asignar camión y conductor»`. O el test navega con `?dock=1` (y entonces el árbol de cuadrilla es el correcto), o maneja el selector de `RouteBuilder`, que es como el escritorio asigna camión. **Decidir cuál según lo que cada test dice estar probando**, no por lo que haga pasar el test.
 
-- [ ] Correr los tres contra QA antes y después: `npx playwright test --config=playwright.qa.config.ts`.
-- [ ] Al pasar, retirar su entrada de la cuarentena en el mismo PR.
+- [x] Correr los tres contra QA antes y después: `npx playwright test --config=playwright.qa.config.ts`.
+- [x] Al pasar, retirar su entrada de la cuarentena en el mismo PR.
+
+**Trabajo hecho (rama `feat/spec-87-fase-2-asercion-despacho`, sin mergear — el
+orquestador cierra la fase tras review y QA):**
+
+- **`despacho-tablet-dock.spec.ts` (test `2d`)** — diagnóstico del spec confirmado
+  leyendo `DispatchRouteSurface.tsx`: a 1024×768 sin `?dock=1`, `isTabletDock` e
+  `isBelowLg` son ambos `false`, así que renderiza `RouteBuilder` (el árbol de
+  escritorio), que **no tiene** el botón «Asignar camión y conductor» ni el
+  `radiogroup` — esos viven sólo en `DispatchVehicleAssignmentSheet` (mobile/
+  tablet, detrás de `isCrewTree`). Confirmado también que `RoutePanel.tsx` no
+  tiene ningún otro `<select>` en el árbol de despacho, así que
+  `page.locator('select')` no es ambiguo. El producto está bien: la propia
+  docstring del test dice que la finalidad es probar que el viewport NO activa
+  `isTabletDock` por accidente antes del flag — eso es exactamente lo que sigue
+  pinneado. Arreglo: el test ahora asigna el camión a través del `<select>` de
+  `RoutePanel.tsx` (como el escritorio realmente asigna camión — opción "b" del
+  texto de la fase), no del sheet móvil.
+- **`despacho-close-dispatch.spec.ts` (Route L)** — diagnóstico del spec
+  confirmado leyendo `infra/supabase-qa/dispatchtrack-mock/server.mjs`:
+  `createdRoutes` es un array en memoria de un proceso systemd de vida larga,
+  nunca se limpia (nadie llama `/__test__/reset` — `grep` en todo el repo no
+  encuentra ningún caller), y `handleCreateCallCount` cuenta TODAS las rutas
+  históricas que llevan ese identificador. Confirmado en vivo contra la QA real:
+  el contador para `E2E77-L-ORD` estaba en **18** antes de tocar nada (no 1), y
+  cada ejecución de Route L lo sube en **+1 exacto**, nunca +2 — el reintento no
+  duplica la ruta, es la aserción absoluta la que está mal. Se descartó
+  deliberadamente llamar a `/__test__/reset`: ese mock es un fixture QA vivo y
+  compartido (project memory: un poll de n8n también lo lee), y resetear
+  `createdRoutes`/`nextRouteId` bajo un proceso ajeno es exactamente el tipo de
+  "no destruyas datos" que este trabajo tiene prohibido arriesgar. Arreglo: el
+  test ahora captura un `baselineCount` justo antes del primer intento de
+  despacho y afirma `count - baselineCount === 1` — la misma garantía de
+  producto (item 22: el reintento no crea una segunda ruta), sin tocar estado
+  compartido.
+- **`despacho-crew-mobile.spec.ts`** — sin cambios. No está en cuarentena, sigue
+  a 390×844 donde `isBelowLg` es verdadero y el sheet/radiogroup sí existen; se
+  corrió igual (los 4 tests, ver evidencia abajo) para confirmar que nada de lo
+  anterior lo rompió.
+- **`quarantine.json` → `[]`.**
+
+**Verificación real contra QA (VPS, self-hosted runner, mismo mecanismo que
+`e2e-qa`; ver reporte completo en la respuesta del agente — no reproducido aquí
+por espacio):**
+  - RED confirmado por la razón correcta antes del fix: `despacho-tablet-dock`
+    2d falló en `locator.click` esperando el botón inexistente (timeout de
+    300s); `despacho-close-dispatch` Route L falló `expect(count).toBe(1)` con
+    `Received: 19` (no una duplicación de ruta).
+  - GREEN después del fix: `despacho-tablet-dock.spec.ts` 4/4 passed (17.0s);
+    `despacho-close-dispatch.spec.ts` 3/3 passed (H, R, L — 29.4s), reconfirmado
+    con una segunda corrida aislada de sólo Route L (delta +1 limpio, 21→22);
+    `despacho-crew-mobile.spec.ts` 4/4 passed, sin cambios.
+  - `apps/frontend/e2e/quarantine.json` en `[]` valida limpio con
+    `check-quarantine.mjs --validate-only`, y los 126 tests de guard
+    (`check-quarantine*.test.sh`, `check-deploy-gating*.test.sh`, 11 ficheros)
+    siguen en verde localmente.
+  - **No verificado por este agente:** el job `e2e-qa` real de `deploy.yml`
+    corriendo sobre el PR mergeado — eso lo confirma `qa-e2e` leyendo el
+    reporte post-merge, como manda el flujo delegado.
 
 ### Fase 3 — Dimensionar los dos backfills `[pending]`
 

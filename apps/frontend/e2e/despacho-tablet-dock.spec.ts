@@ -89,12 +89,21 @@ test.describe('spec-78 Despacho dock tablet — 3a', () => {
     await page.goto(`/app/dispatch/${routeId}`);
     await expect(page.getByTestId('dispatch-route-scan-session-tablet')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Asignar camión y conductor' }).click();
-    const radiogroup = page.getByRole('radiogroup', { name: 'Vehículos' });
-    await expect(radiogroup).toBeVisible();
-    await page.getByRole('radio', { name: new RegExp(`^${VEHICLE_EXTERNAL_ID}`) }).click();
-    await page.getByRole('button', { name: 'Asignar y empezar carga' }).click();
-    await expect(radiogroup).toBeHidden();
+    // spec-87 fase 2 — this used to click "Asignar camión y conductor" and
+    // a `radiogroup`, the crew-mobile sheet's own affordance
+    // (DispatchVehicleAssignmentSheet). Neither exists on this branch: at
+    // 1024x768 without `?dock=1`, `isTabletDock` and `isBelowLg` are both
+    // false (DispatchRouteSurface.tsx), so this renders `RouteBuilder` —
+    // the desktop tree — which assigns a truck through a plain `<select>`
+    // in RoutePanel.tsx, no confirm button of its own. The truck stays
+    // selected as local component state until "Despachar", which this test
+    // does not reach; asserting the select captured the value is what
+    // "assigns the seeded truck" means on THIS tree.
+    const vehicleSelect = page.locator('select');
+    await expect(vehicleSelect).toBeVisible();
+    await expect(vehicleSelect).toBeEnabled();
+    await vehicleSelect.selectOption(VEHICLE_EXTERNAL_ID);
+    await expect(vehicleSelect).toHaveValue(VEHICLE_EXTERNAL_ID);
   });
 
   test('3a — marking this browser as a dock tablet swaps the layout at the same width', async () => {

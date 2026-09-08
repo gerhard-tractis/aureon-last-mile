@@ -157,6 +157,19 @@ test.describe('spec-77/79 Despacho móvil — cerrar y despachar (2i-2l)', () =>
   });
 
   test('Route L — DT accepts, local write fails, retry completes WITHOUT a second DT route', async () => {
+    // spec-87 fase 2 — baseline BEFORE either dispatch attempt, not an
+    // absolute `toBe(1)`. `L_ORDER` (`E2E77-L-ORD`) is a fixed constant and
+    // the DT mock (infra/supabase-qa/dispatchtrack-mock/server.mjs) is a
+    // long-lived systemd process whose `createdRoutes` accumulate across
+    // every run of this suite — nothing calls its `/__test__/reset`, and it
+    // is a live, shared QA fixture (an n8n poll also reads it), so this test
+    // must not reset it out from under that. `handleCreateCallCount` counts
+    // ALL historical routes carrying this identifier, so an absolute count
+    // grows by exactly +1 per run and eventually fails no matter how
+    // correct the retry logic is. The delta is what item 22 actually
+    // claims: this run's retry created no second route.
+    const baselineCount = await createRouteCallCount(L_ORDER);
+
     const route = await openRouteForOrders(page, [L_ORDER]);
     await page.goto(`/app/dispatch/${route.id}`);
     await assignVehicle(page, VEHICLE_NORMAL_ID);
@@ -193,10 +206,12 @@ test.describe('spec-77/79 Despacho móvil — cerrar y despachar (2i-2l)', () =>
 
     await expect(page.getByTestId('dispatch-route-acceptance')).toBeVisible({ timeout: 15_000 });
 
-    // Item 22 — the whole point: exactly ONE route was ever created at DT
-    // for this guide, across both the failed attempt and the retry.
+    // Item 22 — the whole point: exactly ONE route was created at DT for
+    // this guide DURING THIS RUN, across both the failed attempt and the
+    // retry — measured against the baseline captured above, not an
+    // absolute count (see that comment).
     const count = await createRouteCallCount(L_ORDER);
-    expect(count).toBe(1);
+    expect(count - baselineCount).toBe(1);
 
     const { rows } = await db().query(`SELECT status FROM packages WHERE label = $1`, [L_PACKAGE]);
     expect(rows[0].status).toBe('en_ruta');
