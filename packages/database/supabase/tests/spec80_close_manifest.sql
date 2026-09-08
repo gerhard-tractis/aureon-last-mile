@@ -176,7 +176,7 @@ SELECT throws_ok(
        '{"operator_signature":"data:image/png;base64,DDD"}'::jsonb
      ) $$,
   '42501',
-  'manifest not found',
+  'MANIFEST_NOT_FOUND: manifest not found',
   'operator B cannot close operator A''s manifest'
 );
 
@@ -196,7 +196,7 @@ SELECT throws_ok(
        '{"operator_signature":"data:image/png;base64,DDD"}'::jsonb
      ) $$,
   '42501',
-  'no operator in JWT',
+  'NO_OPERATOR_IN_JWT: no operator in JWT',
   'close_manifest rejects a call with no operator_id claim at all'
 );
 

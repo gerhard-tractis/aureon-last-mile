@@ -32,6 +32,18 @@ describe('mapCloseManifestError', () => {
     );
   });
 
+  it('falls back to a generic Spanish message for MANIFEST_NOT_FOUND (spec-80 fase 1b: now carries a sentinel prefix, but is still an anomaly the operator cannot act on, not a business-flow rejection worth explaining)', () => {
+    expect(mapCloseManifestError({ message: 'MANIFEST_NOT_FOUND: manifest not found' })).toBe(
+      'No se pudo completar el manifiesto'
+    );
+  });
+
+  it('falls back to a generic Spanish message for NO_OPERATOR_IN_JWT (spec-80 fase 1b: now carries a sentinel prefix, same anomaly-not-business-rejection reasoning)', () => {
+    expect(mapCloseManifestError({ message: 'NO_OPERATOR_IN_JWT: no operator in JWT' })).toBe(
+      'No se pudo completar el manifiesto'
+    );
+  });
+
   it('falls back for a non-object / message-less error', () => {
     expect(mapCloseManifestError(null)).toBe('No se pudo completar el manifiesto');
     expect(mapCloseManifestError('boom')).toBe('No se pudo completar el manifiesto');
