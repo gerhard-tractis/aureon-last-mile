@@ -261,7 +261,11 @@ export default function RouteReceptionPage() {
 
         <SyncQueuePanel
           status={sync.status}
-          queuedCount={sync.queuedCount}
+          // H2 (spec-81, ronda 3 de review) — el panel lista `recent`
+          // (scan_queue) y su botón "Reintentar ahora" sólo puede drenar
+          // scan_queue; pasarle el `queuedCount` combinado con pickup_queue
+          // mostraría un número que la lista y el botón no pueden respaldar.
+          queuedCount={sync.scanQueueCount}
           recent={sync.recent}
           onRetry={sync.retryNow}
           isRetrying={sync.isRetrying}

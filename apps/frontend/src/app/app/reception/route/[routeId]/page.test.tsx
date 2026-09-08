@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { toast } from 'sonner';
 import RouteReceptionPage from './page';
 import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
@@ -38,14 +38,19 @@ vi.mock('@/hooks/reception/useIncomingRoutes', () => ({
   }),
 }));
 
+// H2 (spec-81, ronda 3 de review) — queuedCount and scanQueueCount are
+// deliberately different values here so a test can catch the panel reading
+// the wrong one.
+const mockUseSyncQueue = vi.fn(() => ({
+  status: 'online' as const,
+  queuedCount: 4,
+  scanQueueCount: 1,
+  recent: [],
+  retryNow: vi.fn(),
+  isRetrying: false,
+}));
 vi.mock('@/hooks/useSyncQueue', () => ({
-  useSyncQueue: () => ({
-    status: 'online',
-    queuedCount: 0,
-    recent: [],
-    retryNow: vi.fn(),
-    isRetrying: false,
-  }),
+  useSyncQueue: () => mockUseSyncQueue(),
 }));
 
 vi.mock('@/hooks/reception/useRouteReceptionSnapshot', () => ({
@@ -109,6 +114,14 @@ describe('RouteReceptionPage', () => {
     expect(
       screen.getByRole('heading', { name: /Ruta PR-2026-0001 · conteo en recepción/ }),
     ).toBeInTheDocument();
+  });
+
+  it('H2 — SyncQueuePanel header shows scanQueueCount, not the combined queuedCount', () => {
+    render(<RouteReceptionPage />);
+    const panel = screen.getByText('Cola de sincronización').closest('section');
+    expect(panel).not.toBeNull();
+    expect(within(panel as HTMLElement).getByText('1')).toBeInTheDocument();
+    expect(within(panel as HTMLElement).queryByText('4')).not.toBeInTheDocument();
   });
 
   it('renders the consolidated order-grouped list', () => {
