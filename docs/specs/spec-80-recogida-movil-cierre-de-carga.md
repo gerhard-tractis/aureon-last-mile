@@ -151,20 +151,151 @@ Cada fase es un PR revisable por separado.
 
 **No** se toca `complete/[loadId]` en esta fase. Sigue siendo la pantalla de spec-19, sin fotos. Es deuda declarada que la fase 3 sustituye.
 
-### Fase 1 — `close_manifest(p_manifest_id, p_signatures, p_missing, p_notes)` `[pending]`
+### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[in_progress]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
 `SECURITY DEFINER`, `operator_id` desde `public.get_operator_id()` y nunca desde un argumento del cliente — el patrón de `expand_carton` (`20260814000002`) es la plantilla.
 
-Hace, en una transacción: fija `status='completed'` y `completed_at`; escribe las cuatro columnas de firma; marca los bultos sin verificar según la decisión del enum; inserta las `discrepancy_notes`; devuelve el resumen que consume `5i`.
+Hace, en una transacción: fija `status='completed'` y `completed_at`, escribe las
+cuatro columnas de firma, y devuelve el resumen que consume `5i`.
 
-Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
+> **Alcance corregido (2026-09-07).** Este párrafo decía «marca los bultos sin
+> verificar según la decisión del enum; inserta las `discrepancy_notes`». Las dos
+> cosas quedaron obsoletas cuando se decidió que una discrepancia es una **fila
+> con ciclo de vida** ([spec-85](spec-85-discrepancias.md)), no un estado de bulto
+> ni una nota suelta.
+>
+> **Los faltantes NO se manejan en esta fase.** Van en la fase 2, que es donde
+> vive `5e`, y se registran llamando a `record_discrepancies` (spec-85 fase 2).
+> Por eso la firma del RPC pierde `p_missing` y `p_notes`.
+>
+> El beneficio de partirlo así es real: **la fase 1 deja de depender de spec-85**
+> y se puede construir en paralelo. Cerrar un manifiesto sin faltantes es un
+> cierre válido y completo por sí solo.
+
+Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_operator IS NOT NULL` — no `status = 'completed'`: ver la nota de "fix round 1" abajo, que es la que manda), manifiesto `pending` sin trabajar todavía, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
+
+> **Fix round 1 (2026-09-07) — el guard de "ya cerrado" cambió de eje.**
+> `trg_route_receptions_status_sync` (`20260812000006`) es un **segundo
+> cerrador**: cuando la recepción del hub termina, marca `status='completed'`
+> y `completed_at` en todos los manifiestos de la ruta **sin ninguna firma** —
+> existe justamente porque durante meses la cuadrilla se saltaba esta
+> pantalla. Rechazar por `status='completed'` (como hacía la primera versión
+> de esta fase) deja esa firma **inalcanzable para siempre**: es la evidencia
+> contra una indemnización, perdida sin vuelta atrás.
+>
+> El guard real es `signature_operator IS NOT NULL` — eso sigue impidiendo el
+> doble cierre (el camino feliz escribe la firma en el mismo `UPDATE`) sin
+> bloquear el rescate de un manifiesto que el otro cerrador ya completó sin
+> firma. Se añadió además un guard de estado separado
+> (`status NOT IN ('in_progress', 'completed')`) para rechazar un manifiesto
+> `pending` — el que `remove_manifest_from_route` (`20260824000004`) deja sin
+> `started_at`, que nunca se trabajó de verdad.
+>
+> `signature_operator_name` también dejó de venir de `p_signatures`: se
+> deriva server-side desde `public.users` por el actor del JWT — es evidencia
+> de transferencia de custodia, y un nombre que controla el cliente no sirve
+> como tal.
+>
+> **Deuda declarada, no resuelta en esta fase:** `manifests` sigue con
+> `GRANT UPDATE` a `authenticated` (heredado de `20260310100000`, lo usa
+> `openPendingManifest.ts` para transiciones `pending → in_progress` fuera
+> del alcance de este RPC). Un conductor autenticado puede seguir escribiendo
+> `PATCH /rest/v1/manifests` directamente y saltarse `close_manifest` por
+> completo, incluyendo las firmas. El cierre real sería acotar ese grant por
+> columna (`GRANT UPDATE (status, started_at, total_orders, total_packages)`)
+> una vez `openPendingManifest.ts` sea la única vía de escritura fuera del
+> RPC. No se hizo aquí para no tocar ese flujo, fuera de alcance de esta fase.
+>
+> **Deuda declarada, no resuelta en esta fase (costura preexistente):**
+> `close_manifest` no comprueba `pickup_route_crew` ni
+> `assigned_to_user_id` — cualquier usuario del operador puede firmar la
+> carga de cualquier cuadrilla, no sólo la propia. Es preexistente (el
+> `.update()` crudo que este RPC reemplaza permitía exactamente lo mismo,
+> sin ningún guard), pero al pasar el cierre a `SECURITY DEFINER` server-side
+> esa falta de comprobación se vuelve más creíble como "correcta" de lo que
+> era. No se cierra aquí porque no era parte del alcance original de esta
+> fase — queda para cuando se defina la relación entre RPC y cuadrilla
+> asignada.
+
+> **Fix round 2 (2026-09-07) — tres correcciones más al RPC, un hueco de
+> alcance en el spec, y un candidato de columna para más adelante.**
+>
+> 1. **`ERRCODE` de "ya firmado" corregido de `P0002` a `23505`.** `P0002`
+>    es el `no_data_found` estándar de Postgres, y este repo ya lo usa en 8
+>    sitios (`20260812000005`, `20260827000003`) para «no encontrado» —
+>    PostgREST lo mapea a HTTP 404, no a 409. Un handler que siguiera el
+>    patrón del repo (`rpcError.code === 'P0002' && message.startsWith(...)`,
+>    como `app/api/dispatch/routes/[id]/blocks/route.ts`) habría leído «ya
+>    firmado» como «no existe». El idioma correcto para «esto ya pasó» en
+>    este repo es `23505` (`20260820000003`, `20260824000003`), que PostgREST
+>    mapea a 409.
+> 2. **Prefijos centinela añadidos a los tres mensajes de error**
+>    (`MANIFEST_ALREADY_SIGNED`, `MANIFEST_NOT_CLOSABLE`,
+>    `OPERATOR_SIGNATURE_REQUIRED`), siguiendo el patrón `ROUTE_NOT_FOUND`/
+>    `ROUTE_SEALED` del repo — un consumidor discrimina por
+>    `message.startsWith(...)`, no por prosa en inglés. `complete/[loadId]/
+>    page.tsx` los mapea a castellano vía
+>    `lib/pickup/closeManifestErrors.ts`.
+> 3. **`signing user not found` (rama muerta) eliminada.**
+>    `get_operator_id()` ya resuelve `v_operator` desde `public.users` por
+>    `auth.uid()` con `deleted_at IS NULL`, y `full_name` es `NOT NULL` en el
+>    esquema — esa comprobación nunca podía dispararse. `close_manifest`
+>    ahora usa `auth.uid()` directamente para el nombre, sin duplicar la
+>    fuente vía `auth.jwt()->>'sub'`.
+>
+> **Corrección a la nota anterior (2026-09-07, ronda 3 de review).** Esa
+> nota decía que no había ninguna forma de llegar a `complete/[loadId]` para
+> un manifiesto que el hub ya cerró. Es falso en escritorio — verificado
+> leyendo la cadena completa, no de oído:
+>
+> 1. `trg_route_receptions_status_sync` cierra la carga sin firma →
+>    `status='completed'`.
+> 2. `get_completed_manifests` la devuelve: el único filtro es
+>    `m.status = 'completed'` (`20260813000001_spec53_package_labels.sql`),
+>    no mira las columnas de firma.
+> 3. `PickupDesktopView.tsx` pasa `onOpen={onOpen}` a `ManifestTable` **sin
+>    condicionar por `tab`** — sólo `selectedIds`/`onToggle` están gateados a
+>    `pending`. El `external_load_id` es un `<button>` en cualquier pestaña,
+>    incluida Completados.
+> 4. Click → `handleRowOpen` → `openPendingManifest` (no-op porque el
+>    status ya no es `pending`) → `router.push('/app/pickup/scan/<loadId>')`
+>    de todas formas — la navegación no depende del resultado del no-op.
+> 5. Scan → «Continuar a revisión» → sin bultos pendientes de nota
+>    `allNotesComplete` es `true` → «Continuar a firma» → `complete/[loadId]`.
+>
+> Es decir: **alcanzable en escritorio**, vía Completados → escanear →
+> revisión → firma. **No alcanzable en móvil** — `PickupMobileView` no
+> renderiza la pestaña Completados en absoluto — y móvil es el dispositivo
+> de la cuadrilla, que es exactamente el hueco que la fase 2 de este spec
+> resuelve. La fase 2 no "construye la entrada de UI" desde cero, como decía
+> antes esta nota: en escritorio esa entrada **ya existe** (aunque sin
+> ningún indicio visual de que ese manifiesto necesita firma de rescate);
+> lo que falta y es trabajo real de fase 2 es la ruta equivalente en móvil.
+>
+> **Candidato para una fase posterior:** `completed_at` se preserva
+> correctamente vía `COALESCE` en el rescate (es "cuándo terminó la carga",
+> no "cuándo se firmó" — sobreescribirlo pondría el día de la firma sobre
+> una carga recibida el día anterior, rompiendo métricas de duración). Pero
+> eso deja el momento real de la firma sin ninguna columna consultable —
+> sólo en `updated_at` (sobreescribible por cualquier otro `UPDATE`) y en el
+> trigger de auditoría. Justo en el caso de rescate, que es cuando esa fecha
+> importa para un reclamo de indemnización, es recuperable pero no
+> consultable directamente. Un `signed_at TIMESTAMPTZ` es candidato de una
+> fase futura.
 
 - [ ] Test pgTAP primero, incluyendo el rechazo cross-tenant. Correr con `scripts/pgtap-local.sh` (los tests SQL **no** corren en CI; ver spec-51).
 - [ ] Implementar. Migración con prefijo de versión único.
 - [ ] Repuntar `complete/[loadId]` al RPC, borrando el `.update()` crudo.
 - [ ] Verificar con `--only=musan` reseteado que un cierre completo deja el manifiesto consistente.
+- [ ] **Plan de QA — el rescate de H1 sí es testeable hoy en `qa.aureon.tractis.ai`,
+      por la ruta de escritorio**: cerrar una ruta desde el hub sin pasar por
+      Firma (dispara `trg_route_receptions_status_sync`), luego en escritorio ir
+      a Completados, abrir el manifiesto, escanear (o confirmar que ya está
+      escaneado), Continuar a revisión, Continuar a firma, y verificar que
+      `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
+      a la fase 2 — esa fase sólo añade el mismo camino en móvil.
 
 ### Fase 2 — `5e` cerrar con faltantes `[pending]`
 
@@ -172,6 +303,15 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 > Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC
 > no hay dónde registrar la merma.
 
+> **Alcance corregido (2026-09-07, ronda 3 de review) — el rescate de H1 en
+> móvil, no una entrada de UI que ya existe.** En escritorio, un manifiesto
+> que `trg_route_receptions_status_sync` cerró sin firma **ya es alcanzable**
+> hoy vía Completados → escanear → revisión → firma (ver la nota de fase 1
+> arriba) — nada de eso lo construye esta fase. Lo que falta y sí es trabajo
+> de fase 2 es el equivalente en móvil: `PickupMobileView` no renderiza la
+> pestaña Completados en absoluto, y móvil es el dispositivo de la
+> cuadrilla. Esta fase debe darle a la cuadrilla una forma de llegar a un
+> manifiesto de rescate sin escritorio y sin teclear la URL a mano.
 
 **Archivos:** `apps/frontend/src/app/app/pickup/review/[loadId]/page.tsx` (sustituye a la pantalla de revisión actual), componente nuevo `components/pickup/UnverifiedPackagesBlock.tsx`
 

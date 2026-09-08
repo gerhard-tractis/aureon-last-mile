@@ -70,7 +70,7 @@ Aquí alguien ya aprendió esa lección: la migración **cuenta los conflictos p
 | **1 — Cuarentena del gate** | El rojo ajeno deja de vetar; el veto se conserva | agente |
 | **2 — Arreglar la aserción de Despacho** | El gate vuelve a verde de verdad | agente |
 | **3 — Dimensionar los dos backfills** | Saber si caben en un deploy antes de intentarlo | agente |
-| **4 — Desplegar el backlog por lotes** | Producción al día | **sólo el usuario puede aprobar** |
+| **4 — Desplegar el backlog por lotes** | Producción al día | agente (aprobación incluida) |
 | **5 — Guardarraíles** | Que no vuelva a acumularse | agente |
 
 ### Fase 1 — Cuarentena del gate `[in_progress]`

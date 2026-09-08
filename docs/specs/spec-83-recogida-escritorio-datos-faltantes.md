@@ -71,7 +71,9 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 
 `5a`, panel de cierres: `CARGA-99785 · Ripley · **2 faltantes de 44**` en paleta warning, junto a los cierres limpios `38/38 paquetes`.
 
-**Este es el más fácil de los tres, y spec-80 lo habilita.** Hoy `get_completed_manifests` da totales pero no verificados, y derivar la merma exige una consulta por manifiesto. Cuando spec-80 fase 1 registre los faltantes al cerrar (`close_manifest`), la cifra queda escrita en el cierre y `TodayClosuresPanel` sólo tiene que leerla.
+**Este es el más fácil de los tres, y spec-80 lo habilita — pero no como decía este párrafo.** Hoy `get_completed_manifests` da totales pero no verificados, y derivar la merma exige una consulta por manifiesto.
+
+**Corrección (fix round 1, 2026-09-07):** el párrafo original decía que spec-80 fase 1 "registra los faltantes al cerrar" y que la cifra "queda escrita en el cierre". Es falso con el alcance ya corregido de esa fase: `close_manifest` **no persiste nada de faltantes** — devuelve `out_missing_count` (y verificados/ajenos) derivado por consulta en el momento de la llamada, y no vuelve a escribirlo en ningún sitio. La persistencia real vive en `discrepancies` (spec-85), vía `record_discrepancies`, que llama la fase 2 de spec-80 — no la fase 1. Ver la nota "Resuelto" justo debajo, que ya reflejaba esto correctamente; este párrafo había quedado sin actualizar.
 
 **Resuelto (2026-09-07): la merma se lee de `discrepancies`** ([spec-85](spec-85-discrepancias.md)) — `kind='missing'`, `operation_type='pickup'`, agrupado por manifiesto. No se añadió ningún valor a `package_status_enum`; la discrepancia es una fila con ciclo de vida propio, así que la cifra es consultable y además dice si se resolvió.
 

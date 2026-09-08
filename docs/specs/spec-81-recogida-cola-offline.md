@@ -88,6 +88,19 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 
 - [ ] Test: dos escaneos y un cierre encolados sin red → al reconectar salen en orden y el cierre va último.
 - [ ] Test: un 500 no descarta la entrada; un 409 idempotente sí la marca resuelta.
+- [ ] **Requisito (2026-09-07, hallazgo de la ronda 3 de review de spec-80
+      fase 1).** `mapCloseManifestError` (spec-80) hoy da al operario **el
+      mismo texto** para un `TypeError: Failed to fetch` (fallo de red — el
+      caso normal en este muelle, la premisa de este spec) y para un
+      `MANIFEST_NOT_CLOSABLE` (rechazo de negocio que reintentar no va a
+      arreglar nunca), y en ambos casos re-habilita el mismo botón. Un
+      operario sin señal que reintente un `MANIFEST_NOT_CLOSABLE` indefinida-
+      mente no tiene forma de saber que su caso es distinto del de red, donde
+      sí debe reintentar. Esta fase — que es la que decide cuándo algo entra
+      a la cola en vez de fallar en el momento — tiene que distinguir la rama
+      "sin conexión" del rechazo de negocio irrecuperable, y presentarle al
+      operario mensajes y afordancias distintos para cada una (encolar y
+      seguir vs. detenerse y pedir ayuda).
 
 ### Fase 3 — Idempotencia en el servidor `[pending]`
 

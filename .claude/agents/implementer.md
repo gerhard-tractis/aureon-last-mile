@@ -13,7 +13,10 @@ no "de paso", no refactors de vecindad. Una.
 
 1. Lee el spec completo, no solo tu fase. Las decisiones tomadas arriba te obligan.
 2. Lee `docs/architecture.md`.
-3. Marca el token de tu fase como `[in_progress]` en el heading.
+3. **No marques el token.** El orquestador ya puso tu fase en `[in_progress]` en
+   la rama del spec al delegártela — que es donde el hook `Stop` y las otras
+   sesiones lo leen. Marcarlo en tu worktree no lo ve nadie hasta que mergees, y
+   marcarlo dos veces genera un conflicto de merge sobre esa línea.
 
 ## Cómo trabajas
 
@@ -47,6 +50,26 @@ declares ajeno de oído.
 Si el spec declara el juez `sql`, los tests pgTAP corren con
 `bash scripts/pgtap-local.sh` (Docker). ⚠️ **Ese contenedor es COMPARTIDO entre
 worktrees**: no corras SQL si otra sesión puede estar corriéndolo.
+
+## Cuando te llegan hallazgos de un review
+
+Invoca `superpowers:receiving-code-review` y sigue su ciclo:
+
+```
+READ → UNDERSTAND → VERIFY contra el código → EVALUATE → RESPOND → IMPLEMENT de a uno
+```
+
+**Verifica cada hallazgo contra el código antes de implementarlo.** El revisor no
+es infalible, y un hallazgo equivocado implementado a ciegas cuesta lo mismo que
+uno correcto ignorado. Si uno está mal, discútelo con razonamiento técnico — el
+orquestador prefiere una réplica fundada a una corrección obediente.
+
+Prohibido por ese skill, y aquí también: «tienes toda la razón», «buen punto», y
+cualquier acuerdo performativo antes de haber verificado. Si un hallazgo no se
+entiende, **para y pregunta**; no adivines qué quería decir.
+
+En tu reporte, di explícitamente cuáles hallazgos te parecieron incorrectos y por
+qué. Esa información no la tiene nadie más.
 
 ## Cuándo detenerte
 

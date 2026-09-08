@@ -2239,6 +2239,31 @@ export type Database = {
         Args: { p_package_id: string; p_reason: string }
         Returns: undefined
       }
+      // spec-80 fase 1: atomic manifest close (status/completed_at/signatures)
+      // plus a verified/missing/unexpected summary for 5i, derived by query.
+      // p_signatures.client_signature/client_name are optional — the mock
+      // allows closing without the local's signature.
+      close_manifest: {
+        Args: {
+          p_manifest_id: string
+          // fix round 1 (H5): the signer's name is derived server-side from
+          // public.users via the JWT actor, never accepted from the client —
+          // it is custody-transfer evidence.
+          p_signatures: {
+            operator_signature: string
+            client_signature?: string | null
+            client_name?: string | null
+          }
+        }
+        Returns: {
+          out_verified_count: number
+          out_missing_count: number
+          out_unexpected_count: number
+          out_completed_at: string
+          out_signature_client: string | null
+          out_signature_client_name: string | null
+        }[]
+      }
       mark_manifest_labels_printed: {
         Args: { p_manifest_id: string }
         Returns: undefined

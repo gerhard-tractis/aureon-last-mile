@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import CompletionPage from './page';
 
 const mockUsePickupScans = vi.fn();
@@ -16,6 +16,7 @@ vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1' }),
 }));
 
+const mockRpc = vi.fn(() => Promise.resolve({ data: [{ out_verified_count: 2 }], error: null }));
 vi.mock('@/lib/supabase/client', () => ({
   createSPAClient: () => {
     const makeSingle = (data: unknown) => ({
@@ -41,9 +42,9 @@ vi.mock('@/lib/supabase/client', () => ({
         }
         return {
           select: () => makeEq({ id: 'm1', started_at: new Date().toISOString() }),
-          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
         };
       },
+      rpc: mockRpc,
       auth: {
         getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }),
       },
@@ -52,7 +53,21 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 vi.mock('@/components/pickup/SignaturePad', () => ({
-  SignaturePad: ({ label }: { label: string }) => <div data-testid="signature-pad">{label}</div>,
+  SignaturePad: ({
+    label,
+    onChange,
+  }: {
+    label: string;
+    onChange: (sig: string) => void;
+  }) => (
+    <button
+      type="button"
+      data-testid={`signature-pad-${label}`}
+      onClick={() => onChange('data:image/png;base64,FAKE')}
+    >
+      {label}
+    </button>
+  ),
 }));
 
 vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
@@ -60,7 +75,7 @@ vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
 }));
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const mockPush = vi.fn();
@@ -131,5 +146,114 @@ describe('CompletionPage', () => {
     const { container } = render(<CompletionPage />);
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain('sm:p-6');
+  });
+
+  it('calls close_manifest RPC (not a raw update) with p_manifest_id and p_signatures on confirm', async () => {
+    render(<CompletionPage />);
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(sigPad);
+
+    const submitButton = await screen.findByRole('button', {
+      name: /completar y generar recibo/i,
+    });
+    fireEvent.click(submitButton);
+
+    const confirmButton = await screen.findByRole('button', {
+      name: /confirmar y completar/i,
+    });
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      // H5 (fix round 1): operator_name is no longer sent — the RPC derives
+      // the signer's name server-side from the JWT actor. A client-supplied
+      // name would be worthless as custody-transfer evidence.
+      expect(mockRpc).toHaveBeenCalledWith('close_manifest', {
+        p_manifest_id: 'm1',
+        p_signatures: {
+          operator_signature: 'data:image/png;base64,FAKE',
+          client_signature: null,
+          client_name: null,
+        },
+      });
+    });
+  });
+
+  // F3 (fix round 2): close_manifest raises in English with a sentinel
+  // prefix (repo pattern — see app/api/dispatch/routes/[id]/blocks/route.ts
+  // reading rpcError.code + message.startsWith(...)). A crew leader on an
+  // all-Spanish PWA must never see that raw Postgres text.
+  const completeAndSubmit = async () => {
+    render(<CompletionPage />);
+    const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
+    fireEvent.click(sigPad);
+
+    const submitButton = await screen.findByRole('button', {
+      name: /completar y generar recibo/i,
+    });
+    fireEvent.click(submitButton);
+
+    const confirmButton = await screen.findByRole('button', {
+      name: /confirmar y completar/i,
+    });
+    fireEvent.click(confirmButton);
+  };
+
+  it('maps MANIFEST_ALREADY_SIGNED to a Spanish message, not the raw RPC text', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+      const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(message).not.toContain('MANIFEST_ALREADY_SIGNED');
+      // Discriminant, not just "has an accent": a test that only checks for
+      // a Spanish-looking character survives swapping this message with the
+      // MANIFEST_NOT_CLOSABLE one below — both are Spanish sentences.
+      expect(message).toMatch(/ya fue firmado/i);
+    });
+
+    // The button must be re-enabled so the operator can retry or investigate
+    // instead of being stuck on a spinner forever.
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /completar y generar recibo/i })
+      ).not.toBeDisabled();
+    });
+  });
+
+  it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'MANIFEST_NOT_CLOSABLE: manifest is not in a closable state (status: pending)' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+      const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(message).not.toContain('MANIFEST_NOT_CLOSABLE');
+      expect(message).toMatch(/[áéíóúñ]/i);
+    });
+  });
+
+  it('falls back to a generic Spanish message for an unrecognized RPC error', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'manifest not found' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('No se pudo completar el manifiesto');
+    });
   });
 });
