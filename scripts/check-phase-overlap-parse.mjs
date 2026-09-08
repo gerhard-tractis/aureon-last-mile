@@ -60,7 +60,7 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     }
   }
   if (phaseStart === -1) {
-    return { headingFound: false, files: [] };
+    return { headingFound: false, files: [], directories: [], warnings: [] };
   }
 
   let phaseEnd = lines.length;
@@ -79,7 +79,7 @@ export function extractArchivosFiles(mdContent, faseMatch) {
     }
   }
   if (archivosStart === -1) {
-    return { headingFound: true, files: [] };
+    return { headingFound: true, files: [], directories: [], warnings: [] };
   }
 
   let archivosEnd = archivosStart + 1;
@@ -88,17 +88,77 @@ export function extractArchivosFiles(mdContent, faseMatch) {
   }
   const block = lines.slice(archivosStart, archivosEnd).join('\n');
 
-  const files = [];
+  const rawEntries = [];
   const spanRe = /`([^`]+)`/g;
   let m;
   while ((m = spanRe.exec(block))) {
     const span = m[1];
-    const looksLikePath = span.includes('/') || /\.[A-Za-z]{2,5}$/.test(span);
+    const looksLikePath = span.includes('/') || /\.[A-Za-z]{2,5}(:\d+)?$/.test(span);
     if (looksLikePath && !span.startsWith('+')) {
-      files.push(span);
+      rawEntries.push(span);
     }
   }
-  return { headingFound: true, files };
+  const { files, directories, warnings } = resolveArchivosEntries(rawEntries);
+  return { headingFound: true, files, directories, warnings };
+}
+
+/**
+ * Normalizes the raw `` `...` `` spans a **Archivos:** block yields into
+ * real, resolvable file paths — or rejects them loudly instead of letting
+ * them pass through as inert strings. Three shapes seen in real specs
+ * (review round 1, blocker 5):
+ *
+ *  1. A comma-separated list where the directory is written ONCE and the
+ *     rest are bare filenames (spec-82 fase 1: `components/pickup/A.tsx`,
+ *     `B.tsx`, `C.tsx`, ...). Carries the last file's directory forward onto
+ *     any entry with no `/` of its own.
+ *  2. A real path with a trailing line-number suffix (spec-80:145:
+ *     `.../page.tsx:176`) — stripped, with a warning, since the file itself
+ *     IS resolvable once the suffix is gone.
+ *  3. A directory declaration, trailing `/` (spec-80:188:
+ *     `packages/database/supabase/migrations/`) — "a new file will land
+ *     somewhere under here", not an existing, resolvable file. Separated
+ *     into its own list rather than silently matching nothing.
+ *
+ * A bare filename with NO prior file-with-directory to inherit from is
+ * dropped, not guessed — this module has no way to know which directory was
+ * meant, and a wrong guess is worse than an honest gap.
+ */
+export function resolveArchivosEntries(rawEntries) {
+  const files = [];
+  const directories = [];
+  const warnings = [];
+  let lastDir = null;
+
+  for (const raw of rawEntries) {
+    if (raw.endsWith('/')) {
+      directories.push(raw);
+      warnings.push(`"${raw}" es un directorio, no un fichero — se ignora al resolver contenido/imports.`);
+      continue;
+    }
+
+    let entry = raw;
+    const lineSuffix = entry.match(/^(.*):\d+$/);
+    if (lineSuffix) {
+      entry = lineSuffix[1];
+      warnings.push(`"${raw}" tenía un sufijo de línea (":N") — usado "${entry}".`);
+    }
+
+    if (entry.includes('/')) {
+      lastDir = entry.slice(0, entry.lastIndexOf('/'));
+      files.push(entry);
+      continue;
+    }
+
+    if (lastDir !== null) {
+      files.push(`${lastDir}/${entry}`);
+      continue;
+    }
+
+    warnings.push(`"${raw}" es un nombre de fichero sin directorio y no hay uno previo del que heredar — se descarta.`);
+  }
+
+  return { files, directories, warnings };
 }
 
 const FRONTEND_SHORTHAND_ROOTS = ['app/', 'components/', 'hooks/', 'lib/'];

@@ -120,11 +120,26 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
     usageError(`spec no encontrado: ${specPath}`);
   }
   const specMd = readFileSync(specFull, 'utf8');
-  const { headingFound, files: declaredRaw } = extractArchivosFiles(specMd, faseMatch);
+  const {
+    headingFound,
+    files: declaredRaw,
+    directories: declaredDirs,
+    warnings: archivosWarnings,
+  } = extractArchivosFiles(specMd, faseMatch);
   if (!headingFound) {
     usageError(`fase no encontrada en ${specPath}: "${faseMatch}"`);
   }
   const declared = declaredRaw.map(normalizeFrontendPath);
+  const name = `${specPath}#${faseMatch}`;
+
+  // Blocker 5 (review round 1): a rejected/degraded **Archivos:** entry
+  // (a bare filename with no directory to inherit, a directory declaration)
+  // must be visible, not silently absorbed into nothing. `resolveContent`
+  // can't act on `declaredDirs` — there is no single file to read — so it is
+  // surfaced here as a warning instead of pretending it became a file.
+  for (const w of archivosWarnings) {
+    console.error(`::warning:: ${name} — ${w}`);
+  }
 
   const diffFiles = branch ? gitDiffFiles(repo, base, branch) : [];
 
@@ -133,8 +148,9 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   const closure = buildClosure([...writeSet], { resolveContent, maxDepth });
 
   return {
-    name: `${specPath}#${faseMatch}`,
+    name,
     declared,
+    declaredDirs,
     diffFiles,
     writeSet,
     closure,
@@ -146,6 +162,9 @@ function printReport(targets, overlap) {
   for (const t of targets) {
     console.log(`  ${t.name}`);
     console.log(`    declarado (**Archivos:**): ${t.declared.length ? t.declared.join(', ') : '(ninguno)'}`);
+    if (t.declaredDirs && t.declaredDirs.length) {
+      console.log(`    directorios declarados (no resueltos a fichero — ver warning arriba): ${t.declaredDirs.join(', ')}`);
+    }
     console.log(`    diff real: ${t.diffFiles.length ? t.diffFiles.join(', ') : '(sin commits aún)'}`);
   }
 

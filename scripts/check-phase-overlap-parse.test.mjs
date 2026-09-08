@@ -5,6 +5,7 @@ import {
   parseTarget,
   extractArchivosFiles,
   normalizeFrontendPath,
+  resolveArchivosEntries,
   parseImportSpecifiers,
 } from './check-phase-overlap-parse.mjs';
 
@@ -87,6 +88,13 @@ test('extractArchivosFiles reports headingFound=false for an unmatched fase', ()
   const r = extractArchivosFiles(SPEC_MD, 'Fase 99');
   assert.equal(r.headingFound, false);
   assert.deepEqual(r.files, []);
+  // review round 2: buildTarget destructures {directories, warnings} on
+  // EVERY return shape — a caller crashes (TypeError, not a clean usage
+  // error) if either early-return path omits them. Real fases hit this
+  // exact path: spec-82 fase 2 and spec-83 fase 3 have no **Archivos:** at
+  // all by design (genuinely ambiguous — the backfill refused to guess).
+  assert.deepEqual(r.directories, []);
+  assert.deepEqual(r.warnings, []);
 });
 
 test('extractArchivosFiles reports no Archivos line as an empty, found phase', () => {
@@ -94,6 +102,8 @@ test('extractArchivosFiles reports no Archivos line as an empty, found phase', (
   const r = extractArchivosFiles(md, 'Fase 1');
   assert.equal(r.headingFound, true);
   assert.deepEqual(r.files, []);
+  assert.deepEqual(r.directories, []);
+  assert.deepEqual(r.warnings, []);
 });
 
 test('extractArchivosFiles works with CRLF line endings (git on Windows checks specs out this way)', () => {
@@ -130,6 +140,71 @@ test('normalizeFrontendPath leaves a packages/ SQL path alone', () => {
     normalizeFrontendPath('packages/database/supabase/migrations/x.sql'),
     'packages/database/supabase/migrations/x.sql'
   );
+});
+
+// ── resolveArchivosEntries (Blocker 5, review round 1) ──────────────────────
+// Specs write the directory ONCE and then list bare filenames — real text
+// from spec-82 fase 1: `components/pickup/PickupMobileNoRoute.tsx`,
+// `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx`,
+// `PickupMobileCompactRow.tsx`, `app/app/pickup/route/active/page.tsx`. Three
+// of those five entries had no directory of their own — silently useless
+// against `git diff --name-only` and against `resolveContent`.
+test('resolveArchivosEntries carries the last directory forward onto bare filenames', () => {
+  const r = resolveArchivosEntries([
+    'components/pickup/PickupMobileNoRoute.tsx',
+    'PickupMobileStartRoute.tsx',
+    'PickupMobileClientGroup.tsx',
+    'PickupMobileCompactRow.tsx',
+    'app/app/pickup/route/active/page.tsx',
+  ]);
+  assert.deepEqual(r.files, [
+    'components/pickup/PickupMobileNoRoute.tsx',
+    'components/pickup/PickupMobileStartRoute.tsx',
+    'components/pickup/PickupMobileClientGroup.tsx',
+    'components/pickup/PickupMobileCompactRow.tsx',
+    'app/app/pickup/route/active/page.tsx',
+  ]);
+});
+
+test('resolveArchivosEntries drops (with a warning) a bare filename with no prior directory context', () => {
+  const r = resolveArchivosEntries(['PickupMobileNoRoute.tsx']);
+  assert.deepEqual(r.files, []);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /sin directorio/);
+});
+
+// real text from spec-80:145 — a line-number suffix appended to an otherwise
+// real, resolvable path.
+test('resolveArchivosEntries strips a trailing line-number suffix and warns', () => {
+  const r = resolveArchivosEntries(['apps/frontend/src/app/app/pickup/review/[loadId]/page.tsx:176']);
+  assert.deepEqual(r.files, ['apps/frontend/src/app/app/pickup/review/[loadId]/page.tsx']);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /sufijo de línea/);
+});
+
+// real text from spec-80:188 — a directory declaration ("a new file goes
+// somewhere under here"), not a resolvable file.
+test('resolveArchivosEntries separates a directory declaration (trailing /) from files, with a warning', () => {
+  const r = resolveArchivosEntries(['packages/database/supabase/migrations/']);
+  assert.deepEqual(r.files, []);
+  assert.deepEqual(r.directories, ['packages/database/supabase/migrations/']);
+  assert.equal(r.warnings.length, 1);
+  assert.match(r.warnings[0], /directorio/);
+});
+
+test('resolveArchivosEntries: a directory entry does not become the carry-forward context for a later bare filename', () => {
+  const r = resolveArchivosEntries(['packages/database/supabase/migrations/', 'foo.sql']);
+  // foo.sql has no real file directory before it (only a directory
+  // declaration) — must be rejected, not silently resolved to
+  // packages/database/supabase/migrations/foo.sql (which may not exist).
+  assert.deepEqual(r.files, []);
+  assert.ok(r.warnings.some((w) => /sin directorio/.test(w)));
+});
+
+test('resolveArchivosEntries passes an already-complete list through unchanged', () => {
+  const r = resolveArchivosEntries(['apps/frontend/src/lib/db.ts', 'apps/frontend/src/lib/queue.ts']);
+  assert.deepEqual(r.files, ['apps/frontend/src/lib/db.ts', 'apps/frontend/src/lib/queue.ts']);
+  assert.deepEqual(r.warnings, []);
 });
 
 // ── parseImportSpecifiers ────────────────────────────────────────────────
