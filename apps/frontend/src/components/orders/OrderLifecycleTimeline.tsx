@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
+import { MILESTONES, milestoneTimestamps } from '@/lib/orders/lifecycle-milestones';
 
 /**
  * spec-65 Task 7 — replaced `OrderLifecycleRibbon` (deleted in Task 8, once
@@ -18,34 +19,8 @@ import type { AuditEntry } from '@/hooks/useOrderDetail';
 
 type MilestoneState = 'done' | 'current' | 'future';
 
-interface Milestone {
-  key: string;
-  label: string;
-  keywords: string[];
-}
-
-const MILESTONES: Milestone[] = [
-  { key: 'importada', label: 'Importada', keywords: ['csv_import', 'insert_orders', 'order_created'] },
-  { key: 'recogida', label: 'Recogida', keywords: ['pickup', 'recogida', 'verificado', 'verified'] },
-  { key: 'recepcion', label: 'Recepción', keywords: ['reception', 'recepcion', 'en_bodega', 'warehouse'] },
-  { key: 'anden', label: 'Andén', keywords: ['dock', 'anden', 'sector', 'consolidat'] },
-  { key: 'reparto', label: 'En reparto', keywords: ['dispatch', 'route', 'en_ruta', 'reparto'] },
-  { key: 'entregada', label: 'Entregada', keywords: ['deliver', 'entregad'] },
-];
-
 interface Props {
   auditLogs: AuditEntry[];
-}
-
-function matchTimestampFor(milestone: Milestone, auditLogs: AuditEntry[]): string | null {
-  let latest: string | null = null;
-  for (const log of auditLogs) {
-    if (!log.timestamp) continue;
-    const action = log.action.toLowerCase();
-    if (!milestone.keywords.some((kw) => action.includes(kw))) continue;
-    if (!latest || log.timestamp > latest) latest = log.timestamp;
-  }
-  return latest;
 }
 
 function computeStates(timestamps: (string | null)[]): MilestoneState[] {
@@ -80,7 +55,7 @@ const LABEL_CLASSES: Record<MilestoneState, string> = {
 };
 
 export function OrderLifecycleTimeline({ auditLogs }: Props) {
-  const timestamps = MILESTONES.map((m) => matchTimestampFor(m, auditLogs));
+  const timestamps = milestoneTimestamps(auditLogs);
   const states = computeStates(timestamps);
 
   return (
