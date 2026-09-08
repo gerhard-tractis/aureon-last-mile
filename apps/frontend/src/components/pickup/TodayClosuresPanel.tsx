@@ -1,17 +1,16 @@
 'use client';
 
-import { Check } from 'lucide-react';
+import { Check, TriangleAlert } from 'lucide-react';
 import type { CompletedManifest } from '@/hooks/pickup/useManifests';
 
 /**
- * spec-54 phase 4.4 — "Cierres de hoy" (mock 1l, right column bottom).
+ * spec-54 phase 4.4 — "Cierres de hoy" (mock 1l/5a, right column bottom).
  *
- * The mock marks a closure with missing packages in the warning palette
- * ("2 faltantes de 44"). get_completed_manifests returns totals but no
- * verified count, so a shortfall cannot be derived here without a second
- * query per manifest. Rows therefore report what closed and when; the
- * discrepancy view (useDiscrepancies) remains the place that answers "what
- * was missing".
+ * spec-83 fase 1: get_completed_manifests now returns missing_count, a COUNT
+ * over public.discrepancies (spec-85, kind='missing', operation_type=
+ * 'pickup') for this manifest. A row with missing_count > 0 renders in the
+ * warning palette with "N faltantes de M"; a clean close (missing_count = 0)
+ * keeps the original success palette and "M paquetes" line.
  */
 
 function timeLabel(iso: string): string {
@@ -36,30 +35,52 @@ export function TodayClosuresPanel({ rows }: { rows: CompletedManifest[] }) {
             Todavía no se cierra ninguna carga hoy.
           </p>
         ) : (
-          rows.map((row) => (
-            <div
-              key={row.id}
-              data-testid="closure-row"
-              className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-2.5 last:border-b-0"
-            >
-              <span className="grid h-6 w-6 flex-none place-items-center rounded-[7px] border border-status-success-border bg-status-success-bg">
-                <Check className="h-3 w-3 text-status-success" strokeWidth={3} />
-              </span>
+          rows.map((row) => {
+            const hasMissing = row.missing_count > 0;
 
-              <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                <span className="truncate font-mono text-[11.5px] font-semibold leading-none text-text">
-                  {row.external_load_id}
+            return (
+              <div
+                key={row.id}
+                data-testid="closure-row"
+                className={`flex items-center gap-2.5 border-b border-border-subtle px-4 py-2.5 last:border-b-0 ${
+                  hasMissing ? 'bg-status-warning-bg' : ''
+                }`}
+              >
+                <span
+                  className={`grid h-6 w-6 flex-none place-items-center rounded-[7px] border ${
+                    hasMissing
+                      ? 'border-status-warning-border bg-status-warning-bg'
+                      : 'border-status-success-border bg-status-success-bg'
+                  }`}
+                >
+                  {hasMissing ? (
+                    <TriangleAlert className="h-3 w-3 text-status-warning" strokeWidth={3} />
+                  ) : (
+                    <Check className="h-3 w-3 text-status-success" strokeWidth={3} />
+                  )}
                 </span>
-                <span className="truncate text-[10.5px] leading-none text-text-muted">
-                  {row.retailer_name ?? 'Sin cliente'} · {row.total_packages ?? 0} paquetes
+
+                <div className="flex min-w-0 flex-1 flex-col gap-[3px]">
+                  <span className="truncate font-mono text-[11.5px] font-semibold leading-none text-text">
+                    {row.external_load_id}
+                  </span>
+                  {hasMissing ? (
+                    <span className="truncate text-[10.5px] font-semibold leading-none text-status-warning-text">
+                      {row.missing_count} faltantes de {row.total_packages ?? 0}
+                    </span>
+                  ) : (
+                    <span className="truncate text-[10.5px] leading-none text-text-muted">
+                      {row.retailer_name ?? 'Sin cliente'} · {row.total_packages ?? 0} paquetes
+                    </span>
+                  )}
+                </div>
+
+                <span className="flex-none font-mono text-[10.5px] font-medium text-text-muted">
+                  {timeLabel(row.completed_at)}
                 </span>
               </div>
-
-              <span className="flex-none font-mono text-[10.5px] font-medium text-text-muted">
-                {timeLabel(row.completed_at)}
-              </span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </section>

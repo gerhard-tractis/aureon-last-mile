@@ -115,7 +115,7 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
-### Fase 1 — Merma `[pending]`
+### Fase 1 — Merma `[in_progress]`
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
