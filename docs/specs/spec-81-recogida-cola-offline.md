@@ -346,6 +346,137 @@ fase 3. Queda para cuando fase 3 mergee, como trabajo de conexión, no de
 diseño nuevo: la forma del `OfflineQueueSender` ya existe y está pensada
 para eso.
 
+**Ronda 3 de review del PR #679 (2026-09-08) — dos bloqueantes, ambos en
+`useOfflineQueue.ts`, y el segundo introducido por un arreglo menor de la
+ronda 2 (m10):**
+
+- **B1.** m10 (ronda 2) evitaba que `timersRef` creciera sin límite quitando
+  cada timer del array en cuanto disparaba — pero lo hacía **reasignando**
+  `timersRef.current` a un array nuevo (`.filter(...)`), y la limpieza del
+  efecto de montaje capturaba `timersRef.current` en una variable local AL
+  MONTAR, no al desmontar. En cuanto el primer timer disparaba, esa variable
+  quedaba apuntando al array viejo — cualquier reintento programado
+  DESPUÉS quedaba en el array nuevo, invisible para el `clearTimeout` del
+  desmontaje. Escenario: A cierra sesión entre el primer y el segundo
+  reintento de su propio `close_manifest`; B entra; el timer huérfano de A
+  dispara igual, ejecutando el closure viejo de `drain` (operatorId/userId
+  de A) contra el cliente Supabase actual (sesión de B) — `close_manifest`
+  deriva `signature_operator_name` de `auth.uid()`, así que el cierre de A
+  queda firmado con el nombre de B. **Implementado:** la limpieza lee
+  `timersRef.current` en el momento en que se ejecuta, no una variable
+  capturada al montar. **Seguimiento descubierto durante el mutation-test de
+  este arreglo, no en el review original:** un `drain()` en vuelo en el
+  momento exacto del desmontaje puede llamar a `scheduleRetry` DESPUÉS de
+  que la limpieza ya corrió — la limpieza no puede cancelar un timer que
+  todavía no existe. Cerrado con `mountedRef`: `scheduleRetry` es un no-op
+  si el componente ya se desmontó, sin importar cuándo dentro del `drain()`
+  en vuelo se intente llamar. Test dedicado
+  (`useOfflineQueue.test.ts`, "B1 (seguimiento)") gatea `send()` para
+  desmontar mientras sigue pendiente y confirma que ningún reintento llega
+  a programarse.
+- **B2.** `drainManifest` sale por `manifestHasDeadEntry` ANTES de mirar
+  `nextAttemptAt`, pero el `remaining` que `drain()` usaba para reprogramar
+  el próximo intento seguía incluyendo esa entrada. Si su backoff ya había
+  vencido, `delay === 0` en cada pasada — `drain()` se reprogramaba
+  inmediato, repetía el mismo estado bloqueado, y volvía a dar 0. Sin
+  techo, sin salida: medido en el review, ~49 pasadas por segundo, cero
+  envíos, alcanzable tanto cross-user (el `dead` de un usuario bloquea el
+  manifiesto para otro) como con dos pestañas del mismo usuario.
+  **Implementado:** antes de calcular `soonest`, se excluyen las entradas
+  cuyo manifiesto está bloqueado por un `dead` (`manifestHasDeadEntry`) —
+  nada que este drenador no vaya a poder avanzar debe alimentar el
+  temporizador de reintento.
+
+Dos mayores que el review pidió arreglar, no sólo anotar:
+
+- **M3.** `ownEntries` rompía el FIFO entre usuarios: `drainManifest`
+  filtraba por `userId` ANTES de mirar si había una entrada `pending` de
+  OTRO usuario por delante en el mismo manifiesto — el propio docstring de
+  `manifestHasDeadEntry` da el argumento que lo contradice ("un `dead` en un
+  manifiesto es un problema del MANIFIESTO, no de quién lo encoló"); un
+  `pending` por delante es lo mismo, sólo temporal. Y había un test
+  (`useOfflineQueue.test.ts`) que **consagraba** el bug como comportamiento
+  correcto. Escenario: A escanea 5 bultos sin red y cierra sesión; B entra,
+  escanea 3 y firma; el drenador de B se saltaba los 5 de A — el manifiesto
+  se cerraba corto de lo que el cliente firmó. Hoy no es explotable
+  (`pickup_scan` no tiene productor real todavía), pero el test bloqueaba el
+  arreglo correcto para cuando lo tenga. **Implementado:** guarda hermana de
+  `manifestHasDeadEntry` (`manifestBlockedForUser`) — la cabeza real del
+  FIFO del manifiesto (sin filtrar por usuario) tiene que ser de esta sesión
+  antes de tocar nada en él. Test corregido para afirmar el comportamiento
+  correcto.
+- **M4.** `useOfflineQueue.test.ts` ("a 500 (retry) does not discard the
+  entry") no desmontaba ni congelaba el reloj, y `drain()` deja un
+  reintento real a +1000ms tras la primera respuesta 'retry'; el mock de
+  `send` devuelve `'sent'` en su segunda llamada. Bajo un stall de reloj
+  real (contención de CPU con el resto de la suite, GC) ese timer podía
+  disparar para real entre el fin del test y la limpieza automática,
+  enviando y purgando una fila que el test asumía seguía `pending`. No es
+  la carrera de M6 ni contención de recursos sin mecanismo — es un test con
+  deadline de reloj real, y el review pidió arreglarlo, no etiquetarlo
+  "flaky". **Implementado:** el test desmonta explícitamente antes de leer
+  el estado final — con B1 corregido, eso cancela el timer de forma
+  determinista sin depender de cuándo llegue el runner a su `afterEach`.
+
+Un mayor nuevo, del checklist original de esta fase (nunca implementado):
+
+- **M5.** El techo de `retryCount` seguía sin existir — `spec-81`
+  (fase 3, M-4) ya declaraba este residual "pendiente de la fase 2". `dead`
+  sólo se alcanzaba vía `outcome: 'dead'` del sender (los centinelas
+  `permanent`/`idempotent`); nada más agotaba reintentos nunca. Con
+  `MAX_BACKOFF_MS` topado en 30s, un error `transient` desconocido (un
+  42501 sin reconocer, o el 409 de lote de fase 3 que el sender nunca puede
+  confirmar completo) reintentaba cada 30s para siempre, y
+  `getPendingPickupCount` lo contaba como `pending` — `SyncChip` pintaba
+  verde de éxito "1 EN COLA" indefinidamente. Mismo síntoma que B3 (ronda
+  2) corrigió para `dead`. **Implementado:** `MAX_RETRY_ATTEMPTS = 10`
+  (~3 minutos de reintentos con el backoff topado antes de dar por muerta
+  una entrada) — al agotarse, `markDead` en vez de otro `markFailed`.
+
+Bloqueante nuevo, hallado por el usuario auditando contra el mock de diseño
+(no del review de mutación):
+
+- **P0.** El camino interactivo de `complete/[loadId]/page.tsx` trataba
+  `classifyCloseManifestError`'s `kind: 'idempotent'` como un rechazo de
+  negocio genérico — caía al mismo `toast.error` + botón re-habilitado que
+  un `permanent` de verdad, en vez de a la rama de éxito. Escenario: la
+  cuadrilla firma y tapea "Confirmar y completar"; `close_manifest`
+  COMMITEA — manifiesto cerrado, firmas escritas — y la respuesta se pierde
+  en un túnel; el operario tapea otra vez, choca con `MANIFEST_ALREADY_SIGNED`
+  (23505, "an idempotent 409" según la propia migración), ve un toast rojo,
+  y queda atrapado en `5f` para siempre (refrescar no ayuda, el `useEffect`
+  recarga el mismo manifiesto ya firmado). El drenador de fondo
+  (`offlineQueueSender.ts`) ya mapeaba `idempotent -> 'sent'` correctamente
+  — era la otra costura sobre la misma función de clasificación, escrita en
+  el mismo PR, que no se había alineado. **Implementado:** `kind ===
+  'idempotent'` navega fuera con un toast de éxito, igual que la rama
+  offline.
+
+**Decisión del usuario, 2026-09-08 — la línea estática del mock de `5f`.**
+El mock (`docs/design/Recogida.dc.html`, PR #685, mergeado a `main`) tiene
+una línea **estática, siempre visible, antes de que el operario firme**:
+*"Todo queda en el teléfono y se sube al recuperar señal. Las fotos
+también."* Hasta esta ronda, la pantalla sólo explicaba el offline
+**después** de un fallo (un toast tras el error del RPC) — afordancias
+opuestas: el mock tranquiliza antes de decidir firmar, el código mostraba
+un error y luego decía que en realidad había ido bien. Razón por la que
+esto se había inventado en tres rondas de review en vez de estar decidido
+desde el principio: **el mock nunca cubrió el camino de fallo en
+absoluto** — cero coincidencias de "error"/"reintentar"/"no se pudo" en
+todo el fichero. El usuario tomó la recomendación del review tal cual:
+**añadir la línea del mock, texto literal, antes de firmar — el toast se
+queda, como confirmación de que el cierre se encoló, no como reemplazo**.
+Implementado en `complete/[loadId]/page.tsx`, antes de la sección de firma
+del operador (mismo orden que el mock, justo antes de "FIRMA DEL LOCAL").
+
+**Hueco de diseño declarado, no decidido:** el mock de `5f` **sigue sin
+cubrir** qué ve el operario ante un rechazo de negocio irrecuperable
+(`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, los dos
+cross-tenant `42501`) — esa pantalla (toast de error + botón re-habilitado,
+sin más afordancia sobre a dónde ir o qué hacer) sigue siendo invención de
+review, no una decisión de diseño. Queda anotado para que no se lea como
+resuelto.
+
 ### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
