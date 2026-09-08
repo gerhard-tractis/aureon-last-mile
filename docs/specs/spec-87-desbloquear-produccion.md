@@ -393,7 +393,40 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 
 - [ ] El agente prepara y verifica cada lote; **el usuario aprueba cada uno**.
 
-### Fase 5 — Guardarraíles `[in_progress]`
+### Fase 5 — Guardarraíles `[done]`
+
+> Implementado por: `implementer`, **tres rondas**. PR #672 (`ee163fb`) más el seguimiento en
+> PR #676 (`9c7a06b`). 67 aserciones en **siete** suites, todas cableadas en `ci.yml:70-88`.
+> Review: `reviewer` adversarial, **tres rondas**, cada una reproduciendo los fixtures por su
+> cuenta. Lo que cambiaron:
+> **la regla 1 era ciega al idioma dominante del repo** — blanqueaba todo cuerpo entre `$$` sin
+> distinguir `CREATE FUNCTION` (inerte) de `DO` (se ejecuta), y **97 de 194** migraciones usan
+> `DO` de nivel superior; **un `$$` dentro de un comentario desactivaba la regla entera**, porque
+> el despojado de comentarios ocurría después; **`--diff-filter=A` dejaba pasar la edición de una
+> migración existente**, con 16 precedentes reales desde junio; y **`extractDestinationTable`
+> anclaba `^\s*UPDATE` al inicio del string**, así que contra un cuerpo de función caía siempre
+> al primer `INSERT INTO` y una función con `UPDATE public.packages` salía en verde.
+> Cuatro mutantes de los arreglos finales hacen fallar sus tests; la lista de 12 `::error::`
+> sobre las 192 migraciones se verificó idéntica entre la ronda 1 y la 3.
+> QA: n/a por capa — es infraestructura de CI. Se verifica con sus propias suites y contra el
+> `deploy.yml` real, no contra QA.
+> Downstream: sin cambios en otros specs.
+>
+> **Dos retractaciones que quedan registradas, porque son parte de la evidencia:**
+> El reviewer retiró su dictamen de ronda 1 sobre `20260913000001` («falso positivo a nivel
+> error»): estaba condicionado a que M6 razonara solo sobre el destino, y una vez F3 admite en el
+> texto del warning que M6 no mira la fuente ni la duración, con la fuente viva en ambos ficheros
+> el `::error::` es correcto **por el fondo**. Y la «Nota sobre B3» que la ronda 2 reescribió era
+> **falsa**: la conclusión de ronda 1 —mutante equivalente, blindado por el chequeo del token
+> `AS`— era la buena, reproducida con el mutante aislado.
+>
+> **Deuda conocida, no arreglada a propósito:** un `UPDATE public.packages p SET …` **con alias**
+> sigue invisible dentro de un cuerpo de función, porque tanto `BODY_UPDATE_RE` como el `updateRe`
+> de `extractAllDestinationTables` exigen `SET` inmediatamente tras el nombre. Preexistente a la
+> ronda 3. Más m-10 (un `--` dentro de un literal borra el resto de la línea; solo explotable con
+> dos sentencias en la misma línea física, cosa que ninguna migración del repo hace), m-13
+> (`DELETE FROM` de nivel superior, `CREATE TABLE x AS SELECT`, `EXECUTE 'UPDATE …'` dentro de un
+> `DO`) y m-14 (en un segundo push a la misma rama la base es el tip anterior, no `main`).
 
 > Implementado por: `implementer` — rama `feat/spec-87-fase-5-guardarrailes`, sin PR aún (lo abre
 > el orquestador tras esto). El token queda `[in_progress]` a propósito: falta review
