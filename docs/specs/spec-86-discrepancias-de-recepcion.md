@@ -1,32 +1,75 @@
 # Spec-86: Discrepancias de Recepción — el bulto que se retiró y no llegó
 
-> **Related:** **spec-85** (en redacción por el usuario — **crea la tabla única de discrepancias; sin ella este spec no se puede implementar**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre de carga en recogida, que escribe discrepancias `source_process = 'pickup'`), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (su «2 faltantes de 44» lee la misma tabla), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (`open_route_reception`, `complete_route_reception`), [spec-62](spec-62-reception-mobile.md) (la hoja de cierre móvil), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (`route_receptions` y el guard de `discrepancy_notes`)
+> **Related:** **spec-85** (**entrega la tabla única de discrepancias: fase 1
+> — esquema — y fase 2 — RPCs — ya mergeadas**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre de carga en recogida, que escribe discrepancias `operation_type = 'pickup'` vía `record_discrepancies`), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (su «2 faltantes de 44» lee la misma tabla), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (`open_route_reception`, `complete_route_reception`), [spec-62](spec-62-reception-mobile.md) (la hoja de cierre móvil), [spec-47](spec-47-pickup-route-and-consolidated-reception.md) (`route_receptions` y el guard de `discrepancy_notes`)
 
 **Status:** backlog
 **Verify:** unit, sql, e2e-qa
-**Bloqueado por:** spec-85. Ninguna fase de este spec puede empezar hasta que la tabla única de discrepancias exista. Quien lo desbloquea: el usuario, entregando spec-85.
+**Bloqueado por:** nada a nivel de esquema — spec-85 fase 1 y fase 2 ya están
+mergeadas (PR #657 incluido, spec-80 fase 1 ya consume el mismo esquema en
+`main`). Ver *Precondición* abajo: el bloqueo real que queda es sólo sobre la
+mitad de la fase 2 (la pata de indemnización), y depende de una decisión del
+usuario, no de spec-85.
 
 _Date: 2026-09-07_
 
+> **Nota (2026-09-08, ronda de arreglos 2 de spec-85 fase 2, B-3):** este spec
+> se escribió contra un esquema que todavía no existía y quedó con nombres
+> inventados — `source_process` no es, y nunca fue, el nombre de ninguna
+> columna. Lo que spec-85 realmente entregó: la columna es
+> `operation_type public.discrepancy_operation_enum` (`'pickup' | 'reception'`),
+> el origen es `manifest_id` o `route_reception_id` según ese valor, con una
+> columna generada `source_id` que apunta al que corresponda, y los tres RPCs
+> son `record_discrepancies(p_operation_type, p_source_id, p_items jsonb)`,
+> `resolve_discrepancy(p_id, p_status, p_resolution)` y
+> `get_discrepancies(p_operation_type, p_status, p_source_id)`. Este documento
+> se corrigió para usar esos nombres en todo el texto de abajo — **sin
+> implementar ninguna fase**: siguen `[blocked]` como estaban.
+
+> **Corrección (2026-09-08, ronda de arreglos 3 de spec-85 fase 2, C1):** la
+> nota de arriba dejó la razón de bloqueo circular — decía que el spec nace
+> `[blocked]` "por diseño propio, no por spec-85", y la sección de
+> *Precondición* seguía justificando eso mismo con "empezar cualquier fase
+> obligaría a inventar un esquema provisional", que es exactamente la
+> dependencia de spec-85 que ya está satisfecha. La sección de abajo se
+> reescribió con el dictamen del re-review: **fase 3 y fase 1 están
+> desbloqueadas**; sólo la mitad de la fase 2 (indemnización) sigue esperando
+> al usuario.
+
 ---
 
-## ⚠️ Precondición dura
+## Precondición: qué está desbloqueado y qué no
 
-**Este spec no se implementa hasta que spec-85 esté hecho.** Spec-85 crea la
-tabla única de discrepancias con el campo que identifica el proceso que la
-genera (`pickup` / `reception`). Este spec **no la define y no la crea** — sólo
-escribe y lee filas `source_process = 'reception'`.
+Spec-85 (esquema + RPCs, fases 1 y 2) ya está mergeado. Este spec **no define
+ni crea la tabla** — sólo escribe y lee filas `operation_type = 'reception'`
+sobre lo que spec-85 entregó. Eso deja de ser, a partir de aquí, motivo para
+que las tres fases nazcan `[blocked]` en bloque:
 
-**Spec-85 debe declarar `**Downstream:** spec-86`** junto a su `**Status:**`, y
-ninguna de sus fases pasa a `[done]` sin releer este spec contra lo que
-realmente se mergeó — la forma de la tabla, los nombres de las columnas y la
-decisión abierta de más abajo. Es la regla de #641, y este spec es exactamente
-el caso que describe: escrito contra una tabla que todavía no existe.
+- **Fase 3 (panel de lectura): desbloqueada.** `get_discrepancies` existe con
+  la firma exacta que esta fase cita (`p_operation_type`, `p_status`,
+  `p_source_id`). No depende de nada más.
+- **Fase 1 (captura al cerrar recepción): desbloqueada a nivel de
+  esquema/RPC.** `record_discrepancies` existe y acepta
+  `operation_type = 'reception'`. Lo que exige, y ya está advertido en la
+  fase misma: reescribir `complete_route_reception` con `CREATE OR REPLACE`
+  tomando como plantilla la **última** migración que la define — nunca la
+  original — porque esta fase le añade el payload por paquete y la llamada al
+  RPC nuevo.
+- **Fase 2: sólo parcialmente bloqueada.** La pata "Resuelta" (bulto aparece,
+  pasa a `resolved` vía `resolve_discrepancy`) no depende de nada que falte:
+  el RPC existe y el escaneo que dispara el avance de estado ya vive en
+  producción. La pata "Perdida → indemnización" sí depende de una decisión
+  abierta (ver *Decisión abierta que hereda spec-85* abajo) y de spec-85 fase
+  3 ("`lost` e indemnización"), ambas esperando al usuario. Ése es el único
+  bloqueo legítimo que queda en todo este spec, y afecta a media fase, no a
+  las tres. Se separa en **fase 2a** (desbloqueada) y **fase 2b** (bloqueada)
+  más abajo por esa razón.
 
-Todas las fases nacen `[blocked]` a propósito. No hay ninguna que un agente
-pueda tomar antes: la fase 1 escribe en esa tabla, la 2 la actualiza y la 3 la
-lee. Empezar cualquiera antes obligaría a inventar un esquema provisional y
-migrarlo después, que es exactamente lo que la tabla única evita.
+**Spec-85 debe seguir declarando `**Downstream:** spec-86`** junto a su
+`**Status:**`, y ninguna de sus fases pasa a `[done]` sin releer este spec
+contra lo que realmente se mergeó. Es la regla de #641, y este spec fue
+exactamente el caso que describe: escrito contra una tabla que todavía no
+existía, y quedó con nombres inventados hasta la corrección de cabecera.
 
 ---
 
@@ -82,18 +125,29 @@ la que no tiene ese registro.
 
 ## Lo que este spec necesita de spec-85
 
-No define la tabla; declara lo que consume. Si spec-85 entrega otra forma, este
-spec se ajusta a ella, pero necesita cubrir:
+Lo que spec-85 realmente entregó (fase 1 esquema + fase 2 RPCs, ambas
+mergeadas):
 
 1. **Grano de paquete.** Una fila por bulto, no por cierre. El texto libre de
    `route_receptions.discrepancy_notes` sigue existiendo como comentario del
    cierre, pero deja de ser el registro.
-2. **`source_process`** distinguiendo `pickup` de `reception`.
-3. **Ciclo de vida** `open → resolved | lost`, con quién resolvió, cuándo y por
-   qué.
+2. **`operation_type public.discrepancy_operation_enum`** distinguiendo
+   `pickup` de `reception`, con `manifest_id`/`route_reception_id` según cuál
+   y una columna generada `source_id` que apunta al que corresponda —
+   `record_discrepancies(p_operation_type, p_source_id, p_items jsonb)` es el
+   RPC de escritura. **Todavía no lo llama ningún fichero de código** — un
+   `git grep record_discrepancies` sobre `apps/` y `packages/` no devuelve nada.
+   Su primer consumidor será spec-80 fase 2 en el lado `pickup`, que está
+   `[pending]`, así que quien tome esta fase **no tiene un llamador de
+   referencia del que copiar la forma del payload**: la fuente de verdad es la
+   tabla de contrato de errores de spec-85 y los tests pgTAP.
+3. **Ciclo de vida** `open → resolved | lost` vía `resolve_discrepancy(p_id,
+   p_status, p_resolution)`, con quién resolvió, cuándo y por qué.
 4. **Enganche de indemnización** para `lost`: una referencia nullable donde el
    flujo de indemnización (no construido, ver *Fuera de alcance*) pueda
-   colgarse sin una segunda migración sobre datos vivos.
+   colgarse sin una segunda migración sobre datos vivos. Spec-85 no la
+   entregó — es una fase futura declarada, "3 — `lost` e indemnización",
+   `[blocked]` en spec-85.
 
 ### Decisión abierta que hereda spec-85
 
@@ -107,7 +161,7 @@ responde.** No se decidió aquí porque la tabla es de spec-85. La asimetría re
 | Quién responde | No nosotros | **Nosotros** — indemnización |
 
 **Recomendación:** estados compartidos (`open / resolved / lost`) pero razones y
-consecuencias por `source_process`. Un `lost` de recepción marca la
+consecuencias por `operation_type`. Un `lost` de recepción marca la
 indemnización; un `lost` de recogida cierra como merma del retail y no la marca.
 Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
@@ -115,16 +169,20 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
 ## Fases
 
-### Fase 1 — Captura por paquete al cerrar la recepción `[blocked]`
+### Fase 1 — Captura por paquete al cerrar la recepción `[pending]`
 
 `complete_route_reception(p_route_id, p_discrepancy_notes text)` (SECURITY
 DEFINER, def viva en QA) hoy sólo exige texto cuando
 `received_count < expected_count`, y no escribe nada por paquete.
 
 Gana un payload por paquete, y **abre una discrepancia por cada paquete esperado
-sin `reception_scan` recibido**, con o sin razón. El conjunto esperado ya es
-computable: `get_route_reception_snapshot` devuelve `expected_packages`, armado
-desde los `pickup_scans` verificados de la ruta.
+sin `reception_scan` recibido**, con o sin razón, llamando a
+`record_discrepancies('reception'::discrepancy_operation_enum,
+<route_reception_id>, p_items)` (spec-85 fase 2) por cada uno —
+`p_source_id` es el `route_reception_id` de esta recepción, no el
+`manifest_id`. El conjunto esperado ya es computable:
+`get_route_reception_snapshot` devuelve `expected_packages`, armado desde
+los `pickup_scans` verificados de la ruta.
 
 El respaldo automático es el punto: si la UI no manda razones, o manda menos de
 las que faltan, la fila se abre igual. **Un cierre corto no puede volver a
@@ -140,23 +198,32 @@ registro del faltante.
 > paquete. Al reescribir la RPC, usar como plantilla la **última** migración que
 > la define, nunca la original.
 
-### Fase 2 — Resolver: apareció, o se perdió `[blocked]`
+### Fase 2a — Resolver: el bulto aparece `[pending]`
 
-Dos desenlaces desde el panel:
+El bulto aparece, se escanea en recepción, el paquete avanza a `en_bodega`
+por el camino normal (`trg_reception_scan_advance_package_status`) y la
+discrepancia pasa a `resolved` vía `resolve_discrepancy(p_id, 'resolved',
+p_resolution)` (spec-85 fase 2). La resolución **no** mueve el estado del
+paquete por su cuenta: lo hace el escaneo, y la fila sólo lo registra. Dos
+escritores del mismo estado es como se producen los desacuerdos.
 
-- **Resuelta** — el bulto aparece, se escanea en recepción, el paquete avanza a
-  `en_bodega` por el camino normal (`trg_reception_scan_advance_package_status`)
-  y la discrepancia pasa a `resolved`. La resolución **no** mueve el estado del
-  paquete por su cuenta: lo hace el escaneo, y la fila sólo lo registra. Dos
-  escritores del mismo estado es como se producen los desacuerdos.
-- **Perdida** — pasa a `lost`, con autor y motivo, y marca la indemnización
-  según la decisión que herede spec-85.
+No depende de nada pendiente: `resolve_discrepancy` existe y el disparador de
+avance de estado ya vive en producción.
 
-### Fase 3 — Ver: la vista Discrepancias en Ops Control `[blocked]`
+### Fase 2b — Perdida e indemnización `[blocked]`
+
+Pasa a `lost` vía el mismo `resolve_discrepancy`, con autor y motivo, y marca
+la indemnización según la decisión abierta de más abajo (*Decisión abierta
+que hereda spec-85*) y de spec-85 fase 3 ("`lost` e indemnización", sigue
+`[blocked]`). Ambas esperan al usuario — éste es el único bloqueo legítimo
+que queda en todo el spec.
+
+### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
 
 Lista las discrepancias abiertas con orden, paquete, carga, ruta, quién cerró la
-recepción y desde cuándo está abierta. Sigue el patrón de panel de etapa que ya
-existe; no inventa una pantalla nueva.
+recepción y desde cuándo está abierta, leyendo `get_discrepancies(
+p_operation_type := 'reception', p_status := 'open')` (spec-85 fase 2). Sigue
+el patrón de panel de etapa que ya existe; no inventa una pantalla nueva.
 
 Esto es lo que rescata a `ORD-01` / `ORD-02`: dejan de estar en ningún panel y
 pasan a estar en éste. **No** se las mete en Recepción — no llegaron, y decir
@@ -173,8 +240,8 @@ que están recibidas sería falso.
   añadido aquí.
 - **El flujo de indemnización al retail.** Este spec registra el disparador
   (`lost` de recepción); no calcula ni tramita nada.
-- **La captura del lado recogida.** Es spec-80 fase 1, que escribe en la misma
-  tabla con `source_process = 'pickup'`.
+- **La captura del lado recogida.** Es spec-80 fase 2, que escribe en la misma
+  tabla vía `record_discrepancies` con `operation_type = 'pickup'`.
 - **Cerrar la asimetría UI/servidor de `finalizeRule`** — spec-56.
 
 ---

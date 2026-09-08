@@ -7,9 +7,10 @@
 
 > **Nota (2026-09-07).** El punto 1 («Merma en cierres», «2 faltantes de 44»)
 > dependía de *«la decisión del enum en spec-80»*. Esa decisión se movió a
-> spec-85, que crea una tabla única de discrepancias con `source_process`
-> (`pickup` / `reception`). La merma se lee de ahí — contando filas de la carga
-> con `source_process = 'pickup'` — en vez de necesitar un estado nuevo en
+> spec-85, que crea una tabla única de discrepancias con `operation_type`
+> (`discrepancy_operation_enum`: `pickup` / `reception`). La merma se lee de
+> ahí — vía `get_discrepancies(p_operation_type := 'pickup', p_source_id :=
+> <manifest_id>)` (spec-85 fase 2) — en vez de necesitar un estado nuevo en
 > `packages`. La tercera opción que este spec temía («sólo `discrepancy_notes`»,
 > que dejaba la merma no consultable) queda descartada.
 

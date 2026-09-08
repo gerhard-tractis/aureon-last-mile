@@ -9,9 +9,11 @@
 > **Nota (2026-09-07).** La decisión de enum que la fase 1 tenía abierta
 > (`faltante_en_origen` vs `extraviado` vs sólo `discrepancy_notes`) **ya no se
 > toma aquí**: spec-85 crea una tabla única de discrepancias con un campo
-> `source_process` que distingue `pickup` de `reception`. Esta fase pasa a
-> escribir en ella con `source_process = 'pickup'`, y spec-86 escribe el lado
-> recepción. Motivo: el mismo faltante se registraba en dos sitios distintos
+> `operation_type` (`discrepancy_operation_enum`) que distingue `pickup` de
+> `reception`. Esta fase pasa a escribir en ella con `operation_type =
+> 'pickup'` vía el RPC `record_discrepancies` (spec-85 fase 2), y spec-86
+> escribe el lado recepción. Motivo: el mismo faltante se registraba en dos
+> sitios distintos
 > según la etapa que lo detectara. Ver spec-86 para el hueco medido en QA que
 > lo motivó.
 
@@ -326,6 +328,59 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
       escaneado), Continuar a revisión, Continuar a firma, y verificar que
       `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
       a la fase 2 — esa fase sólo añade el mismo camino en móvil.
+
+### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[pending]`
+
+Hallado por el re-review de spec-85 fase 2, ronda de arreglos 3 (C3), al
+comparar el "patrón de `close_manifest`" que esa migración dice seguir contra
+lo que `close_manifest` (esta fase, ya mergeado en `main`, PR #657,
+`20260913000002_spec80_close_manifest.sql`) realmente hace. Dos huecos, sin
+tocar aquí — sólo documentados para que otra fase los tome:
+
+1. **ACL: `PUBLIC` y `anon` conservan `EXECUTE`.** `:229` sólo hace
+   `GRANT EXECUTE ON FUNCTION public.close_manifest(UUID, JSONB) TO
+   authenticated;` — sin ningún `REVOKE`. La imagen base de Supabase otorga
+   `EXECUTE` por defecto a `PUBLIC` **y** a `anon` directamente (no por
+   herencia de `PUBLIC`) en toda función nueva — es el mismo hallazgo que
+   M-5 de spec-85 fase 2 cerró para `record_discrepancies`/
+   `resolve_discrepancy`/`get_discrepancies` (`REVOKE ALL ... FROM PUBLIC` +
+   `REVOKE ALL ... FROM anon`, explícito, porque el segundo no se
+   desprende del primero). El resultado real hoy es
+   `=X/postgres | postgres=X | anon=X | authenticated=X | service_role=X`:
+   un llamador sin JWT válido puede invocar `close_manifest` — no hay
+   explotación viva porque el guard `NO_OPERATOR_IN_JWT`-equivalente de
+   dentro (`:53`) rechaza a cualquier caller sin operador resoluble, pero
+   dejar el grant así es la exposición que la convención del repo existe
+   para cerrar antes de que se convierta en una.
+2. **Dos `RAISE` de `42501` sin prefijo centinela.** `:53`
+   (`'no operator in JWT'`) y `:92` (`'manifest not found'`) no llevan el
+   prefijo `PREFIJO:` que los otros tres `RAISE` de esta misma función sí
+   tienen (`MANIFEST_ALREADY_SIGNED`, `MANIFEST_NOT_CLOSABLE`,
+   `OPERATOR_SIGNATURE_REQUIRED`, ver "Fix round 2" arriba). Sin prefijo,
+   `message.startsWith('...')` no puede distinguir "sin operador" de
+   "manifiesto no encontrado" — exactamente el problema que el contrato de
+   errores de spec-85 fase 2 (B-3, tabla en `spec-85-discrepancias.md`)
+   documentó y cerró para sus propios RPCs, tomando `close_manifest` como
+   plantilla. La plantilla, resulta, sólo cumple el patrón a medias.
+
+**Para quien tome esta fase:** una migración nueva (nunca editar
+`20260913000002`), `CREATE OR REPLACE FUNCTION public.close_manifest(...)`
+copiando el cuerpo íntegro de la definición vigente en la migración más
+reciente que la define (hoy, `20260913000002` — comprobar si algo posterior
+la reemplazó antes de usarla como base), con:
+- `RAISE EXCEPTION 'NO_OPERATOR_IN_JWT: no operator in JWT' USING ERRCODE = '42501';` en `:53`.
+- `RAISE EXCEPTION 'MANIFEST_NOT_FOUND: manifest not found' USING ERRCODE = '42501';` en `:92`.
+- `REVOKE ALL ON FUNCTION public.close_manifest(UUID, JSONB) FROM PUBLIC;` y
+  `REVOKE ALL ON FUNCTION public.close_manifest(UUID, JSONB) FROM anon;`
+  después del `GRANT ... TO authenticated` existente.
+- Tests pgTAP nuevos: ACL (mismo patrón que TEST 15/15b de
+  `spec85_discrepancies_rpcs.test.sql`, `aclexplode` contra grantee 0 y
+  contra el rol `anon`) y prefijo (mismo patrón que TEST 10b/10c — pinear
+  `SQLERRM LIKE 'NO_OPERATOR_IN_JWT:%'` / `'MANIFEST_NOT_FOUND:%'`), y
+  confirmarlos por mutación, no sólo por lectura.
+- Revisar si algún consumidor de frontend (`lib/pickup/closeManifestErrors.ts`)
+  ya hace matching sobre el texto viejo sin prefijo — si es así, actualizarlo
+  en el mismo cambio.
 
 ### Fase 2 — `5e` cerrar con faltantes `[pending]`
 
