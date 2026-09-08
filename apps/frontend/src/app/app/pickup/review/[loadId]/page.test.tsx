@@ -27,7 +27,14 @@ vi.mock('@/lib/supabase/client', () => ({
         eq: () => ({
           eq: () => ({
             is: () => ({
-              single: () => Promise.resolve({ data: { id: 'm1' } }),
+              single: () =>
+                Promise.resolve({
+                  data: {
+                    id: 'm1',
+                    retailer_name: 'Falabella',
+                    pickup_location: 'Mall Plaza Vespucio',
+                  },
+                }),
             }),
           }),
         }),
@@ -96,6 +103,15 @@ describe('DiscrepancyReviewPage (5e)', () => {
       mutateAsync: vi.fn().mockResolvedValue(undefined),
     });
     mockPush.mockClear();
+  });
+
+  // Medio 5a (review PR #686): the 5e mock draws "Falabella · Mall Plaza
+  // Vespucio" under the load id — the retailer and pickup point, sourced
+  // from manifests.retailer_name/pickup_location. Only the load id itself
+  // was rendered.
+  it('shows the retailer and pickup point under the load id, as the mock draws it', async () => {
+    render(<DiscrepancyReviewPage />);
+    expect(await screen.findByText('Falabella · Mall Plaza Vespucio')).toBeInTheDocument();
   });
 
   it('shows the "Falta 1 paquete" heading inside the warning card (singular)', async () => {

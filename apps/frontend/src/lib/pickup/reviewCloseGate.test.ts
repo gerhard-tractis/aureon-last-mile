@@ -5,6 +5,7 @@ import {
   closeButtonLabel,
   primaryButtonLabel,
   missingHeadingLabel,
+  manifestSubtitleLabel,
 } from './reviewCloseGate';
 
 describe('dedupeNotFoundScans', () => {
@@ -88,5 +89,27 @@ describe('missingHeadingLabel', () => {
 
   it('reads plural "Faltan N paquetes" for more than one', () => {
     expect(missingHeadingLabel(3)).toBe('Faltan 3 paquetes');
+  });
+});
+
+describe('manifestSubtitleLabel', () => {
+  it('joins retailer and pickup point with the mock\'s "·" separator', () => {
+    expect(manifestSubtitleLabel('Falabella', 'Mall Plaza Vespucio')).toBe(
+      'Falabella · Mall Plaza Vespucio'
+    );
+  });
+
+  it('falls back to just the retailer when pickup_location is not set yet', () => {
+    expect(manifestSubtitleLabel('Falabella', null)).toBe('Falabella');
+  });
+
+  it('falls back to just the pickup point when retailer is not set', () => {
+    expect(manifestSubtitleLabel(null, 'Mall Plaza Vespucio')).toBe(
+      'Mall Plaza Vespucio'
+    );
+  });
+
+  it('returns null when neither is available', () => {
+    expect(manifestSubtitleLabel(null, null)).toBeNull();
   });
 });

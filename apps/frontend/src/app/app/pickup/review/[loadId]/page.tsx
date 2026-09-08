@@ -15,6 +15,7 @@ import {
   dedupeNotFoundScans,
   closeButtonLabel,
   primaryButtonLabel,
+  manifestSubtitleLabel,
 } from '@/lib/pickup/reviewCloseGate';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
@@ -45,19 +46,35 @@ export default function DiscrepancyReviewPage() {
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  // Medio 5a (spec-80 fase 2 review, PR #686): the mock draws "Falabella ·
+  // Mall Plaza Vespucio" under the load id — retailer + pickup point,
+  // sourced straight from manifests (both columns exist on the table
+  // already; no new query). pickup_location can be NULL this early in the
+  // flow (it's populated at digitalization, spec-53/spec-83) — the subtitle
+  // just omits the "· X" half when it is.
+  const [manifestMeta, setManifestMeta] = useState<{
+    retailerName: string | null;
+    pickupLocation: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!operatorId) return;
     const supabase = createSPAClient();
     supabase
       .from('manifests')
-      .select('id')
+      .select('id, retailer_name, pickup_location')
       .eq('operator_id', operatorId)
       .eq('external_load_id', loadId)
       .is('deleted_at', null)
       .single()
       .then(({ data }) => {
-        if (data) setManifestId(data.id);
+        if (data) {
+          setManifestId(data.id);
+          setManifestMeta({
+            retailerName: data.retailer_name ?? null,
+            pickupLocation: data.pickup_location ?? null,
+          });
+        }
       });
     supabase.auth.getUser().then(({ data }) => {
       setUserId(data.user?.id ?? null);
@@ -168,6 +185,15 @@ export default function DiscrepancyReviewPage() {
 
         <div className="flex flex-col gap-0.5">
           <span className="text-lg font-semibold text-text">{loadId}</span>
+          {(() => {
+            const subtitle = manifestSubtitleLabel(
+              manifestMeta?.retailerName ?? null,
+              manifestMeta?.pickupLocation ?? null
+            );
+            return subtitle ? (
+              <span className="text-sm text-text-secondary">{subtitle}</span>
+            ) : null;
+          })()}
         </div>
 
         <UnverifiedPackagesBlock

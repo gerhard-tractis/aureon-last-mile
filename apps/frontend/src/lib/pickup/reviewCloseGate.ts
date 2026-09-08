@@ -92,3 +92,18 @@ export function missingHeadingLabel(missingCount: number): string {
   if (missingCount === 1) return 'Falta 1 paquete';
   return `Faltan ${missingCount} paquetes`;
 }
+
+/**
+ * Medio 5a (spec-80 fase 2 review, PR #686): mock `5e` draws "Falabella ·
+ * Mall Plaza Vespucio" under CARGA-99814 — retailer + pickup point, from
+ * manifests.retailer_name / manifests.pickup_location. pickup_location can
+ * be NULL this early in the flow (populated at digitalization, spec-53/
+ * spec-83), so this degrades gracefully instead of showing a bare "·".
+ */
+export function manifestSubtitleLabel(
+  retailerName: string | null,
+  pickupLocation: string | null
+): string | null {
+  if (retailerName && pickupLocation) return `${retailerName} · ${pickupLocation}`;
+  return retailerName ?? pickupLocation ?? null;
+}
