@@ -185,12 +185,206 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 - [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
 - [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
 
-### Fase 3 — Idempotencia en el servidor `[pending]`
+### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
-**Archivos:** migración nueva; afecta a `close_manifest` (spec-80 fase 1) y a la escritura de `pickup_scans`
+**Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
+`packages/database/supabase/tests/spec81_fase3_pickup_scans_idempotency.test.sql`,
+`packages/database/supabase/tests/spec81_fase3_close_manifest_idempotency.test.sql`
 
-- [ ] Columna `client_operation_id` con índice único parcial por operador.
-- [ ] Test pgTAP: la misma operación dos veces deja una fila y no altera conteos. Correr con `scripts/pgtap-local.sh`.
+- [x] Columna `client_operation_id` con índice único parcial por operador.
+- [x] Test pgTAP: la misma operación dos veces deja una fila y no altera conteos. Corrido con `scripts/pgtap-local.sh`.
+- [x] **Ronda 1 de review — B1:** test pgTAP para el caso de LOTE (un escaneo por
+  número de pedido inserta N filas, un `client_operation_id`, un solo
+  `.insert()`) — el lote debe sobrevivir su propio primer intento y su
+  reintento debe rechazarse sin duplicar ninguna fila. Corrido con
+  `scripts/pgtap-local.sh`, mutación verificada (ver decisión 3 revisada).
+- [x] **Ronda 1 de review — B2:** `client_operation_id` añadido a
+  `apps/frontend/src/lib/types.ts` y `packages/database/src/database.types.ts`
+  (`Row`/`Insert`/`Update` de `pickup_scans`) — sin esto, la fase 2 no puede
+  compilar un `.insert({ …, client_operation_id })` contra el cliente tipado.
+- [x] **Ronda 2 de review — M-1 (bloqueante):** TEST 6 corregido (mismo
+  `package_id` en ambas filas) para que vuelva a tener poder sobre
+  `operator_id`. Mutación re-verificada.
+- [x] **Ronda 2 de review — M-6/m4:** TEST 1/2 convertidos de
+  `DO $$ … RAISE EXCEPTION $$` a aserciones pgTAP; plan de 13 a 20.
+  Mutación de B1 re-corrida tras la conversión — ahora sí ejercita TEST 3-20
+  bajo una mutación de TEST 1/2.
+- [x] **Ronda 2 de review — M-2/M-3/M-4/m-5/n-8:** cabecera de la migración
+  corregida en los cinco puntos; TEST 14 nuevo (SQL) y
+  `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend) congelan
+  el alcance real de M-3. Residual de M-4 (bucle de reintento sin techo de
+  `retryCount`) documentado, no resuelto — pendiente de la fase 2.
+
+**Decisiones tomadas:**
+
+1. **Qué tablas llevan la columna: sólo `pickup_scans`.** `manifests`
+   (close_manifest) y `discrepancies` ya tienen su propia idempotencia por
+   llave de negocio — un manifiesto se firma una vez en su vida
+   (`signature_operator IS NOT NULL` → 23505 `MANIFEST_ALREADY_SIGNED`,
+   20260913000004), y `discrepancies` ya usa los dos índices únicos
+   parciales de spec-85 fase 1 + `ON CONFLICT DO NOTHING` — ese comentario
+   cita a spec-81 por nombre como el motivo. Añadir `client_operation_id`
+   ahí sería un segundo mecanismo sobre una llave que ya existe y ya está
+   probada. `pickup_scans` es distinta: se escribe con un `.insert()` directo
+   del cliente (no hay RPC de por medio) y no tiene ninguna llave de negocio
+   natural — un rescan legítimo del mismo barcode es una fila nueva a
+   propósito. Ver el header de la migración para el argumento completo, y
+   `spec81_fase3_close_manifest_idempotency.test.sql`, que prueba la
+   idempotencia de `close_manifest` **sin tocar su cuerpo**.
+
+   **Residual conocido (M1, ronda 1 de review):** esta decisión cubre los
+   CONTEOS de `close_manifest` (verified/missing/unexpected), no que «esta
+   operación concreta se aplicó». `signature_operator IS NOT NULL` es «no
+   puedo firmar dos veces», no «tu operación ya se aplicó» — un reintento con
+   `p_signatures` **distinto** también da 23505, pero la firma original queda
+   intacta sin que el cliente lo sepa. Escenario real bajo
+   `20260913000004` (cualquier usuario autenticado del operador puede firmar
+   cualquier manifiesto suyo): el operario A firma en su teléfono y se pierde
+   el 200; el operario B cierra el MISMO manifiesto desde otro teléfono con
+   **su** firma y su `client_name`; la cola de A reintenta → 23505 → la fase 2
+   lo marca resuelto → A ve «subido, todo bien», pero la evidencia de custodia
+   almacenada es la de B. No se añade una columna a `manifests` para esto — el
+   checklist literal de esta fase está cumplido — pero es un límite conocido,
+   no un caso cubierto. `spec81_fase3_close_manifest_idempotency.test.sql`
+   TEST 3/5 lo documenta: el reintento lleva una firma deliberadamente
+   distinta (`BBB` contra la `AAA` original) precisamente para que el test
+   tenga poder de detectar esta clase de bug si el guard se debilitara.
+2. **Duplicado = error 23505 (409), nunca éxito silencioso ni P0002/404.**
+   Mismo idioma que `close_manifest`/`record_discrepancies`. La fase 2
+   (otra rama) decide tratar ese 409 como resuelto desde el cliente — las
+   dos mitades están de acuerdo en el código (23505) y en desacuerdo a
+   propósito en la interpretación (servidor: conflicto; cliente: éxito ya
+   cumplido). `pickup_scans` no pasa por RPC, así que el 23505 es el
+   `unique_violation` crudo de Postgres, sin prefijo centinela — el único
+   discriminador que la cola necesita es el ERRCODE, no un mensaje (a
+   diferencia de `close_manifest`, que comparte 42501 entre tres causas).
+
+   Nota (n8, ronda 1 de review): el header de la migración argumenta que un
+   200 silencioso «escondería» el duplicado y por eso es malo — eso es
+   correcto para `pickup_scans`, pero el `ON CONFLICT DO NOTHING` que
+   spec-85 usa para `discrepancies` es exactamente esa forma. Ambas son
+   correctas en su contexto (RPC con llave de negocio propia vs. INSERT
+   directo sin ninguna), pero quien lea sólo el header de esta migración
+   puede leerlo como una regla general — no lo es. La fase 2 maneja las dos
+   formas de «éxito»: 23505 aquí, 200 con fila vacía en discrepancies.
+3. **Índice:** `UNIQUE (operator_id, client_operation_id, package_id) NULLS
+   NOT DISTINCT WHERE client_operation_id IS NOT NULL AND deleted_at IS
+   NULL` — mismo patrón que `uniq_open_discrepancy_per_package`/`_per_barcode`
+   (spec-85 fase 1), con `package_id` añadido y `NULLS NOT DISTINCT` (ronda 1
+   de review, B1 bloqueante). La clave original de dos columnas
+   `(operator_id, client_operation_id)` colisionaba consigo misma en el
+   PRIMER intento de un escaneo por número de pedido: `usePickupScans.ts`
+   inserta N filas — una por bulto — en un único `.insert(rows)`, y las N
+   comparten el mismo `client_operation_id` (fase 1 estampa uno por entrada
+   de cola, no uno por fila física). `package_id` en la clave arregla el
+   lote; `NULLS NOT DISTINCT` es necesario porque `package_id` es `NULL` en
+   un escaneo `not_found`/`duplicate` — sin el modificador, el reintento de
+   ESE escaneo no colisionaría consigo mismo (Postgres trata `NULL <> NULL`
+   por defecto) y se perdería la idempotencia justo donde el barcode no
+   resolvió a un paquete. `operator_id` en la clave por la regla no
+   negociable del repo. Ver el header de la migración para el detalle
+   completo, incluida la razón por la que `client_operation_id IS NOT NULL`
+   pasa de ser honesto-pero-redundante a necesario una vez que `NULLS NOT
+   DISTINCT` aplica a todo el índice, no columna por columna (m3).
+
+**Límites conocidos, documentados y no resueltos aquí (menores, ronda 1 de
+review):**
+
+- **m5 — TEST 6 (cross-tenant) inserta una fila de un manifiesto del
+  operador A bajo el `operator_id` del operador B.** Corre como `postgres`,
+  así que RLS no aplica y la fixture entra; un manifiesto propio de B
+  costaría cuatro líneas más. Ninguno de los dos ficheros de esta fase
+  ejercita el camino bajo el rol `authenticated` — «el cliente recibe 23505»
+  está probado como superusuario, no como el actor real.
+- **m6 — la ventana de `deleted_at IS NULL` es real y hoy sin explotador.**
+  Un escaneo soft-borrado libera su `client_operation_id`, y una entrada de
+  cola aún `pending` con ese id lo reinsertaría. No hay ningún camino de
+  soft-delete de `pickup_scans` en el frontend hoy — sólo aplicaría a una
+  corrección manual por SQL de soporte. Trade-off aceptado, no un cambio.
+  **Ronda 2 (M-2):** con un lote de N filas bajo un único
+  `client_operation_id`, esta ventana es peor de lo descrito arriba —
+  soft-deletear sólo UNA fila del lote y dejar que la cola reintente el LOTE
+  ENTERO (un único statement atómico) hace que el reintento choque contra
+  las N-1 filas vivas y se rechace completo: la fila borrada nunca se
+  reinserta, y el manifiesto queda corto en el bulto exacto que el cliente
+  firma. Sigue mitigado por lo mismo que m6 — no hay soft-delete de
+  `pickup_scans` desde el frontend hoy — pero la cabecera de la migración
+  quedaba corregida: ver `20260913000007:157-170`.
+- **n7 — el header de la migración (`20260913000007:104-109`) desmonta la
+  regla 2 de `check-migration-safety.mjs` pero no la 3**, y el warning que
+  CI emite sobre este archivo es de la regla 3. Es un falso positivo
+  legítimo — el predicado parcial excluye todas las filas existentes, así
+  que no hace falta backfill — pero el header no lo dice explícitamente.
+- **Dos operarios del mismo operador generando por azar el mismo UUID v4**
+  → el segundo recibe 409 y la fase 2 lo da por resuelto, perdiendo un
+  escaneo real. Probabilidad ~0 con 122 bits de entropía por UUID v4,
+  aceptado explícitamente.
+
+**Ronda 2 de review — correcciones y residuales nuevos:**
+
+- **M-1 (bloqueante):** TEST 6 de `spec81_fase3_pickup_scans_idempotency.test.sql`
+  se volvió vacuo al añadir `package_id` a la clave — con `package_id` NULL en
+  la fila de op_B contra `package_id` real en la de op_A, las dos ternas ya
+  discriminaban por `package_id`, así que el test pasaba aunque `operator_id`
+  no estuviera en el índice (verificado por mutación: cero `not ok` mutando
+  el índice a `(client_operation_id, package_id)`). Corregido dándole a la
+  fila de op_B el MISMO `package_id` que la de op_A — ahora `operator_id` es
+  la única columna que sigue discriminando, y un mutante que lo quite falla
+  el test por comportamiento, no sólo por el `ILIKE` textual de TEST 2.
+- **M-6/m4 — TEST 1/2 pasaron de `DO $$ … RAISE EXCEPTION $$` a aserciones
+  pgTAP (`ok`/`is`).** Una `RAISE` aborta la transacción entera: los TEST 3+
+  nunca corrían bajo una mutación de TEST 1/2, así que la evidencia de
+  mutación de B1 nunca había ejercitado el comportamiento real hasta que el
+  reviewer quitó TEST 2 a mano. Re-verificado tras la conversión: mutando el
+  índice, ahora se ven `not ok` reales y el resto del archivo sigue
+  corriendo.
+- **M-2 — la justificación de `deleted_at IS NULL` en la cabecera era falsa
+  para lotes N>1.** Corregido en `20260913000007:157-170`; ver bullet de m6
+  arriba.
+- **M-3 — «la auto-colisión ya no ocurre» estaba sobre-afirmado.** Bajo
+  `NULLS NOT DISTINCT`, un lote de 2+ filas con el MISMO
+  `client_operation_id` y `package_id IS NULL` en todas vuelve a
+  auto-colisionar en el primer intento — es B1 otra vez, en el carril NULL.
+  No alcanzable hoy vía `usePickupScans.ts` (`scan-validator.ts` sólo produce
+  `packageIds.length > 1` con ids reales de `packages.id`, nunca NULL), pero
+  es una propiedad de las escrituras de HOY, no del índice en general.
+  Corregido en `20260913000007:178-192`; congelado con
+  `spec81_fase3_pickup_scans_idempotency.test.sql` TEST 14 (SQL, general) y
+  `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend, la premisa
+  de hoy).
+- **M-4 — la cabecera citaba el contrato de la fase 2 al revés.** Decía que
+  la fase 2 trata todo 409 idempotente como éxito ya resuelto; el docstring
+  real de `OfflineQueueSender` (`useOfflineQueue.ts`, PR #679) dice lo
+  contrario — un sender debe releer el conteo real antes de devolver
+  `'sent'`. Corregido en `20260913000007:56-76`.
+
+  **Residual nuevo (M-4):** un 409 causado por un lote incompleto (el
+  escenario de M-2/m6) hace que un sender correcto nunca vea el conteo
+  esperado y siga devolviendo `'retry'` indefinidamente —
+  `drainManifest` (`useOfflineQueue.ts`, fase 2) no tiene transición a
+  `'dead'` por `retryCount`, sólo el sender puede devolver `'dead'`. Sin que
+  el sender implemente ese corte, la entrada queda en bucle con retroceso
+  exponencial topado en 30s, para siempre. No resuelto en esta fase ni en la
+  2 — decisión pendiente de quien escriba el sender real (fase 2 o una fase
+  futura).
+- **m-5 — la cabecera afirmaba PG 15.8 como la versión de producción.** Falso:
+  producción y QA corren PG 17
+  (`packages/database/supabase/config.toml`'s `major_version = 17`,
+  `infra/supabase-qa/docker-compose.yml`'s `supabase/postgres:17.6.1.136`);
+  15.8 es sólo la imagen de `scripts/pgtap-local.sh`. Sin impacto funcional
+  — verificado también contra `postgres:17.10` — pero la única prueba de
+  esta migración corre en un major distinto al de destino. Corregido en
+  `20260913000007:124-133`.
+- **n-8 — la cabecera daba la razón equivocada para omitir `CONCURRENTLY`.**
+  Decía «no hay backfill»; la razón real es que `pickup_scans` es pequeña
+  hoy, así que el lock `SHARE` que `CREATE UNIQUE INDEX` sí toma dentro de
+  `BEGIN` (bloqueando escrituras mientras escanea la tabla) es breve. La
+  ausencia de backfill es la razón de otra cosa (por qué no hace falta el
+  patrón COUNT(*)-guard). Corregido en `20260913000007:194-204`.
+
+> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 2
+> de review corregida (M-1 bloqueante, M-2/M-3/M-4/m-5/n-8, TEST 1/2
+> convertidos a pgTAP). Falta PR y QA antes de poder marcar esta fase `[done]`.
 
 ### Fase 4 — Chip de sync `[pending]`
 
