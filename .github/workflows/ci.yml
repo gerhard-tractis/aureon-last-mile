@@ -64,6 +64,12 @@ jobs:
       - name: Test the deploy-gating guard — quarantine veto step (round 6)
         run: bash ./scripts/check-deploy-gating-quarantine-r6.test.sh
 
+      # Round 7: executes candidate run: scripts under real bash against a
+      # stub check-quarantine.sh, requiring an actual, live bypass before a
+      # vector counts — the strategy that replaces one -rN.test.sh per round.
+      - name: Test the deploy-gating guard — quarantine veto step (differential harness)
+        run: bash ./scripts/check-deploy-gating-quarantine-differential.test.sh
+
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible
