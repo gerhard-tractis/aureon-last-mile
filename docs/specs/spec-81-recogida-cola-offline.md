@@ -172,7 +172,13 @@ Lógica pura y testeable sin navegador: encolar, listar pendientes, reclamar par
 - [x] **Ronda 5 de review — n6 (nitpick):** el docstring de `claimPending` decía que el token era "el único dato que distingue mi reclamación de la de otro drenador" sin acotar el alcance. Corregido: es único por entrada y milisegundo, no globalmente — inerte para este módulo (todo comparador acota primero por `:id`), pero no serviría como clave de un `Map<token, request>` entre entradas distintas.
 - [x] **Ronda 5 de review — comentario del test de N3:** el test negativo de H5/N3 también mata una "cuarta vía" (`toArray()` + filtro en memoria) sin un cuarto spy, porque Dexie implementa `Table.toArray()` como `this.toCollection().toArray()`. Documentado en el comentario del test para que no se lea como una enumeración incompleta.
 
-### Fase 2 — Drenado `[pending]`
+### Fase 2 — Drenado `[in_progress]`
+
+> Corrección de estado (2026-09-08, orquestador): esta fase estaba declarada
+> `[pending]` de forma incorrecta — es PR #679 (rama
+> `feat/spec-81-fase-2-drenado`), abierto y en su séptima ronda de review al
+> momento de este cierre. No se marca `[done]` aquí: sigue viva, sólo se
+> corrige el token para que refleje que un agente ya la tiene tomada.
 
 **Archivos:** `apps/frontend/src/hooks/useOfflineQueue.ts`, `+ test`
 
@@ -202,7 +208,7 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 - [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
 - [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
 
-### Fase 3 — Idempotencia en el servidor `[in_progress]`
+### Fase 3 — Idempotencia en el servidor `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
 `packages/database/supabase/tests/spec81_fase3_pickup_scans_idempotency.test.sql`,
@@ -399,9 +405,30 @@ review):**
   ausencia de backfill es la razón de otra cosa (por qué no hace falta el
   patrón COUNT(*)-guard). Corregido en `20260913000007:194-204`.
 
-> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 2
-> de review corregida (M-1 bloqueante, M-2/M-3/M-4/m-5/n-8, TEST 1/2
-> convertidos a pgTAP). Falta PR y QA antes de poder marcar esta fase `[done]`.
+> Implementado por: rama `feat/spec-81-fase-3-idempotencia-servidor`, SHA
+> `a5dfaee9`, PR #678 (merge `a93941f7`, 2026-09-08T12:22:00Z).
+> Review: rondas 1 y 2 de review, ambas cerradas en la misma rama — ronda 1
+> (B1 bloqueante: colisión de lote sin `package_id` en la clave; B2: tipos
+> generados) y ronda 2 (M-1 bloqueante: TEST 6 se había vuelto vacuo tras
+> añadir `package_id`, corregido dándole a ambas filas el mismo `package_id`
+> para que `operator_id` siga siendo la única columna discriminante; M-2 a
+> M-4, m-5, n-8 y la conversión de TEST 1/2 de `RAISE EXCEPTION` a
+> aserciones pgTAP, documentadas arriba). Límites conocidos m5/m6/n7 y el
+> residual de dos operarios generando el mismo UUID quedan declarados, no
+> resueltos, por decisión explícita (ver arriba).
+> QA: `gh pr checks 678` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000007` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor a93941f7 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde. `e2e-qa` no aplica como
+> pantalla nueva — verificado en su lugar con `scripts/pgtap-local.sh`: 15
+> aserciones nuevas, mutation-testeadas (índice sin `operator_id`, sin el
+> predicado `deleted_at IS NULL`, índice ausente), más 12 tests SQL
+> downstream (spec-47, 53, 61, 64, 80, 85) re-corridos en verde según el PR.
+> Downstream: revisado spec-82 — sin cambios; spec-82 fase 1 no toca
+> `pickup_scans` ni ningún fichero de la cola offline (confirmado arriba,
+> en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
+> paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
 ### Fase 4 — Chip de sync `[pending]`
 
