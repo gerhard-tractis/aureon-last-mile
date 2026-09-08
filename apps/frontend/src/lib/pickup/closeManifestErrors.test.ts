@@ -130,15 +130,60 @@ describe('classifyCloseManifestError (spec-81 fase 2 — checklist item 5)', () 
     expect(result.kind).toBe('offline');
   });
 
-  it('does not classify an empty-code error with no fetch/network wording as offline', () => {
-    // Guards against widening the empty-code branch into a catch-all: an
-    // empty `code` alone isn't sufficient, the message must still look like
-    // the fetch-rejection shape.
+  // B4, ronda 1 de review del PR #679: el sender ahora impone su propio
+  // `AbortSignal.timeout(...)` sobre `supabase.rpc('close_manifest', …)`
+  // (offlineQueueSender.ts) — el mismo catch-y-resuelve de postgrest-js que
+  // produce la forma 2 para un fallo de red produce TAMBIÉN esta forma para
+  // un abort deliberado: `code: ''`, y el mensaje trae el `name` de una
+  // `DOMException` de abort ("AbortError" en runtimes antiguos, "TimeoutError"
+  // en los que ya implementan `AbortSignal.timeout` según spec), no las
+  // palabras "fetch"/"network"/"load failed". Debe clasificarse offline igual
+  // que un fallo de red real — desde la perspectiva del operario ES un fallo
+  // de red: el servidor pudo no responder a tiempo por la misma causa (2G en
+  // el andén) que produce el `TypeError` directo.
+  it('classifies an AbortError-shaped timeout (code: "") as offline', () => {
+    const result = classifyCloseManifestError({
+      message: 'AbortError: The operation was aborted',
+      details: '',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('classifies a TimeoutError-shaped timeout (code: "") as offline', () => {
+    const result = classifyCloseManifestError({
+      message: 'TimeoutError: signal timed out',
+      details: '',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('treats ANY empty-code Postgrest-shaped error as offline — a real Postgrest code is never empty', () => {
+    // A genuine `close_manifest`/RLS/constraint rejection always carries a
+    // 5-char SQLSTATE (see the migration's `RAISE EXCEPTION … USING
+    // ERRCODE`; Postgres never emits a blank one) — so an empty `code` can
+    // only be postgrest-js's own fetch-catch fallback (B1/B4), regardless of
+    // what wording the underlying browser/runtime error happens to use.
+    // Superseded by the AbortError/TimeoutError cases above the earlier,
+    // narrower version of this test asserted the opposite.
     const result = classifyCloseManifestError({
       message: 'something else entirely',
       details: '',
       hint: '',
       code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('a real Postgrest business error always has a non-empty code and stays business, whatever its message says', () => {
+    const result = classifyCloseManifestError({
+      message: 'permission denied for table manifests',
+      details: '',
+      hint: '',
+      code: '42501',
     });
     expect(result.kind).toBe('business');
   });

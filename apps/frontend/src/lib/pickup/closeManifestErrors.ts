@@ -68,15 +68,25 @@ export function mapCloseManifestError(err: unknown): string {
  *
  * Un `code` de Postgrest genuino (RLS, constraint, el propio
  * `close_manifest` con `RAISE EXCEPTION … USING ERRCODE`) SIEMPRE es un
- * SQLSTATE de 5 caracteres, nunca la cadena vacía — así que `code === ''`
- * combinado con un mensaje con forma de fallo de fetch es una señal segura
- * de la forma 2, no un rechazo de negocio disfrazado.
+ * SQLSTATE de 5 caracteres, nunca la cadena vacía — un `code === ''`
+ * presente (no ausente) es por sí solo una señal segura de la forma 2, sin
+ * necesidad de que el mensaje contenga ninguna palabra concreta.
+ *
+ * B4, ronda 1 de review del PR #679: el sender impone su propio
+ * `AbortSignal.timeout(...)` sobre `supabase.rpc('close_manifest', …)`
+ * (`offlineQueueSender.ts`) — el mismo catch-y-resuelve de postgrest-js que
+ * produce la forma 2 para un fallo de red produce TAMBIÉN esta forma para un
+ * abort deliberado: `code: ''`, pero con el `name` de una `DOMException` de
+ * abort ("AbortError"/"TimeoutError" según el runtime), no las palabras
+ * "fetch"/"network"/"load failed". Exigir esas palabras en el mensaje
+ * (versión original de esta función) clasificaba un timeout propio como
+ * `business` — por eso el único requisito es `code === ''`.
  *
  * `business`: todo lo demás, incluido lo desconocido. Un rechazo real
- * (sentinela reconocido, un `code` de Postgrest no vacío, o un error sin
- * forma reconocible) nunca debe tratarse como "reintentable sin más" — el
- * valor por defecto seguro es detenerse, no encolar a ciegas algo que el
- * servidor puede seguir rechazando para siempre.
+ * (sentinela reconocido, o un `code` de Postgrest no vacío) nunca debe
+ * tratarse como "reintentable sin más" — el valor por defecto seguro es
+ * detenerse, no encolar a ciegas algo que el servidor puede seguir
+ * rechazando para siempre.
  */
 export interface ClassifiedCloseManifestError {
   kind: 'offline' | 'business';
@@ -98,15 +108,15 @@ export function classifyCloseManifestError(err: unknown): ClassifiedCloseManifes
 
   const isRealPostgrestError = code !== undefined && code !== '';
 
-  // Forma 2: postgrest-js's fetch-catch fallback. Empty `code` + a message
-  // that looks like a fetch rejection (never true for a real Postgres error,
-  // whose `code` is always a 5-char SQLSTATE).
-  const looksLikeNetworkFallbackShape =
-    code === '' && !hasSentinel && FETCH_FAILURE_PATTERN.test(rawMessage);
+  // Forma 2: postgrest-js's fetch-catch fallback (network failure OR our own
+  // AbortSignal.timeout firing) — an empty `code` PRESENT on the object.
+  const looksLikeNetworkFallbackShape = code === '' && !hasSentinel;
 
-  // Forma 1: a native TypeError thrown directly (no Postgrest shape at all).
+  // Forma 1: a native TypeError/AbortError thrown directly (no Postgrest
+  // shape at all — no `code` property present).
   const looksLikeNativeFetchThrow =
     !isRealPostgrestError &&
+    code === undefined &&
     !hasSentinel &&
     err instanceof Error &&
     (err instanceof TypeError || FETCH_FAILURE_PATTERN.test(err.message));

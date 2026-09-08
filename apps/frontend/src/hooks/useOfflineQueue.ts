@@ -59,10 +59,20 @@ export type OfflineQueueSender = (entry: PickupQueueEntry) => Promise<OfflineQue
  * Debe superar el timeout de la petición HTTP que hace `send` — spec-81,
  * checklist de fase 2: si no, una petición lenta pero legítima en 2G se
  * reclama como huérfana antes de completarse y entra en un bucle
- * reclaim → resend → resend. 45s da margen sobre un timeout de red típico
- * de 20-30s en el peor caso (2G/EDGE en el andén de un mall).
+ * reclaim → resend → resend.
+ *
+ * B4, ronda 1 de review del PR #679 — la versión anterior (45s) se
+ * justificaba con "un timeout de red típico de 20-30s" que **no existe en
+ * este código**: `postgrest-js` no fija ningún timeout por su cuenta, así
+ * que sin `abortSignal` el límite real era el default del `fetch` del
+ * navegador (~300s) — 45s quedaba 6,7× por debajo, no por encima. La
+ * corrección real es contractual, no un número más generoso: el sender
+ * (`offlineQueueSender.ts`, `CLOSE_MANIFEST_TIMEOUT_MS`) ahora impone su
+ * propio `AbortSignal.timeout(60_000)` sobre la llamada — así que ESTE
+ * valor sólo necesita superar ESE, con margen. 90s deja 30s de margen sobre
+ * los 60s del sender.
  */
-const RECLAIM_STALE_MS = 45_000;
+const RECLAIM_STALE_MS = 90_000;
 
 const BASE_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
