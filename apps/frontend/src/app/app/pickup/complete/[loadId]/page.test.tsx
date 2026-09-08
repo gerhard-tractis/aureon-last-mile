@@ -211,7 +211,10 @@ describe('CompletionPage', () => {
       expect(toast.error).toHaveBeenCalledWith(expect.any(String));
       const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(message).not.toContain('MANIFEST_ALREADY_SIGNED');
-      expect(message).toMatch(/[áéíóúñ]|ya (fue|está)/i);
+      // Discriminant, not just "has an accent": a test that only checks for
+      // a Spanish-looking character survives swapping this message with the
+      // MANIFEST_NOT_CLOSABLE one below — both are Spanish sentences.
+      expect(message).toMatch(/ya fue firmado/i);
     });
 
     // The button must be re-enabled so the operator can retry or investigate

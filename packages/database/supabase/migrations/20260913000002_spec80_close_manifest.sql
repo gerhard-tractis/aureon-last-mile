@@ -64,9 +64,16 @@ BEGIN
   -- above already resolved v_operator FROM this exact row — same
   -- `id = auth.uid() AND deleted_at IS NULL` predicate — and `full_name` is
   -- NOT NULL in the schema (20260216170542). A NULL v_operator_name is
-  -- unreachable; round 1's "signing user not found" branch and its
-  -- `AND operator_id = v_operator` filter were both dead code performing a
-  -- tautological re-check of what get_operator_id() had just proven.
+  -- unreachable *except by a race between these two statements*: under
+  -- READ COMMITTED, if the user's `deleted_at` gets sealed between
+  -- get_operator_id()'s SELECT and this one, this SELECT returns zero rows
+  -- and v_operator_name stays NULL — the close proceeds and writes a
+  -- signature with no name, silently. Round 1's "signing user not found"
+  -- branch and its `AND operator_id = v_operator` filter were both dead
+  -- code performing a tautological re-check of what get_operator_id() had
+  -- just proven, not a guard against this race — the window is real but
+  -- narrow enough (two statements, no I/O between them) that no guard was
+  -- added here for it.
   SELECT full_name INTO v_operator_name
     FROM public.users
    WHERE id = auth.uid()

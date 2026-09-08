@@ -174,7 +174,7 @@ cuatro columnas de firma, y devuelve el resumen que consume `5i`.
 > y se puede construir en paralelo. Cerrar un manifiesto sin faltantes es un
 > cierre válido y completo por sí solo.
 
-Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
+Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_operator IS NOT NULL` — no `status = 'completed'`: ver la nota de "fix round 1" abajo, que es la que manda), manifiesto `pending` sin trabajar todavía, y firma del operario ausente (`5f` la exige; la del local es opcional — el mock permite cerrar sin ella).
 
 > **Fix round 1 (2026-09-07) — el guard de "ya cerrado" cambió de eje.**
 > `trg_route_receptions_status_sync` (`20260812000006`) es un **segundo
@@ -245,16 +245,34 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 >    ahora usa `auth.uid()` directamente para el nombre, sin duplicar la
 >    fuente vía `auth.jwt()->>'sub'`.
 >
-> **Hueco de alcance corregido en este mismo párrafo (no en el código):**
-> este documento afirmaba que el rescate de H1 "existe" sin decir que **no
-> hay ninguna forma de llegar a esa pantalla desde la app** para un
-> manifiesto que el hub ya cerró. La única navegación a
-> `/app/pickup/complete/[loadId]` es `review/[loadId]/page.tsx`, alcanzable
-> sólo desde la lista de manifiestos **pendientes** — un manifiesto que
-> `trg_route_receptions_status_sync` ya completó no aparece ahí, aparece en
-> `get_completed_manifests`/`get_in_transit_manifests`, y ninguna de esas
-> tarjetas enlaza a Firma. El RPC permite el rescate; la entrada de UI para
-> alcanzarlo sin teclear la URL a mano **es fase 2**, no esta.
+> **Corrección a la nota anterior (2026-09-07, ronda 3 de review).** Esa
+> nota decía que no había ninguna forma de llegar a `complete/[loadId]` para
+> un manifiesto que el hub ya cerró. Es falso en escritorio — verificado
+> leyendo la cadena completa, no de oído:
+>
+> 1. `trg_route_receptions_status_sync` cierra la carga sin firma →
+>    `status='completed'`.
+> 2. `get_completed_manifests` la devuelve: el único filtro es
+>    `m.status = 'completed'` (`20260813000001_spec53_package_labels.sql`),
+>    no mira las columnas de firma.
+> 3. `PickupDesktopView.tsx` pasa `onOpen={onOpen}` a `ManifestTable` **sin
+>    condicionar por `tab`** — sólo `selectedIds`/`onToggle` están gateados a
+>    `pending`. El `external_load_id` es un `<button>` en cualquier pestaña,
+>    incluida Completados.
+> 4. Click → `handleRowOpen` → `openPendingManifest` (no-op porque el
+>    status ya no es `pending`) → `router.push('/app/pickup/scan/<loadId>')`
+>    de todas formas — la navegación no depende del resultado del no-op.
+> 5. Scan → «Continuar a revisión» → sin bultos pendientes de nota
+>    `allNotesComplete` es `true` → «Continuar a firma» → `complete/[loadId]`.
+>
+> Es decir: **alcanzable en escritorio**, vía Completados → escanear →
+> revisión → firma. **No alcanzable en móvil** — `PickupMobileView` no
+> renderiza la pestaña Completados en absoluto — y móvil es el dispositivo
+> de la cuadrilla, que es exactamente el hueco que la fase 2 de este spec
+> resuelve. La fase 2 no "construye la entrada de UI" desde cero, como decía
+> antes esta nota: en escritorio esa entrada **ya existe** (aunque sin
+> ningún indicio visual de que ese manifiesto necesita firma de rescate);
+> lo que falta y es trabajo real de fase 2 es la ruta equivalente en móvil.
 >
 > **Candidato para una fase posterior:** `completed_at` se preserva
 > correctamente vía `COALESCE` en el rescate (es "cuándo terminó la carga",
@@ -271,6 +289,13 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 - [ ] Implementar. Migración con prefijo de versión único.
 - [ ] Repuntar `complete/[loadId]` al RPC, borrando el `.update()` crudo.
 - [ ] Verificar con `--only=musan` reseteado que un cierre completo deja el manifiesto consistente.
+- [ ] **Plan de QA — el rescate de H1 sí es testeable hoy en `qa.aureon.tractis.ai`,
+      por la ruta de escritorio**: cerrar una ruta desde el hub sin pasar por
+      Firma (dispara `trg_route_receptions_status_sync`), luego en escritorio ir
+      a Completados, abrir el manifiesto, escanear (o confirmar que ya está
+      escaneado), Continuar a revisión, Continuar a firma, y verificar que
+      `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
+      a la fase 2 — esa fase sólo añade el mismo camino en móvil.
 
 ### Fase 2 — `5e` cerrar con faltantes `[pending]`
 
@@ -278,6 +303,15 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 > Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC
 > no hay dónde registrar la merma.
 
+> **Alcance corregido (2026-09-07, ronda 3 de review) — el rescate de H1 en
+> móvil, no una entrada de UI que ya existe.** En escritorio, un manifiesto
+> que `trg_route_receptions_status_sync` cerró sin firma **ya es alcanzable**
+> hoy vía Completados → escanear → revisión → firma (ver la nota de fase 1
+> arriba) — nada de eso lo construye esta fase. Lo que falta y sí es trabajo
+> de fase 2 es el equivalente en móvil: `PickupMobileView` no renderiza la
+> pestaña Completados en absoluto, y móvil es el dispositivo de la
+> cuadrilla. Esta fase debe darle a la cuadrilla una forma de llegar a un
+> manifiesto de rescate sin escritorio y sin teclear la URL a mano.
 
 **Archivos:** `apps/frontend/src/app/app/pickup/review/[loadId]/page.tsx` (sustituye a la pantalla de revisión actual), componente nuevo `components/pickup/UnverifiedPackagesBlock.tsx`
 
