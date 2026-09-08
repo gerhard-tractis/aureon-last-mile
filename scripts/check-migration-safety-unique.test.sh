@@ -112,8 +112,29 @@ SQL
 assert_not_contains "no preceding COUNT" "does not warn about a CREATE UNIQUE INDEX guarded by a prior COUNT(*) check (h5c pattern)" accept-unique-index-guarded
 
 # A CREATE UNIQUE INDEX on a table created earlier IN THE SAME FILE cannot
-# have live rows yet — no guard is needed (spec-85's discrepancies schema).
+# have live rows yet — no guard is needed. Bare CREATE TABLE (no IF NOT
+# EXISTS): the OID is guaranteed new.
 write_fixture accept-unique-index-new-table <<'SQL'
+BEGIN;
+
+CREATE TABLE public.widgets (
+  id UUID PRIMARY KEY,
+  operator_id UUID NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_widgets_operator
+  ON public.widgets (operator_id)
+  WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_not_contains "::warning::" "does not warn about a CREATE UNIQUE INDEX on a table created in the same file" accept-unique-index-new-table
+
+# ── F2 (round 3): CREATE TABLE IF NOT EXISTS is precisely the syntax whose
+# contract is "may already exist, with rows and with readers" — the opposite
+# of M6/m7's premise ("no OID exists yet, no live rows possible"). A table
+# declared with IF NOT EXISTS must NOT count as "created in this file".
+write_fixture warn-unique-index-if-not-exists-does-not-count-as-created-here <<'SQL'
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.widgets (
@@ -127,7 +148,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_widgets_operator
 
 COMMIT;
 SQL
-assert_not_contains "::warning::" "does not warn about a CREATE UNIQUE INDEX on a table created in the same file" accept-unique-index-new-table
+assert_contains "::warning::" "F2: CREATE TABLE IF NOT EXISTS does not exempt the index guard — the table may already exist with rows" warn-unique-index-if-not-exists-does-not-count-as-created-here
 
 # ── M6 (review round 1): the guard search was global to the file and
 # trivial to satisfy — any COUNT(*) anywhere earlier, followed by any IF

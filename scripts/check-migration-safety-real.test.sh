@@ -24,17 +24,20 @@ echo "check-migration-safety.sh — real migrations + --base scoping"
 # files nobody is touching. Scoping to new files only (see the --base
 # section below) is what makes rule 1 enforceable without relitigating
 # history.
-# 20260913000001 is a documented exception, added by review round 1 (B2)
-# and refined by review round 2 (M6): it CREATE TABLEs `discrepancies` and,
-# at the top level, both declares AND invokes a function whose body
+# 20260913000001 is a documented case, added by review round 1 (B2) and
+# revisited twice since: it CREATE TABLE IF NOT EXISTS's `discrepancies`
+# and, at the top level, both declares AND invokes a function whose body
 # backfills it from `discrepancy_notes` — exactly the pattern B2 exists to
-# catch. But the destination table (`discrepancies`) is itself CREATE
-# TABLE'd earlier in this SAME file — no other backend can have its OID
-# open, no readers exist yet, so it cannot lock anyone out. M6 degrades
-# this to a ::warning:: instead of a hard ::error::. It already shipped and
-# ran safely under fase 3/4's separate by-hand review; this is not a
-# regression either way — it is the guard correctly seeing a real pattern
-# (B2) and correctly recognising it as low-risk (M6).
+# catch. Round 2's M6 degraded this to a ::warning:: on the theory that a
+# table created earlier in the same file cannot have live rows/readers yet.
+# Round 3's F2 corrects that: `IF NOT EXISTS` is precisely the syntax whose
+# CONTRACT is "may already exist, with rows and readers" — M6's premise
+# does not hold for it. `isTableCreatedBefore` now only recognizes a BARE
+# `CREATE TABLE`, so this file is back to a hard ::error::. It already
+# shipped and ran safely under fase 3/4's separate by-hand review, which is
+# why this is not treated as a live incident — but the STATIC guard cannot
+# tell "ran fine once, verified by hand" from "about to lock production",
+# and F2 declines to let IF NOT EXISTS pretend it can.
 MIGRATIONS_DIR="$(cd "$(dirname "$0")/.." && pwd)/packages/database/supabase/migrations"
 TWELVE="
 20260907000001_spec76_en_bodega_not_dock_ready.sql
@@ -57,27 +60,22 @@ if [ -d "$MIGRATIONS_DIR" ]; then
   done
   output=$(bash "$SCRIPT" "${TWELVE_PATHS[@]}" 2>&1)
   actual=$?
-  # M6 (review round 2): 20260913000001's only violation degrades to a
-  # warning, so the batch as a whole now exits 0 — none of the 12 hard-reject.
-  if [ "$actual" -eq 0 ]; then
+  # F2 (review round 3): 20260913000001's CREATE TABLE IF NOT EXISTS no
+  # longer exempts its backfill, so the batch as a whole now exits 1.
+  if [ "$actual" -eq 1 ]; then
     pass=$((pass + 1))
-    echo "  ok   the batch does not hard-reject (20260913000001's only violation is a M6-downgraded ::warning::)"
+    echo "  ok   the batch hard-rejects (20260913000001's CREATE TABLE IF NOT EXISTS no longer exempts its backfill — F2)"
   else
     fail=$((fail + 1))
-    echo "  FAIL expected exit 0 — got $actual"
+    echo "  FAIL expected exit 1 — got $actual"
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
-  if printf '%s' "$output" | grep -q "::warning::.*20260913000001.*declares AND invokes.*downgraded"; then
+  if printf '%s' "$output" | grep -q "::error::.*20260913000001.*declares AND invokes"; then
     pass=$((pass + 1))
-    echo "  ok   20260913000001 (spec85_discrepancies_schema) is a ::warning:: — declares AND invokes a backfill (B2), into a table created in the same file (M6)"
+    echo "  ok   20260913000001 (spec85_discrepancies_schema) is a ::error:: — declares AND invokes a backfill (B2) into a table declared IF NOT EXISTS (F2: does not count as created here)"
   else
     fail=$((fail + 1))
-    echo "  FAIL 20260913000001 was not warned-about by name for declaring+invoking a backfill function"
-    printf '%s\n' "$output" | sed 's/^/         /'
-  fi
-  if printf '%s' "$output" | grep -q "::error::.*20260913000001"; then
-    fail=$((fail + 1))
-    echo "  FAIL 20260913000001 was hard-rejected (::error::) — M6 must degrade this to a warning"
+    echo "  FAIL 20260913000001 was not rejected by name for declaring+invoking a backfill function"
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
   # 20260909000001 is the exact pattern this phase exists to stop
@@ -89,8 +87,12 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     pass=$((pass + 1))
     echo "  ok   20260909000001 (spec79_loaded_route_id) is not flagged dangerous"
   fi
-  # None of the twelve should hard-reject (::error::).
+  # None of the OTHER eleven should hard-reject (::error::) — only
+  # 20260913000001 (F2) is expected to.
   for name in $TWELVE; do
+    if [ "$name" = "20260913000001_spec85_discrepancies_schema.sql" ]; then
+      continue
+    fi
     if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
       fail=$((fail + 1))
       echo "  FAIL $name was unexpectedly rejected"

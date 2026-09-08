@@ -107,12 +107,14 @@ export function extractDestinationTable(stmt) {
   return m ? m[1] : null;
 }
 
-/** M6: whether `table` was named by a `CREATE TABLE` appearing in `textBefore`. */
+/** M6: whether `table` was named by a BARE `CREATE TABLE` (no `IF NOT
+ * EXISTS`) appearing in `textBefore`. F2 (review round 3): `IF NOT EXISTS`
+ * is precisely the syntax whose contract is "may already exist, with rows
+ * and with readers" — the opposite of M6's premise ("no OID exists for
+ * another backend to have opened, no readers exist yet"). Excluding it
+ * deliberately widens what counts as unsafe, not narrows it. */
 export function isTableCreatedBefore(table, textBefore) {
-  return new RegExp(
-    `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:"?public"?\\.)?"?${table}"?\\b`,
-    'i'
-  ).test(textBefore);
+  return new RegExp(`CREATE\\s+TABLE\\s+(?:"?public"?\\.)?"?${table}"?\\b`, 'i').test(textBefore);
 }
 
 /** Splits `text` on top-level `;`, keeping each statement's start offset

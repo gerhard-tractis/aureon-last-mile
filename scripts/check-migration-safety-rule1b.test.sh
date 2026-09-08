@@ -249,6 +249,30 @@ SQL
 assert_exit 0 "F1 mirror: does not hard-reject when EVERY write in the body targets a table created in this file" warn-f1-all-writes-created-here
 assert_contains "::warning::" "F1 mirror: still warns" warn-f1-all-writes-created-here
 
+# ── F2 (round 3): CREATE TABLE IF NOT EXISTS must NOT count as "created in
+# this file" for M6's purposes — its whole contract is "may already exist,
+# with rows and with readers", which is the exact opposite of M6's premise
+# ("no OID exists for another backend to have opened, no readers exist
+# yet"). A backfill into a table declared with IF NOT EXISTS must stay a
+# hard ::error::, not degrade to a warning.
+write_fixture reject-f2-if-not-exists-does-not-count-as-created-here <<'SQL'
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS public.discrepancies (id uuid, note text);
+
+CREATE FUNCTION public.backfill_discrepancies() RETURNS void LANGUAGE plpgsql AS $fn$
+BEGIN
+  INSERT INTO public.discrepancies (id, note)
+    SELECT id, note FROM public.discrepancy_notes WHERE deleted_at IS NULL;
+END;
+$fn$;
+
+SELECT public.backfill_discrepancies();
+
+COMMIT;
+SQL
+assert_exit 1 "F2: CREATE TABLE IF NOT EXISTS does not exempt a backfill into it — the table may already exist with rows and readers" reject-f2-if-not-exists-does-not-count-as-created-here
+
 echo ""
 echo "check-migration-safety.sh (rule 1, round 2+3): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

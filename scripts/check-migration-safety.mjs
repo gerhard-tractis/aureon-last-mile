@@ -126,8 +126,12 @@ export function checkUniqueIndexGuard(rawSql) {
     // m7: match the table CREATE TABLE actually names, not "any word within
     // 80 chars" — a column or a REFERENCES target sharing the table's name
     // used to falsely count as "created in this file".
+    // F2 (review round 3): a BARE CREATE TABLE only — `IF NOT EXISTS` is
+    // precisely the syntax whose contract is "may already exist, with rows
+    // and readers", the opposite of "brand-new table, no live rows
+    // possible" this exemption exists for.
     const createdHere = new RegExp(
-      `CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?:"?public"?\\.)?"?${table}"?\\b`,
+      `CREATE\\s+TABLE\\s+(?:"?public"?\\.)?"?${table}"?\\b`,
       'i'
     ).test(sql.slice(0, idxStart));
     if (createdHere) continue; // brand-new table, no live rows possible
