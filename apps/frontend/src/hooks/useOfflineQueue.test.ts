@@ -363,6 +363,45 @@ describe('useOfflineQueue', () => {
     expect(stored?.lastError).toBe('MANIFEST_NOT_CLOSABLE');
   });
 
+  // M5, ronda 3 de review del PR #679 (mayor) — spec-81 declara el techo de
+  // `retryCount` pendiente de esta fase. `markDead` sólo se invocaba desde
+  // `outcome: 'dead'`, que sólo llega de los cuatro centinelas `permanent`;
+  // nada más agotaba reintentos nunca. Con `MAX_BACKOFF_MS` topado, un error
+  // desconocido reintentaba cada 30s para siempre, y `getPendingPickupCount`
+  // lo contaba como `pending` — `SyncChip` pintaba verde de éxito "1 EN
+  // COLA" indefinidamente. Mismo síntoma que B3 corrigió para `dead`: B2 lo
+  // movió de `dead` a `pending` en vez de eliminarlo.
+  it('M5 — a persistent transient error exhausts retries and dead-letters instead of retrying forever', async () => {
+    const { first } = await seed();
+    const send: OfflineQueueSender = vi.fn(async () => ({
+      outcome: 'retry',
+      reason: 'unknown 42501',
+    }));
+
+    const { result } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+    // Mount's own drain pass produces the first failure for real.
+    await waitFor(async () => {
+      const stored = await db.pickup_queue.get(first.id!);
+      expect(stored?.retryCount).toBe(1);
+    });
+
+    // Drive the rest of the retries directly through `drainNow`, clearing
+    // the backoff each time instead of waiting real wall-clock seconds for
+    // it — this test asserts the CAP exists, not the backoff timing (that's
+    // M2's test).
+    for (let i = 0; i < 20; i++) {
+      const stored = await db.pickup_queue.get(first.id!);
+      if (stored?.status === 'dead') break;
+      await db.pickup_queue.update(first.id!, { nextAttemptAt: null });
+      await result.current.drainNow();
+    }
+
+    const stored = await db.pickup_queue.get(first.id!);
+    expect(stored?.status).toBe('dead');
+    expect(stored?.lastError).toMatch(/unknown 42501/);
+  });
+
   // B3, ronda 1 de review del PR #679: `listPending` excluye `dead` — así
   // que sin este guard, un escaneo muerto simplemente desaparece de la cola
   // y el `close_manifest` detrás de él pasa a la cabeza en la SIGUIENTE

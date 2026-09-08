@@ -77,6 +77,26 @@ const RECLAIM_STALE_MS = 90_000;
 const BASE_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 
+/**
+ * M5, ronda 3 de review del PR #679 (mayor) — spec-81 fase 3 (M-4 residual)
+ * y spec-81 fase 2 (checklist original) dejan escrito que este techo queda
+ * pendiente de esta fase. Sin él, `markDead` sólo se alcanza vía los cuatro
+ * centinelas `permanent`/`idempotent` que clasifica el sender — un error
+ * `transient` desconocido (un 42501 sin reconocer, un 409 de lote que el
+ * sender nunca puede confirmar completo, M-4 de fase 3) reintenta cada
+ * `MAX_BACKOFF_MS` para siempre. `getPendingPickupCount` cuenta eso como
+ * `pending` y `SyncChip` lo pinta verde de éxito — el mismo síntoma que B3
+ * corrigió para `dead` (B2 lo había movido de `dead` a `pending` en vez de
+ * eliminarlo), reintroducido por cualquier `transient` sin techo.
+ *
+ * 10 intentos: con el backoff exponencial topado en `MAX_BACKOFF_MS`, eso
+ * son ~1s+2s+4s+8s+16s+30s×5 ≈ 3 minutos de reintentos antes de rendirse —
+ * suficiente para que una caída de señal de unos minutos en el muelle se
+ * resuelva sola sin dar por muerta la entrada, pero sin reintentar de forma
+ * indefinida un rechazo que nunca va a resolverse solo.
+ */
+const MAX_RETRY_ATTEMPTS = 10;
+
 function nextBackoffAt(retryCountBeforeThisFailure: number): string {
   const delay = Math.min(BASE_BACKOFF_MS * 2 ** retryCountBeforeThisFailure, MAX_BACKOFF_MS);
   return new Date(Date.now() + delay).toISOString();
@@ -187,6 +207,20 @@ async function drainManifest(
     }
     if (result.outcome === 'dead') {
       await markDead(db, next.id!, result.reason, token);
+      continue;
+    }
+    // M5, ronda 3 de review del PR #679 (mayor) — un 'retry' que ya agotó
+    // `MAX_RETRY_ATTEMPTS` deja de ser "reintentable": se da por muerta en
+    // vez de reprogramar otro backoff que nunca la resolvería sola. Sin
+    // esto, un `transient` desconocido reintenta cada `MAX_BACKOFF_MS` para
+    // siempre y `getPendingPickupCount` lo sigue contando como `pending`.
+    if (next.retryCount + 1 >= MAX_RETRY_ATTEMPTS) {
+      await markDead(
+        db,
+        next.id!,
+        `retries exhausted after ${MAX_RETRY_ATTEMPTS} attempts: ${result.reason}`,
+        token,
+      );
       continue;
     }
     // 'retry' — un 500, o la rama "sin conexión" (fetch rechaza casi al
