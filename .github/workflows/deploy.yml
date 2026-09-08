@@ -620,6 +620,16 @@ jobs:
         if: steps.qa.outputs.provisioned == 'true'
         run: |
           set -euo pipefail
+          # spec-87 fase 1 fix round 3 — if npm run e2e:qa dies before
+          # Playwright even starts (a bad export above, a missing dep), no new
+          # results.json is written and "Check quarantine" below would read
+          # whatever a PREVIOUS run left behind, on this same self-hosted
+          # runner, and pass on stale data. actions/checkout@v4's implicit
+          # clean: true does not save this — it does not touch untracked
+          # output directories outside the checkout's own git-ignored state
+          # reliably enough to be the thing anyone is relying on here, and
+          # nobody had written down that they were relying on it at all.
+          rm -rf playwright-report-qa
           PGPASS="$(grep -E '^POSTGRES_PASSWORD=' /home/aureon/.env.qa | tail -n1 | cut -d= -f2- | tr -d '\r')"
           [ -n "$PGPASS" ] || { echo "::error::POSTGRES_PASSWORD missing from /home/aureon/.env.qa"; exit 1; }
           export E2E_DATABASE_URL="postgresql://postgres:${PGPASS}@localhost:5433/postgres"
@@ -631,7 +641,22 @@ jobs:
           # timeout if it is not running.
           curl -sf http://127.0.0.1:4477/__test__/health > /dev/null \
             || echo "::warning::DispatchTrack mock (127.0.0.1:4477) is not reachable — despacho-close-dispatch.spec.ts will fail"
-          npm run e2e:qa
+          # spec-87 fase 1 — this step must not fail the job on a raw red
+          # suite: whether that is allowed through is decided by the
+          # "Check quarantine" step below, which reads the JSON report this
+          # produces. `|| true` here is NOT continue-on-error (that swallows
+          # the result at the job level and disappears silently) — the suite
+          # still vetoes production, just one step later, against the
+          # quarantine list rather than against a bare exit code.
+          npm run e2e:qa || true
+
+      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == 'true'
+        working-directory: .
+        run: |
+          bash scripts/check-quarantine.sh \
+            apps/frontend/e2e/quarantine.json \
+            apps/frontend/playwright-report-qa/results.json
 
       - name: Upload report
         if: always() && steps.qa.outputs.provisioned == 'true'
@@ -642,11 +667,18 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # Runs only if an earlier step in this job actually failed — meaning an
+      # undeclared failure, an expired quarantine entry, or a stale one
+      # (spec-87 fase 1), never a raw red exit code from npm run e2e:qa
+      # (which no longer fails the job on its own — see "Run E2E against QA"
+      # above). approve-production requires needs.e2e-qa.result == 'success'
+      # (enforced by check-deploy-gating.mjs), so this DOES block the
+      # production deploy — false to say otherwise, which an earlier draft
+      # of this step's own echo output did until 2026-09-03.
       - name: Report failure
         if: failure()
         run: |
           echo "::error::E2E against QA failed on ${DEPLOY_SHA}."
-          echo "This is ADVISORY — it does not block the production deploy."
           echo "Download the 'e2e-qa-report-*' artifact for traces and video."
 
   # ─── 8. Production approval gate ─────────────────────────────────────────────

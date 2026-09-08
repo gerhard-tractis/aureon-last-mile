@@ -79,7 +79,23 @@ export default defineConfig({
   workers: 1,
   forbidOnly: true,
 
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-qa' }]],
+  // The 'json' reporter (spec-87 fase 1) is what scripts/check-quarantine.mjs
+  // parses to decide whether a red suite is entirely declared quarantine or
+  // has an undeclared failure. Written inside playwright-report-qa/ so it
+  // ships in the same uploaded artifact as the HTML report.
+  //
+  // ARRAY ORDER IS LOAD-BEARING (review round 1). Reporters' onEnd() hooks
+  // run in array order, and the html reporter's onEnd does
+  // `removeFolders([outputFolder])` before it rebuilds the report — verified
+  // against @playwright/test 1.58.2's reporters/html.js. 'html' MUST stay
+  // before 'json': swap them and results.json gets deleted the instant it is
+  // written, because json's onEnd would then run BEFORE html's onEnd wipes
+  // the folder.
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report-qa' }],
+    ['json', { outputFile: 'playwright-report-qa/results.json' }],
+  ],
 
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3200',

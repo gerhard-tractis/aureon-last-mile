@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 // 'js-yaml'` fails with "does not provide an export named 'default'". Import
 // `load` directly rather than reaching for createRequire.
 import { load } from 'js-yaml';
+import { checkQuarantineStep } from './check-deploy-gating-quarantine.mjs';
 
 const GATE = 'approve-production';
 
@@ -124,6 +125,17 @@ for (const job of PROD_JOBS) {
     errors.push(`${job} does not depend on ${GATE} — it can reach production ungated`);
   }
 }
+
+// ── The quarantine veto (spec-87 fase 1) lives inside a STEP, not a job ──────
+// e2e-qa no longer fails on npm run e2e:qa's raw exit code (`|| true` —
+// deliberately not the job-level continue-on-error checked above). Instead a
+// "Check quarantine" step runs scripts/check-quarantine.sh against the JSON
+// report and IS what passes or fails the job. The needs:/continue-on-error/
+// if: checks above are blind to this: they only see the job as a whole.
+// See check-deploy-gating-quarantine.mjs for the step-shape checks
+// themselves — split out to keep both files under the repo's 300-line
+// guideline.
+errors.push(...checkQuarantineStep(jobs, doc));
 
 // ── needs: is not enough once if: opts into always() ─────────────────────────
 // Normally a skipped dependency skips the dependent job, which is what makes
