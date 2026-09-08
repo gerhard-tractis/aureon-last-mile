@@ -482,6 +482,25 @@ review):**
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
 - [ ] Desmontar el `fixed top-0` sin romper auth ni landing, que hoy también lo montan.
+- [ ] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
+      bloqueante en fase 2, no cerrado del todo ahí).** `dead` es
+      deliberadamente permanente — ver el docstring de `manifestHasDeadEntry`
+      y la decisión de no revertirlo tomada en la ronda 2: soltar el cierre
+      detrás de un escaneo muerto cierra la carga con un bulto de menos, que
+      es el riesgo nº1 del spec. Pero hoy, tras la ronda 2, `dead` sólo dejó
+      de mentir (`getBlockedPickupCount`, separado de `queuedCount`;
+      `SyncChip` ya no lo pinta en verde de éxito) — no tiene ninguna salida.
+      Grep de `'dead'` en todo `apps/frontend/src`: sólo aparece en el tipo,
+      en los guards de `queue-claims.ts`, en `manifestHasDeadEntry` y en
+      `getBlockedPickupCount` (para contarlo). Ninguna pantalla, botón,
+      `markAlive` ni purga manual. Sin esto el operario recibió el toast
+      «tu firma se guardó y el cierre se enviará solo» y nada se lo
+      desmiente nunca — el chip ahora dice «requiere ayuda» pero no dice a
+      quién pedírsela ni qué hacer. Esta fase, que ya toca `SyncChip` y su
+      pantalla, debe: mostrar qué manifiesto está bloqueado y por qué
+      (`lastError`), y dar una vía para que un humano lo resuelva (contactar
+      soporte/operaciones — no necesariamente reintentar solo, dado que
+      `dead` es un rechazo de negocio, no de red).
 
 ### Fase 5 — Fotos `[pending]`
 

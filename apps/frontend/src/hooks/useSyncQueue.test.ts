@@ -124,6 +124,35 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     expect(result.current.queuedCount).toBe(0);
   });
 
+  // B3, ronda 2 de review del PR #679 (bloqueante): un `dead` no es "sigue
+  // en cola" — es un bloqueo permanente. Antes contaba dentro de
+  // `queuedCount`, que `SyncChip.tsx` pinta en verde de éxito; ahora tiene
+  // su propio contador (`blockedCount`), separado.
+  it('does not count dead entries in queuedCount, and counts them in blockedCount', async () => {
+    await seedPickupQueue(1);
+    const [only] = await db.pickup_queue.toArray();
+    await db.pickup_queue.update(only.id!, { status: 'dead' });
+
+    const { result } = renderHook(() => useSyncQueue('op-1'));
+
+    await waitFor(() => expect(result.current.blockedCount).toBe(1));
+    expect(result.current.queuedCount).toBe(0);
+  });
+
+  it('blockedCount is scoped per operator, same as queuedCount', async () => {
+    await seedPickupQueue(1, 'op-1');
+    await seedPickupQueue(1, 'op-2');
+    const rows = await db.pickup_queue.toArray();
+    await db.pickup_queue.update(rows.find((r) => r.operatorId === 'op-1')!.id!, {
+      status: 'dead',
+    });
+
+    const { result } = renderHook(() => useSyncQueue('op-2'));
+
+    await waitFor(() => expect(result.current.status).not.toBe('syncing'));
+    expect(result.current.blockedCount).toBe(0);
+  });
+
   it('requests persistent storage on mount (M4 — "GUARDADO EN EL DISPOSITIVO" must be true)', async () => {
     const persist = vi.fn().mockResolvedValue(true);
     Object.defineProperty(navigator, 'storage', {

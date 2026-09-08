@@ -7,7 +7,7 @@
  * nueva (version 2) en la misma base que ya usa `db.scan_queue`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { db, getPendingPickupCount, requestPersistentStorage } from './db';
+import { db, getBlockedPickupCount, getPendingPickupCount, requestPersistentStorage } from './db';
 
 describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
   beforeEach(async () => {
@@ -28,7 +28,7 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
     expect(db.verno).toBe(2);
   });
 
-  describe('getPendingPickupCount (spec-81 fase 2 — por operador, cuenta pending+sending+dead)', () => {
+  describe('getPendingPickupCount (spec-81 fase 2 — por operador, cuenta pending+sending, no dead)', () => {
     const baseEntry = {
       manifestId: 'm-1',
       type: 'pickup_scan' as const,
@@ -51,7 +51,7 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
       await expect(getPendingPickupCount('op-2')).resolves.toBe(1);
     });
 
-    it('counts sending and dead alongside pending — a stuck sending row must not read as zero', async () => {
+    it('counts sending alongside pending — a stuck sending row must not read as zero', async () => {
       // useSyncQueue.ts stops polling once the combined count is 0. A lone
       // orphaned `sending` row (tab died mid-send, before reclaimStale runs)
       // must not be invisible, or the screen freezes on "all uploaded" with
@@ -63,7 +63,53 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
         { ...baseEntry, clientOperationId: 'd', operatorId: 'op-1', status: 'sent' },
       ]);
 
-      await expect(getPendingPickupCount('op-1')).resolves.toBe(3);
+      await expect(getPendingPickupCount('op-1')).resolves.toBe(2);
+    });
+
+    // B3, ronda 2 de review del PR #679 (bloqueante): antes de este cambio,
+    // `getPendingPickupCount` sumaba `dead` a `queuedCount`, y
+    // `SyncChip.tsx` pinta `queuedCount > 0` en verde de éxito — un escaneo
+    // irrecuperablemente muerto se mostraba, para siempre, como "todo va
+    // bien, está en cola". `dead` deja de contar aquí: `getBlockedPickupCount`
+    // (abajo) es su propio contador, para una afordancia distinta.
+    it('does NOT count dead — a permanently rejected entry is not "still queued"', async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'dead' },
+      ]);
+
+      await expect(getPendingPickupCount('op-1')).resolves.toBe(0);
+    });
+  });
+
+  describe('getBlockedPickupCount (spec-81 fase 2, ronda 2 de review — B3)', () => {
+    const baseEntry = {
+      manifestId: 'm-1',
+      type: 'pickup_scan' as const,
+      payload: {},
+      retryCount: 0,
+      claimToken: null,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    it('counts only dead entries, scoped to the requesting operator', async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'dead' },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'pending' },
+        { ...baseEntry, clientOperationId: 'c', operatorId: 'op-2', status: 'dead' },
+      ]);
+
+      await expect(getBlockedPickupCount('op-1')).resolves.toBe(1);
+      await expect(getBlockedPickupCount('op-2')).resolves.toBe(1);
+    });
+
+    it('is zero when nothing is dead', async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending' },
+      ]);
+
+      await expect(getBlockedPickupCount('op-1')).resolves.toBe(0);
     });
   });
 

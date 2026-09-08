@@ -125,9 +125,8 @@ export class AureonOfflineDB extends Dexie {
 export const db = new AureonOfflineDB();
 
 /**
- * Cuántas entradas de la cola de Recogida de un operador siguen sin
- * confirmar: `pending`, `sending` (reclamada, en vuelo) y `dead` (rechazo de
- * negocio irrecuperable, todavía visible para el operario).
+ * Cuántas entradas de la cola de Recogida de un operador siguen en curso,
+ * como reintentable: `pending` y `sending` (reclamada, en vuelo).
  *
  * spec-81 fase 2 — pasó de device-global a por operador. Device-global
  * dejaba huérfano el contador de un operador que cerraba sesión en un
@@ -136,21 +135,38 @@ export const db = new AureonOfflineDB();
  * bajaba a 0 para el operador entrante (ver "Alcance del contador" en
  * docs/specs/spec-81-recogida-cola-offline.md).
  *
- * Cuenta también `sending` y `dead`, no sólo `pending` — `useSyncQueue`
- * corta su polling cuando el conteo combinado llega a 0; una sola entrada
- * huérfana en `sending` (pestaña muerta a mitad de envío, antes de que
- * `reclaimStale` la recupere) haría caer el conteo a 0, deteniendo el
- * polling y congelando la pantalla en "todo subido" con el escaneo sin
- * enviar de verdad.
+ * Cuenta también `sending`, no sólo `pending` — `useSyncQueue` corta su
+ * polling cuando el conteo combinado llega a 0; una sola entrada huérfana en
+ * `sending` (pestaña muerta a mitad de envío, antes de que `reclaimStale` la
+ * recupere) haría caer el conteo a 0, deteniendo el polling y congelando la
+ * pantalla en "todo subido" con el escaneo sin enviar de verdad.
+ *
+ * NO cuenta `dead` (B3, ronda 2 de review del PR #679) — antes lo hacía, y
+ * `SyncChip.tsx` pinta `queuedCount > 0` en verde de éxito. Un escaneo
+ * irrecuperablemente rechazado no es "todavía en cola" — es un bloqueo que
+ * necesita ayuda humana, y mezclarlo con lo reintentable lo disfrazaba de
+ * éxito para siempre. Ver `getBlockedPickupCount`, su contador hermano.
  */
 export async function getPendingPickupCount(operatorId: string): Promise<number> {
   return db.pickup_queue
     .where('operatorId')
     .equals(operatorId)
-    .and(
-      (entry) =>
-        entry.status === 'pending' || entry.status === 'sending' || entry.status === 'dead',
-    )
+    .and((entry) => entry.status === 'pending' || entry.status === 'sending')
+    .count();
+}
+
+/**
+ * Cuántas entradas de la cola de Recogida de un operador quedaron `dead`:
+ * un rechazo de negocio irrecuperable que agotó los reintentos. Separado de
+ * `getPendingPickupCount` (B3, ronda 2 de review del PR #679) — necesitan
+ * afordancias distintas: "sigue en cola, va a salir solo" contra "está
+ * bloqueado, alguien tiene que intervenir".
+ */
+export async function getBlockedPickupCount(operatorId: string): Promise<number> {
+  return db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and((entry) => entry.status === 'dead')
     .count();
 }
 
