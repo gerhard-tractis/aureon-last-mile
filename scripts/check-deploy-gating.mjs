@@ -141,34 +141,84 @@ for (const job of PROD_JOBS) {
 // guard in a diff.
 const QUARANTINE_STEP_IF = "steps.qa.outputs.provisioned == 'true'";
 
-/** A run: that "checks" quarantine without actually vetoing anything. */
-function neutralisesQuarantineCheck(run) {
-  // `|| true` / `|| :` anywhere lets the step "succeed" having checked
-  // nothing — the exact trick used on "Run E2E against QA" itself, just
-  // moved one step over to swallow the thing that is supposed to replace it.
-  if (/\|\|\s*(true\b|:(\s|$))/.test(run)) return true;
-  // Wrapping the invocation in `echo` (or commenting it out) means the line
-  // never actually executes check-quarantine.sh.
-  return run.split('\n').some((line) => {
-    if (!line.includes('check-quarantine.sh')) return false;
-    const trimmed = line.trim();
-    if (trimmed.startsWith('#')) return true;
-    const echoIdx = trimmed.search(/\becho\b/);
-    return echoIdx !== -1 && echoIdx < trimmed.indexOf('check-quarantine.sh');
-  });
+// The one invocation this guard accepts, canonicalised: no flags (in
+// particular no `--validate-only`, which reads no report and exits 0 having
+// checked nothing against it), the two positional args in this order, and
+// nothing else on the same logical line.
+const EXPECTED_QUARANTINE_INVOCATION =
+  'bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json';
+
+/**
+ * A YAML block scalar keeps every physical line of a `run:` script. A
+ * backslash-continued command (the real deploy.yml wraps its two args across
+ * three lines) is one shell statement split across several of those lines —
+ * this joins them back into one "logical line" per shell statement before any
+ * shape is asserted, and collapses whitespace so re-indentation cannot change
+ * whether a line matches.
+ */
+function logicalLines(run) {
+  const lines = [];
+  let buf = '';
+  for (const raw of run.split('\n')) {
+    const line = raw.trim();
+    buf = buf ? `${buf} ${line}` : line;
+    if (buf.endsWith('\\')) {
+      buf = buf.slice(0, -1).trim();
+      continue;
+    }
+    lines.push(buf.replace(/\s+/g, ' ').trim());
+    buf = '';
+  }
+  if (buf) lines.push(buf.replace(/\s+/g, ' ').trim());
+  return lines.filter((l) => l.length > 0);
+}
+
+/**
+ * True when `run:` contains, as one of its logical lines, EXACTLY the
+ * expected invocation — and nothing elsewhere in the same run: can neutralise
+ * it. `set +e` turns off the default `-eo pipefail` that a plain `run:`
+ * script gets, letting a later line (or an explicit `exit`) override the
+ * invocation's own exit code regardless of whether it passed.
+ *
+ * This is a POSITIVE assertion of the one accepted shape, replacing an
+ * earlier denylist (`|| true`, `|| :`, echo, comment) that a code-review
+ * sweep defeated eight ways using the same fixture factory as these tests —
+ * including `--validate-only`, a real flag this file's own sibling
+ * (check-quarantine.mjs) introduced, which exits 0 without ever reading a
+ * report. A denylist only ever knows the vectors someone thought of; this
+ * asserts the one shape that is actually a veto and rejects everything else,
+ * with no "vector nine" to miss.
+ */
+function hasValidQuarantineInvocation(run) {
+  const lines = logicalLines(run);
+  if (!lines.includes(EXPECTED_QUARANTINE_INVOCATION)) return false;
+  return !lines.some((l) => l === 'set +e' || /^set\s+\+o\s+errexit\b/.test(l) || /^exit\b/.test(l));
 }
 
 if (jobs['e2e-qa']) {
   const steps = jobs['e2e-qa'].steps || [];
-  const quarantineStep = steps.find(
+  // Look at every step that mentions the script, not just the first — an
+  // earlier, unrelated step (a "dry run", a comment) can mention it too, and
+  // picking the first match let that decoy stand in for a real step that had
+  // been deleted (review round 3, V11).
+  const mentionsScript = steps.filter(
     (s) => typeof s.run === 'string' && s.run.includes('check-quarantine.sh')
   );
-  if (!quarantineStep) {
+  const realSteps = mentionsScript.filter((s) => hasValidQuarantineInvocation(s.run));
+  if (realSteps.length === 0) {
     errors.push(
-      'e2e-qa has no step running scripts/check-quarantine.sh — without it a failure ' +
-        'outside the quarantine list, an expired entry, or a stale entry cannot fail the job'
+      'e2e-qa has no step whose run: is exactly `' + EXPECTED_QUARANTINE_INVOCATION + '` ' +
+        '(as a logical line, once any backslash continuations are joined) — without it a failure ' +
+        'outside the quarantine list, an expired entry, a stale entry, or a neutralised invocation ' +
+        '(a flag, a control operator, `set +e`, an explicit exit) cannot fail the job'
+    );
+  } else if (realSteps.length > 1) {
+    errors.push(
+      `e2e-qa has ${realSteps.length} steps whose run: is the quarantine invocation — there must ` +
+        'be exactly one, so it is unambiguous which step is the veto'
     );
   } else {
+    const quarantineStep = realSteps[0];
     if (quarantineStep['continue-on-error']) {
       errors.push(
         'the "Check quarantine" step in e2e-qa must not set continue-on-error — that ' +
@@ -183,11 +233,11 @@ if (jobs['e2e-qa']) {
           'one that merely looks unrelated, can skip the veto on a run where it matters'
       );
     }
-    if (neutralisesQuarantineCheck(quarantineStep.run)) {
+    if (quarantineStep.shell != null && quarantineStep.shell !== 'bash') {
       errors.push(
-        'the "Check quarantine" step\'s run: neutralises the check it claims to run — `|| true`, ' +
-          '`|| :`, a commented-out line, or `echo`ing the invocation instead of running it all let ' +
-          'the step "succeed" having checked nothing'
+        `the "Check quarantine" step's shell: must be left at the default or set to "bash" ` +
+          `(found: ${JSON.stringify(quarantineStep.shell)}) — any other shell can drop the default ` +
+          '-e/pipefail that makes a failing invocation actually fail the step'
       );
     }
   }

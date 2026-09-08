@@ -554,6 +554,132 @@ ECHO_STEP='      - name: Check quarantine
 WF=$(wf_with_e2e_step "$ECHO_STEP")
 assert_exit 1 "fails when the quarantine step's run only echoes the invocation" "$WF"
 
+# ── B1 (re-review round 3): the denylist above is a losing strategy ──────────
+# A code-review sweep built eight vectors off the SAME factory and got exit 0
+# from all of them — `neutralisesQuarantineCheck` only recognises the shapes it
+# was told about. V7 is introduced BY this very branch: `--validate-only` is a
+# real, documented flag of check-quarantine.mjs that exits 0 having read no
+# report at all. The fix asserts the one accepted shape (a positive assertion)
+# instead of extending the denylist to nine.
+V5_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json || echo '"'"'quarantine failed'"'"''
+WF=$(wf_with_e2e_step "$V5_STEP")
+assert_exit 1 "V5: fails when the invocation is followed by || echo" "$WF"
+
+V6_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: if bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json; then echo ok; else echo red; fi'
+WF=$(wf_with_e2e_step "$V6_STEP")
+assert_exit 1 "V6: fails when the invocation is wrapped in an if/then/else" "$WF"
+
+# V7 exploits a flag this very branch introduces: --validate-only never reads
+# a report and exits 0 having checked nothing against it.
+V7_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json --validate-only'
+WF=$(wf_with_e2e_step "$V7_STEP")
+assert_exit 1 "V7: fails when the invocation appends --validate-only" "$WF"
+# V8 is the same shape for THIS guard: it is a static-analysis check on the
+# workflow yaml alone and never reads whatever the report path resolves to
+# (green fixture or not), so V7's assertion already covers it.
+
+V9_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          set +e
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+          exit 0'
+WF=$(wf_with_e2e_step "$V9_STEP")
+assert_exit 1 "V9: fails when set +e and a trailing exit 0 override the invocation" "$WF"
+
+# V9, isolated: `set +e` alone (no trailing exit) still disables the default
+# errexit that makes the invocation's own failure fail the step.
+V9_SET_ONLY_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          set +e
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$V9_SET_ONLY_STEP")
+assert_exit 1 "V9: fails on set +e alone, with no trailing exit" "$WF"
+
+# V9, isolated: a trailing exit alone (no set +e) — belt and braces, since a
+# future default-shell change should not have to also weaken this check.
+V9_EXIT_ONLY_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+          exit 0'
+WF=$(wf_with_e2e_step "$V9_EXIT_ONLY_STEP")
+assert_exit 1 "V9: fails on a trailing exit alone, with no set +e" "$WF"
+
+V10_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        shell: bash {0}
+        run: |
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+          echo done'
+WF=$(wf_with_e2e_step "$V10_STEP")
+assert_exit 1 "V10: fails when shell: bash {0} drops the default -e before a trailing echo" "$WF"
+
+# V10, isolated: shell: bash {0} rejected even with no trailing line at all —
+# the shell override itself is the problem, not just the echo it enables.
+V10_SHELL_ONLY_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        shell: bash {0}
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$V10_SHELL_ONLY_STEP")
+assert_exit 1 "V10: fails on shell: bash {0} alone" "$WF"
+assert_contains "shell" "V10: names the shell override" "$WF"
+
+# ── Two steps claiming the invocation is ambiguous, not doubly safe ─────────
+DUPLICATE_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+      - name: Check quarantine again
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$DUPLICATE_STEP")
+assert_exit 1 "fails when two steps both carry the quarantine invocation" "$WF"
+
+# V11: an earlier, unrelated step happens to mention check-quarantine.sh (a
+# "dry run" with --validate-only) and the real enforcing step was deleted.
+# The old code used steps.find, first match wins — this must not.
+V11_STEP='      - name: Quarantine dry run
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json --validate-only'
+WF=$(wf_with_e2e_step "$V11_STEP")
+assert_exit 1 "V11: fails when the only step mentioning the script is a decoy, not the real invocation" "$WF"
+assert_contains "check-quarantine.sh" "V11: names the missing quarantine invocation" "$WF"
+
+V12_STEP='      - name: Check quarantine
+        env:
+          GUARD: '"'"'true'"'"'
+        run: |
+          [ "$GUARD" = strict ] && bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json; echo skipped'
+WF=$(wf_with_e2e_step "$V12_STEP")
+assert_exit 1 "V12: fails when the invocation is conditioned on an env var and followed by echo skipped" "$WF"
+
+# ── The positive assertion must not punish legitimate logging ───────────────
+# A step that logs before running the real check must still pass — punishing
+# it teaches people to strip logging from around the guard.
+LOG_THEN_INVOKE_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          echo '"'"'running scripts/check-quarantine.sh'"'"'
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$LOG_THEN_INVOKE_STEP")
+assert_exit 0 "accepts a log line before the real invocation" "$WF"
+
+# The real deploy.yml wraps the invocation's two args across lines with
+# trailing backslashes — the positive assertion must recognise that shape too.
+CONTINUATION_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: |
+          bash scripts/check-quarantine.sh \
+            apps/frontend/e2e/quarantine.json \
+            apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$CONTINUATION_STEP")
+assert_exit 0 "accepts the real workflow's backslash line-continued invocation" "$WF"
+
 # ── Bad input ────────────────────────────────────────────────────────────────
 if bash "$SCRIPT" "$TMP/does-not-exist.yml" >/dev/null 2>&1; then
   fail=$((fail + 1)); echo "  FAIL exits non-zero on a missing workflow file"
