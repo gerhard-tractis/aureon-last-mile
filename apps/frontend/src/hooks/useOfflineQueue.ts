@@ -249,8 +249,19 @@ export function useOfflineQueue(
   // propio `drain()` la ejecuta al terminar la que está en curso.
   const rerunRequestedRef = useRef(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // B1, ronda 3 de review del PR #679 (bloqueante) — un `drain()` en vuelo
+  // en el momento del desmontaje puede terminar de reprogramar su reintento
+  // DESPUÉS de que el cleanup del efecto ya corrió: `send()` resuelve,
+  // `calls`/estado se actualiza, pero `markFailed`/`purgeConfirmed` y la
+  // llamada a `scheduleRetry` siguen pendientes cuando el componente se
+  // desmonta. Sin este guard, ese `scheduleRetry` tardío empuja un timer
+  // nuevo a un `timersRef.current` que ya nadie va a limpiar — huérfano para
+  // siempre, el mismo riesgo de custodia que el resto de B1 (un timer que
+  // dispara con el `operatorId`/`userId` de una sesión que ya cerró).
+  const mountedRef = useRef(true);
 
   const scheduleRetry = useCallback((delayMs: number, run: () => void) => {
+    if (!mountedRef.current) return;
     const timer = setTimeout(() => {
       // m10, ronda 2 de review del PR #679 (menor): sin esto, `timersRef`
       // crece sin límite — un timer ya disparado nunca se quitaba del
@@ -340,12 +351,17 @@ export function useOfflineQueue(
   }, [operatorId, userId, send, scheduleRetry]);
 
   useEffect(() => {
+    mountedRef.current = true;
     void drain();
 
     const onOnline = () => void drain();
     window.addEventListener('online', onOnline);
 
     return () => {
+      // B1 — desde aquí, ningún `scheduleRetry` posterior (incluido uno de
+      // un `drain()` que ya estaba en vuelo al desmontar) puede empujar un
+      // timer nuevo — ver el docstring de `mountedRef`.
+      mountedRef.current = false;
       window.removeEventListener('online', onOnline);
       // B1, ronda 3 de review del PR #679 (bloqueante) — leer
       // `timersRef.current` AQUÍ, en vez de capturarlo en una variable local

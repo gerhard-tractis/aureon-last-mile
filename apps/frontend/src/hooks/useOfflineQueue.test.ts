@@ -523,7 +523,14 @@ describe('useOfflineQueue', () => {
 
     renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
-    await waitFor(() => expect(sent).toContain(firstEntry.clientOperationId));
+    // Ronda 3 de review del PR #679 — observed timing out at the default
+    // 1000ms under heavy contention from other test files running in
+    // parallel (`--pool=forks`); this test's own work (the gated send plus
+    // a real IndexedDB write) is not the bottleneck, CPU contention across
+    // files is. Widen the margin rather than fake the clock — the gate
+    // itself (`firstSendGate`) is real async coordination this test relies
+    // on to interleave the injected second manifest correctly.
+    await waitFor(() => expect(sent).toContain(firstEntry.clientOperationId), { timeout: 5_000 });
     releaseFirstSend?.();
 
     await waitFor(() => {
@@ -562,6 +569,14 @@ describe('useOfflineQueue', () => {
     // the moment B1 strands the mount effect's captured cleanup reference.
     await waitFor(() => expect(calls).toBe(2), { timeout: 2_000 });
 
+    // Give the in-flight drain() pass a moment to fully settle (markFailed +
+    // purgeConfirmed + scheduleRetry for the SECOND backoff) before
+    // unmounting — otherwise this test would be racing `mountedRef`'s guard
+    // instead of exercising the timer-identity bug B1 is actually about.
+    // That race is real and is exactly why `mountedRef` exists (see its
+    // docstring) — it just isn't what THIS test is asserting.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     // A second retry (2s backoff, retryCount 1 -> 2^1) is now scheduled in
     // the NEW array. Unmount before it fires: a correct cleanup must cancel
     // it regardless of which array it landed in.
@@ -571,6 +586,46 @@ describe('useOfflineQueue', () => {
     await new Promise((resolve) => setTimeout(resolve, 2_500));
 
     expect(calls).toBe(2);
+  }, 10_000);
+
+  // B1 (seguimiento) — la mitad de la carrera que el test de arriba no
+  // ejercita: un `drain()` que sigue en vuelo EN EL MOMENTO del desmontaje
+  // puede llamar a `scheduleRetry` DESPUÉS de que el cleanup ya corrió (el
+  // cleanup lee `timersRef.current` en el momento en que se ejecuta — no
+  // puede limpiar un timer que todavía no existe). Sin `mountedRef`, ese
+  // timer tardío queda huérfano para siempre: nada volverá a limpiarlo.
+  it('B1 (seguimiento) — a scheduleRetry call that lands after unmount (drain() still in flight) never runs', async () => {
+    const { first } = await seed();
+    let calls = 0;
+    let releaseSend: (() => void) | undefined;
+    const sendGate = new Promise<void>((resolve) => {
+      releaseSend = resolve;
+    });
+    const send: OfflineQueueSender = vi.fn(async () => {
+      calls += 1;
+      await sendGate;
+      return { outcome: 'retry', reason: 'still offline' };
+    });
+
+    const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+    await waitFor(() => expect(calls).toBe(1));
+
+    // Unmount WHILE send() is still pending — markFailed/purgeConfirmed/
+    // scheduleRetry for this failure haven't run yet.
+    unmount();
+    void first;
+    releaseSend?.();
+
+    // Give the in-flight drain() every chance to finish and call
+    // scheduleRetry despite the unmount.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // If a timer leaked, it would fire well within this window (backoff for
+    // the first failure is 1s) and drive a second send.
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    expect(calls).toBe(1);
   }, 10_000);
 
   // B2, ronda 3 de review del PR #679 (bloqueante) — `drainManifest` sale
