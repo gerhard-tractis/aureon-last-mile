@@ -14,7 +14,7 @@
  * (`.abortSignal(signal)` → promesa), no una promesa directa.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { createPickupQueueSender } from './offlineQueueSender';
+import { createPickupQueueSender, createLazyPickupQueueSender } from './offlineQueueSender';
 import type { PickupQueueEntry } from '@/lib/db';
 
 function closeManifestEntry(overrides: Partial<PickupQueueEntry> = {}): PickupQueueEntry {
@@ -244,5 +244,72 @@ describe('createPickupQueueSender — close_manifest', () => {
 
     expect(result.outcome).toBe('retry');
     expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Hallazgo del coordinador, 2026-09-08 (revisión del PR #679 tras la ronda
+ * 4) — `AppLayout.tsx` monta el sender con
+ * `useMemo(() => createPickupQueueSender(createSPAClient()), [])`.
+ * `AppLayout` es `"use client"`, pero Next.js ejecuta el cuerpo del
+ * componente durante el prerender/SSR, y `useMemo` corre en esa pasada.
+ * `createSPAClient()` exige `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en ese
+ * momento — sin ellas (el entorno de build de Vercel Preview para este PR)
+ * lanza `@supabase/ssr: Your project's URL and API key are required`
+ * prerenderizando cualquier ruta bajo `AppLayout` (`/admin/audit-logs`,
+ * medido), rompiendo el build entero.
+ *
+ * `createLazyPickupQueueSender` resuelve las dos exigencias en tensión:
+ * identidad ESTABLE del sender (`useOfflineQueue` mete `send` en las deps de
+ * su efecto — un sender nuevo en cada render reiniciaría la cadena de
+ * reintentos programados), pero SIN construir el cliente Supabase en tiempo
+ * de render. El cliente se crea perezosamente en el primer envío real y se
+ * cachea — en SSR nunca se envía nada, así que nunca se construye.
+ */
+describe('createLazyPickupQueueSender', () => {
+  it('does not call the client factory at construction time', () => {
+    const getClient = vi.fn();
+
+    createLazyPickupQueueSender(getClient);
+
+    expect(getClient).not.toHaveBeenCalled();
+  });
+
+  it('calls the client factory on the first real send, not before', async () => {
+    const { rpc } = rpcMock({ error: null, data: null });
+    const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const getClient = vi.fn(() => supabase);
+
+    const send = createLazyPickupQueueSender(getClient);
+    expect(getClient).not.toHaveBeenCalled();
+
+    await send(closeManifestEntry());
+
+    expect(getClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('caches the client — a second send does not call the factory again', async () => {
+    const { rpc } = rpcMock({ error: null, data: null });
+    const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const getClient = vi.fn(() => supabase);
+
+    const send = createLazyPickupQueueSender(getClient);
+    await send(closeManifestEntry());
+    await send(closeManifestEntry());
+
+    expect(getClient).toHaveBeenCalledTimes(1);
+  });
+
+  it('delegates to the real sender behavior once the client is built', async () => {
+    const { rpc } = rpcMock({
+      error: { message: 'MANIFEST_NOT_CLOSABLE: manifest is not in a closable state (status: pending)', details: '', hint: '', code: 'P0001' },
+      data: null,
+    });
+    const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const send = createLazyPickupQueueSender(() => supabase);
+
+    const result = await send(closeManifestEntry());
+
+    expect(result.outcome).toBe('dead');
   });
 });

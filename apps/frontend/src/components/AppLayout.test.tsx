@@ -32,10 +32,18 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
   useOfflineQueue: (...args: unknown[]) => useOfflineQueueSpy(...args),
 }));
 
+// Hallazgo del coordinador, revisión del PR #679 tras la ronda 4 de spec-81
+// fase 2 — AppLayout pasó de `createPickupQueueSender(createSPAClient())`
+// (construye el cliente Supabase EN el render, rompía el prerender/SSR sin
+// las env vars) a `createLazyPickupQueueSender(createSPAClient)` (identidad
+// estable desde el render, cliente construido perezosamente en el primer
+// envío real — ver offlineQueueSender.test.ts para esa laziness). Este
+// archivo sigue verificando sólo el cableado (operatorId/userId correctos,
+// identidad estable), no la laziness en sí.
 const mockSender = vi.fn();
-const createPickupQueueSenderSpy = vi.fn(() => mockSender);
+const createLazyPickupQueueSenderSpy = vi.fn(() => mockSender);
 vi.mock('@/lib/pickup/offlineQueueSender', () => ({
-  createPickupQueueSender: (...args: unknown[]) => createPickupQueueSenderSpy(...args),
+  createLazyPickupQueueSender: (...args: unknown[]) => createLazyPickupQueueSenderSpy(...args),
 }));
 
 const mockBranding = {
@@ -126,7 +134,7 @@ beforeEach(() => {
   mockDrainNow.mockClear();
   useOfflineQueueSpy.mockClear();
   mockSender.mockClear();
-  createPickupQueueSenderSpy.mockClear();
+  createLazyPickupQueueSenderSpy.mockClear();
 });
 
 describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review PR #679)', () => {
@@ -137,7 +145,7 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
       </AppLayout>,
     );
 
-    expect(createPickupQueueSenderSpy).toHaveBeenCalled();
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalled();
     expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockUserId, mockSender);
   });
 
@@ -173,20 +181,20 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
   });
 
   // m9, ronda 2 de review del PR #679 (menor) — el `useMemo` alrededor de
-  // `createPickupQueueSender` no estaba testeado: sustituirlo por la
+  // `createLazyPickupQueueSender` no estaba testeado: sustituirlo por la
   // llamada directa deja 63/63 en verde, porque el mock de arriba
-  // (`createPickupQueueSenderSpy`) devuelve siempre el mismo objeto sin
+  // (`createLazyPickupQueueSenderSpy`) devuelve siempre el mismo objeto sin
   // importar cuántas veces se llame — la estabilidad de IDENTIDAD, que es
   // lo que el `useMemo` arregla (un sender nuevo en cada render reiniciaría
   // la cadena de reintentos programados de `useOfflineQueue`), era
   // inobservable. Esto comprueba la llamada en sí, no sólo su resultado.
-  it('m9 — memoizes the sender: a re-render does not call createPickupQueueSender again', () => {
+  it('m9 — memoizes the sender: a re-render does not call createLazyPickupQueueSender again', () => {
     const { rerender } = render(
       <AppLayout>
         <div>content</div>
       </AppLayout>,
     );
-    expect(createPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
 
     mockRole = 'operations_manager';
     rerender(
@@ -195,7 +203,7 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
       </AppLayout>,
     );
 
-    expect(createPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
   });
 });
 

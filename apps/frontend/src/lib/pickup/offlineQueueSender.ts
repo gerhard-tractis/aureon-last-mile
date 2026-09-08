@@ -62,6 +62,42 @@ export function createPickupQueueSender(supabase: SupabaseClient): OfflineQueueS
   };
 }
 
+/**
+ * Hallazgo del coordinador, 2026-09-08 (revisión del PR #679 tras la ronda
+ * 4 de spec-81 fase 2) — `AppLayout.tsx` montaba el sender con
+ * `useMemo(() => createPickupQueueSender(createSPAClient()), [])`.
+ * `AppLayout` es `"use client"`, pero Next.js ejecuta el cuerpo del
+ * componente durante el prerender/SSR, y `useMemo` corre en esa pasada.
+ * `createSPAClient()` exige `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en ese
+ * momento — sin ellas (el build de Vercel Preview de este PR no las tenía)
+ * lanza `@supabase/ssr: Your project's URL and API key are required`
+ * prerenderizando cualquier ruta bajo `AppLayout`, rompiendo el build
+ * entero. Medido: `/admin/audit-logs`, pero es cualquier ruta — `AppLayout`
+ * es el shell global.
+ *
+ * Dos exigencias en tensión, no una: `useOfflineQueue` mete `send` en las
+ * deps de su efecto (un sender nuevo en cada render de `AppLayout`
+ * reiniciaría la cadena de reintentos programados), así que el sender
+ * necesita identidad ESTABLE — pero construir el cliente Supabase no puede
+ * pasar en tiempo de render. La solución no es elegir entre las dos: es
+ * separar "identidad estable" de "cuándo se construye el cliente". Este
+ * envoltorio tiene identidad estable desde el primer render (es lo que
+ * `useMemo(() => createLazyPickupQueueSender(createSPAClient), [])`
+ * memoiza), pero NO llama a `getClient()` hasta el primer envío real — en
+ * SSR nunca se envía nada, así que nunca se construye nada.
+ */
+export function createLazyPickupQueueSender(
+  getClient: () => SupabaseClient,
+): OfflineQueueSender {
+  let cached: OfflineQueueSender | null = null;
+  return async (entry: PickupQueueEntry): Promise<OfflineQueueOutcome> => {
+    if (!cached) {
+      cached = createPickupQueueSender(getClient());
+    }
+    return cached(entry);
+  };
+}
+
 async function sendCloseManifest(
   supabase: SupabaseClient,
   entry: PickupQueueEntry,
