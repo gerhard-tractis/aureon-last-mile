@@ -99,6 +99,8 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 > (`20260318000004_agent_suite_tables.sql:253-254`, `drivers.user_id`). Pasa a
 > `[pending]`. El alcance real es hacer usable esa columna, no elegirla.
 
+**Archivos:** migración nueva en `packages/database/supabase/migrations/` (índice único parcial sobre `drivers.user_id`), test pgTAP en `packages/database/supabase/tests/`, `packages/database/supabase/seed-qa.sql`, `apps/frontend/src/app/admin/drivers/page.tsx` (nuevo)
+
 - [ ] Índice único parcial sobre `drivers.user_id` (reemplaza el `CREATE INDEX
       IF NOT EXISTS idx_drivers_user_id ... WHERE user_id IS NOT NULL` de
       `:278`, que no es único) + test pgTAP que compruebe que un segundo
@@ -125,6 +127,8 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 > convivir — no aplica lo que el bloqueo original pedía decidir. Lo único que
 > queda es orden: depende de que aterrice spec-80 fase 3
 > (`manifest_documents`, `[pending]`), no de una persona.
+
+**Archivos:** migración nueva en `packages/database/supabase/migrations/` (tabla de documentos de prueba de entrega, patrón `manifest_documents`; deprecar/eliminar `assignments.pod_photo_url` en la misma migración), test pgTAP en `packages/database/supabase/tests/`
 
 - [ ] Reusar el patrón de `manifest_documents` (spec-80 fase 3), no inventar uno nuevo.
 - [ ] `assignments.pod_photo_url` no tiene datos vivos que migrar (0 lecturas, 0 escrituras) — dejarla sin usar o eliminarla en la misma migración, no hace falta decisión de convivencia.
