@@ -212,6 +212,51 @@ SQL
   return 0
 }
 
+# --- Link a QA driver to a QA login (spec-84 fase 1) ------------------------
+# drivers.user_id (20260318000004:253-254) needs at least one QA row linked
+# so the admin/drivers surface and future "home del operario" work (spec-84
+# fase 2, blocked on design) have something real to exercise. seed-qa.sql
+# cannot do this itself: it runs before this script, so no public.users rows
+# exist yet at seed time.
+#
+# There is no 'driver' entry in the user_role ENUM (20260216170542:16-22) —
+# app-login drivers do not have a role of their own yet, and inventing one
+# here would be guessing at a decision that belongs to spec-84 fase 2's
+# design (which role, if any, represents an app-login driver). pickup_crew
+# is the closest existing fit: its own ENUM comment already calls it
+# "Pickup drivers - scan manifests, confirm pickups", and it is the QA role
+# that most resembles a driver holding a phone. This link is provisional —
+# fase 2 may pick a different role, or add one — and is documented as such
+# here, not silently assumed to be the final answer.
+#
+# QA Driver Uno (00000000-0000-4000-8000-000000000110, seed-qa.sql) is linked
+# to qa-pickup-crew@qa.test. QA Driver Dos is left unlinked on purpose, so QA
+# testing of admin/drivers always has one linked and one unlinked row to
+# exercise both states.
+#
+# Idempotent: plain UPDATE to a constant, safe to re-run.
+link_qa_driver_to_user() {
+  local driver_id="$1" email="$2"
+  local updated
+  updated=$(psql_qa -v driver_id="$driver_id" -v email="$email" -f - <<'SQL'
+UPDATE public.drivers d
+   SET user_id = u.id
+  FROM public.users u
+ WHERE d.id = :'driver_id'::uuid
+   AND u.email = :'email'
+   AND u.deleted_at IS NULL
+   AND d.deleted_at IS NULL
+RETURNING d.id;
+SQL
+  ) || { FAILED+=("driver $driver_id -> $email (link failed)"); return 1; }
+  if [ -z "$updated" ]; then
+    echo "ERROR: could not link driver $driver_id to $email (driver or user row missing?)" >&2
+    FAILED+=("driver $driver_id -> $email (no rows matched)")
+    return 1
+  fi
+  return 0
+}
+
 echo "QA user creation via direct SQL on localhost:$DB_PORT (env: $ENV_FILE)"
 echo "pgcrypto schema: $PGCRYPTO_SCHEMA"
 echo
@@ -224,6 +269,9 @@ while IFS='|' read -r role operator_id perms uid; do
     enforce_permissions "$role" "$email" "$perms" || true
   fi
 done <<< "$ROLE_ROWS"
+
+echo "-- linking QA Driver Uno -> qa-pickup-crew@qa.test"
+link_qa_driver_to_user '00000000-0000-4000-8000-000000000110' 'qa-pickup-crew@qa.test' || true
 
 echo
 echo "==============================================================="

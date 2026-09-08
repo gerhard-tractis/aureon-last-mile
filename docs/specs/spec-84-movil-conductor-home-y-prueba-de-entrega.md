@@ -2,7 +2,7 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**de donde vienen estas dos pantallas; se cerró moviéndolas aquí**), [spec-68](spec-68-distribution-mobile.md) (móvil de distribución, ya entregado), [spec-62](spec-62-reception-mobile.md) (móvil de andén), [spec-43](spec-43-failed-delivery-return-flow.md) (entrega fallida y retorno), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (precedente inmediato: fotos como respaldo, con almacenamiento resuelto)
 
-**Status:** backlog
+**Status:** in progress
 **Bloqueado por:** un rediseño que no se ha hecho (fase 2, fase 4) y, para `1j`, un módulo de Reparto que no existe todavía (fase 4). Fase 1 y fase 3 sí las puede tomar un agente — ver *Corrección (2026-09-08)*.
 **Verify:** unit, e2e-qa
 
@@ -92,7 +92,7 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 | **3 — Prueba de entrega multi-archivo** | Dónde y cómo se guarda la prueba | spec-80 fase 3 (orden, no decisión humana) |
 | **4 — `1j` parada y prueba de entrega** | La parada | fase 3 + rediseño |
 
-### Fase 1 — `drivers.user_id` usable `[pending]`
+### Fase 1 — `drivers.user_id` usable `[in_progress]`
 
 > **Corrección (2026-09-08):** esta fase estaba `[blocked]` por una decisión de
 > modelo que resulta que ya tomó el esquema hace cinco meses
@@ -101,17 +101,75 @@ Ver arriba. Reparto móvil no tiene ronda propia.
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/` (índice único parcial sobre `drivers.user_id`), test pgTAP en `packages/database/supabase/tests/`, `packages/database/supabase/seed-qa.sql`, `apps/frontend/src/app/admin/drivers/page.tsx` (nuevo)
 
-- [ ] Índice único parcial sobre `drivers.user_id` (reemplaza el `CREATE INDEX
-      IF NOT EXISTS idx_drivers_user_id ... WHERE user_id IS NOT NULL` de
-      `:278`, que no es único) + test pgTAP que compruebe que un segundo
-      `drivers` con el mismo `user_id` y el mismo `operator_id` falla.
-- [ ] Decidir y documentar cómo se puebla `drivers.user_id` para conductores
-      existentes — `seed-qa.sql:63-65` no lo hace hoy para ninguno de los dos
-      conductores de QA.
-- [ ] Superficie de admin mínima para vincular un `drivers.user_id` — hoy
-      `apps/frontend/src/app/admin/` no tiene página de conductores.
-- [ ] Revisar cada consulta que hoy elige entre `users` y `drivers` para «quién
-      es este conductor».
+- [x] Índice único parcial sobre `drivers.user_id` — implementado en
+      `20260917000001_spec84_fase1_drivers_user_id_usable.sql` como **global**
+      (`UNIQUE (user_id) WHERE user_id IS NOT NULL AND deleted_at IS NULL`),
+      no por `(operator_id, user_id)` como sugería este checklist — el
+      comentario de esa migración argumenta por qué (`public.users.operator_id`
+      es `NOT NULL`, así que `user_id` ya trae un tenant consigo; permitir el
+      mismo `user_id` en dos operadores sólo reintroduciría la ambigüedad que
+      la fase existe para cerrar). Test pgTAP en
+      `spec84_fase1_drivers_user_id.test.sql` cubre same-operator (TEST 2),
+      cross-operator (TEST 3) y soft-delete liberando el `user_id` (TEST 4).
+      **No ejecutado** — Docker Desktop estaba caído (500 en todo comando)
+      durante esta implementación; `scripts/pgtap-local.sh` no pudo
+      construir/aplicar/correr nada. Pendiente de correr antes de confiar en
+      este archivo.
+- [x] `drivers.user_id` se puebla vía admin, no por backfill masivo — decisión
+      documentada en el comentario de la migración y en
+      `infra/supabase-qa/create-qa-users.sh`: no hay heurística de
+      teléfono/RUT/nombre segura para emparejar automáticamente conductores
+      con cuentas de usuario (el mismo tipo de ambigüedad que
+      `20260903000006_spec72_phase4_territory_history.sql:24-29` ya documenta
+      para `driver_name`), y la tabla no tiene ningún lector/escritor vivo
+      hoy, así que no hay urgencia que justifique adivinar. Para QA, el
+      vínculo se crea en `create-qa-users.sh` (después de que existan
+      `public.users`, ya que `seed-qa.sql` corre antes) — un conductor
+      (`QA Driver Uno`) vinculado a `qa-pickup-crew@qa.test`, el otro
+      (`QA Driver Dos`) deliberadamente sin vincular, para que la superficie
+      de admin siempre tenga ambos estados que ejercitar.
+- [x] Superficie de admin mínima en `/admin/drivers`
+      (`apps/frontend/src/app/admin/drivers/page.tsx` +
+      `components/admin/DriverManagementPage.tsx` +
+      `hooks/useDrivers.ts` + `lib/api/drivers.ts` +
+      `app/api/admin/drivers/[route.ts, [id]/route.ts]`), gateada a
+      `admin`/`operations_manager` (mismo criterio que `/api/users` y
+      `/api/pickup-points`; no incluye `super_admin` — ver comentario en
+      `route.ts` para el porqué).
+- [x] Inventario de "quién es este conductor" (`users` vs `drivers`) — ver
+      abajo.
+
+**Inventario: "quién es este conductor" hoy tiene TRES respuestas distintas, no una.**
+
+1. **`public.drivers`** (agent suite, `20260318000004`) — el modelo "completo":
+   `pay_config`, `score`, WhatsApp, y ahora `user_id`. **Cero lectores y cero
+   escritores vivos en `apps/frontend` o en SQL** (`git grep "from('drivers')"`
+   sólo encuentra `apps/agents/src/dev/test-orders.ts`, un script de
+   desarrollo; `git grep "FROM public.drivers\|JOIN public.drivers"` sobre
+   todas las migraciones no encuentra nada). Es la tabla que esta fase hace
+   usable, pero hoy no la usa nada en producción.
+2. **`pickup_routes.driver_id`** (`20260625000001_spec47_...:32`) —
+   `UUID NOT NULL REFERENCES public.users(id)`, **no** a `drivers`. El
+   conductor de una ruta de Recogida es literalmente un login de la
+   plataforma (rol `pickup_crew`/`pickup_leader`), comparado directo contra
+   `auth.uid()` en frontend
+   (`apps/frontend/src/app/app/pickup/route/active/page.tsx:278`:
+   `route.driver_id === userId`). Este es el único de los tres que ya
+   resuelve "soy yo" de punta a punta hoy.
+3. **`routes.driver_name` / `fleet_vehicles.driver_name`**
+   (`20260306000001_add_routes_dispatches_fleet_tables.sql:62,84`) — texto
+   libre `VARCHAR(255)` poblado desde el webhook de DispatchTrack
+   (`truck_driver`), sin FK a nada. Es cómo Reparto/Distribución identifica
+   "quién manejó esta ruta" — un tercer vocabulario, sin login ni fila propia.
+
+Ninguna consulta elige *entre* `users` y `drivers` hoy — cada módulo ya decidió
+por su cuenta y nunca se cruzan. `drivers.user_id` (ahora usable) es la
+**cuarta** pieza, todavía sin consumidor: la fase 2 (`1g`, home del operario,
+bloqueada por diseño) sería la primera en leerla. No se toca aquí qué hace
+`pickup_routes.driver_id` apuntar a `users` en vez de `drivers` — es una
+inconsistencia real, pero resolverla es una decisión de producto (¿migrar
+Recogida a `drivers`? ¿dejar que cada módulo tenga su propio conductor?) fuera
+del alcance de esta fase, que sólo tenía que dejar `drivers.user_id` usable.
 
 ### Fase 2 — `1g` home del operario `[blocked]`
 
