@@ -250,6 +250,67 @@ la señal se cae → el operario pulsa Completar». No bloqueante para esta
 ronda; queda anotado para que una fase futura decida si cachear
 `manifestId` en IndexedDB vale la pena.
 
+**Ronda 2 de review del PR #679 (2026-09-08) — cuatro bloqueantes más:**
+
+- **B1.** `MANIFEST_ALREADY_SIGNED` (23505) se clasificaba `business` →
+  `dead` en el sender. La migración lo llama explícitamente "an idempotent
+  409": el reintento de un cierre que SÍ se aplicó (respuesta perdida en un
+  túnel, o abortada por el propio `AbortSignal.timeout` de B4 de la ronda
+  1) volvía a chocar con `signature_operator IS NOT NULL` y mataba el
+  manifiesto para siempre — un envío exitoso convertido en bloqueo
+  permanente. **Implementado:** `classifyCloseManifestError` gana un kind
+  `idempotent`, separado de `permanent`; el sender lo reporta `sent`.
+- **B2.** Todo lo no-offline caía a `dead` sin distinguir. Verificado
+  contra el sender real: un JWT expirado (`PGRST301`), un 502 de Kong sin
+  `code`, un `statement timeout` (`57014`) y un deadlock (`40P01`) — los
+  cuatro recuperables reintentando, los cuatro mataban el manifiesto.
+  **Implementado:** `permanent` se reserva a los cuatro rechazos que
+  `close_manifest` declara explícitamente irrecuperables
+  (`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, los dos
+  cross-tenant `42501`); todo lo demás, `transient` (retry).
+- **B3.** `getPendingPickupCount` sumaba `dead` a `queuedCount`, y
+  `SyncChip` pinta `queuedCount > 0` en verde de éxito — un rechazo
+  irrecuperable se mostraba, para siempre, como "todo va bien, está en
+  cola". **Implementado:** `dead` deja de contar en `queuedCount`;
+  `getBlockedPickupCount`/`useSyncQueue().blockedCount` es su propio
+  contador, y `SyncChip` anuncia "N REQUIERE AYUDA" con tono de aviso, no
+  de éxito. `dead` sigue siendo permanente por decisión explícita del
+  reviewer (soltar el cierre detrás de un escaneo muerto es el riesgo nº1);
+  la afordancia humana completa (a dónde lleva el bloqueo, cómo se
+  resuelve) queda como ítem nuevo en el checklist de fase 4, con su razón
+  — no existía en ninguna fase antes de esta ronda.
+- **B4.** La cola estaba acotada por inquilino (`operatorId`), no por
+  persona — dos conductores de la MISMA empresa en un teléfono de muelle
+  compartido, en sesiones sucesivas, comparten `operatorId`. El drenador de
+  quien inicia sesión después enviaba (y firmaba con su propio nombre, vía
+  `auth.uid()` en el servidor) lo que el conductor anterior había encolado.
+  **Implementado:** `PickupQueueEntry` gana `userId`; `useOfflineQueue`
+  recibe `(operatorId, userId, send)` y filtra por `userId` antes de
+  reclamar o enviar cualquier entrada — nunca toca una que la sesión actual
+  no encoló, aunque comparta manifiesto. `manifestHasDeadEntry`/
+  `reclaimStale`/`purgeConfirmed` siguen sin filtrar por usuario a
+  propósito (documentado en el código de `useOfflineQueue.ts`): o son una
+  protección conservadora que debe aplicar a cualquiera, o no tocan datos
+  de negocio.
+
+Dos mayores: **M5** — `enqueue` corría dentro del `catch` de
+`handleComplete` sin un `try` propio; si lanzaba (el tope de 500, o un
+`DOMException` de IndexedDB), la excepción escapaba sin capturar y el botón
+quedaba colgado en "Completando…" para siempre. Capturado, con toast y
+botón re-habilitado. **M6** — un reintento programado o un evento `online`
+que llegaba mientras un `drain()` ya corría se perdía sin dejar rastro; el
+guard `drainingRef.current` no reprogramaba nada. Ahora marca "hace falta
+otra pasada" y la ejecuta al terminar la que está en curso.
+
+m7-m12 (menores): timeout del sender fijado a un valor exacto en vez de
+sólo `toBeInstanceOf` (m7); detección de característica para
+`AbortSignal.timeout` en WebViews sin soporte (m8); test de estabilidad de
+identidad del `useMemo` de `AppLayout` (m9); `timersRef` ya no crece sin
+límite (m10); esta cabecera del checklist citaba la regla de clasificación
+ANTERIOR a B1/B2 (m11); una aserción vacua en
+`useOfflineQueue.test.ts` que el drenado del mount ya satisfacía, corregida
+para discriminar sobre el escaneo encolado después del mount (m12).
+
 **Nota de coordinación con fase 3 (review del PR #678, 2026-09-08):**
 `usePickupScans.ts` inserta N filas (una por bulto) bajo un único
 `clientOperationId` cuando el escaneo es a nivel de pedido — con el índice
@@ -454,6 +515,14 @@ review):**
   `spec81_fase3_pickup_scans_idempotency.test.sql` TEST 14 (SQL, general) y
   `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend, la premisa
   de hoy).
+
+  **Seguimiento cerrado (fase 2, ronda 2 de review del PR #679):** el test
+  de arriba sólo congelaba la mitad de la premisa — que la rama de número de
+  pedido nunca devuelve ids nulos, no que sea la ÚNICA rama que puede
+  devolver más de uno. Mutar la rama 1:1 (`scan-validator.ts:72`) o la de
+  duplicado (`:66`) para devolver dos ids sobrevivía. Cerrado con
+  `expect(result.packageIds).toEqual([])` en el test de duplicado y un test
+  nuevo de la rama 1:1 con `toHaveLength(1)`; ambos mutation-verificados.
 - **M-4 — la cabecera citaba el contrato de la fase 2 al revés.** Decía que
   la fase 2 trata todo 409 idempotente como éxito ya resuelto; el docstring
   real de `OfflineQueueSender` (`useOfflineQueue.ts`, PR #679) dice lo
