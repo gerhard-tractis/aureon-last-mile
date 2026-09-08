@@ -141,6 +141,27 @@ describe('CompletionPage', () => {
     expect(await screen.findByText(/Firma del operador/)).toBeInTheDocument();
   });
 
+  // Decisión del usuario, 2026-09-08 (ronda 3 de review del PR #679) — el
+  // mock de `5f` (`docs/design/Recogida.dc.html`, PR #685) tiene esta línea
+  // ESTÁTICA, siempre visible, ANTES de que el operario firme — no como
+  // reacción a un fallo. Antes de esta ronda la pantalla sólo explicaba el
+  // offline DESPUÉS de un error (un toast tras el fallo del RPC): afordancias
+  // opuestas — el mock tranquiliza antes de decidir firmar, el código
+  // mostraba un error y luego decía que en realidad había ido bien. El mock
+  // nunca cubrió el camino de fallo en absoluto (cero coincidencias de
+  // "error"/"reintentar"/"no se pudo" en todo el fichero), así que esa
+  // afordancia se había inventado en tres rondas de review; el usuario
+  // decidió mantener el toast como confirmación y AÑADIR esta línea, no
+  // reemplazar una por otra. Texto literal del mock, sin parafrasear.
+  it('shows the static offline-safety line before signing (verbatim from the 5f mock)', async () => {
+    render(<CompletionPage />);
+    expect(
+      await screen.findByText(
+        'Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.',
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('renders Spanish checkbox label', async () => {
     render(<CompletionPage />);
     expect(await screen.findByText('Agregar firma del cliente')).toBeInTheDocument();

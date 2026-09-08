@@ -260,6 +260,21 @@ export default function CompletionPage() {
         </p>
       </div>
 
+      {/*
+        Decisión del usuario, 2026-09-08 (ronda 3 de review del PR #679) —
+        línea estática del mock de `5f` (`docs/design/Recogida.dc.html`),
+        siempre visible ANTES de que el operario firme, no como reacción a un
+        fallo. Texto literal del mock. El toast (más abajo, en el catch de
+        `handleComplete`) se queda como confirmación de que el cierre se
+        encoló — esta línea es la promesa hecha ANTES de decidir firmar, no
+        un reemplazo de esa confirmación.
+      */}
+      <div className="flex items-center gap-3 p-3 rounded-lg bg-status-warning-bg border border-status-warning-border">
+        <p className="text-sm text-status-warning-text">
+          Todo queda en el teléfono y se sube al recuperar señal. Las fotos también.
+        </p>
+      </div>
+
       {/* Operator Signature (required) */}
       <div className="space-y-2">
         <p className="text-sm text-text-secondary">
