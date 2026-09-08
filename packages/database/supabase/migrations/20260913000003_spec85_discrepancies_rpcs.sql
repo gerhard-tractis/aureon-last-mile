@@ -56,7 +56,7 @@ DECLARE
 BEGIN
   v_operator := public.get_operator_id();
   IF v_operator IS NULL THEN
-    RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
+    RAISE EXCEPTION 'NO_OPERATOR_IN_JWT: no operator in JWT' USING ERRCODE = '42501';
   END IF;
 
   -- detected_by_user_id is optional evidence (who was present), not a
@@ -64,7 +64,7 @@ BEGIN
   v_actor := NULLIF(auth.jwt() ->> 'sub', '')::UUID;
 
   IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN
-    RAISE EXCEPTION 'p_items must be a JSON array';
+    RAISE EXCEPTION 'INVALID_ITEMS: p_items must be a JSON array';
   END IF;
 
   -- Ownership of the operation: the manifest/route_reception the client
@@ -78,17 +78,17 @@ BEGIN
       SELECT 1 FROM public.manifests
        WHERE id = p_source_id AND operator_id = v_operator AND deleted_at IS NULL
     ) THEN
-      RAISE EXCEPTION 'manifest % not found for this operator', p_source_id USING ERRCODE = '42501';
+      RAISE EXCEPTION 'MANIFEST_NOT_FOUND: manifest % not found for this operator', p_source_id USING ERRCODE = '42501';
     END IF;
   ELSIF p_operation_type = 'reception' THEN
     IF NOT EXISTS (
       SELECT 1 FROM public.route_receptions
        WHERE id = p_source_id AND operator_id = v_operator AND deleted_at IS NULL
     ) THEN
-      RAISE EXCEPTION 'route_reception % not found for this operator', p_source_id USING ERRCODE = '42501';
+      RAISE EXCEPTION 'ROUTE_RECEPTION_NOT_FOUND: route_reception % not found for this operator', p_source_id USING ERRCODE = '42501';
     END IF;
   ELSE
-    RAISE EXCEPTION 'unknown operation_type %', p_operation_type;
+    RAISE EXCEPTION 'UNKNOWN_OPERATION_TYPE: unknown operation_type %', p_operation_type;
   END IF;
 
   -- M5: a clean close (0 missing, 0 unexpected) calls this with an empty
@@ -111,7 +111,7 @@ BEGIN
 
     IF v_kind = 'missing' THEN
       IF v_package_id IS NULL THEN
-        RAISE EXCEPTION 'kind=missing requires package_id, got item %', v_item;
+        RAISE EXCEPTION 'MISSING_REQUIRES_PACKAGE_ID: kind=missing requires package_id, got item %', v_item;
       END IF;
 
       -- Cross-tenant guard: package_id is client-supplied. Without this a
@@ -122,7 +122,7 @@ BEGIN
         SELECT 1 FROM public.packages
          WHERE id = v_package_id AND operator_id = v_operator AND deleted_at IS NULL
       ) THEN
-        RAISE EXCEPTION 'package % not found for this operator', v_package_id USING ERRCODE = '42501';
+        RAISE EXCEPTION 'PACKAGE_NOT_FOUND: package % not found for this operator', v_package_id USING ERRCODE = '42501';
       END IF;
 
       IF p_operation_type = 'pickup' THEN
@@ -151,7 +151,7 @@ BEGIN
 
     ELSIF v_kind = 'unexpected' THEN
       IF v_barcode IS NULL THEN
-        RAISE EXCEPTION 'kind=unexpected requires barcode, got item %', v_item;
+        RAISE EXCEPTION 'UNEXPECTED_REQUIRES_BARCODE: kind=unexpected requires barcode, got item %', v_item;
       END IF;
 
       IF p_operation_type = 'pickup' THEN
@@ -179,7 +179,7 @@ BEGIN
          AND status = 'open' AND deleted_at IS NULL;
 
     ELSE
-      RAISE EXCEPTION 'unknown kind % (expected missing|unexpected)', v_kind;
+      RAISE EXCEPTION 'UNKNOWN_KIND: unknown kind % (expected missing|unexpected)', v_kind;
     END IF;
 
     IF v_id IS NOT NULL THEN
@@ -187,7 +187,15 @@ BEGIN
     END IF;
   END LOOP;
 
-  RETURN QUERY SELECT * FROM public.discrepancies WHERE id = ANY(v_ids);
+  -- m6 (re-review): operator_id/deleted_at repeated here too, for the same
+  -- reason m1 repeats them on resolve_discrepancy's UPDATE — this is
+  -- SECURITY DEFINER and skips RLS, and "operator_id on every query" is a
+  -- repo non-negotiable, not conditional on whether it changes behaviour.
+  -- v_ids was only ever populated from SELECTs already filtered by
+  -- v_operator above, so there is no reachable cross-tenant row here today —
+  -- not a guard with its own test, same class as m1.
+  RETURN QUERY SELECT * FROM public.discrepancies
+   WHERE id = ANY(v_ids) AND operator_id = v_operator AND deleted_at IS NULL;
 END $$;
 
 COMMENT ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) IS
@@ -196,10 +204,22 @@ COMMENT ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enu
 parciales de fase 1: llamar dos veces con el mismo ítem deja una sola fila
 abierta. Verifica que p_source_id (manifest_id o route_reception_id según
 p_operation_type) y cada package_id pertenezcan al operador del JWT — nada
-por debajo lo hace, porque corre SECURITY DEFINER.';
+por debajo lo hace, porque corre SECURITY DEFINER. Mensajes con prefijo
+centinela (NO_OPERATOR_IN_JWT, INVALID_ITEMS, MANIFEST_NOT_FOUND,
+ROUTE_RECEPTION_NOT_FOUND, UNKNOWN_OPERATION_TYPE,
+MISSING_REQUIRES_PACKAGE_ID, PACKAGE_NOT_FOUND, UNEXPECTED_REQUIRES_BARCODE,
+UNKNOWN_KIND), patrón de close_manifest (20260913000002) — tres causas
+distintas comparten ERRCODE 42501 y un mapeador de frontend no puede
+distinguirlas sin esto.';
 
+-- M-5 (re-review): REVOKE ... FROM PUBLIC does not touch `anon` — Supabase's
+-- default privileges grant EXECUTE directly TO anon (and authenticated, and
+-- service_role) on every new function, not by inheriting from PUBLIC. Repo
+-- convention for a write RPC (20260812000003:298, 20260812000005:273,
+-- 20260820000003:316, 20260820000005:110): revoke it explicitly.
 REVOKE ALL ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) TO authenticated;
+REVOKE ALL ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) FROM anon;
 
 -- -----------------------------------------------------------------------------
 -- 2. resolve_discrepancy
@@ -220,7 +240,7 @@ DECLARE
 BEGIN
   v_operator := public.get_operator_id();
   IF v_operator IS NULL THEN
-    RAISE EXCEPTION 'no operator in JWT' USING ERRCODE = '42501';
+    RAISE EXCEPTION 'NO_OPERATOR_IN_JWT: no operator in JWT' USING ERRCODE = '42501';
   END IF;
 
   v_actor := NULLIF(auth.jwt() ->> 'sub', '')::UUID;
@@ -231,11 +251,11 @@ BEGIN
   -- below, which raises a raw 23502 not-null violation instead of a clean
   -- validation error. Check IS NULL explicitly.
   IF p_status IS NULL OR p_status NOT IN ('resolved', 'lost') THEN
-    RAISE EXCEPTION 'p_status must be resolved or lost, got %', p_status USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'INVALID_STATUS: p_status must be resolved or lost, got %', p_status USING ERRCODE = 'P0001';
   END IF;
 
   IF p_resolution IS NULL OR length(trim(p_resolution)) = 0 THEN
-    RAISE EXCEPTION 'p_resolution is required' USING ERRCODE = 'P0001';
+    RAISE EXCEPTION 'RESOLUTION_REQUIRED: p_resolution is required' USING ERRCODE = 'P0001';
   END IF;
 
   -- Ownership + lock: filtered by operator_id here, because the table's
@@ -248,7 +268,7 @@ BEGIN
      FOR UPDATE;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'discrepancy % not found for this operator', p_id USING ERRCODE = '42501';
+    RAISE EXCEPTION 'DISCREPANCY_NOT_FOUND: discrepancy % not found for this operator', p_id USING ERRCODE = '42501';
   END IF;
 
   -- A closed discrepancy is evidence; editing it afterward destroys its
@@ -262,7 +282,7 @@ BEGIN
   -- retrying client would read "already resolved" as "doesn't exist" and
   -- discard the item instead of stopping.
   IF v_row.status <> 'open' THEN
-    RAISE EXCEPTION 'discrepancy % is already % — a closed discrepancy is evidence and cannot be reopened or changed', p_id, v_row.status
+    RAISE EXCEPTION 'DISCREPANCY_ALREADY_RESOLVED: discrepancy % is already % — a closed discrepancy is evidence and cannot be reopened or changed', p_id, v_row.status
       USING ERRCODE = '23505';
   END IF;
 
@@ -287,10 +307,14 @@ Rechaza reabrir o cambiar una discrepancia ya cerrada (resolved/lost -> open,
 o resolved -> lost) con ERRCODE 23505 (unique_violation, "esto ya pasó" ->
 HTTP 409): una discrepancia cerrada es evidencia y no se reabre. p_status
 distinto de resolved/lost (incluido NULL), o p_resolution vacío, es una
-validación aparte y usa P0001. p_resolution es obligatorio.';
+validación aparte y usa P0001. p_resolution es obligatorio. Mensajes con
+prefijo centinela (NO_OPERATOR_IN_JWT, INVALID_STATUS, RESOLUTION_REQUIRED,
+DISCREPANCY_NOT_FOUND, DISCREPANCY_ALREADY_RESOLVED), mismo patrón que
+record_discrepancies y que close_manifest (20260913000002).';
 
 REVOKE ALL ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) FROM anon;
 
 -- -----------------------------------------------------------------------------
 -- 3. get_discrepancies — lectura para la pantalla de resolución
@@ -326,6 +350,7 @@ corresponda). Todos los filtros son opcionales.';
 
 REVOKE ALL ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, public.discrepancy_status_enum, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, public.discrepancy_status_enum, UUID) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, public.discrepancy_status_enum, UUID) FROM anon;
 
 -- -----------------------------------------------------------------------------
 -- 4. Verification
