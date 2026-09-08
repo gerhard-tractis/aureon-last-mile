@@ -7,9 +7,11 @@
  * raw message directly to an end user rather than mapping it in a Next.js
  * API route first — this is that mapping, done client-side instead.
  *
- * Unrecognized errors (cross-tenant "manifest not found", "no operator in
- * JWT") fall back to a generic message: those are anomalies the operator
- * cannot act on, not business-flow rejections worth explaining.
+ * Unrecognized errors — cross-tenant "MANIFEST_NOT_FOUND", "NO_OPERATOR_IN_JWT"
+ * (both now sentinel-prefixed too, spec-80 fase 1b, for consistency with the
+ * rest of the RPC's errors and with record_discrepancies' equivalent causes)
+ * — fall back to a generic message on purpose: those are anomalies the
+ * operator cannot act on, not business-flow rejections worth explaining.
  */
 
 const SENTINEL_MESSAGES: Record<string, string> = {

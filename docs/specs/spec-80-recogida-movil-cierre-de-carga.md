@@ -329,7 +329,7 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
       `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
       a la fase 2 — esa fase sólo añade el mismo camino en móvil.
 
-### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[pending]`
+### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[in_progress]`
 
 Hallado por el re-review de spec-85 fase 2, ronda de arreglos 3 (C3), al
 comparar el "patrón de `close_manifest`" que esa migración dice seguir contra
