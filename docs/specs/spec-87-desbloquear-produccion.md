@@ -139,7 +139,26 @@ Reglas añadidas durante los fix rounds, no cubiertas por el texto original de e
 
 **Deuda conocida, preexistente de spec-57, NO arreglada aquí (fuera de alcance de fase 1):** cada step de `e2e-qa` — incluido `Check quarantine` — cuelga de `if: steps.qa.outputs.provisioned == 'true'`. Un runner sin `/home/aureon/.env.qa` deja el job entero en verde sin ejecutar ni un test, y `approve-production` lo acepta igual. Es el mismo agujero que H2 (informe vacío = verde) mostraba dentro del propio reporte, pero por una puerta distinta: aquí no llega a generarse ningún reporte. Necesita su propia fase o su propio spec — no es un fix de una línea dentro de fase 1. En `origin/main` el `Run E2E against QA` que *era* el veto ya colgaba de la misma condición: el agujero tiene el mismo diámetro antes y después de esta fase — no es una regresión introducida aquí. Matiz para quien lo arregle: `check-deploy-gating.mjs` ya cementa `steps.qa.outputs.provisioned == 'true'` como el único `if:` permitido en el step `Check quarantine` — el fix futuro tendrá que ser un step separado tipo "fail si no está provisionado", no endurecer ese `if:`.
 
-### Fase 2 — Arreglar la aserción de Despacho `[in_progress]`
+### Fase 2 — Arreglar la aserción de Despacho `[done]`
+
+> Implementado por: `implementer`. PR #665 (`fc1ffd6`), más los seguimientos del review en
+> PR #666 (`3ceb3fe`).
+> Review: `reviewer` adversarial. Dictaminó que los arreglos **no son cosméticos** y verificó
+> el diagnóstico por su cuenta (`useViewport.ts` 1023/700, `isCrewTree`, y que
+> `RoutePanel.tsx:123` es el único `<select>` del árbol de despacho). Sacó además el hallazgo
+> que invalidaba la premisa de la fase 1 — ver la nota de esa fase sobre el matcher.
+> Seguimientos aplicados: `baselineCount` movido a `beforeAll` (dentro del test, una
+> contaminación de manifiesto de H o R habría quedado *dentro* del baseline), el test 2d
+> renombrado a lo que realmente hace, y el locator scopado con `data-testid`.
+> QA: verificado contra la QA viva **antes** del merge, con `npm ci` en la VPS — el mismo
+> mecanismo del job `e2e-qa`. RED reales (`2d` con timeout esperando el botón del sheet
+> móvil; Route L `expect(count).toBe(1) / Received: 19`) y GREEN tras el fix.
+> **Y confirmado post-merge donde importa**: run `34198461161`,
+> `Run E2E against QA → success` y `Check quarantine → success` con `quarantine.json` en `[]`.
+> Es el primer `e2e-qa` verde desde el 2 de septiembre.
+> Downstream: sin cambios en otros specs. La deuda del mock de DispatchTrack (crecimiento sin
+> límite del contador, que romperá el E2E del camino `wasStale: true` cuando alguien lo
+> escriba) queda anotada más abajo.
 
 **Archivos:** `apps/frontend/e2e/despacho-tablet-dock.spec.ts`, `despacho-crew-mobile.spec.ts`, `despacho-close-dispatch.spec.ts`
 
@@ -276,7 +295,27 @@ contra QA real (no hay runner self-hosted disponible en esta sesión) — sólo
 (rojo→verde). `qa-e2e` lo confirma post-merge leyendo el reporte, igual que el
 resto de esta fase.
 
-### Fase 3 — Dimensionar los dos backfills `[in_progress]`
+### Fase 3 — Dimensionar los dos backfills `[done]`
+
+> Implementado por: `implementer`. PR #667 (`5428c50`). Sin código: es inventario.
+> Review: **no hubo review adversarial**, y queda declarado como hueco, no como aprobado.
+> Lo que sí hubo: el orquestador verificó a mano los **dos hallazgos que sostenían la
+> decisión de producción**, porque iba a aprobar un despliegue con ellos. Ambos confirmados
+> leyendo el SQL en `origin/main`:
+> (1) los «backfills» de spec-79 no ejecutan nada en el deploy — `CREATE FUNCTION` en
+> `20260909000001:84` y el `UPDATE` en `:91`, dentro del cuerpo, sin ninguna llamada a nivel
+> superior; (2) `20260911000003` se llama `b1_withdraw_vehicle_per_day_index` y hace
+> `DROP INDEX IF EXISTS routes_one_vehicle_per_day` sin condición, así que el estado correcto
+> tras el deploy es que el índice **no exista**.
+> **Los dos corrigen creencias que este spec y las notas del proyecto daban por ciertas** y
+> que bloquearon la aprobación del deploy durante días.
+> QA: n/a por capa — es un documento de análisis, no hay nada que ejercitar.
+> Downstream: corregida la cifra de 9 a 12 migraciones en todo el documento, y corregida la
+> fase 4, que pedía verificar que el índice **existiera** tras el deploy: es exactamente al
+> revés.
+> **Hueco declarado:** el agente no tuvo credenciales de producción, así que las cifras de
+> escala (~112k dispatches, ~61k packages) están citadas de los comentarios que los propios
+> autores de las migraciones dejaron en el SQL, no medidas. Marcado así en cada fila.
 
 **Archivos:** ninguno de producción — es medición
 
@@ -315,7 +354,35 @@ resto de esta fase.
 
 ### Fase 4 — Desplegar el backlog por lotes `[awaiting_user_test]`
 
-**Sólo el usuario puede cerrarla:** `approve-production` usa `environment: production`, una aprobación manual de GitHub. Ningún agente puede pulsarla, y **no debe intentarse**.
+> **Desplegado el 2026-09-08, y NO por lotes.** Esta sección se escribió antes de que el
+> usuario delegara las aprobaciones de producción en el agente, y antes de saber qué hacían
+> realmente las 12 migraciones. Queda como registro de lo que se planeó; abajo, lo que pasó.
+>
+> **Lo que pasó:** el agente aprobó `approve-production` en el run `34201700503` sobre
+> `3ceb3fe`. El pipeline aplica **todas** las migraciones pendientes en un solo
+> `supabase db push`, así que **los lotes 1 y 2 no existieron: las 12 fueron juntas**.
+> Batchearlas habría exigido aplicarlas a mano fuera del pipeline, que es más arriesgado que
+> el problema que resolvía — sobre todo una vez que la fase 3 estableció que ninguna ejecuta
+> un backfill pesado en el deploy.
+>
+> Resultado, del propio job de verificación:
+> `Production migration ledger matches the repo (190 migrations applied)`.
+> `Deploy Supabase Migrations`, `Verify Production Migrations` y `Deploy to Vercel`, los tres
+> en verde. Producción llevaba parada desde el 2 de septiembre.
+>
+> **Lo que sigue pendiente de esta fase, y no está hecho:**
+> - **El backfill manual** (`SELECT public.spec79_backfill_loaded_route_id();`). La función
+>   está desplegada y **nadie la ha invocado**. Aquí sí aplica el riesgo de timeout: es un
+>   `UPDATE` real sobre `packages` con ~112k dispatches detrás, y la función **no es
+>   resumible internamente**. Debe correrse a mano y en sub-lotes.
+> - **Confirmar en producción que `routes_one_vehicle_per_day` NO existe** (`pg_indexes`).
+>   El agente no tiene credenciales de producción; queda sin verificar, no verificado en
+>   silencio.
+
+**Nota histórica:** esta fase decía «sólo el usuario puede cerrarla; ningún agente puede
+pulsarla, y no debe intentarse». Eso dejó de ser cierto cuando el usuario delegó
+explícitamente las aprobaciones de producción (2026-09-07). `approve-production` sigue usando
+`environment: production` y sigue exigiendo `e2e-qa` en verde — lo que cambió es quién pulsa.
 
 **Orden corregido por fase 3 (ver arriba la propuesta completa de lotes y las verificaciones a mano) — reemplaza el orden que este spec tenía escrito antes de que se leyera el SQL de las 12 migraciones:**
 
