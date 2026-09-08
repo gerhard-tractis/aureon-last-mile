@@ -69,9 +69,13 @@ describe('DiscrepancyReviewPage (5e)', () => {
           scanned_at: '2026-09-08T08:47:00Z',
         },
       ],
+      isLoading: false,
+      isError: false,
     });
     mockUseMissingPackages.mockReturnValue({
       data: [{ id: 'pkg1', label: 'PKG-001', order_number: 'ORD-001' }],
+      isLoading: false,
+      isError: false,
     });
     mockUseDiscrepancyNotes.mockReturnValue({ data: [] });
     mockUseSaveDiscrepancyNote.mockReturnValue({ mutate: vi.fn() });
@@ -176,5 +180,36 @@ describe('DiscrepancyReviewPage (5e)', () => {
 
     fireEvent.click(cta);
     expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
+  });
+
+  // Bloqueante 2 (review PR #686): manifestId resolves before scans/missing
+  // do — `!manifestId` alone was the only loading guard, so a manifest that
+  // resolved with the other two queries still in flight (or offline/failed,
+  // 5e's own mock shows "SIN RED" in the status bar) fell straight through
+  // to `missingCount === 0`, rendering the single gold "Continuar a firma"
+  // as if the crew had verified everything. These pin a third, explicit
+  // state that must not collapse into the clean-close case.
+  it('shows a loading state, not the clean-close CTA, while scans/missing are still in flight', async () => {
+    mockUsePickupScans.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+
+    render(<DiscrepancyReviewPage />);
+
+    expect(await screen.findByTestId('review-loading')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit error state, not the clean-close CTA, when scans or missing packages fail to load', async () => {
+    mockUsePickupScans.mockReturnValue({ data: undefined, isLoading: false, isError: true });
+    mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+
+    render(<DiscrepancyReviewPage />);
+
+    expect(await screen.findByTestId('review-error')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
   });
 });

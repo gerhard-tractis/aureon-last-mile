@@ -64,12 +64,16 @@ export default function DiscrepancyReviewPage() {
     });
   }, [operatorId, loadId]);
 
-  const { data: scans = [] } = usePickupScans(manifestId, operatorId);
-  const { data: missingPackages = [] } = useMissingPackages(
-    operatorId,
-    loadId,
-    manifestId
-  );
+  const {
+    data: scans = [],
+    isLoading: scansLoading,
+    isError: scansError,
+  } = usePickupScans(manifestId, operatorId);
+  const {
+    data: missingPackages = [],
+    isLoading: missingLoading,
+    isError: missingError,
+  } = useMissingPackages(operatorId, loadId, manifestId);
   const { data: notes = [] } = useDiscrepancyNotes(manifestId);
   const saveNote = useSaveDiscrepancyNote();
 
@@ -108,13 +112,44 @@ export default function DiscrepancyReviewPage() {
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
 
-  if (!manifestId) {
+  // Bloqueante 2 (spec-80 fase 2 review, PR #686): `!manifestId` only covers
+  // the manifest lookup itself, which resolves before usePickupScans/
+  // useMissingPackages do. Without a THIRD state here, a manifest that
+  // resolved while those two were still in flight — or failed outright, the
+  // exact "SIN RED" scenario the 5e mock's own status bar draws — fell
+  // straight through to `missingCount === 0` and rendered the single gold
+  // "Continuar a firma" as if the crew had verified everything. This is the
+  // block this whole phase exists to install; it must not be reachable by
+  // accident of loading state.
+  if (!manifestId || scansLoading || missingLoading) {
     return (
-      <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
+      <div
+        data-testid="review-loading"
+        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+      >
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-20 w-full" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-10 w-full" />
+      </div>
+    );
+  }
+
+  if (scansError || missingError) {
+    return (
+      <div
+        data-testid="review-error"
+        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+      >
+        <div className="flex flex-col gap-2 rounded-2xl p-4 bg-status-error-bg border-2 border-status-error-border">
+          <span className="font-semibold text-status-error">
+            No se pudo cargar el estado de {loadId}
+          </span>
+          <span className="text-sm text-text">
+            Revisa la conexión e inténtalo de nuevo. No se puede continuar a
+            firma sin saber si quedan bultos sin verificar.
+          </span>
+        </div>
       </div>
     );
   }
