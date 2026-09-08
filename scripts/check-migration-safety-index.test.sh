@@ -100,6 +100,43 @@ SQL
 assert_contains "orders" "warns about orders too" warn-orders-and-dispatches
 assert_contains "dispatches" "warns about dispatches too" warn-orders-and-dispatches
 
+# ── m8 (review round 1): `ON "public"."packages"` (both parts quoted) was
+# parsed as table "public", so the warning never named the real table.
+write_fixture warn-quoted-schema-and-table <<'SQL'
+BEGIN;
+
+CREATE INDEX IF NOT EXISTS idx_packages_foo
+  ON "public"."packages" (foo)
+  WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_contains "packages" "a fully-quoted schema.table still names the real table, not \"public\"" warn-quoted-schema-and-table
+
+# ── m9 (review round 1): rule 2 ran on raw text, so a `-- ...` comment
+# mentioning a CREATE INDEX in prose produced a false ::warning::.
+write_fixture accept-index-mentioned-only-in-comment <<'SQL'
+-- We used to CREATE UNIQUE INDEX ON packages (foo) here, but reverted it.
+BEGIN;
+
+ALTER TABLE public.route_blocks ADD COLUMN foo TEXT;
+
+COMMIT;
+SQL
+assert_not_contains "::warning::" "a CREATE INDEX mentioned only in a comment does not produce a warning" accept-index-mentioned-only-in-comment
+
+# ── m11 (review round 2): reverting `[\s\S]*?(?:;|$)` to `[\s\S]*?;` in this
+# statement regex survives the rest of the suite unnoticed, because no
+# existing fixture has the LAST statement in the file end at true EOF with
+# no trailing `;` at all. This fixture's last (and only) line has no
+# semicolon and nothing follows it.
+mkdir -p "$TMP/warn-index-no-trailing-semicolon"
+# printf, not a heredoc, so the fixture file truly has no trailing `;` and
+# no trailing newline after it — the last statement ends at raw EOF.
+printf '%s' 'CREATE INDEX IF NOT EXISTS idx_packages_foo ON public.packages (foo)' > "$TMP/warn-index-no-trailing-semicolon/0000000001_fixture.sql"
+assert_contains "::warning::" "m11: warns even when the last statement in the file has no trailing ; at all" warn-index-no-trailing-semicolon
+assert_contains "packages" "m11: the semicolon-less last statement still names the table" warn-index-no-trailing-semicolon
+
 echo ""
 echo "check-migration-safety.sh (rule 2): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

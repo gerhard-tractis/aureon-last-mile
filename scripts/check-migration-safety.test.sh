@@ -75,7 +75,7 @@ assert_contains "::error::" "prints ::error:: for the DDL+backfill mix" reject-d
 write_fixture reject-ddl-plus-insert-select <<'SQL'
 BEGIN;
 
-CREATE TABLE public.foo_cache (id UUID PRIMARY KEY, val TEXT);
+ALTER TABLE public.foo_cache ADD COLUMN val TEXT;
 
 INSERT INTO public.foo_cache (id, val)
   SELECT id, val FROM public.foo_source WHERE deleted_at IS NULL;
@@ -83,6 +83,24 @@ INSERT INTO public.foo_cache (id, val)
 COMMIT;
 SQL
 assert_exit 1 "rejects DDL + top-level INSERT...SELECT backfill in the same file" reject-ddl-plus-insert-select
+
+# M6 (review round 2): the ORIGINAL version of this fixture had
+# `CREATE TABLE public.foo_cache` — i.e. the destination IS a table created
+# earlier in the same file, which M6 correctly downgrades to a warning (see
+# check-migration-safety-rule1b.test.sh). Kept here, corrected, so this file
+# still documents that specific transition instead of silently going stale.
+write_fixture warn-ddl-plus-insert-select-into-table-created-here <<'SQL'
+BEGIN;
+
+CREATE TABLE public.foo_cache (id UUID PRIMARY KEY, val TEXT);
+
+INSERT INTO public.foo_cache (id, val)
+  SELECT id, val FROM public.foo_source WHERE deleted_at IS NULL;
+
+COMMIT;
+SQL
+assert_exit 0 "M6: does not reject a top-level INSERT...SELECT into a table CREATE TABLE'd earlier in the same file" warn-ddl-plus-insert-select-into-table-created-here
+assert_contains "::warning::" "M6: still warns about the INSERT...SELECT into the newly-created table" warn-ddl-plus-insert-select-into-table-created-here
 
 # ── The pattern that must NOT be rejected: spec79_backfill_loaded_route_id ──
 # (20260909000001) — ADD COLUMN + CREATE INDEX, and a function that CONTAINS
@@ -132,6 +150,126 @@ ALTER TABLE public.dispatches
 COMMIT;
 SQL
 assert_exit 0 "does not reject a migration with DDL and no backfill at all" accept-ddl-only
+
+# ── B1 (review round 1): a bare UPDATE inside a DO $$ block DOES run at
+# deploy time, unlike a CREATE FUNCTION body. Blanking every dollar-quoted
+# body indiscriminately made this invisible.
+write_fixture reject-ddl-plus-do-block-backfill <<'SQL'
+BEGIN;
+
+ALTER TABLE public.packages ADD COLUMN load_state TEXT;
+
+DO $$
+BEGIN
+  UPDATE public.packages SET load_state = 'en_bodega' WHERE load_state IS NULL;
+END $$;
+
+COMMIT;
+SQL
+assert_exit 1 "rejects DDL + a top-level backfill hidden inside a DO block" reject-ddl-plus-do-block-backfill
+
+# ── B2 (review round 1): declaring a function is inert, but a migration
+# that ALSO invokes it at the top level runs the backfill at deploy time —
+# this is the exact line the false-positive-avoidance overcorrected past.
+write_fixture reject-ddl-plus-invoked-function <<'SQL'
+BEGIN;
+
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+
+CREATE FUNCTION public.backfill_foo() RETURNS VOID LANGUAGE plpgsql AS $fn$
+BEGIN
+  UPDATE public.packages SET foo = 'x';
+END;
+$fn$;
+
+SELECT public.backfill_foo();
+
+COMMIT;
+SQL
+assert_exit 1 "rejects DDL + a declared AND invoked backfill function" reject-ddl-plus-invoked-function
+
+# ── Real-world B1 case: 20260810000002_spec51_repair_wrongly_cancelled_orders
+# stages a `CREATE TEMP TABLE` and, inside the same top-level DO block, runs
+# an unbounded UPDATE keyed off it. `CREATE TEMP TABLE` did not match
+# DDL_RE (only `CREATE TABLE`, without TEMP, did), so DDL_RE.test() failed
+# and rule 1 never even reached the UPDATE check.
+write_fixture reject-create-temp-table-plus-do-block-backfill <<'SQL'
+DO $$
+DECLARE
+  v_affected INT;
+BEGIN
+  CREATE TEMP TABLE spec51_wrongly_cancelled ON COMMIT DROP AS
+  SELECT o.id FROM public.orders o WHERE o.status = 'cancelado';
+
+  SELECT count(*) INTO v_affected FROM spec51_wrongly_cancelled;
+
+  UPDATE public.packages p
+  SET status = p.status
+  WHERE p.deleted_at IS NULL
+    AND p.order_id IN (SELECT id FROM spec51_wrongly_cancelled);
+END $$;
+SQL
+assert_exit 1 "rejects a top-level CREATE TEMP TABLE + unbounded UPDATE inside the same DO block" reject-create-temp-table-plus-do-block-backfill
+
+# ── B3 (review round 1): a $$ inside a `-- ...` comment used to pair with
+# the real function's opening $$ and blank out everything up to and
+# including the ALTER TABLE, making DDL_RE never fire.
+write_fixture reject-ddl-plus-backfill-with-dollar-in-comment <<'SQL'
+-- this migration uses a $$-quoted body below
+BEGIN;
+
+ALTER TABLE public.orders ADD COLUMN bar TEXT;
+
+CREATE FUNCTION public.f() RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+  RETURN;
+END;
+$$;
+
+UPDATE public.orders SET bar = 'x';
+
+COMMIT;
+SQL
+assert_exit 1 "a \$\$ inside a line comment does not blank out the DDL that follows it" reject-ddl-plus-backfill-with-dollar-in-comment
+
+# ── M5 (review round 1): the rejection message says "unbounded", but the
+# rule rejected ANY top-level UPDATE regardless of scope. A single-row
+# update by primary-key literal is not a backfill.
+write_fixture accept-ddl-plus-bounded-single-row-update <<'SQL'
+BEGIN;
+
+ALTER TABLE public.dock_zones ADD COLUMN sort_order INT;
+
+UPDATE public.dock_zones SET sort_order = 1
+  WHERE id = '11111111-1111-1111-1111-111111111111';
+
+COMMIT;
+SQL
+assert_exit 0 "does not reject DDL + a single-row UPDATE bounded by an id literal" accept-ddl-plus-bounded-single-row-update
+
+# ── m12 (review round 1/2): `check-migration-safety.mjs` used to call
+# `process.exit(main(...))` at MODULE TOP LEVEL, so merely `import`-ing the
+# module (e.g. to reuse `checkIndexConcurrency`/`checkUniqueIndexGuard`
+# elsewhere) aborted the whole process. Importing the module must be a
+# no-op; only running it as the CLI entrypoint should exit.
+IMPORT_PROBE="$TMP/m12_import_probe.mjs"
+cat > "$IMPORT_PROBE" <<'JS'
+import { pathToFileURL } from 'node:url';
+const target = pathToFileURL(process.argv[2]).href;
+const m = await import(target);
+if (typeof m.checkIndexConcurrency !== 'function') throw new Error('checkIndexConcurrency not exported');
+if (typeof m.checkUniqueIndexGuard !== 'function') throw new Error('checkUniqueIndexGuard not exported');
+console.log('IMPORT_OK');
+JS
+IMPORT_ONLY_OUTPUT=$(node "$IMPORT_PROBE" "$(dirname "$SCRIPT")/check-migration-safety.mjs" 2>&1)
+if printf '%s' "$IMPORT_ONLY_OUTPUT" | grep -q "IMPORT_OK"; then
+  pass=$((pass + 1))
+  echo "  ok   m12: importing check-migration-safety.mjs does not abort the process, and rule 2/3 checks are importable"
+else
+  fail=$((fail + 1))
+  echo "  FAIL m12: importing check-migration-safety.mjs failed or aborted the process"
+  printf '%s\n' "$IMPORT_ONLY_OUTPUT" | sed 's/^/         /'
+fi
 
 echo ""
 echo "check-migration-safety.sh (rule 1): $pass passed, $fail failed"

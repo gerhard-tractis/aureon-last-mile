@@ -24,6 +24,20 @@ echo "check-migration-safety.sh — real migrations + --base scoping"
 # files nobody is touching. Scoping to new files only (see the --base
 # section below) is what makes rule 1 enforceable without relitigating
 # history.
+# 20260913000001 is a documented case, added by review round 1 (B2) and
+# revisited twice since: it CREATE TABLE IF NOT EXISTS's `discrepancies`
+# and, at the top level, both declares AND invokes a function whose body
+# backfills it from `discrepancy_notes` — exactly the pattern B2 exists to
+# catch. Round 2's M6 degraded this to a ::warning:: on the theory that a
+# table created earlier in the same file cannot have live rows/readers yet.
+# Round 3's F2 corrects that: `IF NOT EXISTS` is precisely the syntax whose
+# CONTRACT is "may already exist, with rows and readers" — M6's premise
+# does not hold for it. `isTableCreatedBefore` now only recognizes a BARE
+# `CREATE TABLE`, so this file is back to a hard ::error::. It already
+# shipped and ran safely under fase 3/4's separate by-hand review, which is
+# why this is not treated as a live incident — but the STATIC guard cannot
+# tell "ran fine once, verified by hand" from "about to lock production",
+# and F2 declines to let IF NOT EXISTS pretend it can.
 MIGRATIONS_DIR="$(cd "$(dirname "$0")/.." && pwd)/packages/database/supabase/migrations"
 TWELVE="
 20260907000001_spec76_en_bodega_not_dock_ready.sql
@@ -46,12 +60,22 @@ if [ -d "$MIGRATIONS_DIR" ]; then
   done
   output=$(bash "$SCRIPT" "${TWELVE_PATHS[@]}" 2>&1)
   actual=$?
-  if [ "$actual" -eq 0 ]; then
+  # F2 (review round 3): 20260913000001's CREATE TABLE IF NOT EXISTS no
+  # longer exempts its backfill, so the batch as a whole now exits 1.
+  if [ "$actual" -eq 1 ]; then
     pass=$((pass + 1))
-    echo "  ok   none of the 12 fase-3 migrations is rejected"
+    echo "  ok   the batch hard-rejects (20260913000001's CREATE TABLE IF NOT EXISTS no longer exempts its backfill — F2)"
   else
     fail=$((fail + 1))
-    echo "  FAIL one of the 12 fase-3 migrations was rejected — expected 0, got $actual"
+    echo "  FAIL expected exit 1 — got $actual"
+    printf '%s\n' "$output" | sed 's/^/         /'
+  fi
+  if printf '%s' "$output" | grep -q "::error::.*20260913000001.*declares AND invokes"; then
+    pass=$((pass + 1))
+    echo "  ok   20260913000001 (spec85_discrepancies_schema) is a ::error:: — declares AND invokes a backfill (B2) into a table declared IF NOT EXISTS (F2: does not count as created here)"
+  else
+    fail=$((fail + 1))
+    echo "  FAIL 20260913000001 was not rejected by name for declaring+invoking a backfill function"
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
   # 20260909000001 is the exact pattern this phase exists to stop
@@ -63,6 +87,17 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     pass=$((pass + 1))
     echo "  ok   20260909000001 (spec79_loaded_route_id) is not flagged dangerous"
   fi
+  # None of the OTHER eleven should hard-reject (::error::) — only
+  # 20260913000001 (F2) is expected to.
+  for name in $TWELVE; do
+    if [ "$name" = "20260913000001_spec85_discrepancies_schema.sql" ]; then
+      continue
+    fi
+    if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
+      fail=$((fail + 1))
+      echo "  FAIL $name was unexpectedly rejected"
+    fi
+  done
   # Rule 2 should still fire against the real files: 20260909000001
   # (packages) and 20260911000002 (routes) both create an index without
   # CONCURRENTLY, which fase 3's own table marks "medio" risk for exactly
@@ -76,7 +111,12 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     printf '%s\n' "$output" | sed 's/^/         /'
   fi
 else
-  echo "  skip migrations directory not found at $MIGRATIONS_DIR"
+  # m12 (review round 1): this used to be a silent `skip` (exit 0, "0
+  # failed") when the migrations path changed — the exact shape of the
+  # fase-1 bug, a fixture that stops being exercised without anyone
+  # noticing. If the directory is gone, that's a FAIL, not a skip.
+  fail=$((fail + 1))
+  echo "  FAIL migrations directory not found at $MIGRATIONS_DIR — the validation set cannot run"
 fi
 
 # ── --base scoping: only newly ADDED files are checked, so 90+ older
@@ -122,6 +162,83 @@ if printf '%s' "$output" | grep -qF "old_and_bad"; then
 else
   pass=$((pass + 1))
   echo "  ok   --base does not check a migration that already existed at the base commit"
+fi
+
+
+# ── B4 (review round 1): --diff-filter=A alone misses a PR that EDITS an
+# existing migration's backfill — real precedent: 20260908000001 (added in
+# #613, modified in #615), 20260901000001 (modified in #583, "lift
+# statement_timeout on the two migration-time backfills"). Two scenarios:
+# an already-bad file being touched must not hard-reject (that's 90+
+# migrations' worth of legitimate history), but a CLEAN file that a PR
+# newly breaks must reject — that is a real, new problem.
+GIT_FIXTURE2="$TMP/gitrepo2"
+mkdir -p "$GIT_FIXTURE2/migrations"
+(
+  cd "$GIT_FIXTURE2"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+
+  cat > migrations/0000000001_already_bad.sql <<'SQL'
+BEGIN;
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+UPDATE public.packages SET foo = 'bar';
+COMMIT;
+SQL
+  cat > migrations/0000000002_was_clean.sql <<'SQL'
+BEGIN;
+ALTER TABLE public.orders ADD COLUMN bar TEXT;
+COMMIT;
+SQL
+  git add -A
+  git commit -q -m base
+
+  # Touch the already-bad migration (e.g. lift a statement_timeout) —
+  # still has the same pre-existing violation, nothing new introduced.
+  cat > migrations/0000000001_already_bad.sql <<'SQL'
+BEGIN;
+SET LOCAL statement_timeout = '30min';
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+UPDATE public.packages SET foo = 'bar';
+COMMIT;
+SQL
+  # Break the migration that was clean at base — a genuinely new problem.
+  cat > migrations/0000000002_was_clean.sql <<'SQL'
+BEGIN;
+ALTER TABLE public.orders ADD COLUMN bar TEXT;
+UPDATE public.orders SET bar = 'baz';
+COMMIT;
+SQL
+  git add -A
+  git commit -q -m "touch both migrations"
+)
+BASE_SHA2=$(cd "$GIT_FIXTURE2" && git rev-parse HEAD~1)
+output2=$(cd "$GIT_FIXTURE2" && bash "$SCRIPT" --base "$BASE_SHA2" migrations 2>&1)
+actual2=$?
+if [ "$actual2" -eq 1 ]; then
+  pass=$((pass + 1))
+  echo "  ok   --base still rejects a build when an edited file introduces a NEW violation"
+else
+  fail=$((fail + 1))
+  echo "  FAIL --base did not reject a newly-introduced violation in an edited file — expected exit 1, got $actual2"
+  printf '%s\n' "$output2" | sed 's/^/         /'
+fi
+if printf '%s\n' "$output2" | grep "::error::" | grep -qF "already_bad.sql"; then
+  fail=$((fail + 1))
+  echo "  FAIL --base hard-rejected a pre-existing violation merely being touched (already_bad.sql)"
+  printf '%s\n' "$output2" | sed 's/^/         /'
+else
+  pass=$((pass + 1))
+  echo "  ok   --base does not hard-reject a pre-existing violation that was already there at base"
+fi
+if printf '%s' "$output2" | grep -qF "was_clean.sql"; then
+  pass=$((pass + 1))
+  echo "  ok   --base names the file that newly broke (was_clean.sql)"
+else
+  fail=$((fail + 1))
+  echo "  FAIL --base did not mention was_clean.sql at all"
+  printf '%s\n' "$output2" | sed 's/^/         /'
 fi
 
 echo ""
