@@ -76,6 +76,31 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     expect(result.current.queuedCount).toBe(0);
   });
 
+  it('H2 — scanQueueCount reflects only scan_queue, the queue retryNow can actually drain', async () => {
+    // The Recepción panel shows this number in its header, lists `recent`
+    // (scan_queue only) below it, and its "Reintentar ahora" button drains
+    // scan_queue only (syncManager.manualSync -> getUnsynced). Feeding it the
+    // combined `queuedCount` once pickup_queue has entries would show a
+    // number the list and the button can't back up (spec-81, ronda 3, H2).
+    await seedPickupQueue(2);
+    await db.scan_queue.add({
+      manifest_id: 'manifest-1',
+      order_id: 'order-1',
+      barcode_scanned: 'SCAN-A',
+      scan_status: 'success',
+      scanned_at: new Date(),
+      synced: false,
+      operator_id: 'op-1',
+      user_id: 'user-1',
+      created_at: new Date(),
+    });
+
+    const { result } = renderHook(() => useSyncQueue());
+
+    await waitFor(() => expect(result.current.queuedCount).toBe(3));
+    expect(result.current.scanQueueCount).toBe(1);
+  });
+
   it('requests persistent storage on mount (M4 — "GUARDADO EN EL DISPOSITIVO" must be true)', async () => {
     const persist = vi.fn().mockResolvedValue(true);
     Object.defineProperty(navigator, 'storage', {

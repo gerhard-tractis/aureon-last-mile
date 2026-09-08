@@ -22,8 +22,16 @@ export type ConnectionState = 'online' | 'offline' | 'syncing';
 
 export interface SyncQueueState {
   status: ConnectionState;
-  /** Scans written to the device and not yet accepted by the server. */
+  /** Everything outstanding on this device: Recepción's `scan_queue` plus
+   * Recogida's `pickup_queue`. What the topbar chip and header badges show —
+   * they have no "retry" button tied to a single queue. */
   queuedCount: number;
+  /** Outstanding rows in `scan_queue` only — what `recent` lists and what
+   * `retryNow` (`syncManager.manualSync` → `getUnsynced`) can actually drain.
+   * `SyncQueuePanel` must use this, not `queuedCount`: feeding it the
+   * combined count would show a header number the list below and the
+   * "Reintentar ahora" button can't back up (spec-81, ronda 3, H2). */
+  scanQueueCount: number;
   /** Most recent scans, newest first — both queued and recently synced. */
   recent: ScanQueue[];
   retryNow: () => void;
@@ -37,6 +45,7 @@ const RECENT_LIMIT = 25;
 export function useSyncQueue(): SyncQueueState {
   const [status, setStatus] = useState<ConnectionState>('online');
   const [queuedCount, setQueuedCount] = useState(0);
+  const [scanQueueCount, setScanQueueCount] = useState(0);
   const [recent, setRecent] = useState<ScanQueue[]>([]);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -52,6 +61,7 @@ export function useSyncQueue(): SyncQueueState {
         db.scan_queue.filter((s) => !s.synced).count(),
         getPendingPickupCount(),
       ]);
+      setScanQueueCount(outstandingScans);
       setQueuedCount(outstandingScans + outstandingPickups);
     } catch {
       // IndexedDB unavailable (private browsing, quota). The chip simply
@@ -113,5 +123,5 @@ export function useSyncQueue(): SyncQueueState {
     return () => clearInterval(id);
   }, [status, queuedCount, read]);
 
-  return { status, queuedCount, recent, retryNow, isRetrying };
+  return { status, queuedCount, scanQueueCount, recent, retryNow, isRetrying };
 }
