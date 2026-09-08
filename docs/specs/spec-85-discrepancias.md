@@ -335,7 +335,27 @@ valor de retorno y deja un `RAISE NOTICE` si `ON CONFLICT DO NOTHING` tragó
 alguna — tragar sigue siendo correcto (el backfill de una tabla de evidencia
 no puede tumbar un deploy), pero ya no es silencioso en los logs.
 
-### Fase 2 — RPCs `[in_progress]`
+### Fase 2 — RPCs `[done]`
+
+> Implementado por: `implementer` con TDD, **tres rondas**. PR #660 (`eee1b41`), más el
+> seguimiento del review en PR #673.
+> Review: `reviewer` adversarial, **cuatro rondas**, cada una re-verificando las mutaciones
+> por su cuenta en vez de aceptar el reporte. De 11 a **36 savepoints**.
+> Lo que cambiaron los reviews: **`23505` en vez de `P0002`** para «ya resuelta» —`P0002` es
+> `no_data_found` y PostgREST lo mapea a 404, así que la cola offline de spec-81 habría leído
+> «ya resuelta» como «no existe» y descartado el ítem, sobre una tabla que es evidencia contra
+> una indemnización; **la rama `reception` llegó sin un solo test**, con el fixture creado y
+> sin usar; **`p_status = NULL` esquivaba la validación entera** (`NULL NOT IN (…)` evalúa a
+> `NULL`); **`p_items` vacío levantaba excepción**, así que una carga limpia habría hecho
+> fallar el cierre justo cuando todo salió bien; y **`REVOKE … FROM anon`**, porque el ACL real
+> traía `anon=X` por default privileges de Supabase, que un `REVOKE … FROM PUBLIC` no quita.
+> Contrato de errores publicado: 13 prefijos centinela en 14 sitios, los 14 verificados por
+> mutación individual.
+> QA: n/a por capa — son RPCs sin pantalla que los llame todavía. La verificación de esta capa
+> es pgTAP más el mutation-test. El primer QA real llega con el consumidor (spec-80 fase 2).
+> Downstream: **spec-86 reconciliado** contra el esquema real — venía escrito contra un
+> `source_process` que nunca existió — y su bloqueo recolocado donde de verdad está. Revisados
+> spec-80 y spec-83, corregidos por lo mismo.
 
 **Archivos:** migración nueva, test pgTAP
 
@@ -717,17 +737,32 @@ alguien sin autoridad, que es el caso que importa.
 > ocultar/deshabilitar la acción en la UI para roles no autorizados — hoy sin caller, así que
 > radio de impacto cero, pero documentado donde se va a necesitar.
 
-### Fase 3b — La pantalla y el workflow de indemnización `[blocked]`
+### Fase 3b — Estado `lost` de bulto `[parked]`
 
-Bloqueada por diseño, no por dependencia técnica. Falta decidir:
+> **Decisión del usuario (2026-09-08), y recorta esta fase casi entera.**
+> «La pantalla de indemnizaciones será un spec aparte. Por ahora nos basta con que
+> tengamos `discrepancies`, y que eventualmente agreguemos un nuevo estado de package
+> que sea `lost`. No trabajaría más que eso en 85 3b; lo armaremos como spec aparte
+> luego de terminar todo esto.»
+>
+> **Qué sale de esta fase y se va a un spec futuro:** la pantalla desde la que se
+> declara el `lost`, y todo el workflow de indemnización — la fila de `exceptions`, el
+> `settlement_id`, el enganche económico. **No se diseña aquí y no se diseña ahora**; se
+> escribirá como spec propio cuando el bloque de Recogida esté terminado.
+>
+> **Qué queda:** un estado `lost` de bulto, y sólo eventualmente. Por eso la fase pasa a
+> `[parked]` y no a `[blocked]`: ya no espera una decisión: espera su turno.
+>
+> **Lo que ya vale hoy sin nada de esto:** `discrepancies` registra el hecho con autor,
+> motivo y momento, y `resolve_discrepancy` ya distingue `resolved` de `lost` con el
+> guard de rol de la fase 3a. La evidencia contra una indemnización futura **ya se está
+> acumulando** aunque el workflow no exista — que es justo lo que el usuario dice que le
+> basta.
 
-- [ ] **Dónde vive la pantalla** desde la que el jefe de operaciones declara el `lost`.
-      Candidata natural: el panel de resolución de discrepancias que spec-86 fase 3
-      describe, pero no está decidido.
-- [ ] **Si el bulto pasa a `extraviado`** o el estado de bulto se queda como está y la
-      discrepancia es el único registro.
-- [ ] **Si se abre una fila de `exceptions` con `settlement_id`**, o el enganche de
-      indemnización es otro. La tabla ya reserva una referencia nullable para esto.
+- [ ] **Añadir el estado `lost` al enum de bulto** cuando llegue el momento. Ojo al
+      tomarlo: hay que revisar quién consume el enum de estado de bulto (`spec-52` es el
+      motor de estados) y qué pantallas lo pintan, porque añadir un valor a un enum vivo
+      rompe cualquier `switch` exhaustivo que no lo contemple.
 - [ ] **Handoff del guard de fase 3a, pendiente para cuando exista un caller.**
       `resolve_discrepancy` lanza `LOST_REQUIRES_OPERATIONS_MANAGER:` **en inglés** —
       distinto de los cuatro precedentes citados en `20260913000005` (`cancel_pickup_route`
