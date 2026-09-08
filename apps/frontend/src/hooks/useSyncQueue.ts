@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { db, type ScanQueue } from '@/lib/db';
+import { db, getPendingPickupCount, requestPersistentStorage, type ScanQueue } from '@/lib/db';
 import { syncManager } from '@/lib/sync-manager';
 
 /**
@@ -22,8 +22,16 @@ export type ConnectionState = 'online' | 'offline' | 'syncing';
 
 export interface SyncQueueState {
   status: ConnectionState;
-  /** Scans written to the device and not yet accepted by the server. */
+  /** Everything outstanding on this device: Recepción's `scan_queue` plus
+   * Recogida's `pickup_queue`. What the topbar chip and header badges show —
+   * they have no "retry" button tied to a single queue. */
   queuedCount: number;
+  /** Outstanding rows in `scan_queue` only — what `recent` lists and what
+   * `retryNow` (`syncManager.manualSync` → `getUnsynced`) can actually drain.
+   * `SyncQueuePanel` must use this, not `queuedCount`: feeding it the
+   * combined count would show a header number the list below and the
+   * "Reintentar ahora" button can't back up (spec-81, ronda 3, H2). */
+  scanQueueCount: number;
   /** Most recent scans, newest first — both queued and recently synced. */
   recent: ScanQueue[];
   retryNow: () => void;
@@ -37,6 +45,7 @@ const RECENT_LIMIT = 25;
 export function useSyncQueue(): SyncQueueState {
   const [status, setStatus] = useState<ConnectionState>('online');
   const [queuedCount, setQueuedCount] = useState(0);
+  const [scanQueueCount, setScanQueueCount] = useState(0);
   const [recent, setRecent] = useState<ScanQueue[]>([]);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -44,8 +53,16 @@ export function useSyncQueue(): SyncQueueState {
     try {
       const rows = await db.scan_queue.orderBy('scanned_at').reverse().limit(RECENT_LIMIT).toArray();
       setRecent(rows);
-      const outstanding = await db.scan_queue.filter((s) => !s.synced).count();
-      setQueuedCount(outstanding);
+      // spec-81 — the badge covers both queues that live in this device's
+      // IndexedDB: Recepción's `scan_queue` and Recogida's `pickup_queue`.
+      // Without the second term this reads 0 while Recogida scans wait for
+      // signal (ronda 1 de review de spec-81 fase 1, B1).
+      const [outstandingScans, outstandingPickups] = await Promise.all([
+        db.scan_queue.filter((s) => !s.synced).count(),
+        getPendingPickupCount(),
+      ]);
+      setScanQueueCount(outstandingScans);
+      setQueuedCount(outstandingScans + outstandingPickups);
     } catch {
       // IndexedDB unavailable (private browsing, quota). The chip simply
       // reports the network state; it must never take the screen down.
@@ -70,6 +87,11 @@ export function useSyncQueue(): SyncQueueState {
   useEffect(() => {
     setStatus(navigator.onLine ? 'online' : 'offline');
     void read();
+    // spec-81 fase 1, ronda 1 de review (M4) — best-effort: sin este
+    // permiso, IndexedDB es "best-effort" y iOS Safari (no instalado) purga
+    // a los 7 días sin interacción. Éste es el primer mount que escribe en
+    // la cola de Recogida, así que es donde corresponde pedirlo.
+    void requestPersistentStorage();
 
     const onOnline = () => {
       // Coming back online is exactly when the queue should drain, so the
@@ -101,5 +123,5 @@ export function useSyncQueue(): SyncQueueState {
     return () => clearInterval(id);
   }, [status, queuedCount, read]);
 
-  return { status, queuedCount, recent, retryNow, isRetrying };
+  return { status, queuedCount, scanQueueCount, recent, retryNow, isRetrying };
 }

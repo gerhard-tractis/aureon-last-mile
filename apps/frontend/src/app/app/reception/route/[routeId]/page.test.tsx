@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { toast } from 'sonner';
 import RouteReceptionPage from './page';
 import { routeReceptionSnapshotFixture } from '@/test/fixtures/routeReceptionSnapshot';
@@ -38,14 +38,19 @@ vi.mock('@/hooks/reception/useIncomingRoutes', () => ({
   }),
 }));
 
+// H2 (spec-81, ronda 3 de review) — queuedCount and scanQueueCount are
+// deliberately different values here so a test can catch the panel reading
+// the wrong one.
+const mockUseSyncQueue = vi.fn(() => ({
+  status: 'online' as const,
+  queuedCount: 4,
+  scanQueueCount: 1,
+  recent: [],
+  retryNow: vi.fn(),
+  isRetrying: false,
+}));
 vi.mock('@/hooks/useSyncQueue', () => ({
-  useSyncQueue: () => ({
-    status: 'online',
-    queuedCount: 0,
-    recent: [],
-    retryNow: vi.fn(),
-    isRetrying: false,
-  }),
+  useSyncQueue: () => mockUseSyncQueue(),
 }));
 
 vi.mock('@/hooks/reception/useRouteReceptionSnapshot', () => ({
@@ -109,6 +114,14 @@ describe('RouteReceptionPage', () => {
     expect(
       screen.getByRole('heading', { name: /Ruta PR-2026-0001 · conteo en recepción/ }),
     ).toBeInTheDocument();
+  });
+
+  it('H2 — SyncQueuePanel header shows scanQueueCount, not the combined queuedCount', () => {
+    render(<RouteReceptionPage />);
+    const panel = screen.getByText('Cola de sincronización').closest('section');
+    expect(panel).not.toBeNull();
+    expect(within(panel as HTMLElement).getByText('1')).toBeInTheDocument();
+    expect(within(panel as HTMLElement).queryByText('4')).not.toBeInTheDocument();
   });
 
   it('renders the consolidated order-grouped list', () => {
@@ -263,6 +276,20 @@ describe('RouteReceptionPage', () => {
     // Gap fix — error/null below lg used to fall through to the desktop
     // centred card. The mobile card must state the failure and always offer
     // a working way back to /app/reception with a touch target >= 44px.
+    // B1 (spec-81, ronda 4 de review) — the mobile session's own "escaneos
+    // en cola" banner talks about Recepción's scan_queue specifically. Fed
+    // the combined `queuedCount` it would show a driver's leftover
+    // Recogida pickup_queue entries as if they were Recepción scans, on a
+    // session with zero of its own queued. It must read scanQueueCount.
+    it('shows scanQueueCount in its own queued-scans banner, not the combined queuedCount', async () => {
+      render(<RouteReceptionPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByText('1', { selector: 'span.font-mono' })).toBeInTheDocument();
+      expect(screen.queryByText('4', { selector: 'span.font-mono' })).not.toBeInTheDocument();
+    });
+
     it('renders a mobile-shaped error card with a working way back, not the desktop card', () => {
       mockSnapshot.mockReturnValue({
         data: undefined,

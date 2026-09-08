@@ -37,11 +37,13 @@ export default function ScanningPage() {
   const [elapsed, setElapsed] = useState('00:00');
   const [userId, setUserId] = useState<string | null>(null);
 
-  // spec-54 mock 1h — real device queue state for the "COLA N" badge. No
-  // writer populates `db.scan_queue` from this screen today (see
-  // PickupFlowHeader's `queuedCount` doc comment), so `queuedCount` is
-  // always 0 in practice; wired to the real hook rather than hard-coded so
-  // the badge starts working the day a writer exists.
+  // spec-54 mock 1h — real device queue state for the "COLA N" badge.
+  // spec-81 fase 1: `useSyncQueue` now also counts `db.pickup_queue`, the
+  // Recogida offline queue that lives in this same IndexedDB database (see
+  // PickupFlowHeader's `queuedCount` doc comment). No writer populates
+  // `db.pickup_queue` from this screen yet — that's spec-81 fase 2 — so
+  // `queuedCount` is still 0 in practice, but the count is correct
+  // infrastructure rather than a hard-coded value waiting on a rewrite.
   const sync = useSyncQueue();
 
   // spec-53 — second entry point. Labels are normally printed from the pickup

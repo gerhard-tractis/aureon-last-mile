@@ -166,7 +166,13 @@ export default function RouteReceptionPage() {
         snapshot={snapshot}
         lastScanResult={lastScanResult}
         syncStatus={sync.status}
-        queuedCount={sync.queuedCount}
+        // B1 (spec-81, ronda 4 de review) — this banner's own text says
+        // "escaneos aún en cola" inside a Recepción session; it can only
+        // speak for scan_queue, not for pickup_queue leftovers from a
+        // Recogida run earlier the same day. Same reasoning as H2's fix to
+        // SyncQueuePanel below (queuedCount stays reserved for badges that
+        // are explicitly device-wide, like the topbar chip).
+        queuedCount={sync.scanQueueCount}
         isScanPending={scanMutation.isPending}
         isFinalizePending={completeMutation.isPending}
         onScan={handleScan}
@@ -261,7 +267,11 @@ export default function RouteReceptionPage() {
 
         <SyncQueuePanel
           status={sync.status}
-          queuedCount={sync.queuedCount}
+          // H2 (spec-81, ronda 3 de review) — el panel lista `recent`
+          // (scan_queue) y su botón "Reintentar ahora" sólo puede drenar
+          // scan_queue; pasarle el `queuedCount` combinado con pickup_queue
+          // mostraría un número que la lista y el botón no pueden respaldar.
+          queuedCount={sync.scanQueueCount}
           recent={sync.recent}
           onRetry={sync.retryNow}
           isRetrying={sync.isRetrying}

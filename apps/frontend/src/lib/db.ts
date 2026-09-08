@@ -24,9 +24,62 @@ export interface ScanQueue {
   error_message?: string | null; // NULL unless error
 }
 
+/**
+ * spec-81 — cola offline de Recogida (escaneos, cierres de carga, y en fase 5
+ * fotos). Vive en esta misma base porque `useSyncQueue`/`SyncChip`/
+ * `PickupFlowHeader` YA leen `db.scan_queue` de aquí para el badge "COLA N" —
+ * ver ronda 1 de review de spec-81 fase 1 (B1). Una base IndexedDB separada
+ * dejaría esos contadores en 0 mientras las entradas de Recogida esperan en
+ * otro origen de almacenamiento.
+ */
+export type PickupQueueOperationType = 'pickup_scan' | 'close_manifest';
+
+/**
+ * `pending`: candidata a envío. `sending`: un drenador la reclamó — evita que
+ * dos pasadas concurrentes (el mount y el evento `online` disparando juntos
+ * al salir de un túnel) la envíen dos veces. `sent`: confirmada por el
+ * servidor. `dead`: agotó los reintentos con un rechazo de negocio
+ * irrecuperable — sale de `listPending` sin mentir que se envió y sin
+ * borrarse en silencio (spec-81 fase 1, ronda 1 de review, B3).
+ */
+export type PickupQueueEntryStatus = 'pending' | 'sending' | 'sent' | 'dead';
+
+export interface PickupQueueEntry {
+  /** Clave primaria autoincremental de Dexie. También es el orden FIFO de
+   * inserción: `listPending` ordena por este campo, así que un manifiesto
+   * nunca ve su `close_manifest` adelantar a los escaneos que produjeron su
+   * conteo. */
+  id?: number;
+  /** UUID v4 generado por el cliente al encolar. Es la clave de idempotencia
+   * que el servidor persiste (spec-81 fase 3) y NUNCA se regenera en un
+   * reintento. */
+  clientOperationId: string;
+  operatorId: string;
+  manifestId: string;
+  type: PickupQueueOperationType;
+  payload: Record<string, unknown>;
+  /**
+   * Reservado para spec-81 fase 5 (fotos): el blob de la foto capturada.
+   * Deliberadamente sin usar en fase 1.
+   */
+  blob?: Blob;
+  status: PickupQueueEntryStatus;
+  retryCount: number;
+  lastError?: string;
+  /** ISO 8601. Cuándo se intentó por última vez — persistido, no en memoria,
+   * para que el backoff exponencial de fase 2 sobreviva a que la PWA se
+   * cierre y reabra a mitad de reintento (spec-81 fase 1, ronda 1, B3). */
+  lastAttemptAt: string | null;
+  /** ISO 8601. Cuándo puede volver a intentarse — lo calcula y persiste fase
+   * 2 al fallar un intento; fase 1 sólo reserva el campo. */
+  nextAttemptAt: string | null;
+  createdAt: string;
+}
+
 // Dexie Database Class (Task 3.1)
 class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
+  pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
 
   constructor() {
     super('aureon_offline');
@@ -36,11 +89,45 @@ class AureonOfflineDB extends Dexie {
       scan_queue:
         '++id, manifest_id, operator_id, synced, [manifest_id+synced], scanned_at',
     });
+
+    // spec-81 fase 1 — cola offline de Recogida. No se toca el índice de
+    // `scan_queue`: los índices se congelan en la versión donde se
+    // publicaron (ver spec-81, ronda 1, B7).
+    this.version(2).stores({
+      pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
+    });
   }
 }
 
 // Export database instance (Task 3.2)
 export const db = new AureonOfflineDB();
+
+/**
+ * Cuántas entradas de la cola de Recogida siguen sin confirmar, en todo el
+ * dispositivo. Deliberadamente no filtra por operador — mismo criterio que
+ * `getUnsynced()` de abajo, que tampoco lo hace: el badge del topbar es
+ * global al dispositivo, no por operador.
+ */
+export async function getPendingPickupCount(): Promise<number> {
+  return db.pickup_queue.where('status').equals('pending').count();
+}
+
+/**
+ * Pide al navegador que el origen sea "persistent" en vez de "best-effort".
+ * Sin esto, iOS Safari (no instalado) purga IndexedDB a los 7 días sin
+ * interacción y Android puede desalojar el origen entero bajo presión de
+ * disco — ver spec-81, ronda 1 de review, M4. `5d` promete "GUARDADO EN EL
+ * DISPOSITIVO"; sin este permiso esa frase no es verdad.
+ *
+ * Devuelve `false` (nunca lanza) cuando la API no existe — mismo patrón
+ * defensivo que `checkStorageQuota`.
+ */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.storage?.persist) {
+    return false;
+  }
+  return navigator.storage.persist();
+}
 
 // Helper Functions (Task 3.3)
 
