@@ -59,8 +59,30 @@ function walkSpecs(suite, acc) {
   return acc;
 }
 
+// Playwright's JSON reporter writes `spec.file` RELATIVE TO `testDir`
+// (`./e2e` in playwright.qa.config.ts), so a live report never carries an
+// `e2e/` prefix — confirmed against a real `npx playwright test` run with
+// @playwright/test 1.58.2, not read off the reporter source. quarantine.json
+// entries, though, are hand-written WITH that prefix (see git history of
+// that file). An exact `===` on entry.spec vs spec.file therefore never
+// matches a real CI report: this shipped as a no-op quarantine (spec-87
+// follow-up B1, deploy.yml run 34196179672) — every entry both "does not
+// match any test" AND leaves its failure "undeclared", at once.
+//
+// Stripping a literal `e2e/` prefix from both sides (not a basename or
+// endsWith compare) accepts both forms while still keeping two different
+// directories that share a basename apart — `otro/foo.spec.ts` must never
+// match `e2e/foo.spec.ts`.
+function stripE2ePrefix(path) {
+  return path.startsWith('e2e/') ? path.slice('e2e/'.length) : path;
+}
+
 function matches(entry, spec) {
-  return entry.spec === spec.file && typeof spec.title === 'string' && spec.title.includes(entry.test);
+  return (
+    stripE2ePrefix(entry.spec) === stripE2ePrefix(spec.file) &&
+    typeof spec.title === 'string' &&
+    spec.title.includes(entry.test)
+  );
 }
 
 function main() {

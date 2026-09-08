@@ -26,6 +26,20 @@ const baseProps = {
  * / 'loaded' are the same sets scan/seal/dispatch enforce server-side).
  */
 describe('RoutePanel — derived from routeStatus', () => {
+  /**
+   * spec-87 follow-up B4 — despacho-tablet-dock.spec.ts's E2E currently
+   * scopes the vehicle `<select>` with a bare `page.locator('select')`,
+   * correct only because RoutePanel.tsx is the sole native `<select>` in
+   * the dispatch tree today. A future `<select>` in TopBar or
+   * OrderInspector (mounted everywhere under /app by AppLayout) would break
+   * that E2E with an opaque strict-mode-violation message. A stable
+   * `data-testid` on this element lets the E2E scope to it directly.
+   */
+  it('marks the vehicle select with a stable data-testid', () => {
+    render(<RoutePanel {...baseProps} routeStatus="loaded" />);
+    expect(screen.getByTestId('route-panel-vehicle-select')).toBeInTheDocument();
+  });
+
   it('enables "Cerrar Ruta" while the route is still loadable (draft/planned/loading) and has stops', () => {
     render(<RoutePanel {...baseProps} routeStatus="loading" />);
     expect(screen.getByRole('button', { name: 'Cerrar Ruta' })).toBeEnabled();

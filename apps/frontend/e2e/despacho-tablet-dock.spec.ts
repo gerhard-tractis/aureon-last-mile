@@ -8,18 +8,32 @@
  * "Despachar a DispatchTrack" stays disabled throughout, its real
  * precondition, not a mock).
  *
- * Covers `2a`(via the API)/`2d`/`3a` — one crew, one route, one truck, one
- * accepted scan, one rejected scan, at the dock's own viewport, asserting
- * the tablet-specific tree (`isTabletDock` branch of
- * `DispatchRouteSurface.tsx`) rather than despacho-crew-mobile.spec.ts's
- * phone tree. Does not repeat 2a/2b/2c's UI assertions (route list, BORRADOR
- * chip, dock brief tiles) — those are already pinned there against the
- * SAME components (`DispatchRouteBeforeScan` is reused unchanged by `3a`,
- * per spec-78 decision 1's own text); this suite creates the route via the
- * API (openTabletRouteToLoad(), same shortcut despacho-journey.ts takes and
- * documents) and starts from `/app/dispatch/[routeId]?dock=1` directly, to
- * keep its own scope to what is actually new here: the tablet layout and
- * the dock's viewport.
+ * Covers `2a`(via the API)/`3a`, plus a `2d`-adjacent viewport check — one
+ * crew, one route, one truck, one accepted scan, one rejected scan, at the
+ * dock's own viewport, asserting the tablet-specific tree (`isTabletDock`
+ * branch of `DispatchRouteSurface.tsx`) rather than
+ * despacho-crew-mobile.spec.ts's phone tree. Does not repeat 2a/2b/2c's UI
+ * assertions (route list, BORRADOR chip, dock brief tiles) — those are
+ * already pinned there against the SAME components (`DispatchRouteBeforeScan`
+ * is reused unchanged by `3a`, per spec-78 decision 1's own text); this suite
+ * creates the route via the API (openTabletRouteToLoad(), same shortcut
+ * despacho-journey.ts takes and documents) and starts from
+ * `/app/dispatch/[routeId]?dock=1` directly, to keep its own scope to what
+ * is actually new here: the tablet layout and the dock's viewport.
+ *
+ * spec-87 follow-up B3 — the first test below (`'2d viewport — …'`) is NOT
+ * `2d` itself: it never assigns a truck through Despachar (nothing is
+ * PATCHed, `routes.vehicle_id` is never written — `selectedVehicle` lives
+ * in `RouteBuilder`'s own `useState` and is only sent on `handleDispatch`).
+ * It pins a real, separate thing — that at 1024x768 without `?dock=1` the
+ * desktop tree renders, not the flag-gated mobile sheet — but its old name
+ * and this header's old "Covers 2d" both claimed coverage that was never
+ * true after spec-87 fase 2's fix. The real `2d` (persisted vehicle
+ * assignment through the mobile sheet) lives in
+ * despacho-crew-mobile.spec.ts's own `'2d — assigns the seeded truck'`
+ * test, at 390x844, which also proves the PATCH persisted (2c's block
+ * stops reading "Sin asignar" after a refetch, not just local sheet
+ * state) — no coverage was lost by this rename, only mislabeled.
  *
  * The viewport is the DEVICE'S 1024x768, not the app's usable space.
  * Spec-78's own Fase 4 item 11 names the difference: `AppLayout` draws a
@@ -76,7 +90,7 @@ test.describe('spec-78 Despacho dock tablet — 3a', () => {
     await closeDb();
   });
 
-  test('2d — assigns the seeded truck at the dock viewport, before the flag is set', async () => {
+  test('2d viewport — at 1024x768 without ?dock=1 renders the desktop tree, not the mobile sheet', async () => {
     const route = await openTabletRouteToLoad(page);
     routeId = route.id;
     routeCode = route.code;
@@ -95,11 +109,24 @@ test.describe('spec-78 Despacho dock tablet — 3a', () => {
     // 1024x768 without `?dock=1`, `isTabletDock` and `isBelowLg` are both
     // false (DispatchRouteSurface.tsx), so this renders `RouteBuilder` —
     // the desktop tree — which assigns a truck through a plain `<select>`
-    // in RoutePanel.tsx, no confirm button of its own. The truck stays
-    // selected as local component state until "Despachar", which this test
-    // does not reach; asserting the select captured the value is what
-    // "assigns the seeded truck" means on THIS tree.
-    const vehicleSelect = page.locator('select');
+    // in RoutePanel.tsx, no confirm button of its own. The truck is held as
+    // local component state (`selectedVehicle`) and only sent on
+    // `handleDispatch` — this test never reaches Despachar, so nothing is
+    // PATCHed and `routes.vehicle_id` is never written. What this DOES pin
+    // is exactly what its (renamed) title says: at this viewport, without
+    // the flag, the tree that renders is the desktop one, with a native,
+    // enabled `<select>` — not the flag-gated mobile sheet. The one E2E
+    // that actually exercises persisted vehicle assignment on the tablet is
+    // despacho-crew-mobile.spec.ts's own `2d`, at 390x844, through the sheet
+    // (spec-87 follow-up B3).
+    //
+    // spec-87 follow-up B4 — scoped to RoutePanel's own data-testid, not a
+    // bare `page.locator('select')`. That was correct only because
+    // RoutePanel.tsx is the sole native `<select>` in the dispatch tree
+    // today (verified); a future `<select>` anywhere else AppLayout mounts
+    // (TopBar, OrderInspector) would turn this into an opaque
+    // strict-mode-violation failure with no pointer back to the cause.
+    const vehicleSelect = page.getByTestId('route-panel-vehicle-select');
     await expect(vehicleSelect).toBeVisible();
     await expect(vehicleSelect).toBeEnabled();
     await vehicleSelect.selectOption(VEHICLE_EXTERNAL_ID);

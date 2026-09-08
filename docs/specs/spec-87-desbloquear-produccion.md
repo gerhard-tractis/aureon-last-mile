@@ -79,6 +79,8 @@ Aquí alguien ya aprendió esa lección: la migración **cuenta los conflictos p
 > Review: reviewer (Opus) — seis rondas adversariales, cada una encontrando y verificando en bash real un bypass ejecutable que la ronda anterior no cubría (denylist inicial de round 1 perdía 2/4 vectores; H2 encontró que un reporte vacío pasaba en verde; round 3 mostró ocho vectores más que tumbaron el denylist entero, sustituido por la whitelist de forma; round 4 encontró tres vectores más y el agujero de `defaults.run.shell`; round 5 (H1/H2) encontró que `logicalLines()` sólo partía por `\`, nunca por `;`/`&&`/`||`, y que el ancla de orden podía quedar vacía; round 6 (B1/B2/M4) encontró que la regla de empalme de continuaciones era más laxa que bash, que `${{ }}` se sustituye antes de que bash lea nada, y que `working-directory` no tenía cadena de resolución). La ronda final aprobó **sin reservas**: 25 vectores a mano + 427 cuerpos de fuzz, cero bypasses, con un arnés diferencial propio (`bash --noprofile --norc -e -o pipefail` contra un stub de `check-quarantine.sh`) que confirmó las dos únicas divergencias restantes como fail-closed, no bugs. Una ronda 7, de pulido y no bloqueante, cerró lo que quedaba: mensaje propio para el rechazo de `${{` (antes cayía en el genérico "no step whose run: is exactly..."), la cadena `working-directory` testeada a los tres niveles (`step → job → workflow`; round 6 sólo probó el nivel de job), y mutation-testing explícito y confirmado a mano (mutar → correr la suite → ver el flip esperado → revertir) de los cuatro mutantes que sobrevivían: el fallback a `defaults.run.working-directory` a nivel de workflow, el chequeo de `working-directory` a nivel de step, el flush final de `logicalLines()` (el patrón `run: |-` que entrega js-yaml sin salto final), y el ancla `^` de `ALLOWED_EXTRA_LINE`. Se añadió además un arnés diferencial (`check-deploy-gating-quarantine-differential.test.sh`) como estrategia de aquí en adelante, en vez de seguir sumando un fichero `-rN.test.sh` de vectores sueltos por ronda.
 > QA: esta fase es infraestructura de CI, no una pantalla — se verifica con sus propias 126 pruebas en 11 ficheros de `scripts/*.test.sh` (todas verdes) y contra el `deploy.yml` real, no con QA end-to-end. PR #658 mergeado `2026-09-08T03:27:24Z` (squash `18833b9`) sobre `main`; `gh pr checks 658` verde: `Lint, Type-Check, Test, Build` (dos runs, uno por push+pull_request) en verde, incluida la nueva suite del arnés diferencial cableada en `ci.yml`. El job `e2e-qa` de `deploy.yml` no corre sobre un PR — corre post-merge contra QA en la VPS — así que no hay reporte de e2e-qa que leer para esta fase; lo que el veto de esta fase protege (que un fallo real vete el deploy) se ejerce la próxima vez que `deploy.yml` corra con esta cuarentena activa.
 > Downstream: `docs/specs/spec-85-discrepancias.md:263` es la única mención de spec-87 en `docs/specs/` fuera de este propio archivo — es una referencia informativa a que esta fase existe, no asume ninguna forma de RPC ni comportamiento de esta fase. Sin cambios. Deuda dejada explícitamente para quien tome la deuda de spec-57 (no de esta fase): un `deploy-hotfix.yml` nuevo con su propio job de despliegue (p. ej. `deploy-vercel`) es invisible para los cinco checks de spec-57 y para este veto — `check-deploy-gating.mjs:41` fija el objetivo en `.github/workflows/deploy.yml` y `ci.yml` lo invoca sin argumento; no existe ningún guard que inventaríe workflows. La lista blanca de esta fase cierra la clase de bypass **a nivel de fichero**, no de repositorio.
+>
+> **Corrección (seguimiento post-fase-2, B1 — bloqueante):** la cuarentena descrita arriba **nunca absorbió un solo fallo**. `matches()` en `check-quarantine.mjs` comparaba `entry.spec === spec.file` de forma exacta. `quarantine.json` se escribe a mano con el prefijo `e2e/` (`"spec": "e2e/despacho-tablet-dock.spec.ts"`), pero el reportero JSON de Playwright escribe `spec.file` **relativo a `testDir`** (`./e2e` en `playwright.qa.config.ts`), así que un informe real nunca lleva ese prefijo — confirmado de forma empírica contra una corrida real de `npx playwright test` con `@playwright/test 1.58.2`, no leyendo el reportero en abstracto (una ronda de review anterior concluyó lo contrario leyendo el código fuente del reportero; esa conclusión era falsa, desmentida por el log real). El log del run de `deploy.yml` `34196179672`, step `Check quarantine`, muestra el síntoma exacto: para las dos entradas activas de esa fecha, **"entry does not match any test"** y **"undeclared failure"** a la vez, para el mismo spec. El veto seguía funcionando (nada de esto es `continue-on-error`), pero la cuarentena — el mecanismo pensado para comprar tiempo declarando fallos conocidos — era un no-op desde el primer commit. No se detectó en seis rondas de review porque los propios fixtures de `check-quarantine.test.sh`/`check-quarantine-report.test.sh` fabricaban el informe **con** el prefijo `e2e/`, así que la suite verde probaba el matcher contra una forma de informe que Playwright nunca produce — el caso de libro de un test que pasaría igual con el código roto. Arreglado en rama `fix/spec-87-matcher-cuarentena`: `matches()` ahora normaliza ambos lados quitando un prefijo literal `e2e/` (no un `endsWith`/basename — `otro/foo.spec.ts` nunca matchea `e2e/foo.spec.ts`), los fixtures de ambos ficheros de test se corrigieron a la forma real (sin el prefijo en `file`), y se añadieron pruebas para ambas direcciones del prefijo más un caso negativo de substring, fijadas por mutación (cada mutante probado y revertido a mano).
 
 **Archivos:** `.github/workflows/deploy.yml`, `.github/workflows/ci.yml`, `apps/frontend/e2e/quarantine.json` (nuevo), `apps/frontend/playwright.qa.config.ts`, `scripts/check-quarantine.mjs`/`.sh` + su test, `scripts/check-deploy-gating.mjs` + su test
 
@@ -136,8 +138,11 @@ Las tres referencian `«Asignar camión y conductor»`. O el test navega con `?d
 - [x] Correr los tres contra QA antes y después: `npx playwright test --config=playwright.qa.config.ts`.
 - [x] Al pasar, retirar su entrada de la cuarentena en el mismo PR.
 
-**Trabajo hecho (rama `feat/spec-87-fase-2-asercion-despacho`, sin mergear — el
-orquestador cierra la fase tras review y QA):**
+**Trabajo hecho (rama `feat/spec-87-fase-2-asercion-despacho`, PR #665, squash
+`fc1ffd6` mergeado `2026-09-08T07:08:43Z` sobre `main` — el token sigue
+`[in_progress]` a propósito: el review encontró B1, bloqueante, sobre la
+premisa de la fase 1; el orquestador cierra la fase a `[done]` tras el review
+del seguimiento y QA, no antes):**
 
 - **`despacho-tablet-dock.spec.ts` (test `2d`)** — diagnóstico del spec confirmado
   leyendo `DispatchRouteSurface.tsx`: a 1024×768 sin `?dock=1`, `isTabletDock` e
@@ -193,6 +198,73 @@ por espacio):**
   - **No verificado por este agente:** el job `e2e-qa` real de `deploy.yml`
     corriendo sobre el PR mergeado — eso lo confirma `qa-e2e` leyendo el
     reporte post-merge, como manda el flujo delegado.
+
+**Seguimiento post-review (rama `fix/spec-87-matcher-cuarentena`), B2-B4 — no
+bloqueantes, cierran huecos que el review de fase 2 encontró:**
+
+- **B2 — `baselineCount` se capturaba demasiado tarde.** Vivía dentro del
+  propio test de Route L, es decir **después** de que Route H y Route R ya
+  hubieran despachado en la misma corrida (`mode: 'serial'`). Una regresión
+  que hiciera que el despacho de H o R incluyera `E2E77-L-ORD` en su propio
+  payload de `dispatches[]` (contaminación de manifiesto — la clase de bug
+  que `force_split`/`loadedPackageIds` puede producir) habría quedado
+  **dentro** del baseline en vez de aparecer como delta — justo lo único que
+  el viejo `toBe(1)` absoluto sí detectaba y el delta, tal como estaba escrito,
+  ya no. Movido a `test.beforeAll`, justo después de `seed()` y antes de que
+  cualquier ruta despache.
+- **B3 — el test `2d` de `despacho-tablet-dock.spec.ts` ya no asigna nada.**
+  `RouteBuilder.tsx` guarda `selectedVehicle` en `useState` de React y sólo lo
+  envía en `handleDispatch`, que este test nunca alcanza: no hay PATCH, no hay
+  escritura de `routes.vehicle_id`. El título `2d — assigns the seeded
+  truck…` y la cabecera del fichero (`Covers 2a/2d/3a`) mentían desde que fase
+  2 cambió la aserción al `<select>` de escritorio. Renombrado a `'2d viewport
+  — at 1024x768 without ?dock=1 renders the desktop tree, not the mobile
+  sheet'`, que es lo que de verdad pinnea, y corregida la cabecera para
+  apuntar al `2d` real: el test homónimo de `despacho-crew-mobile.spec.ts`, a
+  390×844, que sí prueba persistencia (PATCH + refetch, no sólo estado local
+  del sheet). No se perdió cobertura — sólo estaba mal etiquetada, y el
+  nombre viejo invitaba a que alguien borrara el test tablet por "redundante"
+  sin ver que era el único pin de esa decisión de viewport.
+- **B4 — `page.locator('select')` sin ámbito.** Correcto hoy
+  (`RoutePanel.tsx` es el único `<select>` nativo del árbol de despacho,
+  verificado), pero global a la página. Añadido
+  `data-testid="route-panel-vehicle-select"` en `RoutePanel.tsx` (TDD: rojo
+  primero en `RoutePanel.test.tsx`) y el E2E ahora escopa por ese testid, para
+  que un futuro `<select>` en `TopBar` u `OrderInspector` (que `AppLayout`
+  monta en toda `/app`) falle con un mensaje que señale la causa, no con una
+  violación de strict-mode opaca.
+
+**Anotado, no implementado — crecimiento sin límite del mock de DispatchTrack
+de QA.** No es de esta fase ni de spec-79 tal como están escritos hoy; se deja
+aquí en vez de en spec-79 para no arrastrar la deuda preexistente de campos de
+evidencia que ese spec tiene en fases anteriores (`Fase 0`…`Fase 1g`, todas
+`[done]` sin `> Implementado por:`/`> Review:`/`> QA:` — tocar ese archivo
+dispara `check-spec-fields.sh` sobre las 13, no sólo sobre la línea añadida).
+`infra/supabase-qa/dispatchtrack-mock/` no resetea nunca — la decisión de no
+resetearlo en esta misma fase (Route L, arriba) fue correcta y esto no la
+contradice. `handleListRoutes` filtra por `isoDate`, y
+`despacho-close-fixture.ts:116` siembra con `CURRENT_DATE`: dos corridas de
+`e2e-qa` **el mismo día** dejan ≥2 rutas con el conjunto de identificadores
+exactamente igual (`{E2E77-L-ORD}`) para la misma fecha. `dt-list-routes.ts`
+(spec-79, Fase 4i) define `ambiguous` como "más de una ruta con conjunto
+exactamente igual", y `dispatch-retry-precheck.ts` traduce `ambiguous` →
+`refuse`. Hoy Route L no llega a esa rama — el reintento va por
+`isConfirmedExternalRouteId`, no por el precheck — así que no es un bug activo.
+Pero **el día que alguien escriba el E2E del camino `wasStale: true`, que es
+exactamente el que spec-79 (B-2/B-3, Fase 4h/4i) más necesita cubrir de punta
+a punta, ese test fallará por acumulación del fixture, no por el producto**.
+La limpieza correcta no es un `/__test__/reset` global sino uno **con filtro
+por prefijo** (`POST /__test__/reset?prefix=E2E77`) llamado desde el
+`teardown()` de `despacho-close-fixture.ts`, junto al `DELETE … LIKE
+'E2E77-%'` que ese fichero ya hace — no toca Musan ni el poll de n8n que
+también lee este mock. Queda para quien tome el E2E de `wasStale: true`,
+en spec-79 o en una fase futura de spec-87.
+
+**No verificado por este agente (seguimiento):** ninguno de B2-B4 se corrió
+contra QA real (no hay runner self-hosted disponible en esta sesión) — sólo
+`tsc --noEmit`, `eslint` y el nuevo test unitario de `RoutePanel.test.tsx`
+(rojo→verde). `qa-e2e` lo confirma post-merge leyendo el reporte, igual que el
+resto de esta fase.
 
 ### Fase 3 — Dimensionar los dos backfills `[pending]`
 
