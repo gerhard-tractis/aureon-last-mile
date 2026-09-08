@@ -25,7 +25,7 @@
  *      comprobé y está limpio" cuando en realidad no se comprobó nada.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseTarget, extractArchivosFiles, normalizeFrontendPath } from './check-phase-overlap-parse.mjs';
 import { buildClosure, computeOverlap } from './check-phase-overlap-closure.mjs';
@@ -52,21 +52,56 @@ function parseArgv(argv) {
   return { targets, base, repo, maxDepth };
 }
 
-/** `git show <ref>:<path>` — null (not an error) when the path doesn't exist at that ref. */
-function gitShow(repo, ref, filePath) {
+/**
+ * Performance (review round 1, medium 7): resolving one import specifier
+ * probes up to 7 candidate paths (no ext, .ts, .tsx, .js, .jsx, two barrel
+ * suffixes) against `resolveContent`. Spawning `git show` per candidate —
+ * most of which don't exist — is what made this slow: measured 86s for 2
+ * targets, >15min for the real 4-target acceptance case, which is dead on
+ * arrival for a `PreToolUse` hook (the stated destination for this guard).
+ *
+ * `git ls-tree -r --name-only <ref>` lists a ref's ENTIRE file tree in one
+ * process — one spawn per distinct ref for the whole run, not one per
+ * candidate path. Existence becomes a `Set.has()` (free); `git show` is
+ * then called at most ONCE per file, only for a candidate already confirmed
+ * to exist, and its result is cached too (the same shared file is resolved
+ * repeatedly — once per importer that reaches it).
+ */
+const treeCache = new Map(); // ref -> Set<path>
+function listTreeFiles(repo, ref) {
+  if (treeCache.has(ref)) return treeCache.get(ref);
+  let files;
   try {
-    // stderr is 'ignore', not 'pipe': probing extension candidates
-    // (path, path.ts, path.tsx, ...) makes a "does not exist" miss the
-    // expected, common case, and letting git print it would spam every
-    // real run with noise nobody reads.
-    return execFileSync('git', ['show', `${ref}:${filePath}`], {
+    const out = execFileSync('git', ['ls-tree', '-r', '--name-only', ref], {
+      cwd: repo,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    files = new Set(out.split('\n').map((l) => l.trim()).filter(Boolean));
+  } catch {
+    files = new Set();
+  }
+  treeCache.set(ref, files);
+  return files;
+}
+
+const showCache = new Map(); // `${ref}\0${path}` -> content|null
+/** `git show <ref>:<path>` — null (not an error) when the path doesn't exist at that ref. Cached per (ref, path). */
+function gitShow(repo, ref, filePath) {
+  const key = `${ref}\0${filePath}`;
+  if (showCache.has(key)) return showCache.get(key);
+  let content;
+  try {
+    content = execFileSync('git', ['show', `${ref}:${filePath}`], {
       cwd: repo,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     });
   } catch {
-    return null;
+    content = null;
   }
+  showCache.set(key, content);
+  return content;
 }
 
 /** `git diff --name-only base...branch` — the branch's REAL write set, when it has commits. */
@@ -83,32 +118,48 @@ function gitDiffFiles(repo, base, branch) {
   }
 }
 
+/**
+ * A resolveSpecifier candidate with no extension (e.g. `@/lib/offline` ->
+ * `apps/frontend/src/lib/offline`) can match a real DIRECTORY on disk, not
+ * just a missing file. `existsSync` returns true for both; `readFileSync`
+ * on a directory throws EISDIR, not "file not found" — crashing the whole
+ * run instead of correctly reporting "no content here, try the next
+ * candidate". `statSync().isFile()` is the actual question being asked.
+ */
 function readWorkingTree(repo, filePath) {
   const full = path.join(repo, filePath);
-  return existsSync(full) ? readFileSync(full, 'utf8') : null;
+  if (!existsSync(full)) return null;
+  try {
+    if (!statSync(full).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return readFileSync(full, 'utf8');
 }
 
 /**
- * Content resolver for one target: branch content wins when the branch has
- * touched the file; otherwise base; otherwise the working tree (covers a
- * freshly-declared file that has no commit anywhere yet — buildClosure then
- * just can't extend past it, which is the honest outcome for undeclared,
- * unwritten code).
+ * Content resolver for one target. A branch's tree already contains every
+ * file it inherited unchanged from base — a branch's `git ls-tree` is a
+ * strict superset of base's except for what that branch itself deleted — so
+ * there is no separate "try branch, then fall back to base" step needed:
+ * resolve everything against `branch` (when given) or `base` otherwise, via
+ * the cheap `listTreeFiles` existence check, and only fall back to the
+ * working tree for a file that exists in neither ref's history yet (a
+ * freshly-declared file with no commit anywhere — buildClosure then just
+ * can't extend past it, the honest outcome for undeclared, unwritten code).
  *
- * Known limitation, not engineered around: a branch that DELETES a file
- * relative to base makes `git show branch:path` fail, and this falls back
- * to base's (stale) content for that path. Rare — and a phase that deletes
- * a shared file is exactly the kind of change a human should be looking at
- * anyway, not something this guard should paper over by guessing.
+ * This also changes one behavior, for the better: a branch that DELETES a
+ * file relative to base used to silently fall back to base's stale content
+ * for that path. Now `listTreeFiles(branch)` correctly omits it, and
+ * resolution correctly falls through to the working-tree check instead of
+ * pretending the deleted file still exists.
  */
 function makeResolver(repo, base, branch) {
+  const ref = branch || base;
   return function resolveContent(filePath) {
-    if (branch) {
-      const fromBranch = gitShow(repo, branch, filePath);
-      if (fromBranch !== null) return fromBranch;
+    if (listTreeFiles(repo, ref).has(filePath)) {
+      return gitShow(repo, ref, filePath);
     }
-    const fromBase = gitShow(repo, base, filePath);
-    if (fromBase !== null) return fromBase;
     return readWorkingTree(repo, filePath);
   };
 }
