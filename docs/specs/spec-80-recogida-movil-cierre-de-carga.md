@@ -489,19 +489,55 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > — candidatos razonables son spec-86 fase 3 (panel de resolución de discrepancias) o una fase
 > nueva de spec-85; la decisión de cuál es del orquestador, no de esta fase.
 >
-> **Aplazamiento declarado — nota "Alcance corregido" (2026-09-07, ronda 3):** esa nota pide que
-> `PickupMobileView` gane una forma de llegar a un manifiesto de rescate (uno que
-> `trg_route_receptions_status_sync` completó sin firma) sin escritorio y sin teclear la URL —
-> una pestaña Completados en móvil. **No se construyó en esta fase.** Razón: `PickupMobileView.tsx`
-> es, por lo visto en los tests existentes (agrupación de manifiestos por cliente, tarjetas KPI,
-> tarjeta "próxima carga"), el mismo fichero que spec-82 fase 1 (`5b`/`5c`, la lista de
-> manifiestos y las recogidas del día) está editando en paralelo ahora mismo — tocarlo aquí
-> arriesgaba un conflicto de tres ramas sobre el mismo componente, el escenario que la
-> coordinación de esta sesión pidió evitar explícitamente. Queda como trabajo pendiente de esta
-> fase, no resuelto: alguien debe decidir si es una fase 2b de spec-80, o si se absorbe dentro de
-> spec-82 fase 1 dado que ya toca el mismo fichero.
+> **Aplazamiento declarado — nota "Alcance corregido" (2026-09-07, ronda 3), corregido en la
+> ronda de review de PR #686 (2026-09-08):** esa nota pide que la cuadrilla gane una forma de
+> llegar a un manifiesto de rescate (uno que `trg_route_receptions_status_sync` completó sin
+> firma) sin escritorio y sin teclear la URL — una pestaña Completados en móvil. **No se
+> construyó en esta fase.**
+>
+> La razón que se había escrito antes aquí — "`PickupMobileView.tsx` es, por lo visto en los
+> tests existentes, el mismo fichero que spec-82 fase 1 está editando en paralelo" — era
+> **falsa**, y se afirmaba sin comprobarla (`gh pr view` la habría descartado en un comando).
+> Verificado ahora: el PR #682 (spec-82 fase 1) toca `app/app/pickup/route/active/page.{tsx,test.tsx}`,
+> `CloseRouteButton`, `DigitalizeManifestTrigger`, `NextManifestCard`, `RouteManifestList` y dos
+> specs — **no** `PickupMobileView.tsx`. `git log -- PickupMobileView.tsx` da `e0eaf97` (spec-61)
+> como último commit; nada de spec-82 lo toca.
+>
+> La razón real: `PickupMobileView.tsx` en sí mismo está libre, pero una pestaña Completados no
+> vive ahí sola — la pantalla que de verdad tendría que crecer es `PickupMobileActiveRoute.tsx`
+> (o un hermano suyo), que ya importa `RouteManifestRow` de `./RouteManifestList` (`:15`). Ese
+> fichero, junto con `CloseRouteButton.tsx`, `DigitalizeManifestTrigger.tsx`, `NextManifestCard.tsx`
+> y todo `app/app/pickup/route/active/**`, está explícitamente fuera de alcance para esta ronda de
+> corrección (instrucción del orquestador, para no pisar el PR #682 en vuelo) — no porque
+> spec-82 fase 1 edite el mismo archivo que este spec necesitaría, sino porque la familia de
+> componentes donde encajaría la entrada de rescate es la misma familia que #682 está tocando
+> ahora mismo, y tocarla desde dos ramas a la vez es exactamente el conflicto que la coordinación
+> de esta sesión pidió evitar.
+>
+> Sigue sin construirse. Queda declarado, con dueño: se retoma después de que #682 mergee, como
+> fase 2b de este spec (`spec-80`) — no absorbida en spec-82 fase 1, porque el "rescate sin firma"
+> es un flujo de `close_manifest`/discrepancias (spec-80/spec-85), no de asignación de ruta
+> (el alcance real de spec-82 fase 1).
 >
 > Review y QA pendientes — no se marca `[done]` aquí.
+
+### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
+
+> Depende de que el PR #682 (spec-82 fase 1) mergee primero — toca la misma familia de
+> componentes (`PickupMobileActiveRoute.tsx` y lo que importa de `RouteManifestList.tsx`).
+> Ver el "Aplazamiento declarado" de la fase 2, arriba, para la razón completa de por qué no se
+> construyó ahí.
+
+Dale a la cuadrilla, en móvil, una forma de llegar a un manifiesto que `trg_route_receptions_status_sync`
+ya cerró sin firma (rescate de H1, fase 1) — sin escritorio y sin teclear la URL a mano. En
+escritorio esa entrada ya existe (Completados → escanear → revisión → firma); en móvil no hay
+pestaña Completados en absoluto.
+
+- [ ] Diseñar dónde vive la entrada: ¿una pestaña/filtro dentro de `PickupMobileActiveRoute.tsx`,
+      o una pantalla hermana fuera de la ruta activa? El mock de Recogida no dibuja este estado —
+      es un hallazgo a escalar antes de construir, no licencia para inventar el diseño aquí.
+- [ ] Tests primero.
+- [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
 ### Fase 3 — `5f` firma y fotos `[pending]`
 
