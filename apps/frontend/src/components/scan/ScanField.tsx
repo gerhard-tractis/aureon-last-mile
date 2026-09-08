@@ -73,6 +73,17 @@ export function ScanField({
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const s = SIZES[size];
+  // spec-54 fix: race guard. The auto-submit debounce (useScannerAutoSubmit)
+  // and the Enter keydown handler both call submit() with the same code —
+  // normally reset() cancels whichever one is still pending. But if the
+  // debounce timer fires and this submit() call's own state update
+  // (setValue('')) hasn't committed yet when the real Enter keydown event
+  // arrives (a genuine gap on a loaded runner, or in production), the Enter
+  // handler's closure can still see the pre-clear value and submit() again
+  // for the same physical scan. `submittedRef` closes that gap: it's an
+  // ordinary ref (synchronous, not batched like state), so it's true the
+  // instant the first submit() runs, regardless of when React commits.
+  const submittedRef = useRef(false);
 
   // Keep focus on the field. A scanner gun types into whatever is focused, so
   // losing focus silently drops scans — the operator keeps working and nothing
@@ -87,6 +98,11 @@ export function ScanField({
     if (disabled) return;
     const code = raw.trim();
     if (!code) return;
+    // Same scan already submitted by the other path (debounce vs. Enter) —
+    // see submittedRef above. Cleared again on the next scan's first
+    // keystroke in handleChange.
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     autoSubmit.reset();
     onScan(code);
     setValue('');
@@ -97,8 +113,15 @@ export function ScanField({
   const autoSubmit = useScannerAutoSubmit(submit);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setValue(e.target.value);
-    autoSubmit.handleValueChange(e.target.value);
+    const newValue = e.target.value;
+    // A field that was empty and now isn't is the first keystroke of a new,
+    // distinct scan — re-arm the guard so this next scan can submit even if
+    // the previous one only just cleared.
+    if (value === '' && newValue !== '') {
+      submittedRef.current = false;
+    }
+    setValue(newValue);
+    autoSubmit.handleValueChange(newValue);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

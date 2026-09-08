@@ -58,6 +58,50 @@ describe('ScanField', () => {
     expect(onScan).toHaveBeenCalledTimes(1);
   });
 
+  it('does not double-submit when Enter arrives after the debounce already auto-submitted (spec-54 race)', () => {
+    // Reproduces the production race: the Zebra/keyboard-wedge path fills the
+    // whole value in one shot (maxKeyGap = 0), so the auto-submit timer is
+    // armed. If the gap before the trailing Enter keystroke exceeds
+    // IDLE_DEBOUNCE_MS (120ms) — plausible under load, e.g. two separate
+    // Playwright round trips — the timer fires and submits BEFORE Enter's
+    // keydown handler runs. The debounce fire schedules a React state update
+    // (setValue('')) that is not yet committed when the real Enter keydown
+    // event is dispatched, so the still-attached handler closure can see the
+    // stale (uncommitted) value and submit the same code a second time.
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'E2E78-P1B' } });
+    // Advance past the debounce window WITHOUT act() — this fires the
+    // setTimeout callback (which calls setValue('')) but does not force
+    // React to flush/commit that update before the next line runs, mirroring
+    // the real gap between the browser-side timer firing and the DOM commit
+    // versus the next real keyboard event arriving from Playwright.
+    vi.advanceTimersByTime(150);
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith('E2E78-P1B');
+  });
+
+  it('still submits two distinct scans in a row after the race guard fires — the guard must not collapse legitimate consecutive scans', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ScanField onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'E2E78-P1A' } });
+    act(() => vi.advanceTimersByTime(150));
+    fireEvent.change(input, { target: { value: 'E2E78-P1B' } });
+    act(() => vi.advanceTimersByTime(150));
+
+    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenNthCalledWith(1, 'E2E78-P1A');
+    expect(onScan).toHaveBeenNthCalledWith(2, 'E2E78-P1B');
+  });
+
   it('does not auto-submit while disabled', () => {
     vi.useFakeTimers();
     const onScan = vi.fn();
