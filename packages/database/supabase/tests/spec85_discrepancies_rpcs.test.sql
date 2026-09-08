@@ -71,17 +71,22 @@ VALUES
 
 INSERT INTO public.vehicles (id, operator_id, plate)
 VALUES
-  ('88880001-0000-0000-0000-000000000852', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'T85R2-PLATE');
+  ('88880001-0000-0000-0000-000000000852', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'T85R2-PLATE'),
+  ('88880002-0000-0000-0000-000000000852', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000852', 'T85R2-PLATE-B');
 
 INSERT INTO public.pickup_routes (id, operator_id, code, driver_id, vehicle_id, status)
 VALUES
   ('55550001-0000-0000-0000-000000000852', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852',
-   'PR-T85R2-0001', 'aaaaaaaa-0000-4000-a000-000000000852', '88880001-0000-0000-0000-000000000852', 'in_progress');
+   'PR-T85R2-0001', 'aaaaaaaa-0000-4000-a000-000000000852', '88880001-0000-0000-0000-000000000852', 'in_progress'),
+  ('55550002-0000-0000-0000-000000000852', 'bbbbbbbb-bbbb-bbbb-bbbb-000000000852',
+   'PR-T85R2-0002', 'bbbbbbbb-0000-4000-b000-000000000852', '88880002-0000-0000-0000-000000000852', 'in_progress');
 
 INSERT INTO public.route_receptions (id, pickup_route_id, operator_id, delivered_by, status)
 VALUES
   ('66660001-0000-0000-0000-000000000852', '55550001-0000-0000-0000-000000000852',
-   'aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'aaaaaaaa-0000-4000-a000-000000000852', 'pending');
+   'aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'aaaaaaaa-0000-4000-a000-000000000852', 'pending'),
+  ('66660002-0000-0000-0000-000000000852', '55550002-0000-0000-0000-000000000852',
+   'bbbbbbbb-bbbb-bbbb-bbbb-000000000852', 'bbbbbbbb-0000-4000-b000-000000000852', 'pending');
 
 -- Helper: run everything as operator A's authenticated JWT.
 CREATE OR REPLACE FUNCTION pg_temp.as_operator_a() RETURNS VOID AS $$
@@ -105,7 +110,10 @@ SAVEPOINT test_1;
 
 DO $$
 DECLARE
-  v_count INT;
+  v_count            INT;
+  v_detected_by      UUID;
+  v_note             TEXT;
+  v_detected_at      TIMESTAMPTZ;
 BEGIN
   PERFORM pg_temp.as_operator_a();
 
@@ -130,7 +138,26 @@ BEGIN
     RAISE EXCEPTION 'TEST 1 FAILED: expected exactly 1 open missing discrepancy, got %', v_count;
   END IF;
 
-  RAISE NOTICE '✓ TEST 1 PASSED: record_discrepancies inserts a missing discrepancy';
+  -- m2: the row's whole point is who declared what, when — assert the
+  -- attribution actually lands, not just the count.
+  SELECT detected_by_user_id, note, detected_at INTO v_detected_by, v_note, v_detected_at
+    FROM public.discrepancies
+   WHERE operator_id = 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852'
+     AND kind = 'missing'
+     AND package_id = '33330001-0000-0000-0000-000000000852'
+     AND status = 'open';
+
+  IF v_detected_by IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 1 FAILED: detected_by_user_id not attributed to the caller, got %', v_detected_by;
+  END IF;
+  IF v_note IS DISTINCT FROM 'no llegó' THEN
+    RAISE EXCEPTION 'TEST 1 FAILED: note not stored, got %', v_note;
+  END IF;
+  IF v_detected_at IS NULL THEN
+    RAISE EXCEPTION 'TEST 1 FAILED: detected_at is NULL';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 1 PASSED: record_discrepancies inserts a missing discrepancy with attribution';
 END $$;
 RESET ROLE;
 
@@ -144,7 +171,8 @@ SAVEPOINT test_2;
 
 DO $$
 DECLARE
-  v_count INT;
+  v_count       INT;
+  v_detected_by UUID;
 BEGIN
   PERFORM pg_temp.as_operator_a();
 
@@ -170,7 +198,16 @@ BEGIN
     RAISE EXCEPTION 'TEST 2 FAILED: expected exactly 1 open unexpected discrepancy, got %', v_count;
   END IF;
 
-  RAISE NOTICE '✓ TEST 2 PASSED: record_discrepancies inserts an unexpected discrepancy';
+  SELECT detected_by_user_id INTO v_detected_by
+    FROM public.discrepancies
+   WHERE operator_id = 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852'
+     AND kind = 'unexpected' AND barcode = 'AJENO-999';
+
+  IF v_detected_by IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 2 FAILED: detected_by_user_id not attributed to the caller, got %', v_detected_by;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 2 PASSED: record_discrepancies inserts an unexpected discrepancy with attribution';
 END $$;
 RESET ROLE;
 
@@ -226,12 +263,56 @@ RESET ROLE;
 ROLLBACK TO test_3;
 
 -- =============================================================================
+-- TEST 3b (m3) — two identical items inside the SAME p_items array, in one
+-- call, must still leave exactly one open row. Guards against a future
+-- refactor from the per-item loop to a bulk `INSERT ... SELECT
+-- jsonb_array_elements(...)`, which would reintroduce fase 1's C1 bug
+-- (ON CONFLICT DO NOTHING inside one INSERT statement dedupes source rows
+-- but not against each other unless the statement itself is written to).
+-- =============================================================================
+SAVEPOINT test_3b;
+
+DO $$
+DECLARE
+  v_count INT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  PERFORM public.record_discrepancies(
+    'pickup'::public.discrepancy_operation_enum,
+    '44440001-0000-0000-0000-000000000852'::UUID,
+    jsonb_build_array(
+      jsonb_build_object('kind', 'unexpected', 'barcode', 'AJENO-DUP'),
+      jsonb_build_object('kind', 'unexpected', 'barcode', 'AJENO-DUP')
+    )
+  );
+
+  RESET ROLE;
+
+  SELECT COUNT(*) INTO v_count
+    FROM public.discrepancies
+   WHERE operator_id = 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852'
+     AND kind = 'unexpected' AND barcode = 'AJENO-DUP';
+
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'TEST 3b FAILED: two identical items in one call produced % rows, expected 1', v_count;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 3b PASSED: duplicate items within one p_items array do not duplicate rows';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_3b;
+
+-- =============================================================================
 -- TEST 4 — cross-tenant rejection on record_discrepancies: operator A cannot
 -- record a discrepancy against operator B's manifest.
 -- =============================================================================
 SAVEPOINT test_4;
 
 DO $$
+DECLARE
+  v_sqlstate TEXT;
 BEGIN
   PERFORM pg_temp.as_operator_a();
 
@@ -247,7 +328,14 @@ BEGIN
       IF SQLERRM LIKE 'TEST 4 FAILED%' THEN
         RAISE;
       END IF;
-      RAISE NOTICE '✓ TEST 4 PASSED: cross-tenant manifest rejected (%)', SQLERRM;
+      -- M6: pin the SQLSTATE, not just "something was raised" — a mutant
+      -- that downgrades the guard's ERRCODE to a plain P0001 validation
+      -- must fail this test even though a rejection still occurs.
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 4 FAILED: expected ERRCODE 42501 for cross-tenant manifest, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 4 PASSED: cross-tenant manifest rejected with 42501 (%)', SQLERRM;
   END;
 
   RESET ROLE;
@@ -257,12 +345,52 @@ RESET ROLE;
 ROLLBACK TO test_4;
 
 -- =============================================================================
+-- TEST 4b (B2) — cross-tenant rejection on the reception branch: operator A
+-- cannot record a discrepancy against operator B's route_reception. Mirrors
+-- TEST 4, on the branch the original suite never exercised.
+-- =============================================================================
+SAVEPOINT test_4b;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'reception'::public.discrepancy_operation_enum,
+      '66660002-0000-0000-0000-000000000852'::UUID, -- operator B's route_reception
+      jsonb_build_array(jsonb_build_object('kind', 'unexpected', 'barcode', 'X'))
+    );
+    RAISE EXCEPTION 'TEST 4b FAILED: record_discrepancies accepted a route_reception belonging to another operator';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 4b FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 4b FAILED: expected ERRCODE 42501 for cross-tenant route_reception, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 4b PASSED: cross-tenant route_reception rejected with 42501 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_4b;
+
+-- =============================================================================
 -- TEST 5 — cross-tenant rejection: operator A cannot record a discrepancy
 -- against a package_id belonging to operator B, even under A's own manifest.
 -- =============================================================================
 SAVEPOINT test_5;
 
 DO $$
+DECLARE
+  v_sqlstate TEXT;
 BEGIN
   PERFORM pg_temp.as_operator_a();
 
@@ -278,7 +406,11 @@ BEGIN
       IF SQLERRM LIKE 'TEST 5 FAILED%' THEN
         RAISE;
       END IF;
-      RAISE NOTICE '✓ TEST 5 PASSED: cross-tenant package_id rejected (%)', SQLERRM;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 5 FAILED: expected ERRCODE 42501 for cross-tenant package_id, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 5 PASSED: cross-tenant package_id rejected with 42501 (%)', SQLERRM;
   END;
 
   RESET ROLE;
@@ -286,6 +418,91 @@ END $$;
 RESET ROLE;
 
 ROLLBACK TO test_5;
+
+-- =============================================================================
+-- TEST 5b (B2) — reception happy path: 'missing' against A's own
+-- route_reception inserts a row with route_reception_id set and
+-- operation_type='reception'. The fixture existed unused before this fix.
+-- =============================================================================
+SAVEPOINT test_5b;
+
+DO $$
+DECLARE
+  v_count INT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  PERFORM public.record_discrepancies(
+    'reception'::public.discrepancy_operation_enum,
+    '66660001-0000-0000-0000-000000000852'::UUID, -- A's own route_reception
+    jsonb_build_array(
+      jsonb_build_object('kind', 'missing', 'package_id', '33330001-0000-0000-0000-000000000852', 'note', 'no llegó en la recepción')
+    )
+  );
+
+  RESET ROLE;
+
+  SELECT COUNT(*) INTO v_count
+    FROM public.discrepancies
+   WHERE operator_id = 'aaaaaaaa-aaaa-aaaa-aaaa-000000000852'
+     AND operation_type = 'reception'
+     AND route_reception_id = '66660001-0000-0000-0000-000000000852'
+     AND package_id = '33330001-0000-0000-0000-000000000852'
+     AND status = 'open';
+
+  IF v_count <> 1 THEN
+    RAISE EXCEPTION 'TEST 5b FAILED: expected exactly 1 open reception discrepancy, got %', v_count;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 5b PASSED: record_discrepancies inserts a reception discrepancy';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_5b;
+
+-- =============================================================================
+-- TEST 5c (B2) — cross-tenant rejection on the reception branch's
+-- package_id guard: operator A cannot record a 'missing' discrepancy against
+-- operator B's package_id, even under A's own route_reception. This is the
+-- reception-branch equivalent of TEST 5, on a code path fase 2's original
+-- suite never exercised — the exact mutation the review named: deleting
+-- `AND operator_id = v_operator` from the route_reception ownership guard
+-- left this package_id guard as the only thing standing between A's JWT and
+-- B's route_reception, and nothing in that guard looks at route_reception_id
+-- at all.
+-- =============================================================================
+SAVEPOINT test_5c;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'reception'::public.discrepancy_operation_enum,
+      '66660001-0000-0000-0000-000000000852'::UUID, -- A's own route_reception
+      jsonb_build_array(jsonb_build_object('kind', 'missing', 'package_id', '33330003-0000-0000-0000-000000000852')) -- B's package
+    );
+    RAISE EXCEPTION 'TEST 5c FAILED: record_discrepancies accepted a package_id belonging to another operator on the reception branch';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 5c FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 5c FAILED: expected ERRCODE 42501 for cross-tenant package_id on reception, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 5c PASSED: cross-tenant package_id rejected on reception branch with 42501 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_5c;
 
 -- =============================================================================
 -- TEST 6 — resolve_discrepancy, happy path open -> resolved.
@@ -297,6 +514,7 @@ DECLARE
   v_id     UUID;
   v_status public.discrepancy_status_enum;
   v_resolution TEXT;
+  v_resolved_by UUID;
 BEGIN
   INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
@@ -309,7 +527,8 @@ BEGIN
 
   RESET ROLE;
 
-  SELECT status, resolution INTO v_status, v_resolution FROM public.discrepancies WHERE id = v_id;
+  SELECT status, resolution, resolved_by_user_id INTO v_status, v_resolution, v_resolved_by
+    FROM public.discrepancies WHERE id = v_id;
 
   IF v_status <> 'resolved' THEN
     RAISE EXCEPTION 'TEST 6 FAILED: expected status resolved, got %', v_status;
@@ -317,8 +536,12 @@ BEGIN
   IF v_resolution IS DISTINCT FROM 'apareció en el siguiente camión' THEN
     RAISE EXCEPTION 'TEST 6 FAILED: resolution text not stored, got %', v_resolution;
   END IF;
+  -- m2: attribution is the payload of this table.
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: resolved_by_user_id not attributed to the caller, got %', v_resolved_by;
+  END IF;
 
-  RAISE NOTICE '✓ TEST 6 PASSED: resolve_discrepancy moves open -> resolved';
+  RAISE NOTICE '✓ TEST 6 PASSED: resolve_discrepancy moves open -> resolved with attribution';
 END $$;
 RESET ROLE;
 
@@ -333,6 +556,7 @@ DO $$
 DECLARE
   v_id     UUID;
   v_status public.discrepancy_status_enum;
+  v_resolved_by UUID;
 BEGIN
   INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
@@ -345,13 +569,16 @@ BEGIN
 
   RESET ROLE;
 
-  SELECT status INTO v_status FROM public.discrepancies WHERE id = v_id;
+  SELECT status, resolved_by_user_id INTO v_status, v_resolved_by FROM public.discrepancies WHERE id = v_id;
 
   IF v_status <> 'lost' THEN
     RAISE EXCEPTION 'TEST 7 FAILED: expected status lost, got %', v_status;
   END IF;
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 7 FAILED: resolved_by_user_id not attributed to the caller, got %', v_resolved_by;
+  END IF;
 
-  RAISE NOTICE '✓ TEST 7 PASSED: resolve_discrepancy moves open -> lost';
+  RAISE NOTICE '✓ TEST 7 PASSED: resolve_discrepancy moves open -> lost with attribution';
 END $$;
 RESET ROLE;
 
@@ -393,7 +620,19 @@ BEGIN
       IF SQLERRM LIKE 'TEST 8 FAILED%' THEN
         RAISE;
       END IF;
-      RAISE NOTICE '✓ TEST 8 PASSED (b): resolved -> lost rejected (%)', SQLERRM;
+      DECLARE
+        v_sqlstate TEXT;
+      BEGIN
+        GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+        -- B1: a closed discrepancy is "already happened", the repo's 23505
+        -- idiom (see close_manifest, 20260913000002) — not P0002, which
+        -- PostgREST maps to 404 and would read as "doesn't exist" to an
+        -- offline retry queue (spec-81).
+        IF v_sqlstate <> '23505' THEN
+          RAISE EXCEPTION 'TEST 8 FAILED: expected ERRCODE 23505 for resolved -> lost, got % (%)', v_sqlstate, SQLERRM;
+        END IF;
+      END;
+      RAISE NOTICE '✓ TEST 8 PASSED (b): resolved -> lost rejected with 23505 (%)', SQLERRM;
   END;
 
   RESET ROLE;
@@ -406,7 +645,10 @@ ROLLBACK TO test_8;
 -- TEST 9 — resolve_discrepancy's reopen rejection uses its own ERRCODE,
 -- distinct from a plain validation failure (P0001), so a retrying offline
 -- client (spec-81) can tell "already resolved, stop retrying" apart from
--- "malformed request, do not retry blindly".
+-- "malformed request, do not retry blindly". B1: that ERRCODE is 23505
+-- (unique_violation, the repo's "this already happened" idiom -> HTTP 409),
+-- not P0002 (Postgres's standard no_data_found -> PostgREST 404, which the
+-- offline queue would read as "doesn't exist" and discard).
 -- =============================================================================
 SAVEPOINT test_9;
 
@@ -429,10 +671,10 @@ BEGIN
   EXCEPTION
     WHEN OTHERS THEN
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
-      IF v_sqlstate <> 'P0002' THEN
-        RAISE EXCEPTION 'TEST 9 FAILED: expected ERRCODE P0002 for reopen rejection, got % (%)', v_sqlstate, SQLERRM;
+      IF v_sqlstate <> '23505' THEN
+        RAISE EXCEPTION 'TEST 9 FAILED: expected ERRCODE 23505 for reopen rejection, got % (%)', v_sqlstate, SQLERRM;
       END IF;
-      RAISE NOTICE '✓ TEST 9 PASSED: reopen rejection raises P0002 (%)', SQLERRM;
+      RAISE NOTICE '✓ TEST 9 PASSED: reopen rejection raises 23505 (%)', SQLERRM;
   END;
 
   RESET ROLE;
@@ -440,6 +682,50 @@ END $$;
 RESET ROLE;
 
 ROLLBACK TO test_9;
+
+-- =============================================================================
+-- TEST 9b (m5) — the literal idempotent retry a spec-81 offline queue makes:
+-- calling resolve_discrepancy again with the SAME target status and
+-- resolution text that already closed the row. Still rejected with 23505 —
+-- "idempotent" here means the caller gets a stable, recognizable "already
+-- done" response, not that the call silently no-ops.
+-- =============================================================================
+SAVEPOINT test_9b;
+
+DO $$
+DECLARE
+  v_id UUID;
+  v_sqlstate TEXT;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, status, resolution, resolved_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852',
+          'resolved', 'apareció en el siguiente camión', NOW())
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    -- Literal retry: identical status and resolution text to what is already stored.
+    PERFORM public.resolve_discrepancy(v_id, 'resolved'::public.discrepancy_status_enum, 'apareció en el siguiente camión');
+    RAISE EXCEPTION 'TEST 9b FAILED: resolve_discrepancy allowed a literal resolved -> resolved retry to silently succeed';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 9b FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '23505' THEN
+        RAISE EXCEPTION 'TEST 9b FAILED: expected ERRCODE 23505 for resolved -> resolved retry, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 9b PASSED: literal resolved -> resolved retry rejected with 23505 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_9b;
 
 -- =============================================================================
 -- TEST 10 — cross-tenant rejection on resolve_discrepancy: operator B cannot
@@ -451,6 +737,8 @@ DO $$
 DECLARE
   v_id UUID;
   v_status public.discrepancy_status_enum;
+  v_sqlstate TEXT;
+  v_current_user TEXT;
 BEGIN
   INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
   VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
@@ -458,6 +746,14 @@ BEGIN
   RETURNING id INTO v_id;
 
   PERFORM pg_temp.as_operator_b();
+
+  -- m6: pg_temp.as_operator_b() sets SET LOCAL role inside a function frame
+  -- (fase 1 set it inline in the DO block) — assert the role switch actually
+  -- took, not just that the JWT claim GUC is set.
+  SELECT current_user INTO v_current_user;
+  IF v_current_user <> 'authenticated' THEN
+    RAISE EXCEPTION 'TEST 10 FAILED: pg_temp.as_operator_b() did not switch role, current_user is %', v_current_user;
+  END IF;
 
   BEGIN
     PERFORM public.resolve_discrepancy(v_id, 'resolved'::public.discrepancy_status_enum, 'operator B intenta resolver');
@@ -467,7 +763,13 @@ BEGIN
       IF SQLERRM LIKE 'TEST 10 FAILED%' THEN
         RAISE;
       END IF;
-      RAISE NOTICE '✓ TEST 10 PASSED: cross-tenant resolve rejected (%)', SQLERRM;
+      -- M6: pin the SQLSTATE — a mutant that downgrades this guard's
+      -- ERRCODE from 42501 to a plain P0001 must fail this test.
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 10 FAILED: expected ERRCODE 42501 for cross-tenant resolve, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 10 PASSED: cross-tenant resolve rejected with 42501 (%)', SQLERRM;
   END;
 
   RESET ROLE;
@@ -528,5 +830,196 @@ END $$;
 RESET ROLE;
 
 ROLLBACK TO test_11;
+
+-- =============================================================================
+-- TEST 12 (M7) — get_discrepancies filters by p_source_id, and never returns
+-- soft-deleted rows. Both screens (Recogida/Recepción resolution) filter by
+-- the manifest/route_reception they are looking at — without this filter
+-- every call returns the whole tenant's history instead of one operation's.
+-- =============================================================================
+SAVEPOINT test_12;
+
+DO $$
+DECLARE
+  v_source_count   INT;
+  v_other_source_count INT;
+  v_deleted_count  INT;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'de la carga 1');
+
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note, deleted_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'borrada', NOW());
+
+  PERFORM pg_temp.as_operator_a();
+
+  SELECT COUNT(*) INTO v_source_count
+    FROM public.get_discrepancies(p_source_id := '44440001-0000-0000-0000-000000000852'::UUID);
+
+  -- A source_id that has no rows at all — proves the filter narrows, not
+  -- just that it's silently ignored.
+  SELECT COUNT(*) INTO v_other_source_count
+    FROM public.get_discrepancies(p_source_id := '66660001-0000-0000-0000-000000000852'::UUID);
+
+  SELECT COUNT(*) INTO v_deleted_count
+    FROM public.get_discrepancies(p_source_id := '44440001-0000-0000-0000-000000000852'::UUID)
+   WHERE note = 'borrada';
+
+  RESET ROLE;
+
+  IF v_source_count <> 1 THEN
+    RAISE EXCEPTION 'TEST 12 FAILED: p_source_id filter returned % rows, expected 1', v_source_count;
+  END IF;
+  IF v_other_source_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 12 FAILED: p_source_id filter leaked % row(s) from a different source', v_other_source_count;
+  END IF;
+  IF v_deleted_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 12 FAILED: get_discrepancies returned a soft-deleted row';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 12 PASSED: get_discrepancies filters by p_source_id and excludes deleted_at';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_12;
+
+-- =============================================================================
+-- TEST 13 (M3) — resolve_discrepancy with p_status = NULL raises a clean
+-- P0001 validation error instead of falling through `NULL NOT IN (...)`
+-- (which evaluates to NULL, not TRUE, so the guard never fires) into a raw
+-- 23502 not-null violation on the UPDATE. Reachable from PostgREST with
+-- {"p_status": null}.
+-- =============================================================================
+SAVEPOINT test_13;
+
+DO $$
+DECLARE
+  v_id UUID;
+  v_sqlstate TEXT;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'de A')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.resolve_discrepancy(v_id, NULL::public.discrepancy_status_enum, 'algo');
+    RAISE EXCEPTION 'TEST 13 FAILED: resolve_discrepancy accepted p_status = NULL';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 13 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 13 FAILED: expected clean ERRCODE P0001 for p_status = NULL, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 13 PASSED: p_status = NULL rejected cleanly with P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_13;
+
+-- =============================================================================
+-- TEST 14 (M5) — record_discrepancies with p_items = '[]' returns an empty
+-- set instead of raising. close_manifest (spec-80) is named as this RPC's
+-- caller; a clean close (0 missing, 0 unexpected) must not fail the close
+-- with a 400 precisely when nothing went wrong.
+-- =============================================================================
+SAVEPOINT test_14;
+
+DO $$
+DECLARE
+  v_count INT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  SELECT COUNT(*) INTO v_count
+    FROM public.record_discrepancies(
+      'pickup'::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      '[]'::JSONB
+    );
+
+  RESET ROLE;
+
+  IF v_count <> 0 THEN
+    RAISE EXCEPTION 'TEST 14 FAILED: expected 0 rows for an empty p_items array, got %', v_count;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 14 PASSED: record_discrepancies with an empty p_items array returns an empty set, does not raise';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_14;
+
+-- =============================================================================
+-- TEST 15 (m7) — no PUBLIC EXECUTE grant survives on any of the three RPCs.
+-- Postgres's default ACL grants EXECUTE to PUBLIC on every new function;
+-- fase 1 REVOKEd it explicitly on spec85_backfill_discrepancy_notes
+-- (20260913000001:282) and this fase's three RPCs need the same treatment.
+-- =============================================================================
+SAVEPOINT test_15;
+
+DO $$
+DECLARE
+  v_leaked TEXT;
+BEGIN
+  -- aclexplode(proacl), not has_function_privilege(): the latter, called by
+  -- postgres (superuser), always returns true regardless of ACL and would
+  -- pass even with the REVOKE deleted. A NULL proacl means Postgres's
+  -- implicit default ACL still applies — which grants EXECUTE to PUBLIC —
+  -- so that also counts as leaked.
+  SELECT string_agg(DISTINCT p.proname, ', ') INTO v_leaked
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    LEFT JOIN LATERAL aclexplode(p.proacl) a ON a.grantee = 0 AND a.privilege_type = 'EXECUTE'
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('record_discrepancies', 'resolve_discrepancy', 'get_discrepancies')
+     AND (p.proacl IS NULL OR a.grantee IS NOT NULL);
+
+  IF v_leaked IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 15 FAILED: PUBLIC still has (or implicitly has) EXECUTE on: %', v_leaked;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 15 PASSED: no PUBLIC EXECUTE grant survives on the three RPCs';
+END $$;
+
+ROLLBACK TO test_15;
+
+-- =============================================================================
+-- TEST 16 (m10) — get_discrepancies is SECURITY INVOKER, not SECURITY
+-- DEFINER. It relies on the table's own SELECT-only RLS + GRANT for tenant
+-- scoping, unlike record_discrepancies/resolve_discrepancy which must be
+-- DEFINER to write past that same RLS. A DEFINER get_discrepancies would run
+-- as postgres and the explicit get_operator_id() filter in its body would be
+-- the only thing standing between it and every tenant's rows.
+-- =============================================================================
+SAVEPOINT test_16;
+
+DO $$
+DECLARE
+  v_is_definer BOOLEAN;
+BEGIN
+  SELECT p.prosecdef INTO v_is_definer
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'get_discrepancies';
+
+  IF v_is_definer THEN
+    RAISE EXCEPTION 'TEST 16 FAILED: get_discrepancies is SECURITY DEFINER, expected SECURITY INVOKER';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 16 PASSED: get_discrepancies is SECURITY INVOKER';
+END $$;
+
+ROLLBACK TO test_16;
 
 ROLLBACK;

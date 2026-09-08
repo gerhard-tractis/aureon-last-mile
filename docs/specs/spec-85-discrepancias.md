@@ -334,15 +334,21 @@ no puede tumbar un deploy), pero ya no es silencioso en los logs.
 - [x] Implementar.
 
 Migración `20260913000003_spec85_discrepancies_rpcs.sql`, tests en
-`spec85_discrepancies_rpcs.test.sql` (11 tests). `record_discrepancies` valida
-que `p_source_id` (manifiesto o recepción según `p_operation_type`) y cada
-`package_id` pertenezcan al operador del JWT antes de insertar — nada por
-debajo lo hace, porque la RLS efectiva de la tabla es sólo `SELECT` y el RPC
-corre `SECURITY DEFINER`. `resolve_discrepancy` rechaza cualquier transición
-que no sea `open → resolved|lost` (incluida `resolved → lost`) con `ERRCODE
-P0002`, distinto del `P0001` de las validaciones (estado destino inválido,
-resolución vacía) — mismo split que `close_manifest` para que la cola offline
-de spec-81 distinga "ya cerrada, no reintentar" de "petición mal formada".
+`spec85_discrepancies_rpcs.test.sql` (22 tests, tras la ronda de arreglos 1).
+`record_discrepancies` valida que `p_source_id` (manifiesto o recepción según
+`p_operation_type`) y cada `package_id` pertenezcan al operador del JWT antes
+de insertar — nada por debajo lo hace, porque la RLS efectiva de la tabla es
+sólo `SELECT` y el RPC corre `SECURITY DEFINER`. Con `p_items = '[]'` no
+inserta nada y devuelve el conjunto vacío en vez de fallar — `close_manifest`
+(spec-80), su llamador nombrado, cierra así una carga limpia (0 faltantes, 0
+sobrantes) sin que eso cuente como error. `resolve_discrepancy` rechaza
+cualquier transición que no sea `open → resolved|lost` (incluida
+`resolved → lost`, y el reintento literal `resolved → resolved`) con
+`ERRCODE 23505` (unique_violation, el idioma del repo para "esto ya pasó" →
+HTTP 409) — **no** `P0002` (no_data_found → HTTP 404 en PostgREST, que una
+cola offline (spec-81) leería como "no existe" y descartaría el ítem). Mismo
+split que `close_manifest` usa para "ya firmado" (`23505`) contra una
+validación (`P0001`).
 `get_discrepancies` es `SECURITY INVOKER`: la tabla ya concede `SELECT` a
 `authenticated` y la RLS filtra por `operator_id`, así que una consulta
 directa ya queda acotada por tenant; el filtro explícito por
@@ -355,6 +361,67 @@ cualquier acción que deja rastro sobre evidencia, así que `resolve_discrepancy
 sigue el mismo patrón. Si la pantalla de resolución necesita cerrar sin texto
 libre (p.ej. un botón "apareció" sin campo), se ajusta aquí, no inventando una
 regla distinta en el frontend.
+
+**Ronda de arreglos 1 (adversarial), cerrada:** B1 (`P0002` → `23505` en el
+rechazo de reapertura de `resolve_discrepancy` — ver arriba), B2 (la rama
+`reception` de `record_discrepancies` no tenía ni un test; el fixture de
+`route_receptions` existía sin usar — cubierto con TEST 4b/5b/5c: guard de
+tenant sobre `route_reception_id`, happy path, y guard de `package_id` ajeno
+en esa rama), M3 (`p_status = NULL` caía en `NULL NOT IN (...)` = `NULL`, el
+`IF` nunca disparaba, y el `UPDATE` fallaba con `23502` crudo — ahora
+`p_status IS NULL OR ...`), M4 (el `COMMENT` de `resolve_discrepancy` seguía
+afirmando `P0002` después del fix de B1 — corregido), M5 (`p_items = '[]'`
+ahora devuelve el conjunto vacío en vez de lanzar excepción — decisión
+documentada arriba; el guard de ownership de `p_source_id` se comprueba
+*antes* del `RETURN` temprano, así que un `source_id` ajeno con `p_items`
+vacío sigue rechazándose), M6 (TEST 4/5/10 no distinguían `SQLSTATE` — un
+mutante que bajara los cuatro `42501` a `P0001` dejaba la suite en verde;
+ahora cada uno usa `GET STACKED DIAGNOSTICS`), M7 (`get_discrepancies` perdía
+tanto el filtro `p_source_id` como `deleted_at IS NULL` sin que ningún test
+lo notara — TEST 12 cubre ambos, verificado por mutación borrando cada uno
+por separado). Menores: m1 (`UPDATE` de `resolve_discrepancy` ahora repite
+`operator_id`/`deleted_at`, aunque el `FOR UPDATE` de arriba ya lo hacía
+seguro — es higiene del no-negociable del repo, no un guard con test propio
+distinguible: el `id` es único globalmente), m2 (atribución —
+`detected_by_user_id`/`resolved_by_user_id`/`note`/`detected_at` — verificada
+en TEST 1/2/6/7, mutación confirmada: sustituir `v_actor` por `NULL` en los
+cinco sitios rompe las cuatro), m3 (TEST 3b: dos ítems idénticos en el MISMO
+`p_items`, no en dos llamadas separadas), m5 (TEST 9b: el reintento idéntico
+`resolved → resolved`, el caso literal que motiva B1), m6 (TEST 10 afirma
+`current_user = 'authenticated'` tras `pg_temp.as_operator_b()`), m7
+(`REVOKE ALL ... FROM PUBLIC` en las tres RPCs, como fase 1 en
+`spec85_backfill_discrepancy_notes`; TEST 15 usa `aclexplode(proacl)`, no
+`has_function_privilege()` — llamado como `postgres` (superusuario) ese
+siempre da `true` sin importar el `REVOKE`), m10 (TEST 16: `get_discrepancies`
+es `SECURITY INVOKER` vía `pg_proc.prosecdef`). Los 22 tests se verificaron
+con **mutación real** sobre el contenedor pgTAP en vivo para cada hallazgo de
+B1/B2/M3/M6/M7/m2/m5/m7/m10 — no sólo lectura del texto de la migración.
+
+**Documentado, no codificado (aplazamiento deliberado):**
+- **m4 — cardinalidad de retorno.** `record_discrepancies` hace
+  `WHERE id = ANY(v_ids)` sin `ORDER BY`. Con ítems duplicados dentro de un
+  mismo `p_items` (ver TEST 3b), el `SETOF` resultante tiene menos filas que
+  ítems de entrada — es el comportamiento correcto (idempotencia), pero el
+  llamador no debe asumir "una fila de vuelta por ítem enviado".
+- **m8 — el lote es todo-o-nada.** Un `barcode` de más de 100 caracteres
+  (`VARCHAR(100)` en la tabla) aborta la transacción completa con `22001`, no
+  sólo ese ítem. Para `close_manifest`, que llama a esta RPC con el lote
+  completo de discrepancias de un cierre, eso significa que un solo bulto con
+  un código de barras corrupto revierte el cierre entero. Defendible como
+  comportamiento por ahora — cualquier cambio a inserción parcial es decisión
+  del llamador, no de este RPC.
+- **m9 — no se valida que el bulto pertenezca a *esa* operación**, sólo al
+  operador. Un `package_id` de otro manifiesto/recepción del mismo operador
+  pasa el guard de `record_discrepancies`. Aplazamiento deliberado: la spec no
+  pedía esa validación cruzada, y añadirla exige decidir qué tabla intermedia
+  prueba "este bulto estaba en este manifiesto" (¿`manifest_packages`? ¿el
+  propio `packages.order_id` vía el manifiesto?), que no es una decisión de
+  esta fase.
+- **m12 — tamaño de archivo.** La migración quedó en 359 líneas y el test en
+  1025, ambos por encima de las 300 de la guía. Los tests SQL del repo ya
+  viven sistemáticamente por encima de esa guía (ver fase 1); no se partió la
+  migración porque las tres RPCs comparten cabecera de módulo y no hay un
+  corte natural sin duplicar contexto entre archivos.
 
 ### Fase 3 — `lost` e indemnización `[blocked]`
 

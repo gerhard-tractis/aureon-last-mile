@@ -17,10 +17,13 @@
 --     close_manifest (spec-80) y su equivalente de recepción.
 --
 --   resolve_discrepancy(p_id, p_status, p_resolution)
---     Sólo open -> resolved | lost. Rechaza reabrir con su propio ERRCODE
---     P0002 (evidencia cerrada, no se reabre) — distinto de P0001, que es
---     para validaciones (estado destino inválido, resolución vacía), igual
---     que spec-80 distingue "ya firmado" (P0002) de una validación (P0001).
+--     Sólo open -> resolved | lost. Rechaza reabrir con ERRCODE 23505
+--     (unique_violation, el idioma del repo para "esto ya pasó" -> HTTP 409)
+--     — distinto de P0001, que es para validaciones (estado destino inválido,
+--     resolución vacía), igual que spec-80's close_manifest distingue "ya
+--     firmado" (23505) de una validación (P0001). P0002 (no_data_found)
+--     queda fuera a propósito: PostgREST lo mapea a 404, y una cola offline
+--     (spec-81) leería "ya resuelta" como "no existe" y descartaría el ítem.
 --
 --   get_discrepancies(p_operation_type, p_status, p_source_id) — lectura
 --     para la pantalla de resolución, todos los argumentos opcionales.
@@ -60,14 +63,16 @@ BEGIN
   -- tenant boundary, so unlike expand_carton this does not hard-require it.
   v_actor := NULLIF(auth.jwt() ->> 'sub', '')::UUID;
 
-  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
-    RAISE EXCEPTION 'p_items must be a non-empty JSON array';
+  IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN
+    RAISE EXCEPTION 'p_items must be a JSON array';
   END IF;
 
   -- Ownership of the operation: the manifest/route_reception the client
   -- claims p_source_id belongs to must actually belong to this operator.
   -- Nothing below the RPC checks this — the table's effective RLS is
   -- SELECT-only, and this function runs SECURITY DEFINER as postgres.
+  -- Checked even for an empty p_items (below) — a bogus/foreign source_id is
+  -- still rejected regardless of whether there is anything to insert.
   IF p_operation_type = 'pickup' THEN
     IF NOT EXISTS (
       SELECT 1 FROM public.manifests
@@ -84,6 +89,16 @@ BEGIN
     END IF;
   ELSE
     RAISE EXCEPTION 'unknown operation_type %', p_operation_type;
+  END IF;
+
+  -- M5: a clean close (0 missing, 0 unexpected) calls this with an empty
+  -- array. close_manifest (spec-80) is named as this RPC's caller — failing
+  -- the whole close with a 400 precisely when nothing went wrong would be
+  -- backwards. Returning an empty set is the caller-friendly contract;
+  -- [] is not malformed input, just "nothing to record" — but the source_id
+  -- ownership above still gets checked first.
+  IF jsonb_array_length(p_items) = 0 THEN
+    RETURN;
   END IF;
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
@@ -183,6 +198,7 @@ abierta. Verifica que p_source_id (manifest_id o route_reception_id según
 p_operation_type) y cada package_id pertenezcan al operador del JWT — nada
 por debajo lo hace, porque corre SECURITY DEFINER.';
 
+REVOKE ALL ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_discrepancies(public.discrepancy_operation_enum, UUID, JSONB) TO authenticated;
 
 -- -----------------------------------------------------------------------------
@@ -209,7 +225,12 @@ BEGIN
 
   v_actor := NULLIF(auth.jwt() ->> 'sub', '')::UUID;
 
-  IF p_status NOT IN ('resolved', 'lost') THEN
+  -- M3: `NULL NOT IN (...)` evaluates to NULL, not TRUE — this IF would
+  -- never fire for p_status = NULL (reachable from PostgREST as
+  -- {"p_status": null}), and execution would fall through to the UPDATE
+  -- below, which raises a raw 23502 not-null violation instead of a clean
+  -- validation error. Check IS NULL explicitly.
+  IF p_status IS NULL OR p_status NOT IN ('resolved', 'lost') THEN
     RAISE EXCEPTION 'p_status must be resolved or lost, got %', p_status USING ERRCODE = 'P0001';
   END IF;
 
@@ -232,21 +253,29 @@ BEGIN
 
   -- A closed discrepancy is evidence; editing it afterward destroys its
   -- probative value (see docs/specs/spec-85-discrepancias.md). This gets its
-  -- own ERRCODE (P0002), distinct from the P0001 validation failures above,
-  -- so an offline retry queue (spec-81) can tell "already closed, stop
-  -- retrying" (idempotent 409) apart from "malformed request" (500,
-  -- retryable) — same split spec-80 uses for close_manifest.
+  -- own ERRCODE, 23505 (unique_violation — the repo's idiom for "this
+  -- already happened", maps to HTTP 409), distinct from the P0001
+  -- validation failures above, so an offline retry queue (spec-81) can tell
+  -- "already closed, stop retrying" apart from "malformed request, do not
+  -- retry blindly" — same split spec-80's close_manifest uses. Deliberately
+  -- NOT P0002 (no_data_found): PostgREST maps that to HTTP 404, and a
+  -- retrying client would read "already resolved" as "doesn't exist" and
+  -- discard the item instead of stopping.
   IF v_row.status <> 'open' THEN
     RAISE EXCEPTION 'discrepancy % is already % — a closed discrepancy is evidence and cannot be reopened or changed', p_id, v_row.status
-      USING ERRCODE = 'P0002';
+      USING ERRCODE = '23505';
   END IF;
 
+  -- m1: operator_id and deleted_at repeated here even though the FOR UPDATE
+  -- select above already scoped and locked this exact row — "operator_id on
+  -- every query" is a repo non-negotiable, not just a safety net for this
+  -- particular call site.
   UPDATE public.discrepancies
      SET status              = p_status,
          resolution          = p_resolution,
          resolved_at         = NOW(),
          resolved_by_user_id = v_actor
-   WHERE id = p_id
+   WHERE id = p_id AND operator_id = v_operator AND deleted_at IS NULL
   RETURNING * INTO v_row;
 
   RETURN v_row;
@@ -254,10 +283,13 @@ END $$;
 
 COMMENT ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) IS
 'spec-85 fase 2. Transiciona una discrepancia de open a resolved o lost.
-Rechaza cualquier otra transición (incluida resolved/lost -> open, o
-resolved -> lost) con ERRCODE P0002: una discrepancia cerrada es evidencia y
-no se reabre. p_resolution es obligatorio.';
+Rechaza reabrir o cambiar una discrepancia ya cerrada (resolved/lost -> open,
+o resolved -> lost) con ERRCODE 23505 (unique_violation, "esto ya pasó" ->
+HTTP 409): una discrepancia cerrada es evidencia y no se reabre. p_status
+distinto de resolved/lost (incluido NULL), o p_resolution vacío, es una
+validación aparte y usa P0001. p_resolution es obligatorio.';
 
+REVOKE ALL ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.resolve_discrepancy(UUID, public.discrepancy_status_enum, TEXT) TO authenticated;
 
 -- -----------------------------------------------------------------------------
@@ -292,6 +324,7 @@ COMMENT ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, 
 operation_type, status y/o source_id (manifest_id o route_reception_id según
 corresponda). Todos los filtros son opcionales.';
 
+REVOKE ALL ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, public.discrepancy_status_enum, UUID) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_discrepancies(public.discrepancy_operation_enum, public.discrepancy_status_enum, UUID) TO authenticated;
 
 -- -----------------------------------------------------------------------------
