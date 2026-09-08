@@ -173,6 +173,20 @@ export default function ScanningPage() {
     [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
   );
 
+  // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+  // bloqueos cross-user que este botón no puede resolver (sólo revive
+  // `dead`, vía `retryBlockedManifest`/`retryDead`). Sin este feedback, el
+  // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
+  // ningún cambio — ni éxito ni error, la misma pantalla de siempre.
+  const handleRetryBlocked = useCallback(() => {
+    if (!manifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+      if (revived === 0) {
+        toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
+      }
+    });
+  }, [manifestId, operatorId]);
+
   return (
     <>
       <div className="space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
@@ -234,11 +248,7 @@ export default function ScanningPage() {
           // B-1) — "el operario puede reintentar desde la app". Sólo se
           // ofrece una vez que el manifiesto cargó: sin `manifestId` no hay
           // a qué carga aplicar el reintento.
-          onRetryBlocked={
-            manifestId && operatorId
-              ? () => void retryBlockedManifest(operatorId, manifestId)
-              : undefined
-          }
+          onRetryBlocked={manifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />

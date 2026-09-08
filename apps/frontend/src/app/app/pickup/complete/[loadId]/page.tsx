@@ -59,6 +59,20 @@ export default function CompletionPage() {
   // de saberlo ni de reintentar.
   const sync = useSyncQueue(operatorId);
 
+  // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+  // bloqueos cross-user que este botón no puede resolver (sólo revive
+  // `dead`, vía `retryBlockedManifest`/`retryDead`). Sin este feedback, el
+  // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
+  // ningún cambio.
+  const handleRetryBlocked = () => {
+    if (!manifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+      if (revived === 0) {
+        toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
+      }
+    });
+  };
+
   useEffect(() => {
     if (!operatorId) return;
     const supabase = createSPAClient();
@@ -276,9 +290,7 @@ export default function CompletionPage() {
         <button
           type="button"
           data-testid="blocked-badge"
-          onClick={() => {
-            if (manifestId && operatorId) void retryBlockedManifest(operatorId, manifestId);
-          }}
+          onClick={handleRetryBlocked}
           className="flex w-full items-center justify-between gap-2 rounded-lg border border-status-error-border bg-status-error-bg p-3 text-left text-sm font-medium text-status-error-text"
         >
           <span>{sync.blockedCount} REQUIERE AYUDA</span>

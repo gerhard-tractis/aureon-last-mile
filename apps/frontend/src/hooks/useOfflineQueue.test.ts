@@ -17,7 +17,12 @@ import { db } from '@/lib/db';
 import { enqueue, listPending } from '@/lib/offline/queue';
 import * as queueLib from '@/lib/offline/queue';
 import * as queueBlockingLib from '@/lib/offline/queue-blocking';
-import { useOfflineQueue, MAX_RETRY_ATTEMPTS, type OfflineQueueSender } from './useOfflineQueue';
+import {
+  useOfflineQueue,
+  retryBlockedManifest,
+  MAX_RETRY_ATTEMPTS,
+  type OfflineQueueSender,
+} from './useOfflineQueue';
 
 const OPERATOR_A = 'operator-a';
 const USER_A = 'user-a';
@@ -1052,5 +1057,205 @@ describe('useOfflineQueue', () => {
       const afterSignalReturns = await db.pickup_queue.get(entry.id!);
       expect(afterSignalReturns).toBeUndefined(); // sent, then purged
     });
+
+    // E5b — ronda 5 de review del PR #679 (bloqueante), el cuarto flanco.
+    // `manifestHead` (`queue-blocking.ts`) incluye `sending` a propósito
+    // (menor 2, ronda 4 — cierra la ventana de bloqueo cross-user). Pero
+    // `claimPending` sólo reclama `status === 'pending'` y devuelve `null`
+    // si no. Una cabeza `sending` PROPIA (huérfana — p. ej. abandonada por
+    // el guard `isMounted` de M-1 tras un desmontaje a mitad de envío) no
+    // está bloqueada por `manifestIsBlocked` (sus propias entradas nunca la
+    // bloquean a una misma) — así que `manifestHead` la devuelve, sigue sin
+    // ser reclamable, `continue`, y vuelta a empezar: bucle sin techo DENTRO
+    // de esta misma pasada de `drain()`, y `drainingRef.current` nunca
+    // vuelve a `false` porque el `for(;;)` nunca sale por `return`. Medido
+    // por el reviewer: 1446 iteraciones/segundo, 0 envíos.
+    it('E5b — an own orphaned sending head that is not yet reclaimable does not spin the loop forever', async () => {
+      const stuckSending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'STUCK-SENDING' },
+      });
+      // Recién abandonada — bien dentro de RECLAIM_STALE_MS (90s), así que
+      // reclaimStale (que sólo corre al INICIO de una pasada de drain(), no
+      // dentro del bucle) no la toca todavía.
+      await db.pickup_queue.update(stuckSending.id!, {
+        status: 'sending',
+        claimToken: 'orphaned-token',
+        lastAttemptAt: new Date().toISOString(),
+      });
+      const behindIt = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      const manifestHeadSpy = vi.spyOn(queueBlockingLib, 'manifestHead');
+
+      const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      unmount();
+
+      // Nunca reclamable dentro de esta pasada — nada se envía, y lo que
+      // está detrás en el FIFO tampoco avanza.
+      expect(send).not.toHaveBeenCalled();
+      const behindEntry = await db.pickup_queue.get(behindIt.id!);
+      expect(behindEntry?.status).toBe('pending');
+      // Mismo criterio que E1/B2: un drenador correcto se detiene tras un
+      // puñado de vueltas en vez de girar sin techo (medido bajo el bug:
+      // 1446/s).
+      expect(manifestHeadSpy.mock.calls.length).toBeLessThan(15);
+    });
+
+    // E8 — ronda 5 de review del PR #679 (bloqueante), la consecuencia de
+    // E5b: como el bucle de `drainManifest` nunca sale por `return`,
+    // `drainingRef.current` se queda `true` para siempre — así que
+    // `drainNow()` y cualquier evento `online` posterior son no-ops
+    // (`rerunRequestedRef.current = true; return;`). El escenario real:
+    // cambio de turno en el muelle — un conductor cierra sesión con un
+    // envío en vuelo (M-1 lo abandona en `sending`, huérfano), el
+    // siguiente entra después. Sin el arreglo de E5b, ni siquiera esperar a
+    // que `reclaimStale` pudiera recuperarla (una vez pasado
+    // `RECLAIM_STALE_MS`) sirve de nada: `drainNow()` ya no hace nada.
+    it('E8 — once the orphaned head becomes reclaimable, a later drainNow() actually resumes (drainingRef is not stuck)', async () => {
+      const stuckSending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'STUCK-SENDING' },
+      });
+      await db.pickup_queue.update(stuckSending.id!, {
+        status: 'sending',
+        claimToken: 'orphaned-token',
+        lastAttemptAt: new Date().toISOString(),
+      });
+      const behindIt = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      const { result } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      // Deja que la pasada inicial se estabilice (bloqueada por la cabeza
+      // no-reclamable, bajo el arreglo de E5b).
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // El tiempo pasa — la reclamación huérfana ya es lo bastante vieja
+      // para que `reclaimStale` (`RECLAIM_STALE_MS`) la recupere en la
+      // PRÓXIMA pasada de `drain()`.
+      await db.pickup_queue.update(stuckSending.id!, {
+        lastAttemptAt: new Date(Date.now() - 91_000).toISOString(),
+      });
+      await result.current.drainNow();
+
+      await waitFor(
+        async () => {
+          const stored = await db.pickup_queue.get(behindIt.id!);
+          expect(stored).toBeUndefined(); // sent, then purged
+        },
+        { timeout: 5_000 },
+      );
+    });
+  });
+
+  // M-1, ronda 5 de review del PR #679 (mayor) — `retryBlockedManifest`
+  // despertaba al drenador con `window.dispatchEvent(new Event('online'))`.
+  // Hay SIETE suscriptores reales de ese evento en la app (React Query's
+  // `onlineManager`, `useSyncQueue`, `scanStore`, etc. — ver `Providers.tsx`,
+  // `useSyncQueue.ts`, `scanStore.ts`). Tocar "REQUIERE AYUDA" sin señal de
+  // verdad les mentía a todos: React Query reanudaba mutaciones pausadas y
+  // refetcheaba contra un dispositivo sin cobertura, el chip pintaba
+  // "online" en verde, Recepción se marcaba online — y nada se
+  // autocorregía, porque el navegador nunca iba a emitir el `offline` real
+  // que los devolviera a la realidad (el estado de red real no cambió).
+  // Medido por el reviewer: `navigator.onLine = false` pero
+  // `SyncChip.status === 'online'` y `onlineManager.isOnline() === true`
+  // tras un solo tap.
+  //
+  // `PICKUP_QUEUE_WAKE_EVENT` es un evento propio, con un solo suscriptor
+  // (este mismo hook) — "hay trabajo nuevo, no esperes al backoff" sin
+  // fingir que la red volvió.
+  it("M-1 — retryBlockedManifest wakes the drainer via a scoped event, not a real 'online' that lies to the rest of the app", async () => {
+    const dead = await enqueue(db, {
+      operatorId: OPERATOR_A,
+      userId: USER_A,
+      manifestId: MANIFEST_1,
+      type: 'pickup_scan',
+      payload: {},
+    });
+    await db.pickup_queue.update(dead.id!, { status: 'dead' });
+    const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+    // Let the initial (blocked-by-dead) pass settle before retrying.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(send).not.toHaveBeenCalled();
+
+    const unrelatedOnlineListener = vi.fn();
+    window.addEventListener('online', unrelatedOnlineListener);
+    try {
+      await retryBlockedManifest(OPERATOR_A, MANIFEST_1);
+
+      // The retry itself still works — the dead entry is revived and the
+      // drainer actually resumes.
+      await waitFor(() => expect(send).toHaveBeenCalled());
+    } finally {
+      window.removeEventListener('online', unrelatedOnlineListener);
+    }
+
+    // But nothing outside this hook — React Query's onlineManager,
+    // useSyncQueue, scanStore, or anything else subscribed to the real
+    // 'online' event — ever saw it fire.
+    expect(unrelatedOnlineListener).not.toHaveBeenCalled();
+  });
+
+  // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount`
+  // (`getBlockedPickupCount`) incluye ahora los `pending` bloqueados
+  // cross-user (M-2), pero `retryBlockedManifest` sólo revive `dead`. Sin
+  // que el llamador pueda distinguir "revivió algo" de "no había nada que
+  // revivir", el operario toca "REQUIERE AYUDA" sobre un bloqueo cross-user
+  // y no pasa nada — sin cambio, sin feedback. Devolver el conteo real deja
+  // que la pantalla que monta el botón decida qué decir cuando es 0 (ver
+  // `complete/[loadId]/page.tsx` y `scan/[loadId]/page.tsx`).
+  it('M-3 — retryBlockedManifest returns how many dead entries it actually revived', async () => {
+    const dead = await enqueue(db, {
+      operatorId: OPERATOR_A,
+      userId: USER_A,
+      manifestId: MANIFEST_1,
+      type: 'pickup_scan',
+      payload: {},
+    });
+    await db.pickup_queue.update(dead.id!, { status: 'dead' });
+
+    const revived = await retryBlockedManifest(OPERATOR_A, MANIFEST_1);
+
+    expect(revived).toBe(1);
+  });
+
+  it('M-3 — retryBlockedManifest returns 0 when the block is cross-user (nothing dead to revive)', async () => {
+    // Blocked entirely by another user's fresh pending entry — no `dead`
+    // anywhere in this manifest, so `retryDead` has nothing to do.
+    await enqueue(db, {
+      operatorId: OPERATOR_A,
+      userId: 'user-b',
+      manifestId: MANIFEST_1,
+      type: 'pickup_scan',
+      payload: {},
+    });
+
+    const revived = await retryBlockedManifest(OPERATOR_A, MANIFEST_1);
+
+    expect(revived).toBe(0);
   });
 });

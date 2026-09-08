@@ -661,6 +661,115 @@ ahí es contención de CI, no un bug del drenador, así que no había una
 arreglo estructural del lado del TEST (reducir de 9 pasadas reales
 necesarias a 1), no del código de producción.
 
+**Ronda 5 de review del PR #679 (2026-09-08) — un bloqueante (el cuarto
+flanco de la cola de reintentos), tres mayores acotados, y el arreglo de
+Vercel del coordinador (fuera de la cola, en `AppLayout.tsx`).** El review
+confirmó primero que las costuras 1 y 2 de la ronda 4 estaban genuinamente
+cerradas (9 mutantes probados, todos muertos) y que E4 corrió de punta a
+punta con el sender real (750s de outage simulada, 30 intentos reales,
+`retryCount: 30`, la fila sobrevive y sube al volver la señal) — el riesgo
+de producto nº1 quedó confirmado cerrado, no sólo con el sender de prueba.
+
+**Bloqueante — costura 3 ("¿es reclamable esta fila?"), cerrada
+estructuralmente.** `manifestHead` (`queue-blocking.ts`) incluye `sending`
+a propósito desde la ronda 4 (menor 2, cierra el bloqueo cross-user), pero
+`claimPending` sólo reclama `status === 'pending'`. Una cabeza `sending`
+PROPIA — huérfana, abandonada por el guard `isMounted` del M-1 de la ronda
+4 tras un desmontaje a mitad de envío, o por una pestaña muerta que
+`reclaimStale` aún no alcanzó — no está bloqueada por `manifestIsBlocked`
+(las entradas de un usuario nunca lo bloquean a él mismo), así que
+`manifestHead` la seguía devolviendo, seguía sin ser reclamable, y el
+bucle de `drainManifest` volvía a pedirla en la vuelta siguiente sin salir
+jamás — `drainingRef.current` se quedaba `true` para siempre, así que ni
+`drainNow()` ni un futuro evento `online` volvían a hacer nada. Medido por
+el reviewer: 1446 iteraciones/segundo, 0 envíos (E5b); y la consecuencia
+—cambio de turno en el muelle: el siguiente conductor entra, y la cola no
+vuelve a moverse mientras la app siga abierta, ni siquiera pasado
+`RECLAIM_STALE_MS`— medida aparte (E8). **Implementado:** `isClaimable`
+(`queue-blocking.ts`) es el único predicado para "¿puedo reclamar esta
+fila ahora?" (hoy: `status === 'pending'`); `drainManifest` lo comprueba
+justo después de `manifestHead` y `return`s (no `continue`) si es falso —
+nada que este drenador pueda hacer con esta cabeza en esta pasada; la
+siguiente pasada de `drain()` (que sí corre `reclaimStale` primero) es
+quien puede liberarla. Reproducido en `E5b` (conteo de iteraciones,
+verificado en rojo contra el código de la ronda 4 antes de arreglar: 1269
+iteraciones/s) y `E8` (la cadena completa: la reclamación se libera tras
+`RECLAIM_STALE_MS` y un `drainNow()` posterior sí reanuda). Mutation-
+testeado: quitar el guard revive el mismo síntoma medido.
+
+**M-1, ronda 5 — el evento `online` sintético dejó de mentirle al resto de
+la app.** `retryBlockedManifest` despertaba al drenador con
+`window.dispatchEvent(new Event('online'))` — un evento GLOBAL con siete
+suscriptores reales (`Providers.tsx`: React Query's `onlineManager`;
+`useSyncQueue.ts`; `scanStore.ts`; entre otros). Tocar "REQUIERE AYUDA"
+sin señal de verdad les mentía a todos a la vez, y nada se autocorregía
+porque el estado de red real nunca cambiaba. Medido: `navigator.onLine
+=== false` pero `SyncChip.status === 'online'` y
+`onlineManager.isOnline() === true` tras un solo tap. **Implementado:**
+`PICKUP_QUEUE_WAKE_EVENT` (`'aureon:pickup-queue-wake'`), un evento propio
+con un solo suscriptor (el propio `useOfflineQueue`) — "hay trabajo nuevo,
+no esperes al backoff" sin fingir que la red volvió. `window.addEventListener`
+sigue escuchando `online` TAMBIÉN (la reconexión real sigue disparando una
+pasada), sólo `retryBlockedManifest` cambió qué dispara.
+
+**M-2, ronda 5 — los contadores dejaron de ser O(N²).**
+`getPendingPickupCount`/`getBlockedPickupCount` (`db.ts`) llamaban
+`manifestIsBlocked` una vez POR ENTRADA, y cada llamada hace 2 escaneos
+completos del índice. `useSyncQueue` invoca ambos cada `POLL_MS` (2s).
+Medido: N=200 (dentro del tope de 500 que declara `enqueue`, el escenario
+normal de una carga escaneada sin red) tardaba 21 SEGUNDOS por contador.
+**Implementado:** `createBlockedChecker` (`db.ts`) memoiza
+`manifestIsBlocked` por `(manifestId, userId)` — el resultado sólo depende
+de ese par, nunca de la entrada en sí — reduciendo el coste al número de
+pares distintos realmente presentes (unos pocos manifiestos), no al número
+de entradas. Test dedicado con 200 entradas en un mismo manifiesto:
+`manifestIsBlocked` pasa de 200 llamadas a ≤1.
+
+**M-3, ronda 5 — el badge cuenta bloqueos que el botón no podía
+desbloquear.** `blockedCount` incluye desde la ronda 4 los `pending`
+bloqueados cross-user, pero `retryBlockedManifest` sólo revive `dead` (un
+bloqueo cross-user se resuelve solo, con `CROSS_USER_RECLAIM_MS`, no con
+un botón). El operario leía "1 REQUIERE AYUDA / Toca para reintentar",
+tocaba, y no pasaba nada — sin cambio, sin feedback. **Implementado:**
+`retryBlockedManifest` devuelve cuántas entradas `dead` revivió de verdad
+(antes `void`); `PickupFlowHeader`'s dos pantallas (`scan/[loadId]` y
+`complete/[loadId]`) muestran `toast.info('Nada que reintentar
+todavía. Puede que otro operario lo esté procesando.')` cuando el conteo
+es 0. No se amplió el alcance del botón (revivir un bloqueo cross-user
+sigue siendo automático, por tiempo) — se cerró el hueco de feedback.
+
+**Menores cerrados:** 1 (`db.pickup-queue.test.ts:66` remitía a
+`db.test.ts`, borrado en `98e941f` al consolidar — corregido a apuntar al
+test real en el mismo fichero); 2 (se perdió `does not let one blocked
+manifest affect the count of an unrelated one` al consolidar — recuperada);
+3 (`queue-blocking.ts` re-exportaba `listPending` "porque `db.ts` lo
+necesita" — `db.ts` no lo importa; código muerto con comentario falso,
+eliminado).
+
+**Fuera de la cola — el arreglo de Vercel del coordinador.** `AppLayout.tsx`
+montaba el sender con `useMemo(() => createPickupQueueSender(createSPAClient()),
+[])`; Next.js ejecuta el cuerpo de un componente `"use client"` durante el
+prerender/SSR, y `createSPAClient()` exige las env vars de Supabase en ese
+momento — sin ellas (el deploy preview de este PR), rompía el build entero
+en `/admin`, `/admin/audit-logs` y `/admin/tools/wismo`. **Implementado:**
+`createLazyPickupQueueSender` (`offlineQueueSender.ts`) — identidad
+estable desde el primer render (lo que `useMemo` memoiza), pero el cliente
+Supabase se construye perezosamente en el primer envío real, cacheado
+después; en SSR nunca se envía nada, así que `createSPAClient` nunca se
+llama. Verificado con el criterio falsable pedido: `next build` sin
+`NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en el entorno compila las tres rutas
+sin error (antes: `Error occurred prerendering page...`, reproducido
+primero contra el código sin arreglar). `AppLayout.tsx` no estaba en
+alcance de esta fase hasta este hallazgo — la instrucción de tocarlo vino
+del coordinador, no de una decisión propia de esta ronda.
+
+**Qué se cerró estructuralmente y qué se parchó, otra vez:** la costura 3
+se cerró estructuralmente — `isClaimable` es la única fuente de verdad
+para "¿es reclamable esta fila?", igual que `manifestIsBlocked` lo es para
+"¿puede avanzar el manifiesto?". M-1, M-2 y M-3 son arreglos estructurales
+del lado de producción (un evento propio, una memoización real, un valor
+de retorno que antes no existía), no parches sobre sus síntomas.
+
 ### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,

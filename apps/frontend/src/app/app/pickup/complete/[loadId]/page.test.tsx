@@ -75,7 +75,7 @@ vi.mock('@/components/pickup/PickupStepBreadcrumb', () => ({
 }));
 
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
 const mockPush = vi.fn();
@@ -128,6 +128,9 @@ describe('CompletionPage', () => {
       retryNow: vi.fn(),
       isRetrying: false,
     });
+    // M-3, ronda 5 de review del PR #679 (mayor) — por defecto simula "sí
+    // había algo que revivir"; el test dedicado abajo lo sobreescribe con 0.
+    mockRetryBlockedManifest.mockResolvedValue(1);
   });
 
   it('renders Spanish header', async () => {
@@ -229,6 +232,31 @@ describe('CompletionPage', () => {
 
       await waitFor(() => {
         expect(mockRetryBlockedManifest).toHaveBeenCalledWith('op-1', 'm1');
+      });
+    });
+
+    // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+    // bloqueos cross-user que este botón no puede resolver (sólo revive
+    // `dead`). Sin feedback, el operario toca "REQUIERE AYUDA" y no ve
+    // ningún cambio.
+    it('shows an info toast when retryBlockedManifest revives nothing (a cross-user block, not a dead entry)', async () => {
+      mockRetryBlockedManifest.mockResolvedValueOnce(0);
+      mockUseSyncQueue.mockReturnValue({
+        status: 'online',
+        queuedCount: 0,
+        blockedCount: 1,
+        recent: [],
+        retryNow: vi.fn(),
+        isRetrying: false,
+      });
+      const { toast } = await import('sonner');
+      render(<CompletionPage />);
+
+      const badge = await screen.findByTestId('blocked-badge');
+      fireEvent.click(badge);
+
+      await waitFor(() => {
+        expect(toast.info).toHaveBeenCalledWith(expect.any(String));
       });
     });
   });

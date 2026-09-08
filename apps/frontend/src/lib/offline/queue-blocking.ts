@@ -22,7 +22,7 @@
  */
 import type { PickupQueueEntry } from '../db';
 import type { PickupQueueStore } from './queue-claims';
-import { listPending, manifestHasDeadEntry } from './queue';
+import { manifestHasDeadEntry } from './queue';
 
 /**
  * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679) — el
@@ -111,7 +111,30 @@ export async function manifestIsBlocked(
   return manifestBlockedForUser(db, operatorId, manifestId, userId);
 }
 
-/** Re-exportado por conveniencia — algunos llamadores (`db.ts`) sólo
- * necesitan filtrar entradas pendientes propias sin volver a implementar la
- * lógica de FIFO. */
-export { listPending };
+/**
+ * Costura 3, ronda 5 de review del PR #679 (bloqueante) — el cuarto flanco.
+ * `manifestIsBlocked` unificó "¿puede avanzar el manifiesto?", pero
+ * "¿es reclamable ESTA fila?" seguía implícito y repartido entre
+ * `manifestHead` (que devuelve `sending` a propósito, para el bloqueo
+ * cross-user) y `claimPending` (que sólo acepta `pending` y devuelve `null`
+ * si no). Una cabeza `sending` PROPIA — huérfana, abandonada por el guard
+ * `isMounted` de M-1 tras un desmontaje a mitad de envío, o por una
+ * pestaña muerta que `reclaimStale` aún no alcanzó — no está bloqueada por
+ * `manifestIsBlocked` (las entradas de un usuario nunca lo bloquean a él
+ * mismo), así que `manifestHead` la sigue devolviendo, sigue sin ser
+ * reclamable, y sin este predicado el llamador reintentaba en el mismo
+ * bucle sin techo: `drainManifest` (`useOfflineQueue.ts`) nunca salía por
+ * `return`, y `drainingRef.current` quedaba `true` para siempre — ni
+ * `drainNow()` ni un futuro evento `online` volvían a hacer nada. Medido
+ * por el reviewer: 1446 iteraciones/segundo, 0 envíos.
+ *
+ * Un solo sitio que responda "¿es reclamable esta fila?" — igual que
+ * `manifestIsBlocked` es el único sitio para "¿puede avanzar el
+ * manifiesto?". El llamador debe usar este predicado ANTES de intentar
+ * `claimPending`, y salir (no reintentar en el mismo bucle) si es falso —
+ * `reclaimStale`, al inicio de la PRÓXIMA pasada de `drain()`, es quien la
+ * libera tras `RECLAIM_STALE_MS`.
+ */
+export function isClaimable(entry: PickupQueueEntry): boolean {
+  return entry.status === 'pending';
+}

@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, getBlockedPickupCount, getPendingPickupCount, requestPersistentStorage } from './db';
+import * as queueBlockingLib from './offline/queue-blocking';
 
 describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
   beforeEach(async () => {
@@ -63,7 +64,10 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
       // compartir manifiesto con `a`/`b` haría que M-2 los contara, con
       // razón, como bloqueados en vez de en cola — exactamente lo que M-2
       // pide, pero no lo que ESTE test mide (que `sending` no es invisible).
-      // Ese caso cruzado tiene su propio test en `db.test.ts`.
+      // Ese caso cruzado tiene su propio test más abajo, en este mismo
+      // fichero (menor 1, ronda 5 de review del PR #679 — la referencia
+      // original a `db.test.ts` quedó colgando cuando ese archivo se
+      // consolidó aquí en `98e941f`).
       await db.pickup_queue.bulkAdd([
         { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending' },
         { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'sending' },
@@ -166,6 +170,62 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
 
       await expect(getPendingPickupCount('op-1')).resolves.toBe(1);
       await expect(getBlockedPickupCount('op-1')).resolves.toBe(1);
+    });
+
+    // Menor 2, ronda 5 de review del PR #679 — se perdió al consolidar
+    // `db.test.ts` en este fichero (`98e941f`); recuperado. Un manifiesto
+    // bloqueado (cross-user) no puede filtrar hacia el conteo de otro
+    // manifiesto sin relación, aunque compartan operador.
+    it('does not let one blocked manifest affect the count of an unrelated one', async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending', userId: 'user-b' },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'pending', userId: 'user-a' },
+        {
+          ...baseEntry,
+          clientOperationId: 'c',
+          operatorId: 'op-1',
+          status: 'pending',
+          userId: 'user-a',
+          manifestId: 'm-2',
+        },
+      ]);
+
+      await expect(getPendingPickupCount('op-1')).resolves.toBe(2);
+      await expect(getBlockedPickupCount('op-1')).resolves.toBe(1);
+    });
+
+    // M-2, ronda 5 de review del PR #679 (mayor) — `getPendingPickupCount`/
+    // `getBlockedPickupCount` llamaban `manifestIsBlocked` UNA VEZ POR
+    // ENTRADA, y cada llamada hace 2 escaneos completos del índice
+    // (`manifestHasDeadEntry` + `manifestHead`/`manifestBlockedForUser`).
+    // `useSyncQueue` invoca ambos contadores cada `POLL_MS` (2s). Medido por
+    // el reviewer: N=200 (dentro del tope de 500 que declara `enqueue`, el
+    // escenario normal de una carga escaneada sin red) tardaba 21 SEGUNDOS
+    // por contador — con poll cada 2s, transacciones solapándose sin fin en
+    // la pantalla de escaneo. El conjunto de manifiestos bloqueados debe
+    // calcularse UNA VEZ POR LLAMADA, no una vez por entrada — son unos
+    // pocos manifiestos, no cientos de entradas.
+    it('M-2 — computes the blocked set once per distinct (manifest, owner), not once per entry', async () => {
+      const ENTRY_COUNT = 200;
+      await db.pickup_queue.bulkAdd(
+        Array.from({ length: ENTRY_COUNT }, (_, i) => ({
+          ...baseEntry,
+          clientOperationId: `bulk-${i}`,
+          operatorId: 'op-1',
+          status: 'pending' as const,
+          // Todas en el mismo manifiesto y del mismo dueño — el caso normal
+          // (una carga, un operario) y el peor caso para un algoritmo que no
+          // memoiza: 200 llamadas idénticas a `manifestIsBlocked` en vez de
+          // una sola.
+          manifestId: 'm-bulk',
+          userId: 'user-a',
+        })),
+      );
+      const manifestIsBlockedSpy = vi.spyOn(queueBlockingLib, 'manifestIsBlocked');
+
+      await getPendingPickupCount('op-1');
+
+      expect(manifestIsBlockedSpy.mock.calls.length).toBeLessThanOrEqual(1);
     });
   });
 

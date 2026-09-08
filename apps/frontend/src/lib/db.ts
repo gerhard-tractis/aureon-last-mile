@@ -180,14 +180,14 @@ export async function getPendingPickupCount(operatorId: string): Promise<number>
     .and((entry) => entry.status === 'pending' || entry.status === 'sending')
     .toArray();
 
+  const isBlocked = createBlockedChecker(operatorId);
   let count = 0;
   for (const entry of entries) {
     if (entry.status === 'sending') {
       count += 1;
       continue;
     }
-    const blocked = await manifestIsBlocked(db, operatorId, entry.manifestId, entry.userId);
-    if (!blocked) count += 1;
+    if (!(await isBlocked(entry.manifestId, entry.userId))) count += 1;
   }
   return count;
 }
@@ -206,16 +206,44 @@ export async function getBlockedPickupCount(operatorId: string): Promise<number>
     .and((entry) => entry.status === 'dead' || entry.status === 'pending')
     .toArray();
 
+  const isBlocked = createBlockedChecker(operatorId);
   let count = 0;
   for (const entry of entries) {
     if (entry.status === 'dead') {
       count += 1;
       continue;
     }
-    const blocked = await manifestIsBlocked(db, operatorId, entry.manifestId, entry.userId);
-    if (blocked) count += 1;
+    if (await isBlocked(entry.manifestId, entry.userId)) count += 1;
   }
   return count;
+}
+
+/**
+ * M-2, ronda 5 de review del PR #679 (mayor) — `getPendingPickupCount`/
+ * `getBlockedPickupCount` llamaban `manifestIsBlocked` una vez POR ENTRADA;
+ * cada llamada hace 2 escaneos completos del índice
+ * (`manifestHasDeadEntry` + `manifestHead`/`manifestBlockedForUser`).
+ * `useSyncQueue` invoca ambos contadores cada `POLL_MS` (2s). Medido: N=200
+ * (dentro del tope de 500 que declara `enqueue`) tardaba 21s por contador.
+ *
+ * El resultado de `manifestIsBlocked` sólo depende de `(manifestId, userId)`
+ * — nunca de la entrada en sí — así que memoizarlo por esa clave reduce el
+ * coste al número de pares distintos realmente presentes (unos pocos
+ * manifiestos, cada uno con uno o dos dueños), no al número de entradas.
+ */
+function createBlockedChecker(
+  operatorId: string,
+): (manifestId: string, userId: string) => Promise<boolean> {
+  const cache = new Map<string, Promise<boolean>>();
+  return (manifestId, userId) => {
+    const key = `${manifestId}::${userId}`;
+    let cached = cache.get(key);
+    if (!cached) {
+      cached = manifestIsBlocked(db, operatorId, manifestId, userId);
+      cache.set(key, cached);
+    }
+    return cached;
+  };
 }
 
 /**

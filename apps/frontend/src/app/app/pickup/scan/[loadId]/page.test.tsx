@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import ScanningPage from './page';
 
 // Mock all dependencies
@@ -30,8 +30,13 @@ vi.mock('@/hooks/useOfflineQueue', () => ({
 }));
 
 const mockToastError = vi.fn();
+const mockToastInfo = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { error: (...args: unknown[]) => mockToastError(...args), success: vi.fn() },
+  toast: {
+    error: (...args: unknown[]) => mockToastError(...args),
+    success: vi.fn(),
+    info: (...args: unknown[]) => mockToastInfo(...args),
+  },
 }));
 
 // spec-53 — the real hook goes through react-query, which needs a provider
@@ -126,6 +131,10 @@ describe('ScanningPage', () => {
     ] });
     mockUseScanMutation.mockReturnValue({ mutate: vi.fn(), isPending: false });
     mockUseManifestOrders.mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() });
+    // M-3, ronda 5 de review del PR #679 (mayor) — el valor por defecto
+    // simula "sí había algo que revivir"; el test dedicado abajo lo
+    // sobreescribe con 0 para probar el feedback cuando no hay nada.
+    mockRetryBlockedManifest.mockResolvedValue(1);
     mockUseSyncQueue.mockReturnValue({
       status: 'online',
       queuedCount: 0,
@@ -208,6 +217,18 @@ describe('ScanningPage', () => {
       render(<ScanningPage />);
       (await screen.findByTestId('retry-blocked')).click();
       expect(mockRetryBlockedManifest).toHaveBeenCalledWith('op-1', 'm1');
+    });
+
+    // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+    // bloqueos cross-user que `retryBlockedManifest` no puede resolver (sólo
+    // revive `dead`). Sin feedback, el operario toca "REQUIERE AYUDA" y no
+    // ve ningún cambio — ni éxito ni error.
+    it('shows an info toast when retryBlockedManifest revives nothing (a cross-user block, not a dead entry)', async () => {
+      mockRetryBlockedManifest.mockResolvedValueOnce(0);
+      render(<ScanningPage />);
+      (await screen.findByTestId('retry-blocked')).click();
+
+      await waitFor(() => expect(mockToastInfo).toHaveBeenCalledWith(expect.any(String)));
     });
   });
 

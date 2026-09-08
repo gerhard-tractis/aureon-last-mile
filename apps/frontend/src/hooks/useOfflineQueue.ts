@@ -12,7 +12,7 @@ import {
   reclaimStale,
   retryDead,
 } from '@/lib/offline/queue';
-import { manifestHead, manifestIsBlocked } from '@/lib/offline/queue-blocking';
+import { isClaimable, manifestHead, manifestIsBlocked } from '@/lib/offline/queue-blocking';
 
 /**
  * spec-81 fase 2 — el drenador de `pickup_queue`.
@@ -206,6 +206,18 @@ async function drainManifest(
     const next = await manifestHead(db, operatorId, manifestId);
     if (!next) return;
 
+    // Costura 3, ronda 5 de review del PR #679 (bloqueante) — `manifestHead`
+    // incluye `sending` a propósito (menor 2, ronda 4), pero sólo `pending`
+    // es reclamable (`claimPending`). Sin este guard, una cabeza `sending`
+    // PROPIA (huérfana — ver el docstring de `isClaimable`) nunca deja de
+    // ser la cabeza, `claimPending` nunca la reclama, y el bucle volvía a
+    // pedirla en la siguiente vuelta sin salir jamás — `drainingRef` se
+    // quedaba `true` para siempre. `return`, no `continue`: nada que este
+    // drenador pueda hacer con esta cabeza en esta pasada; la siguiente
+    // pasada de `drain()` (que sí corre `reclaimStale` primero) es quien
+    // puede liberarla, una vez pasado `RECLAIM_STALE_MS`.
+    if (!isClaimable(next)) return;
+
     if (next.nextAttemptAt && Date.parse(next.nextAttemptAt) > Date.now()) {
       // Todavía en backoff — no reintentar antes de tiempo, y no adelantar
       // nada detrás en este manifiesto (FIFO). Un evento `online` posterior,
@@ -216,10 +228,16 @@ async function drainManifest(
     if (!isMounted()) return;
     const token = await claimPending(db, next.id!);
     if (!token) {
-      // Otro drenador (el evento `online` y el mount disparando juntos al
-      // salir de un túnel) ganó la reclamación primero. Reintentar la
-      // cabeza de la cola: si sigue "sending" bajo el otro token, listPending
-      // ya no la devuelve y el bucle avanza solo.
+      // `isClaimable` ya exige `status === 'pending'` antes de llegar aquí,
+      // así que esto sólo puede pasar por una carrera genuina: otro
+      // drenador (el evento `online` y el mount disparando juntos al salir
+      // de un túnel) ganó la reclamación entre nuestra lectura de `next` y
+      // esta llamada. `continue` es seguro AQUÍ — a diferencia de una
+      // cabeza `sending` persistente, esta condición se resuelve sola en la
+      // vuelta siguiente: `manifestHead` ya no verá esta fila como
+      // `pending` (ahora es `sending` bajo el token del otro drenador), así
+      // que `isClaimable` la detendrá arriba en vez de volver a intentar
+      // reclamarla.
       continue;
     }
 
@@ -415,15 +433,21 @@ export function useOfflineQueue(
     mountedRef.current = true;
     void drain();
 
-    const onOnline = () => void drain();
-    window.addEventListener('online', onOnline);
+    const onWake = () => void drain();
+    window.addEventListener('online', onWake);
+    // M-1, ronda 5 de review del PR #679 (mayor) — `PICKUP_QUEUE_WAKE_EVENT`
+    // es el segundo disparador de una pasada, junto al `online` real. Ver su
+    // docstring más abajo para por qué `retryBlockedManifest` necesita uno
+    // propio en vez de reutilizar `online`.
+    window.addEventListener(PICKUP_QUEUE_WAKE_EVENT, onWake);
 
     return () => {
       // B1 — desde aquí, ningún `scheduleRetry` posterior (incluido uno de
       // un `drain()` que ya estaba en vuelo al desmontar) puede empujar un
       // timer nuevo — ver el docstring de `mountedRef`.
       mountedRef.current = false;
-      window.removeEventListener('online', onOnline);
+      window.removeEventListener('online', onWake);
+      window.removeEventListener(PICKUP_QUEUE_WAKE_EVENT, onWake);
       // B1, ronda 3 de review del PR #679 (bloqueante) — leer
       // `timersRef.current` AQUÍ, en vez de capturarlo en una variable local
       // al montar el efecto. `scheduleRetry` reasigna `timersRef.current` a
@@ -441,21 +465,52 @@ export function useOfflineQueue(
 }
 
 /**
+ * M-1, ronda 5 de review del PR #679 (mayor) — `retryBlockedManifest`
+ * despertaba al drenador con `window.dispatchEvent(new Event('online'))`.
+ * `online` es un evento GLOBAL con siete suscriptores reales en la app
+ * (`Providers.tsx`: React Query's `onlineManager`; `useSyncQueue.ts`;
+ * `scanStore.ts`; y otros) — tocar "REQUIERE AYUDA" sin señal de verdad les
+ * mentía a TODOS ellos a la vez: React Query reanudaba mutaciones pausadas y
+ * refetcheaba contra un dispositivo sin cobertura, el chip de sync pintaba
+ * "online" en verde, Recepción se marcaba online. Y nada se autocorregía:
+ * el navegador nunca iba a disparar el `offline` real que los devolviera a
+ * la realidad, porque el estado de red real nunca cambió — la app creía que
+ * había señal el resto de la sesión. Medido por el reviewer:
+ * `navigator.onLine === false` pero `SyncChip.status === 'online'` y
+ * `onlineManager.isOnline() === true` tras un solo tap.
+ *
+ * Este evento propio (`CustomEvent`, no reutiliza el tipo `'online'`) tiene
+ * exactamente UN suscriptor: el propio `useOfflineQueue`, más arriba en
+ * este archivo. "Hay trabajo nuevo que intentar ahora, no esperes al
+ * próximo backoff" sin fingir que la red volvió.
+ */
+export const PICKUP_QUEUE_WAKE_EVENT = 'aureon:pickup-queue-wake';
+
+/**
  * Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —
  * "el operario puede reintentar desde la app". Vive fuera del hook a
  * propósito: el único `useOfflineQueue` montado en producción vive dentro de
  * `AppLayout` (alcance global, mismo que `SyncChip`), y ninguna pantalla
  * tiene una referencia a SU `drainNow` — `AppLayout` no expone el valor de
- * retorno del hook. En vez de enhebrar esa referencia a través del shell
- * (fuera del alcance de esta ronda, y `AppLayout.tsx` está en la lista de
- * "no tocar"), esta función usa el mismo mecanismo que ya dispara una pasada
- * desde cualquier punto de la app: el evento `online` global al que el
- * efecto de montaje del hook ya está suscrito (`window.addEventListener`
- * más arriba). No es un evento de conectividad real, pero es exactamente la
- * señal que ese listener existe para atender — "hay trabajo nuevo que
- * intentar ahora, no esperes al próximo backoff".
+ * retorno del hook. En vez de enhebrar esa referencia a través del shell,
+ * esta función dispara `PICKUP_QUEUE_WAKE_EVENT` (ver su docstring arriba),
+ * al que el efecto de montaje del hook ya está suscrito.
+ *
+ * M-3, ronda 5 de review del PR #679 (mayor) — devuelve cuántas entradas
+ * `dead` revivió de verdad (`retryDead`), en vez de `void`. `blockedCount`
+ * (`getBlockedPickupCount`) incluye desde la ronda 4 los `pending`
+ * bloqueados cross-user, no sólo `dead` — pero esta función SÓLO puede
+ * revivir `dead` (un bloqueo cross-user se resuelve solo, con
+ * `CROSS_USER_RECLAIM_MS`, no con un botón). Sin este valor de retorno, la
+ * pantalla que monta el botón no tiene forma de distinguir "revivió algo" de
+ * "no había nada que revivir" — el operario tocaba "REQUIERE AYUDA" sobre un
+ * bloqueo cross-user y no pasaba nada, sin feedback.
  */
-export async function retryBlockedManifest(operatorId: string, manifestId: string): Promise<void> {
-  await retryDead(db, operatorId, manifestId);
-  window.dispatchEvent(new Event('online'));
+export async function retryBlockedManifest(
+  operatorId: string,
+  manifestId: string,
+): Promise<number> {
+  const revived = await retryDead(db, operatorId, manifestId);
+  window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
+  return revived;
 }
