@@ -11,7 +11,7 @@ interface UnverifiedPackagesBlockProps {
   missingPackages: MissingPackage[];
   notFoundScans: UnexpectedScan[];
   noteMap: Map<string, string>;
-  onSaveNote: (packageId: string, note: string) => void;
+  onSaveNote: (packageId: string, note: string) => Promise<void>;
 }
 
 /**

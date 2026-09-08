@@ -89,9 +89,16 @@ export default function DiscrepancyReviewPage() {
     [notes]
   );
 
-  const handleSaveNote = (packageId: string, note: string) => {
-    if (!operatorId || !manifestId || !userId) return;
-    saveNote.mutate({
+  // Medio 4 (spec-80 fase 2 review, PR #686): mutateAsync, not the
+  // fire-and-forget mutate — MissingPackageRow now awaits this and keeps
+  // the typed note (instead of discarding it) if the save rejects.
+  const handleSaveNote = (packageId: string, note: string): Promise<void> => {
+    if (!operatorId || !manifestId || !userId) {
+      return Promise.reject(
+        new Error('missing operatorId/manifestId/userId')
+      );
+    }
+    return saveNote.mutateAsync({
       operatorId,
       manifestId,
       packageId,

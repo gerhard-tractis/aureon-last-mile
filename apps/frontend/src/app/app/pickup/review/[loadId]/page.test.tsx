@@ -40,8 +40,21 @@ vi.mock('@/lib/supabase/client', () => ({
 }));
 
 vi.mock('@/components/pickup/MissingPackageRow', () => ({
-  MissingPackageRow: ({ packageLabel }: { packageLabel: string }) => (
-    <div data-testid="missing-package-row">{packageLabel}</div>
+  MissingPackageRow: ({
+    packageId,
+    packageLabel,
+    onSaveNote,
+  }: {
+    packageId: string;
+    packageLabel: string;
+    onSaveNote: (packageId: string, note: string) => Promise<void>;
+  }) => (
+    <div data-testid="missing-package-row">
+      {packageLabel}
+      <button onClick={() => onSaveNote(packageId, 'nota de prueba').catch(() => {})}>
+        save-note-stub
+      </button>
+    </div>
   ),
 }));
 
@@ -78,7 +91,10 @@ describe('DiscrepancyReviewPage (5e)', () => {
       isError: false,
     });
     mockUseDiscrepancyNotes.mockReturnValue({ data: [] });
-    mockUseSaveDiscrepancyNote.mockReturnValue({ mutate: vi.fn() });
+    mockUseSaveDiscrepancyNote.mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn().mockResolvedValue(undefined),
+    });
     mockPush.mockClear();
   });
 
@@ -199,6 +215,31 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
+  });
+
+  // Medio 4 (review PR #686): handleSaveNote used to fire-and-forget via
+  // `.mutate()`, which has no way to tell MissingPackageRow the save
+  // failed. Wiring it through `.mutateAsync()` is what lets the row keep
+  // the typed note instead of discarding it on a failed save.
+  it('saves a note via mutateAsync (not the fire-and-forget mutate) so a failure can propagate back to the row', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(undefined);
+    const mutate = vi.fn();
+    mockUseSaveDiscrepancyNote.mockReturnValue({ mutate, mutateAsync });
+
+    render(<DiscrepancyReviewPage />);
+    const stub = await screen.findByText('save-note-stub');
+    fireEvent.click(stub);
+
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operatorId: 'op-1',
+        manifestId: 'm1',
+        packageId: 'pkg1',
+        note: 'nota de prueba',
+        userId: 'u1',
+      })
+    );
+    expect(mutate).not.toHaveBeenCalled();
   });
 
   it('shows an explicit error state, not the clean-close CTA, when scans or missing packages fail to load', async () => {

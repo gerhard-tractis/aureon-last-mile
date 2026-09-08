@@ -8,7 +8,7 @@ interface MissingPackageRowProps {
   orderNumber: string;
   customerName?: string;
   existingNote: string;
-  onSaveNote: (packageId: string, note: string) => void;
+  onSaveNote: (packageId: string, note: string) => Promise<void>;
 }
 
 /**
@@ -38,16 +38,33 @@ export function MissingPackageRow({
 }: MissingPackageRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const hasNote = existingNote.trim().length > 0;
   const subtitle = customerName ? `${orderNumber} · ${customerName}` : orderNumber;
 
-  const handleSave = () => {
+  // Medio 4 (spec-80 fase 2 review, PR #686): the draft used to be cleared
+  // and the editor closed unconditionally, right after calling onSaveNote —
+  // which is a bare `.insert()` with no offline queue and no onError
+  // (useSaveDiscrepancyNote). Without network, the note the crew just typed
+  // vanished from the screen AND never reached the server. Only clear/close
+  // once the save actually resolves; keep the draft and surface the failure
+  // otherwise so nothing typed is silently lost.
+  const handleSave = async () => {
     const trimmed = draft.trim();
     if (!trimmed) return;
-    onSaveNote(packageId, trimmed);
-    setIsEditing(false);
-    setDraft('');
+    setIsSaving(true);
+    setSaveError(false);
+    try {
+      await onSaveNote(packageId, trimmed);
+      setIsEditing(false);
+      setDraft('');
+    } catch {
+      setSaveError(true);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -89,12 +106,18 @@ export function MissingPackageRow({
             rows={2}
             aria-label={`Nota para paquete ${packageLabel}`}
           />
+          {saveError && (
+            <span className="text-xs text-status-error">
+              No se pudo guardar la nota. Revisa la conexión e inténtalo de nuevo.
+            </span>
+          )}
           <button
             type="button"
             onClick={handleSave}
-            className="self-end text-xs font-semibold rounded-md px-3 min-h-9 bg-accent text-accent-foreground"
+            disabled={isSaving}
+            className="self-end text-xs font-semibold rounded-md px-3 min-h-11 bg-accent text-accent-foreground disabled:opacity-50"
           >
-            Guardar
+            {isSaving ? 'Guardando…' : 'Guardar'}
           </button>
         </div>
       )}
