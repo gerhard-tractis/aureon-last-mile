@@ -1,6 +1,6 @@
 # Spec-89: Guardarraíl de paralelismo — ¿estas fases se pisan?
 
-**Status:** in progress
+**Status:** completed
 **Verify:** unit
 **Downstream:** ninguno todavía — este spec construye una herramienta que el orquestador usa antes de dispatchar; ningún spec de producto depende de su implementación.
 
@@ -436,7 +436,7 @@ BLANDO", se dispatcha con la advertencia leída, no a ciegas.
 
 ## Fases
 
-### Fase 1 — `check-phase-overlap` + extensión de `check-spec-fields.sh` `[in_progress]`
+### Fase 1 — `check-phase-overlap` + extensión de `check-spec-fields.sh` `[done]`
 
 **Archivos:** `scripts/check-phase-overlap.mjs`, `scripts/check-phase-overlap.sh`,
 `scripts/check-phase-overlap-parse.mjs`, `scripts/check-phase-overlap-closure.mjs`,
@@ -553,7 +553,20 @@ uso activo en el repo hoy (verificado, ver bullets correspondientes).
 > atacar"), ronda 2 (escalada del bloqueante 5 con evidencia de spec-86), y
 > ronda 3 (desajuste de nombre de campo que dejaba la regla de directorio
 > como código muerto en producción, más dos notas para el futuro hook) — ver
-> los resúmenes de hallazgos cerrados arriba. Pendiente de una cuarta ronda
-> antes de merge.
-> QA: PR #691 abierto, sin auto-merge — `gh pr checks 691` verde tras cada
-> ronda (ver reporte de cierre de sesión para el detalle por commit).
+> los resúmenes de hallazgos cerrados arriba. La ronda 3 cerró con aprobación
+> condicionada a tres puntos, verificados por el orquestador antes de mergear
+> (no se pidió una cuarta ronda de review).
+> QA: PR #691 mergeado el 2026-09-08 (`49ce766`, squash), CI verde — Lint/
+> Type-Check/Test/Build y Vercel. Los tres códigos de salida comprobados a mano
+> sobre datos reales del repo antes del merge: `exit 1` en el conflicto duro
+> directorio-vs-fichero (spec-88 fase 1 declara
+> `packages/database/supabase/migrations/`, spec-80 fase 2 escribe
+> `20260916000001_*.sql` ahí dentro — el caso que la ronda 3 demostró muerto),
+> `exit 3` en «no puedo juzgar» (spec-82 fase 2 y spec-83 fase 3), y la
+> advertencia de ceguera SQL presente en el mensaje.
+> Downstream: el hook `PreToolUse` que haría esto obligatorio en cada despacho
+> NO se construye aquí — es spec aparte, y su diseño depende de tres cosas que
+> esta fase deja resueltas o nombradas: el `exit 3` que distingue «no lo sé» de
+> «disjunto», la reconciliación del ledger de despachos en vuelo (no hay evento
+> de fin de agente en background), y que el hook falle **abierto** ante un error
+> propio y sólo cierre ante un conflicto que sepa afirmar.
