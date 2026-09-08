@@ -84,6 +84,17 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
+// M4, ronda 1 de review del PR #679 — sin este mock (y el test de abajo),
+// nada en este fichero ejercitaba la forma REAL que `supabase.rpc()`
+// resuelve sin señal. Los otros tests de arriba pasan `{ message: '...' }`
+// desnudo — nunca la forma que `postgrest-js` produce de verdad
+// (`{message, details, hint, code: ''}`, ver `closeManifestErrors.ts`) — así
+// que ninguno de ellos podía haber atrapado B1.
+const mockEnqueue = vi.fn();
+vi.mock('@/lib/offline/queue', () => ({
+  enqueue: (...args: unknown[]) => mockEnqueue(...args),
+}));
+
 describe('CompletionPage', () => {
   beforeEach(() => {
     mockUsePickupScans.mockReturnValue({
@@ -240,6 +251,53 @@ describe('CompletionPage', () => {
       const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(message).not.toContain('MANIFEST_NOT_CLOSABLE');
       expect(message).toMatch(/[áéíóúñ]/i);
+    });
+  });
+
+  // M4, ronda 1 de review del PR #679 — el mock de RPC de abajo es la forma
+  // EXACTA que `postgrest-js@1.21.4` resuelve cuando `fetch` rechaza sin
+  // señal (`PostgrestBuilder.ts:218-229`, ver `closeManifestErrors.ts`), no
+  // un `TypeError` inventado. Antes del fix de B1, esta forma se clasificaba
+  // `business` (porque `'code' in err` era verdadero) y el operario sin
+  // señal veía el toast de error genérico con nada encolado — exactamente
+  // la regresión que este test existe para que no vuelva a pasar
+  // desapercibida.
+  it('queues the close and navigates away on the real postgrest-js network-fallback shape (offline, not business)', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'TypeError: Failed to fetch',
+        details: 'TypeError: Failed to fetch\n    at fetch (...)',
+        hint: '',
+        code: '',
+      },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(mockEnqueue).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          manifestId: 'm1',
+          type: 'close_manifest',
+          payload: expect.objectContaining({
+            manifestId: 'm1',
+            signatures: expect.objectContaining({
+              operator_signature: 'data:image/png;base64,FAKE',
+            }),
+          }),
+        }),
+      );
+    });
+
+    expect(toast.error).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/sin conexión|sin señal/i));
+    });
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup');
     });
   });
 
