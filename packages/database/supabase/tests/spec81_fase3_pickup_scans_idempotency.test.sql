@@ -22,9 +22,24 @@
 -- (20260913000001): existing rows and any future write that omits the id
 -- (there is none today, but nothing forces one) must not collide on NULL,
 -- and a soft-deleted scan must not permanently block reuse of its id.
+--
+-- Round 1 of review (B1): an order-number scan
+-- (apps/frontend/src/lib/pickup/scan-validator.ts's packageIds[]) writes N
+-- rows — one per bulto — in a SINGLE `.insert(rows)` call
+-- (usePickupScans.ts), all sharing the ONE client_operation_id fase 1 stamps
+-- per queue entry (lib/offline/queue.ts). A key of
+-- (operator_id, client_operation_id) alone collides with ITSELF inside that
+-- one statement, on the FIRST attempt, not the retry. The key is
+-- (operator_id, client_operation_id, package_id) NULLS NOT DISTINCT — the
+-- modifier because package_id is NULL on a not_found/duplicate scan, and a
+-- retry of THAT scan must still collide on (operator_id, coid, NULL); without
+-- NULLS NOT DISTINCT, Postgres treats NULL <> NULL and the retry would
+-- silently insert a second row for the same not_found/duplicate scan,
+-- defeating idempotency exactly where a barcode does not resolve to a
+-- package.
 
 BEGIN;
-SELECT plan(9);
+SELECT plan(13);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -48,7 +63,9 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data, status)
 VALUES
   ('00000000-0000-4000-8000-000000008140','00000000-0000-4000-8000-000000008100',
-   '00000000-0000-4000-8000-000000008120','CTN81-1','[]'::jsonb,'{}'::jsonb,'ingresado')
+   '00000000-0000-4000-8000-000000008120','CTN81-1','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-000000008141','00000000-0000-4000-8000-000000008100',
+   '00000000-0000-4000-8000-000000008120','CTN81-2','[]'::jsonb,'{}'::jsonb,'ingresado')
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
@@ -74,10 +91,12 @@ END $$;
 SELECT pass('TEST 1 PASSED: pickup_scans.client_operation_id exists and is nullable');
 
 -- =============================================================================
--- TEST 2 — a UNIQUE index covers (operator_id, client_operation_id),
--- partial on client_operation_id IS NOT NULL AND deleted_at IS NULL.
--- Read from pg_index directly (not just "an insert fails") so a mutation
--- that widens/narrows the predicate is caught even before TEST 3-9 run.
+-- TEST 2 — a UNIQUE index covers (operator_id, client_operation_id,
+-- package_id) NULLS NOT DISTINCT, partial on client_operation_id IS NOT NULL
+-- AND deleted_at IS NULL. Read from pg_index directly (not just "an insert
+-- fails") so a mutation that widens/narrows the predicate, drops a column,
+-- or drops the NULLS NOT DISTINCT modifier is caught even before TEST 3-13
+-- run.
 -- =============================================================================
 DO $$
 DECLARE
@@ -94,6 +113,12 @@ BEGIN
   IF v_indexdef NOT ILIKE '%operator_id%' THEN
     RAISE EXCEPTION 'TEST 2 FAILED: unique index on client_operation_id does not include operator_id — % ', v_indexdef;
   END IF;
+  IF v_indexdef NOT ILIKE '%package_id%' THEN
+    RAISE EXCEPTION 'TEST 2 FAILED: unique index does not include package_id — a batch insert of N rows sharing one client_operation_id (order-number scan) collides with itself — %', v_indexdef;
+  END IF;
+  IF v_indexdef NOT ILIKE '%NULLS NOT DISTINCT%' THEN
+    RAISE EXCEPTION 'TEST 2 FAILED: unique index is missing NULLS NOT DISTINCT — a retried not_found/duplicate scan (package_id IS NULL) would not collide with itself — %', v_indexdef;
+  END IF;
   IF v_indexdef NOT ILIKE '%WHERE%client_operation_id IS NOT NULL%' THEN
     RAISE EXCEPTION 'TEST 2 FAILED: unique index is not partial on client_operation_id IS NOT NULL — %', v_indexdef;
   END IF;
@@ -101,7 +126,7 @@ BEGIN
     RAISE EXCEPTION 'TEST 2 FAILED: unique index does not exclude soft-deleted rows — %', v_indexdef;
   END IF;
 END $$;
-SELECT pass('TEST 2 PASSED: unique partial index on (operator_id, client_operation_id) WHERE client_operation_id IS NOT NULL AND deleted_at IS NULL');
+SELECT pass('TEST 2 PASSED: unique partial index on (operator_id, client_operation_id, package_id) NULLS NOT DISTINCT WHERE client_operation_id IS NOT NULL AND deleted_at IS NULL');
 
 -- =============================================================================
 -- TEST 3-5 — the retry itself: same client_operation_id, second insert
@@ -222,6 +247,89 @@ SELECT is(
       AND client_operation_id = '00000000-0000-4000-8000-000000008199'),
   2,
   'the soft-deleted row is preserved as evidence, not erased — two rows total, one live'
+);
+
+-- =============================================================================
+-- TEST 10-12 — B1: the order-number scan batch. usePickupScans.ts inserts N
+-- rows (one per bulto) in a SINGLE `.insert(rows)` call, all sharing the ONE
+-- client_operation_id fase 1 stamps per queue entry. That batch must succeed
+-- on the FIRST attempt (package_id differentiates the rows), and the retry
+-- of the SAME batch (queue resend after a lost 200) must be rejected without
+-- creating any of its rows twice.
+-- =============================================================================
+SELECT lives_ok(
+  $$ INSERT INTO public.pickup_scans (
+       operator_id, manifest_id, package_id, barcode_scanned, scan_result,
+       scanned_at, client_operation_id
+     ) VALUES
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      '00000000-0000-4000-8000-000000008140', 'ORD-81-1', 'verified', NOW(),
+      '00000000-0000-4000-8000-000000008299'),
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      '00000000-0000-4000-8000-000000008141', 'ORD-81-1', 'verified', NOW(),
+      '00000000-0000-4000-8000-000000008299')
+  $$,
+  'TEST 10: an order-number scan of 2 bultos — one client_operation_id, two rows, one INSERT — succeeds on the first attempt (package_id differentiates)'
+);
+
+SELECT throws_ok(
+  $$ INSERT INTO public.pickup_scans (
+       operator_id, manifest_id, package_id, barcode_scanned, scan_result,
+       scanned_at, client_operation_id
+     ) VALUES
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      '00000000-0000-4000-8000-000000008140', 'ORD-81-1', 'verified', NOW(),
+      '00000000-0000-4000-8000-000000008299'),
+     ('00000000-0000-4000-8000-000000008100',
+      (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+      '00000000-0000-4000-8000-000000008141', 'ORD-81-1', 'verified', NOW(),
+      '00000000-0000-4000-8000-000000008299')
+  $$,
+  '23505',
+  NULL,
+  'TEST 11: the queue resending the SAME order-number batch (same client_operation_id, same package_ids) is rejected as unique_violation — 409, never a silent second insert'
+);
+
+SELECT is(
+  (SELECT COUNT(*)::int FROM public.pickup_scans
+    WHERE operator_id = '00000000-0000-4000-8000-000000008100'
+      AND client_operation_id = '00000000-0000-4000-8000-000000008299'
+      AND deleted_at IS NULL),
+  2,
+  'TEST 12: the rejected batch retry leaves exactly the original two rows, not four'
+);
+
+-- =============================================================================
+-- TEST 13 — the other half of B1: a retried not_found/duplicate scan has
+-- package_id IS NULL. Without NULLS NOT DISTINCT, Postgres treats NULL <>
+-- NULL and this retry would insert a second row instead of colliding.
+-- =============================================================================
+INSERT INTO public.pickup_scans (
+  operator_id, manifest_id, package_id, barcode_scanned, scan_result,
+  scanned_at, client_operation_id
+) VALUES (
+  '00000000-0000-4000-8000-000000008100',
+  (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+  NULL, 'CTN-NOT-FOUND', 'not_found', NOW(),
+  '00000000-0000-4000-8000-000000008300'
+);
+
+SELECT throws_ok(
+  $$ INSERT INTO public.pickup_scans (
+       operator_id, manifest_id, package_id, barcode_scanned, scan_result,
+       scanned_at, client_operation_id
+     ) VALUES (
+       '00000000-0000-4000-8000-000000008100',
+       (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008100' AND external_load_id = 'CARGA-81-1'),
+       NULL, 'CTN-NOT-FOUND', 'not_found', NOW(),
+       '00000000-0000-4000-8000-000000008300'
+     ) $$,
+  '23505',
+  NULL,
+  'TEST 13: a retried not_found scan (package_id IS NULL) collides with itself thanks to NULLS NOT DISTINCT — without it this insert would silently succeed'
 );
 
 SELECT * FROM finish();
