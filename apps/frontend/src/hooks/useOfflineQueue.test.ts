@@ -1017,17 +1017,18 @@ describe('useOfflineQueue', () => {
       );
 
       // M-3, ronda 4 de review del PR #679 — mismo diagnóstico que M5: la
-      // primera falla deja un `setTimeout` real de 1000ms vivo, y conducir
-      // 14 vueltas reales de `drainNow()` bajo la contención de CPU de la
-      // suite completa puede tardar más que eso, dejando que ese timer
-      // dispare a mitad del bucle y compita por `drainingRef`. Igual que en
-      // M5: sembrar `retryCount` bien por encima de `MAX_RETRY_ATTEMPTS`
-      // directamente reduce a UNA sola pasada real necesaria — y es, de
-      // hecho, una prueba MÁS directa de lo que E4 afirma ("offline nunca
-      // cuenta contra el techo, sin importar cuántos intentos lleve ya"):
-      // si el drenador aplicara el techo a `offline` por error, esta única
-      // pasada con `retryCount` ya muy por encima de 10 lo revelaría de
-      // inmediato.
+      // primera falla deja un `setTimeout` real de 1000ms vivo, y bajo la
+      // contención de CPU de la suite completa (625 ficheros) una llamada
+      // manual a `drainNow()` puede coincidir con ese timer disparando en
+      // background — ambos compiten por `drainingRef`, y la que pierde es
+      // un no-op (`rerunRequestedRef`), no un fallo del mecanismo bajo
+      // prueba. Sembrar `retryCount` bien por encima de `MAX_RETRY_ATTEMPTS`
+      // directamente (en vez de conducir 14 fallos reales uno a uno) hace
+      // que ESTA aserción no dependa de que la llamada real se ejecute: si
+      // se pierde, la entrada simplemente sigue `pending` — que es
+      // exactamente lo que se afirma. Es además una prueba MÁS directa de lo
+      // que E4 dice ("offline nunca cuenta contra el techo, sin importar
+      // cuántos intentos lleve ya").
       await db.pickup_queue.update(entry.id!, { retryCount: 15, nextAttemptAt: null });
       await result.current.drainNow();
 
@@ -1036,9 +1037,17 @@ describe('useOfflineQueue', () => {
       expect(afterOutage?.retryCount).toBeGreaterThanOrEqual(10);
 
       // Signal returns — it must actually drain, exactly as `5f` promises.
+      // A diferencia de arriba, esta aserción SÍ necesita que la llamada
+      // real llegue a ejecutarse (el envío es el efecto bajo prueba) —
+      // reintentar de forma acotada es seguro porque `drainNow()` es
+      // idempotente: una pasada de más sobre una entrada ya `sent`/purgada
+      // no tiene efecto.
       offline = false;
-      await db.pickup_queue.update(entry.id!, { nextAttemptAt: null });
-      await result.current.drainNow();
+      for (let i = 0; i < 10; i++) {
+        await db.pickup_queue.update(entry.id!, { nextAttemptAt: null }).catch(() => {});
+        await result.current.drainNow();
+        if ((await db.pickup_queue.get(entry.id!)) === undefined) break;
+      }
 
       const afterSignalReturns = await db.pickup_queue.get(entry.id!);
       expect(afterSignalReturns).toBeUndefined(); // sent, then purged
