@@ -574,11 +574,65 @@ mutante. Suite completa: 36/36 en verde.
   migración porque las tres RPCs comparten cabecera de módulo y no hay un
   corte natural sin duplicar contexto entre archivos.
 
-### Fase 3 — `lost` e indemnización `[blocked]`
+### Decisión del usuario (2026-09-08): quién declara `lost`
 
-Bloqueada por una decisión del usuario: qué dispara exactamente un `lost` — si el bulto pasa a `extraviado`, si se abre una `exceptions` con `settlement_id`, y quién puede marcarlo.
+> **«Lost must be declared by the ops manager in a UI screen which we haven't decided yet.»**
 
-- [ ] Decidir con el usuario antes de tocar nada.
+Contesta dos de las cuatro preguntas que bloqueaban la fase 3, y conviene ser preciso
+sobre cuáles:
+
+- **Qué dispara un `lost`: nada automático.** Es un acto humano deliberado. No hay regla,
+  ni temporizador, ni job por lotes que promueva una discrepancia a `lost` por antigüedad
+  ni por ninguna otra condición. Esto elimina una rama entera de trabajo que el spec dejaba
+  abierta.
+- **Quién puede marcarlo: el jefe de operaciones.** El rol `operations_manager` ya existe
+  en el RBAC (`20260216170542_create_users_table_with_rbac.sql`), así que no hay que
+  inventarlo.
+
+Sigue sin decidirse: **la pantalla** desde la que lo declara, y los **efectos aguas abajo**
+— si el bulto pasa a `extraviado`, y si se abre una fila de `exceptions` con
+`settlement_id`. La decisión anterior del usuario (2026-09-07) fue que un `lost` «debe
+disparar un workflow de indemnización pendiente»; el mecanismo concreto de ese workflow es
+lo que queda por decidir.
+
+Por eso la fase se parte en dos: el guard de permiso es backend puro y se puede construir
+ya; la pantalla y el workflow siguen esperando diseño.
+
+### Fase 3a — Solo el jefe de operaciones puede declarar `lost` `[pending]`
+
+**Archivos:** migración nueva sobre `resolve_discrepancy`, test pgTAP.
+
+**El hueco es real y está abierto en `main` ahora mismo.** `resolve_discrepancy`
+(`20260913000003`) valida el tenant y **no comprueba ningún rol**: hoy cualquier usuario
+autenticado del operador —un `pickup_crew`, un `warehouse_staff`— puede declarar `lost` una
+discrepancia, y `lost` es la rama que abre una indemnización. Eso contradice la decisión de
+arriba, y no depende de que exista la pantalla.
+
+- [ ] Test pgTAP primero: bajo un JWT de `pickup_crew`, `resolve_discrepancy(id, 'lost', …)`
+      se rechaza; bajo `operations_manager`, pasa.
+- [ ] Decidir y **escribir** si `resolved` también se restringe o sigue abierta a cualquier
+      rol del operador. Resolver una discrepancia es operación de andén; declararla perdida
+      es una decisión con consecuencia económica. Por defecto: `resolved` abierta, `lost`
+      restringida — pero es una decisión, no un detalle, y va argumentada.
+- [ ] `CREATE OR REPLACE` desde la **última** definición de la función, no desde la
+      original — regla no negociable del repo.
+- [ ] Errcode y centinela coherentes con el contrato ya publicado: `42501` +
+      `LOST_REQUIRES_OPERATIONS_MANAGER:` (o el nombre que encaje en la tabla de errores del
+      spec), para que el frontend lo mapee por prefijo sin parsear texto libre.
+- [ ] Mutation-testear el guard: si borrar la comprobación de rol no rompe ningún test, el
+      test no vale.
+
+### Fase 3b — La pantalla y el workflow de indemnización `[blocked]`
+
+Bloqueada por diseño, no por dependencia técnica. Falta decidir:
+
+- [ ] **Dónde vive la pantalla** desde la que el jefe de operaciones declara el `lost`.
+      Candidata natural: el panel de resolución de discrepancias que spec-86 fase 3
+      describe, pero no está decidido.
+- [ ] **Si el bulto pasa a `extraviado`** o el estado de bulto se queda como está y la
+      discrepancia es el único registro.
+- [ ] **Si se abre una fila de `exceptions` con `settlement_id`**, o el enganche de
+      indemnización es otro. La tabla ya reserva una referencia nullable para esto.
 
 ---
 
