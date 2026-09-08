@@ -127,7 +127,7 @@ export function RouteManifestList({
                     {m.external_load_id}
                   </p>
                 </div>
-                <div className="flex gap-3 text-sm text-text-secondary shrink-0">
+                <div className="flex items-center gap-3 text-sm text-text-secondary shrink-0">
                   <div className="flex items-center gap-1">
                     <ShoppingCart className="h-4 w-4" />
                     <span className="font-mono">{m.total_orders ?? 0}</span>
@@ -136,13 +136,16 @@ export function RouteManifestList({
                     <Package className="h-4 w-4" />
                     <span className="font-mono">{progressLabel(m)}</span>
                   </div>
+                  {/* spec-82 fase 1 (mock 5c) — same chip PickupMobileCompactRow
+                      already shows for its `completed` variant on the 3h
+                      screen, reused verbatim for visual consistency. */}
+                  {complete && (
+                    <span className="flex-none rounded border border-status-success-border bg-status-success-bg px-1.5 py-1 font-mono text-[10.5px] font-semibold text-status-success-text">
+                      COMPLETADA
+                    </span>
+                  )}
                 </div>
               </div>
-              {complete && (
-                <p className="mt-2 text-xs font-medium text-status-success">
-                  Verificación completa
-                </p>
-              )}
             </button>
             {canRemove && (
               <AlertDialog>
