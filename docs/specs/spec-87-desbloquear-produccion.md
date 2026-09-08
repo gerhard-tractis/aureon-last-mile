@@ -393,7 +393,7 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 
 - [ ] El agente prepara y verifica cada lote; **el usuario aprueba cada uno**.
 
-### Fase 5 — Guardarraíles `[pending]`
+### Fase 5 — Guardarraíles `[in_progress]`
 
 **Archivos:** `scripts/check-migration-safety.sh` + test, cableado en CI
 
