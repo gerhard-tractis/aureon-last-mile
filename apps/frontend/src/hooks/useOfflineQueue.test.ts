@@ -89,7 +89,7 @@ describe('useOfflineQueue', () => {
     });
 
     // A new scan arrives while offline, then signal returns.
-    await enqueue(db, {
+    const scan3 = await enqueue(db, {
       operatorId: OPERATOR_A,
       userId: USER_A,
       manifestId: MANIFEST_1,
@@ -103,8 +103,14 @@ describe('useOfflineQueue', () => {
       expect(pending).toHaveLength(0);
     });
 
+    // m12, ronda 2 de review del PR #679 (menor) — la aserción original
+    // comprobaba `send` con `first`, que ya se había enviado en el drenado
+    // del MONTAJE, antes de que `SCAN-3` ni el evento `online` existieran:
+    // pasaba igual con o sin un segundo drenado real. Lo que de verdad
+    // discrimina "el evento `online` disparó otro drenado" es que SCAN-3
+    // — encolado DESPUÉS del mount — se haya enviado.
     expect(send).toHaveBeenCalledWith(
-      expect.objectContaining({ clientOperationId: first.clientOperationId }),
+      expect.objectContaining({ clientOperationId: scan3.clientOperationId }),
     );
   });
 

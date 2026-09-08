@@ -171,6 +171,32 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
 
     expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, null, mockSender);
   });
+
+  // m9, ronda 2 de review del PR #679 (menor) — el `useMemo` alrededor de
+  // `createPickupQueueSender` no estaba testeado: sustituirlo por la
+  // llamada directa deja 63/63 en verde, porque el mock de arriba
+  // (`createPickupQueueSenderSpy`) devuelve siempre el mismo objeto sin
+  // importar cuántas veces se llame — la estabilidad de IDENTIDAD, que es
+  // lo que el `useMemo` arregla (un sender nuevo en cada render reiniciaría
+  // la cadena de reintentos programados de `useOfflineQueue`), era
+  // inobservable. Esto comprueba la llamada en sí, no sólo su resultado.
+  it('m9 — memoizes the sender: a re-render does not call createPickupQueueSender again', () => {
+    const { rerender } = render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+    expect(createPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+
+    mockRole = 'operations_manager';
+    rerender(
+      <AppLayout>
+        <div>content, again</div>
+      </AppLayout>,
+    );
+
+    expect(createPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AppLayout sidebar branding', () => {

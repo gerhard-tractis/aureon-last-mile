@@ -176,14 +176,25 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
       "sin conexión" del rechazo de negocio irrecuperable, y presentarle al
       operario mensajes y afordancias distintos para cada una (encolar y
       seguir vs. detenerse y pedir ayuda).
-      **Implementado:** `classifyCloseManifestError` (`lib/pickup/closeManifestErrors.ts`)
-      devuelve `{ kind: 'offline' | 'business', message }` — `offline` sólo
-      para un `TypeError` sin `code` de Postgrest y sin prefijo sentinela
-      reconocido; todo lo demás (incluido lo desconocido) es `business` por
-      defecto seguro. `complete/[loadId]/page.tsx` encola el cierre
-      (`enqueue(db, { type: 'close_manifest', ... })`) y navega fuera en la
-      rama offline; en la rama business deja el botón re-habilitado y no
-      encola nada.
+      **Implementado (m11, ronda 2 de review del PR #679 — este párrafo citaba
+      la regla ANTERIOR a B1/B2, que la contradice; ver esas dos entradas
+      más abajo para la vigente):** `classifyCloseManifestError`
+      (`lib/pickup/closeManifestErrors.ts`) devuelve
+      `{ kind: 'offline' | 'idempotent' | 'permanent' | 'transient', message }`
+      — `offline` para la forma de red/timeout de `postgrest-js` (`code`
+      presente pero vacío, o un `TypeError`/`AbortError` nativo sin
+      centinela); `idempotent` para `MANIFEST_ALREADY_SIGNED` (el cierre ya
+      se aplicó); `permanent` sólo para los cuatro rechazos que
+      `close_manifest` declara explícitamente irrecuperables
+      (`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, y los dos
+      cross-tenant `42501`); todo lo demás, incluido lo desconocido, es
+      `transient` — el valor por defecto seguro para un drenador de fondo
+      pasó de "detenerse" a "reintentar". `complete/[loadId]/page.tsx`
+      encola el cierre (`enqueue(db, { type: 'close_manifest', ... })`) y
+      navega fuera en la rama offline; en cualquier otra rama deja el botón
+      re-habilitado y no encola nada — el sender (`offlineQueueSender.ts`)
+      es quien traduce `idempotent`/`permanent`/`transient` a
+      `sent`/`dead`/`retry` para el drenador de fondo.
 - [x] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1. **Implementado (ronda 1 de review del PR #679, B4):** `timeout_http` no existía como valor propio — `postgrest-js` no fija ninguno y el sender no pasaba `signal`, así que el límite real era el default de `fetch` del navegador (~300s), muy por encima de los 45s que se afirmaban como margen. `offlineQueueSender.ts` ahora impone `AbortSignal.timeout(60_000)` sobre `close_manifest`, y `RECLAIM_STALE_MS = 90_000` en `useOfflineQueue.ts` — 30s de margen sobre ESE valor, que sí es real.
 - [x] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
 - [x] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
@@ -399,7 +410,9 @@ review):**
   firma. Sigue mitigado por lo mismo que m6 — no hay soft-delete de
   `pickup_scans` desde el frontend hoy — pero la cabecera de la migración
   quedaba corregida: ver `20260913000007:157-170`.
-- **n7 — el header de la migración (`20260913000007:104-109`) desmonta la
+- **n7 — el header de la migración (`20260913000007:206-213`, corregido en
+  ronda 2 de review del PR #679 — citaba `104-109`, obsoleto tras
+  reordenarse la migración) desmonta la
   regla 2 de `check-migration-safety.mjs` pero no la 3**, y el warning que
   CI emite sobre este archivo es de la regla 3. Es un falso positivo
   legítimo — el predicado parcial excluye todas las filas existentes, así

@@ -73,6 +73,31 @@ describe('validateScan', () => {
 
     const result = await validateScan('CTN001', 'manifest-1', 'op-1', 'LOAD-1');
     expect(result.scanResult).toBe('duplicate');
+    // Fase 3 follow-up (ronda 2 de review del PR #679, seguimiento de dos
+    // líneas dejado abierto en el review de fase 3): esta rama sólo
+    // congelaba la mitad de la premisa de M-3 — que la rama de número de
+    // pedido NUNCA devuelve ids nulos — sin fijar que la rama de duplicado
+    // (scan-validator.ts:66) sea la única que SIEMPRE devuelve una lista
+    // vacía. Mutar esta rama para devolver dos ids sobrevivía sin esta
+    // aserción.
+    expect(result.packageIds).toEqual([]);
+  });
+
+  // Fase 3 follow-up (ronda 2 de review del PR #679) — la mitad que
+  // faltaba de la premisa de M-3: la rama 1:1 de coincidencia por
+  // `label` (scan-validator.ts:72) siempre devuelve exactamente UN id, no
+  // sólo "no vacío". Mutar esa rama para devolver dos ids sobrevivía sin
+  // esta aserción — la auto-colisión del primer envío que M-3 describe
+  // depende de que sólo la rama de número de pedido pueda producir un lote.
+  it('a 1:1 label match returns exactly one package id, never a batch', async () => {
+    queryResponses['packages'] = [{ id: 'pkg-1', label: 'CTN001', order_id: 'order-1' }];
+    queryResponses['orders'] = [{ id: 'order-1' }];
+    queryResponses['pickup_scans'] = []; // no duplicate at either check
+
+    const result = await validateScan('CTN001', 'manifest-1', 'op-1', 'LOAD-1');
+    expect(result.scanResult).toBe('verified');
+    expect(result.packageIds).toHaveLength(1);
+    expect(result.packageIds).toEqual(['pkg-1']);
   });
 
   // M-3 (spec-81 fase 3, round 2 of review): the migration's unique index
