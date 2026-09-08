@@ -42,7 +42,15 @@ export interface SyncQueueState {
 const POLL_MS = 2_000;
 const RECENT_LIMIT = 25;
 
-export function useSyncQueue(): SyncQueueState {
+/**
+ * `operatorId` — spec-81 fase 2: `getPendingPickupCount` pasó de
+ * device-global a por operador (ver "Alcance del contador" en el spec). Sin
+ * un operador conocido no hay a quién atribuirle la cuenta de
+ * `pickup_queue`, así que esta vista sólo suma `scan_queue` hasta que
+ * `operatorId` llegue — normalmente un instante después del mount, cuando
+ * `useOperatorId` resuelve la sesión.
+ */
+export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
   const [status, setStatus] = useState<ConnectionState>('online');
   const [queuedCount, setQueuedCount] = useState(0);
   const [scanQueueCount, setScanQueueCount] = useState(0);
@@ -59,7 +67,7 @@ export function useSyncQueue(): SyncQueueState {
       // signal (ronda 1 de review de spec-81 fase 1, B1).
       const [outstandingScans, outstandingPickups] = await Promise.all([
         db.scan_queue.filter((s) => !s.synced).count(),
-        getPendingPickupCount(),
+        operatorId ? getPendingPickupCount(operatorId) : Promise.resolve(0),
       ]);
       setScanQueueCount(outstandingScans);
       setQueuedCount(outstandingScans + outstandingPickups);
@@ -67,7 +75,7 @@ export function useSyncQueue(): SyncQueueState {
       // IndexedDB unavailable (private browsing, quota). The chip simply
       // reports the network state; it must never take the screen down.
     }
-  }, []);
+  }, [operatorId]);
 
   const retryNow = useCallback(() => {
     setIsRetrying(true);

@@ -20,6 +20,7 @@ async function seedPickupQueue(count: number, operatorId = 'op-1') {
       payload: { barcode: `SCAN-${i}` },
       status: 'pending',
       retryCount: 0,
+      claimToken: null,
       lastAttemptAt: null,
       nextAttemptAt: null,
       createdAt: new Date().toISOString(),
@@ -41,7 +42,7 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
   it('counts pending pickup_queue entries even when scan_queue is empty', async () => {
     await seedPickupQueue(3);
 
-    const { result } = renderHook(() => useSyncQueue());
+    const { result } = renderHook(() => useSyncQueue('op-1'));
 
     await waitFor(() => expect(result.current.queuedCount).toBe(3));
   });
@@ -60,7 +61,7 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
       created_at: new Date(),
     });
 
-    const { result } = renderHook(() => useSyncQueue());
+    const { result } = renderHook(() => useSyncQueue('op-1'));
 
     await waitFor(() => expect(result.current.queuedCount).toBe(3));
   });
@@ -70,7 +71,7 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     const [only] = await db.pickup_queue.toArray();
     await db.pickup_queue.update(only.id!, { status: 'sent' });
 
-    const { result } = renderHook(() => useSyncQueue());
+    const { result } = renderHook(() => useSyncQueue('op-1'));
 
     await waitFor(() => expect(result.current.status).not.toBe('syncing'));
     expect(result.current.queuedCount).toBe(0);
@@ -95,10 +96,32 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
       created_at: new Date(),
     });
 
-    const { result } = renderHook(() => useSyncQueue());
+    const { result } = renderHook(() => useSyncQueue('op-1'));
 
     await waitFor(() => expect(result.current.queuedCount).toBe(3));
     expect(result.current.scanQueueCount).toBe(1);
+  });
+
+  it('fase 2 — does not count another operator\'s pickup_queue entries on the same device', async () => {
+    // A driver closes out on a dock phone; a second driver opens the same
+    // phone next. Without per-operator scoping the badge would show the
+    // first driver's leftovers to the second, who can neither drain nor
+    // purge them (spec-81, "Alcance del contador").
+    await seedPickupQueue(3, 'op-1');
+    await seedPickupQueue(5, 'op-2');
+
+    const { result } = renderHook(() => useSyncQueue('op-2'));
+
+    await waitFor(() => expect(result.current.queuedCount).toBe(5));
+  });
+
+  it('fase 2 — reports 0 pickup_queue entries when no operator is known yet', async () => {
+    await seedPickupQueue(4, 'op-1');
+
+    const { result } = renderHook(() => useSyncQueue(null));
+
+    await waitFor(() => expect(result.current.status).not.toBe('syncing'));
+    expect(result.current.queuedCount).toBe(0);
   });
 
   it('requests persistent storage on mount (M4 — "GUARDADO EN EL DISPOSITIVO" must be true)', async () => {
@@ -108,7 +131,7 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
       configurable: true,
     });
 
-    renderHook(() => useSyncQueue());
+    renderHook(() => useSyncQueue('op-1'));
 
     await waitFor(() => expect(persist).toHaveBeenCalledOnce());
 

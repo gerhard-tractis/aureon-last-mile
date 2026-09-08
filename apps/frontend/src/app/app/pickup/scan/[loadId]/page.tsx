@@ -44,7 +44,7 @@ export default function ScanningPage() {
   // `db.pickup_queue` from this screen yet — that's spec-81 fase 2 — so
   // `queuedCount` is still 0 in practice, but the count is correct
   // infrastructure rather than a hard-coded value waiting on a rewrite.
-  const sync = useSyncQueue();
+  const sync = useSyncQueue(operatorId);
 
   // spec-53 — second entry point. Labels are normally printed from the pickup
   // list before departure, but the crew also needs them here: this is the

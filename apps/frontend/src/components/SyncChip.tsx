@@ -13,9 +13,14 @@ import { useSyncQueue } from '@/hooks/useSyncQueue';
  * work, not that the network is down. "SIN CONEXIÓN · 14 EN COLA" tells them
  * their scans are held and counted; the panel beside the count says they can
  * keep working.
+ *
+ * `operatorId` — spec-81 fase 2: the Recogida side of the count
+ * (`pickup_queue`) is now per operator, not device-global (see
+ * `useSyncQueue`). Without it, an operator who logs out on a dock phone
+ * leaves a stale count the next operator can neither drain nor purge.
  */
-export function SyncChip() {
-  const { status, queuedCount } = useSyncQueue();
+export function SyncChip({ operatorId = null }: { operatorId?: string | null }) {
+  const { status, queuedCount } = useSyncQueue(operatorId);
 
   // Online and nothing outstanding is the normal state and needs no chrome.
   if (status === 'online' && queuedCount === 0) return null;
