@@ -46,6 +46,7 @@
 import {
   nearestFuncDeclName,
   extractDestinationTable,
+  extractAllDestinationTables,
   isTableCreatedBefore,
   splitStatementsWithIndex,
   invokesFunction,
@@ -207,7 +208,10 @@ function findInvokedBackfillViolation(commentsStripped, topLevel) {
           return {
             kind: 'invoke',
             statement: `INVOKE:${name}`,
-            destinationTable: extractDestinationTable(body),
+            // F1: EVERY write in the body, not just whichever one an
+            // anchored single-match scan happened to find — see
+            // extractAllDestinationTables.
+            destinationTables: extractAllDestinationTables(body),
             startIdx,
             message:
               `contains DDL and both declares AND invokes "${name}", whose body performs a backfill — ` +
@@ -243,8 +247,14 @@ export function findRule1Violations(rawSql) {
   const invoked = findInvokedBackfillViolation(commentsStripped, topLevel);
   if (invoked) violations.push(invoked);
   for (const v of violations) {
+    // F1: a violation may name several tables it writes to (a function
+    // body's `destinationTables`) or just one (a single top-level
+    // statement's `destinationTable`) — normalize to a list and degrade
+    // only if EVERY one of them was created earlier in this same file.
+    const tables = v.destinationTables ?? (v.destinationTable != null ? [v.destinationTable] : []);
     v.destinationCreatedHere =
-      v.destinationTable != null && isTableCreatedBefore(v.destinationTable, topLevel.slice(0, v.startIdx));
+      tables.length > 0 && tables.every((t) => isTableCreatedBefore(t, topLevel.slice(0, v.startIdx)));
+    if (v.destinationTable === undefined) v.destinationTable = tables.join(', ') || null;
   }
   return violations;
 }

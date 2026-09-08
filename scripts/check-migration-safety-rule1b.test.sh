@@ -199,6 +199,56 @@ COMMIT;
 SQL
 assert_exit 1 "M6 mirror: still hard-rejects a backfill into an EXISTING table (packages), not created in this file" reject-m6-backfill-into-existing-table-not-created-here
 
+# ── F1 (round 3): extractDestinationTable anchored UPDATE-matching to the
+# START of the string (`^\s*UPDATE`). Called against a FUNCTION BODY (which
+# starts at the `$$` tag, not at the UPDATE), that anchor can never match, so
+# the function silently fell through to the first INSERT INTO in the body —
+# any OTHER write in the same body (e.g. a real UPDATE against an existing,
+# live table) went completely unseen. Reviewer's exact fixture: the body
+# UPDATEs a pre-existing table (packages) AND INSERTs into a table created in
+# the same file (foo_cache) — must still hard-reject on the packages write.
+write_fixture reject-f1-body-has-update-and-insert <<'SQL'
+BEGIN;
+
+CREATE TABLE public.foo_cache (id uuid primary key, v text);
+
+CREATE FUNCTION public.backfill_all() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.packages SET status = 'reset';
+  INSERT INTO public.foo_cache (id, v) SELECT id, 'x' FROM public.packages;
+END;
+$$;
+
+SELECT public.backfill_all();
+
+COMMIT;
+SQL
+assert_exit 1 "F1: rejects when a function body UPDATEs an EXISTING table, even though it also INSERTs into a table created in this file" reject-f1-body-has-update-and-insert
+assert_contains "::error::" "F1: the packages write is a hard reject, not downgraded" reject-f1-body-has-update-and-insert
+
+# ── F1 mirror: EVERY write in the body targets a table created in this same
+# file — this must still degrade to a warning (M6's actual scope, not
+# widened by fixing F1's single-write blind spot).
+write_fixture warn-f1-all-writes-created-here <<'SQL'
+BEGIN;
+
+CREATE TABLE public.foo_cache (id uuid primary key, v text);
+CREATE TABLE public.foo_log (id uuid primary key, note text);
+
+CREATE FUNCTION public.backfill_all() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.foo_cache SET v = 'reset';
+  INSERT INTO public.foo_log (id, note) SELECT id, 'x' FROM public.foo_cache;
+END;
+$$;
+
+SELECT public.backfill_all();
+
+COMMIT;
+SQL
+assert_exit 0 "F1 mirror: does not hard-reject when EVERY write in the body targets a table created in this file" warn-f1-all-writes-created-here
+assert_contains "::warning::" "F1 mirror: still warns" warn-f1-all-writes-created-here
+
 echo ""
-echo "check-migration-safety.sh (rule 1, round 2): $pass passed, $fail failed"
+echo "check-migration-safety.sh (rule 1, round 2+3): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

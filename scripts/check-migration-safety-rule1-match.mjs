@@ -65,11 +65,41 @@ export function nearestFuncDeclName(text, funcDeclRe) {
   return m ? m[1] : null;
 }
 
+/** F1 (review round 3): every table written by an UPDATE ... SET or
+ * INSERT INTO in `text`, in first-seen order, deduplicated. Unlike
+ * `extractDestinationTable` below, this does NOT anchor to the start of the
+ * string — called against a whole FUNCTION BODY (which starts at the `$$`
+ * tag, e.g. `BEGIN\n  UPDATE ...`), a `^`-anchored single-match scan can
+ * never see the UPDATE at all and silently falls through to the first
+ * INSERT INTO, hiding every OTHER write in the same body. M6 must see ALL
+ * of them: a backfill degrades to a warning only if EVERY table it writes
+ * was CREATE TABLE'd earlier in the file, not just the one this used to
+ * happen to find. */
+export function extractAllDestinationTables(text) {
+  const tables = [];
+  const seen = new Set();
+  const add = (name) => {
+    if (!seen.has(name)) {
+      seen.add(name);
+      tables.push(name);
+    }
+  };
+  const updateRe = /\bUPDATE\s+(?:"?public"?\.)?"?(\w+)"?\s+SET\b/gi;
+  let m;
+  while ((m = updateRe.exec(text))) add(m[1]);
+  const insertRe = /\bINSERT\s+INTO\s+(?:"?public"?\.)?"?(\w+)"?/gi;
+  while ((m = insertRe.exec(text))) add(m[1]);
+  return tables;
+}
+
 /** M6: the destination table of an UPDATE or INSERT INTO statement, or
  * null. Used to tell whether a backfill writes into a table CREATE TABLE'd
  * earlier in the same file — that cannot lock anyone out (no OID for
  * another backend to have opened, no readers yet), so it degrades to a
- * warning instead of a hard reject. */
+ * warning instead of a hard reject. Only safe to call against a SINGLE
+ * statement known to start at the UPDATE/INSERT itself (top-level
+ * per-statement violations) — never against a function body; use
+ * `extractAllDestinationTables` for that. */
 export function extractDestinationTable(stmt) {
   let m = stmt.match(/^\s*UPDATE\s+(?:"?public"?\.)?"?(\w+)"?/i);
   if (m) return m[1];
