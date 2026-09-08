@@ -224,10 +224,23 @@ legítimo que queda en todo el spec.
 > aquí es el **efecto aguas abajo** (si el bulto pasa a `extraviado`, si se abre
 > una `exceptions` con `settlement_id`) y **dónde vive la pantalla**.
 >
-> El guard de permiso correspondiente es **spec-85 fase 3a**, que ya está
+> **Corrección (2026-09-08, fix/spec-85-fase-3a-seguimiento).** El párrafo de
+> abajo quedó desactualizado por `271c961`, que implementó spec-85 fase 3a
+> (PR #670, `20260913000005_spec85_lost_requires_ops_manager.sql`): el guard de
+> permiso **ya existe**. `resolve_discrepancy` rechaza `p_status = 'lost'` con
+> `42501` + `LOST_REQUIRES_OPERATIONS_MANAGER:` para cualquier caller cuyo
+> `public.users.role` no sea `operations_manager`, `admin` o `super_admin`;
+> `resolved` sigue abierto a cualquier rol del operador. Esta fase 2b ya no está
+> bloqueada por eso — sigue `[blocked]` únicamente por la decisión de producto
+> sobre el efecto aguas abajo (¿el bulto pasa a `extraviado`? ¿se abre una
+> `exceptions` con `settlement_id`?) y por dónde vive la pantalla, ninguna de
+> las dos resuelta todavía. Quien implemente esta fase debe diseñar el flujo de
+> recepción asumiendo el guard de rol activo, no su ausencia.
+>
+> ~~El guard de permiso correspondiente es **spec-85 fase 3a**, que ya está
 > `[pending]` y desbloqueada: hoy `resolve_discrepancy` no comprueba ningún rol,
 > así que cualquier usuario del operador puede declarar `lost`. Esta fase 2b no
-> debería construirse antes que 3a.
+> debería construirse antes que 3a.~~ (obsoleto, ver corrección de arriba)
 >
 > Y ojo con la pantalla: la candidata natural es el panel que describe la **fase 3
 > de este mismo spec**, que está desbloqueada. Si esa fase se construye antes de
