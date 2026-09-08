@@ -331,6 +331,30 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
 
 ### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[in_progress]`
 
+> Implementado por: sesión en solitario, TDD manual (test pgTAP escrito y
+> corrido en rojo antes de la migración). Rama
+> `feat/spec-80-fase-1b-close-manifest-acl`, SHA `f11ea7a`, PR #669
+> (merge `78d65df8`, 2026-09-08T09:02:14Z).
+> Review: **no se hizo** — no había `reviewer` disponible en esta sesión para
+> lanzar una ronda adversarial separada. Queda declarado como hueco, no como
+> aprobado.
+> QA: `gh pr checks 669` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). `e2e-qa` no aplica — este spec declara `unit, e2e-qa` como
+> jueces, y esta fase es puramente de esquema/RPC sin pantalla nueva que
+> tocar; verificado en su lugar con `scripts/pgtap-local.sh` (contenedor
+> compartido `spec52-pg`): `spec80_close_manifest_acl.test.sql` 2/2, y los
+> 21/21 de `spec80_close_manifest.sql` siguen en verde con los dos mensajes
+> reprefijados. Mutation-testeado quitando cada `REVOKE` por separado —
+> ambos matan su test correspondiente. No se probó contra la base de QA real
+> (a diferencia de la fase 1): el cambio es sólo ACL + prefijo de mensaje
+> sobre una función ya viva en QA/producción, sin nueva superficie que un
+> humano pueda ejercitar desde la UI.
+> Downstream: revisado spec-81, spec-82, spec-83, spec-84, spec-86 — sin
+> cambios. Ninguno depende del texto exacto de estos dos mensajes de error
+> (ambos seguían cayendo al fallback genérico antes del prefijo, y lo siguen
+> haciendo después — ver test nuevo en `closeManifestErrors.test.ts`), ni del
+> ACL, que no era parte de ningún contrato que otro spec asumiera.
+
 Hallado por el re-review de spec-85 fase 2, ronda de arreglos 3 (C3), al
 comparar el "patrón de `close_manifest`" que esa migración dice seguir contra
 lo que `close_manifest` (esta fase, ya mergeado en `main`, PR #657,
