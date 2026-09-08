@@ -33,9 +33,22 @@ interface NextManifestCardProps {
 export function NextManifestCard({ manifest, index, onVerify }: NextManifestCardProps) {
   return (
     <div className="rounded-lg border-2 border-accent bg-surface p-4" data-testid="next-manifest-card">
-      <p className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-muted mb-2">
-        Siguiente manifiesto
-      </p>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        {/* spec-82 fase 1 ronda 2 (mock 5c) — the mock's header row is the
+            carga id itself; the chip REPLACES a "SIGUIENTE MANIFIESTO"
+            eyebrow, it does not sit next to one. The removed eyebrow
+            duplicated the chip's own text for assistive tech ("Siguiente
+            manifiesto, Siguiente"). No test asserted the eyebrow string. */}
+        <p className="font-mono text-sm font-bold text-text truncate">
+          {manifest.external_load_id}
+        </p>
+        {/* spec-82 fase 1 (mock 5c) — same chip PickupMobileNextLoadCard
+            (mock 3h) already shows for this exact state; reused verbatim
+            for visual consistency across the two "next stop" cards. */}
+        <span className="flex-none rounded-full bg-accent-light px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[.06em] text-accent-light-foreground">
+          SIGUIENTE
+        </span>
+      </div>
       <div className="flex items-start gap-3">
         <span className="grid h-9 w-9 flex-none place-items-center rounded-md bg-accent-muted font-mono text-sm font-bold text-accent-emphasis">
           {index + 1}
@@ -45,7 +58,7 @@ export function NextManifestCard({ manifest, index, onVerify }: NextManifestCard
             {manifest.retailer_name ?? 'Retailer desconocido'}
           </p>
           <p className="text-[11.5px] text-text-secondary mt-0.5 truncate">
-            {manifest.external_load_id} · {manifest.total_orders ?? 0} órdenes ·{' '}
+            {manifest.total_orders ?? 0} órdenes ·{' '}
             {expectedLabel(manifest.total_packages)} paquetes
           </p>
           {manifest.pickup_location && (

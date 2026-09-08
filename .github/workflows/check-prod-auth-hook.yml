@@ -1,0 +1,45 @@
+name: Check production auth hook config
+
+# spec-88 fase 3 needs to know whether `custom_access_token_hook` is wired into
+# GoTrue in PRODUCTION before any REVOKE touches it. Production is a
+# Supabase-managed project (ref wfwlcpnkkxxzdvhvvsxb) — there is no GoTrue
+# container to `docker inspect`, unlike QA which is self-hosted on the VPS.
+# The equivalent read there is the Management API's auth config endpoint.
+#
+# This workflow does ONE thing: read that config and print a single boolean.
+# It never echoes the PAT, the project ref, or the full response body — only
+# `hook_custom_access_token_enabled`. Read-only against production; no writes.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Read hook_custom_access_token_enabled
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Query Supabase Management API
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          set -euo pipefail
+          HTTP_STATUS=$(curl -sS -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/config/auth")
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "::error::Management API returned HTTP ${HTTP_STATUS} — cannot confirm hook state"
+            rm -f response.json
+            exit 1
+          fi
+
+          ENABLED=$(jq -r '.hook_custom_access_token_enabled // false' response.json)
+          rm -f response.json
+
+          echo "hook_custom_access_token_enabled=${ENABLED}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "::notice::custom_access_token_hook enabled in production: ${ENABLED}"
