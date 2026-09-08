@@ -167,6 +167,18 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(secondaryIndex).toBeGreaterThan(primaryIndex);
   });
 
+  // Medio 6 (review PR #686): the mock draws the primary CTA at 60px tall
+  // and the secondary at 52px — both were the Button default's h-10 (40px),
+  // under the touch-target minimum on the two most important taps of the
+  // screen.
+  it('the two footer CTAs meet the mock\'s touch-target sizes (60px primary, 52px secondary)', async () => {
+    render(<DiscrepancyReviewPage />);
+    const primary = await screen.findByRole('button', { name: /seguir escaneando/i });
+    const secondary = await screen.findByRole('button', { name: /cerrar con 1 faltante/i });
+    expect(primary.className).toMatch(/min-h-\[60px\]/);
+    expect(secondary.className).toMatch(/min-h-\[52px\]/);
+  });
+
   // Decisión del usuario (2026-09-08): la nota del faltante es OPCIONAL — "Es
   // opcional, y la dejaría editable en el futuro". El mock 5e muestra el CTA
   // "Cerrar con 3 faltantes" totalmente opaco con dos bultos SIN nota; no hay

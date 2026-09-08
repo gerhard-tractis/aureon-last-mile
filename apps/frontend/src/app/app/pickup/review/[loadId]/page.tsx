@@ -208,8 +208,12 @@ export default function DiscrepancyReviewPage() {
       {/* Sticky footer — always visible on tablet/mobile */}
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
         <div className="max-w-2xl mx-auto flex flex-col gap-3">
+          {/* Medio 6 (spec-80 fase 2 review, PR #686): mock draws the
+              primary CTA at 60px and the secondary at 52px — Button's
+              default h-10 (40px) is under the touch-target minimum on the
+              two most important taps of this screen. */}
           {counts.missingCount > 0 ? (
-            <Button onClick={goToScan} className="w-full">
+            <Button onClick={goToScan} className="w-full min-h-[60px]">
               {primaryButtonLabel(counts.missingCount)}
             </Button>
           ) : null}
@@ -218,12 +222,12 @@ export default function DiscrepancyReviewPage() {
             <Button
               variant="outline"
               onClick={goToFirma}
-              className="w-full border-status-error-border text-status-error hover:bg-status-error-bg"
+              className="w-full min-h-[52px] border-status-error-border text-status-error hover:bg-status-error-bg"
             >
               {closeButtonLabel(counts.missingCount)}
             </Button>
           ) : (
-            <Button onClick={goToFirma} className="w-full">
+            <Button onClick={goToFirma} className="w-full min-h-[60px]">
               {primaryButtonLabel(counts.missingCount)}
             </Button>
           )}
