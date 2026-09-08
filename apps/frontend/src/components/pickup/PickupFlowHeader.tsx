@@ -12,12 +12,15 @@ interface PickupFlowHeaderProps {
    * shown as "COLA 0": a badge reading zero is still a claim about state,
    * and the handoff's rule is to neutralise it, not render it.
    *
-   * Nothing writes to the underlying queue from this screen today (see the
-   * comment on `sync` in page.tsx), so in practice this badge never fires
-   * yet. It's also device-global — `useSyncQueue` counts every unsynced row
-   * in `db.scan_queue` regardless of `manifest_id`/`operator_id`, so if a
-   * writer is ever added it would need to filter, or this badge would count
-   * other manifests'/operators' queued scans too.
+   * spec-81 fase 1 — `useSyncQueue` now sums `db.scan_queue` (Recepción) and
+   * `db.pickup_queue` (Recogida, this screen), both in the same IndexedDB
+   * database. No writer populates `db.pickup_queue` from this screen yet —
+   * that's spec-81 fase 2 — so in practice this badge is still 0 today, but
+   * the count itself is correct infrastructure: the day fase 2 lands a
+   * writer, this number is true without touching this component. It is
+   * device-global, not scoped to `manifestId`/`operatorId` — same as
+   * `scan_queue` counting today — so it can include other manifests'
+   * queued work.
    */
   queuedCount: number;
 }

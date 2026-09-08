@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { db, type ScanQueue } from '@/lib/db';
+import { db, getPendingPickupCount, requestPersistentStorage, type ScanQueue } from '@/lib/db';
 import { syncManager } from '@/lib/sync-manager';
 
 /**
@@ -44,8 +44,15 @@ export function useSyncQueue(): SyncQueueState {
     try {
       const rows = await db.scan_queue.orderBy('scanned_at').reverse().limit(RECENT_LIMIT).toArray();
       setRecent(rows);
-      const outstanding = await db.scan_queue.filter((s) => !s.synced).count();
-      setQueuedCount(outstanding);
+      // spec-81 — the badge covers both queues that live in this device's
+      // IndexedDB: Recepción's `scan_queue` and Recogida's `pickup_queue`.
+      // Without the second term this reads 0 while Recogida scans wait for
+      // signal (ronda 1 de review de spec-81 fase 1, B1).
+      const [outstandingScans, outstandingPickups] = await Promise.all([
+        db.scan_queue.filter((s) => !s.synced).count(),
+        getPendingPickupCount(),
+      ]);
+      setQueuedCount(outstandingScans + outstandingPickups);
     } catch {
       // IndexedDB unavailable (private browsing, quota). The chip simply
       // reports the network state; it must never take the screen down.
@@ -70,6 +77,11 @@ export function useSyncQueue(): SyncQueueState {
   useEffect(() => {
     setStatus(navigator.onLine ? 'online' : 'offline');
     void read();
+    // spec-81 fase 1, ronda 1 de review (M4) — best-effort: sin este
+    // permiso, IndexedDB es "best-effort" y iOS Safari (no instalado) purga
+    // a los 7 días sin interacción. Éste es el primer mount que escribe en
+    // la cola de Recogida, así que es donde corresponde pedirlo.
+    void requestPersistentStorage();
 
     const onOnline = () => {
       // Coming back online is exactly when the queue should drain, so the

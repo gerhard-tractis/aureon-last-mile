@@ -3,10 +3,21 @@
  *
  * Lógica pura sobre IndexedDB (Dexie + fake-indexeddb, sin DOM real).
  * Ver docs/specs/spec-81-recogida-cola-offline.md.
+ *
+ * Ronda 1 de review: la cola vive en `AureonOfflineDB` (`@/lib/db`), la
+ * misma base que ya usa `useSyncQueue` — no una base separada (B1).
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { RecogidaOfflineQueueDB } from "./db";
-import { enqueue, listPending, markSent, markFailed, purgeConfirmed } from "./queue";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { db } from "../db";
+import {
+  enqueue,
+  listPending,
+  markSent,
+  markFailed,
+  purgeConfirmed,
+  claimPending,
+  markDead,
+} from "./queue";
 
 const OPERATOR_A = "operator-a";
 const OPERATOR_B = "operator-b";
@@ -14,14 +25,12 @@ const MANIFEST_1 = "manifest-1";
 const MANIFEST_2 = "manifest-2";
 
 describe("recogida offline queue", () => {
-  let db: RecogidaOfflineQueueDB;
-
-  beforeEach(() => {
-    db = new RecogidaOfflineQueueDB();
+  beforeEach(async () => {
+    await db.pickup_queue.clear();
   });
 
   afterEach(async () => {
-    await db.delete();
+    await db.pickup_queue.clear();
   });
 
   describe("enqueue", () => {
@@ -65,6 +74,44 @@ describe("recogida offline queue", () => {
 
       expect(entry.status).toBe("pending");
       expect(entry.retryCount).toBe(0);
+      expect(entry.lastAttemptAt).toBeNull();
+      expect(entry.nextAttemptAt).toBeNull();
+    });
+
+    it("persists the payload's blob (B6 — a mutant dropping it must fail)", async () => {
+      // fake-indexeddb's structured-clone polyfill does not round-trip a
+      // real Blob's identity (it comes back as `{}`), so asserting on a
+      // re-read would test the polyfill, not our code. Assert on the write
+      // itself: the object hitting `db.pickup_queue.add` must carry `blob`.
+      const addSpy = vi.spyOn(db.pickup_queue, "add");
+      const blob = new Blob(["fake photo bytes"], { type: "image/jpeg" });
+
+      await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "ABC123" },
+        blob,
+      });
+
+      expect(addSpy).toHaveBeenCalledWith(expect.objectContaining({ blob }));
+      addSpy.mockRestore();
+    });
+
+    it("stamps createdAt with the real current time (B6 — a fixed-value mutant must fail)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T12:34:56.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "ABC123" },
+      });
+
+      expect(entry.createdAt).toBe("2026-09-07T12:34:56.000Z");
+
+      vi.useRealTimers();
     });
   });
 
@@ -174,6 +221,63 @@ describe("recogida offline queue", () => {
 
       expect(pending).toHaveLength(0);
     });
+
+    it("does not return entries claimed in-flight (sending) or dead-lettered", async () => {
+      const sending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const dead = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-2" },
+      });
+
+      await claimPending(db, sending.id!);
+      await markDead(db, dead.id!, "MANIFEST_NOT_CLOSABLE");
+
+      const pending = await listPending(db, OPERATOR_A);
+
+      expect(pending).toHaveLength(0);
+    });
+  });
+
+  describe("claimPending (B3 — in-flight guard)", () => {
+    it("transitions a pending entry to sending and returns true", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      const claimed = await claimPending(db, entry.id!);
+
+      expect(claimed).toBe(true);
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+    });
+
+    it("refuses a second concurrent claim of the same entry", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      const [firstClaim, secondClaim] = await Promise.all([
+        claimPending(db, entry.id!),
+        claimPending(db, entry.id!),
+      ]);
+
+      // Exactly one of the two concurrent claims may win — never both, and
+      // never neither (Dexie's `.modify()` serialises this in one txn).
+      expect([firstClaim, secondClaim].filter(Boolean)).toHaveLength(1);
+    });
   });
 
   describe("markFailed", () => {
@@ -192,6 +296,80 @@ describe("recogida offline queue", () => {
       expect(refetched.retryCount).toBe(1);
       expect(refetched.lastError).toBe("500 server error");
       expect(refetched.status).toBe("pending");
+    });
+
+    it("stamps lastAttemptAt so a reload can rebuild backoff instead of retrying everything at once", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T08:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await markFailed(db, entry.id!, "network error");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.lastAttemptAt).toBe("2026-09-07T08:00:00.000Z");
+
+      vi.useRealTimers();
+    });
+
+    it("releases an in-flight (sending) claim back to pending on failure", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await claimPending(db, entry.id!);
+
+      await markFailed(db, entry.id!, "network error");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("pending");
+    });
+
+    it("B2 — never loses an increment under two concurrent failures on the same entry", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      // Both drain passes read the stale entry and race to write — this is
+      // exactly what happens when the `online` event and the mount-time
+      // drain both fire coming out of a tunnel (spec-81, ronda 1, B2).
+      await Promise.all([
+        markFailed(db, entry.id!, "network error A"),
+        markFailed(db, entry.id!, "network error B"),
+      ]);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.retryCount).toBe(2);
+    });
+  });
+
+  describe("markDead (B3 — terminal state, no lying and no silent loss)", () => {
+    it("moves an entry out of listPending without deleting it or marking it sent", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+
+      await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored).toBeDefined();
+      expect(stored?.status).toBe("dead");
+      expect(stored?.lastError).toBe("MANIFEST_NOT_CLOSABLE");
+
+      const pending = await listPending(db, OPERATOR_A);
+      expect(pending).toHaveLength(0);
     });
   });
 
@@ -214,7 +392,7 @@ describe("recogida offline queue", () => {
       const purgedCount = await purgeConfirmed(db, OPERATOR_A);
 
       expect(purgedCount).toBe(1);
-      const remaining = await db.queue.toArray();
+      const remaining = await db.pickup_queue.toArray();
       expect(remaining).toHaveLength(1);
       expect(remaining[0].clientOperationId).toBe(stillPending.clientOperationId);
     });
@@ -237,7 +415,7 @@ describe("recogida offline queue", () => {
 
       await purgeConfirmed(db, OPERATOR_A);
 
-      const remaining = await db.queue.toArray();
+      const remaining = await db.pickup_queue.toArray();
       expect(remaining).toHaveLength(1);
       expect(remaining[0].operatorId).toBe(OPERATOR_B);
     });

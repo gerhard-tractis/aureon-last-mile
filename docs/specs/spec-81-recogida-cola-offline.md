@@ -2,7 +2,7 @@
 
 > **Related:** [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (las pantallas que hacen la promesa que este spec cumple), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`), [spec-54](spec-54-ui-rebrand.md) (fase 2: el chip de sync y `ConnectionStatusBanner`), [spec-62](spec-62-reception-mobile.md) (móvil de andén, mismo problema de conectividad), [spec-52](spec-52-pickup-route-vehicle-and-state-engine.md) (motor de estados de bulto)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 **Downstream:** spec-82-recogida-movil-asignacion-y-ruta.md
 
@@ -20,7 +20,12 @@ Hacer verdad el «SIN RED» que el diseño de Recogida promete en cinco pantalla
 - `5f`: «Todo queda en el teléfono y se sube al recuperar señal. **Las fotos también.**»
 - `5i`: «Guardado en el teléfono — 6 registros y 2 fotos esperan señal para subir»
 
-**No existe ninguna cola.** Búsqueda en `apps/frontend/src` de `outbox`, `offlineQueue`, `useOfflineQueue` y `syncQueue`: cero resultados. Hoy cada escaneo es una escritura sincrónica a Supabase; sin señal, falla y se pierde.
+**No existe ninguna cola para Recogida — y esa frase necesita matices, corregidos en la ronda 1 de review de fase 1.** El goal original decía que un grep de `outbox|offlineQueue|useOfflineQueue|syncQueue` daba cero resultados; es falso, `hooks/useSyncQueue.ts` es uno de esos nombres. Lo que hay realmente:
+
+- **Una cola viva, sin escritor de Recogida.** `apps/frontend/src/lib/db.ts` (clase `AureonOfflineDB`, base IndexedDB `aureon_offline`, tabla `scan_queue`) + `hooks/useSyncQueue.ts` + `lib/sync-manager.ts` ya implementan lo que la fase 2 de este spec promete: backoff exponencial (`[1000, 2000, 4000]`, `maxRetries = 3`), batching por `manifest_id`, y un guard `isSyncing`. La consumen `components/SyncChip.tsx`, `app/app/reception/route/[routeId]/page.tsx` y **`app/app/pickup/scan/[loadId]/page.tsx`** — la pantalla de escaneo de Recogida ya está cableada a esta cola para el badge "COLA N", pero nada escribe en ella desde esa pantalla hoy. Ese escritor es, en efecto, lo que este spec construye — pero sobre esta base, no sobre una nueva (ver "Decisiones de diseño").
+- **Una cola muerta.** `lib/offline/indexedDB.ts` (también una clase `AureonOfflineDB`, distinta base) + `lib/stores/scanStore.ts`. `scanStore` es su único consumidor y nada fuera de su propio test importa `useScanStore`. No se retira en esta fase porque hacerlo no es trivial y no es su alcance; queda escrito aquí para que el próximo lector no la confunda con infraestructura viva ni intente construir sobre ella.
+
+Ese matiz no cambia el diagnóstico de fondo: hoy cada escaneo de Recogida es una escritura sincrónica a Supabase; sin señal, falla y se pierde. Lo que aporta este spec es el escritor y el contrato de idempotencia sobre la cola que ya existe, no una cola nueva.
 
 Esto no es un detalle de pulido. El caso de uso es un operario en el andén de un mall, con el teléfono en una bodega sin cobertura, escaneando 42 bultos. Es **el** entorno de la pantalla, no un caso borde.
 
@@ -40,9 +45,15 @@ Meterla dentro de spec-80 obligaría a ese PR a tocar el motor de escaneo, el de
 
 ## Decisiones de diseño
 
-### Almacenamiento: IndexedDB, no `localStorage`
+### Almacenamiento: IndexedDB, no `localStorage` — y **la misma base que ya existe**, no una tercera
 
 Las fotos son blobs de varios MB. `localStorage` es texto y tiene un techo de ~5 MB por origen. IndexedDB almacena blobs nativamente y es lo único que soporta «2 fotos esperan señal».
+
+**Corrección de ronda 1 de review (B1):** la primera versión de esta fase creó `RecogidaOfflineQueueDB`, una base IndexedDB (`AureonRecogidaOfflineQueue`) separada de `aureon_offline` (la que ya usan `useSyncQueue`/`SyncChip`/`PickupFlowHeader`). Eso rompe exactamente lo que el spec promete: 42 bultos escaneados sin señal encolarían en la base nueva, y el badge "COLA N" — que lee `aureon_offline.scan_queue` — mostraría 0 mientras esperan.
+
+La cola de Recogida vive en `apps/frontend/src/lib/db.ts`, la clase `AureonOfflineDB` existente, como una tabla nueva (`pickup_queue`) añadida vía `this.version(2).stores({...})` — Dexie conserva `scan_queue` (versión 1) sin tocarlo. Un origen de almacenamiento, una sola medición de cuota (`checkStorageQuota`), un solo lugar donde pedir `navigator.storage.persist()`.
+
+`apps/frontend/src/lib/offline/indexedDB.ts` + `lib/stores/scanStore.ts` (la base y el store que la primera versión de este spec citaba como "la otra Recogida existente") están muertos — ver "Goal". No se tocan aquí.
 
 ### Idempotencia: la clave la genera el cliente
 
@@ -72,13 +83,19 @@ Las lecturas. Un manifiesto que nunca se descargó no se puede escanear sin red,
 
 ### Fase 1 — Almacén y contrato `[in_progress]`
 
-**Archivos:** `apps/frontend/src/lib/offline/queue.ts`, `queue.test.ts`, `apps/frontend/src/lib/offline/db.ts`
+**Archivos:** `apps/frontend/src/lib/db.ts` (tabla `pickup_queue`, version 2 — **no** una base separada, ver "Decisiones de diseño"), `apps/frontend/src/lib/offline/queue.ts`, `queue.test.ts`, `apps/frontend/src/hooks/useSyncQueue.ts` (cuenta también `pickup_queue`)
 
-Lógica pura y testeable sin navegador: encolar, listar pendientes, marcar enviado, marcar fallido con contador de reintentos, purgar lo confirmado.
+Lógica pura y testeable sin navegador: encolar, listar pendientes, reclamar para envío (`claimPending`), marcar enviado, marcar fallido con contador de reintentos, marcar muerta (`markDead` — rechazo de negocio irrecuperable), purgar lo confirmado.
 
-- [ ] Tests primero, con IndexedDB falso en memoria. Nada de tocar el DOM.
-- [ ] Implementar el almacén.
-- [ ] Un `client_operation_id` por entrada, generado al encolar y **nunca** regenerado en el reintento. Test explícito de eso — es el error que hace duplicar.
+- [x] Tests primero, con IndexedDB falso en memoria (`fake-indexeddb`). Nada de tocar el DOM.
+- [x] Implementar el almacén — converge sobre `AureonOfflineDB` (`lib/db.ts`), no una base propia.
+- [x] Un `client_operation_id` por entrada, generado al encolar y **nunca** regenerado en el reintento. Test explícito de eso — es el error que hace duplicar.
+- [x] **Ronda 1 de review — B2:** `markFailed` es atómico (`db.pickup_queue.where(":id").equals(id).modify(fn)`, una sola transacción); el `get` + `update` original perdía incrementos bajo dos fallos concurrentes. Test que raza dos `markFailed` sobre la misma entrada y verifica `retryCount === 2`.
+- [x] **Ronda 1 de review — B3:** `PickupQueueEntry` ahora tiene `lastAttemptAt`/`nextAttemptAt` (persistidos, para que el backoff de fase 2 sobreviva a que la PWA se cierre a mitad de reintento), un estado in-flight `sending` (con `claimPending`, atómico, para que dos drenados concurrentes no envíen la misma entrada dos veces) y un estado terminal `dead` (con `markDead`, para sacar una entrada envenenada de `listPending` sin mentir "sent" ni borrarla en silencio).
+- [x] **Ronda 1 de review — B6:** mutantes cerrados — `enqueue` tiene test explícito de que persiste `blob` (via spy sobre `.add()`, porque `fake-indexeddb` no preserva la identidad de un `Blob` real a través de su structured-clone) y de que `createdAt` usa la hora real (`vi.useFakeTimers({ toFake: ["Date"] })` — fake timers completos cuelgan las transacciones internas de Dexie). `listPending` pasó de un `.sort()` posterior a `orderBy("id")` explícito: el `.sort()` era necesariamente redundante (IndexedDB ya desempata por clave primaria ascendente dentro de un mismo valor de índice) y ningún test legítimo podía discriminar su ausencia sin violar esa garantía del spec de IndexedDB.
+- [x] **Ronda 1 de review — B7:** el índice `[manifestId+status]` se quitó — ninguna consulta lo usaba y no empezaba por `operatorId`.
+- [x] **Ronda 1 de review — B1, contador real:** `useSyncQueue().queuedCount` ahora suma `db.scan_queue` (sin sincronizar) + `db.pickup_queue` (pendientes), con test. `PickupFlowHeader`/`SyncChip` siguen sin escritor hasta fase 2, pero el conteo ya es correcto — no hace falta tocarlos otra vez cuando fase 2 aterrice.
+- [x] **Ronda 1 de review — M4:** `requestPersistentStorage()` (`lib/db.ts`) pide `navigator.storage.persist()`; se invoca desde el mount de `useSyncQueue` (el primer punto que ya toca esta base). Sin esto, "GUARDADO EN EL DISPOSITIVO" (`5d`) no es una garantía real — IndexedDB es best-effort y iOS Safari no instalado purga a los 7 días sin interacción.
 
 ### Fase 2 — Drenado `[pending]`
 

@@ -1,17 +1,44 @@
 /**
  * spec-81 fase 1 — Contrato puro de la cola offline de Recogida.
  *
- * Encolar, listar pendientes, marcar enviado, marcar fallido con contador de
- * reintentos, purgar lo confirmado. Sin DOM, sin React — el drenado (worker
- * que consume esta cola contra la red) es spec-81 fase 2.
+ * Encolar, listar pendientes, reclamar para envío, marcar enviado, marcar
+ * fallido con contador de reintentos, marcar muerta (rechazo irrecuperable),
+ * purgar lo confirmado. Sin DOM, sin React — el drenado (worker que consume
+ * esta cola contra la red) es spec-81 fase 2.
  *
- * Ver docs/specs/spec-81-recogida-cola-offline.md.
+ * Ronda 1 de review: opera sobre `AureonOfflineDB` (`@/lib/db`), la base que
+ * ya usan `useSyncQueue`/`SyncChip`/`PickupFlowHeader` — no una base propia
+ * (B1). Ver docs/specs/spec-81-recogida-cola-offline.md.
  */
-import type {
-  PickupQueueEntry,
-  PickupQueueOperationType,
-  RecogidaOfflineQueueDB,
-} from "./db";
+import type { PickupQueueEntry, PickupQueueOperationType } from "../db";
+
+/** Una colección Dexie ya acotada por `.where().equals()` — soporta filtrar
+ * más (`.and()`), escribir atómicamente dentro de una única transacción
+ * (`.modify()`) o borrar (`.delete()`), en cualquier orden. */
+interface PickupQueueCollection {
+  and(filter: (entry: PickupQueueEntry) => boolean): PickupQueueCollection;
+  modify(
+    changes: Partial<PickupQueueEntry> | ((entry: PickupQueueEntry) => void),
+  ): Promise<number>;
+  delete(): Promise<number>;
+}
+
+/** El subconjunto de `AureonOfflineDB` que este módulo necesita — permite
+ * pasar la instancia real (`db` de `@/lib/db`) o un doble de prueba. */
+export interface PickupQueueStore {
+  pickup_queue: {
+    add(entry: PickupQueueEntry): Promise<number>;
+    get(id: number): Promise<PickupQueueEntry | undefined>;
+    where(index: string): {
+      equals(value: unknown): PickupQueueCollection;
+    };
+    orderBy(index: string): {
+      filter(predicate: (entry: PickupQueueEntry) => boolean): {
+        toArray(): Promise<PickupQueueEntry[]>;
+      };
+    };
+  };
+}
 
 export interface EnqueueInput {
   operatorId: string;
@@ -29,10 +56,10 @@ export interface EnqueueInput {
  * siempre la misma entrada y el mismo id.
  */
 export async function enqueue(
-  db: RecogidaOfflineQueueDB,
+  db: PickupQueueStore,
   input: EnqueueInput,
 ): Promise<PickupQueueEntry> {
-  const id = await db.queue.add({
+  const id = await db.pickup_queue.add({
     clientOperationId: crypto.randomUUID(),
     operatorId: input.operatorId,
     manifestId: input.manifestId,
@@ -41,10 +68,12 @@ export async function enqueue(
     blob: input.blob,
     status: "pending",
     retryCount: 0,
+    lastAttemptAt: null,
+    nextAttemptAt: null,
     createdAt: new Date().toISOString(),
   });
 
-  const entry = await db.queue.get(id);
+  const entry = await db.pickup_queue.get(id);
   if (!entry) {
     throw new Error(`recogida offline queue: entry ${id} not found right after insert`);
   }
@@ -53,47 +82,106 @@ export async function enqueue(
 
 /**
  * Entradas pendientes de un operador, en orden FIFO estricto de inserción.
- * Filtrar por `manifestId` acota a un manifiesto (garantiza que su
- * `close_manifest` nunca salga antes que sus escaneos); dos manifiestos
- * distintos pueden drenarse en paralelo (spec-81 fase 2).
+ * `orderBy("id")` es explícito sobre la clave primaria en vez de depender de
+ * un `.sort()` posterior — el orden de un cursor de IndexedDB sobre un único
+ * valor de índice ya viene desempatado por clave primaria ascendente, así
+ * que un `.sort()` adicional era redundante y no discriminaba ningún
+ * mutante (spec-81, ronda 1 de review, B6).
+ *
+ * Excluye `sending` (reclamada por otro drenado en curso) y `dead`
+ * (rechazo irrecuperable) además de `sent`.
  */
 export async function listPending(
-  db: RecogidaOfflineQueueDB,
+  db: PickupQueueStore,
   operatorId: string,
   manifestId?: string,
 ): Promise<PickupQueueEntry[]> {
-  const entries = await db.queue
-    .where("operatorId")
-    .equals(operatorId)
-    .and((entry) => entry.status === "pending")
-    .and((entry) => manifestId === undefined || entry.manifestId === manifestId)
+  return db.pickup_queue
+    .orderBy("id")
+    .filter(
+      (entry) =>
+        entry.operatorId === operatorId &&
+        entry.status === "pending" &&
+        (manifestId === undefined || entry.manifestId === manifestId),
+    )
     .toArray();
-
-  return entries.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
 }
 
 /** Marca una entrada como confirmada por el servidor. */
-export async function markSent(db: RecogidaOfflineQueueDB, id: number): Promise<void> {
-  await db.queue.update(id, { status: "sent" });
+export async function markSent(db: PickupQueueStore, id: number): Promise<void> {
+  await db.pickup_queue.where(":id").equals(id).modify({ status: "sent" });
 }
 
 /**
- * Registra un intento fallido: incrementa `retryCount` y guarda el motivo.
- * La entrada permanece `pending` — sigue siendo candidata a reintento en
- * fase 2 — y conserva su `client_operation_id` original.
+ * Reclama una entrada `pending` para enviarla, marcándola `sending`. Atómico:
+ * usa `.modify()` con un filtro `status === "pending"` para que dos pasadas
+ * de drenado concurrentes (el evento `online` y el montaje disparando juntos
+ * al salir de un túnel) no puedan enviar la misma entrada dos veces —
+ * `.modify()` corre en una única transacción a nivel del motor de IndexedDB,
+ * así que sólo una de las dos llamadas concurrentes ve `count === 1`
+ * (spec-81, ronda 1 de review, B3).
+ *
+ * Devuelve `true` si esta llamada ganó la reclamación, `false` si la entrada
+ * ya no estaba `pending` (otro drenado se le adelantó, o no existe).
+ */
+export async function claimPending(db: PickupQueueStore, id: number): Promise<boolean> {
+  const now = new Date().toISOString();
+  const count = await db.pickup_queue
+    .where(":id")
+    .equals(id)
+    .and((entry) => entry.status === "pending")
+    .modify((entry) => {
+      entry.status = "sending";
+      entry.lastAttemptAt = now;
+    });
+  return count === 1;
+}
+
+/**
+ * Registra un intento fallido: incrementa `retryCount`, guarda el motivo y
+ * el momento del intento, y libera la reclamación (`sending` → `pending`) si
+ * la había — sigue siendo candidata a reintento en fase 2. Conserva su
+ * `client_operation_id` original.
+ *
+ * Atómico por construcción: `.modify()` con una función de cambios lee y
+ * escribe dentro de la misma transacción, así que dos `markFailed`
+ * concurrentes sobre la misma entrada nunca pierden un incremento — a
+ * diferencia de la versión anterior (`get` + `update` en dos transacciones
+ * separadas), que sí lo perdía (spec-81, ronda 1 de review, B2).
  */
 export async function markFailed(
-  db: RecogidaOfflineQueueDB,
+  db: PickupQueueStore,
   id: number,
   errorMessage: string,
 ): Promise<void> {
-  const entry = await db.queue.get(id);
-  if (!entry) return;
+  const now = new Date().toISOString();
+  await db.pickup_queue
+    .where(":id")
+    .equals(id)
+    .modify((entry) => {
+      entry.retryCount += 1;
+      entry.lastError = errorMessage;
+      entry.lastAttemptAt = now;
+      entry.status = "pending";
+    });
+}
 
-  await db.queue.update(id, {
-    retryCount: entry.retryCount + 1,
-    lastError: errorMessage,
-  });
+/**
+ * Marca una entrada como muerta: un rechazo de negocio irrecuperable (p. ej.
+ * `MANIFEST_NOT_CLOSABLE`) que reintentar nunca va a arreglar. Sale de
+ * `listPending` sin mentir que se envió (`sent`) y sin desaparecer en
+ * silencio (borrarla sería el riesgo nº1 del spec: una carga que se cierra
+ * con un conteo falso). Ver spec-81, ronda 1 de review, B3.
+ */
+export async function markDead(
+  db: PickupQueueStore,
+  id: number,
+  reason: string,
+): Promise<void> {
+  await db.pickup_queue
+    .where(":id")
+    .equals(id)
+    .modify({ status: "dead", lastError: reason });
 }
 
 /**
@@ -103,10 +191,10 @@ export async function markFailed(
  * fase 2 la invoque tras cada drenado exitoso.
  */
 export async function purgeConfirmed(
-  db: RecogidaOfflineQueueDB,
+  db: PickupQueueStore,
   operatorId: string,
 ): Promise<number> {
-  return db.queue
+  return db.pickup_queue
     .where("operatorId")
     .equals(operatorId)
     .and((entry) => entry.status === "sent")
