@@ -269,7 +269,10 @@ export function findRule1Warnings(rawSql) {
     .map(
       (v) =>
         `${v.message} — downgraded: destination table "${v.destinationTable}" was CREATE TABLE'd earlier ` +
-        'in this same file, so no other backend can have it open and nothing can be locked out (warning, not error)'
+        'in this same file, so no other backend can have THAT table open yet (warning, not error). ' +
+        'This does NOT mean the statement is risk-free: M6 only reasons about the destination — it does not ' +
+        'look at the source of an INSERT ... SELECT (an existing, live source table still gets scanned and ' +
+        'locked for reading) or at how long the deploy transaction stays open while that scan runs.'
     );
 }
 

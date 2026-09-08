@@ -273,6 +273,39 @@ COMMIT;
 SQL
 assert_exit 1 "F2: CREATE TABLE IF NOT EXISTS does not exempt a backfill into it — the table may already exist with rows and readers" reject-f2-if-not-exists-does-not-count-as-created-here
 
+# ── F3 (round 3): M6's warning text claimed "nothing can be locked out",
+# which is only true of the DESTINATION table. It says nothing about the
+# SOURCE of an INSERT ... SELECT — an existing, live table gets a full scan
+# (AccessShareLock, held for the length of the read) inside the deploy's own
+# transaction. 20260306000001:316 is exactly this shape: INSERT INTO
+# dispatches ... SELECT ... FROM delivery_attempts, a preexisting table.
+# The message must not assert blanket safety it cannot back up.
+write_fixture warn-f3-message-does-not-overclaim-safety <<'SQL'
+BEGIN;
+
+CREATE TABLE public.foo_cache (id uuid primary key, v text);
+CREATE TABLE public.delivery_attempts_existing_marker (id uuid);
+
+CREATE FUNCTION public.backfill_all() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO public.foo_cache (id, v) SELECT id, 'x' FROM public.delivery_attempts;
+END;
+$$;
+
+SELECT public.backfill_all();
+
+COMMIT;
+SQL
+assert_contains "::warning::" "F3: still warns (destination genuinely created here)" warn-f3-message-does-not-overclaim-safety
+if bash "$SCRIPT" "$TMP/warn-f3-message-does-not-overclaim-safety" 2>&1 | grep -qF "nothing can be locked out"; then
+  fail=$((fail + 1))
+  echo "  FAIL F3: warning text still claims blanket 'nothing can be locked out', ignoring the SOURCE table and transaction duration"
+else
+  pass=$((pass + 1))
+  echo "  ok   F3: warning text no longer overclaims blanket safety"
+fi
+assert_contains "source" "F3: warning text calls out that the SOURCE table (and transaction duration) is a separate, unaddressed risk" warn-f3-message-does-not-overclaim-safety
+
 echo ""
 echo "check-migration-safety.sh (rule 1, round 2+3): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
