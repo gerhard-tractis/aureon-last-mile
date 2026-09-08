@@ -1,0 +1,56 @@
+'use client';
+
+import { useState } from 'react';
+import { Camera } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { CameraIntake } from './CameraIntake';
+
+/**
+ * spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" on the mobile
+ * active-route screen (`/app/pickup/route/active`). Reuses the exact OCR
+ * intake flow already built for desktop's "Nuevo Manifiesto"
+ * (CameraIntake / useCameraIntake, spec-47) — this is placement only, no
+ * new capability, per the spec's own framing.
+ *
+ * A self-contained trigger (owns its own open/close state) rather than a
+ * prop threaded down from `page.tsx`, deliberately: spec-82's phase-1 file
+ * list names `app/app/pickup/route/active/page.tsx` but not
+ * `PickupMobileView.tsx` or `app/app/pickup/page.tsx`, and desktop's
+ * `intakeOpen` state lives on that different page entirely. Keeping the
+ * dialog local here means this addition does not have to reach into files
+ * outside the phase's declared scope.
+ *
+ * Mobile-3j (`PickupMobileStartRoute`) deliberately does NOT get this same
+ * control — spec-54 already excluded "Nuevo Manifiesto" from that screen
+ * on purpose ("that screen is for a driver starting a route", with a
+ * regression test in app/app/pickup/page.test.tsx pinning it) and nothing
+ * in spec-82's text revisits that call. Mock 5c is the active-ROUTE screen,
+ * not the pre-route manifest list, so the two decisions do not conflict.
+ */
+export function DigitalizeManifestTrigger() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full min-h-[44px] gap-2"
+        onClick={() => setOpen(true)}
+      >
+        <Camera className="h-4 w-4" aria-hidden="true" />
+        Digitalizar manifiesto
+      </Button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Digitalizar manifiesto</DialogTitle>
+          </DialogHeader>
+          <CameraIntake onClose={() => setOpen(false)} />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

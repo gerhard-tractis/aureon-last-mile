@@ -21,6 +21,7 @@ import { RouteCompleteNotice } from '@/components/pickup/RouteCompleteNotice';
 import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
 import { RouteManifestList } from '@/components/pickup/RouteManifestList';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
+import { DigitalizeManifestTrigger } from '@/components/pickup/DigitalizeManifestTrigger';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
 import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
@@ -228,6 +229,13 @@ export default function ActiveRoutePage() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* spec-82 phase 1 (mock 5c) — precarga/digitalización de un
+              manifiesto nuevo directamente desde la ruta activa, sin
+              volver a la pantalla de escritorio. Reusa el mismo flujo OCR
+              que "Nuevo Manifiesto" ya usa en /app/pickup (spec-47);
+              ver DigitalizeManifestTrigger.tsx. */}
+          <DigitalizeManifestTrigger />
         </>
       )}
 

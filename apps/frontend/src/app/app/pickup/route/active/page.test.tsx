@@ -285,6 +285,19 @@ describe('ActiveRoutePage', () => {
     );
   });
 
+  // spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" reuses the OCR
+  // intake flow already built for desktop (CameraIntake/useCameraIntake,
+  // spec-47); DigitalizeManifestTrigger.test.tsx covers the dialog itself,
+  // this only proves it is reachable from this screen.
+  it('offers "Digitalizar manifiesto" on the active-route screen', async () => {
+    wrap(<Page />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: /digitalizar manifiesto/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
   /**
    * spec-61 Task 5 — abandoned routes had no exit. Task 7 stopped
    * `get_pending_manifests` offering routed loads, so a route opened by

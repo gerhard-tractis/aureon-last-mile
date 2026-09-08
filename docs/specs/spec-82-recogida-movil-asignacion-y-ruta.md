@@ -2,7 +2,7 @@
 
 > **Related:** [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre al que estas pantallas conducen), [spec-81](spec-81-recogida-cola-offline.md) (`DESCARGAR` depende de su almacén), [spec-83](spec-83-recogida-escritorio-datos-faltantes.md) (escritorio `5a`), [spec-61](spec-61-pickup-route-crew.md) (construyó estas dos pantallas contra el mock `3j`), [spec-64](spec-64-remove-manifest-from-open-route.md) (quitar una carga de una ruta abierta), [spec-54](spec-54-ui-rebrand.md) (mock `1i`, ruta activa)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 **Downstream:** spec-83-recogida-escritorio-datos-faltantes.md
 
@@ -63,16 +63,67 @@ Es la contraparte honesta de la cola de spec-81: una carga que nunca se descarg�
 | **3 — Asignación** | «asignados a ti» de verdad | decisión (a)/(b)/(c) |
 | **4 — Andén en la tarjeta** | La línea del mock | decisión sobre el dato |
 
-### Fase 1 — Diff visual `[pending]`
+### Fase 1 — Diff visual `[in_progress]`
 
 **Archivos:** `components/pickup/PickupMobileNoRoute.tsx`, `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx`, `PickupMobileCompactRow.tsx`, `app/app/pickup/route/active/page.tsx`, y sus tests
 
 Lo único que se toca aquí es lo que no necesita datos nuevos: jerarquía, chips de estado (`EN RUTA` / `SIGUIENTE` / `COMPLETADA`), el pie de conteo de `5b`, la cabecera de `5c` con el código de ruta y «Cerrar ruta», y **«Digitalizar manifiesto»**, que ya existe (`useCameraIntake`) y sólo hay que colocar donde el mock lo pone.
 
-- [ ] Screenshot diff pantalla a pantalla contra `5b` y `5c` antes de tocar nada; anotar cada diferencia como «visual» o «necesita dato».
-- [ ] Tests de los componentes tocados primero.
-- [ ] Implementar sólo lo marcado «visual».
-- [ ] Lista explícita en este spec de lo aplazado y por qué.
+- [x] Screenshot diff pantalla a pantalla contra `5b` y `5c` antes de tocar nada; anotar cada diferencia como «visual» o «necesita dato».
+- [x] Tests de los componentes tocados primero.
+- [x] Implementar sólo lo marcado «visual».
+- [x] Lista explícita en este spec de lo aplazado y por qué.
+
+**GAP declarado antes de empezar:** no hay acceso al proyecto de Claude Design
+donde viven `5b`/`5c` — ni imagen ni export. Todo lo de abajo se contrastó contra
+la **descripción textual** de este mismo spec, no contra un screenshot real. Es
+un diff más débil que el que el checklist pide, y se dice aquí en vez de fingir
+que se hizo el diff pixel a pixel.
+
+**Lo que ya estaba (spec-54/spec-61), sin cambios porque ya coincide con el texto del mock:**
+- `5b` — eyebrow "MANIFIESTOS POR RETIRAR · N" (deliberadamente NO "asignados a
+  ti" — ver fase 3), agrupación Cliente → Punto → Manifiesto con
+  "N puntos · N paquetes", pie de conteo "N manifiestos · N paq." / "entran a la
+  ruta". `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx` — no tocados.
+- `5c` — cabecera con `route.code` y botón "Cerrar ruta y entregar"
+  (`RouteProgressHeader.tsx`, `CloseRouteButton.tsx`, ya en `route/active/page.tsx`).
+
+**Implementado en esta fase:**
+- **"Digitalizar manifiesto" en `5c`.** Nuevo `DigitalizeManifestTrigger.tsx`
+  (botón + diálogo autocontenidos, reutiliza `CameraIntake`/`useCameraIntake`
+  íntegros — spec-47), montado en `app/app/pickup/route/active/page.tsx` junto
+  al botón "Agregar manifiesto". Deliberadamente **no** se tocó
+  `PickupMobileStartRoute.tsx` (`5b`/3j): spec-54 ya excluyó a propósito
+  "Nuevo Manifiesto" de esa pantalla, con un test de regresión que lo protege
+  (`app/app/pickup/page.test.tsx`, "shows 'Nuevo Manifiesto' on desktop and
+  hides it on mobile") — nada en el texto de spec-82 revisita esa decisión, y
+  la cita de "Digitalizar manifiesto" en el checklist de fase 1 sólo nombra
+  `5c`.
+
+**Aplazado, con la razón:**
+- **Chips `EN RUTA` / `SIGUIENTE` / `COMPLETADA` por carga en `5c`.** No
+  implementados. La lista de archivos de esta fase nombra
+  `PickupMobileCompactRow.tsx`, pero ese componente pertenece a
+  `PickupMobileActiveRoute.tsx` (mock 3h de spec-54, la pantalla que
+  `PickupMobileView` renderiza en `/app/pickup` cuando ya hay ruta activa) —
+  una pantalla **distinta** de `5c`, que este mismo spec ata explícitamente a
+  `app/app/pickup/route/active/page.tsx` (mock 1i de spec-54, ver "Related" al
+  inicio del archivo). `route/active/page.tsx` reparte sus cargas en tres
+  componentes que no aparecen en la lista de archivos de esta fase
+  (`NextManifestCard.tsx`, `UpcomingManifestList.tsx`, `RouteManifestList.tsx`)
+  y hoy no llevan ningún chip de estado por carga. Sin ver `5c` no hay forma
+  honesta de decidir en cuál de los tres va cada chip, ni si el mock los quiere
+  en un listado plano distinto de los tres actuales — inventar esa distribución
+  sería exactamente el "criterio de volumen/diseño" que el spec pide no
+  confundir. Queda como hueco real de esta fase, no como "hecho en silencio".
+  El chip `DESCARGAR` de los cuatro no aplica aquí de todas formas — depende de
+  spec-81 fase 1 (fase 2 de este spec).
+- **Copy exacto de "Cerrar ruta" vs "Cerrar ruta y entregar".** El texto del
+  spec cita «Cerrar ruta»; el botón real dice «Cerrar ruta y entregar». Sin el
+  mock no se puede saber si es una paráfrasis del spec o una diferencia real —
+  cambiarlo a ciegas sería inventar. Sin tocar.
+- **Andén / "SIN DESCARGAR" / otras señales de `5c` fuera del texto citado por
+  este spec.** Fuera de alcance de fase 1 por diseño (fases 2 y 4).
 
 ### Fase 2 — `DESCARGAR` `[pending]`
 

@@ -1,0 +1,81 @@
+import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
+import { DigitalizeManifestTrigger } from './DigitalizeManifestTrigger';
+
+/**
+ * spec-82 phase 1 (mock 5c) — "Digitalizar manifiesto" placed on the
+ * mobile active-route screen. Reuses the exact OCR intake flow spec-47
+ * already built for desktop's "Nuevo Manifiesto" (CameraIntake /
+ * useCameraIntake) — no new capability, only a new place to trigger it
+ * from. CameraIntake itself is unit-tested in CameraIntake.test.tsx; these
+ * tests only cover the trigger button + dialog wiring around it.
+ */
+
+// ── CameraIntake's own hook dependencies, mocked minimally so the dialog
+// can mount without hitting Supabase. ──────────────────────────────────────
+vi.mock('@/hooks/pickup/useCameraIntake', () => ({
+  useCameraIntake: () => ({
+    submit: vi.fn(),
+    reset: vi.fn(),
+    status: 'idle',
+    result: null,
+    error: null,
+    uploadProgress: null,
+  }),
+}));
+
+vi.mock('@/hooks/useTenantClients', () => ({
+  useTenantClients: () => ({ data: [{ id: 'client-1', name: 'Easy' }], isLoading: false }),
+}));
+
+vi.mock('@/hooks/pickup/usePickupPointsByClient', () => ({
+  usePickupPointsByClient: () => ({ data: [], isLoading: false }),
+}));
+
+vi.mock('@/hooks/useOperatorId', () => ({
+  useOperatorId: () => ({ operatorId: 'op-123' }),
+}));
+
+function renderTrigger() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(DigitalizeManifestTrigger),
+    ),
+  );
+}
+
+describe('DigitalizeManifestTrigger', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders a "Digitalizar manifiesto" button', () => {
+    renderTrigger();
+    expect(
+      screen.getByRole('button', { name: /digitalizar manifiesto/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('the intake dialog is closed until the button is pressed', () => {
+    renderTrigger();
+    expect(screen.queryByTestId('client-select')).not.toBeInTheDocument();
+  });
+
+  it('opens the OCR intake flow on tap', () => {
+    renderTrigger();
+    fireEvent.click(screen.getByRole('button', { name: /digitalizar manifiesto/i }));
+    expect(screen.getByTestId('client-select')).toBeInTheDocument();
+  });
+
+  it('closes the dialog when CameraIntake calls onClose (Cancelar)', () => {
+    renderTrigger();
+    fireEvent.click(screen.getByRole('button', { name: /digitalizar manifiesto/i }));
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(screen.queryByTestId('client-select')).not.toBeInTheDocument();
+  });
+});
