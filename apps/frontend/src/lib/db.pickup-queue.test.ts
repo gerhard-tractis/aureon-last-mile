@@ -93,5 +93,14 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
 
       await expect(requestPersistentStorage()).resolves.toBe(false);
     });
+
+    it('N1 — returns exactly what the browser granted, not a hardcoded true', async () => {
+      const persist = vi.fn().mockResolvedValue(false);
+      vi.stubGlobal('navigator', { storage: { persist } });
+
+      const granted = await requestPersistentStorage();
+
+      expect(granted).toBe(false);
+    });
   });
 });
