@@ -462,8 +462,11 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > - El botón **Nota** por bulto es literal: `MissingPackageRow.tsx` reemplaza el textarea
 >   siempre-abierto de la primera ronda (reutilizaba `DiscrepancyItem`) por un chip `Nota` de 44px
 >   que abre un campo inline, y un chip `CON NOTA` + la nota entrecomillada de sólo lectura una vez
->   guardada — igual que el mock. `DiscrepancyItem.tsx` queda sin usar (comentario añadido; no se
->   borra por si otro spec lo retoma).
+>   guardada — igual que el mock. **Corrección (ronda de review PR #686, 2026-09-08):** la
+>   decisión de dejar `DiscrepancyItem.tsx` sin usar "por si otro spec lo retoma" no se cumplió —
+>   `git grep` confirmó que ningún archivo de producción lo importaba, sólo su propio test (6
+>   casos). Borrado, junto con `DiscrepancyItem.test.tsx`: 60+ líneas y 6 tests corriendo en cada
+>   CI por un componente inalcanzable, sin ningún spec declarándolo como suyo.
 >
 > **Decisión del usuario (2026-09-08) sobre si la nota es obligatoria:** *"Es opcional, y la
 > dejaría editable en el futuro."* El mock ya lo mostraba así (CTA de cierre totalmente opaco con
