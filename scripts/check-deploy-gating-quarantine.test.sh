@@ -242,16 +242,18 @@ V12_STEP='      - name: Check quarantine
 WF=$(wf_with_e2e_step "$V12_STEP")
 assert_exit 1 "V12: fails when the invocation is conditioned on an env var and followed by echo skipped" "$WF"
 
-# ── The positive assertion must not punish legitimate logging ───────────────
-# A step that logs before running the real check must still pass — punishing
-# it teaches people to strip logging from around the guard.
-LOG_THEN_INVOKE_STEP='      - name: Check quarantine
+# ── The positive assertion must not punish a genuinely inert comment ────────
+# A `#` comment before the real invocation must still pass — `#` makes bash
+# ignore the rest of THAT physical line outright, so nothing on it can
+# neutralise anything. (Round 5, H1, dropped `echo` from this whitelist —
+# see check-deploy-gating-quarantine-r5.test.sh for why.)
+COMMENT_THEN_INVOKE_STEP='      - name: Check quarantine
         if: steps.qa.outputs.provisioned == '"'"'true'"'"'
         run: |
-          echo '"'"'running scripts/check-quarantine.sh'"'"'
+          # running scripts/check-quarantine.sh
           bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
-WF=$(wf_with_e2e_step "$LOG_THEN_INVOKE_STEP")
-assert_exit 0 "accepts a log line before the real invocation" "$WF"
+WF=$(wf_with_e2e_step "$COMMENT_THEN_INVOKE_STEP")
+assert_exit 0 "accepts a # comment line before the real invocation" "$WF"
 
 # The real deploy.yml wraps the invocation's two args across lines with
 # trailing backslashes — the positive assertion must recognise that shape too.

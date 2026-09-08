@@ -46,13 +46,25 @@ function logicalLines(run) {
   return lines.filter((l) => l.length > 0);
 }
 
-// A logical line is tolerated alongside the invocation only if it cannot
-// itself neutralise anything: a comment, or an `echo`. Round 3's denylist
-// (`set +e`, `set +o errexit`, `exit`) missed `trap ... EXIT`, `set +ex`, and
-// `set +e -u` on re-review (round 4) — three more ways to swallow the
-// invocation's exit code that nobody had enumerated yet. A denylist only
-// ever knows the vectors someone thought of.
-const ALLOWED_EXTRA_LINE = /^(#|echo\b)/;
+// A logical line is tolerated alongside the invocation only if it CANNOT
+// itself neutralise anything: a `#` comment. `#` makes bash ignore the rest
+// of that physical line outright, so nothing after it — `;`, `&&`, a
+// redirection — can execute.
+//
+// Round 4 also allowed `echo`, on the theory that a log line before the
+// invocation is harmless. It is not: `logicalLines()` splits only on `\n`
+// and joined `\`-continuations, never on `;`/`&&`/`||`/backticks/`$(`, so
+// only the FIRST token of a logical line was ever inspected. Re-review round
+// 5 (H1) found and executed live bypasses that pass this whitelist under
+// `bash --noprofile --norc -e -o pipefail` (how GitHub actually runs a
+// step): `echo pre; trap 'exit 0' EXIT`, `echo hi; set +e`, and
+// `echo '{"suites":[]}' > apps/frontend/playwright-report-qa/results.json`
+// all start with `echo` and were accepted, and all three neutralise the
+// invocation exactly like the vectors this file already rejects when they
+// appear on their own. The real deploy.yml step never logs before invoking
+// the script (see deploy.yml's "Check quarantine" step), so dropping `echo`
+// costs nothing there.
+const ALLOWED_EXTRA_LINE = /^#/;
 
 /**
  * True when `run:`, once its logical lines are computed, is EXACTLY the
@@ -159,16 +171,49 @@ export function checkQuarantineStep(jobs, doc) {
   // this guard green while the step reads whatever results.json a
   // PREVIOUS run left on the self-hosted runner's disk — a perpetual pass
   // that never executes the current commit's tests at all.
-  const e2eRunIdx = steps.findIndex(
-    (s) => typeof s.run === 'string' && s.run.includes('npm run e2e:qa')
-  );
-  const quarantineIdx = steps.indexOf(quarantineStep);
-  if (e2eRunIdx !== -1 && quarantineIdx < e2eRunIdx) {
+  //
+  // Round 5 (H2) found this anchor passed in EMPTY: `findIndex` returning -1
+  // when no step runs `npm run e2e:qa` was read as "no anchor to check
+  // against" and silently approved — proved live by renaming the Playwright
+  // step, or deleting it outright, with "Check quarantine" as the only step
+  // left; both accepted. `.includes` also took the first textual mention,
+  // a `#` comment included (the same V11 shape this file already fixed once
+  // for the quarantine invocation itself, here recurring in the anchor);
+  // proved by putting `# npm run e2e:qa is below` ahead of the real step and
+  // watching the guard anchor on the comment. `stepRunsE2eSuite` below
+  // requires a genuine, non-comment mention, and the anchor is now the LAST
+  // such step (mutation-killed: `findIndex` → `findLastIndex` used to
+  // survive with two `npm run e2e:qa` steps and the quarantine step between
+  // them — the first-match anchor let the veto pass by only outrunning the
+  // EARLIER of the two).
+  function stepRunsE2eSuite(step) {
+    if (typeof step.run !== 'string') return false;
+    return logicalLines(step.run)
+      .filter((l) => !l.startsWith('#'))
+      .some((l) => l.includes('npm run e2e:qa'));
+  }
+
+  let e2eRunIdx = -1;
+  steps.forEach((s, i) => {
+    if (stepRunsE2eSuite(s)) e2eRunIdx = i;
+  });
+
+  if (e2eRunIdx === -1) {
     errors.push(
-      'the "Check quarantine" step must run AFTER the step that runs `npm run e2e:qa`, not ' +
-        'before it — otherwise it reads a stale results.json left over from a previous run ' +
-        'instead of the one this run just produced'
+      'e2e-qa must contain a step whose run: actually invokes `npm run e2e:qa` (a `#` comment ' +
+        'mentioning it does not count) — without that anchor the "Check quarantine" step could ' +
+        'sit anywhere, including before a renamed or deleted Playwright step, and this guard ' +
+        'would have nothing to check its position against'
     );
+  } else {
+    const quarantineIdx = steps.indexOf(quarantineStep);
+    if (quarantineIdx < e2eRunIdx) {
+      errors.push(
+        'the "Check quarantine" step must run AFTER the step that runs `npm run e2e:qa`, not ' +
+          'before it — otherwise it reads a stale results.json left over from a previous run ' +
+          'instead of the one this run just produced'
+      );
+    }
   }
 
   return errors;
