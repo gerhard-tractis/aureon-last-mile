@@ -181,6 +181,33 @@ jobs:
       - name: Test the spec-fields guard
         run: bash ./scripts/check-spec-fields.test.sh
 
+      # spec-90: una fase [blocked] necesita la misma evidencia que una
+      # [done] — qué se intentó, contra qué se verificó, cuándo, y quién
+      # desbloquea. Sólo sobre los specs tocados en este PR, igual que el
+      # guard de arriba y por la misma razón de transición.
+      - name: Check blocked-phase evidence on touched specs
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then
+            echo "No es un pull_request; este guard valida los specs del PR. Saltando."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
+          bash ./scripts/check-blocked-evidence.sh --base "$BASE"
+
+      - name: Test the blocked-evidence guard
+        run: bash ./scripts/check-blocked-evidence.test.sh
+
+      # spec-90: avisa (no rompe) cuando un `> Bloqueo:` lleva más de 30 días
+      # verificado, o cuando falta del todo — sobre TODOS los specs, no sólo
+      # los tocados, porque un bloqueo puede caducar sin que nadie vuelva a
+      # tocar ese archivo.
+      - name: Check blocked-phase freshness (repo-wide, warn-only)
+        run: bash ./scripts/check-blocked-freshness.sh
+
+      - name: Test the blocked-freshness guard
+        run: bash ./scripts/check-blocked-freshness.test.sh
+
       # El harness de orquestación tiene que seguir existiendo EN EL REPO.
       # El 2026-09-07 los tres subagentes desaparecieron a mitad de sesión
       # porque vivían sólo como archivos sin trackear en un checkout viejo:
