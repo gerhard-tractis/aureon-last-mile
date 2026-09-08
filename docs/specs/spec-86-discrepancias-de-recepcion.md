@@ -135,7 +135,12 @@ mergeadas):
    `pickup` de `reception`, con `manifest_id`/`route_reception_id` según cuál
    y una columna generada `source_id` que apunta al que corresponda —
    `record_discrepancies(p_operation_type, p_source_id, p_items jsonb)` es el
-   RPC de escritura, ya usado por spec-80 fase 2 en el lado `pickup`.
+   RPC de escritura. **Todavía no lo llama ningún fichero de código** — un
+   `git grep record_discrepancies` sobre `apps/` y `packages/` no devuelve nada.
+   Su primer consumidor será spec-80 fase 2 en el lado `pickup`, que está
+   `[pending]`, así que quien tome esta fase **no tiene un llamador de
+   referencia del que copiar la forma del payload**: la fuente de verdad es la
+   tabla de contrato de errores de spec-85 y los tests pgTAP.
 3. **Ciclo de vida** `open → resolved | lost` vía `resolve_discrepancy(p_id,
    p_status, p_resolution)`, con quién resolvió, cuándo y por qué.
 4. **Enganche de indemnización** para `lost`: una referencia nullable donde el

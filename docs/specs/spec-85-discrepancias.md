@@ -515,7 +515,14 @@ sobre el contrato de errores que la ronda 2 documentó pero no probó:**
   cinco tests nuevos (17-21) para los guards que ningún test alcanzaba:
   `INVALID_ITEMS`, `UNKNOWN_OPERATION_TYPE`, `MISSING_REQUIRES_PACKAGE_ID`,
   `UNEXPECTED_REQUIRES_BARCODE`, `UNKNOWN_KIND` — estos cinco también cierran
-  m6 de la ronda 2.
+  **el m6 de la ronda 3** (los cinco guards que ningún test alcanzaba). Ojo con
+  la ambigüedad del nombre: hay **tres** cosas distintas llamadas `m6` en este
+  historial. El **m6 de la ronda 2** es otra: la aserción de `current_user` en
+  TEST 10, cerrada en su propia ronda (ver línea 433). Y el comentario
+  `-- m6 (re-review):` de `20260913000003…sql:190`, sobre el `operator_id` del
+  `RETURN QUERY` final, se refiere a un tercero — el hallazgo menor de la ronda
+  2 sobre coherencia con m1, declarado y verificado como **no distinguible por
+  mutación**. Cuando cites un `m6`, di de qué ronda.
 - **B2 — `RESOLUTION_REQUIRED` (mig:257-259) sin test ni respaldo en el
   esquema.** El único `CHECK` de la tabla
   (`discrepancy_resolved_has_when`) no exige `resolution`; mutar el `IF`
