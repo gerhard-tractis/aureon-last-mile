@@ -67,6 +67,17 @@ export function parseArgs(argv) {
   return {
     quarantinePath: rest[0],
     reportPath: rest[1],
+    // m7 (spec-87 fase 1, re-review round 4): `toISOString()` reads UTC, not
+    // the runner's local clock, and NEITHER ci.yml's `--validate-only` call
+    // NOR deploy.yml's e2e-qa invocation passes --today — both rely on this
+    // default. In Madrid (UTC+2) that means an entry keeps reading as "not
+    // yet expired" for the first two hours of the day AFTER its `expires`
+    // date. Direction is permissive only, bounded at two hours, and matches
+    // the same UTC boundary `isRealCalendarDate` already uses for parsing —
+    // switching just this default to local time would make the two
+    // disagree with each other depending on the runner's TZ, which is a
+    // worse failure mode than a fixed, documented two-hour grace window.
+    // Left as UTC deliberately; not fixed, per m7's own "if not, document it".
     today: today ?? new Date().toISOString().slice(0, 10),
     validateOnly,
   };
