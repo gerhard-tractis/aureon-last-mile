@@ -115,6 +115,18 @@ describe('useOfflineQueue', () => {
     );
   });
 
+  // M4, ronda 3 de review del PR #679 (mayor) — este test no desmontaba ni
+  // congelaba el reloj, y `drain()` deja un reintento REAL a +1000ms
+  // (`nextBackoffAt`) tras la primera respuesta 'retry'. Si el tiempo real
+  // entre el fin de este test y la limpieza automática (`afterEach(cleanup)`
+  // en `src/test/setup.ts`) se acerca a 1000ms — un stall del runner, GC,
+  // contención de CPU con el resto de la suite — ese timer dispara para
+  // real, `send` devuelve 'sent' en su segunda llamada, y `purgeConfirmed`
+  // borra la fila: no es un flake de contención de recursos ni la carrera
+  // de M6, es un test con deadline de reloj real. Desmontar explícitamente
+  // aquí, antes de leer el estado final, hace que el `clearTimeout` del
+  // cleanup (B1) cancele ese timer de forma determinista sin depender de
+  // cuánto tarde el runner en llegar al `afterEach` global.
   it('a 500 (retry) does not discard the entry — it stays queued for the next pass', async () => {
     const { first } = await seed();
     let calls = 0;
@@ -126,12 +138,14 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+    const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const stored = await db.pickup_queue.get(first.id!);
       expect(stored?.retryCount).toBe(1);
     });
+
+    unmount();
 
     const stored = await db.pickup_queue.get(first.id!);
     expect(stored?.status).toBe('pending');
@@ -618,7 +632,17 @@ describe('useOfflineQueue', () => {
       expect(stillThere.userId).toBe(USER_A);
     });
 
-    it("drains this user's own entry while a different user's entry in the SAME manifest waits untouched", async () => {
+    // M3, ronda 3 de review del PR #679 (mayor) — la versión anterior de
+    // este test CONSAGRABA el bug: afirmaba que B drenaba su propio escaneo
+    // mientras el de A, encolado ANTES en el mismo manifiesto, esperaba
+    // intacto. Eso rompe el FIFO entre usuarios — exactamente el argumento
+    // del propio docstring de `manifestHasDeadEntry`: un `pending` por
+    // delante en el mismo manifiesto es el mismo problema que un `dead` por
+    // delante, sólo que temporal. Escenario real: A escanea 5 bultos sin
+    // red y cierra sesión; B entra, escanea 3 y firma. El drenador de B NO
+    // puede saltarse los 5 de A — el manifiesto se cerraría corto de lo que
+    // el cliente firmó.
+    it("a different user's earlier pending entry in the SAME manifest blocks this user's own entry behind it — no cross-user FIFO skip", async () => {
       await enqueue(db, {
         operatorId: OPERATOR_A,
         userId: USER_A,
@@ -626,26 +650,28 @@ describe('useOfflineQueue', () => {
         type: 'pickup_scan',
         payload: { barcode: 'A-SCAN' },
       });
-      const bEntry = await enqueue(db, {
+      await enqueue(db, {
         operatorId: OPERATOR_A,
         userId: USER_B,
         manifestId: MANIFEST_1,
         type: 'pickup_scan',
         payload: { barcode: 'B-SCAN' },
       });
-      const sent: string[] = [];
-      const send: OfflineQueueSender = vi.fn(async (entry) => {
-        sent.push(entry.clientOperationId);
-        return { outcome: 'sent' };
-      });
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
       renderHook(() => useOfflineQueue(OPERATOR_A, USER_B, send));
+      // Give the drainer every chance to (wrongly) skip ahead — 200ms of
+      // real wall clock is orders of magnitude more than every chained
+      // drain pass needs to settle (see the sibling B4 test above for the
+      // same margin reasoning).
+      await new Promise((resolve) => setTimeout(resolve, 200));
 
-      await waitFor(() => expect(sent).toEqual([bEntry.clientOperationId]));
+      expect(send).not.toHaveBeenCalled();
 
       const remaining = await listPending(db, OPERATOR_A, MANIFEST_1);
-      expect(remaining).toHaveLength(1);
+      expect(remaining).toHaveLength(2);
       expect(remaining[0].userId).toBe(USER_A);
+      expect(remaining[1].userId).toBe(USER_B);
     });
 
     it("eventually drains once the enqueuing user's own session mounts the drainer", async () => {

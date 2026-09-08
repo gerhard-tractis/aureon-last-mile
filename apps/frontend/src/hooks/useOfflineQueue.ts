@@ -112,6 +112,30 @@ function ownEntries(entries: PickupQueueEntry[], userId: string): PickupQueueEnt
   return entries.filter((entry) => entry.userId === userId);
 }
 
+/**
+ * M3, ronda 3 de review del PR #679 (mayor) — guarda hermana de
+ * `manifestHasDeadEntry`. Su propio docstring da el argumento: un `pending`
+ * de OTRO usuario por delante en el FIFO de este manifiesto es el mismo
+ * problema que un `dead` por delante, sólo que temporal — dejarlo pasar
+ * (como hacía `ownEntries` filtrando ANTES de mirar quién es la cabeza real)
+ * rompe el FIFO entre usuarios: A escanea 5 bultos sin red y cierra sesión;
+ * B entra, escanea 3 y firma; el drenador de B no puede saltarse los 5 de A
+ * — el manifiesto se cerraría corto de lo que el cliente firmó.
+ *
+ * `listPending(db, operatorId, manifestId)` sin filtrar por usuario ya viene
+ * en orden FIFO estricto (ver su docstring); su primer elemento es la
+ * cabeza real de este manifiesto sea de quien sea. Si esa cabeza no es de
+ * `userId`, esta sesión no puede tocar nada en el manifiesto todavía.
+ */
+async function manifestBlockedForUser(
+  operatorId: string,
+  manifestId: string,
+  userId: string,
+): Promise<boolean> {
+  const [globalHead] = await listPending(db, operatorId, manifestId);
+  return globalHead !== undefined && globalHead.userId !== userId;
+}
+
 async function drainManifest(
   operatorId: string,
   userId: string,
@@ -126,6 +150,10 @@ async function drainManifest(
     // persistido de una pasada anterior como uno que este mismo bucle
     // acaba de producir.
     if (await manifestHasDeadEntry(db, operatorId, manifestId)) return;
+
+    // M3 — un `pending` de otro usuario por delante bloquea igual (ver
+    // docstring de `manifestBlockedForUser`).
+    if (await manifestBlockedForUser(operatorId, manifestId, userId)) return;
 
     const [next] = ownEntries(await listPending(db, operatorId, manifestId), userId);
     if (!next) return;
