@@ -1,0 +1,175 @@
+/**
+ * check-deploy-gating-quarantine.mjs (spec-87 fase 1)
+ *
+ * The quarantine-veto STEP shape checks for e2e-qa, split out of
+ * check-deploy-gating.mjs to keep both files under the repo's 300-line
+ * guideline. check-deploy-gating.mjs asserts needs:/continue-on-error/if: at
+ * JOB granularity; this module is blind to all of that and only knows about
+ * the one step inside e2e-qa that actually vetoes production.
+ *
+ * Returns an array of error strings (empty when the shape is fine) so the
+ * caller can fold them into its own `errors` list without this module
+ * knowing how errors are reported.
+ */
+
+const QUARANTINE_STEP_IF = "steps.qa.outputs.provisioned == 'true'";
+
+// The one invocation this guard accepts, canonicalised: no flags (in
+// particular no `--validate-only`, which reads no report and exits 0 having
+// checked nothing against it), the two positional args in this order, and
+// nothing else on the same logical line.
+const EXPECTED_QUARANTINE_INVOCATION =
+  'bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json';
+
+/**
+ * A YAML block scalar keeps every physical line of a `run:` script. A
+ * backslash-continued command (the real deploy.yml wraps its two args across
+ * three lines) is one shell statement split across several of those lines —
+ * this joins them back into one "logical line" per shell statement before any
+ * shape is asserted, and collapses whitespace so re-indentation cannot change
+ * whether a line matches.
+ */
+function logicalLines(run) {
+  const lines = [];
+  let buf = '';
+  for (const raw of run.split('\n')) {
+    const line = raw.trim();
+    buf = buf ? `${buf} ${line}` : line;
+    if (buf.endsWith('\\')) {
+      buf = buf.slice(0, -1).trim();
+      continue;
+    }
+    lines.push(buf.replace(/\s+/g, ' ').trim());
+    buf = '';
+  }
+  if (buf) lines.push(buf.replace(/\s+/g, ' ').trim());
+  return lines.filter((l) => l.length > 0);
+}
+
+// A logical line is tolerated alongside the invocation only if it cannot
+// itself neutralise anything: a comment, or an `echo`. Round 3's denylist
+// (`set +e`, `set +o errexit`, `exit`) missed `trap ... EXIT`, `set +ex`, and
+// `set +e -u` on re-review (round 4) — three more ways to swallow the
+// invocation's exit code that nobody had enumerated yet. A denylist only
+// ever knows the vectors someone thought of.
+const ALLOWED_EXTRA_LINE = /^(#|echo\b)/;
+
+/**
+ * True when `run:`, once its logical lines are computed, is EXACTLY the
+ * expected invocation plus only comment/echo lines — nothing else. This is a
+ * WHITELIST of the one accepted shape, not a list of forbidden ones: `trap`,
+ * any spelling of `set`, `if`, `while`, or anything else fails simply by not
+ * being on the list, with no vector anyone had to have predicted first.
+ */
+function hasValidQuarantineInvocation(run) {
+  const lines = logicalLines(run);
+  const invocationCount = lines.filter((l) => l === EXPECTED_QUARANTINE_INVOCATION).length;
+  if (invocationCount !== 1) return false;
+  return lines.every((l) => l === EXPECTED_QUARANTINE_INVOCATION || ALLOWED_EXTRA_LINE.test(l));
+}
+
+/**
+ * Resolves the shell a step actually runs under, following the same
+ * precedence `actions/runner` does: the step's own `shell:`, then the job's
+ * `defaults.run.shell`, then the workflow's `defaults.run.shell`. Round 3
+ * only ever read `step.shell` — a job- or workflow-level `defaults:` block
+ * (deploy.yml already has one, for `working-directory`) silently overrides
+ * the step's shell with no way for that check to see it.
+ */
+function effectiveShell(step, job, doc) {
+  if (step.shell != null) return step.shell;
+  const jobShell = job && job.defaults && job.defaults.run && job.defaults.run.shell;
+  if (jobShell != null) return jobShell;
+  const wfShell = doc && doc.defaults && doc.defaults.run && doc.defaults.run.shell;
+  if (wfShell != null) return wfShell;
+  return 'bash';
+}
+
+/**
+ * ── The quarantine veto (spec-87 fase 1) lives inside a STEP, not a job ────
+ * e2e-qa no longer fails on npm run e2e:qa's raw exit code (`|| true` —
+ * deliberately not the job-level continue-on-error). Instead a
+ * "Check quarantine" step runs scripts/check-quarantine.sh against the JSON
+ * report and IS what passes or fails the job. Deleting that step, or giving
+ * it its own continue-on-error, leaves e2e-qa green regardless of what
+ * actually failed.
+ */
+export function checkQuarantineStep(jobs, doc) {
+  const errors = [];
+  const e2eQa = jobs['e2e-qa'];
+  if (!e2eQa) return errors;
+
+  const steps = e2eQa.steps || [];
+  // Look at every step that mentions the script, not just the first — an
+  // earlier, unrelated step (a "dry run", a comment) can mention it too, and
+  // picking the first match let that decoy stand in for a real step that had
+  // been deleted (review round 3, V11).
+  const mentionsScript = steps.filter(
+    (s) => typeof s.run === 'string' && s.run.includes('check-quarantine.sh')
+  );
+  const realSteps = mentionsScript.filter((s) => hasValidQuarantineInvocation(s.run));
+
+  if (realSteps.length === 0) {
+    errors.push(
+      'e2e-qa has no step whose run: is exactly `' + EXPECTED_QUARANTINE_INVOCATION + '` ' +
+        '(as a logical line, once any backslash continuations are joined) — without it a failure ' +
+        'outside the quarantine list, an expired entry, a stale entry, or a neutralised invocation ' +
+        '(a flag, a control operator, `set +e`, an explicit exit) cannot fail the job'
+    );
+    return errors;
+  }
+  if (realSteps.length > 1) {
+    errors.push(
+      `e2e-qa has ${realSteps.length} steps whose run: is the quarantine invocation — there must ` +
+        'be exactly one, so it is unambiguous which step is the veto'
+    );
+    return errors;
+  }
+
+  const quarantineStep = realSteps[0];
+  if (quarantineStep['continue-on-error']) {
+    errors.push(
+      'the "Check quarantine" step in e2e-qa must not set continue-on-error — that ' +
+        'reports success to the job even when the quarantine check failed, the exact ' +
+        'silent-pass this step exists to prevent'
+    );
+  }
+  if (quarantineStep.if != null && String(quarantineStep.if).trim() !== QUARANTINE_STEP_IF) {
+    errors.push(
+      `the "Check quarantine" step's if: must be exactly "${QUARANTINE_STEP_IF}" when present ` +
+        `(found: ${JSON.stringify(quarantineStep.if)}) — any other condition, including false or ` +
+        'one that merely looks unrelated, can skip the veto on a run where it matters'
+    );
+  }
+
+  const shell = effectiveShell(quarantineStep, e2eQa, doc);
+  if (shell !== 'bash') {
+    errors.push(
+      `the "Check quarantine" step's effective shell: must be "bash" (found: ${JSON.stringify(shell)}, ` +
+        'resolved from step.shell, then e2e-qa\'s defaults.run.shell, then the workflow\'s ' +
+        'defaults.run.shell) — any other shell, set at any of those three levels, can drop the ' +
+        'default -e/pipefail that makes a failing invocation actually fail the step'
+    );
+  }
+
+  // ── M4: order, not just presence ──────────────────────────────────────
+  // steps.filter (round 3) proved a decoy step could not stand in for a
+  // deleted real one, but it never looked at WHERE the real step sits.
+  // Moving "Check quarantine" before the step that runs Playwright leaves
+  // this guard green while the step reads whatever results.json a
+  // PREVIOUS run left on the self-hosted runner's disk — a perpetual pass
+  // that never executes the current commit's tests at all.
+  const e2eRunIdx = steps.findIndex(
+    (s) => typeof s.run === 'string' && s.run.includes('npm run e2e:qa')
+  );
+  const quarantineIdx = steps.indexOf(quarantineStep);
+  if (e2eRunIdx !== -1 && quarantineIdx < e2eRunIdx) {
+    errors.push(
+      'the "Check quarantine" step must run AFTER the step that runs `npm run e2e:qa`, not ' +
+        'before it — otherwise it reads a stale results.json left over from a previous run ' +
+        'instead of the one this run just produced'
+    );
+  }
+
+  return errors;
+}
