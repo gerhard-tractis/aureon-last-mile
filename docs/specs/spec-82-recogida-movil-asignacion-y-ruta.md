@@ -99,7 +99,7 @@ andén, no dónde guardarlo si se decide capturarlo.
 | **3 — Asignación** | «asignados a ti» de verdad | decisión (a)/(b)/(c) |
 | **4 — Andén en la tarjeta** | La línea del mock | decisión sobre si se captura, no sobre dónde guardarlo |
 
-### Fase 1 — Diff visual `[in_progress]`
+### Fase 1 — Diff visual `[done]`
 
 **Archivos:** `components/pickup/PickupMobileNoRoute.tsx`, `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx`, `PickupMobileCompactRow.tsx`, `app/app/pickup/route/active/page.tsx`, y sus tests
 
@@ -269,6 +269,24 @@ línea contra el HTML real de cada artboard.
   inferior de `5c` (mover `Digitalizar manifiesto` a ella, por ejemplo — ver
   la nota de arriba) tiene que decidir también qué hacer con `Cancelar
   ruta`, que hoy vive ahí sin que el mock lo prevea.
+
+> Implementado por: rama `feat/spec-82-fase-1`, SHA `fdc514dc`, PR #682
+> (merge `0d1baeee`, 2026-09-08T17:16:39Z).
+> Review: dos rondas. La ronda 1 bloqueó porque el spec registraba mal el
+> mock — decía que `COMPLETADA` era «por carga» cuando el mock lo pone en la
+> cabecera de grupo-cliente (líneas 486-493 del HTML), corregido arriba. La
+> ronda 2 verificó las cuatro correcciones aplicándolas el reviewer, y
+> comprobó la invalidación contra un `QueryClient` real.
+> QA: `gh pr checks 682` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). Sin migración — no aplica `Verify Production Migrations`.
+> `e2e-qa`: no hay reporte post-merge verificado en esta sesión; verificado
+> en su lugar con `vitest run --pool=forks` sobre `src/components/pickup` y
+> `src/app/app/pickup` (54 archivos, 490 tests, según el PR) y `tsc
+> --noEmit`/`eslint` limpios.
+> Downstream: revisado spec-83 — sin cambios; spec-83 (escritorio `5a`) no
+> comparte ningún componente de `route/active/page.tsx`. Revisado spec-80
+> (fase 2, en paralelo) y spec-81 (fase 3, en paralelo) — confirmado sin
+> solape de archivos (ver "Coordinación con trabajo paralelo" en el PR).
 
 ### Fase 2 — `DESCARGAR` `[pending]`
 
