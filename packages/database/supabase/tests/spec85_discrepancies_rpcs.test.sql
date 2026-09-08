@@ -40,7 +40,23 @@ INSERT INTO auth.users (
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'spec85r3-ops-manager-a@operators.test', crypt('x', gen_salt('bf')), NOW(),
    '{"operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852"}'::jsonb,
-   '{"full_name":"Spec85r3 Ops Manager A"}'::jsonb, NOW(), NOW(), '', '')
+   '{"full_name":"Spec85r3 Ops Manager A"}'::jsonb, NOW(), NOW(), '', ''),
+  -- fix/spec-85-fase-3a-seguimiento (post-merge review, item 1): the review
+  -- found a surviving mutant — narrowing the allowed-role list from
+  -- ('operations_manager','admin','super_admin') to just
+  -- ('operations_manager') left 41/41 PASSED, because no test exercised
+  -- admin or super_admin declaring 'lost'. These two fixture users close
+  -- that gap.
+  ('aaaaaaaa-0004-4000-a000-000000000852',
+   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'spec85r3-admin-a@operators.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852"}'::jsonb,
+   '{"full_name":"Spec85r3 Admin A"}'::jsonb, NOW(), NOW(), '', ''),
+  ('aaaaaaaa-0005-4000-a000-000000000852',
+   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'spec85r3-super-admin-a@operators.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852"}'::jsonb,
+   '{"full_name":"Spec85r3 Super Admin A"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
@@ -57,7 +73,12 @@ ON CONFLICT (id) DO UPDATE
 -- the ONLY fixture user in this file whose role is not the default.
 INSERT INTO public.users (id, operator_id, email, full_name, permissions, role)
 VALUES
-  ('aaaaaaaa-0003-4000-a000-000000000852','aaaaaaaa-aaaa-aaaa-aaaa-000000000852','spec85r3-ops-manager-a@operators.test','Spec85r3 Ops Manager A',ARRAY['admin'],'operations_manager')
+  ('aaaaaaaa-0003-4000-a000-000000000852','aaaaaaaa-aaaa-aaaa-aaaa-000000000852','spec85r3-ops-manager-a@operators.test','Spec85r3 Ops Manager A',ARRAY['admin'],'operations_manager'),
+  -- fix/spec-85-fase-3a-seguimiento (item 1): admin and super_admin fixture
+  -- users, exercising the two elevated roles the migration's guard allows
+  -- besides operations_manager (see TEST 28/29 below).
+  ('aaaaaaaa-0004-4000-a000-000000000852','aaaaaaaa-aaaa-aaaa-aaaa-000000000852','spec85r3-admin-a@operators.test','Spec85r3 Admin A',ARRAY['admin'],'admin'),
+  ('aaaaaaaa-0005-4000-a000-000000000852','aaaaaaaa-aaaa-aaaa-aaaa-000000000852','spec85r3-super-admin-a@operators.test','Spec85r3 Super Admin A',ARRAY['admin'],'super_admin')
 ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id,
       full_name   = EXCLUDED.full_name,
@@ -132,6 +153,23 @@ CREATE OR REPLACE FUNCTION pg_temp.as_operator_a_ops_manager() RETURNS VOID AS $
 BEGIN
   PERFORM set_config('request.jwt.claims',
     '{"sub":"aaaaaaaa-0003-4000-a000-000000000852","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+END $$ LANGUAGE plpgsql;
+
+-- fix/spec-85-fase-3a-seguimiento (item 1): operator A's admin and
+-- super_admin, mirroring as_operator_a_ops_manager() exactly — same JWT
+-- Postgres role, only public.users.role differs.
+CREATE OR REPLACE FUNCTION pg_temp.as_operator_a_admin() RETURNS VOID AS $$
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0004-4000-a000-000000000852","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+END $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION pg_temp.as_operator_a_super_admin() RETURNS VOID AS $$
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0005-4000-a000-000000000852","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 END $$ LANGUAGE plpgsql;
 
@@ -2000,5 +2038,91 @@ END $$;
 RESET ROLE;
 
 ROLLBACK TO test_27;
+
+-- =============================================================================
+-- TEST 28 (fix/spec-85-fase-3a-seguimiento, item 1) — resolve_discrepancy
+-- allows p_status = 'lost' from operator A's admin. Mirrors TEST 26 exactly,
+-- only the actor's role differs.
+--
+-- Why this exists: the post-merge review found a surviving mutant — the
+-- allowed-role list narrowed from ('operations_manager','admin',
+-- 'super_admin') down to just ('operations_manager') left all 41 existing
+-- tests PASSED, because none of them exercised admin or super_admin
+-- declaring 'lost'. TEST 26 only proves operations_manager works; it says
+-- nothing about the other two roles the migration's own header and
+-- verification block claim to allow.
+-- =============================================================================
+SAVEPOINT test_28;
+
+DO $$
+DECLARE
+  v_id          UUID;
+  v_status      public.discrepancy_status_enum;
+  v_resolved_by UUID;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar con autoridad de admin')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a_admin();
+
+  PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, 'nunca apareció, cerrado por admin');
+
+  RESET ROLE;
+
+  SELECT status, resolved_by_user_id INTO v_status, v_resolved_by FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'lost' THEN
+    RAISE EXCEPTION 'TEST 28 FAILED: expected status lost for an admin caller, got %', v_status;
+  END IF;
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0004-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 28 FAILED: resolved_by_user_id not attributed to the admin caller, got %', v_resolved_by;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 28 PASSED: admin caller declares lost successfully';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_28;
+
+-- =============================================================================
+-- TEST 29 (fix/spec-85-fase-3a-seguimiento, item 1) — resolve_discrepancy
+-- allows p_status = 'lost' from operator A's super_admin. Mirrors TEST 28,
+-- the third and last elevated role the guard allows.
+-- =============================================================================
+SAVEPOINT test_29;
+
+DO $$
+DECLARE
+  v_id          UUID;
+  v_status      public.discrepancy_status_enum;
+  v_resolved_by UUID;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar con autoridad de super_admin')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a_super_admin();
+
+  PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, 'nunca apareció, cerrado por super_admin');
+
+  RESET ROLE;
+
+  SELECT status, resolved_by_user_id INTO v_status, v_resolved_by FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'lost' THEN
+    RAISE EXCEPTION 'TEST 29 FAILED: expected status lost for a super_admin caller, got %', v_status;
+  END IF;
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0005-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 29 FAILED: resolved_by_user_id not attributed to the super_admin caller, got %', v_resolved_by;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 29 PASSED: super_admin caller declares lost successfully';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_29;
 
 ROLLBACK;
