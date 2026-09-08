@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
@@ -9,6 +9,9 @@ import { ModuleKey } from '@/lib/modules/registry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
+import { createSPAClient } from '@/lib/supabase/client';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { createPickupQueueSender } from '@/lib/pickup/offlineQueueSender';
 import { useSidebarPin } from './sidebar/useSidebarPin';
 import { SidebarNavItem } from './sidebar/SidebarNavItem';
 import { SidebarBrand } from './sidebar/SidebarBrand';
@@ -44,6 +47,22 @@ export default function AppLayout({
 }) {
   const { role, permissions, operatorId } = useGlobal();
   const { logoUrl, companyName } = useBranding();
+
+  // spec-81 fase 2, B2 (ronda 1 de review del PR #679) — el drenador de la
+  // cola offline de Recogida (`pickup_queue`) se monta aquí, en el shell
+  // global, con el mismo alcance que `SyncChip`/`useSyncQueue` (dentro de
+  // `TopBar`, más abajo). Sin esto el hook existía pero nadie lo llamaba en
+  // producción: un `close_manifest` encolado sin señal nunca se drenaba, ni
+  // al volver la conexión ni al reabrir la PWA.
+  //
+  // `useMemo` (m5, misma ronda de review) — `useOfflineQueue` mete `send` en
+  // las deps de su efecto; un sender nuevo en cada render reiniciaría la
+  // cadena de reintentos programados (`scheduleRetry`/`clearTimeout`) en
+  // cada montaje de `AppLayout`. `createSPAClient()` en sí es barato (no abre
+  // conexión), pero el sender debe ser estable para el hook, no solo barato
+  // de recrear.
+  const pickupQueueSender = useMemo(() => createPickupQueueSender(createSPAClient()), []);
+  useOfflineQueue(operatorId, pickupQueueSender);
   const { pinned, togglePin } = useSidebarPin();
   const pathname = usePathname();
   const [logoError, setLogoError] = useState(false);

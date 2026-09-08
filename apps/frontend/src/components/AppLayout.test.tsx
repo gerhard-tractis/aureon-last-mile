@@ -17,6 +17,24 @@ vi.mock('@/lib/context/GlobalContext', () => ({
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPASassClient: () => Promise.resolve({ logout: vi.fn() }),
+  createSPAClient: () => ({ rpc: vi.fn() }),
+}));
+
+// spec-81 fase 2, B2 (ronda 1 de review del PR #679) — AppLayout monta el
+// drenador de la cola offline de Recogida. El hook y el sender real se
+// mockean aquí: lo que este archivo verifica es SOLO que AppLayout los
+// conecta con el operatorId correcto, no la lógica de drenado (cubierta en
+// useOfflineQueue.test.ts) ni la del sender (offlineQueueSender.test.ts).
+const mockDrainNow = vi.fn();
+const useOfflineQueueSpy = vi.fn(() => ({ drainNow: mockDrainNow }));
+vi.mock('@/hooks/useOfflineQueue', () => ({
+  useOfflineQueue: (...args: unknown[]) => useOfflineQueueSpy(...args),
+}));
+
+const mockSender = vi.fn();
+const createPickupQueueSenderSpy = vi.fn(() => mockSender);
+vi.mock('@/lib/pickup/offlineQueueSender', () => ({
+  createPickupQueueSender: (...args: unknown[]) => createPickupQueueSenderSpy(...args),
 }));
 
 const mockBranding = {
@@ -103,6 +121,35 @@ beforeEach(() => {
   mockBranding.companyName = null;
   mockIsTablet = false;
   mockPathname = '/app';
+  mockDrainNow.mockClear();
+  useOfflineQueueSpy.mockClear();
+  mockSender.mockClear();
+  createPickupQueueSenderSpy.mockClear();
+});
+
+describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review PR #679)', () => {
+  it('mounts useOfflineQueue with the current operatorId and a real Supabase-backed sender', () => {
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(createPickupQueueSenderSpy).toHaveBeenCalled();
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockSender);
+  });
+
+  it('passes null through when operatorId is not known yet, instead of skipping the mount', () => {
+    mockOperatorId = null;
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(null, mockSender);
+  });
 });
 
 describe('AppLayout sidebar branding', () => {
