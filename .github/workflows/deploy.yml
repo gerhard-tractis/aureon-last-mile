@@ -620,6 +620,16 @@ jobs:
         if: steps.qa.outputs.provisioned == 'true'
         run: |
           set -euo pipefail
+          # spec-87 fase 1 fix round 3 — if npm run e2e:qa dies before
+          # Playwright even starts (a bad export above, a missing dep), no new
+          # results.json is written and "Check quarantine" below would read
+          # whatever a PREVIOUS run left behind, on this same self-hosted
+          # runner, and pass on stale data. actions/checkout@v4's implicit
+          # clean: true does not save this — it does not touch untracked
+          # output directories outside the checkout's own git-ignored state
+          # reliably enough to be the thing anyone is relying on here, and
+          # nobody had written down that they were relying on it at all.
+          rm -rf playwright-report-qa
           PGPASS="$(grep -E '^POSTGRES_PASSWORD=' /home/aureon/.env.qa | tail -n1 | cut -d= -f2- | tr -d '\r')"
           [ -n "$PGPASS" ] || { echo "::error::POSTGRES_PASSWORD missing from /home/aureon/.env.qa"; exit 1; }
           export E2E_DATABASE_URL="postgresql://postgres:${PGPASS}@localhost:5433/postgres"

@@ -64,6 +64,12 @@ jobs:
       - name: Test the quarantine guard
         run: bash ./scripts/check-quarantine.test.sh
 
+      - name: Test the quarantine guard — input validation
+        run: bash ./scripts/check-quarantine-validate.test.sh
+
+      - name: Test the quarantine guard — report shape
+        run: bash ./scripts/check-quarantine-report.test.sh
+
       # The watchdog is the only thing that notices QA going stale, so its
       # decision logic is unit-tested like any other guard.
       - name: Test the QA drift watchdog
