@@ -915,19 +915,24 @@ describe('useOfflineQueue', () => {
     it("E2 — unmounting mid-manifest stops the drain loop before the next entry ever sends", async () => {
       const { first, second, close } = await seed();
       const sentIds: string[] = [];
-      let unmountFn: (() => void) | undefined;
+      // A ref object, not a reassigned `let` — `unmountRef` itself is only
+      // ever assigned once (`prefer-const` correctly objects to a `let`
+      // that's genuinely assigned once, even across this forward-reference
+      // gap between declaring the closure and mounting the component it
+      // needs to unmount).
+      const unmountRef: { current?: () => void } = {};
       const send: OfflineQueueSender = vi.fn(async (entry) => {
         sentIds.push(entry.clientOperationId);
         if (entry.clientOperationId === first.clientOperationId) {
           // Unmount right as the first entry's send is about to resolve —
           // before `drainManifest`'s loop gets a chance to claim `second`.
-          unmountFn?.();
+          unmountRef.current?.();
         }
         return { outcome: 'sent' };
       });
 
       const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
-      unmountFn = unmount;
+      unmountRef.current = unmount;
 
       await waitFor(() => expect(sentIds).toContain(first.clientOperationId));
       await new Promise((resolve) => setTimeout(resolve, 150));
