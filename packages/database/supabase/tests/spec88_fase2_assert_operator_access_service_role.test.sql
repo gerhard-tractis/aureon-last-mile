@@ -12,19 +12,23 @@
 -- auth.uid() IS NULL must now prove, via the JWT's own `role` claim, that it
 -- really is service_role — not merely that it has no end-user session.
 --
--- Why `request.jwt.claims ->> 'role'`, not `request.jwt.claim.role`: this
--- project's PostgREST runs with PGRST_DB_USE_LEGACY_GUCS=false
--- (infra/supabase-qa/docker-compose.yml), so PostgREST never populates the
--- legacy per-claim GUCs (`request.jwt.claim.role` et al) — only the single
--- JSON GUC `request.jwt.claims`. auth.uid() itself already reads claims this
--- way (`request.jwt.claims::json->>'sub'`), and this repo's own RLS
--- policies do the same for `role` (see
--- 20260413000004_spec33_pickup_points_write_rls.sql). The spec's own text
--- proposes `request.jwt.claim.role`; this test (and the migration it drives)
--- deliberately deviates from that literal wording because it would read an
--- unset GUC and always be NULL in this project's real PostgREST config —
--- silently reproducing the exact bug this fase exists to close, just one
--- layer further down.
+-- Why the guard calls `auth.role()` rather than reading either JWT GUC
+-- directly: PostgREST exposes the JWT's `role` claim through two possible
+-- GUCs, and which one is populated depends on `PGRST_DB_USE_LEGACY_GUCS` — a
+-- deploy-time setting this repo does not control for a managed Supabase
+-- project (production). Legacy mode populates only the singular
+-- `request.jwt.claim.role`; non-legacy mode populates only the JSON
+-- `request.jwt.claims ->> 'role'`. Reading just one of the two is a real bug,
+-- not a stylistic choice: whichever source you skip is exactly the one a
+-- managed PostgREST might be using, and the guard would then reject every
+-- real service_role caller. `auth.role()` — present in every Supabase
+-- project, not new schema surface here — already coalesces both sources
+-- (`request.jwt.claim.role` first, falling back to
+-- `request.jwt.claims ->> 'role'`), the identical two-source shape
+-- `auth.uid()` uses for `sub`. Calling it means the guard is correct under
+-- either GUC mode without needing to know, or guess, which one production
+-- runs. TEST 3b below exercises the legacy-GUC-only case directly — the case
+-- a single-source read would get wrong.
 --
 -- Fixture style follows spec88_assert_operator_access_internal_guard.test.sql.
 
