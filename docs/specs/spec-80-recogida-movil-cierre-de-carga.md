@@ -337,7 +337,7 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
       `close_manifest` acepta el rescate y escribe la firma. No requiere esperar
       a la fase 2 — esa fase sólo añade el mismo camino en móvil.
 
-### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[in_progress]`
+### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000004_spec80_close_manifest_acl_fix.sql`, `packages/database/supabase/tests/spec80_close_manifest_acl.test.sql`, `packages/database/supabase/tests/spec80_close_manifest.sql`, `apps/frontend/src/lib/pickup/closeManifestErrors.ts`
 
@@ -358,7 +358,11 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
 > ambos matan su test correspondiente. No se probó contra la base de QA real
 > (a diferencia de la fase 1): el cambio es sólo ACL + prefijo de mensaje
 > sobre una función ya viva en QA/producción, sin nueva superficie que un
-> humano pueda ejercitar desde la UI.
+> humano pueda ejercitar desde la UI. **Cierre (2026-09-08, orquestador):** la
+> migración de esta fase está aplicada en producción — confirmado
+> `git merge-base --is-ancestor 78d65df8 32667d0d`, el `headSha` del run
+> `34265192142` ("Deploy Production"), cuyo job `Verify Production
+> Migrations` cerró en verde.
 > Downstream: revisado spec-81, spec-82, spec-83, spec-84, spec-86 — sin
 > cambios. Ninguno depende del texto exacto de estos dos mensajes de error
 > (ambos seguían cayendo al fallback genérico antes del prefijo, y lo siguen
