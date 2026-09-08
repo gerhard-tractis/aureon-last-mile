@@ -57,7 +57,10 @@ describe('useMissingPackages', () => {
     const ordersChain = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      is: vi.fn().mockResolvedValue({ data: [{ id: 'order-1', order_number: 'ORD-001' }], error: null }),
+      is: vi.fn().mockResolvedValue({
+        data: [{ id: 'order-1', order_number: 'ORD-001', customer_name: 'Camila Fernández' }],
+        error: null,
+      }),
     };
     // packages query → pkg-1 and pkg-2
     const packagesChain = {
@@ -85,7 +88,12 @@ describe('useMissingPackages', () => {
 
     // pkg-1 is missing (not verified), pkg-2 is verified
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data?.[0]).toMatchObject({ id: 'pkg-1', label: 'PKG-001', order_number: 'ORD-001' });
+    expect(result.current.data?.[0]).toMatchObject({
+      id: 'pkg-1',
+      label: 'PKG-001',
+      order_number: 'ORD-001',
+      customer_name: 'Camila Fernández',
+    });
   });
 });
 
