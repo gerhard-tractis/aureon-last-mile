@@ -10,6 +10,7 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
+import { mapCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
@@ -113,23 +114,34 @@ export default function CompletionPage() {
 
     try {
       const supabase = createSPAClient();
-      const { error } = await supabase
-        .from('manifests')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          signature_operator: operatorSignature,
-          signature_operator_name: operatorName,
-          signature_client: clientSignature,
-          signature_client_name: clientName || null,
-        })
-        .eq('id', manifestId);
+      // H5 (fix round 1): operator_name is NOT sent — close_manifest derives
+      // the signer's name server-side from the JWT actor's public.users row.
+      // A client-supplied name would be worthless as custody-transfer
+      // evidence.
+      const { error } = await supabase.rpc('close_manifest', {
+        p_manifest_id: manifestId,
+        p_signatures: {
+          operator_signature: operatorSignature,
+          client_signature: clientSignature,
+          client_name: clientName || null,
+        },
+      });
 
       if (error) throw error;
       toast.success('Manifiesto completado exitosamente');
       router.push('/app/pickup');
     } catch (err) {
+      // H2 (fix round 1): close_manifest now has three hard rejections
+      // (cross-tenant, non-closable status, already signed) where the old
+      // raw .update() almost always just succeeded. Swallowing the error
+      // left the operator staring at a re-enabled button with no idea
+      // whether the signature was captured — surface it.
+      // F3 (fix round 2): close_manifest raises in English with a sentinel
+      // prefix (MANIFEST_ALREADY_SIGNED, MANIFEST_NOT_CLOSABLE,
+      // OPERATOR_SIGNATURE_REQUIRED) — map it to Spanish rather than
+      // painting raw Postgres text on an all-Spanish PWA.
       console.error('Failed to complete manifest:', err);
+      toast.error(mapCloseManifestError(err));
       setIsSubmitting(false);
     }
   };
