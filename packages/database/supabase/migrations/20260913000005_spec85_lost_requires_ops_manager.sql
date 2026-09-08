@@ -208,8 +208,24 @@ BEGIN
   IF v_src NOT LIKE '%LOST_REQUIRES_OPERATIONS_MANAGER%' THEN
     RAISE EXCEPTION 'resolve_discrepancy has no lost-requires-operations_manager gate — any authenticated user of the operator could declare a discrepancy lost';
   END IF;
-  IF v_src NOT LIKE '%operations_manager%' OR v_src NOT LIKE '%admin%' OR v_src NOT LIKE '%super_admin%' THEN
-    RAISE EXCEPTION 'resolve_discrepancy lost part of the elevated-role list (operations_manager/admin/super_admin)';
+  -- fix/spec-85-fase-3a-seguimiento (post-merge review, item 1): the three
+  -- bare `v_src NOT LIKE '%admin%'`-style checks this replaced were vacuous.
+  -- They passed as long as ANY substring of prosrc contained the word — and
+  -- the RAISE EXCEPTION message text two lines above the role list ALSO
+  -- spells out "operations_manager, admin or super_admin", so a mutant that
+  -- narrowed the actual `NOT IN (...)` role list down to just
+  -- ('operations_manager') still satisfied all three checks and this DO
+  -- block still raised only the "installed" NOTICE, not an exception.
+  -- Verified by mutation: this exact narrowing, applied live, produced 41/41
+  -- PASSED with the old checks and left admin/super_admin able to lose the
+  -- ability to declare 'lost' in total silence (see TEST 28/29 in
+  -- spec85_discrepancies_rpcs.test.sql). This LIKE now targets the literal
+  -- `NOT IN (...)` list text as it appears in prosrc — single quotes doubled
+  -- because this is itself a single-quoted string literal — not just the
+  -- individual words, which also appear in the message text regardless of
+  -- what the list actually contains.
+  IF v_src NOT LIKE '%(''operations_manager'', ''admin'', ''super_admin'')%' THEN
+    RAISE EXCEPTION 'resolve_discrepancy lost part of the elevated-role list (operations_manager/admin/super_admin) — expected literal NOT IN (''operations_manager'', ''admin'', ''super_admin'') in the function body';
   END IF;
   IF v_src NOT LIKE '%DISCREPANCY_ALREADY_RESOLVED%' THEN
     RAISE EXCEPTION 'resolve_discrepancy no longer rejects reopening — this file was templated on an earlier definition';
