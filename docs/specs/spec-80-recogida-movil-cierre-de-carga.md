@@ -420,7 +420,7 @@ la reemplazó antes de usarla como base), con:
   ya hace matching sobre el texto viejo sin prefijo — si es así, actualizarlo
   en el mismo cambio.
 
-### Fase 2 — `5e` cerrar con faltantes `[in_progress]`
+### Fase 2 — `5e` cerrar con faltantes `[done]`
 
 > **No empezar hasta que [spec-85](spec-85-discrepancias.md) fase 2 esté en `[done]`.**
 > Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC
@@ -571,7 +571,41 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > búsqueda del manifiesto falla por red (sin rama `else`/`catch`, forma preexistente); (3) el
 > estado de error no ofrece «Reintentar» ni salida.
 >
-> Review y QA pendientes — no se marca `[done]` aquí.
+> Cierre (2026-09-08, orquestador). Rama `feat/spec-80-fase-2-bloqueo-faltantes`,
+> SHA `632b505e`, PR #686 (merge `4e59c6cc`, 2026-09-08T19:28:53Z).
+> Review: tres rondas adversariales, todas cerradas en la misma rama — ronda 1
+> encontró que el arreglo P0 de los CTAs no lo sujetaba ningún test (invertirlos
+> dejaba 8/8 en verde); ronda 2 encontró que el bloqueo se evaporaba sin red
+> porque TanStack Query **pausa** las queries (`isLoading` false, `data`
+> undefined) y el `= []` lo convertía en `missingCount = 0`; ronda 3 (arriba)
+> gateó por ausencia de datos — la mutación que quita `|| missingPackages ===
+> undefined` produce un crash real aguas abajo (`Cannot read properties of
+> undefined (reading 'length')`), prueba de que el bug llegaba al JSX de
+> producción.
+> QA: `gh pr checks 686` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). **Hueco declarado, no maquillado:** el `push` a `main` que
+> trae este merge (`Deploy Production`, run `34270192606`) falló en el gate
+> `E2E against QA` por un test en cuarentena no declarado
+> (`despacho-close-dispatch.spec.ts`, Ruta H — ajeno a Recogida) y por eso
+> nunca llegó a `Verify Production Migrations`; las dos ejecuciones
+> posteriores del pipeline (`439e7f9`, `e23690e`) siguen `waiting` sobre la
+> aprobación manual de producción al momento de este cierre. La migración
+> `20260916000001` **no** está confirmada como aplicada en producción —
+> a diferencia de la fase 1b, aquí no hay un run verde posterior que la
+> incluya. Verificado vía pgTAP local (`spec80_fase2_close_manifest_discrepancies.test.sql`,
+> 11/11 tras la ronda de review, según el PR) y vía `vitest` (83 archivos /
+> 679 tests en `src/lib/pickup src/components/pickup src/app/app/pickup
+> src/hooks/pickup`), ambos citados en el PR.
+> Downstream: revisado spec-81 (cola offline, en su fase 3/2 en paralelo) —
+> sin cambios; esta fase no toca ningún fichero de la cola ni de
+> `PickupFlowHeader`. Revisado spec-82 (confirmado sin solape de archivos,
+> arriba), spec-83, spec-84, spec-86 — sin cambios de contrato que les
+> afecte.
+> Seguimiento de prioridad alta, no cerrado aquí: `useDiscrepancies.ts:31-56`
+> se traga los errores de red y resuelve con `[]` — el mismo patrón que la
+> ronda 3 de review acaba de blindar del lado del gate, pero sin corregir en
+> origen. Queda para una fase nueva o para spec-85/86; no se abre número aquí
+> por decisión del orquestador — anotado para que no se pierda.
 
 ### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
 
