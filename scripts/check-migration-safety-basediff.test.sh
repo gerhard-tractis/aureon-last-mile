@@ -163,6 +163,56 @@ else
   echo "  ok   m8: no 'git show ... fatal' noise for the renamed file"
 fi
 
+# ── F4 (round 3): the base-diff Set compares `v.statement` by EXACT string
+# equality. `.trim()` absorbs leading/trailing whitespace, but NOT internal
+# spacing — reformatting an existing backfill (e.g. wrapping it across
+# three indented lines, no semantic change) changes the trimmed string byte-
+# for-byte, so the Set lookup misses and a pure reformat looks like a
+# BRAND NEW violation. Real precedent this could break: 20260901000001,
+# "lift statement_timeout on the two migration-time backfills" — wrapping an
+# existing backfill in a SET LOCAL while reformatting it must not reject.
+GIT_FIXTURE_F4="$TMP/gitrepo-f4-reformat"
+mkdir -p "$GIT_FIXTURE_F4/migrations"
+(
+  cd "$GIT_FIXTURE_F4"
+  git init -q
+  git config user.email test@example.com
+  git config user.name test
+
+  cat > migrations/0000000001_reformat.sql <<'SQL'
+BEGIN;
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+UPDATE public.packages SET foo = 'bar';
+COMMIT;
+SQL
+  git add -A
+  git commit -q -m base
+
+  # Same statement, reformatted across three indented lines — no semantic
+  # change, but the trimmed text differs byte-for-byte from base.
+  cat > migrations/0000000001_reformat.sql <<'SQL'
+BEGIN;
+ALTER TABLE public.packages ADD COLUMN foo TEXT;
+UPDATE public.packages
+  SET foo
+    = 'bar';
+COMMIT;
+SQL
+  git add -A
+  git commit -q -m "reformat the existing backfill, no semantic change"
+)
+BASE_SHA_F4=$(cd "$GIT_FIXTURE_F4" && git rev-parse HEAD~1)
+output_f4=$(cd "$GIT_FIXTURE_F4" && bash "$SCRIPT" --base "$BASE_SHA_F4" migrations 2>&1)
+actual_f4=$?
+if [ "$actual_f4" -eq 0 ]; then
+  pass=$((pass + 1))
+  echo "  ok   F4: a pure reformat of an existing backfill (whitespace only) does not hard-reject"
+else
+  fail=$((fail + 1))
+  echo "  FAIL F4: expected exit 0 for a whitespace-only reformat, got $actual_f4 — statement identity is not whitespace-normalized"
+  printf '%s\n' "$output_f4" | sed 's/^/         /'
+fi
+
 echo ""
-echo "check-migration-safety.sh (B3 base-diff + m8 rename): $pass passed, $fail failed"
+echo "check-migration-safety.sh (B3 base-diff + m8 rename + F4): $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

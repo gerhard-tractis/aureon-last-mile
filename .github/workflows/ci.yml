@@ -81,7 +81,10 @@ jobs:
       - name: Test the migration-safety guard — rule 1, round 2 (B1, B2, M5, M6)
         run: bash ./scripts/check-migration-safety-rule1b.test.sh
 
-      - name: Test the migration-safety guard — B3 per-violation base diff + m8 rename
+      - name: Test the migration-safety guard — rule 1, round 3 (F1, F2, F3)
+        run: bash ./scripts/check-migration-safety-rule1c.test.sh
+
+      - name: Test the migration-safety guard — B3 per-violation base diff + m8 rename + F4
         run: bash ./scripts/check-migration-safety-basediff.test.sh
 
       # The production gate is only as good as its wiring, and this file has a

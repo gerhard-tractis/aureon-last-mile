@@ -94,13 +94,31 @@ export function violationsAtBase(baseSha, filePath, oldPathAtBase) {
 }
 
 /**
+ * F4 (review round 3): collapses all whitespace runs to a single space, so
+ * a statement's IDENTITY for base-diffing purposes is insensitive to pure
+ * reformatting (re-indenting, wrapping across lines). `.trim()` alone only
+ * absorbs leading/trailing whitespace — it left a whitespace-only edit
+ * (e.g. wrapping an existing backfill across three indented lines with no
+ * semantic change) looking like a brand-new violation, because the Set
+ * comparison in `newViolationsSinceBase` is exact-string. Real precedent
+ * this protects: 20260901000001, "lift statement_timeout on the two
+ * migration-time backfills" — reformatting a backfill while touching it
+ * must not reject.
+ */
+function normalizeStatementWhitespace(stmt) {
+  return stmt.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * B3: which of `currentViolations` are genuinely NEW relative to `baseSha`
  * — i.e. no violation at base has the same `statement` identity. A
- * violation identical (by statement text) to one already at base is not
- * new; anything else is, even when the file already had a DIFFERENT
- * violation at base.
+ * violation identical (by statement text, whitespace-normalized — F4) to
+ * one already at base is not new; anything else is, even when the file
+ * already had a DIFFERENT violation at base.
  */
 export function newViolationsSinceBase(baseSha, filePath, oldPathAtBase, currentViolations) {
-  const baseStatements = new Set(violationsAtBase(baseSha, filePath, oldPathAtBase).map((v) => v.statement));
-  return currentViolations.filter((v) => !baseStatements.has(v.statement));
+  const baseStatements = new Set(
+    violationsAtBase(baseSha, filePath, oldPathAtBase).map((v) => normalizeStatementWhitespace(v.statement))
+  );
+  return currentViolations.filter((v) => !baseStatements.has(normalizeStatementWhitespace(v.statement)));
 }
