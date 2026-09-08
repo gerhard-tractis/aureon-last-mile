@@ -272,6 +272,13 @@ línea contra el HTML real de cada artboard.
 
 ### Fase 2 — `DESCARGAR` `[pending]`
 
+**Archivos:** (indeterminado — el segundo punto habla de precargar «al almacén
+de spec-81», pero `apps/frontend/src/lib/db.ts` hoy sólo tiene colas de SALIDA
+(`scan_queue`, `pickup_queue`), no un caché de lectura offline. No hay tabla,
+hook ni componente que nombrar sin inventarlo. `check-phase-overlap.mjs` la
+reporta como «no puedo juzgar» (exit 3). Rellenar este campo es parte de tomar
+la fase: primero se decide la forma del almacén, después se declara.)
+
 - [ ] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
 - [ ] Precarga de manifiesto, órdenes y bultos al almacén de spec-81.
 - [ ] Chip de estado por carga. **Ver la nota "Colisión futura anotada" en
