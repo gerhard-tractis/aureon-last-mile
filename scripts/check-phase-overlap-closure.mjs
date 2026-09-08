@@ -160,6 +160,18 @@ export function buildClosure(seedFiles, { resolveContent, maxDepth = 2 }) {
  * writing it, are not reported at all — that is "this app has a design
  * system", not a parallelism risk.
  */
+// review round 1, blocker 1: every phase edits its OWN spec's markdown as
+// routine narration (the `[x]` checkboxes, review notes, the token itself).
+// Two sibling phases of the SAME spec both touch that one `.md` in their
+// real `git diff`, which reported a hard conflict on the spec's own prose
+// for the single most common parallel-dispatch pattern in this repo — two
+// phases of one spec. `docs/**` carries no runtime contract to break, so it
+// is excluded from BOTH tiers, not just softened: there is nothing here for
+// "soft coupling" to mean either.
+function isIgnoredForOverlap(file) {
+  return file.startsWith('docs/');
+}
+
 export function computeOverlap(targets) {
   const hard = [];
   const soft = [];
@@ -170,18 +182,21 @@ export function computeOverlap(targets) {
       const b = targets[j];
 
       for (const file of a.writeSet) {
+        if (isIgnoredForOverlap(file)) continue;
         if (b.writeSet.has(file)) {
           hard.push({ file, targets: [a.name, b.name] });
         }
       }
 
       for (const [file, info] of a.closure) {
+        if (isIgnoredForOverlap(file)) continue;
         if (a.writeSet.has(file)) continue; // already handled as a's own write
         if (b.writeSet.has(file) && !a.writeSet.has(file)) {
           soft.push({ file, writer: b.name, reacher: a.name, via: info.via });
         }
       }
       for (const [file, info] of b.closure) {
+        if (isIgnoredForOverlap(file)) continue;
         if (b.writeSet.has(file)) continue;
         if (a.writeSet.has(file) && !b.writeSet.has(file)) {
           soft.push({ file, writer: a.name, reacher: b.name, via: info.via });

@@ -199,5 +199,54 @@ test('computeOverlap: three real Recogida targets — two share surface, one (SQ
   assert.equal(touchesC, false);
 });
 
+// ── Blocker 1 (review round 1): docs/** must never count as a hard conflict.
+// Every phase edits its OWN spec's `.md` file as part of normal work — two
+// phases of the SAME spec both touch that one file in their real diff, which
+// made computeOverlap report a hard conflict on the spec's own markdown for
+// any two sibling phases. Verified against real branches: `spec-80#Fase 1b`
+// vs `spec-80#Fase 2` reported `CONFLICTO DURO — docs/specs/spec-80-....md`
+// before this fix — a false positive that would have blocked the single most
+// common parallel-dispatch pattern (two phases of one spec).
+test('computeOverlap: two targets that both touch their own spec .md is NOT a hard conflict', () => {
+  const a = target('spec-80-fase-1b', [
+    'docs/specs/spec-80-recogida-movil-cierre-de-carga.md',
+    'apps/frontend/src/lib/pickup/closeManifestErrors.ts',
+  ]);
+  const b = target('spec-80-fase-2', [
+    'docs/specs/spec-80-recogida-movil-cierre-de-carga.md',
+    'apps/frontend/src/components/pickup/UnverifiedPackagesBlock.tsx',
+  ]);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 0, 'docs/** must be excluded from the hard tier');
+});
+
+test('computeOverlap: docs/** is also excluded from the soft tier (no noise from a shared spec doc)', () => {
+  const a = target('A', ['docs/specs/spec-80-recogida-movil-cierre-de-carga.md']);
+  const b = target('B', ['docs/specs/spec-80-recogida-movil-cierre-de-carga.md']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 0);
+  assert.equal(r.soft.length, 0);
+});
+
+test('computeOverlap: a real (non-docs) hard conflict alongside a shared spec .md still fires', () => {
+  // Guards against a mutation that excludes EVERYTHING, not just docs/** —
+  // the real conflicting file must still be caught.
+  const a = target('A', ['docs/specs/spec-80-x.md', 'apps/frontend/src/lib/pickup/closeManifestErrors.ts']);
+  const b = target('B', ['docs/specs/spec-80-x.md', 'apps/frontend/src/lib/pickup/closeManifestErrors.ts']);
+  const r = computeOverlap([a, b]);
+  assert.equal(r.hard.length, 1);
+  assert.equal(r.hard[0].file, 'apps/frontend/src/lib/pickup/closeManifestErrors.ts');
+});
+
+// ── Medium 6 (review round 1): the depth-cap DEFAULT (not just the mechanism)
+// needs its own test. Every earlier depth test passed maxDepth explicitly, so
+// a mutation of the *default value* (2 -> 99) in buildClosure's signature
+// went undetected — 14/14 stayed green under that mutation.
+test('buildClosure DEFAULT maxDepth (no override) does not reach a 3rd hop', () => {
+  const c = buildClosure(['apps/frontend/src/hooks/useOfflineQueue.ts'], { resolveContent });
+  assert.ok(c.has('apps/frontend/src/lib/db.ts'), 'depth 2 (default) should be included');
+  assert.ok(!c.has('apps/frontend/src/lib/offline/deepest.ts'), 'depth 3 must be excluded by the DEFAULT cap');
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
