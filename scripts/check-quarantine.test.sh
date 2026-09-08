@@ -204,6 +204,19 @@ assert_exit 1 "an entry that expired yesterday fails the gate" \
 assert_contains "expired" "names the expiry as the reason, one day past" \
   "2026-09-07" "$EXPIRES_YESTERDAY" "$ONE_FAILING_REPORT"
 
+# ── m6: the "active" boundary, not just the "expired" one ──────────────────
+# EXPIRES_TODAY above (against a still-FAILING report) cannot tell `active =
+# filter(e => !(e.expires < today))` apart from a mutant `<=`: either way the
+# entry is still covered by `quarantine.some(matches)` in the undeclared-
+# failure check, so the gate passes regardless of which operator ran. The
+# operator only matters for the STALE check, which only looks at entries the
+# `active` filter selected — so the fixture that actually exercises the
+# boundary needs the quarantined test to now PASS on its exact expiry date.
+assert_exit 1 "an entry expiring exactly today, now passing, is still active enough to be flagged stale" \
+  "2026-09-07" "$EXPIRES_TODAY" "$PASSING_REPORT"
+assert_contains "Retire it" "names the exactly-expiring entry as stale, not silently forgiven" \
+  "2026-09-07" "$EXPIRES_TODAY" "$PASSING_REPORT"
+
 # ── Success message names what it forgave, not just a count ────────────────
 assert_contains "despacho-tablet-dock.spec.ts" "success message names the forgiven spec" \
   "2026-09-07" "$DECLARED_ACTIVE" "$ONE_FAILING_REPORT"
