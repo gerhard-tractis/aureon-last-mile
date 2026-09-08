@@ -163,55 +163,154 @@ paralelismo, es "este repo tiene un sistema de diseño compartido".
 
 La lección más cara del día (el guard de cuarentena pasó siete rondas de review
 fabricando un informe con una forma que Playwright nunca produce) obliga a
-correr esto contra código real, no sólo contra fixtures inventadas. Se corrió
-contra las cuatro ramas vivas de Recogida el 2026-09-08:
+correr esto contra código real, no sólo contra fixtures inventadas. Y una
+segunda lección, de la ronda 1 de review de este spec: **corrido en el momento
+equivocado, un criterio de aceptación pasa por razones que no sostienen el
+caso real.** El primer borrador de esta sección validaba con las cuatro ramas
+YA COMMITEADAS — que es post-hoc, no el momento en que el orquestador de verdad
+necesita la respuesta. El criterio correcto es **modo dispatch-time**: los
+mismos targets, **sin rama**, porque en el momento de decidir si dos fases
+nuevas se pueden despachar en paralelo casi nunca hay todavía una rama con
+commits — sólo hay lo que el spec declaró.
+
+### Modo dispatch-time (sin rama) — el caso real, corrido como se usa de verdad
 
 ```
 node scripts/check-phase-overlap.mjs \
-  "docs/specs/spec-81-recogida-cola-offline.md#Fase 2@feat/spec-81-fase-2-drenado" \
-  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 2@feat/spec-80-fase-2-bloqueo-faltantes" \
-  "docs/specs/spec-82-recogida-movil-asignacion-y-ruta.md#Fase 1@feat/spec-82-fase-1" \
-  "docs/specs/spec-88-anon-security-definer-audit.md#Fase 2@feat/spec-88-fase-2-assert-operator-access" \
+  "docs/specs/spec-81-recogida-cola-offline.md#Fase 2" \
+  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 2" \
+  "docs/specs/spec-82-recogida-movil-asignacion-y-ruta.md#Fase 1" \
   --base origin/main
 ```
 
-Con el tope de profundidad **por defecto (2)**, sin flags extra — resultado
-completo en el mensaje de cierre de la fase 1: **CONFLICTO DURO: ninguno.**
-**ACOPLAMIENTO BLANDO — 2 casos**, ambos `apps/frontend/src/components/AppLayout.tsx`
-— escrito por spec-81 fase 2, alcanzado por spec-80 fase 2 y por spec-82 fase 1,
-los dos vía `layout.tsx` (convención de Next.js, no import) → `AppLayout`
-(import). spec-88 (SQL puro) no aparece en ningún caso — disjunta. Veredicto:
-**despachable en paralelo — sólo acoplamiento blando, revisar los casos de
-arriba**. Con `--max-depth 3` aparecen dos casos más sobre `TopBar.tsx` (un hop
-más allá de `AppLayout.tsx`) — mismo veredicto, más detalle.
+Resultado real, 2026-09-08, contra `origin/main` post-PR#693 (backfill de
+`**Archivos:**`): **CONFLICTO DURO: ninguno. ACOPLAMIENTO BLANDO: ninguno.
+VEREDICTO: despachable en paralelo — superficies disjuntas.**
 
-Esto es exactamente lo que pedía el criterio de aceptación: las tres ramas de
-Recogida se reportan compartiendo superficie (a través del shell de layout que
-spec-81 tocó), y la cuarta —SQL puro— se reporta disjunta, sin aparecer en
-ningún caso de solapamiento.
+**Esto es exacto para lo que cada fase DECLARA, y honesto sobre el límite de
+esa declaración.** spec-81 fase 2 declara un solo fichero
+(`useOfflineQueue.ts`), que a dos hops de profundidad no alcanza
+`AppLayout.tsx` — sólo lo alcanza porque la rama real, con sus 26+ ficheros
+commiteados, sí lo toca. La cobertura de `**Archivos:**` de spec-81 fase 2 es
+~4% de lo que la fase termina tocando de verdad. **Esta herramienta no puede
+arreglar la calidad de una declaración escasa** — puede negarse a opinar
+cuando no hay declaración en absoluto (bloqueante 3, abajo), pero no puede
+inventar ficheros que el spec nunca nombró. El criterio de aceptación de este
+spec es que la herramienta **razone correctamente sobre lo que se le da**, no
+que adivine lo que falta.
 
-Esa corrida contra código real, no la fixture, es la que encontró y corrigió
-dos bugs reales antes de este commit:
+### Modo post-hoc (con rama, cuando ya existe) — más preciso, no el caso de dispatch
 
-1. **CRLF rompía el emparejamiento de encabezados de fase.** `extractArchivosFiles`
-   usaba un regex anclado con `$`; en un checkout de Windows (line endings
-   CRLF), el `\r` sobrante entre el último carácter real y `$` hacía que
-   **ningún** encabezado de fase matcheara nunca contra un spec real — sólo
-   contra las fixtures de test, escritas con `\n` puro. Sin la corrida contra
-   ficheros reales esto habría quedado invisible: los quince tests unitarios
-   con fixtures `\n` pasaban en verde.
-2. **El cierre de imports puro es ciego a los layouts de Next.js** (ver la
-   sección anterior) — sin esta corrida real, el guard habría reportado
-   "disjunto" entre las tres ramas de Recogida, un falso negativo exactamente
-   del tipo que el requisito pide evitar ("ni indirectamente").
+```
+node scripts/check-phase-overlap.mjs \
+  "docs/specs/spec-81-recogida-cola-offline.md#Fase 2@origin/feat/spec-81-fase-2-drenado" \
+  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 2@feat/spec-80-fase-2-bloqueo-faltantes" \
+  "docs/specs/spec-82-recogida-movil-asignacion-y-ruta.md#Fase 1@origin/feat/spec-82-fase-1" \
+  "docs/specs/spec-88-anon-security-definer-audit.md#Fase 2@origin/feat/spec-88-fase-2-assert-operator-access" \
+  --base origin/main
+```
+
+Con las ramas reales ya commiteadas, la misma corrida (2026-09-08, ~15.4s —
+ver "Rendimiento" abajo): **CONFLICTO DURO: ninguno. ACOPLAMIENTO BLANDO — 4
+casos**, incluido `apps/frontend/src/components/AppLayout.tsx` (escrito por
+spec-81 fase 2, alcanzado por spec-80 fase 2 y spec-82 fase 1 vía
+`layout.tsx` — convención de Next.js, no import). spec-88 (SQL puro) no
+aparece en ningún caso — disjunta. Veredicto: **despachable en paralelo —
+sólo acoplamiento blando, revisar los casos de arriba**.
+
+**Cuándo usar cuál:** dispatch-time es el chequeo real *antes* de dispatchar
+una fase que todavía no tiene rama. Post-hoc es útil para revalidar una fase
+que ya está en curso contra otra que se va a dispatchar junto a ella — en ese
+caso sí hay una rama real que consultar, y consultarla siempre gana sobre la
+declaración (ver "Fuente de la superficie" arriba). Ninguno de los dos modos
+es "el correcto" en abstracto; dispatch-time es el que importa para el
+requisito original ("antes de dispatchar en paralelo").
+
+### El número que importa: cuántas fases quedan en "no puedo juzgar" hoy
+
+De las **24 fases `[pending]`/`[in_progress]` activas hoy** en `docs/specs/`,
+**7 no declaran `**Archivos:**`**: spec-80 fase 1b, spec-82 fase 2, spec-83
+fase 3, y spec-88 fases 1, 2, 4 y 5. De esas 7:
+
+- **3 son juzgables igual** si el orquestador les pasa la rama que ya existe
+  (`feat/spec-80-fase-1b-close-manifest-acl`, `feat/spec-88-fase-1-revoke-anon`,
+  `feat/spec-88-fase-2-assert-operator-access`) — el diff real sustituye a la
+  declaración ausente.
+- **4 quedan en "no puedo juzgar" pase lo que pase hoy**: spec-82 fase 2,
+  spec-83 fase 3, spec-88 fase 4, spec-88 fase 5 — ni declaración ni rama.
+  Las dos primeras son, textualmente, las dos que el agente del backfill
+  (PR #693) **se negó a rellenar por ambigüedad honesta** — spec-82 fase 2
+  habla de precargar al «almacén de spec-81», pero hoy `lib/db.ts` sólo tiene
+  colas de salida, no caché de lectura; spec-83 fase 3 es un condicional
+  explícito en el propio spec («leer spec-73 y decidir»). Que la herramienta
+  se niegue a opinar exactamente donde un agente humano-en-el-loop también se
+  negó no es una coincidencia — es la señal de que el rechazo es la respuesta
+  correcta, no un hueco de cobertura.
+
+**17 de 24 (71%) son juzgables hoy sin tocar nada más.** No son "casi todas
+sin poder juzgar" — pero el 29% restante importa: antes de dispatchar
+cualquiera de esas 7 en paralelo con otra fase, el orquestador tiene que
+pasarle la rama si existe, o tratarla como no verificada si no existe. La
+herramienta lo dice en voz alta (exit 3) en vez de mentir "disjuntas".
 
 ## Mutación verificada
 
-Cada regla del núcleo (`computeOverlap`'s distinción duro/blando, el tope de
-profundidad, el guard `isNextPageFile`) se mutó a mano y se confirmó que algún
-test la atrapa — no basta con "los tests pasan", hace falta ver el test fallar
-cuando la regla se desactiva. Documentado con la salida real en el reporte de
+Cada regla del núcleo se mutó a mano y se confirmó que algún test la atrapa —
+no basta con "los tests pasan", hace falta ver el test fallar cuando la regla
+se desactiva:
+
+- `computeOverlap`: la distinción duro/blando, la exclusión de `docs/**` de
+  ambos tiers (bloqueante 1), y la semántica de directorio-vs-fichero-concreto
+  (bloqueante 5 — dos declaraciones de directorio nunca chocan entre sí; una
+  declaración de directorio SÍ choca con un fichero concreto de la otra fase
+  bajo ese directorio).
+- `buildClosure`: el guard `isNextPageFile` (con un fichero señuelo que
+  demuestra que el guard hace falta, no que coincide por casualidad), Y **el
+  valor por defecto del tope de profundidad (2)** — no sólo el mecanismo. La
+  primera ronda de tests pasaba `maxDepth` explícito siempre, así que una
+  mutación del *default* (`maxDepth = 2` → `99`, tanto en
+  `check-phase-overlap-closure.mjs` como, por separado, en
+  `check-phase-overlap.mjs`) sobrevivía sin que ningún test lo notara —
+  corregido con un test end-to-end que omite `--max-depth` a propósito.
+
+Salida real de cada mutación (mutante → test que muere) está en el reporte de
 cierre de fase 1.
+
+## Rendimiento — de incompatible con un hook a ~15s
+
+Medido por el review (ronda 1, medio 7) contra las cuatro ramas reales:
+**86s para 2 targets pequeños, más de 15 minutos para el cuarteto completo**.
+Causa: `resolveSpecifier` prueba hasta 7 candidatos de extensión por
+especificador (sin extensión, `.ts`, `.tsx`, `.js`, `.jsx`, dos sufijos de
+barril), y cada candidato era un `git show` — un proceso nuevo por intento,
+la mayoría de los cuales fallan (el candidato no existe). Un `PreToolUse` que
+tarda minutos se desactiva la primera semana, y "de aquí a un hook" es
+exactamente el destino declarado para este guard.
+
+**Arreglo:** `git ls-tree -r --name-only <ref>` lista el árbol ENTERO de un
+ref en una sola llamada — una vez por ref distinto en toda la corrida, no una
+vez por candidato. La existencia de un candidato pasa a ser un `Set.has()` en
+memoria (gratis); `git show` se llama como máximo una vez por fichero, sólo
+para el candidato ya confirmado, y su resultado también se cachea (un mismo
+fichero compartido se resuelve una vez, no una vez por importador que lo
+alcanza). `makeResolver` se simplificó de paso: la rama de una fase ya
+contiene, por herencia de árbol, todo lo que no cambió respecto a la base —
+"probar rama, si falla probar base" nunca hacía falta.
+
+**Medido después del arreglo, mismo cuarteto real:** **~15.4s** (`Date.now()`
+antes/después del proceso completo, no una estimación) — de más de 15 minutos
+a compatible con un hook en un solo cambio, sin tocar la superficie pública
+del CLI. Comportamiento verificado sin cambios: los 17 tests de
+`check-phase-overlap.test.sh` siguen en verde tras el refactor.
+
+**Efecto colateral encontrado y corregido en el camino:** el mismo repo real
+expuso un crash — un candidato de `resolveSpecifier` sin extensión puede
+coincidir con un DIRECTORIO real del árbol de trabajo (`existsSync` es cierto
+para directorios también; `readFileSync` sobre uno lanza `EISDIR`, no "no
+encontrado"). `readWorkingTree` ahora comprueba `statSync().isFile()` antes
+de leer. Sin la corrida contra el repo real esto habría quedado invisible —
+ninguna fixture pequeña tiene un candidato que coincida por accidente con una
+carpeta real.
 
 ## Cómo se usa — y qué queda fuera a propósito
 
@@ -254,13 +353,45 @@ BLANDO", se dispatcha con la advertencia leída, no a ciegas.
   nuevo que se añada a `tsconfig.json` sin actualizar
   `check-phase-overlap-closure.mjs` degrada en falso negativo silencioso —
   riesgo aceptado y documentado, no una garantía de completitud.
-- **Consciente de renombres/borrados entre ramas.** Si una rama borra un
-  fichero que la base tenía, `git show <rama>:<path>` falla y el resolvedor de
-  contenido cae de vuelta al contenido de la base para ese path —
-  documentado como limitación conocida en `check-phase-overlap.mjs`
-  (`makeResolver`), no resuelto: una fase que borra un fichero compartido es
-  exactamente el tipo de cambio que un humano debería estar mirando de todos
-  modos, no algo que este guard deba adivinar en su nombre.
+- **Ciego a la colisión en SQL puro (bloqueante 2 del review, estructural —
+  no se ataca aquí).** Dos migraciones DISTINTAS que hacen `CREATE OR
+  REPLACE FUNCTION` sobre la MISMA función no se detectan: cada una es un
+  fichero `.sql` diferente, así que ni el tier duro (mismo fichero) ni el
+  cierre de imports (SQL no tiene imports) las conecta — aunque en tiempo de
+  ejecución sean la misma colisión que dos fases escribiendo la misma
+  función de TypeScript. Encaja mal en un cierre de imports por diseño: la
+  pieza correcta sería parsear el nombre de función objetivo de cada
+  migración (`check-migration-safety-rule1-match.mjs` ya hace algo parecido
+  para otro propósito) y comparar NOMBRES DE FUNCIÓN, no rutas de fichero —
+  un modelo de datos distinto al de este guard. Se deja registrado como
+  candidato a fase separada, no como hueco silencioso.
+- **Consciente de renombres/borrados entre ramas, con un límite.** Una rama
+  que borra un fichero que la base tenía se resuelve correctamente hoy: su
+  `git ls-tree` ya no lo lista, así que el resolvedor cae al árbol de
+  trabajo en vez de al contenido stale de la base (corregido en la ronda 2
+  de review, junto con la cache de `git show` — ver "Rendimiento" abajo).
+  El límite que queda: si el fichero tampoco existe en el árbol de trabajo
+  local (un checkout que no sea el que se está inspeccionando), la
+  resolución para ahí — no hay drama, buildClosure simplemente no puede
+  extender más allá de ese punto, que es el resultado honesto para un
+  fichero que ya no existe en ningún lado consultable.
+- **`import()` dinámico y side-effect imports no se reconocen.** `IMPORT_RE`
+  (en `check-phase-overlap-parse.mjs`) cubre `import`/`import type`/
+  re-exports/`require()`, pero no `next/dynamic(() => import(...))` ni un
+  `import './x.css'` sin binding. Verificado contra el repo real: **hoy no
+  hay ningún `next/dynamic` ni `await import(` fuera de tests** en
+  `apps/frontend/src` — hueco latente, no activo. Si aparece uno, degrada en
+  falso negativo silencioso (un borde de acoplamiento invisible), no en un
+  crash — anotado aquí para que la próxima persona que añada un
+  `next/dynamic` sepa que este guard no lo sigue todavía.
+- **`nextLayoutAncestors` sólo busca `layout.{tsx,ts}`.** Next.js aplica
+  `template.tsx`, `error.tsx` y `loading.tsx` a una ruta por la MISMA
+  convención de sistema de archivos — `apps/frontend/src/app/error.tsx`
+  existe hoy y se aplica a todo el árbol. El mismo razonamiento que justificó
+  el edge de `layout.tsx` aplica igual a esos tres ficheros; el código
+  todavía no los sigue. Tier blando si se añadiera (nunca lo escribe una
+  fase directamente sin querer), impacto bajo — anotado, no implementado en
+  esta fase.
 
 ## Fases
 
@@ -279,23 +410,69 @@ trabajo derivado (el hook automático descartado arriba, soporte para más
 alias), se abre como spec nuevo, no como fase de éste.
 
 - [x] `check-phase-overlap-parse.mjs`: `parseTarget`, `extractArchivosFiles`,
-      `normalizeFrontendPath`, `parseImportSpecifiers` — TDD, 16/16 verde.
-- [x] `check-phase-overlap-closure.mjs`: `buildClosure` (tope de profundidad,
-      alias `@/`, barriles, convención de layout de Next.js) y
-      `computeOverlap` (duro/blando) — TDD, 14/14 verde, mutación verificada
-      en las dos reglas núcleo.
+      `normalizeFrontendPath`, `resolveArchivosEntries` (bloqueante 5 —
+      arrastre de directorio, sufijo de línea, declaración de directorio),
+      `parseImportSpecifiers` — TDD, 22/22 verde.
+- [x] `check-phase-overlap-closure.mjs`: `buildClosure` (tope de profundidad
+      **con test del valor por defecto**, alias `@/`, barriles, convención
+      de layout de Next.js) y `computeOverlap` (duro/blando, exclusión de
+      `docs/**` de ambos tiers — bloqueante 1, semántica
+      directorio-vs-fichero-concreto — bloqueante 5) — TDD, 22/22 verde,
+      mutación verificada en cada regla.
 - [x] `check-phase-overlap.mjs` + `.sh`: CLI, integración con `git diff`/`git
-      show` contra un repo temporal real (no fixtures fabricadas) — TDD,
-      9/9 verde, mutación verificada en el exit code.
+      show`/`git ls-tree` contra un repo temporal real (no fixtures
+      fabricadas), write set vacío rechazado con exit 3 (bloqueante 3) — TDD,
+      17/17 verde, mutación verificada en el exit code y en el tope de
+      profundidad por defecto de la CLI.
 - [x] `check-spec-fields.sh`: regla `**Archivos:**` obligatoria en fases
-      `[pending]`/`[in_progress]`, exenta en las demás — TDD, tests nuevos
-      verdes junto con los 21 preexistentes.
-- [x] Corrida real contra `feat/spec-81-fase-2-drenado`,
-      `feat/spec-80-fase-2-bloqueo-faltantes`, `feat/spec-82-fase-1`,
-      `feat/spec-88-fase-2-assert-operator-access`: conflicto duro ninguno,
-      acoplamiento blando correctamente identificado en las tres de Recogida,
-      spec-88 disjunta.
+      `[pending]`/`[in_progress]`, exenta en las demás — TDD, 34/34 verde.
+- [x] Corrida real en **modo dispatch-time** (sin ramas) y en modo post-hoc
+      (con las cuatro ramas reales) — ver "Validado contra la realidad"
+      arriba para ambas salidas completas y la cuenta de fases en
+      "no puedo juzgar" (17/24 juzgables hoy, 4/24 genuinamente no
+      verificables sin backfill ni rama).
+- [x] Rendimiento: 15min → ~15.4s en el cuarteto real (bloqueante/medio 7).
 
-> Implementado por: (una sola sesión, spec + implementación — ver reporte de cierre)
-> Review: sin revisión todavía — pendiente de `code-review`/`requesting-code-review` antes de PR.
-> QA: PR todavía no abierto.
+**Ronda 2 de review — hallazgos cerrados:**
+- Bloqueante 1 (falso positivo en `docs/**` entre fases hermanas del mismo
+  spec) — `isIgnoredForOverlap`, mutación verificada.
+- Bloqueante 3 (write set vacío informaba "disjunto" en vez de negarse) —
+  exit 3 explícito, con el nombre de cada target sin superficie.
+- Bloqueante 4 (el criterio de aceptación se validaba post-hoc) — reescrito
+  en modo dispatch-time; ver la sección de arriba con ambos modos y el
+  número de fases sin poder juzgar.
+- Bloqueante 5 (paths sueltos sin directorio, sufijo de línea, referencia de
+  directorio tratada como fichero literal) — `resolveArchivosEntries` +
+  semántica de directorio en `computeOverlap` (una declaración de directorio
+  nunca choca con otra declaración de directorio; SÍ choca con un fichero
+  concreto de otra fase bajo ese directorio — escalado por el coordinador
+  tras el backfill de PR #693, que expuso el mismo patrón en spec-86).
+- Medio 6 (el valor por defecto del tope de profundidad no estaba
+  mutation-testeado, sólo el mecanismo) — test end-to-end sin `--max-depth`
+  en ambas capas (closure y CLI).
+- Medio 7 (rendimiento incompatible con un hook) — cache de `git ls-tree` +
+  `git show`, ver "Rendimiento" arriba.
+- Bug encontrado en el camino (no reportado por el review; apareció al
+  correr el modo dispatch-time real): `extractArchivosFiles` devolvía una
+  forma distinta (sin `directories`/`warnings`) en sus dos ramas de retorno
+  temprano — crasheaba con `TypeError` exactamente en las dos fases
+  (spec-82 fase 2, spec-83 fase 3) que son el mejor caso de prueba del
+  bloqueante 3. Corregido con test de regresión en ambas formas de retorno.
+- Bug encontrado en el camino (durante la medición de rendimiento): un
+  candidato de resolución sin extensión puede coincidir con un directorio
+  real del árbol de trabajo — `EISDIR` crasheaba la corrida en vez de tratar
+  el candidato como "no encontrado". Corregido con test de regresión.
+
+**Lo que NO se atacó, y por qué:** la ceguera a colisiones en SQL puro
+(bloqueante 2 del review) — ver el bullet correspondiente en "Deliberadamente
+NO es" arriba. `import()` dinámico/side-effect imports y
+`template.tsx`/`error.tsx`/`loading.tsx` — hueco latente documentado, sin
+uso activo en el repo hoy (verificado, ver bullets correspondientes).
+
+> Implementado por: una sola sesión, spec + implementación, dos rondas de
+> review adversarial atendidas en la misma rama (`feat/spec-89-guardarrail-paralelismo`).
+> Review: ronda 1 (10 hallazgos: 5 bloqueantes, 2 medios, 2 menores, 1 "no
+> atacar") y ronda 2 (escalada del bloqueante 5 con evidencia de spec-86) —
+> ver el resumen de hallazgos cerrados arriba. Sin review de una tercera
+> ronda todavía — pendiente antes de merge.
+> QA: PR #691 abierto, sin auto-merge — pendiente `gh pr checks`.
