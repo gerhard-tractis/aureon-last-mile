@@ -106,6 +106,31 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
   });
 
+  // Mutation guard (spec-80 fase 2 review, bloqueante 1): a prior round had
+  // these two CTAs' labels correctly wired to navigation but their
+  // primary/secondary STYLING inverted — every existing test still passed
+  // because none of them looked at variant/class or DOM order, only at
+  // label+navigation. These two assertions fail if that mutation recurs.
+  it('"Seguir escaneando" renders as the solid gold primary button, before the red-outlined secondary one, in DOM order', async () => {
+    render(<DiscrepancyReviewPage />);
+    const primary = await screen.findByRole('button', { name: /seguir escaneando/i });
+    const secondary = await screen.findByRole('button', { name: /cerrar con 1 faltante/i });
+
+    // Primary: default (solid/gold) variant — Button's default variant class.
+    expect(primary.className).toMatch(/bg-primary/);
+    expect(primary.className).not.toMatch(/border-status-error-border/);
+
+    // Secondary: red-outlined `variant="outline"` styling, not solid.
+    expect(secondary.className).toMatch(/border-status-error-border/);
+    expect(secondary.className).not.toMatch(/^bg-primary\b/);
+
+    const buttons = screen.getAllByRole('button');
+    const primaryIndex = buttons.indexOf(primary);
+    const secondaryIndex = buttons.indexOf(secondary);
+    expect(primaryIndex).toBeGreaterThanOrEqual(0);
+    expect(secondaryIndex).toBeGreaterThan(primaryIndex);
+  });
+
   // Decisión del usuario (2026-09-08): la nota del faltante es OPCIONAL — "Es
   // opcional, y la dejaría editable en el futuro". El mock 5e muestra el CTA
   // "Cerrar con 3 faltantes" totalmente opaco con dos bultos SIN nota; no hay
