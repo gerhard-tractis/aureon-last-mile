@@ -226,16 +226,18 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
   });
 
-  // Bloqueante 2 (review PR #686): manifestId resolves before scans/missing
-  // do — `!manifestId` alone was the only loading guard, so a manifest that
-  // resolved with the other two queries still in flight (or offline/failed,
-  // 5e's own mock shows "SIN RED" in the status bar) fell straight through
-  // to `missingCount === 0`, rendering the single gold "Continuar a firma"
-  // as if the crew had verified everything. These pin a third, explicit
-  // state that must not collapse into the clean-close case.
-  it('shows a loading state, not the clean-close CTA, while scans/missing are still in flight', async () => {
-    mockUsePickupScans.mockReturnValue({ data: undefined, isLoading: true, isError: false });
-    mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+  // Bloqueante 2 (review PR #686, ronda 3): each gate must stand on its OWN
+  // hook. A test that puts BOTH hooks in the same state at once (as the
+  // ronda-2 version of this test did) can't tell which half of
+  // `scans === undefined || missingPackages === undefined` is actually
+  // doing the work — the reviewer's mutation to drop either half stayed
+  // green against that test. These two put exactly ONE hook's data at
+  // undefined while the OTHER is fully resolved — the shape that actually
+  // happens in production: `scans` comes back warm from cache (same query
+  // key already fetched on scan/[loadId]) while `missing` is still
+  // resolving.
+  it('shows a loading state, not the clean-close CTA, while missingPackages has no data yet (scans already resolved)', async () => {
+    mockUseMissingPackages.mockReturnValue({ data: undefined, isError: false });
 
     render(<DiscrepancyReviewPage />);
 
@@ -243,6 +245,32 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a loading state, not the clean-close CTA, while scans has no data yet (missingPackages already resolved)', async () => {
+    mockUsePickupScans.mockReturnValue({ data: undefined, isError: false });
+
+    render(<DiscrepancyReviewPage />);
+
+    expect(await screen.findByTestId('review-loading')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
+  });
+
+  // Bloqueante 1 (spec-80 fase 2 review, ronda 3, PR #686): the actual bug —
+  // a query PAUSED by networkMode:'online' while offline (not "loading" in
+  // the isLoading sense: isLoading/isError both read FALSE, data simply
+  // never arrives). This is the exact shape TanStack Query returns in that
+  // state; if page.tsx ever goes back to gating on isLoading instead of on
+  // data presence, this is the test that catches it.
+  it('shows a loading state, not the clean-close CTA, when a query is paused offline (isLoading and isError both false, data undefined)', async () => {
+    mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+
+    render(<DiscrepancyReviewPage />);
+
+    expect(await screen.findByTestId('review-loading')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
   });
 
   // Medio 4 (review PR #686): handleSaveNote used to fire-and-forget via
@@ -270,9 +298,28 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(mutate).not.toHaveBeenCalled();
   });
 
-  it('shows an explicit error state, not the clean-close CTA, when scans or missing packages fail to load', async () => {
+  // Bloqueante 2: each half of `scansError || missingError` tested alone —
+  // a mutation dropping `|| missingError` would still pass the first test
+  // (scansError alone already trips it) but fail the second.
+  it('shows an explicit error state when scans fails to load (missingPackages unaffected)', async () => {
     mockUsePickupScans.mockReturnValue({ data: undefined, isLoading: false, isError: true });
     mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: false, isError: false });
+
+    render(<DiscrepancyReviewPage />);
+
+    expect(await screen.findByTestId('review-error')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /continuar a firma/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cerrar con/i })).not.toBeInTheDocument();
+  });
+
+  it('shows an explicit error state when missingPackages fails to load (scans unaffected)', async () => {
+    mockUsePickupScans.mockReturnValue({
+      data: [{ id: 's1', scan_result: 'verified', package_id: 'p1' }],
+      isLoading: false,
+      isError: false,
+    });
+    mockUseMissingPackages.mockReturnValue({ data: undefined, isLoading: false, isError: true });
 
     render(<DiscrepancyReviewPage />);
 

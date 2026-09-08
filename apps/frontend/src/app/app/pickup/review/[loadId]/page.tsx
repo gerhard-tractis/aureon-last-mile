@@ -81,24 +81,39 @@ export default function DiscrepancyReviewPage() {
     });
   }, [operatorId, loadId]);
 
-  const {
-    data: scans = [],
-    isLoading: scansLoading,
-    isError: scansError,
-  } = usePickupScans(manifestId, operatorId);
-  const {
-    data: missingPackages = [],
-    isLoading: missingLoading,
-    isError: missingError,
-  } = useMissingPackages(operatorId, loadId, manifestId);
+  // Bloqueante 1 (spec-80 fase 2 review, ronda 3, PR #686): `isLoading` is
+  // `isPending && isFetching` in TanStack Query v5 — it is FALSE while a
+  // query sits `paused` (networkMode:'online', the repo default —
+  // Providers.tsx calls onlineManager.setOnline(false) on the browser's
+  // `offline` event, never overriding networkMode). The crew's exact "SIN
+  // RED" path: arriving from scan/[loadId] with ['pickup','scans',...]
+  // already warm in cache, `missing` still in flight when the connection
+  // drops — scansLoading/missingLoading both read false, isError both read
+  // false, data stays undefined. Gating on loading/error state let that
+  // slip through. Gating on DATA PRESENCE instead is honest regardless of
+  // which TanStack phase produced the absence (pending, paused, or errored
+  // with no cached data): the CTA cannot exist until we actually know
+  // there's nothing missing.
+  const { data: scans, isError: scansError } = usePickupScans(
+    manifestId,
+    operatorId
+  );
+  const { data: missingPackages, isError: missingError } = useMissingPackages(
+    operatorId,
+    loadId,
+    manifestId
+  );
   const { data: notes = [] } = useDiscrepancyNotes(manifestId);
   const saveNote = useSaveDiscrepancyNote();
 
-  const notFoundScans = useMemo(() => dedupeNotFoundScans(scans), [scans]);
+  const notFoundScans = useMemo(
+    () => dedupeNotFoundScans(scans ?? []),
+    [scans]
+  );
 
   const counts = useMemo(
-    () => computeReviewCounts(scans, missingPackages.length),
-    [scans, missingPackages.length]
+    () => computeReviewCounts(scans ?? [], (missingPackages ?? []).length),
+    [scans, missingPackages]
   );
 
   const noteMap = useMemo(
@@ -136,16 +151,16 @@ export default function DiscrepancyReviewPage() {
     router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
 
-  // Bloqueante 2 (spec-80 fase 2 review, PR #686): `!manifestId` only covers
-  // the manifest lookup itself, which resolves before usePickupScans/
-  // useMissingPackages do. Without a THIRD state here, a manifest that
-  // resolved while those two were still in flight — or failed outright, the
-  // exact "SIN RED" scenario the 5e mock's own status bar draws — fell
-  // straight through to `missingCount === 0` and rendered the single gold
-  // "Continuar a firma" as if the crew had verified everything. This is the
-  // block this whole phase exists to install; it must not be reachable by
-  // accident of loading state.
-  if (!manifestId || scansLoading || missingLoading) {
+  // Bloqueante 2 (spec-80 fase 2 review, ronda 3, PR #686): each gate below
+  // must stand on its own hook — `scans` comes back warm from cache when
+  // the crew arrives from scan/[loadId] (same query key already fetched
+  // there), while `missing` is very often still resolving. A combined
+  // `scansError || missingError` / `scans === undefined ||
+  // missingPackages === undefined` reads correctly but a test that only
+  // ever sets both hooks to the same state at once can't tell which half
+  // is doing the work — see page.test.tsx for the per-hook tests and the
+  // two mutations applied to confirm each one is load-bearing.
+  if (!manifestId) {
     return (
       <div
         data-testid="review-loading"
@@ -159,6 +174,10 @@ export default function DiscrepancyReviewPage() {
     );
   }
 
+  // Error takes priority over "still loading": once a query has actually
+  // settled into an error, its data is ALSO undefined — checking data
+  // presence first would show the loading skeleton forever instead of the
+  // error card.
   if (scansError || missingError) {
     return (
       <div
@@ -174,6 +193,24 @@ export default function DiscrepancyReviewPage() {
             firma sin saber si quedan bultos sin verificar.
           </span>
         </div>
+      </div>
+    );
+  }
+
+  // Bloqueante 1: gate on DATA PRESENCE, not on isLoading — a query paused
+  // by networkMode:'online' while offline reads isLoading=false AND
+  // isError=false, with data still undefined. This is the check that
+  // actually keeps the CTA unreachable in that state.
+  if (scans === undefined || missingPackages === undefined) {
+    return (
+      <div
+        data-testid="review-loading"
+        className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto"
+      >
+        <Skeleton className="h-6 w-48" />
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-10 w-full" />
       </div>
     );
   }
