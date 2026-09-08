@@ -29,121 +29,7 @@
  *   1  gate failure — undeclared failure, expired entry, or stale entry
  *   2  input error — missing/unreadable/malformed file, or a bad entry shape
  */
-import fs from 'node:fs';
-
-const REQUIRED_FIELDS = ['spec', 'test', 'reason', 'owner', 'expires'];
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-// An entry cannot be renewed further out than this without a human looking
-// at it again — otherwise "expires" degenerates into a decoration and
-// quarantine becomes permanent, which is the failure mode fase 1 exists to
-// prevent (review round 1).
-const MAX_HORIZON_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function usageError(msg) {
-  console.error(`ERROR: ${msg}`);
-  console.error(
-    'Usage: node check-quarantine.mjs <quarantine.json> <playwright-report.json> [--today YYYY-MM-DD]'
-  );
-  process.exit(2);
-}
-
-function readJson(filePath, label) {
-  if (!filePath) usageError(`missing ${label} path`);
-  if (!fs.existsSync(filePath)) {
-    console.error(`ERROR: ${label} not found: ${filePath}`);
-    process.exit(2);
-  }
-  let raw;
-  try {
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch (err) {
-    console.error(`ERROR: could not read ${label} (${filePath}): ${err.message}`);
-    process.exit(2);
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    console.error(`ERROR: ${label} (${filePath}) is not valid JSON: ${err.message}`);
-    process.exit(2);
-  }
-}
-
-/**
- * Extracts --today and --validate-only from argv (either position, order
- * irrelevant) and returns the remaining positional args alongside them.
- */
-function parseArgs(argv) {
-  const rest = [...argv];
-  let today = null;
-  const todayIdx = rest.indexOf('--today');
-  if (todayIdx !== -1) {
-    today = rest[todayIdx + 1];
-    rest.splice(todayIdx, 2);
-  }
-  const validateOnlyIdx = rest.indexOf('--validate-only');
-  const validateOnly = validateOnlyIdx !== -1;
-  if (validateOnly) rest.splice(validateOnlyIdx, 1);
-  return {
-    quarantinePath: rest[0],
-    reportPath: rest[1],
-    today: today ?? new Date().toISOString().slice(0, 10),
-    validateOnly,
-  };
-}
-
-/**
- * `YYYY-MM-DD` matches ISO_DATE's shape but says nothing about whether it is
- * a real calendar date — "2026-99-99" matches the regex, and "2026-02-30"
- * parses (rolling forward to March 2nd) without ever throwing. Round-tripping
- * through Date and comparing the formatted result back to the original
- * string catches both.
- */
-function isRealCalendarDate(str) {
-  if (!ISO_DATE.test(str)) return false;
-  const d = new Date(`${str}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return false;
-  return d.toISOString().slice(0, 10) === str;
-}
-
-function validateQuarantine(quarantine, quarantinePath, today) {
-  if (!Array.isArray(quarantine)) {
-    console.error(`ERROR: quarantine file (${quarantinePath}) must be a JSON array`);
-    process.exit(2);
-  }
-  const errors = [];
-  const horizon = new Date(`${today}T00:00:00.000Z`).getTime() + MAX_HORIZON_DAYS * DAY_MS;
-  quarantine.forEach((entry, i) => {
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-      errors.push(`quarantine[${i}] is not an object`);
-      return;
-    }
-    for (const field of REQUIRED_FIELDS) {
-      if (typeof entry[field] !== 'string' || entry[field].trim() === '') {
-        errors.push(`quarantine[${i}] is missing required string field "${field}"`);
-      }
-    }
-    if (typeof entry.expires === 'string') {
-      if (!isRealCalendarDate(entry.expires)) {
-        errors.push(
-          `quarantine[${i}].expires "${entry.expires}" is not a real date (YYYY-MM-DD, and it ` +
-            'must exist on the calendar)'
-        );
-      } else if (new Date(`${entry.expires}T00:00:00.000Z`).getTime() > horizon) {
-        errors.push(
-          `quarantine[${i}].expires "${entry.expires}" is more than ${MAX_HORIZON_DAYS} days past ` +
-            `--today (${today}) — quarantine cannot be renewed into the far future; a distant date is ` +
-            'how it stops meaning anything'
-        );
-      }
-    }
-  });
-  if (errors.length) {
-    console.error(`quarantine check FAILED (${quarantinePath} malformed):`);
-    errors.forEach((e) => console.error(`  - ${e}`));
-    process.exit(2);
-  }
-}
+import { usageError, readJson, parseArgs, validateQuarantine } from './check-quarantine-validate.mjs';
 
 /**
  * Walks the Playwright JSON reporter's suite tree (suites nest suites and
@@ -187,6 +73,20 @@ function main() {
   validateQuarantine(quarantine, quarantinePath, today);
 
   if (validateOnly) {
+    // review round 2, H3 — this mode never sees a report, so it CANNOT know
+    // whether an expired entry's test still fails (that needs the report),
+    // which is why it does not fail the build over expiry. What it CAN do
+    // without one is warn: without this, the day an entry's expiry passes,
+    // every PR stays green right up until the next e2e-qa run on the VPS
+    // catches it — by which point production is already re-blocked.
+    for (const entry of quarantine) {
+      if (entry.expires < today) {
+        console.log(
+          `::warning::quarantine entry for ${entry.spec} :: "${entry.test}" expired on ` +
+            `${entry.expires} (owner: ${entry.owner}) — e2e-qa will fail until it is fixed or renewed.`
+        );
+      }
+    }
     console.log(`quarantine file ok — ${quarantine.length} entr${quarantine.length === 1 ? 'y' : 'ies'}, structurally valid`);
     return;
   }
@@ -216,6 +116,33 @@ function main() {
     }
   }
 
+  // ── H2 (review round 2): an empty report must not be green ──────────────
+  // Nothing above checks that a test actually RAN. Before this, the only
+  // thing standing between an empty report and a green gate was
+  // quarantine.json itself having active entries that then fail to match
+  // anything in an empty suites[] — coverage that disappears the day fase 2
+  // empties the file, which is the day production actually unblocks. A
+  // test.describe.skip, or a rename that breaks testMatch, would leave
+  // e2e-qa green forever with zero tests executed. Demonstrated with
+  // {"suites":[],"errors":[],"stats":{expected:0,unexpected:0,flaky:0}},
+  // with `{}`, and with every result "skipped" (allSpecs non-empty, stats
+  // still all zero) — all three passed before this check existed.
+  // H5 (review round 2) — `flaky` is folded into "something executed" here,
+  // but nothing gates on it being NONZERO. That is fine only because
+  // playwright.qa.config.ts sets `retries: 0`: a test cannot be reported
+  // "flaky" (failed, then passed on retry) without a retry to do the passing
+  // on. If retries is ever raised above 0, a flaky pass can hide a real
+  // intermittent failure behind a green gate, and this script would need an
+  // explicit check on stats.flaky > 0 — it does not have one today.
+  const stats = report.stats || {};
+  const executed = (stats.expected || 0) + (stats.unexpected || 0) + (stats.flaky || 0);
+  if (executed === 0) {
+    errors.push(
+      'report.stats shows no test executed (expected=0, unexpected=0, flaky=0) — an empty ' +
+        'report, a testMatch that matched nothing, or every test skipped must not pass as green.'
+    );
+  }
+
   const allSpecs = [];
   for (const suite of report.suites ?? []) {
     walkSpecs(suite, allSpecs);
@@ -227,6 +154,13 @@ function main() {
   // this walk found means something did not surface as a spec — a crashed
   // file among others that DID load, a global-setup failure, anything this
   // script's own tree-walk cannot see by construction.
+  //
+  // review round 2, H4 — stats.unexpected counts TESTS, failing.length counts
+  // SPECS; they only line up one-to-one because playwright.qa.config.ts runs
+  // a single project (`projects: [{ name: 'chromium', ... }]`). Add a second
+  // project and one failing spec produces stats.unexpected: 2 against
+  // failing.length: 1, tripping this check on a perfectly healthy report.
+  // Re-check this the day that config gains a second project.
   const statsUnexpected = report.stats && report.stats.unexpected;
   if (typeof statsUnexpected === 'number' && statsUnexpected > failing.length) {
     errors.push(
