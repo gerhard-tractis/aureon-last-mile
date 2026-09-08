@@ -70,7 +70,7 @@ Las lecturas. Un manifiesto que nunca se descargó no se puede escanear sin red,
 | **4 — Chip de sync** | `ConnectionStatusBanner` pasa a ser el indicador del handoff |
 | **5 — Fotos** | Blobs en la cola, subida diferida al bucket `manifests` |
 
-### Fase 1 — Almacén y contrato `[pending]`
+### Fase 1 — Almacén y contrato `[in_progress]`
 
 **Archivos:** `apps/frontend/src/lib/offline/queue.ts`, `queue.test.ts`, `apps/frontend/src/lib/offline/db.ts`
 
@@ -129,5 +129,5 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
 ## Riesgos
 
 - **Una cola a medias es peor que ninguna.** Si `5d` dice «guardado en el dispositivo» y la entrada se pierde, el operario cierra una carga con un conteo falso y el cliente firma sobre esa cifra. Las fases 1–3 van juntas o no va ninguna; sólo la 4 y la 5 son separables.
-- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado.
+- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado (fase 1, no aplicado todavía):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso (fase 2 la invoca ahí); el tope duro para entradas `pending`/`failed` sin confirmar se fija en **500 por operador** — a partir de fase 2, encolar por encima de ese número debe rechazarse con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
 - **El alcance puede tentar a crecer** a Recepción y Despacho. Este spec entrega la infraestructura y **sólo** conecta Recogida; adoptarla en otros módulos es trabajo posterior con sus propios specs.
