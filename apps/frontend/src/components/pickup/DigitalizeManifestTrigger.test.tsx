@@ -100,4 +100,30 @@ describe('DigitalizeManifestTrigger', () => {
       queryKey: ['pickup', 'unassigned-manifests'],
     });
   });
+
+  // spec-82 fase 1 ronda 2, review round 2 — the invalidation above only
+  // fired through CameraIntake's own onClose (its "Cancelar" button). A
+  // driver who sees "N órdenes creadas" and dismisses the dialog with Esc
+  // or the dialog's own X (Radix's built-in close control, not routed
+  // through CameraIntake at all) hit the exact same stale-list bug through
+  // the door next door: `onOpenChange={setOpen}` skipped `handleClose`
+  // entirely for that exit path.
+  it('invalidates the unassigned-manifests query when the dialog is dismissed via its own close control (Esc/X), not just via CameraIntake onClose', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /digitalizar manifiesto/i }));
+    // Radix Dialog's built-in close control (top-right X, sr-only "Close"),
+    // wired to onOpenChange(false) directly — never touches CameraIntake.
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['pickup', 'unassigned-manifests'],
+    });
+  });
 });

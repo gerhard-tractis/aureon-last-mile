@@ -238,7 +238,12 @@ línea contra el HTML real de cada artboard.
 
 - [ ] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
 - [ ] Precarga de manifiesto, órdenes y bultos al almacén de spec-81.
-- [ ] Chip de estado por carga.
+- [ ] Chip de estado por carga. **Ver la nota "Colisión futura anotada" en
+      la sección "Implementado en esta fase" de Fase 1 (arriba, bajo
+      `COMPLETADA`)**: `RouteManifestList` ya usa ese mismo slot de fila
+      para el chip `COMPLETADA` (`isManifestComplete(m)`); decidir aquí qué
+      chip gana si ambos predicados aplicaran a la vez por un dato
+      inconsistente, antes de renderizar `DESCARGAR` ahí.
 
 ### Fase 3 — Asignación `[blocked]`
 

@@ -57,7 +57,13 @@ export function DigitalizeManifestTrigger() {
         Digitalizar manifiesto
       </Button>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      {/* review round 2 — `onOpenChange={setOpen}` skipped `handleClose`
+          (and its invalidation) for every dismissal that does not go
+          through CameraIntake's own onClose: Esc, or Radix's built-in
+          close X, both call onOpenChange(false) directly. Routing every
+          closing transition through handleClose closes that gap; opening
+          still goes through plain setOpen(true). */}
+      <Dialog open={open} onOpenChange={(next) => (next ? setOpen(true) : handleClose())}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Digitalizar manifiesto</DialogTitle>
