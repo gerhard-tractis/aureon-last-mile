@@ -483,10 +483,22 @@ hacia semántica de reparto. Las omisiones concretas están en la Fase 4.6.
 El elemento dominante del mock es la tarjeta "TU TAREA AHORA": la siguiente
 tarea **de esta persona**. No es construible.
 
-`public.drivers` no tiene `user_id` ni ninguna referencia a `auth.users`, y
+> **Corrección (2026-09-08).** El párrafo de abajo decía que `public.drivers`
+> «no tiene `user_id` ni ninguna referencia a `auth.users`, y ninguna migración
+> posterior la agrega». Es falso: `drivers.user_id UUID REFERENCES
+> public.users(id) ON DELETE SET NULL` existe desde
+> `20260318000004_agent_suite_tables.sql:253-254` — anterior a este spec, no
+> posterior. El vínculo sí existe; lo que falta (índice único, poblado,
+> superficie de admin) está corregido en [spec-84](spec-84-movil-conductor-home-y-prueba-de-entrega.md#fase-1),
+> que ya no lo trata como decisión de modelo pendiente. Esta sección queda
+> `[parked]` igual — la pantalla se movió a spec-84 — pero sin la afirmación
+> falsa.
+
+~~`public.drivers` no tiene `user_id` ni ninguna referencia a `auth.users`, y
 ninguna migración posterior la agrega. Las rutas apuntan a `driver_id`, pero
 nada conecta esa fila con la cuenta que tiene el teléfono en la mano. El
-sistema no puede responder "cuál es *mi* próxima tarea".
+sistema no puede responder "cuál es *mi* próxima tarea".~~ (falso, ver
+corrección de arriba)
 
 Lo que sí se podría construir hoy:
 
@@ -499,9 +511,11 @@ Lo que sí se podría construir hoy:
 Lo que no: la tarjeta de tarea y la lista "DESPUÉS DE ESTA", que son la razón
 de ser de la pantalla.
 
-**Qué la desbloquea:** una columna `drivers.user_id` (o una tabla de asociación
-`users` ↔ `drivers`), más una superficie de administración para mantener ese
-mapeo. Es trabajo de esquema con su propio spec, no un rediseño.
+**Qué la desbloquea:** ~~una columna `drivers.user_id` (o una tabla de
+asociación `users` ↔ `drivers`)~~ — esa columna ya existe, ver corrección de
+arriba. Falta el índice único, el poblado, y una superficie de administración
+para mantener el mapeo. Es trabajo de esquema con su propio spec (spec-84
+fase 1), no un rediseño.
 
 ### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba `[parked]`
 

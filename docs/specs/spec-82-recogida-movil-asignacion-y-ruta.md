@@ -48,9 +48,23 @@ Es la contraparte honesta de la cola de spec-81: una carga que nunca se descarg�
 
 «Mall Plaza Vespucio — **andén P2**». Hoy la tarjeta muestra el punto de recogida, no el andén.
 
-`dock_zones` existe y Musan tiene dos (`QUIL-001`, `CONSOL`), pero son andenes **del hub**, no del punto de recogida del retailer. El andén de `5c` es el del local donde se retira, y no hay campo para él: `pickup_points.pickup_locations` es un JSONB con `{name, address, comuna}`.
+`dock_zones` existe y Musan tiene dos (`QUIL-001`, `CONSOL`), pero son andenes **del hub**, no del punto de recogida del retailer. El andén de `5c` es el del local donde se retira.
 
-**Es un dato nuevo.** O se añade al JSONB de `pickup_locations`, o se omite la línea. Omitirla es defendible — es el mismo criterio con el que spec-54 dejó fuera la columna VENTANA en vez de inventarla.
+**Corrección (2026-09-08).** Esto decía que `pickup_points.pickup_locations` es
+un JSONB `{name, address, comuna}` y que el andén «es un dato nuevo» de
+esquema. Es falso: el contrato real, declarado en
+`20260318000004_agent_suite_tables.sql:68-69`, es
+`[{name, address, comuna, lat, lng, contact_name, contact_phone,
+operating_hours}]` — ya tiene sitio para más que nombre/dirección/comuna, y
+`NextManifestCard.tsx:13` ya lee `pickup_locations[].contact_phone`, así que el
+repo ya sabe leer campos de ese JSONB más allá de los tres que muestra el
+formulario. `{name, address, comuna}` es lo que hoy **escribe**
+`PickupPointForm.tsx:19-24` y valida `pickupLocationSchema`
+(`api/pickup-points/route.ts:8-14`) — un recorte de formulario, no un límite de
+columna. Añadir `dock` es cero migración: campo en `pickupLocationSchema` +
+`PickupPointForm.tsx` + la tarjeta. La fase 4 sigue `[blocked]`, pero por la
+razón correcta: falta decidir si el alta del punto de recogida captura el
+andén, no dónde guardarlo si se decide capturarlo.
 
 ---
 
@@ -61,7 +75,7 @@ Es la contraparte honesta de la cola de spec-81: una carga que nunca se descarg�
 | **1 — Diff visual `5b`/`5c`** | Las dos pantallas contra el mock nuevo, sin datos nuevos | — |
 | **2 — `DESCARGAR`** | Precarga por carga | spec-81 fase 1 |
 | **3 — Asignación** | «asignados a ti» de verdad | decisión (a)/(b)/(c) |
-| **4 — Andén en la tarjeta** | La línea del mock | decisión sobre el dato |
+| **4 — Andén en la tarjeta** | La línea del mock | decisión sobre si se captura, no sobre dónde guardarlo |
 
 ### Fase 1 — Diff visual `[pending]`
 
@@ -86,7 +100,11 @@ Bloqueada por la decisión de producto. Si sale (b), el trabajo cae en `5a` (spe
 
 ### Fase 4 — Andén `[blocked]`
 
-Bloqueada por la decisión del dato. Si se omite, se cierra esta fase con la razón escrita, como spec-54 hizo con VENTANA.
+**Corrección (2026-09-08):** no está bloqueada por dónde vive el dato — el
+JSONB `pickup_locations` ya admite el campo sin migración, ver corrección más
+arriba. Sigue `[blocked]` por si el alta del punto de recogida debe capturar el
+andén, decisión que le toca al usuario. Si se decide que no, se cierra esta
+fase con la razón escrita, como spec-54 hizo con VENTANA.
 
 ---
 
