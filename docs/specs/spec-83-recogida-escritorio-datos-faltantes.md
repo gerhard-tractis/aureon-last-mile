@@ -157,6 +157,13 @@ izquierdo de la fila.
 
 ### Fase 3 — Ocupación `[pending]`
 
+**Archivos:** (indeterminado — esta fase es **condicional**: su primer punto es
+decidir si se implementa. Si la decisión es «no», el write set real es cero
+ficheros de código. Declarar una lista antes de esa decisión sería inventarla.
+`check-phase-overlap.mjs` la reporta como «no puedo juzgar» (exit 3), que es la
+respuesta correcta: no se despacha en paralelo con nada hasta que la decisión
+esté tomada y este campo se rellene de verdad.)
+
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
 
