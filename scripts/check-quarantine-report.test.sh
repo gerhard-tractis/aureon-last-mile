@@ -66,7 +66,7 @@ PASSING_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": true,
               "tests": [ { "results": [ { "status": "passed" } ] } ]
@@ -98,7 +98,7 @@ BROKEN_LOAD_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": false,
               "tests": [ { "results": [ { "status": "failed" } ] } ]
@@ -127,7 +127,7 @@ STATS_MISMATCH_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": false,
               "tests": [ { "results": [ { "status": "failed" } ] } ]
@@ -172,7 +172,7 @@ ALL_SKIPPED_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": true,
               "tests": [ { "results": [ { "status": "skipped" } ] } ]

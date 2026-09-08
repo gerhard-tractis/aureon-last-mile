@@ -59,7 +59,7 @@ ONE_FAILING_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": false,
               "tests": [ { "results": [ { "status": "failed" } ] } ]
@@ -110,7 +110,7 @@ PASSING_REPORT='{
           "title": "spec-78 Despacho dock tablet — 3a",
           "specs": [
             {
-              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "file": "despacho-tablet-dock.spec.ts",
               "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
               "ok": true,
               "tests": [ { "results": [ { "status": "passed" } ] } ]
@@ -160,8 +160,8 @@ TWO_ROUTE_TESTS_REPORT='{
         {
           "title": "spec-77/79",
           "specs": [
-            { "file": "e2e/despacho-close-dispatch.spec.ts", "title": "Route H — load, force-close a split order, dispatch: full path + H3", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] },
-            { "file": "e2e/despacho-close-dispatch.spec.ts", "title": "Route R — DispatchTrack rejects: 2k names what did NOT change, Reintentar is primary", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] }
+            { "file": "despacho-close-dispatch.spec.ts", "title": "Route H — load, force-close a split order, dispatch: full path + H3", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] },
+            { "file": "despacho-close-dispatch.spec.ts", "title": "Route R — DispatchTrack rejects: 2k names what did NOT change, Reintentar is primary", "ok": false, "tests": [ { "results": [ { "status": "failed" } ] } ] }
           ]
         }
       ],
@@ -220,6 +220,65 @@ assert_contains "Retire it" "names the exactly-expiring entry as stale, not sile
 # ── Success message names what it forgave, not just a count ────────────────
 assert_contains "despacho-tablet-dock.spec.ts" "success message names the forgiven spec" \
   "2026-09-07" "$DECLARED_ACTIVE" "$ONE_FAILING_REPORT"
+
+# ── B1: the real Playwright JSON reporter never emits the `e2e/` prefix ─────
+# playwright.qa.config.ts sets `testDir: './e2e'`, and Playwright's JSON
+# reporter writes `spec.file` RELATIVE TO testDir — confirmed against a real
+# `npx playwright test` run with @playwright/test 1.58.2, not read off the
+# reporter source in the abstract. quarantine.json entries are hand-written
+# with the `e2e/` prefix (see git history of that file), so a naive `===`
+# match on entry.spec vs spec.file NEVER matches a live CI report: this is
+# the bug seen in deploy.yml run 34196179672 — an "entry does not match any
+# test" AND an "undeclared failure" for the very same spec, at once.
+REAL_REPORT_NO_PREFIX='{
+  "suites": [
+    {
+      "title": "despacho-tablet-dock.spec.ts",
+      "suites": [
+        {
+          "title": "spec-78 Despacho dock tablet — 3a",
+          "specs": [
+            {
+              "file": "despacho-tablet-dock.spec.ts",
+              "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
+              "ok": false,
+              "tests": [ { "results": [ { "status": "failed" } ] } ]
+            }
+          ]
+        }
+      ],
+      "specs": []
+    }
+  ],
+  "stats": { "expected": 0, "unexpected": 1, "flaky": 0 }
+}'
+assert_exit 0 "quarantine entry with e2e/ prefix matches a real report's unprefixed file" \
+  "2026-09-07" "$DECLARED_ACTIVE" "$REAL_REPORT_NO_PREFIX"
+
+# ── The reverse form must also match: an entry written WITHOUT the prefix ──
+# against a report file WITH one (e.g. a future config change, or a fixture
+# someone hand-writes the old way). Both forms are accepted; this is not the
+# same as a loose endsWith — see the negative case below.
+DECLARED_ACTIVE_NO_PREFIX='[
+  { "spec": "despacho-tablet-dock.spec.ts",
+    "test": "2d — assigns the seeded truck",
+    "reason": "aserción usa el afordance móvil sobre el árbol de escritorio (spec-87 fase 2)",
+    "owner": "spec-78", "expires": "2026-09-21" }
+]'
+assert_exit 0 "quarantine entry WITHOUT e2e/ prefix matches a report file WITH one" \
+  "2026-09-07" "$DECLARED_ACTIVE_NO_PREFIX" "$ONE_FAILING_REPORT"
+
+# ── Negative case: normalization must not turn into a loose suffix match ───
+# Two DIFFERENT directories that happen to share a basename must NOT match
+# just because both strip a leading segment. This pins the normalization to
+# "strip a literal `e2e/` prefix", not "compare basenames" or "endsWith".
+DIFFERENT_DIR_ENTRY='[
+  { "spec": "otro/despacho-tablet-dock.spec.ts",
+    "test": "2d — assigns the seeded truck",
+    "reason": "x", "owner": "spec-78", "expires": "2026-09-21" }
+]'
+assert_exit 1 "an entry under a different directory must NOT match e2e/'s file of the same basename" \
+  "2026-09-07" "$DIFFERENT_DIR_ENTRY" "$ONE_FAILING_REPORT"
 
 # The empty/all-skipped/blank-report cases (H2) and the --validate-only
 # expiry warning (H3) live in check-quarantine-report.test.sh.
