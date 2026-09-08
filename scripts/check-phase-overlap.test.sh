@@ -278,6 +278,45 @@ assert_exit 0 "undeclared Archivos but a real branch diff IS judgeable (not refu
   "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
   "docs/specs/spec-92-sin-archivos.md#Fase 1@feat/spec-92-fase-1"
 
+# ── spec-91 fase 2: the exit-3 message used to LIE when **Archivos:** IS
+# declared but resolves to nothing (the real #695 regression: spec-83 fase 3
+# and spec-82 fase 2 both declare `**Archivos:** (indeterminado — <razón>)`).
+# It must still refuse to judge (exit 3, correct behavior preserved) but the
+# message must say "the field is present, it just didn't resolve" — not
+# "declare **Archivos:**" to someone who already did.
+cat > "$REPO/docs/specs/spec-96-indeterminado.md" <<'MD'
+### Fase 1 — condicional, no hay nada que nombrar todavía `[pending]`
+
+**Archivos:** (indeterminado — esta fase es condicional: su primer punto es
+decidir si se implementa. Si la decisión es "no", el write set real es cero
+ficheros de código.)
+
+- [ ] decidir si se implementa
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-96 with a declared-but-unresolvable Archivos field")
+
+assert_exit 3 "declared-but-unresolvable Archivos field: still refuses to judge (exit 3)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+assert_contains "declara **Archivos:** pero" "declared-but-unresolvable: message says the field IS present" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+assert_contains "esta fase es condicional" "declared-but-unresolvable: message quotes the declared reason" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-96-indeterminado.md#Fase 1"
+
+# The OTHER case (field genuinely absent) must keep the OLD wording — the
+# fix must not blur the two messages into one that's wrong for both.
+assert_contains "sin **Archivos:** en el spec" "genuinely-absent Archivos field: keeps the original wording" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
+  "docs/specs/spec-92-sin-archivos.md#Fase 1"
+
 # ── Regression (found running against the real repo, not a fixture): a
 # resolveSpecifier candidate with no extension can match a REAL DIRECTORY on
 # disk when it isn't in either ref's git tree (`readWorkingTree` fallback).

@@ -173,9 +173,11 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   const specMd = readFileSync(specFull, 'utf8');
   const {
     headingFound,
+    fieldPresent: archivosFieldPresent,
     files: declaredRaw,
     directories: declaredDirs,
     warnings: archivosWarnings,
+    raw: archivosRaw,
   } = extractArchivosFiles(specMd, faseMatch);
   if (!headingFound) {
     usageError(`fase no encontrada en ${specPath}: "${faseMatch}"`);
@@ -210,6 +212,12 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
     // so they never exercise this seam). Found by review round 3 against
     // real data, not by any test.
     directories: declaredDirs,
+    // spec-91 fase 2: si el campo **Archivos:** existe pero no resolvió a
+    // ningún fichero (p.ej. "(indeterminado — <razón>)", PR #695), el
+    // mensaje de exit 3 necesita saberlo para no decir "declara
+    // **Archivos:**" a una fase que ya lo hizo.
+    archivosFieldPresent,
+    archivosRaw,
     diffFiles,
     writeSet,
     closure,
@@ -303,7 +311,19 @@ function main() {
   if (unjudgeable.length > 0) {
     console.error('check-phase-overlap: no puedo juzgar — target(s) sin superficie alguna:');
     for (const t of unjudgeable) {
-      console.error(`  ${t.name} — sin **Archivos:** en el spec y sin rama (o rama sin commits todavía).`);
+      // spec-91 fase 2 (regresión real, #695): dos causas MUY distintas
+      // producen el mismo writeSet vacío. Sin distinguirlas, el mensaje le
+      // dice a una fase que YA declaró **Archivos:** que la declare —
+      // instrucción cumplida, mensaje falso. `archivosFieldPresent` es la
+      // señal: la línea existe, sólo que su contenido (p.ej. "(indeterminado
+      // — <razón>)") no resolvió a ningún fichero ni directorio.
+      if (t.archivosFieldPresent) {
+        console.error(
+          `  ${t.name} — declara **Archivos:** pero su contenido no resuelve a ningún fichero del repo: "${t.archivosRaw}"`,
+        );
+      } else {
+        console.error(`  ${t.name} — sin **Archivos:** en el spec y sin rama (o rama sin commits todavía).`);
+      }
     }
     console.error('Declara **Archivos:** en el spec, o pasa la rama una vez tenga commits, antes de dispatchar en paralelo.');
     process.exit(3);

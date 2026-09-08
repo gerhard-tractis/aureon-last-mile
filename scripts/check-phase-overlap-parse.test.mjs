@@ -113,6 +113,58 @@ test('extractArchivosFiles works with CRLF line endings (git on Windows checks s
   assert.deepEqual(r.files, ['apps/frontend/src/hooks/useOfflineQueue.ts']);
 });
 
+// ── fieldPresent / raw (spec-91 fase 2 — el exit 3 dejó de mentir) ─────────
+//
+// Regresión real (#695): `**Archivos:** (indeterminado — <razón>)` es una
+// fase que SÍ declaró el campo, con una razón real por la que no resuelve a
+// ningún fichero — no es lo mismo que una fase que nunca escribió la línea.
+// `check-phase-overlap.mjs` necesita distinguir los dos para no decirle a
+// alguien "declara **Archivos:**" cuando ya lo hizo.
+
+test('extractArchivosFiles: fieldPresent is false when the line never appears', () => {
+  const md = '### Fase 1 — sin archivos `[pending]`\n\nSolo prosa.\n';
+  const r = extractArchivosFiles(md, 'Fase 1');
+  assert.equal(r.fieldPresent, false);
+});
+
+test('extractArchivosFiles: fieldPresent is true even when content resolves to nothing (indeterminado)', () => {
+  const md = [
+    '### Fase 3 — Ocupación `[pending]`',
+    '',
+    '**Archivos:** (indeterminado — esta fase es condicional, no hay nada que nombrar sin inventarlo)',
+    '',
+    '- [ ] decidir si se implementa',
+  ].join('\n');
+  const r = extractArchivosFiles(md, 'Fase 3');
+  assert.equal(r.headingFound, true);
+  assert.equal(r.fieldPresent, true);
+  assert.deepEqual(r.files, []);
+  assert.deepEqual(r.directories, []);
+});
+
+test('extractArchivosFiles: raw carries the declared text so the caller can quote it', () => {
+  const md = [
+    '### Fase 3 — Ocupación `[pending]`',
+    '',
+    '**Archivos:** (indeterminado — razón real aquí)',
+    '',
+  ].join('\n');
+  const r = extractArchivosFiles(md, 'Fase 3');
+  assert.match(r.raw, /razón real aquí/);
+});
+
+test('extractArchivosFiles: raw is empty string when the field is absent (not "undefined")', () => {
+  const md = '### Fase 1 — sin archivos `[pending]`\n\nSolo prosa.\n';
+  const r = extractArchivosFiles(md, 'Fase 1');
+  assert.equal(r.raw, '');
+});
+
+test('extractArchivosFiles: fieldPresent true, raw quoted, when heading not found stays false (unjudgeable is a separate question)', () => {
+  const r = extractArchivosFiles(SPEC_MD, 'Fase 99');
+  assert.equal(r.headingFound, false);
+  assert.equal(r.fieldPresent, false);
+});
+
 // ── normalizeFrontendPath ────────────────────────────────────────────────
 test('normalizeFrontendPath prefixes a bare app/ shorthand', () => {
   assert.equal(
