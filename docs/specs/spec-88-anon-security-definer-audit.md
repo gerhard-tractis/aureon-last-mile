@@ -2,7 +2,7 @@
 
 > **Related:** [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (su fase 1b ya documentó y arregló exactamente este mismo patrón — `REVOKE ... FROM anon` sin `REVOKE ... FROM PUBLIC` — en `close_manifest`; plantilla de esta spec), [spec-85](spec-85-discrepancias.md) (fase 2 usó el patrón correcto en sus tres RPCs; el otro precedente), [spec-87](spec-87-desbloquear-produccion.md) (dueña de `check-migration-safety.sh`, donde encaja el check automático de la fase 5 de esta spec)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** sql
 **Downstream:** ninguno todavía — esta spec sólo audita y planifica; nada consume su resultado hasta que una fase de arreglo se implemente
 
@@ -66,10 +66,10 @@ Un review adversarial reportó que de 60 funciones `SECURITY DEFINER` en `public
 | `resolve_discrepancy(uuid,enum,text)` | sí | no | sí | bajo — cerrada |
 | `set_config(text,text,boolean)` | no | sí | **no** | **alto — fuga #4, hallazgo nuevo (ver abajo)** |
 | `start_pickup_route(text)` | no | sí | sí (`get_operator_id() IS NULL → RAISE`) | medio — **el overload huérfano** (ver sección dedicada) |
-| `start_pickup_route(uuid,uuid[])` | sí (`FROM PUBLIC`+`FROM anon`) | no | sí | bajo — cerrada |
+| `start_pickup_route(uuid,uuid[])` | sí (sólo `FROM anon`, `20260820000003:316`) | **sí** | sí | medio — **ACL que miente, mismo patrón que el Grupo B** (corregido: la fila original de esta tabla decía lo contrario — `REVOKE FROM PUBLIC`+`FROM anon`, PUBLIC "no" — invertido respecto al `proacl` real capturado en el mismo dump de QA. Cerrada en fase 1 (`20260913000006`), ver fix de review round 1 / PR #675) |
 | `validate_audit_logging()` | no | sí | **no** | bajo — sólo diagnóstico de estructura (nombres de triggers/índices), no datos de negocio, pero expone detalle interno a un llamante anónimo |
 
-**Resumen:** 10 funciones genuinamente sin guard (`archive_old_audit_logs`, `calculate_daily_metrics`, `calculate_dashboard_monthly_rollup`, `create_audit_logs_partition`, `custom_access_token_hook`, `get_active_routes_with_dispatches`, `get_unmatched_comunas`, `map_comuna_alias`, `set_config`, `validate_audit_logging`); 4 con ACL que miente pero guard que salva (`add_dock_zone_adjacency_pair`, `open_route_reception`, `remove_dock_zone_adjacency_pair`, `reopen_pickup_route`); 1 overload huérfano (`start_pickup_route(text)`); 17 nunca revocadas pero con guard efectivo (defensa en profundidad pendiente, no exploit); 6 correctamente cerradas hoy; 1 causa raíz compartida (`assert_operator_access`).
+**Resumen:** 10 funciones genuinamente sin guard (`archive_old_audit_logs`, `calculate_daily_metrics`, `calculate_dashboard_monthly_rollup`, `create_audit_logs_partition`, `custom_access_token_hook`, `get_active_routes_with_dispatches`, `get_unmatched_comunas`, `map_comuna_alias`, `set_config`, `validate_audit_logging`); 5 con ACL que miente pero guard que salva (`add_dock_zone_adjacency_pair`, `open_route_reception`, `remove_dock_zone_adjacency_pair`, `reopen_pickup_route`, y `start_pickup_route(uuid,uuid[])` — reclasificada en round 1 de review, ver fila corregida arriba); 1 overload huérfano (`start_pickup_route(text)`); 17 nunca revocadas pero con guard efectivo (defensa en profundidad pendiente, no exploit); 5 correctamente cerradas hoy; 1 causa raíz compartida (`assert_operator_access`).
 
 ## Las tres fugas de datos, reproducidas en QA (transacción con `ROLLBACK`, sin datos de Musan)
 
@@ -224,19 +224,21 @@ Ordenadas por riesgo y por lo que se puede hacer sin arriesgar el login.
 | **4 — Check automático de ACL huérfana** | `check-migration-safety.sh` (spec-87 fase 5) detecta un overload sin `REVOKE` propio y un `REVOKE FROM anon` sin `REVOKE FROM PUBLIC` que le corresponda | no |
 | **5 — Defensa en profundidad del resto** | `REVOKE` sobre las 17 funciones guardadas-pero-nunca-revocadas — sin urgencia, sin riesgo, cierre de higiene | no |
 
-### Fase 1 — REVOKE mecánico `[pending]`
+### Fase 1 — REVOKE mecánico `[in_progress]`
 
 Cierra, con una sola migración (`CREATE OR REPLACE` no es necesario donde el cuerpo no cambia — sólo el ACL), las funciones donde revocar `anon`/PUBLIC no cambia ningún comportamiento legítimo, porque **ningún llamante legítimo del sistema es `anon`** sobre estas RPCs: el frontend siempre llama autenticado, y el patrón correcto (spec-80 fase 1b, spec-85 fase 2) es `REVOKE ALL ... FROM PUBLIC; GRANT EXECUTE ... TO authenticated [, service_role]; REVOKE ALL ... FROM anon;`.
 
-**Funciones a cerrar en esta fase — 15 en total:**
-- Las 9 confirmadas sin guard, salvo `custom_access_token_hook` (fase 3, aparte): `archive_old_audit_logs`, `calculate_daily_metrics`, `calculate_dashboard_monthly_rollup`, `create_audit_logs_partition`, `get_active_routes_with_dispatches`, `get_unmatched_comunas`, `map_comuna_alias`, `set_config`, `validate_audit_logging`.
-- Las 4 con ACL-que-miente (guard salva, pero PUBLIC sigue expuesto): `add_dock_zone_adjacency_pair`, `open_route_reception`, `remove_dock_zone_adjacency_pair`, `reopen_pickup_route`. Aquí sí hace falta `REVOKE ALL ... FROM PUBLIC` explícito, porque el `FROM anon` de sus migraciones originales ya está aplicado y es redundante — el gap es sólo PUBLIC.
+**Funciones a cerrar en esta fase — 16 en total (corregido en round 1 de review, PR #675 — ver nota abajo):**
+- Las 9 confirmadas sin guard, salvo `custom_access_token_hook` (fase 3, aparte): `archive_old_audit_logs`, `calculate_daily_metrics`, `calculate_dashboard_monthly_rollup`, `create_audit_logs_partition`, `get_active_routes_with_dispatches`, `get_unmatched_comunas`, `map_comuna_alias`, `set_config`, `validate_audit_logging`. De estas nueve, cinco (`archive_old_audit_logs`, `calculate_dashboard_monthly_rollup`, `create_audit_logs_partition`, `validate_audit_logging`, y `start_pickup_route(text)` más abajo) nunca tuvieron un `GRANT` explícito a `authenticated` — sólo el `=X` implícito que Postgres pone en toda función nueva. Un `REVOKE FROM PUBLIC`+`FROM anon` sin también `FROM authenticated` las deja invocables por cualquier sesión autenticada sin ningún guard — el `REVOKE` debe alcanzar a `authenticated` también en esas cinco.
+- Las 5 con ACL-que-miente (guard salva, pero PUBLIC sigue expuesto): `add_dock_zone_adjacency_pair`, `open_route_reception`, `remove_dock_zone_adjacency_pair`, `reopen_pickup_route`, y **`start_pickup_route(uuid,uuid[])`** — la firma viva de `start_pickup_route`, mal clasificada originalmente como "ya cerrada" (ver fila corregida en la tabla arriba). Aquí sí hace falta `REVOKE ALL ... FROM PUBLIC` explícito.
 - El overload huérfano: `start_pickup_route(text)`.
 - `assert_operator_access(uuid)` misma: **no** tiene por qué ser invocable directamente por nadie fuera de otra función `SECURITY DEFINER` — no hay ningún llamante legítimo desde PostgREST. Revocar PUBLIC y `anon`/`authenticated` aquí (dejar sólo `service_role`, si acaso) no rompe nada porque las funciones que la usan como guard interno la llaman como su propio dueño (`SECURITY DEFINER`, ejecuta con privilegios del dueño de la función, no del rol PostgREST del llamante original) — confirmar esto en la implementación antes de aplicar, no asumirlo de esta prosa.
 
 **Por qué `map_comuna_alias` y `set_config` no necesitan la reescritura de `assert_operator_access` (fase 2) para cerrarse:** ninguna de las dos usa `assert_operator_access` como guard — de hecho, no usan ningún guard. El `REVOKE` de ACL, sin más, ya es suficiente para las dos.
 
 **Verificación de esta fase:** re-correr, contra QA, las tres fugas reproducidas arriba y el intento de `set_config('statement_timeout', ...)` como `anon` — las cuatro deben fallar con `permission denied for function` (Postgres, no la propia función) tras el `REVOKE`. Ningún flujo autenticado existente debe romperse — correr al menos un E2E que use `get_active_routes_with_dispatches` (buscar el consumer real en `apps/frontend` antes de escribir la migración) contra QA autenticado, antes y después.
+
+**Excepción declarada al límite de 300 líneas por archivo:** `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql` es SQL repetitivo — cada una de las 16 funciones necesita su propio `has_function()` + de 2 a 4 aserciones `aclexplode()` casi idénticas (PUBLIC, `anon`, a veces `authenticated`/`service_role`), y partirlo por grupo (A/B/C) rompería la sección `plan(N)` única que pgTAP exige por transacción. Se deja como un solo archivo en vez de dividirlo artificialmente.
 
 ### Fase 2 — Reescritura de `assert_operator_access` `[pending]`
 
@@ -269,3 +271,10 @@ Las 17 funciones con guard efectivo pero sin `REVOKE` nunca aplicado (`add_manif
 ## Nota sobre el alcance de esta tarea
 
 Esta spec **audita y planifica**. Ninguna fase se implementó — el encargo fue explícito: confirmar y escribir, no arreglar. Las cinco fases de arriba son el plan; la primera que se tome debe abrir su propia rama (`feat/spec-88-fase-1-...`), seguir TDD (`sql` como juez, vía `scripts/pgtap-local.sh`, ⚠️ contenedor compartido entre worktrees — comprobar que nadie más lo está usando antes de correr), y traer su propia evidencia de `> Implementado por:` / `> Review:` / `> QA:` antes de marcarse `[done]`.
+
+## Deuda anotada, no arreglada en esta fase (round 1 de review, PR #675)
+
+Dos hallazgos del review de fase 1 son deuda real, pero **fuera del alcance de un `REVOKE` mecánico** — se dejan escritos aquí para que nadie los reabra por accidente ni los confunda con un incendio activo:
+
+- **El harness de pgTAP local es ciego a `not ok`.** `scripts/pgtap-local.sh` decide pass/fail con `grep -qE "ERROR:|^psql: error:"` sobre la salida de `psql` — un fichero de test que corre limpio pero cuyas aserciones fallan (`not ok`, sin `ERROR:` de Postgres) se reporta como PASS igual. Medido: de 73 ficheros en `packages/database/supabase/tests/`, sólo **6** usan aserciones pgTAP (`plan()`/`is()`/`finish()`) — el resto usa `RAISE EXCEPTION`, que sí produce `ERROR:` y sí lo detecta el harness. Los 6 ficheros pgTAP se corrieron a mano para esta fase y **son genuinamente verdes** (confirmado contando `ok`/`not ok` en la salida cruda de `psql`, no en el resumen del script). No es un incendio — es una laguna de cobertura del harness que merece su propia spec (arreglarla aquí sería tocar infraestructura compartida por otras 5 fases de tests pgTAP fuera del alcance de spec-88).
+- **`set_config(text,text,boolean)` con `is_local = true` es código muerto bajo PostgREST, y ya lo era antes de esta fase.** `createSSRClient()` en el frontend llama a `setSupabaseSessionIp` (`apps/frontend/src/lib/utils/ipAddress.ts`), que invoca este RPC vía `set_config(..., true)`. PostgREST abre una transacción nueva por cada petición HTTP — el `SET LOCAL` que produce `is_local = true` muere al terminar esa transacción, antes de que la query que se suponía debía auditar (el `INSERT` en `audit_logs` de esa misma request) llegue a correr. La llamada está envuelta en `try/catch` con `console.warn`, así que no rompe nada — simplemente no hace lo que su nombre sugiere. Esta fase **no** lo introduce ni lo arregla: cerrar `set_config` a `authenticated` (lo que sí hace esta migración) no cambia este comportamiento. Se anota explícitamente para que nadie, al ver el guard cerrado, decida "arreglar" esto reabriendo el grant a `anon` — el bug es la transacción de PostgREST, no el ACL.
