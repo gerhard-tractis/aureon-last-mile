@@ -21,6 +21,7 @@ interface PickupQueueCollection {
     changes: Partial<PickupQueueEntry> | ((entry: PickupQueueEntry) => void),
   ): Promise<number>;
   delete(): Promise<number>;
+  toArray(): Promise<PickupQueueEntry[]>;
 }
 
 /** El subconjunto de `AureonOfflineDB` que este módulo necesita — permite
@@ -31,11 +32,6 @@ export interface PickupQueueStore {
     get(id: number): Promise<PickupQueueEntry | undefined>;
     where(index: string): {
       equals(value: unknown): PickupQueueCollection;
-    };
-    orderBy(index: string): {
-      filter(predicate: (entry: PickupQueueEntry) => boolean): {
-        toArray(): Promise<PickupQueueEntry[]>;
-      };
     };
   };
 }
@@ -82,11 +78,16 @@ export async function enqueue(
 
 /**
  * Entradas pendientes de un operador, en orden FIFO estricto de inserción.
- * `orderBy("id")` es explícito sobre la clave primaria en vez de depender de
- * un `.sort()` posterior — el orden de un cursor de IndexedDB sobre un único
- * valor de índice ya viene desempatado por clave primaria ascendente, así
- * que un `.sort()` adicional era redundante y no discriminaba ningún
- * mutante (spec-81, ronda 1 de review, B6).
+ * `.where("operatorId").equals(operatorId)` ya entrega ese orden gratis: un
+ * cursor de IndexedDB sobre un único valor de un índice no único viene
+ * desempatado por clave primaria ascendente (la misma garantía que hacía
+ * redundante el `.sort()` que se quitó en B6) — así que no hace falta un
+ * `orderBy` explícito.
+ *
+ * Usa el índice `operatorId` en vez de recorrer toda la tabla: un table scan
+ * deserializa también las entradas de otros operadores, las `sent` sin
+ * purgar y, desde fase 5, el `Blob` de cada fila, sólo para descartar la
+ * mayoría (spec-81, ronda 3 de review, H5).
  *
  * Excluye `sending` (reclamada por otro drenado en curso) y `dead`
  * (rechazo irrecuperable) además de `sent`.
@@ -97,10 +98,10 @@ export async function listPending(
   manifestId?: string,
 ): Promise<PickupQueueEntry[]> {
   return db.pickup_queue
-    .orderBy("id")
-    .filter(
+    .where("operatorId")
+    .equals(operatorId)
+    .and(
       (entry) =>
-        entry.operatorId === operatorId &&
         entry.status === "pending" &&
         (manifestId === undefined || entry.manifestId === manifestId),
     )
@@ -162,8 +163,39 @@ export async function markFailed(
       entry.retryCount += 1;
       entry.lastError = errorMessage;
       entry.lastAttemptAt = now;
-      entry.status = "pending";
+      // H3 (ronda 3 de review): sólo libera una reclamación en curso
+      // (`sending` → `pending`). Un `sent` o un `dead` son terminales — un
+      // 200 tardío llegando después de un timeout local, o un reintento
+      // perdido que llega tras el rechazo de negocio, no puede resucitarlos.
+      // Resucitar un `sent` sería un duplicado en `pickup_scans` (para eso
+      // existe `clientOperationId`); resucitar un `dead` reabriría algo que
+      // ya se decidió irrecuperable.
+      if (entry.status === "sending") {
+        entry.status = "pending";
+      }
     });
+}
+
+/**
+ * Devuelve a `pending` toda entrada `sending` cuyo `lastAttemptAt` supere
+ * `olderThanMs`. Sin esto, `sending` es un estado sin salida: si la pestaña
+ * muere justo después de `claimPending` (la PWA cerrada en segundo plano en
+ * un muelle con la pantalla apagada), nadie vuelve a tener el `id` de esa
+ * entrada — no aparece en `listPending` ni en `getPendingPickupCount`, pero
+ * el escaneo sigue sin enviar en `pickup_queue`. `reclaimStale` es lo que un
+ * drenador de fase 2 corre al arrancar (mount, evento `online`) para
+ * recuperar reclamaciones huérfanas. Ver spec-81, ronda 3 de review, H1.
+ */
+export async function reclaimStale(
+  db: PickupQueueStore,
+  olderThanMs: number,
+): Promise<number> {
+  const cutoff = Date.now() - olderThanMs;
+  return db.pickup_queue
+    .where("status")
+    .equals("sending")
+    .and((entry) => entry.lastAttemptAt !== null && Date.parse(entry.lastAttemptAt) <= cutoff)
+    .modify({ status: "pending" });
 }
 
 /**

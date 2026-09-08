@@ -17,6 +17,7 @@ import {
   purgeConfirmed,
   claimPending,
   markDead,
+  reclaimStale,
 } from "./queue";
 
 const OPERATOR_A = "operator-a";
@@ -222,6 +223,19 @@ describe("recogida offline queue", () => {
       expect(pending).toHaveLength(0);
     });
 
+    it("H5 — queries the operatorId index instead of scanning the whole table", async () => {
+      // A full-table scan deserializes every row (including other operators'
+      // and, from fase 5 on, each row's photo Blob) just to discard most of
+      // them. `.where("operatorId")` already gives FIFO order for free — see
+      // the docstring above — so nothing is gained by scanning.
+      const whereSpy = vi.spyOn(db.pickup_queue, "where");
+
+      await listPending(db, OPERATOR_A);
+
+      expect(whereSpy).toHaveBeenCalledWith("operatorId");
+      whereSpy.mockRestore();
+    });
+
     it("does not return entries claimed in-flight (sending) or dead-lettered", async () => {
       const sending = await enqueue(db, {
         operatorId: OPERATOR_A,
@@ -277,6 +291,103 @@ describe("recogida offline queue", () => {
       // Exactly one of the two concurrent claims may win — never both, and
       // never neither (Dexie's `.modify()` serialises this in one txn).
       expect([firstClaim, secondClaim].filter(Boolean)).toHaveLength(1);
+    });
+
+    it("stamps lastAttemptAt so a stale claim can be detected later (N2)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await claimPending(db, entry.id!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.lastAttemptAt).toBe("2026-09-07T09:00:00.000Z");
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe("reclaimStale (H1 — sending is not a dead end)", () => {
+    it("returns a sending entry whose lastAttemptAt is older than the threshold back to pending", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await claimPending(db, entry.id!);
+
+      // The tab that claimed it died right there — never called markSent or
+      // markFailed. 10 minutes pass before anyone looks again.
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+
+      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+
+      expect(reclaimedCount).toBe(1);
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("pending");
+
+      vi.useRealTimers();
+    });
+
+    it("leaves a sending entry alone when its lastAttemptAt is still within the threshold", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await claimPending(db, entry.id!);
+
+      vi.setSystemTime(new Date("2026-09-07T09:01:00.000Z"));
+
+      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+
+      expect(reclaimedCount).toBe(0);
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+
+      vi.useRealTimers();
+    });
+
+    it("does not touch pending, sent or dead entries", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const pending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const sent = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-2" },
+      });
+      await markSent(db, sent.id!);
+
+      vi.setSystemTime(new Date("2026-09-07T10:00:00.000Z"));
+
+      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+
+      expect(reclaimedCount).toBe(0);
+      expect((await db.pickup_queue.get(pending.id!))?.status).toBe("pending");
+      expect((await db.pickup_queue.get(sent.id!))?.status).toBe("sent");
+
+      vi.useRealTimers();
     });
   });
 
@@ -350,6 +461,37 @@ describe("recogida offline queue", () => {
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.retryCount).toBe(2);
     });
+
+    it("H3 — never resurrects a dead-lettered entry back to pending", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE");
+
+      await markFailed(db, entry.id!, "late retry after dead-lettering");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("dead");
+    });
+
+    it("H3 — never resurrects an already-confirmed (sent) entry back to pending", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await markSent(db, entry.id!);
+
+      // A late 500 arriving after a local timeout already marked this sent.
+      await markFailed(db, entry.id!, "late 500 after local timeout");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sent");
+    });
   });
 
   describe("markDead (B3 — terminal state, no lying and no silent loss)", () => {
@@ -418,6 +560,23 @@ describe("recogida offline queue", () => {
       const remaining = await db.pickup_queue.toArray();
       expect(remaining).toHaveLength(1);
       expect(remaining[0].operatorId).toBe(OPERATOR_B);
+    });
+
+    it("H4 — never deletes a dead-lettered entry (silent loss is the spec's risk nº1)", async () => {
+      const dead = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      await markDead(db, dead.id!, "MANIFEST_NOT_CLOSABLE");
+
+      const purgedCount = await purgeConfirmed(db, OPERATOR_A);
+
+      expect(purgedCount).toBe(0);
+      const stored = await db.pickup_queue.get(dead.id!);
+      expect(stored).toBeDefined();
+      expect(stored?.status).toBe("dead");
     });
   });
 });
