@@ -33,6 +33,23 @@ import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
  */
 const CLOSE_MANIFEST_TIMEOUT_MS = 60_000;
 
+/**
+ * m8, ronda 2 de review del PR #679 — este es el primer uso de
+ * `AbortSignal.timeout` en el navegador (los otros dos del repo,
+ * `dt-list-routes.ts`, son server-side). En un WebView sin soporte
+ * (Chrome <103 / Safari <16) es `undefined`; llamarlo directamente lanzaría
+ * un `TypeError` DENTRO del sender — ese `TypeError`, sin `code` de
+ * Postgrest, se clasificaría `offline` y reintentaría para siempre sin que
+ * el cierre se enviara jamás, en silencio. Sin soporte, se envía sin
+ * imponer el límite propio (el default del `fetch` del navegador sigue
+ * aplicando) en vez de lanzar.
+ */
+function closeManifestTimeoutSignal(): AbortSignal | undefined {
+  return typeof AbortSignal.timeout === 'function'
+    ? AbortSignal.timeout(CLOSE_MANIFEST_TIMEOUT_MS)
+    : undefined;
+}
+
 export function createPickupQueueSender(supabase: SupabaseClient): OfflineQueueSender {
   return async (entry: PickupQueueEntry): Promise<OfflineQueueOutcome> => {
     if (entry.type !== 'close_manifest') {
@@ -58,20 +75,33 @@ async function sendCloseManifest(
     };
   };
 
-  const { error } = await supabase
-    .rpc('close_manifest', {
-      p_manifest_id: payload.manifestId,
-      p_signatures: payload.signatures,
-    })
-    .abortSignal(AbortSignal.timeout(CLOSE_MANIFEST_TIMEOUT_MS));
+  const builder = supabase.rpc('close_manifest', {
+    p_manifest_id: payload.manifestId,
+    p_signatures: payload.signatures,
+  });
+  const signal = closeManifestTimeoutSignal();
+  const { error } = await (signal ? builder.abortSignal(signal) : builder);
 
   if (!error) {
     return { outcome: 'sent' };
   }
 
   const classified = classifyCloseManifestError(error);
-  if (classified.kind === 'offline') {
-    return { outcome: 'retry', reason: classified.message };
+  switch (classified.kind) {
+    case 'offline':
+    case 'transient':
+      // B2, ronda 2 de review del PR #679: cualquier cosa que no sea uno
+      // de los cuatro rechazos que close_manifest declara explícitamente
+      // irrecuperables es reintentable — el valor por defecto seguro para
+      // un drenador de fondo es reintentar, no matar el manifiesto.
+      return { outcome: 'retry', reason: classified.message };
+    case 'idempotent':
+      // B1, ronda 2 de review del PR #679: MANIFEST_ALREADY_SIGNED en un
+      // reintento significa que el cierre YA se aplicó — es exactamente lo
+      // que 'sent' significa por contrato (ver docstring de
+      // OfflineQueueSender en useOfflineQueue.ts), no un rechazo.
+      return { outcome: 'sent' };
+    case 'permanent':
+      return { outcome: 'dead', reason: classified.message };
   }
-  return { outcome: 'dead', reason: classified.message };
 }

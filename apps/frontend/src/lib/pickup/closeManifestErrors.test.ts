@@ -62,35 +62,111 @@ describe('classifyCloseManifestError (spec-81 fase 2 — checklist item 5)', () 
     expect(result.message).toMatch(/sin conexión|sin señal/i);
   });
 
-  it('classifies a sentinel-prefixed business rejection as business — stop and ask for help', () => {
+  it('classifies a sentinel-prefixed genuinely irrecoverable rejection as permanent — stop and ask for help', () => {
     const result = classifyCloseManifestError({
       message: 'MANIFEST_NOT_CLOSABLE: manifest is not in a closable state (status: pending)',
     });
-    expect(result.kind).toBe('business');
+    expect(result.kind).toBe('permanent');
     expect(result.message).toMatch(/no está listo para cerrarse/i);
   });
 
-  it('classifies an unrecognized Postgrest-shaped error (has a code) as business, not offline', () => {
-    // A real anomaly (RLS denial, constraint violation) still isn't the
-    // network — retrying without connectivity context would be wrong.
+  // B2, ronda 2 de review del PR #679: un `code` de Postgrest genuino que no
+  // coincide con ninguno de los centinelas irrecuperables de close_manifest
+  // no es, por sí solo, motivo para matar el manifiesto para siempre — un
+  // drenador de fondo debe reservar `permanent` a lo que la propia función
+  // declara irrecuperable, y tratar cualquier otra cosa como reintentable.
+  it('classifies an unrecognized Postgrest-shaped error (has a code, no known sentinel) as transient — retry, not dead', () => {
     const result = classifyCloseManifestError({
       message: 'permission denied for table manifests',
       code: '42501',
     });
-    expect(result.kind).toBe('business');
+    expect(result.kind).toBe('transient');
   });
 
-  it('classifies a non-object / message-less error as business (safe default: stop, do not silently queue)', () => {
+  it('classifies a non-object / message-less error as transient (safe default for a background drainer: retry, do not kill the manifest on something unrecognized)', () => {
     const result = classifyCloseManifestError(null);
-    expect(result.kind).toBe('business');
+    expect(result.kind).toBe('transient');
   });
 
-  it('offline classification carries a distinct message from every business one', () => {
+  it('offline classification carries a distinct message from a permanent one', () => {
     const offline = classifyCloseManifestError(new TypeError('Failed to fetch'));
-    const business = classifyCloseManifestError({
+    const permanent = classifyCloseManifestError({
       message: 'MANIFEST_NOT_CLOSABLE: not closable',
     });
-    expect(offline.message).not.toBe(business.message);
+    expect(offline.message).not.toBe(permanent.message);
+  });
+
+  // B1, ronda 2 de review del PR #679 (bloqueante): un reintento de un
+  // cierre que SÍ se aplicó en el servidor (la respuesta se pierde en un
+  // túnel, o el propio AbortSignal.timeout del sender la corta) vuelve a
+  // chocar con `signature_operator IS NOT NULL` → 23505
+  // MANIFEST_ALREADY_SIGNED. La migración lo llama explícitamente "an
+  // idempotent 409" — tratarlo como `permanent`/`dead` convierte un envío
+  // que SÍ funcionó en un manifiesto muerto para siempre. Debe ser
+  // `idempotent`: la operación ya está aplicada, que es justo lo que
+  // `OfflineQueueSender`'s `'sent'` significa por contrato
+  // (`useOfflineQueue.ts`).
+  it('classifies MANIFEST_ALREADY_SIGNED as idempotent — the close already applied, not a rejection to retry or kill', () => {
+    const result = classifyCloseManifestError({
+      message: 'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature',
+      details: '',
+      hint: '',
+      code: '23505',
+    });
+    expect(result.kind).toBe('idempotent');
+  });
+
+  it('classifies OPERATOR_SIGNATURE_REQUIRED as permanent', () => {
+    const result = classifyCloseManifestError({
+      message: 'OPERATOR_SIGNATURE_REQUIRED: operator signature is required',
+      code: 'P0001',
+    });
+    expect(result.kind).toBe('permanent');
+  });
+
+  it('classifies cross-tenant MANIFEST_NOT_FOUND (42501) as permanent', () => {
+    const result = classifyCloseManifestError({
+      message: 'MANIFEST_NOT_FOUND: manifest not found',
+      code: '42501',
+    });
+    expect(result.kind).toBe('permanent');
+  });
+
+  it('classifies cross-tenant NO_OPERATOR_IN_JWT (42501) as permanent', () => {
+    const result = classifyCloseManifestError({
+      message: 'NO_OPERATOR_IN_JWT: no operator in JWT',
+      code: '42501',
+    });
+    expect(result.kind).toBe('permanent');
+  });
+
+  // B2, ronda 2 de review — cuatro errores transitorios probados por el
+  // reviewer contra el sender real, los cuatro recuperables reintentando,
+  // los cuatro mataban el manifiesto para siempre bajo la clasificación
+  // anterior (todo lo `business` → `dead`).
+  it('classifies an expired-JWT rejection (PGRST301) as transient, not permanent', () => {
+    const result = classifyCloseManifestError({ message: 'JWT expired', code: 'PGRST301' });
+    expect(result.kind).toBe('transient');
+  });
+
+  it('classifies a Kong 502 with no Postgrest code as transient', () => {
+    const result = classifyCloseManifestError({
+      message: '<html><body><h1>502 Bad Gateway</h1></body></html>',
+    });
+    expect(result.kind).toBe('transient');
+  });
+
+  it('classifies a statement-timeout rejection (57014) as transient', () => {
+    const result = classifyCloseManifestError({
+      message: 'canceling statement due to statement timeout',
+      code: '57014',
+    });
+    expect(result.kind).toBe('transient');
+  });
+
+  it('classifies a deadlock rejection (40P01) as transient', () => {
+    const result = classifyCloseManifestError({ message: 'deadlock detected', code: '40P01' });
+    expect(result.kind).toBe('transient');
   });
 
   // B1, review round 1 of PR #679: this is the shape supabase.rpc() ACTUALLY
@@ -178,13 +254,14 @@ describe('classifyCloseManifestError (spec-81 fase 2 — checklist item 5)', () 
     expect(result.kind).toBe('offline');
   });
 
-  it('a real Postgrest business error always has a non-empty code and stays business, whatever its message says', () => {
+  it('a real Postgrest error with a non-empty code and no recognized sentinel is never offline, and defaults to transient (retry)', () => {
     const result = classifyCloseManifestError({
       message: 'permission denied for table manifests',
       details: '',
       hint: '',
       code: '42501',
     });
-    expect(result.kind).toBe('business');
+    expect(result.kind).not.toBe('offline');
+    expect(result.kind).toBe('transient');
   });
 });
