@@ -184,7 +184,7 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
       (`enqueue(db, { type: 'close_manifest', ... })`) y navega fuera en la
       rama offline; en la rama business deja el botón re-habilitado y no
       encola nada.
-- [x] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1. **Implementado:** `RECLAIM_STALE_MS = 45_000` en `useOfflineQueue.ts`.
+- [x] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1. **Implementado (ronda 1 de review del PR #679, B4):** `timeout_http` no existía como valor propio — `postgrest-js` no fija ninguno y el sender no pasaba `signal`, así que el límite real era el default de `fetch` del navegador (~300s), muy por encima de los 45s que se afirmaban como margen. `offlineQueueSender.ts` ahora impone `AbortSignal.timeout(60_000)` sobre `close_manifest`, y `RECLAIM_STALE_MS = 90_000` en `useOfflineQueue.ts` — 30s de margen sobre ESE valor, que sí es real.
 - [x] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
 - [x] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
 - [x] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
@@ -192,6 +192,52 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 - [x] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
 - [x] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola. **Implementado:** `.modify({ status: "pending", claimToken: null })`; combinado con que `matchesClaim` ya exige `status === "sending"`, es defensa en profundidad, no la única barrera.
 - [x] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings. **Implementado:** helper `matchesClaim(entry, claimedAt)` compartido por los tres; los tres devuelven `Promise<number>`.
+
+**Ronda 1 de review del PR #679 (2026-09-08) — cuatro bloqueantes:**
+
+- **B1.** `classifyCloseManifestError` nunca veía el error que la app produce
+  de verdad: `supabase.rpc('close_manifest', …)` no rechaza con un
+  `TypeError` sin señal — `postgrest-js@1.21.4` captura el fallo de `fetch` y
+  RESUELVE con `{ message, details, hint: '', code: '' }`. El check original
+  (`'code' in err`) clasificaba esa forma como `business` siempre, cero
+  cobertura real de la rama offline. **Implementado:** un `code` presente
+  pero vacío es ahora la señal (un `code` de Postgrest real nunca es la
+  cadena vacía — siempre un SQLSTATE de 5 caracteres).
+- **B2.** `useOfflineQueue` no tenía ningún llamador de producción — la fase
+  «Drenado» no drenaba nada. **Implementado:** `lib/pickup/offlineQueueSender.ts`
+  (el `OfflineQueueSender` real contra `close_manifest`) montado en
+  `AppLayout.tsx`, mismo alcance global que `SyncChip`/`useSyncQueue`.
+- **B3.** Un escaneo `dead` no bloqueaba el `close_manifest` detrás de él —
+  `listPending` excluye `dead` a propósito, así que en la siguiente pasada el
+  cierre pasaba a la cabeza y se enviaba con un bulto menos del que el
+  operario contó. **Implementado:** `manifestHasDeadEntry` en `queue.ts`,
+  comprobado en cada vuelta de `drainManifest` antes de listar pendientes.
+- **B4.** Ver la nota sobre `RECLAIM_STALE_MS` arriba.
+
+Cuatro mayores (mutantes que sobrevivían 7/7, cerrados con tests que se
+verificaron contra el mutante real, no sólo escritos): M1 (el camino de
+éxito — `markSent`, `purgeConfirmed`, y el `claimToken` en `markFailed`/
+`markDead` — no tenía ninguna aserción que lo exigiera), M2 (el retroceso
+exponencial no tenía ningún test, ni la puerta que lo honra), M3 (el test
+del 409 tenía las dos ramas devolviendo `'sent'`, no discriminaba nada —
+dividido en dos tests reales), M4 (integration test nuevo en
+`complete/[loadId]/page.test.tsx` con la forma real de postgrest-js —
+verificado a mano que habría atrapado B1).
+
+m3 (menor): el tope de 500 entradas sin confirmar por operador que
+"Riesgos" declaraba vigente desde esta fase no estaba implementado.
+**Implementado:** `enqueue` lo comprueba y rechaza con error explícito.
+
+m4 (menor, sin cerrar — alcance documentado, no arreglado): la rama offline
+de `complete/[loadId]/page.tsx` es casi inalcanzable en la práctica.
+`manifestId` se pide con un `supabase.from('manifests')` crudo en un
+`useEffect` sin caché (líneas ~52-66) y la página muestra un skeleton
+mientras `!manifestId`. Sin señal, recargar la página deja el skeleton
+permanente — nunca llega a mostrar el botón de completar. La única ventana
+real en la que la rama offline dispara es «la pantalla cargó con señal →
+la señal se cae → el operario pulsa Completar». No bloqueante para esta
+ronda; queda anotado para que una fase futura decida si cachear
+`manifestId` en IndexedDB vale la pena.
 
 **Nota de coordinación con fase 3 (review del PR #678, 2026-09-08):**
 `usePickupScans.ts` inserta N filas (una por bulto) bajo un único
@@ -449,5 +495,5 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
 ## Riesgos
 
 - **Una cola a medias es peor que ninguna.** Si `5d` dice «guardado en el dispositivo» y la entrada se pierde, el operario cierra una carga con un conteo falso y el cliente firma sobre esa cifra. Las fases 1–3 van juntas o no va ninguna; sólo la 4 y la 5 son separables.
-- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado (fase 1, no aplicado todavía):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso (fase 2 la invoca ahí); el tope duro para entradas `pending`/`failed` sin confirmar se fija en **500 por operador** — a partir de fase 2, encolar por encima de ese número debe rechazarse con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
+- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado y aplicado (fase 2, ronda 1 de review del PR #679, m3):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso; el tope duro para entradas sin confirmar (`status !== 'sent'`) se fija en **500 por operador** y `enqueue` lo comprueba, rechazando con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
 - **El alcance puede tentar a crecer** a Recepción y Despacho. Este spec entrega la infraestructura y **sólo** conecta Recogida; adoptarla en otros módulos es trabajo posterior con sus propios specs.
