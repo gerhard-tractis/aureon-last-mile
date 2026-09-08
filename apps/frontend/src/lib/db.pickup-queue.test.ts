@@ -28,48 +28,42 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
     expect(db.verno).toBe(2);
   });
 
-  describe('getPendingPickupCount', () => {
-    it('counts only pending entries, device-global (mirrors getUnsynced)', async () => {
+  describe('getPendingPickupCount (spec-81 fase 2 — por operador, cuenta pending+sending+dead)', () => {
+    const baseEntry = {
+      manifestId: 'm-1',
+      type: 'pickup_scan' as const,
+      payload: {},
+      retryCount: 0,
+      claimToken: null,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    it('only counts the requesting operator, not another operator sharing the device', async () => {
       await db.pickup_queue.bulkAdd([
-        {
-          clientOperationId: 'a',
-          operatorId: 'op-1',
-          manifestId: 'm-1',
-          type: 'pickup_scan',
-          payload: {},
-          status: 'pending',
-          retryCount: 0,
-          lastAttemptAt: null,
-          nextAttemptAt: null,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          clientOperationId: 'b',
-          operatorId: 'op-2',
-          manifestId: 'm-2',
-          type: 'pickup_scan',
-          payload: {},
-          status: 'pending',
-          retryCount: 0,
-          lastAttemptAt: null,
-          nextAttemptAt: null,
-          createdAt: new Date().toISOString(),
-        },
-        {
-          clientOperationId: 'c',
-          operatorId: 'op-1',
-          manifestId: 'm-1',
-          type: 'pickup_scan',
-          payload: {},
-          status: 'sent',
-          retryCount: 0,
-          lastAttemptAt: null,
-          nextAttemptAt: null,
-          createdAt: new Date().toISOString(),
-        },
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending' },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-2', status: 'pending' },
+        { ...baseEntry, clientOperationId: 'c', operatorId: 'op-1', status: 'sent' },
       ]);
 
-      await expect(getPendingPickupCount()).resolves.toBe(2);
+      await expect(getPendingPickupCount('op-1')).resolves.toBe(1);
+      await expect(getPendingPickupCount('op-2')).resolves.toBe(1);
+    });
+
+    it('counts sending and dead alongside pending — a stuck sending row must not read as zero', async () => {
+      // useSyncQueue.ts stops polling once the combined count is 0. A lone
+      // orphaned `sending` row (tab died mid-send, before reclaimStale runs)
+      // must not be invisible, or the screen freezes on "all uploaded" with
+      // a scan that never actually sent — the spec's declared risk nº1.
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', status: 'pending' },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', status: 'sending' },
+        { ...baseEntry, clientOperationId: 'c', operatorId: 'op-1', status: 'dead' },
+        { ...baseEntry, clientOperationId: 'd', operatorId: 'op-1', status: 'sent' },
+      ]);
+
+      await expect(getPendingPickupCount('op-1')).resolves.toBe(3);
     });
   });
 

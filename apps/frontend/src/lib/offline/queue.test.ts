@@ -296,10 +296,49 @@ describe("recogida offline queue", () => {
       expect(claimed).not.toBeNull();
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      // The returned value IS the lastAttemptAt it stamped — the token
-      // markFailed/markSent compare against later to tell "my reclamation"
-      // from "someone else's" (M1, ronda 4 de review).
-      expect(claimed).toBe(stored?.lastAttemptAt);
+      // The returned value IS the claimToken it stamped (fase 2 — a
+      // crypto.randomUUID() nonce, not the lastAttemptAt timestamp) — what
+      // markFailed/markSent/markDead compare against later to tell "my
+      // reclamation" from "someone else's" (M1, ronda 4; nonce, fase 2).
+      expect(claimed).toBe(stored?.claimToken);
+      expect(stored?.lastAttemptAt).not.toBeNull();
+    });
+
+    it("fase 2 — two claims of the same entry within the same millisecond get different tokens (nonce, not a timestamp)", async () => {
+      // Verified bug (spec-81 fase 2 checklist): before this fix, claim →
+      // markFailed(t) → claim → markFailed(t) left retryCount 2 and
+      // `pending` — the second claim, landing in the same millisecond,
+      // stamped the SAME token as the first, so a stale token reused by
+      // mistake still matched. crypto.randomUUID() makes that impossible.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      const token1 = await claimPending(db, entry.id!);
+      await markFailed(db, entry.id!, "network error", token1!);
+      // Time never advances — this is the common case offline: fetch
+      // rejects almost instantly.
+      const token2 = await claimPending(db, entry.id!);
+
+      expect(token2).not.toBeNull();
+      expect(token2).not.toBe(token1);
+
+      // A caller that (by mistake) reuses the first, now-stale token must
+      // be a complete no-op against the entry's real, current claim.
+      await markFailed(db, entry.id!, "reused stale token", token1!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+      expect(stored?.retryCount).toBe(1);
+      expect(stored?.claimToken).toBe(token2);
+
+      vi.useRealTimers();
     });
 
     it("returns null when the entry was not pending", async () => {
@@ -564,6 +603,13 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("dead");
+      // Fase 2 residual — H3 protected `status`, not the rest of the row.
+      // A no-token markFailed on a dead entry used to conserve `status` but
+      // still overwrite `lastError`, wiping the only record of *why* that
+      // scan was discarded, and `retryCount`, which the operator never
+      // needed to know about again.
+      expect(stored?.lastError).toBe("MANIFEST_NOT_CLOSABLE");
+      expect(stored?.retryCount).toBe(0);
     });
 
     it("H3 — never resurrects an already-confirmed (sent) entry back to pending", async () => {
@@ -580,6 +626,10 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
+      // Same residual as above, the `sent` side: no genuine retry count for
+      // a confirmed operation.
+      expect(stored?.retryCount).toBe(0);
+      expect(stored?.lastError).toBeUndefined();
     });
 
     // M1 (ronda 4 de review) — claimPending devolvía sólo un boolean, así
@@ -621,7 +671,7 @@ describe("recogida offline queue", () => {
       // pending, which would let a third send happen on top of drainer 2's
       // in-flight one.
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
@@ -668,6 +718,20 @@ describe("recogida offline queue", () => {
 
       vi.useRealTimers();
     });
+
+    it("fase 2 — persists nextAttemptAt when the drainer computes a backoff", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      await markFailed(db, entry.id!, "500 server error", undefined, "2026-09-07T09:05:00.000Z");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.nextAttemptAt).toBe("2026-09-07T09:05:00.000Z");
+    });
   });
 
   describe("markSent (M1 — a stale claim cannot confirm a live one's in-flight send)", () => {
@@ -694,7 +758,7 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
@@ -810,6 +874,37 @@ describe("recogida offline queue", () => {
       expect(pending).toHaveLength(0);
     });
 
+    // Fase 2 — unifica el contrato: los tres escritores terminales
+    // (markSent, markFailed, markDead) devuelven ahora el `count` real de
+    // `.modify()`, no sólo markSent (m4, ronda 5). Un `count === 0` en
+    // markDead significa "tu reclamación fue robada" — información que el
+    // drenador necesita para no seguir tratando el envío como en curso.
+    it("fase 2 — returns the real modify() count (1 confirmed, 0 when the claim was stolen)", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      const confirmed = await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE", token!);
+      expect(confirmed).toBe(1);
+
+      const other = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const staleToken = await claimPending(db, other.id!);
+      await reclaimStale(db, OPERATOR_A, 0);
+      await claimPending(db, other.id!);
+
+      const stolen = await markDead(db, other.id!, "late rejection", staleToken!);
+      expect(stolen).toBe(0);
+    });
+
     // B1 (ronda 5 de review) — markDead era el único de los tres escritores
     // terminales (markSent, markFailed, markDead) sin guard de token. Mismo
     // escenario que el M1 de markFailed/markSent, con el tercer escritor:
@@ -840,7 +935,7 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
