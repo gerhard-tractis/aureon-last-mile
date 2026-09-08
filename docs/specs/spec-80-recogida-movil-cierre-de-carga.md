@@ -406,7 +406,7 @@ la reemplazó antes de usarla como base), con:
   ya hace matching sobre el texto viejo sin prefijo — si es así, actualizarlo
   en el mismo cambio.
 
-### Fase 2 — `5e` cerrar con faltantes `[pending]`
+### Fase 2 — `5e` cerrar con faltantes `[in_progress]`
 
 > **No empezar hasta que [spec-85](spec-85-discrepancias.md) fase 2 esté en `[done]`.**
 > Esta fase escribe en `discrepancies` mediante `record_discrepancies`; sin ese RPC

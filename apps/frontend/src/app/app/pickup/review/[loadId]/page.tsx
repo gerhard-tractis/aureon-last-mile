@@ -3,20 +3,32 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { DiscrepancyItem } from '@/components/pickup/DiscrepancyItem';
+import { UnverifiedPackagesBlock } from '@/components/pickup/UnverifiedPackagesBlock';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import {
   useMissingPackages,
   useDiscrepancyNotes,
   useSaveDiscrepancyNote,
 } from '@/hooks/pickup/useDiscrepancies';
+import {
+  computeReviewCounts,
+  dedupeNotFoundBarcodes,
+  allMissingNotesComplete,
+  closeButtonLabel,
+} from '@/lib/pickup/reviewCloseGate';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
-import { CheckCircle, XCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
-import { MetricCard } from '@/components/metrics/MetricCard';
 import { Skeleton } from '@/components/ui/skeleton';
 
+/**
+ * spec-80 fase 2, mock `5e`. Replaces spec-47's review screen at the same
+ * point in the flow: no longer just informational — it is the "el bloqueo
+ * que faltaba en 5d" the mock's own label calls it. A missing package
+ * without a note keeps the crew here; the client signs on `5f` over
+ * whatever counts leave this screen.
+ */
 export default function DiscrepancyReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -53,13 +65,11 @@ export default function DiscrepancyReviewPage() {
   const { data: notes = [] } = useDiscrepancyNotes(manifestId);
   const saveNote = useSaveDiscrepancyNote();
 
-  const verifiedCount = useMemo(
-    () => scans.filter((s) => s.scan_result === 'verified').length,
-    [scans]
-  );
-  const notFoundScans = useMemo(
-    () => scans.filter((s) => s.scan_result === 'not_found'),
-    [scans]
+  const notFoundBarcodes = useMemo(() => dedupeNotFoundBarcodes(scans), [scans]);
+
+  const counts = useMemo(
+    () => computeReviewCounts(scans, missingPackages.length),
+    [scans, missingPackages.length]
   );
 
   const noteMap = useMemo(
@@ -67,13 +77,12 @@ export default function DiscrepancyReviewPage() {
     [notes]
   );
 
-  const allNotesComplete = useMemo(
+  const canClose = useMemo(
     () =>
-      missingPackages.length === 0 ||
-      missingPackages.every((p) => {
-        const existingNote = noteMap.get(p.id);
-        return existingNote && existingNote.trim().length > 0;
-      }),
+      allMissingNotesComplete(
+        missingPackages.map((p) => p.id),
+        noteMap
+      ),
     [missingPackages, noteMap]
   );
 
@@ -88,16 +97,17 @@ export default function DiscrepancyReviewPage() {
     });
   };
 
+  const goToFirma = () => {
+    if (!canClose) return;
+    router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`);
+  };
+
   if (!manifestId) {
     return (
       <div className="space-y-4 p-4 sm:p-6 max-w-2xl mx-auto">
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-20 w-full" />
-        <div className="grid grid-cols-3 gap-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </div>
+        <Skeleton className="h-24 w-full" />
         <Skeleton className="h-10 w-full" />
       </div>
     );
@@ -111,52 +121,20 @@ export default function DiscrepancyReviewPage() {
         {/* Gold header */}
         <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
           <p className="text-xs opacity-80">{loadId}</p>
-          <p className="font-semibold text-base mt-0.5">Revisión</p>
+          <p className="font-semibold text-base mt-0.5">
+            Faltan {counts.missingCount} paquetes
+          </p>
+          <p className="text-xs opacity-80 mt-0.5">
+            {counts.verifiedCount} de {counts.totalCount} verificados
+          </p>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-3 gap-3">
-          <MetricCard icon={CheckCircle} label="Verificados" value={verifiedCount} />
-          <MetricCard icon={XCircle} label="Faltantes" value={missingPackages.length} />
-          <MetricCard icon={AlertTriangle} label="No en manifiesto" value={notFoundScans.length} />
-        </div>
-
-        {/* Missing Packages — notes required */}
-        {missingPackages.length > 0 && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-text">
-              Faltantes — notas obligatorias ({missingPackages.length})
-            </h2>
-            {missingPackages.map((pkg) => (
-              <DiscrepancyItem
-                key={pkg.id}
-                packageId={pkg.id}
-                packageLabel={pkg.label}
-                orderNumber={pkg.order_number}
-                existingNote={noteMap.get(pkg.id) ?? ''}
-                onSaveNote={handleSaveNote}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Not in Manifest scans — informational */}
-        {notFoundScans.length > 0 && (
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-text">
-              No en manifiesto ({notFoundScans.length})
-            </h2>
-            {notFoundScans.map((scan) => (
-              <div
-                key={scan.id}
-                className="flex items-center gap-2 p-2 bg-status-warning-bg border border-status-warning-border rounded-lg"
-              >
-                <AlertTriangle className="h-4 w-4 text-status-warning" />
-                <span className="font-mono text-sm text-text">{scan.barcode_scanned}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        <UnverifiedPackagesBlock
+          missingPackages={missingPackages}
+          notFoundBarcodes={notFoundBarcodes}
+          noteMap={noteMap}
+          onSaveNote={handleSaveNote}
+        />
       </div>
 
       {/* Sticky footer — always visible on tablet/mobile */}
@@ -170,27 +148,14 @@ export default function DiscrepancyReviewPage() {
             className="flex items-center gap-2"
           >
             <ArrowLeft className="h-4 w-4" />
-            Volver
+            Seguir escaneando
           </Button>
           <Button
-            // spec-80 fase 0 — Revisión vuelve a llevar a la Firma.
-            //
-            // spec-47 (3a61572, PR #349) cambió este destino de
-            // `/app/pickup/handoff/<loadId>` a la ruta activa cuando introdujo
-            // el modelo centrado en ruta y borró la pantalla de Entrega. La de
-            // Firma sobrevivió pero se quedó sin ningún enlace: es la única que
-            // escribe `signature_operator` / `signature_client` y pone el
-            // manifiesto en `completed`, así que desde entonces ninguna carga
-            // podía cerrarse. Verificado en QA sobre CARGA-PARIS-002: 28/28
-            // bultos verificados y el manifiesto todavía `in_progress`, sin
-            // firmas.
-            onClick={() =>
-              router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`)
-            }
-            disabled={!allNotesComplete}
+            onClick={goToFirma}
+            disabled={!canClose}
             className="flex-1 disabled:opacity-50"
           >
-            Continuar a firma
+            {closeButtonLabel(counts.missingCount)}
           </Button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import DiscrepancyReviewPage from './page';
 
 const mockUsePickupScans = vi.fn();
@@ -55,7 +55,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
-describe('DiscrepancyReviewPage', () => {
+describe('DiscrepancyReviewPage (5e)', () => {
   beforeEach(() => {
     mockUsePickupScans.mockReturnValue({
       data: [
@@ -72,83 +72,78 @@ describe('DiscrepancyReviewPage', () => {
     mockPush.mockClear();
   });
 
-  it('renders Spanish labels in MetricCards', async () => {
+  it('shows the "Faltan N paquetes" header', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText('Verificados')).toBeInTheDocument();
-    expect(screen.getByText('Faltantes')).toBeInTheDocument();
-    expect(screen.getByText('No en manifiesto')).toBeInTheDocument();
+    expect(await screen.findByText('Faltan 1 paquetes')).toBeInTheDocument();
   });
 
-  it('renders MetricCards with correct values via data-value', async () => {
-    const { container } = render(<DiscrepancyReviewPage />);
-    await screen.findByText('Verificados');
-    const valueEls = container.querySelectorAll('[data-value]');
-    expect(valueEls).toHaveLength(3);
-    expect(valueEls[0].textContent).toBe('2');  // verified
-    expect(valueEls[1].textContent).toBe('1');  // missing
-    expect(valueEls[2].textContent).toBe('1');  // not found
+  it('shows the "X de Y verificados" subheading', async () => {
+    render(<DiscrepancyReviewPage />);
+    expect(await screen.findByText('2 de 3 verificados')).toBeInTheDocument();
   });
 
-  it('renders "Revisión" in header', async () => {
+  it('renders the SIN VERIFICAR list from UnverifiedPackagesBlock', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText('Revisión')).toBeInTheDocument();
+    expect(await screen.findByText(/sin verificar \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByTestId('discrepancy-item')).toHaveTextContent('PKG-001');
   });
 
-  // spec-80 fase 0. This used to assert "Continuar a ruta" -> /app/pickup/route/active,
-  // which is the spec-47 regression: it skipped the Firma step entirely, so no
-  // manifest was ever signed or completed. The DESTINATION is what matters here,
-  // not the label — a test that only checked the wording would have passed
-  // throughout the whole period the step was unreachable.
-  it('sends the crew on to Firma, not back to the route', async () => {
-    // The CTA is gated on every missing package carrying a note, so the note
-    // has to be present for this to test navigation rather than the gate.
-    mockUseDiscrepancyNotes.mockReturnValue({
-      data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
-    });
-
+  it('renders the NO ESTABAN EN LA CARGA block', async () => {
     render(<DiscrepancyReviewPage />);
-    const cta = await screen.findByRole('button', { name: /continuar a firma/i });
-
-    fireEvent.click(cta);
-
-    expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
+    expect(await screen.findByText(/no estaban en la carga \(1\)/i)).toBeInTheDocument();
   });
 
-  it('never routes the crew straight to the active route from Revisión', async () => {
-    mockUseDiscrepancyNotes.mockReturnValue({
-      data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
-    });
-
+  it('the primary CTA reads "Cerrar con 1 faltante" while missing packages exist', async () => {
     render(<DiscrepancyReviewPage />);
-    fireEvent.click(await screen.findByRole('button', { name: /continuar a firma/i }));
-
-    expect(mockPush).not.toHaveBeenCalledWith('/app/pickup/route/active');
+    expect(
+      await screen.findByRole('button', { name: /cerrar con 1 faltante/i })
+    ).toBeInTheDocument();
   });
 
-  // Pinning the gate spec-80 fase 0 must not weaken: a missing package without
-  // a note cannot be signed over, because the client signs against that count.
-  it('keeps Firma unreachable while a missing package has no note', async () => {
+  it('keeps the close CTA disabled while a missing package has no note', async () => {
     render(<DiscrepancyReviewPage />);
-    const cta = await screen.findByRole('button', { name: /continuar a firma/i });
-
+    const cta = await screen.findByRole('button', { name: /cerrar con 1 faltante/i });
     expect(cta).toBeDisabled();
     fireEvent.click(cta);
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it('renders "Volver" back button', async () => {
+  it('enables the close CTA and navigates to Firma once every missing package has a note', async () => {
+    mockUseDiscrepancyNotes.mockReturnValue({
+      data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
+    });
+
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByRole('button', { name: /volver/i })).toBeInTheDocument();
+    const cta = await screen.findByRole('button', { name: /cerrar con 1 faltante/i });
+    expect(cta).not.toBeDisabled();
+
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
   });
 
-  it('renders "Faltantes — notas obligatorias" section header', async () => {
+  it('renders the "Seguir escaneando" exit back to scanning', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText(/faltantes — notas obligatorias/i)).toBeInTheDocument();
+    const btn = await screen.findByRole('button', { name: /seguir escaneando/i });
+    fireEvent.click(btn);
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
   });
 
-  it('has responsive padding', () => {
-    const { container } = render(<DiscrepancyReviewPage />);
-    const wrapper = container.firstElementChild;
-    expect(wrapper?.className).toContain('sm:p-6');
+  it('passes straight through with zero missing packages: no warning, CTA reads "Continuar a firma" and is enabled', async () => {
+    mockUseMissingPackages.mockReturnValue({ data: [] });
+    mockUsePickupScans.mockReturnValue({
+      data: [
+        { id: 's1', scan_result: 'verified', package_id: 'p1' },
+        { id: 's2', scan_result: 'verified', package_id: 'p2' },
+      ],
+    });
+
+    render(<DiscrepancyReviewPage />);
+    const cta = await screen.findByRole('button', { name: /continuar a firma/i });
+    expect(cta).not.toBeDisabled();
+    expect(screen.queryByText(/sin verificar/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/quedan registrados como faltantes/i)).not.toBeInTheDocument();
+
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
   });
 });
