@@ -21,6 +21,7 @@ import { RouteCompleteNotice } from '@/components/pickup/RouteCompleteNotice';
 import { UpcomingManifestList } from '@/components/pickup/UpcomingManifestList';
 import { RouteManifestList } from '@/components/pickup/RouteManifestList';
 import { AddManifestSheet } from '@/components/pickup/AddManifestSheet';
+import { DigitalizeManifestTrigger } from '@/components/pickup/DigitalizeManifestTrigger';
 import { CloseRouteButton } from '@/components/pickup/CloseRouteButton';
 import { CancelRouteButton } from '@/components/pickup/CancelRouteButton';
 import { toast } from 'sonner';
@@ -228,6 +229,13 @@ export default function ActiveRoutePage() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+
+          {/* spec-82 phase 1 (mock 5c) — precarga/digitalización de un
+              manifiesto nuevo directamente desde la ruta activa, sin
+              volver a la pantalla de escritorio. Reusa el mismo flujo OCR
+              que "Nuevo Manifiesto" ya usa en /app/pickup (spec-47);
+              ver DigitalizeManifestTrigger.tsx. */}
+          <DigitalizeManifestTrigger />
         </>
       )}
 
@@ -242,7 +250,7 @@ export default function ActiveRoutePage() {
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
         {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
-            the routine "Cerrar ruta y entregar". Flush, they are two
+            the routine "Cerrar ruta" CTA. Flush, they are two
             full-width 40px targets one thumb-width apart on a phone held
             one-handed, with only the confirm dialog between a mis-tap and
             detaching every manifest on the route. 3h already separates them

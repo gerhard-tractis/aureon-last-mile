@@ -386,6 +386,12 @@ El chip **no renderiza nada** estando en línea y con la cola vacía — el esta
 
 `RouteReceptionHeader` queda sin referencias: su código de ruta pasa al encabezado de página y su barra de progreso a la columna izquierda, donde ahora lleva semántica `role="progressbar"` con `aria-valuenow` / `aria-valuemax`.
 
+### Nota de seguimiento — carrera debounce/Enter (post-cierre, PR #692)
+
+`ScanField`, `ReceptionScanner`, `ScannerInput` (pickup) y `BatchScanner` comparten el mismo patrón: el debounce de `useScannerAutoSubmit` y el `keydown` de Enter llaman a la misma función de envío con el mismo código, y hasta la corrección de la carrera de spec-54 (fix/spec-54-scan-double-submit-race) ninguno tenía guarda contra que ambos caminos disparen para el mismo escaneo. Los cuatro llevan ahora un `submittedRef` síncrono, re-armado sin condición en cada `handleChange`.
+
+Riesgo residual, no corregido en esa ronda porque no es una regresión de ese PR y su corrección exige tocar el contrato de `handleKeyDown` en las cuatro superficies: `handleKeyDown` sigue enviando el código leído del **estado** de React (`value`), no de un ref síncrono. En la misma ventana en la que el guard existe para proteger (el debounce dispara y su `setValue('')` aún no comprometió), si el operario sigue tipeando/escaneando *antes* de que el Enter llegue, el camino de Enter podría en principio leer un `value` truncado o de un escaneo anterior y enviar un código incorrecto. No se ha observado en producción ni en los tests — el gap es submilisegundos y el lector típico no dispara Enter tan pronto — pero la raíz es la misma inconsistencia estado-vs-ref que motivó el fix. Si aparece evidencia de códigos truncados/incorrectos llegando desde el camino de Enter, empezar por aquí.
+
 ---
 
 ## Fase 4.6 — Ruta activa del conductor (móvil) `[done]`
@@ -483,10 +489,22 @@ hacia semántica de reparto. Las omisiones concretas están en la Fase 4.6.
 El elemento dominante del mock es la tarjeta "TU TAREA AHORA": la siguiente
 tarea **de esta persona**. No es construible.
 
-`public.drivers` no tiene `user_id` ni ninguna referencia a `auth.users`, y
+> **Corrección (2026-09-08).** El párrafo de abajo decía que `public.drivers`
+> «no tiene `user_id` ni ninguna referencia a `auth.users`, y ninguna migración
+> posterior la agrega». Es falso: `drivers.user_id UUID REFERENCES
+> public.users(id) ON DELETE SET NULL` existe desde
+> `20260318000004_agent_suite_tables.sql:253-254` — anterior a este spec, no
+> posterior. El vínculo sí existe; lo que falta (índice único, poblado,
+> superficie de admin) está corregido en [spec-84](spec-84-movil-conductor-home-y-prueba-de-entrega.md#fase-1),
+> que ya no lo trata como decisión de modelo pendiente. Esta sección queda
+> `[parked]` igual — la pantalla se movió a spec-84 — pero sin la afirmación
+> falsa.
+
+~~`public.drivers` no tiene `user_id` ni ninguna referencia a `auth.users`, y
 ninguna migración posterior la agrega. Las rutas apuntan a `driver_id`, pero
 nada conecta esa fila con la cuenta que tiene el teléfono en la mano. El
-sistema no puede responder "cuál es *mi* próxima tarea".
+sistema no puede responder "cuál es *mi* próxima tarea".~~ (falso, ver
+corrección de arriba)
 
 Lo que sí se podría construir hoy:
 
@@ -499,9 +517,11 @@ Lo que sí se podría construir hoy:
 Lo que no: la tarjeta de tarea y la lista "DESPUÉS DE ESTA", que son la razón
 de ser de la pantalla.
 
-**Qué la desbloquea:** una columna `drivers.user_id` (o una tabla de asociación
-`users` ↔ `drivers`), más una superficie de administración para mantener ese
-mapeo. Es trabajo de esquema con su propio spec, no un rediseño.
+**Qué la desbloquea:** ~~una columna `drivers.user_id` (o una tabla de
+asociación `users` ↔ `drivers`)~~ — esa columna ya existe, ver corrección de
+arriba. Falta el índice único, el poblado, y una superficie de administración
+para mantener el mapeo. Es trabajo de esquema con su propio spec (spec-84
+fase 1), no un rediseño.
 
 ### `1j` — Parada y prueba de entrega: no hay dónde guardar la prueba `[parked]`
 

@@ -65,6 +65,14 @@ describe('NextManifestCard', () => {
     expect(screen.queryByText('Av. Providencia 1234, Providencia')).toBeNull();
   });
 
+  // spec-82 fase 1 (mock 5c) — the card highlighted as the driver's next
+  // stop carries a "SIGUIENTE" badge, matching the chip already built for
+  // the same state on PickupMobileNextLoadCard (mock 3h).
+  it('shows a SIGUIENTE badge', () => {
+    render(<NextManifestCard manifest={MANIFEST} index={0} onVerify={vi.fn()} />);
+    expect(screen.getByText('SIGUIENTE')).toBeInTheDocument();
+  });
+
   it('shows an unknown package total as "—" instead of reading null as zero', () => {
     render(
       <NextManifestCard

@@ -1,0 +1,101 @@
+name: Production Read-Only Query
+
+# spec-87 fase 4 — two SELECTs the agent could not run itself: it has no SSH
+# or docker access to production (production is managed Supabase, not the VPS
+# that hosts QA), but the same SUPABASE_DB_PASSWORD / SUPABASE_PROJECT_REF
+# secrets that `verify-prod-migrations` already uses to link the Supabase CLI
+# against production are enough to open a read-only psql session.
+#
+# WHY A SEPARATE WORKFLOW, NOT A STEP BOLTED ONTO deploy.yml
+# ------------------------------------------------------------
+# deploy.yml's production jobs all sit behind `approve-production` (a human
+# clicking "Review deployments") because they MUTATE production. This job
+# never does — it runs two SELECTs and prints their result — so gating it
+# behind a deploy approval would misrepresent what it does and slow down a
+# question that has nothing to do with shipping code. It gets its own
+# workflow_dispatch instead: a human still has to click "Run workflow", but
+# nothing here writes.
+#
+# WHAT IT PRINTS AND WHAT IT NEVER DOES
+# ---------------------------------------
+# Both queries are read-only (SELECT ... FROM pg_indexes / cron.job). Only
+# their result rows are echoed to the job log — never the connection string,
+# never SUPABASE_DB_PASSWORD. GitHub Actions also masks any log line that
+# contains a secret's literal value as a defense in depth, but this workflow
+# does not rely on that: PGPASSWORD is passed as an env var to psql, never
+# interpolated into a command string that gets echoed.
+#
+# Do not add a third query, an UPDATE, or a DDL statement to this file without
+# rethinking the "no approval gate" decision above — the moment this workflow
+# writes anything, it needs the same `environment: production` treatment
+# deploy.yml's mutating jobs get.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  query:
+    name: Run read-only production queries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install postgresql-client
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -yqq postgresql-client
+
+      - name: Confirm routes_one_vehicle_per_day does NOT exist (spec-87, spec-79 h5c/b1)
+        # 20260911000002 creates this index only if it finds zero conflicting
+        # (operator_id, vehicle_id, route_date) groups; 20260911000003, one
+        # migration later, drops it unconditionally regardless — the index
+        # forbade a legitimate case (one truck, two routes same day). The
+        # correct post-deploy state is ABSENCE, not presence. See spec-87
+        # fase 3/4 for the full reasoning.
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+            -c "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'routes_one_vehicle_per_day';"
+
+      - name: List cron.job (spec-88 fase 1 review question)
+        # spec-88's reviewer asked whether archive_old_audit_logs is scheduled
+        # under a role other than postgres/service_role before approving that
+        # deploy. In QA there are only two jobs, both as postgres.
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+            -c "SELECT jobid, jobname, username, active FROM cron.job;"
+
+      - name: Count packages eligible for the spec-79 loaded_route_id backfill
+        # Sizes the UPDATE inside spec79_backfill_loaded_route_id() (see
+        # 20260910000001) without running it: same FROM/WHERE shape as the
+        # function body, wrapped in a SELECT COUNT(*) instead of an UPDATE, so
+        # this step is read-only even though the function it mirrors is not.
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          psql "sslmode=require host=db.${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co port=5432 dbname=postgres user=postgres" \
+            -c "
+              SELECT COUNT(*) AS eligible_packages
+                FROM public.packages p
+                JOIN (
+                  SELECT dd.order_id, MIN(dd.route_id::text)::uuid AS route_id
+                    FROM public.dispatches dd
+                    JOIN public.routes r ON r.id = dd.route_id
+                   WHERE dd.deleted_at IS NULL
+                     AND r.deleted_at  IS NULL
+                     AND r.status IN ('draft', 'planned', 'loading', 'loaded',
+                                       'dispatched', 'in_transit', 'in_progress')
+                   GROUP BY dd.order_id
+                  HAVING COUNT(DISTINCT dd.route_id) = 1
+                ) d ON d.order_id = p.order_id
+               WHERE p.deleted_at      IS NULL
+                 AND p.loaded_at       IS NOT NULL
+                 AND p.load_inferred   = false
+                 AND p.loaded_route_id IS NULL;
+            "

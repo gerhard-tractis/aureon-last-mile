@@ -27,4 +27,13 @@ describe('CloseRouteButton', () => {
     expect(container.querySelector('.animate-spin')).not.toBeNull();
     expect(screen.getByTestId('close-route-button')).toBeDisabled();
   });
+
+  // spec-82 fase 1 (mock 5c) — the mock's literal copy is "Cerrar ruta",
+  // with no "y entregar". Only `data-testid="close-route-button"` guarded
+  // this button before, so the earlier "Cerrar ruta y entregar" copy could
+  // regress without any test noticing.
+  it('reads "Cerrar ruta", not "Cerrar ruta y entregar"', () => {
+    render(<CloseRouteButton totalVerified={1} onClose={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Cerrar ruta' })).toBeInTheDocument();
+  });
 });
