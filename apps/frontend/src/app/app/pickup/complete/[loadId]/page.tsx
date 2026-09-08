@@ -10,9 +10,11 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
-import { mapCloseManifestError } from '@/lib/pickup/closeManifestErrors';
+import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
+import { db } from '@/lib/db';
+import { enqueue } from '@/lib/offline/queue';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { toast } from 'sonner';
@@ -141,7 +143,36 @@ export default function CompletionPage() {
       // OPERATOR_SIGNATURE_REQUIRED) — map it to Spanish rather than
       // painting raw Postgres text on an all-Spanish PWA.
       console.error('Failed to complete manifest:', err);
-      toast.error(mapCloseManifestError(err));
+
+      // spec-81 fase 2, checklist item 5 — "sin conexión" y "rechazo de
+      // negocio irrecuperable" son ramas distintas, no el mismo mensaje ni
+      // la misma afordancia. Offline: encolar la firma capturada y dejar al
+      // operario seguir — es el caso normal en este muelle, y
+      // `useOfflineQueue` la drenará al volver la señal. Rechazo de
+      // negocio: detenerse, no encolar algo que el servidor puede seguir
+      // rechazando para siempre, y re-habilitar el botón para que el
+      // operario corrija o pida ayuda.
+      const classified = classifyCloseManifestError(err);
+      if (classified.kind === 'offline') {
+        await enqueue(db, {
+          operatorId,
+          manifestId,
+          type: 'close_manifest',
+          payload: {
+            manifestId,
+            signatures: {
+              operator_signature: operatorSignature,
+              client_signature: clientSignature,
+              client_name: clientName || null,
+            },
+          },
+        });
+        toast.success(classified.message);
+        router.push('/app/pickup');
+        return;
+      }
+
+      toast.error(classified.message);
       setIsSubmitting(false);
     }
   };
