@@ -266,6 +266,32 @@ assert_exit 0 "undeclared Archivos but a real branch diff IS judgeable (not refu
   "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2" \
   "docs/specs/spec-92-sin-archivos.md#Fase 1@feat/spec-92-fase-1"
 
+# ── Regression (found running against the real repo, not a fixture): a
+# resolveSpecifier candidate with no extension can match a REAL DIRECTORY on
+# disk when it isn't in either ref's git tree (`readWorkingTree` fallback).
+# `existsSync` is true for directories too, and `readFileSync` on one throws
+# EISDIR — crashing the whole run instead of correctly treating it as "not a
+# file, try the next candidate". apps/frontend/src/lib/offline/ is exactly
+# such a directory here.
+mkdir -p "$REPO/apps/frontend/src/lib/offline/decoy-dir"
+cat > "$REPO/apps/frontend/src/lib/offline/decoy-dir/leaf.ts" <<'TS'
+export const leaf = true;
+TS
+cat > "$REPO/docs/specs/spec-93-x.md" <<'MD'
+### Fase 1 — importa un directorio sin index `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/imports-a-bare-dir.ts`
+MD
+cat > "$REPO/apps/frontend/src/lib/offline/imports-a-bare-dir.ts" <<'TS'
+import { leaf } from './decoy-dir';
+TS
+(cd "$REPO" && git add -A && git commit -q -m "spec-93: a specifier resolving to a real directory with no index")
+
+assert_exit 0 "a specifier resolving to a real (uncommitted) directory does not crash (EISDIR regression)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-93-x.md#Fase 1" \
+  "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
