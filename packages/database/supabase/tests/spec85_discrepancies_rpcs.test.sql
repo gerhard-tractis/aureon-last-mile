@@ -450,6 +450,12 @@ BEGIN
       IF v_sqlstate <> '42501' THEN
         RAISE EXCEPTION 'TEST 4 FAILED: expected ERRCODE 42501 for cross-tenant manifest, got % (%)', v_sqlstate, SQLERRM;
       END IF;
+      -- B-1 (re-review): pin the sentinel prefix, not just the ERRCODE — a
+      -- rewrite to Spanish (or any other text) leaves the SQLSTATE intact
+      -- while breaking the frontend's startsWith('MANIFEST_NOT_FOUND:').
+      IF SQLERRM NOT LIKE 'MANIFEST_NOT_FOUND:%' THEN
+        RAISE EXCEPTION 'TEST 4 FAILED: expected MANIFEST_NOT_FOUND: sentinel prefix, got %', SQLERRM;
+      END IF;
       RAISE NOTICE '✓ TEST 4 PASSED: cross-tenant manifest rejected with 42501 (%)', SQLERRM;
   END;
 
@@ -488,6 +494,10 @@ BEGIN
       IF v_sqlstate <> '42501' THEN
         RAISE EXCEPTION 'TEST 4b FAILED: expected ERRCODE 42501 for cross-tenant route_reception, got % (%)', v_sqlstate, SQLERRM;
       END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'ROUTE_RECEPTION_NOT_FOUND:%' THEN
+        RAISE EXCEPTION 'TEST 4b FAILED: expected ROUTE_RECEPTION_NOT_FOUND: sentinel prefix, got %', SQLERRM;
+      END IF;
       RAISE NOTICE '✓ TEST 4b PASSED: cross-tenant route_reception rejected with 42501 (%)', SQLERRM;
   END;
 
@@ -524,6 +534,10 @@ BEGIN
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
       IF v_sqlstate <> '42501' THEN
         RAISE EXCEPTION 'TEST 5 FAILED: expected ERRCODE 42501 for cross-tenant package_id, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'PACKAGE_NOT_FOUND:%' THEN
+        RAISE EXCEPTION 'TEST 5 FAILED: expected PACKAGE_NOT_FOUND: sentinel prefix, got %', SQLERRM;
       END IF;
       RAISE NOTICE '✓ TEST 5 PASSED: cross-tenant package_id rejected with 42501 (%)', SQLERRM;
   END;
@@ -609,6 +623,10 @@ BEGIN
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
       IF v_sqlstate <> '42501' THEN
         RAISE EXCEPTION 'TEST 5c FAILED: expected ERRCODE 42501 for cross-tenant package_id on reception, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'PACKAGE_NOT_FOUND:%' THEN
+        RAISE EXCEPTION 'TEST 5c FAILED: expected PACKAGE_NOT_FOUND: sentinel prefix, got %', SQLERRM;
       END IF;
       RAISE NOTICE '✓ TEST 5c PASSED: cross-tenant package_id rejected on reception branch with 42501 (%)', SQLERRM;
   END;
@@ -740,6 +758,10 @@ BEGIN
       IF v_sqlstate <> 'P0001' THEN
         RAISE EXCEPTION 'TEST 8 FAILED: expected ERRCODE P0001 for p_status = open (enum validation, not the reopen guard), got % (%)', v_sqlstate, SQLERRM;
       END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'INVALID_STATUS:%' THEN
+        RAISE EXCEPTION 'TEST 8 FAILED: expected INVALID_STATUS: sentinel prefix, got %', SQLERRM;
+      END IF;
       RAISE NOTICE '✓ TEST 8 PASSED (a): p_status = open rejected by enum validation with P0001, on a resolved row (%)', SQLERRM;
   END;
 
@@ -761,6 +783,10 @@ BEGIN
         -- offline retry queue (spec-81).
         IF v_sqlstate <> '23505' THEN
           RAISE EXCEPTION 'TEST 8 FAILED: expected ERRCODE 23505 for resolved -> lost, got % (%)', v_sqlstate, SQLERRM;
+        END IF;
+        -- B-1 (re-review): pin the sentinel prefix.
+        IF SQLERRM NOT LIKE 'DISCREPANCY_ALREADY_RESOLVED:%' THEN
+          RAISE EXCEPTION 'TEST 8 FAILED: expected DISCREPANCY_ALREADY_RESOLVED: sentinel prefix, got %', SQLERRM;
         END IF;
       END;
       RAISE NOTICE '✓ TEST 8 PASSED (b): resolved -> lost rejected with 23505 (%)', SQLERRM;
@@ -817,6 +843,10 @@ BEGIN
       IF v_sqlstate <> 'P0001' THEN
         RAISE EXCEPTION 'TEST 8c FAILED: expected ERRCODE P0001 for p_status = open on an open row, got % (%)', v_sqlstate, SQLERRM;
       END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'INVALID_STATUS:%' THEN
+        RAISE EXCEPTION 'TEST 8c FAILED: expected INVALID_STATUS: sentinel prefix, got %', SQLERRM;
+      END IF;
       RAISE NOTICE '✓ TEST 8c PASSED: p_status = open on an open row rejected by enum validation with P0001 (%)', SQLERRM;
   END;
 
@@ -871,6 +901,10 @@ BEGIN
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
       IF v_sqlstate <> '23505' THEN
         RAISE EXCEPTION 'TEST 9 FAILED: expected ERRCODE 23505 for reopen rejection, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'DISCREPANCY_ALREADY_RESOLVED:%' THEN
+        RAISE EXCEPTION 'TEST 9 FAILED: expected DISCREPANCY_ALREADY_RESOLVED: sentinel prefix, got %', SQLERRM;
       END IF;
       RAISE NOTICE '✓ TEST 9 PASSED: reopen rejection raises 23505 (%)', SQLERRM;
   END;
@@ -966,6 +1000,10 @@ BEGIN
       GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
       IF v_sqlstate <> '42501' THEN
         RAISE EXCEPTION 'TEST 10 FAILED: expected ERRCODE 42501 for cross-tenant resolve, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'DISCREPANCY_NOT_FOUND:%' THEN
+        RAISE EXCEPTION 'TEST 10 FAILED: expected DISCREPANCY_NOT_FOUND: sentinel prefix, got %', SQLERRM;
       END IF;
       RAISE NOTICE '✓ TEST 10 PASSED: cross-tenant resolve rejected with 42501 (%)', SQLERRM;
   END;
@@ -1213,6 +1251,10 @@ BEGIN
       IF v_sqlstate <> 'P0001' THEN
         RAISE EXCEPTION 'TEST 13 FAILED: expected clean ERRCODE P0001 for p_status = NULL, got % (%)', v_sqlstate, SQLERRM;
       END IF;
+      -- B-1 (re-review): pin the sentinel prefix.
+      IF SQLERRM NOT LIKE 'INVALID_STATUS:%' THEN
+        RAISE EXCEPTION 'TEST 13 FAILED: expected INVALID_STATUS: sentinel prefix, got %', SQLERRM;
+      END IF;
       RAISE NOTICE '✓ TEST 13 PASSED: p_status = NULL rejected cleanly with P0001 (%)', SQLERRM;
   END;
 
@@ -1393,5 +1435,373 @@ BEGIN
 END $$;
 
 ROLLBACK TO test_16;
+
+-- =============================================================================
+-- TEST 17 (B-1, ronda 3) — record_discrepancies rejects p_items that is valid
+-- JSON but not a JSON array (e.g. a bare object), with the sentinel-prefixed
+-- P0001 (mig:67). This is also the m6 (ronda 2) guard: mutating this RAISE to
+-- NULL does not just survive silently — jsonb_array_length(p_items) at mig:100
+-- then blows up with a raw 22023 (invalid_parameter_value) instead of the
+-- P0001 the error-contract table promises, because a JSON object has no
+-- array length.
+-- =============================================================================
+SAVEPOINT test_17;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'pickup'::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      '{"kind":"missing"}'::JSONB -- object, not array
+    );
+    RAISE EXCEPTION 'TEST 17 FAILED: record_discrepancies accepted p_items that is not a JSON array';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 17 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 17 FAILED: expected ERRCODE P0001 for non-array p_items, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'INVALID_ITEMS:%' THEN
+        RAISE EXCEPTION 'TEST 17 FAILED: expected INVALID_ITEMS: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 17 PASSED: non-array p_items rejected with INVALID_ITEMS: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_17;
+
+-- =============================================================================
+-- TEST 18 (B-1, ronda 3) — record_discrepancies rejects p_operation_type =
+-- NULL with the sentinel-prefixed UNKNOWN_OPERATION_TYPE (mig:91). The enum
+-- type only has 'pickup'/'reception' as literal values, so NULL is the only
+-- value PostgREST can send that reaches the ELSE branch: `p_operation_type =
+-- 'pickup'` and `= 'reception'` both evaluate to NULL (not TRUE) when the
+-- operand itself is NULL, and PL/pgSQL treats a NULL IF condition as false.
+-- =============================================================================
+SAVEPOINT test_18;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      NULL::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      jsonb_build_array(jsonb_build_object('kind', 'unexpected', 'barcode', 'X'))
+    );
+    RAISE EXCEPTION 'TEST 18 FAILED: record_discrepancies accepted p_operation_type = NULL';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 18 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 18 FAILED: expected ERRCODE P0001 for p_operation_type = NULL, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'UNKNOWN_OPERATION_TYPE:%' THEN
+        RAISE EXCEPTION 'TEST 18 FAILED: expected UNKNOWN_OPERATION_TYPE: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 18 PASSED: p_operation_type = NULL rejected with UNKNOWN_OPERATION_TYPE: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_18;
+
+-- =============================================================================
+-- TEST 19 (B-1, ronda 3) — record_discrepancies rejects a 'missing' item with
+-- no package_id, with the sentinel-prefixed MISSING_REQUIRES_PACKAGE_ID
+-- (mig:114).
+-- =============================================================================
+SAVEPOINT test_19;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'pickup'::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      jsonb_build_array(jsonb_build_object('kind', 'missing', 'note', 'sin package_id'))
+    );
+    RAISE EXCEPTION 'TEST 19 FAILED: record_discrepancies accepted kind=missing with no package_id';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 19 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: expected ERRCODE P0001 for kind=missing without package_id, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'MISSING_REQUIRES_PACKAGE_ID:%' THEN
+        RAISE EXCEPTION 'TEST 19 FAILED: expected MISSING_REQUIRES_PACKAGE_ID: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 19 PASSED: kind=missing without package_id rejected with MISSING_REQUIRES_PACKAGE_ID: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_19;
+
+-- =============================================================================
+-- TEST 20 (B-1, ronda 3) — record_discrepancies rejects an 'unexpected' item
+-- with no barcode, with the sentinel-prefixed UNEXPECTED_REQUIRES_BARCODE
+-- (mig:154).
+-- =============================================================================
+SAVEPOINT test_20;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'pickup'::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      jsonb_build_array(jsonb_build_object('kind', 'unexpected', 'note', 'sin barcode'))
+    );
+    RAISE EXCEPTION 'TEST 20 FAILED: record_discrepancies accepted kind=unexpected with no barcode';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 20 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 20 FAILED: expected ERRCODE P0001 for kind=unexpected without barcode, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'UNEXPECTED_REQUIRES_BARCODE:%' THEN
+        RAISE EXCEPTION 'TEST 20 FAILED: expected UNEXPECTED_REQUIRES_BARCODE: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 20 PASSED: kind=unexpected without barcode rejected with UNEXPECTED_REQUIRES_BARCODE: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_20;
+
+-- =============================================================================
+-- TEST 21 (B-1, ronda 3) — record_discrepancies rejects an item whose kind is
+-- neither 'missing' nor 'unexpected', with the sentinel-prefixed UNKNOWN_KIND
+-- (mig:182).
+-- =============================================================================
+SAVEPOINT test_21;
+
+DO $$
+DECLARE
+  v_sqlstate TEXT;
+BEGIN
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.record_discrepancies(
+      'pickup'::public.discrepancy_operation_enum,
+      '44440001-0000-0000-0000-000000000852'::UUID,
+      jsonb_build_array(jsonb_build_object('kind', 'bogus', 'barcode', 'X'))
+    );
+    RAISE EXCEPTION 'TEST 21 FAILED: record_discrepancies accepted an unknown kind';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 21 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: expected ERRCODE P0001 for kind=bogus, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'UNKNOWN_KIND:%' THEN
+        RAISE EXCEPTION 'TEST 21 FAILED: expected UNKNOWN_KIND: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 21 PASSED: kind=bogus rejected with UNKNOWN_KIND: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_21;
+
+-- =============================================================================
+-- TEST 22 (B-2, ronda 3) — resolve_discrepancy rejects a whitespace-only
+-- p_resolution on an OPEN row with the sentinel-prefixed RESOLUTION_REQUIRED
+-- (mig:258), and — the actual probative point, same pattern as TEST 8c —
+-- leaves the row untouched. Nothing in the schema backs this up: the only
+-- CHECK constraint is discrepancy_resolved_has_when (status='open' OR
+-- resolved_at IS NOT NULL), which says nothing about `resolution` being
+-- non-blank. If this IF is ever loosened or reordered (e.g. moved after the
+-- `SELECT ... FOR UPDATE` to "fail on not-found first"), the row would end up
+-- status='lost', resolution='   ', resolved_at=NOW(): an indemnifiable loss
+-- with no written reason — the exact gap spec-85-discrepancias.md:382-386
+-- documents as a closed decision.
+-- =============================================================================
+SAVEPOINT test_22;
+
+DO $$
+DECLARE
+  v_id          UUID;
+  v_sqlstate    TEXT;
+  v_status      public.discrepancy_status_enum;
+  v_resolution  TEXT;
+  v_resolved_at TIMESTAMPTZ;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar sin motivo')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, '   ');
+    RAISE EXCEPTION 'TEST 22 FAILED: resolve_discrepancy accepted a whitespace-only p_resolution';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 22 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> 'P0001' THEN
+        RAISE EXCEPTION 'TEST 22 FAILED: expected ERRCODE P0001 for whitespace-only p_resolution, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'RESOLUTION_REQUIRED:%' THEN
+        RAISE EXCEPTION 'TEST 22 FAILED: expected RESOLUTION_REQUIRED: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 22 PASSED: whitespace-only p_resolution rejected with RESOLUTION_REQUIRED: P0001 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+
+  SELECT status, resolution, resolved_at INTO v_status, v_resolution, v_resolved_at
+    FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'open' THEN
+    RAISE EXCEPTION 'TEST 22 FAILED: row status changed despite rejection, got %', v_status;
+  END IF;
+  IF v_resolution IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 22 FAILED: resolution got populated on a rejected call, got %', v_resolution;
+  END IF;
+  IF v_resolved_at IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 22 FAILED: resolved_at got populated on a rejected call';
+  END IF;
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_22;
+
+-- =============================================================================
+-- TEST 23 (B-3, ronda 3) — get_discrepancies' p_operation_type filter
+-- actually discriminates. TEST 11's fixture was all-'pickup', so filtering by
+-- 'pickup' filtered nothing — a mutant replacing the whole predicate with
+-- TRUE survived 29/29. Adds a 'reception' row alongside operator A's pickup
+-- rows and asserts it is excluded when filtering p_operation_type='pickup',
+-- and present when filtering p_operation_type='reception'. This is the exact
+-- shape spec-86 fase 3 calls with (p_operation_type := 'reception'): a Hub
+-- operator's Recepción panel must not surface a pickup-side discrepancy.
+-- =============================================================================
+SAVEPOINT test_23;
+
+DO $$
+DECLARE
+  v_pickup_count    INT;
+  v_reception_count INT;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'abierta pickup');
+
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, route_reception_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'reception',
+          '33330002-0000-0000-0000-000000000852', '66660001-0000-0000-0000-000000000852', 'abierta reception');
+
+  PERFORM pg_temp.as_operator_a();
+
+  SELECT COUNT(*) INTO v_pickup_count
+    FROM public.get_discrepancies(p_operation_type := 'pickup'::public.discrepancy_operation_enum);
+
+  SELECT COUNT(*) INTO v_reception_count
+    FROM public.get_discrepancies(p_operation_type := 'reception'::public.discrepancy_operation_enum);
+
+  RESET ROLE;
+
+  IF v_pickup_count <> 1 THEN
+    RAISE EXCEPTION 'TEST 23 FAILED: p_operation_type=pickup returned % rows, expected 1 (the reception row leaked in)', v_pickup_count;
+  END IF;
+  IF v_reception_count <> 1 THEN
+    RAISE EXCEPTION 'TEST 23 FAILED: p_operation_type=reception returned % rows, expected 1', v_reception_count;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 23 PASSED: get_discrepancies'' p_operation_type filter discriminates pickup from reception';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_23;
+
+-- =============================================================================
+-- TEST 24 (m7, ronda 3) — get_discrepancies orders by detected_at DESC
+-- (mig:343). spec-86 fase 3 reads "how long has this been open" off this
+-- ordering; mutating ASC/DESC survived 29/29 with no test pinning direction.
+-- =============================================================================
+SAVEPOINT test_24;
+
+DO $$
+DECLARE
+  v_id_old UUID;
+  v_id_new UUID;
+  v_first  UUID;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note, detected_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'vieja', NOW() - INTERVAL '2 days')
+  RETURNING id INTO v_id_old;
+
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note, detected_at)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'nueva', NOW())
+  RETURNING id INTO v_id_new;
+
+  PERFORM pg_temp.as_operator_a();
+
+  SELECT id INTO v_first
+    FROM public.get_discrepancies(p_operation_type := 'pickup'::public.discrepancy_operation_enum)
+   LIMIT 1;
+
+  RESET ROLE;
+
+  IF v_first <> v_id_new THEN
+    RAISE EXCEPTION 'TEST 24 FAILED: expected the most recently detected row first (DESC), got % instead of %', v_first, v_id_new;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 24 PASSED: get_discrepancies orders by detected_at DESC';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_24;
 
 ROLLBACK;
