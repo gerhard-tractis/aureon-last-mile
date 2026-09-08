@@ -89,7 +89,37 @@ Las lecturas. Un manifiesto que nunca se descargó no se puede escanear sin red,
 | **4 — Chip de sync** | `ConnectionStatusBanner` pasa a ser el indicador del handoff |
 | **5 — Fotos** | Blobs en la cola, subida diferida al bucket `manifests` |
 
-### Fase 1 — Almacén y contrato `[in_progress]`
+### Fase 1 — Almacén y contrato `[done]`
+
+> Implementado por: `implementer` con TDD, **cinco rondas**. Rama
+> `feat/spec-81-fase-1-almacen-cola`, SHA final `d9f03db`, PR #661.
+> Review: `reviewer` adversarial, cuatro rondas — la última **post-merge**, porque
+> la ronda 5 entró con auto-merge antes de revisarse. Aprobada sin revert.
+> Lo que cambiaron los reviews: **convergió sobre `lib/db.ts` con un `version(2)`**
+> en vez de crear una tercera base IndexedDB (la premisa del `Goal` de este spec
+> era falsa: `hooks/useSyncQueue.ts` ya existía y ya alimentaba el contador de la
+> pantalla de escaneo de Recogida); `markFailed` pasó a `.modify()` atómico porque
+> dos concurrentes dejaban `retryCount = 1`; el enum ganó `sending` y `dead`, y con
+> ellos `reclaimStale` — sin salida, una pestaña muerta a mitad de envío dejaba el
+> badge en «COLA 0» con el escaneo sin enviar; y `claimPending` pasó a devolver un
+> token de propiedad, porque un drenador zombi liberaba la reclamación de otro con
+> la petición en vuelo.
+> Verificación por mutación independiente de cada guard: cada mutante mata
+> exactamente el test que lo reclama. 42/42 en `queue.test.ts`, suite completa
+> 5922 tests, `tsc` y `eslint` limpios.
+> QA: **n/a por capa.** Fase 1 es lógica pura sobre IndexedDB — sin UI, sin red y
+> sin ningún llamador todavía; no hay nada que un humano pueda ejercitar en QA. El
+> equivalente de esta capa es la suite unitaria más el mutation-test de arriba. El
+> primer QA real de la cola llega con el drenador de fase 2.
+> Downstream: revisado spec-82 — sin cambios. **Sí cambió este mismo spec**: el
+> `Goal` se reescribió (su grep de «cero resultados» era falso) y el checklist de
+> fase 2 recogió tres ítems nuevos, además del de `mapCloseManifestError` que vino
+> de spec-80 fase 1.
+> **Tres residuales abiertos, todos sobre superficie sin llamador**, trasladados al
+> checklist de fase 2: el token es una marca de milisegundo y no un nonce, así que
+> dos reclamaciones sucesivas de la misma entrada en el mismo ms lo repiten;
+> `markFailed` sin token pisa `lastError` y `retryCount` de entradas ya terminales;
+> y `reclaimStale` no invalida el token al devolver la entrada a `pending`.
 
 **Archivos:** `apps/frontend/src/lib/db.ts` (tabla `pickup_queue`, version 2 — **no** una base separada, ver "Decisiones de diseño"), `apps/frontend/src/lib/offline/queue.ts`, `queue.test.ts`, `apps/frontend/src/hooks/useSyncQueue.ts` (cuenta también `pickup_queue`)
 
@@ -150,6 +180,10 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 - [ ] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
 - [ ] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
 - [ ] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
+- [ ] **El token deja de ser una marca de milisegundo y pasa a ser un nonce** (`crypto.randomUUID()` en un campo `claimToken` propio, o `${now}#${contador}`). Hoy `claimPending` usa `new Date().toISOString()`, así que **dos reclamaciones sucesivas de la misma entrada dentro del mismo ms producen el mismo token** y el guard vuelve a pasar: es el bug M1 otra vez, dentro de una ventana de 1 ms. Y no es hipotético — el docstring de `markFailed` señala que sin señal `fetch` rechaza casi al instante, así que claim y fallo caen en el mismo ms **como caso común**. Verificado: `claim → markFailed(t) → claim → markFailed(t)` deja `retryCount 2` y `pending`, cuando lo correcto es `retryCount 1` y `sending`. Mitigado si el drenador respeta `nextAttemptAt` con retroceso, pero no conviene depender de eso.
+- [ ] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
+- [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
+- [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
 
 ### Fase 3 — Idempotencia en el servidor `[pending]`
 
