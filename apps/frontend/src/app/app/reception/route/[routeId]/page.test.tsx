@@ -276,6 +276,20 @@ describe('RouteReceptionPage', () => {
     // Gap fix — error/null below lg used to fall through to the desktop
     // centred card. The mobile card must state the failure and always offer
     // a working way back to /app/reception with a touch target >= 44px.
+    // B1 (spec-81, ronda 4 de review) — the mobile session's own "escaneos
+    // en cola" banner talks about Recepción's scan_queue specifically. Fed
+    // the combined `queuedCount` it would show a driver's leftover
+    // Recogida pickup_queue entries as if they were Recepción scans, on a
+    // session with zero of its own queued. It must read scanQueueCount.
+    it('shows scanQueueCount in its own queued-scans banner, not the combined queuedCount', async () => {
+      render(<RouteReceptionPage />);
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getByText('1', { selector: 'span.font-mono' })).toBeInTheDocument();
+      expect(screen.queryByText('4', { selector: 'span.font-mono' })).not.toBeInTheDocument();
+    });
+
     it('renders a mobile-shaped error card with a working way back, not the desktop card', () => {
       mockSnapshot.mockReturnValue({
         data: undefined,
