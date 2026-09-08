@@ -339,6 +339,8 @@ Rechaza: manifiesto de otro operador, manifiesto **ya firmado** (`signature_oper
 
 ### Fase 1b — `close_manifest`: ACL heredado sin revocar y dos `RAISE` sin prefijo `[in_progress]`
 
+**Archivos:** `packages/database/supabase/migrations/20260913000004_spec80_close_manifest_acl_fix.sql`, `packages/database/supabase/tests/spec80_close_manifest_acl.test.sql`, `packages/database/supabase/tests/spec80_close_manifest.sql`, `apps/frontend/src/lib/pickup/closeManifestErrors.ts`
+
 > Implementado por: sesión en solitario, TDD manual (test pgTAP escrito y
 > corrido en rojo antes de la migración). Rama
 > `feat/spec-80-fase-1b-close-manifest-acl`, SHA `f11ea7a`, PR #669
@@ -568,6 +570,8 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > Review y QA pendientes — no se marca `[done]` aquí.
 
 ### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
+
+**Archivos:** `apps/frontend/src/components/pickup/PickupMobileActiveRoute.tsx`, `+ test` (el diseño exacto de dónde vive la entrada está sin decidir — ver el primer punto de abajo; puede sumar un fichero de pantalla hermana no nombrado aquí)
 
 > El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
 > tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
