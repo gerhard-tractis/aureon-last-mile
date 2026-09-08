@@ -92,4 +92,54 @@ describe('classifyCloseManifestError (spec-81 fase 2 — checklist item 5)', () 
     });
     expect(offline.message).not.toBe(business.message);
   });
+
+  // B1, review round 1 of PR #679: this is the shape supabase.rpc() ACTUALLY
+  // resolves with when there's no connectivity — postgrest-js@1.21.4
+  // (PostgrestBuilder.ts:218-229) catches the fetch rejection and resolves
+  // (never rejects) with a plain object carrying an EMPTY `code`, not a raw
+  // TypeError. `complete/[loadId]/page.tsx:127` does `if (error) throw error`
+  // on that plain object, so this — not `new TypeError(...)` — is the form
+  // classifyCloseManifestError must recognize.
+  it('classifies the real postgrest-js network-fallback shape (code: "") as offline, not business', () => {
+    const result = classifyCloseManifestError({
+      message: 'TypeError: Failed to fetch',
+      details: 'TypeError: Failed to fetch\n    at fetch (...)',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('classifies a Firefox-shaped network-fallback message (code: "") as offline', () => {
+    const result = classifyCloseManifestError({
+      message: 'TypeError: NetworkError when attempting to fetch resource.',
+      details: '',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('classifies a Safari-shaped network-fallback message (code: "") as offline', () => {
+    const result = classifyCloseManifestError({
+      message: 'TypeError: Load failed',
+      details: '',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('offline');
+  });
+
+  it('does not classify an empty-code error with no fetch/network wording as offline', () => {
+    // Guards against widening the empty-code branch into a catch-all: an
+    // empty `code` alone isn't sufficient, the message must still look like
+    // the fetch-rejection shape.
+    const result = classifyCloseManifestError({
+      message: 'something else entirely',
+      details: '',
+      hint: '',
+      code: '',
+    });
+    expect(result.kind).toBe('business');
+  });
 });
