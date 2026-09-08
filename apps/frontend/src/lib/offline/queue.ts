@@ -37,6 +37,16 @@ export interface EnqueueInput {
 }
 
 /**
+ * m3, ronda 1 de review del PR #679 — "Riesgos" declara este tope vigente
+ * desde fase 2: encolar por encima de 500 entradas sin confirmar
+ * (`status !== "sent"`) por operador debe rechazarse con un error explícito
+ * en vez de fallar en silencio contra la cuota real de IndexedDB del
+ * navegador. `sent` no cuenta porque `purgeConfirmed` las borra tras cada
+ * drenado exitoso — son transitorias, no acumulación real.
+ */
+const MAX_UNCONFIRMED_ENTRIES_PER_OPERATOR = 500;
+
+/**
  * Encola una operación. Genera el `client_operation_id` (UUID v4) una única
  * vez, aquí. Ninguna otra función de este módulo lo toca — un reintento
  * (`markFailed` seguido de un nuevo intento de envío en fase 2) reutiliza
@@ -46,6 +56,17 @@ export async function enqueue(
   db: PickupQueueStore,
   input: EnqueueInput,
 ): Promise<PickupQueueEntry> {
+  const unconfirmedCount = await db.pickup_queue
+    .where("operatorId")
+    .equals(input.operatorId)
+    .and((entry) => entry.status !== "sent")
+    .count();
+  if (unconfirmedCount >= MAX_UNCONFIRMED_ENTRIES_PER_OPERATOR) {
+    throw new Error(
+      `recogida offline queue: cola llena (${MAX_UNCONFIRMED_ENTRIES_PER_OPERATOR} entradas sin confirmar) para este operador — no se puede encolar más hasta que el drenado confirme o descarte alguna`,
+    );
+  }
+
   const id = await db.pickup_queue.add({
     clientOperationId: crypto.randomUUID(),
     operatorId: input.operatorId,

@@ -114,6 +114,92 @@ describe("recogida offline queue", () => {
 
       vi.useRealTimers();
     });
+
+    // m3, ronda 1 de review del PR #679 — "Riesgos" declara este tope
+    // vigente desde fase 2 ("encolar por encima de ese número debe
+    // rechazarse con un error explícito en vez de fallar en silencio contra
+    // la cuota real del navegador"), pero `enqueue` no lo comprobaba: el
+    // spec afirmaba algo que el código no hacía.
+    it("rejects enqueue past 500 unconfirmed (non-sent) entries for the same operator", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `seed-${i}`,
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `SEED-${i}` },
+          status: "pending",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "ONE-TOO-MANY" },
+        }),
+      ).rejects.toThrow(/500|quota|cola llena/i);
+    });
+
+    it("does not count sent (purged-eligible) entries against the 500 cap", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `sent-${i}`,
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `SENT-${i}` },
+          status: "sent",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "STILL-FINE" },
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it("does not count another operator's entries against this operator's cap", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `other-op-${i}`,
+          operatorId: OPERATOR_B,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `OTHER-${i}` },
+          status: "pending",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "STILL-FINE" },
+        }),
+      ).resolves.toBeDefined();
+    });
   });
 
   describe("client_operation_id survives retry", () => {
