@@ -237,6 +237,13 @@ describe("recogida offline queue", () => {
       // this test exists to allow. What actually distinguishes "indexed
       // lookup" from "table scan" is whether a full-collection method ran
       // at all — assert that negative instead.
+      //
+      // N3 (ronda 5 de review) — these three are not an enumeration of
+      // "the ways someone might scan the table"; they are Dexie's own
+      // bottleneck. A fourth path (`toArray()` + an in-memory filter) also
+      // dies against this assertion, because Dexie implements
+      // `Table.toArray()` as `this.toCollection().toArray()` — so
+      // `toCollectionSpy` catches it too, without a fourth spy.
       const filterSpy = vi.spyOn(db.pickup_queue, "filter");
       const toCollectionSpy = vi.spyOn(db.pickup_queue, "toCollection");
       const orderBySpy = vi.spyOn(db.pickup_queue, "orderBy");
@@ -633,6 +640,34 @@ describe("recogida offline queue", () => {
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("pending");
     });
+
+    // m3 (ronda 5 de review) — el token no era de un solo uso: markFailed no
+    // lo invalidaba, así que un replay de la misma respuesta de red (mismo
+    // token, mismo ms — el caso común: `fetch` sin señal rechaza casi al
+    // instante) volvía a pasar el guard y quemaba presupuesto de reintentos
+    // dos veces por un único fallo real.
+    it("m3 — a replayed token does not increment retryCount twice", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      await markFailed(db, entry.id!, "network error", token!);
+      // Replay of the same failure report, still carrying the same token —
+      // by now the entry is back to `pending`, not `sending`.
+      await markFailed(db, entry.id!, "network error", token!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.retryCount).toBe(1);
+
+      vi.useRealTimers();
+    });
   });
 
   describe("markSent (M1 — a stale claim cannot confirm a live one's in-flight send)", () => {
@@ -692,6 +727,67 @@ describe("recogida offline queue", () => {
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
     });
+
+    // m4 (ronda 5 de review) — markSent devolvía void tanto si confirmó como
+    // si el token había caducado, así que un drenador no podía saber si su
+    // 200 se registró antes de llamar purgeConfirmed. Devuelve el count real
+    // de `.modify()`.
+    it("m4 — returns 1 when it actually confirmed the entry", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      const result = await markSent(db, entry.id!, token!);
+
+      expect(result).toBe(1);
+    });
+
+    it("m4 — returns 0 when the token no longer matches (nothing confirmed)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const staleToken = await claimPending(db, entry.id!);
+
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+      await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
+      await claimPending(db, entry.id!);
+
+      const result = await markSent(db, entry.id!, staleToken!);
+
+      expect(result).toBe(0);
+
+      vi.useRealTimers();
+    });
+
+    // m5 (ronda 5 de review) — asimetría inversa a H3, sin test hasta ahora:
+    // markSent no tenía guard contra resucitar una entrada ya `dead`. Un 200
+    // tardío que llega después de que la entrada ya se dio por irrecuperable
+    // no puede marcarla enviada — reabriría algo que ya se decidió muerto.
+    it("m5 — never marks sent an already dead-lettered entry", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE");
+
+      const result = await markSent(db, entry.id!);
+
+      expect(result).toBe(0);
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("dead");
+    });
   });
 
   describe("markDead (B3 — terminal state, no lying and no silent loss)", () => {
@@ -712,6 +808,75 @@ describe("recogida offline queue", () => {
 
       const pending = await listPending(db, OPERATOR_A);
       expect(pending).toHaveLength(0);
+    });
+
+    // B1 (ronda 5 de review) — markDead era el único de los tres escritores
+    // terminales (markSent, markFailed, markDead) sin guard de token. Mismo
+    // escenario que el M1 de markFailed/markSent, con el tercer escritor:
+    // drenador A reclama, se cuelga; reclaimStale lo libera; drenador B
+    // reclama y está enviando de verdad; el 422 tardío de A llega y no puede
+    // matar la reclamación viva de B.
+    it("a stale claimant's markDead does not kill a live claimant's reclamation", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      const staleToken = await claimPending(db, entry.id!);
+      expect(staleToken).not.toBeNull();
+
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+      await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
+
+      const liveToken = await claimPending(db, entry.id!);
+      expect(liveToken).not.toBeNull();
+      expect(liveToken).not.toBe(staleToken);
+
+      await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE", staleToken!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+      expect(stored?.lastAttemptAt).toBe(liveToken);
+
+      vi.useRealTimers();
+    });
+
+    it("a matching token still marks the entry dead as before", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE", token!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("dead");
+    });
+
+    // m5 (ronda 5 de review) — asimetría inversa a H3, sin test hasta ahora:
+    // markDead no tenía guard contra sobrescribir una entrada ya `sent`. Un
+    // rechazo de negocio tardío que llega después de que el envío real ya se
+    // confirmó no puede convertir ese éxito en un fallo permanente.
+    it("m5 — never dead-letters an already-confirmed (sent) entry", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      await markSent(db, entry.id!);
+
+      await markDead(db, entry.id!, "late rejection after confirmation");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sent");
     });
   });
 

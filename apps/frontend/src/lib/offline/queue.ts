@@ -120,16 +120,28 @@ export async function listPending(
  * segundo, que sigue en curso. Sin `claimedAt` se comporta como antes —
  * necesario porque `claimPending` no es la única vía de `pending` a
  * `sending` para código que aún no rastrea el token.
+ *
+ * También es un no-op si la entrada ya está `dead` (m5, ronda 5 de review) —
+ * un 200 tardío no puede reabrir algo que ya se decidió irrecuperable, la
+ * misma asimetría que H3 cierra del lado de `markFailed`.
+ *
+ * Devuelve el `count` real de `.modify()` (0 ó 1) — no `void` (m4, ronda 5 de
+ * review). Sin esto un drenador que encadene `markSent` con `purgeConfirmed`
+ * no puede saber si su 200 se registró de verdad antes de purgar.
  */
 export async function markSent(
   db: PickupQueueStore,
   id: number,
   claimedAt?: string,
-): Promise<void> {
-  await db.pickup_queue
+): Promise<number> {
+  return db.pickup_queue
     .where(":id")
     .equals(id)
-    .and((entry) => claimedAt === undefined || entry.lastAttemptAt === claimedAt)
+    .and(
+      (entry) =>
+        (claimedAt === undefined || entry.lastAttemptAt === claimedAt) &&
+        entry.status !== "dead",
+    )
     .modify({ status: "sent" });
 }
 
@@ -145,11 +157,20 @@ export async function markSent(
  * Devuelve el `lastAttemptAt` (ISO 8601) que acaba de estampar si esta
  * llamada ganó la reclamación, `null` si la entrada ya no estaba `pending`
  * (otro drenado se le adelantó, o no existe). Ese valor devuelto ES el token
- * de propiedad de la reclamación — el único dato que distingue "mi
- * reclamación" de "la de otro drenador" cuando dos pasan por el mismo `id`
+ * de propiedad de la reclamación — lo que distingue "mi reclamación" de "la
+ * de otro drenador" cuando dos pasan por el mismo `id`
  * (M1, ronda 4 de review: antes devolvía sólo un `boolean`, así que
  * `markFailed`/`markSent` no podían hacer esa distinción y un zombi podía
  * resolver la reclamación de otro).
+ *
+ * N6 (ronda 5 de review) — el token es único por **entrada y milisegundo**,
+ * no globalmente: dos entradas distintas reclamadas dentro del mismo
+ * milisegundo comparten el mismo valor de `lastAttemptAt`. Es inerte para el
+ * uso que hace este módulo (`markFailed`/`markSent`/`markDead` siempre
+ * acotan primero por `:id`, así que la colisión nunca llega a compararse
+ * entre entradas), pero no sirve como clave de un `Map<token, request>` que
+ * correlacione respuestas en vuelo entre entradas distintas — eso sí pisaría
+ * una con otra.
  */
 export async function claimPending(db: PickupQueueStore, id: number): Promise<string | null> {
   const now = new Date().toISOString();
@@ -177,12 +198,16 @@ export async function claimPending(db: PickupQueueStore, id: number): Promise<st
  * separadas), que sí lo perdía (spec-81, ronda 1 de review, B2).
  *
  * `claimedAt`, opcional (M1, ronda 4 de review) — mismo contrato que en
- * `markSent`: si se pasa y ya no coincide con el `lastAttemptAt` actual, la
- * llamada entera es un no-op (ni incrementa `retryCount` ni toca `status`).
- * Sin esto, el fallo tardío de un drenador zombi cuya reclamación ya expiró
- * y fue reasignada por `reclaimStale` liberaba la reclamación **del segundo
- * drenador**, con su envío real todavía en vuelo — `claimPending` vuelve a
- * devolver esa entrada como disponible y produce un tercer envío.
+ * `markSent`: si se pasa, es de un solo uso (m3, ronda 5 de review): sólo
+ * hace efecto mientras la entrada sigue `sending` bajo ese mismo token. Un
+ * replay de la misma respuesta de red con el mismo token (frecuente — sin
+ * señal, `fetch` rechaza casi al instante, así que claim y fallo caen en el
+ * mismo ms) encuentra la entrada ya devuelta a `pending` por el primer
+ * intento y no incrementa `retryCount` de nuevo. Sin esto, el fallo tardío
+ * de un drenador zombi cuya reclamación ya expiró y fue reasignada por
+ * `reclaimStale` liberaba la reclamación **del segundo drenador**, con su
+ * envío real todavía en vuelo — `claimPending` vuelve a devolver esa entrada
+ * como disponible y produce un tercer envío.
  */
 export async function markFailed(
   db: PickupQueueStore,
@@ -194,7 +219,11 @@ export async function markFailed(
   await db.pickup_queue
     .where(":id")
     .equals(id)
-    .and((entry) => claimedAt === undefined || entry.lastAttemptAt === claimedAt)
+    .and(
+      (entry) =>
+        claimedAt === undefined ||
+        (entry.lastAttemptAt === claimedAt && entry.status === "sending"),
+    )
     .modify((entry) => {
       entry.retryCount += 1;
       entry.lastError = errorMessage;
@@ -263,15 +292,33 @@ export async function reclaimStale(
  * `listPending` sin mentir que se envió (`sent`) y sin desaparecer en
  * silencio (borrarla sería el riesgo nº1 del spec: una carga que se cierra
  * con un conteo falso). Ver spec-81, ronda 1 de review, B3.
+ *
+ * `claimedAt`, opcional (B1, ronda 5 de review) — mismo contrato que
+ * `markSent`/`markFailed`: `markDead` era el único de los tres escritores
+ * terminales sin guard de token. Sin él, el 422 tardío de un drenador zombi
+ * (reclamación ya expirada y reasignada por `reclaimStale`) podía marcar
+ * `dead` la reclamación **en curso** de un segundo drenador, perdiendo un
+ * escaneo que sí estaba en vuelo — exactamente la clase de bug que M1 existe
+ * para cerrar, dejada abierta en el tercer escritor.
+ *
+ * También es un no-op si la entrada ya está `sent` (m5, ronda 5 de review) —
+ * un rechazo tardío no puede convertir un envío ya confirmado en un fallo
+ * permanente; la asimetría inversa de lo anterior.
  */
 export async function markDead(
   db: PickupQueueStore,
   id: number,
   reason: string,
+  claimedAt?: string,
 ): Promise<void> {
   await db.pickup_queue
     .where(":id")
     .equals(id)
+    .and(
+      (entry) =>
+        (claimedAt === undefined || entry.lastAttemptAt === claimedAt) &&
+        entry.status !== "sent",
+    )
     .modify({ status: "dead", lastError: reason });
 }
 
