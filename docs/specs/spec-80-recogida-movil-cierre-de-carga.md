@@ -55,6 +55,14 @@ La regresión es de `spec-47` (`3a61572`, PR #349). El flujo era `Revisión → 
 
 Las etiquetas de `5b` y `5e` en el propio diseño dicen «el paso que faltaba» y «el bloqueo que faltaba en `5d`». **Este no es un restyle: es la ronda de diseño que documenta los huecos funcionales del rebrand anterior.** Tratarlo como cosmético es repetir el error.
 
+`docs/design/Recogida.dc.html` es la copia versionada en el repo de ese mismo archivo, para
+agentes sin acceso al proyecto de Claude Design (ver `docs/design/README.md`). El mock manda en
+diseño; este spec manda en comportamiento — si discrepan, se implementa el mock y la
+discrepancia se escribe aquí, no se resuelve en silencio. Si el mock no contempla algo que el
+código necesita (un estado de error, un caso vacío), es un hallazgo para escalar al usuario, no
+licencia para inventarlo. Esta referencia caduca con el diseño: al re-bajar el fichero, comprobar
+que `5e`–`5i` siguen siendo las mismas pantallas.
+
 ## Las pantallas
 
 | Mock | Pantalla | Estado hoy |

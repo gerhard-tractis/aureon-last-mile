@@ -16,6 +16,24 @@
 
 _Date: 2026-09-07_
 
+## Mock de diseño
+
+Este spec valida contra **`docs/design/Recogida.dc.html`, pantalla `5a`** (la única que cubre —
+escritorio de Recogida). El mock manda en diseño; este spec manda en comportamiento. Si
+discrepan, se implementa el mock y la discrepancia se escribe aquí, no se resuelve en silencio.
+
+Nótese que la pantalla ya construida (fase 4.4 de spec-54) se hizo contra el mock **anterior**,
+`1l` del handoff original — no contra este archivo. Lo que este spec cierra son los tres datos
+que `1l` también pedía y que `5a` vuelve a pedir; la estructura de dos columnas no cambia entre
+una versión y la otra.
+
+Si al implementar aparece un caso que `5a` no contempla — un estado de error de estas tres
+columnas, o qué se muestra mientras la ventana de retiro no tiene dato — es un hallazgo para
+escalar al usuario, no algo que inventar.
+
+Esta referencia caduca con el diseño: si el usuario actualiza los mocks, hay que volver a bajar
+el fichero (`docs/design/README.md`) y comprobar que `5a` sigue siendo la misma pantalla.
+
 ---
 
 ## Goal

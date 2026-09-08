@@ -8,6 +8,28 @@
 
 _Date: 2026-09-07_
 
+## Mock de diseño
+
+Este spec valida contra **`docs/design/Recogida.dc.html`, pantallas `5b` y `5c`**. El mock manda
+en diseño; este spec manda en comportamiento — si discrepan, se implementa el mock y la
+discrepancia se escribe aquí, no se resuelve en silencio.
+
+`5b` y `5c` **ya están implementadas** contra mocks anteriores (`3j` de spec-61, `1i` de
+spec-54). Lo que valida este fichero es la ronda nueva: los chips `EN RUTA`/`SIGUIENTE`/
+`DESCARGAR`/`COMPLETADA` de `5c`, el «MANIFIESTOS ASIGNADOS A TI · 4» de `5b`, y el andén en la
+tarjeta — no es una reconstrucción desde cero.
+
+El 2026-09-08, la fase 1 de este spec se implementó sin este fichero disponible para el
+subagente — no tenía la herramienta `DesignSync` — y dejó fuera, con buen criterio, la ubicación
+de esos chips por no poder decidirla contra el mock. Cualquier fase pendiente de este spec debe
+usar `docs/design/Recogida.dc.html` para resolver eso, y si algo que el código necesita no está
+en el mock — un estado vacío, un error de descarga sin red — es un hallazgo para escalar, no una
+invención.
+
+Esta referencia caduca con el diseño: si el usuario actualiza los mocks, hay que volver a bajar
+el fichero (`docs/design/README.md`) y comprobar que `5b`/`5c` siguen siendo las mismas
+pantallas.
+
 ---
 
 ## Goal
