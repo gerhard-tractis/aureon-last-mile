@@ -24,19 +24,33 @@ export function ScannerInput({ onScan, disabled }: ScannerInputProps) {
     }
   }, [disabled]);
 
+  // spec-54 race guard — see ScanField.tsx for the full explanation. The
+  // auto-submit debounce and the Enter keydown handler both call fireScan()
+  // with the same code; without this, a debounce fire whose setValue('')
+  // hasn't committed yet when Enter's keydown arrives lets the still-stale
+  // closure submit the same scan a second time.
+  const submittedRef = useRef(false);
+
   const fireScan = (submitValue: string) => {
     const trimmed = submitValue.trim();
     if (!trimmed) return;
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     autoSubmit.reset();
-    onScan(trimmed);
-    setValue('');
-    setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
+    try {
+      onScan(trimmed);
+    } finally {
+      setValue('');
+      setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 50);
+    }
   };
 
   // Auto-submit scanner bursts that arrive without a CR/Enter suffix.
   const autoSubmit = useScannerAutoSubmit(fireScan);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Re-arm unconditionally on every keystroke — see ScanField.tsx.
+    submittedRef.current = false;
     setValue(e.target.value);
     autoSubmit.handleValueChange(e.target.value);
   };

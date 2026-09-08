@@ -166,6 +166,38 @@ describe('ReceptionScanner', () => {
     expect(onScan).toHaveBeenCalledWith('CTN12345');
   });
 
+  it('does not double-submit when Enter arrives after the debounce already auto-submitted (spec-54 race)', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ReceptionScanner {...defaultProps} onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CTN99999' } });
+    // Outside act() on purpose — leaves the debounce fire's setValue('')
+    // uncommitted when the Enter keydown below runs.
+    vi.advanceTimersByTime(150);
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledWith('CTN99999');
+  });
+
+  it('still submits two distinct scans in a row after the race guard fires', () => {
+    vi.useFakeTimers();
+    const onScan = vi.fn();
+    render(<ReceptionScanner {...defaultProps} onScan={onScan} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.change(input, { target: { value: 'CTN00001' } });
+    act(() => vi.advanceTimersByTime(150));
+    fireEvent.change(input, { target: { value: 'CTN00002' } });
+    act(() => vi.advanceTimersByTime(150));
+
+    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenNthCalledWith(1, 'CTN00001');
+    expect(onScan).toHaveBeenNthCalledWith(2, 'CTN00002');
+  });
+
   describe('ScanFeedbackBanner', () => {
     it('shows the received banner', () => {
       render(
