@@ -375,9 +375,18 @@ resto de esta fase.
 >   está desplegada y **nadie la ha invocado**. Aquí sí aplica el riesgo de timeout: es un
 >   `UPDATE` real sobre `packages` con ~112k dispatches detrás, y la función **no es
 >   resumible internamente**. Debe correrse a mano y en sub-lotes.
-> - **Confirmar en producción que `routes_one_vehicle_per_day` NO existe** (`pg_indexes`).
->   El agente no tiene credenciales de producción; queda sin verificar, no verificado en
->   silencio.
+> - ~~Confirmar en producción que `routes_one_vehicle_per_day` NO existe (`pg_indexes`). El
+>   agente no tiene credenciales de producción; queda sin verificar, no verificado en
+>   silencio.~~ **Corregido 2026-09-08: esta frase era falsa y se retracta explícitamente,
+>   no se reemplaza en silencio.** El job `verify-prod-migrations` de `deploy.yml` se conecta
+>   a producción en cada deploy con `secrets.SUPABASE_DB_PASSWORD` /
+>   `secrets.SUPABASE_PROJECT_REF` — de ahí salió, en este mismo documento, `Production
+>   migration ledger matches the repo (190 migrations applied)`. Esos secretos existen en
+>   GitHub y son los mismos que cualquier job de CI puede usar. Lo que de verdad falta no es
+>   la credencial: es que nadie había escrito un job que sólo *lea* con ella. Ver más abajo.
+>   Es la segunda vez en el mismo día que un spec le atribuye al usuario un bloqueo que en
+>   realidad era "nadie escribió el job" — la otra fue un `docker inspect` sobre un
+>   contenedor que no existe.
 
 **Nota histórica:** esta fase decía «sólo el usuario puede cerrarla; ningún agente puede
 pulsarla, y no debe intentarse». Eso dejó de ser cierto cuando el usuario delegó
@@ -392,6 +401,166 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 4. Frontend y worker.
 
 - [ ] El agente prepara y verifica cada lote; **el usuario aprueba cada uno**.
+
+---
+
+#### 2026-09-08 — Tarea A: verificación por CI, no por SSH/docker
+
+**Producción es Supabase gestionado (proyecto `wfwlcpnkkxxzdvhvvsxb`), no self-hosted.** El VPS
+`aureon-vps` (`Hostinger-aureon_LM`) sólo aloja QA — no hay contenedor de producción al que
+conectarse por SSH ni `docker exec`. El único camino a producción es la Management API de
+Supabase, el CLI de `supabase` con el token, o un job de CI que use `SUPABASE_DB_PASSWORD` /
+`SUPABASE_PROJECT_REF` — nunca SSH ni `docker`. Ese es exactamente el camino que
+`verify-prod-migrations` ya usa en cada deploy, y de ahí sale la única cifra de producción que
+este spec cita en ningún lado (190 migraciones aplicadas).
+
+**Lo que faltaba no era la credencial — era el job.** `verify-prod-migrations` sólo sabe hacer
+una cosa: `supabase migration list --linked`. No hay, hasta ahora, ningún job en este repo que
+abra una sesión de sólo lectura contra producción y corra un `SELECT` arbitrario. Se creó uno:
+
+**`.github/workflows/prod-readonly-query.yml`** — `workflow_dispatch` de una sola tarea, sin
+`environment: production` (no muta nada, así que gatearlo detrás de la aprobación de deploy
+sería atribuirle un riesgo que no tiene), que abre `psql` contra
+`db.<SUPABASE_PROJECT_REF>.supabase.co` con `PGPASSWORD` pasado por variable de entorno (nunca
+interpolado en un comando que se imprima) y corre tres `SELECT`, cada uno en su propio step para
+que el log distinga cuál produjo qué:
+
+1. `SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname =
+   'routes_one_vehicle_per_day';` — confirma si el índice existe. **El resultado correcto y
+   esperado es 0 filas** (ver fase 3: `20260911000003` lo retira sin condición una migración
+   después de que `20260911000002` lo crea saltándoselo en silencio si hay conflictos).
+2. `SELECT jobid, jobname, username, active FROM cron.job;` — la consulta que el review de
+   spec-88 fase 1 pidió antes de aprobar su despliegue: si `archive_old_audit_logs` aparece
+   programado bajo un rol distinto de `postgres`/`service_role`. En QA sólo hay dos jobs, ambos
+   como `postgres`; si en producción sale igual, spec-88 lo puede anotar como sin riesgo
+   residual.
+3. Un `SELECT COUNT(*)` con el mismo `FROM`/`WHERE` que el `UPDATE` de
+   `spec79_backfill_loaded_route_id()` (ver Tarea B abajo) — dimensiona el backfill sin
+   ejecutarlo, porque es un `SELECT`, no el `UPDATE` real.
+
+**Por qué no lo lancé yo.** La instrucción de esta tarea es explícita: "Abre PR con eso y dime
+el número; lo lanzo yo." El PR se abre **sin auto-merge** y sin disparar el `workflow_dispatch`
+— aunque técnicamente `gh workflow run` está disponible en este entorno, ejercerlo aquí violaría
+tanto esa instrucción directa como la regla "sólo lectura sobre producción en esta tarea"
+interpretada de la forma más estricta: ningún byte sale de este agente hacia producción, ni de
+lectura, sin que el usuario apriete el botón él mismo.
+
+**Esto es lo único que de verdad exige a una persona en esta fase** — no porque el agente no
+tenga acceso técnico (sí lo tiene, vía el mismo mecanismo que `verify-prod-migrations`), sino
+porque **la aprobación de "correr algo contra producción, aunque sea sólo lectura" es del
+usuario, no del agente, en esta tarea concreta.** Es la razón correcta para dejar la fase en
+`awaiting_user_test` — distinta, honesta, y no la que el spec tenía escrita antes ("el agente no
+tiene credenciales").
+
+---
+
+#### 2026-09-08 — Tarea B: el backfill de `loaded_route_id`, diseño del driver por sub-lotes
+
+**Qué actualiza exactamente `spec79_backfill_loaded_route_id()`, y sobre qué conjunto** (leído en
+`20260909000001:84-108` y su redefinición en `20260910000001:49-77`, que es la versión vigente
+— `COUNT(DISTINCT dd.route_id) = 1`, no `COUNT(*) = 1`):
+
+- Construye, en una subconsulta, el conjunto de `order_id` que hoy tienen **exactamente una ruta
+  activa distinta** entre sus dispatches vivos: `JOIN dispatches dd → routes r`, filtrando
+  `dd.deleted_at IS NULL`, `r.deleted_at IS NULL`, `r.status IN (draft, planned, loading,
+  loaded, dispatched, in_transit, in_progress)`, agrupado por `dd.order_id`, con `HAVING
+  COUNT(DISTINCT dd.route_id) = 1`. Esta subconsulta barre la tabla `dispatches` completa
+  (~112k filas documentadas en el comentario de la migración) — es el costo dominante.
+- Para cada fila de `packages` que matchea ese `order_id` **y** cumple `p.deleted_at IS NULL AND
+  p.loaded_at IS NOT NULL AND p.load_inferred = false AND p.loaded_route_id IS NULL`, escribe
+  `loaded_route_id = d.route_id`. Ese último filtro (`loaded_route_id IS NULL`) es lo que hace
+  la función **idempotente**: una fila ya escrita deja de matchear en la siguiente corrida.
+
+**Dimensionamiento contra producción — pendiente de la Tarea A.** El tercer `SELECT` del
+workflow nuevo (arriba) usa exactamente el mismo `FROM`/`WHERE` que el `UPDATE`, envuelto en
+`COUNT(*)` en vez de `SET`, así que su resultado ES el conteo de filas que el backfill tocaría —
+sin tocarlas. No tengo ese número todavía: depende de que el usuario dispare el workflow. Cuando
+lo haga, ese conteo entra aquí y decide el tamaño de lote real (ver abajo).
+
+**Diseño de la versión por sub-lotes — recomendado: una función nueva, en dos partes, NO
+implementada en este PR.**
+
+Por qué no una sola `UPDATE ... LIMIT n` repetida sin más: Postgres no soporta `LIMIT` en
+`UPDATE`, y aunque se envuelva en un CTE con `LIMIT`, cada llamada volvería a pagar el barrido
+completo de `dispatches` (el costo dominante, según el propio comentario de la migración) antes
+de aplicar el límite — N llamadas, N barridos completos. Eso no reduce el riesgo de timeout por
+llamada de forma proporcional al tamaño del lote: sólo lo traslada, y si el batch es chico,
+multiplica el costo total en vez de repartirlo.
+
+**Recomendación: separar la parte cara (el agregado sobre `dispatches`) de la parte que se
+repite (el `UPDATE` sobre `packages`).**
+
+1. Una tabla de staging permanente, poblada **una sola vez**, con el `INSERT ... SELECT` que
+   hoy vive dentro del `UPDATE ... FROM (SELECT ...)`:
+   `spec79_loaded_route_backfill_candidates(order_id UUID PRIMARY KEY, route_id UUID)`. Esta
+   inserción sigue pagando el barrido de `dispatches`, pero se hace **una vez**, no una vez por
+   lote — y es un `INSERT` sobre una tabla nueva y vacía, no un `UPDATE` sobre `packages` en
+   producción, así que un timeout aquí no revierte trabajo ya aplicado a `packages`.
+   `INSERT ... ON CONFLICT (order_id) DO NOTHING` la hace resumible también a ella: si el
+   propio `INSERT` se corta a mitad, repetirlo no duplica filas.
+2. Una función `spec79_backfill_loaded_route_id_batch(p_batch_size INT DEFAULT 2000)` que hace
+   `UPDATE packages p SET loaded_route_id = c.route_id FROM (SELECT order_id, route_id FROM
+   spec79_loaded_route_backfill_candidates LIMIT p_batch_size) c WHERE c.order_id = p.order_id
+   AND p.deleted_at IS NULL AND p.loaded_at IS NOT NULL AND p.load_inferred = false AND
+   p.loaded_route_id IS NULL`, seguido de `DELETE FROM
+   spec79_loaded_route_backfill_candidates WHERE order_id IN (...)` para las filas que ya
+   dejaron de matchear (ya escritas o sin packages elegibles) — así la tabla de staging se va
+   vaciando y su tamaño restante ES el progreso pendiente, sin duplicar el filtro
+   `loaded_route_id IS NULL` como estado de verdad. Se llama repetidas veces (a mano, o desde
+   un `workflow_dispatch` separado) hasta que devuelva 0 candidatos restantes.
+
+**Tamaño de lote — argumentado, pendiente de ajuste con la cifra real de la Tarea A.** 2000
+`order_id` por lote es un punto de partida, no una cifra medida: acota el `UPDATE` a como mucho
+unos pocos miles de filas de `packages` (la proporción packages/orders en este dataset no está
+medida todavía), lo bastante chico para que un timeout de una sola llamada pierda como mucho ese
+lote, no todo el trabajo — y lo bastante grande para no necesitar cientos de llamadas manuales.
+Se corrige con el conteo real de la Tarea A antes de escribir la migración de verdad.
+
+**Por qué no se implementa aquí:** el spec pide explícitamente "PREPARA, NO EJECUTES", y
+comprometerse a un tamaño de lote o a la forma final del staging antes de tener el conteo real
+de producción (Tarea A) sería adivinar exactamente lo que este spec lleva insistiendo en no
+hacer. Es trabajo nuevo — función + tabla + pgTAP — para una fase siguiente, una vez que el
+usuario dispare el workflow de la Tarea A y el número entre aquí.
+
+**Cómo se verifica que terminó, y cómo se detecta si quedó a medias:**
+
+- `SELECT COUNT(*) FROM spec79_loaded_route_backfill_candidates;` — 0 significa terminado.
+  Cualquier valor > 0 entre corridas es exactamente "a medias", sin ambigüedad — es progreso
+  persistido, no un estado inferido.
+- Contraste independiente, sin depender de la tabla de staging: `SELECT COUNT(*) FROM
+  public.packages WHERE loaded_at IS NOT NULL AND load_inferred = false AND loaded_route_id IS
+  NULL;` antes y después de cada lote. Debe decrecer monótonamente y llegar a un valor estable
+  (el resto son las órdenes ambiguas — más de una ruta activa — que esta función deliberadamente
+  no toca; ver el comentario de `20260909000001` sobre falsos negativos, no falsos positivos).
+
+**Qué pasa mientras tanto — y esto es lo más importante de la Tarea B.** Hoy, en producción,
+`loaded_route_id` está `NULL` en todas las filas (nadie ha corrido ni la función completa ni
+ningún lote). El único lugar que lee esa columna es `isGenuinelyLoadedPackage`
+(`apps/frontend/src/lib/dispatch/dispatch-load-state.ts:61-69`):
+
+```ts
+export function isGenuinelyLoadedPackage(p: PackageRow, routeId: string): boolean {
+  ...
+  p.loaded_route_id === routeId
+}
+```
+
+Con la columna vacía, esta función devuelve `false` para **todo** paquete cargado antes de que
+exista `loaded_route_id` — no sólo para los ambiguos. Eso es exactamente el "falso negativo,
+nunca falso positivo" que la propia migración documenta como aceptable (`20260909000001:46-54`):
+un paquete genuinamente cargado deja de contarse como cargado en el manifiesto de su ruta hasta
+que (a) se re-escanea (lo que sí escribe `loaded_route_id` en caliente, vía
+`advancePackagesToEnCarga` en `stage-dispatch.ts`) o (b) corre el backfill. **Nada está roto por
+esto** en el sentido de mostrar un dato falso — pero un despachador que mira el manifiesto de
+una ruta hoy puede ver menos paquetes "cargados" de los que físicamente están en el camión, para
+cualquier paquete cargado antes del 2026-09-08 y no vuelto a escanear. Es una regresión de
+precisión visible al usuario, no una corrupción de datos, y es exactamente el motivo por el que
+la Tarea A/B de esta fase es más urgente que "nice to have": cada día sin el backfill es un día
+más de manifiestos subcontados para carga histórica.
+
+**Resumen de lo entregado en este PR sobre Tarea B:** diseño completo y razonado, sin ejecutar
+nada — ni el `UPDATE` original ni ninguna versión por lotes. El SQL de la función batched de
+arriba es una propuesta para la siguiente fase, no una migración aplicada.
 
 ### Fase 5 — Guardarraíles `[done]`
 
