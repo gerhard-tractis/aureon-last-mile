@@ -510,26 +510,29 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 > vive ahí sola — la pantalla que de verdad tendría que crecer es `PickupMobileActiveRoute.tsx`
 > (o un hermano suyo), que ya importa `RouteManifestRow` de `./RouteManifestList` (`:15`). Ese
 > fichero, junto con `CloseRouteButton.tsx`, `DigitalizeManifestTrigger.tsx`, `NextManifestCard.tsx`
-> y todo `app/app/pickup/route/active/**`, está explícitamente fuera de alcance para esta ronda de
-> corrección (instrucción del orquestador, para no pisar el PR #682 en vuelo) — no porque
-> spec-82 fase 1 edite el mismo archivo que este spec necesitaría, sino porque la familia de
-> componentes donde encajaría la entrada de rescate es la misma familia que #682 está tocando
-> ahora mismo, y tocarla desde dos ramas a la vez es exactamente el conflicto que la coordinación
-> de esta sesión pidió evitar.
+> y todo `app/app/pickup/route/active/**`, estuvo explícitamente fuera de alcance para esta ronda
+> de corrección (instrucción del orquestador, para no pisar el PR #682 mientras seguía en vuelo) —
+> no porque spec-82 fase 1 editara el mismo archivo que este spec necesitaría, sino porque la
+> familia de componentes donde encajaría la entrada de rescate era la misma familia que #682
+> estaba tocando en ese momento, y tocarla desde dos ramas a la vez era exactamente el conflicto
+> que la coordinación de esta sesión pidió evitar.
 >
-> Sigue sin construirse. Queda declarado, con dueño: se retoma después de que #682 mergee, como
-> fase 2b de este spec (`spec-80`) — no absorbida en spec-82 fase 1, porque el "rescate sin firma"
-> es un flujo de `close_manifest`/discrepancias (spec-80/spec-85), no de asignación de ruta
-> (el alcance real de spec-82 fase 1).
+> **Actualización:** el PR #682 ya mergeó a `main` (`2026-09-08T17:16:39Z`) — verificado con
+> `gh pr view 682 --json state,mergedAt`. El conflicto que motivaba el aplazamiento ya no existe,
+> pero esta ronda de corrección sigue sin poder tocar esos archivos (siguen fuera del alcance que
+> el orquestador fijó para esta tarea específica). Sigue sin construirse. Queda declarado, con
+> dueño: fase 2b de este spec (`spec-80`), ahora sin ningún bloqueo de coordinación — no absorbida
+> en spec-82 fase 1, porque el "rescate sin firma" es un flujo de `close_manifest`/discrepancias
+> (spec-80/spec-85), no de asignación de ruta (el alcance real de spec-82 fase 1).
 >
 > Review y QA pendientes — no se marca `[done]` aquí.
 
 ### Fase 2b — entrada de rescate para móvil (Completados sin escritorio) `[pending]`
 
-> Depende de que el PR #682 (spec-82 fase 1) mergee primero — toca la misma familia de
-> componentes (`PickupMobileActiveRoute.tsx` y lo que importa de `RouteManifestList.tsx`).
-> Ver el "Aplazamiento declarado" de la fase 2, arriba, para la razón completa de por qué no se
-> construyó ahí.
+> El PR #682 (spec-82 fase 1) ya mergeó (`2026-09-08T17:16:39Z`) — la única dependencia que
+> tenía esta fase ya no bloquea. Toca la misma familia de componentes (`PickupMobileActiveRoute.tsx`
+> y lo que importa de `RouteManifestList.tsx`). Ver el "Aplazamiento declarado" de la fase 2,
+> arriba, para la razón completa de por qué no se construyó ahí.
 
 Dale a la cuadrilla, en móvil, una forma de llegar a un manifiesto que `trg_route_receptions_status_sync`
 ya cerró sin firma (rescate de H1, fase 1) — sin escritorio y sin teclear la URL a mano. En
