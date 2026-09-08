@@ -20,6 +20,25 @@
 --   'CTN-AJENO-1' scanned twice as 'not_found' (same barcode)   -> one unexpected
 -- A second manifest (CARGA-80B-2), fully verified, 0 missing, 0 unexpected,
 -- proves the empty-p_items path (spec-85's M5) does not fail the close.
+--
+-- On the p_items query's `SELECT DISTINCT barcode_scanned` (fourth mutant
+-- raised in the PR #686 review): left as-is, documented as defensively
+-- redundant rather than covered by its own mutation-killed fixture.
+-- Assertion 6 below (one open 'unexpected' from two 'not_found' scans of
+-- the SAME barcode) passes even with the DISTINCT removed, because
+-- uniq_open_discrepancy_per_barcode (20260913000001, a partial unique
+-- index on (operator_id, barcode, operation_type, source_id) WHERE
+-- status='open') is what actually collapses the duplicate INSERT via
+-- record_discrepancies' `ON CONFLICT ... DO NOTHING` — the DISTINCT never
+-- gets the chance to matter for THIS fixture's single-barcode case. A
+-- fixture that would actually kill this mutant needs two DIFFERENT
+-- not_found barcodes plus something the DISTINCT specifically dedupes
+-- that the unique index does not (the index already keys on `barcode`
+-- itself, so there is no such case within a single close_manifest call —
+-- the DISTINCT is redundant with the index, not a second, weaker guard
+-- beside it). Not verified against psql in this round (see commit
+-- 1e00a08); documented per the review's "o lo testeas o lo documentas
+-- como redundante" instruction.
 BEGIN;
 SELECT plan(13);
 
