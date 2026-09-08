@@ -80,6 +80,7 @@ export function UnverifiedPackagesBlock({
                 packageId={pkg.id}
                 packageLabel={pkg.label}
                 orderNumber={pkg.order_number}
+                customerName={pkg.customer_name ?? undefined}
                 existingNote={noteMap.get(pkg.id) ?? ''}
                 onSaveNote={onSaveNote}
               />

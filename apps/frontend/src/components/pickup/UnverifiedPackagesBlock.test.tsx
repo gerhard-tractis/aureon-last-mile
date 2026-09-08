@@ -3,8 +3,17 @@ import { render, screen } from '@testing-library/react';
 import { UnverifiedPackagesBlock } from './UnverifiedPackagesBlock';
 
 vi.mock('./MissingPackageRow', () => ({
-  MissingPackageRow: ({ packageLabel }: { packageLabel: string }) => (
-    <div data-testid="missing-package-row">{packageLabel}</div>
+  MissingPackageRow: ({
+    packageLabel,
+    customerName,
+  }: {
+    packageLabel: string;
+    customerName?: string;
+  }) => (
+    <div data-testid="missing-package-row">
+      {packageLabel}
+      {customerName ? ` · ${customerName}` : ''}
+    </div>
   ),
 }));
 
@@ -33,7 +42,7 @@ describe('UnverifiedPackagesBlock', () => {
     render(
       <UnverifiedPackagesBlock
         counts={{ ...baseCounts, missingCount: 3, totalCount: 42 }}
-        missingPackages={[{ id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1' }]}
+        missingPackages={[{ id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1', customer_name: null }]}
         notFoundScans={[]}
         noteMap={new Map()}
         onSaveNote={vi.fn()}
@@ -52,7 +61,7 @@ describe('UnverifiedPackagesBlock', () => {
     render(
       <UnverifiedPackagesBlock
         counts={{ ...baseCounts, missingCount: 1, verifiedCount: 41, totalCount: 42 }}
-        missingPackages={[{ id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1' }]}
+        missingPackages={[{ id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1', customer_name: null }]}
         notFoundScans={[]}
         noteMap={new Map()}
         onSaveNote={vi.fn()}
@@ -67,8 +76,8 @@ describe('UnverifiedPackagesBlock', () => {
       <UnverifiedPackagesBlock
         counts={{ ...baseCounts, missingCount: 2 }}
         missingPackages={[
-          { id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1' },
-          { id: 'p2', label: 'CTN-2', order_id: 'o1', order_number: 'ORD-1' },
+          { id: 'p1', label: 'CTN-1', order_id: 'o1', order_number: 'ORD-1', customer_name: null },
+          { id: 'p2', label: 'CTN-2', order_id: 'o1', order_number: 'ORD-1', customer_name: null },
         ]}
         notFoundScans={[]}
         noteMap={new Map()}
@@ -77,6 +86,30 @@ describe('UnverifiedPackagesBlock', () => {
     );
     expect(screen.getByText('SIN VERIFICAR · 2')).toBeInTheDocument();
     expect(screen.getAllByTestId('missing-package-row')).toHaveLength(2);
+  });
+
+  // Medio 5b (review PR #686): mock 5e's SIN VERIFICAR rows are
+  // "ORD-48213 · Camila Fernández" — MissingPackageRow supports
+  // customerName, but the only production caller never passed it.
+  it('passes customer_name through to MissingPackageRow as customerName', () => {
+    render(
+      <UnverifiedPackagesBlock
+        counts={{ ...baseCounts, missingCount: 1 }}
+        missingPackages={[
+          {
+            id: 'p1',
+            label: 'CTN-1',
+            order_id: 'o1',
+            order_number: 'ORD-48213',
+            customer_name: 'Camila Fernández',
+          },
+        ]}
+        notFoundScans={[]}
+        noteMap={new Map()}
+        onSaveNote={vi.fn()}
+      />
+    );
+    expect(screen.getByText('CTN-1 · Camila Fernández')).toBeInTheDocument();
   });
 
   it('renders the NO ESTABAN EN LA CARGA · N block with the scan time and each barcode', () => {
