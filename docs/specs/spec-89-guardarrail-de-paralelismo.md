@@ -210,8 +210,8 @@ node scripts/check-phase-overlap.mjs \
   --base origin/main
 ```
 
-Con las ramas reales ya commiteadas, la misma corrida (2026-09-08, ~15.4s —
-ver "Rendimiento" abajo): **CONFLICTO DURO: ninguno. ACOPLAMIENTO BLANDO — 4
+Con las ramas reales ya commiteadas, la misma corrida (2026-09-08 — ver
+"Rendimiento" abajo para el tiempo real medido) — **CONFLICTO DURO: ninguno. ACOPLAMIENTO BLANDO — 4
 casos**, incluido `apps/frontend/src/components/AppLayout.tsx` (escrito por
 spec-81 fase 2, alcanzado por spec-80 fase 2 y spec-82 fase 1 vía
 `layout.tsx` — convención de Next.js, no import). spec-88 (SQL puro) no
@@ -228,30 +228,47 @@ requisito original ("antes de dispatchar en paralelo").
 
 ### El número que importa: cuántas fases quedan en "no puedo juzgar" hoy
 
-De las **24 fases `[pending]`/`[in_progress]` activas hoy** en `docs/specs/`,
-**7 no declaran `**Archivos:**`**: spec-80 fase 1b, spec-82 fase 2, spec-83
-fase 3, y spec-88 fases 1, 2, 4 y 5. De esas 7:
+Recontado tras el merge de spec-88 fase 2 (PR #683) y mi backfill de spec-88
+fases 1/4/5 (que este mismo commit añade): de las **25 fases
+`[pending]`/`[in_progress]` activas hoy** en `docs/specs/`, **3 no declaran
+`**Archivos:**` en absoluto**: spec-80 fase 1b, spec-82 fase 2, spec-83
+fase 3.
 
-- **3 son juzgables igual** si el orquestador les pasa la rama que ya existe
-  (`feat/spec-80-fase-1b-close-manifest-acl`, `feat/spec-88-fase-1-revoke-anon`,
-  `feat/spec-88-fase-2-assert-operator-access`) — el diff real sustituye a la
+- **1 es juzgable igual** si el orquestador le pasa la rama que ya existe
+  (`feat/spec-80-fase-1b-close-manifest-acl`) — el diff real sustituye a la
   declaración ausente.
-- **4 quedan en "no puedo juzgar" pase lo que pase hoy**: spec-82 fase 2,
-  spec-83 fase 3, spec-88 fase 4, spec-88 fase 5 — ni declaración ni rama.
-  Las dos primeras son, textualmente, las dos que el agente del backfill
-  (PR #693) **se negó a rellenar por ambigüedad honesta** — spec-82 fase 2
-  habla de precargar al «almacén de spec-81», pero hoy `lib/db.ts` sólo tiene
-  colas de salida, no caché de lectura; spec-83 fase 3 es un condicional
-  explícito en el propio spec («leer spec-73 y decidir»). Que la herramienta
-  se niegue a opinar exactamente donde un agente humano-en-el-loop también se
-  negó no es una coincidencia — es la señal de que el rechazo es la respuesta
-  correcta, no un hueco de cobertura.
+- **2 quedan en "no puedo juzgar" pase lo que pase hoy**: spec-82 fase 2 y
+  spec-83 fase 3 — ni declaración ni rama. Son, textualmente, las dos que el
+  agente del backfill (PR #693) **se negó a rellenar por ambigüedad
+  honesta** — spec-82 fase 2 habla de precargar al «almacén de spec-81»,
+  pero hoy `lib/db.ts` sólo tiene colas de salida, no caché de lectura;
+  spec-83 fase 3 es un condicional explícito en el propio spec («leer
+  spec-73 y decidir»). Que la herramienta se niegue a opinar exactamente
+  donde un agente humano-en-el-loop también se negó no es una coincidencia
+  — es la señal de que el rechazo es la respuesta correcta, no un hueco de
+  cobertura.
 
-**17 de 24 (71%) son juzgables hoy sin tocar nada más.** No son "casi todas
-sin poder juzgar" — pero el 29% restante importa: antes de dispatchar
-cualquiera de esas 7 en paralelo con otra fase, el orquestador tiene que
-pasarle la rama si existe, o tratarla como no verificada si no existe. La
-herramienta lo dice en voz alta (exit 3) en vez de mentir "disjuntas".
+**23 de 25 (92%) son juzgables hoy sin tocar nada más** (22 por declaración
+directa, 1 más si el orquestador pasa la rama existente). Sólo **2 de 25
+(8%)** quedan genuinamente sin poder juzgar — y son exactamente las dos que
+un humano también se negó a decidir sin más contexto.
+
+**Corrección sobre una ronda anterior de esta misma sección — bug real, no
+sólo un número desactualizado (review ronda 3).** Un borrador anterior
+contaba spec-88 fase 4 y fase 5 como "sin declaración ni rama", cuando
+**spec-88 fase 5 sí declara `**Archivos:**`** (una referencia de directorio,
+`packages/database/supabase/migrations/`) — y **spec-84 fase 3** usa la
+misma forma. La razón por la que parecían indistinguibles de "no declarado"
+era un bug real: `check-phase-overlap.mjs` devolvía el campo como
+`declaredDirs`, `check-phase-overlap-closure.mjs` lo leía como
+`a.directories ?? []` — el `?? []` se tragaba el desajuste de nombre en
+silencio, `directoryConflicts` nunca iteraba nada, y una fase que sólo
+declara un directorio quedaba con `writeSet.size === 0`, cayendo en el mismo
+"no puedo juzgar" que una fase sin declarar nada. Ambos bugs (el nombre de
+campo, y que una declaración de sólo-directorio no debe contar como "sin
+superficie") están corregidos con test de regresión que ejercita el camino
+real de la CLI, no un fixture que fabrica la forma correcta — ver
+"Mutación verificada" abajo.
 
 ## Mutación verificada
 
@@ -272,11 +289,30 @@ se desactiva:
   `check-phase-overlap-closure.mjs` como, por separado, en
   `check-phase-overlap.mjs`) sobrevivía sin que ningún test lo notara —
   corregido con un test end-to-end que omite `--max-depth` a propósito.
+- **Ronda 3 — el desajuste de nombre de campo `declaredDirs`/`directories`,
+  y la mutación que sí lo habría atrapado si hubiera existido.** El primer
+  test de directorio-vs-fichero (ronda 1) vivía sólo en
+  `check-phase-overlap-closure.test.mjs`, cuya fábrica de fixtures
+  (`target()`) construye el objeto con la clave `directories` a mano — la
+  misma clave que `computeOverlap` lee. Eso prueba que la REGLA es correcta;
+  no prueba que el CLI real (`check-phase-overlap.mjs`) construya el objeto
+  con esa clave. Devolvía `declaredDirs`, y `a.directories ?? []` en
+  `computeOverlap` se tragaba el desajuste sin lanzar — una fase que declara
+  sólo un directorio nunca chocaba con nada, vía CLI, aunque los 22 tests de
+  `check-phase-overlap-closure.test.mjs` siguieran en verde. Corregido con
+  cuatro tests nuevos en `check-phase-overlap.test.sh` que ejercen el camino
+  real (spec → CLI → closure), no la fábrica de fixtures — mutando
+  `directories: declaredDirs` de vuelta a `declaredDirs`, y mutando
+  `directoryConflicts` a un `return` inmediato, cada uno hace morir esos
+  cuatro tests. Lección aplicada, no sólo anotada: una regla de
+  `check-phase-overlap-closure.mjs` sin un test correspondiente en
+  `check-phase-overlap.test.sh` que la alcance por el camino real de la CLI
+  es una regla que puede estar desconectada de la CLI sin que nada lo note.
 
 Salida real de cada mutación (mutante → test que muere) está en el reporte de
 cierre de fase 1.
 
-## Rendimiento — de incompatible con un hook a ~15s
+## Rendimiento — de incompatible con un hook a segundos
 
 Medido por el review (ronda 1, medio 7) contra las cuatro ramas reales:
 **86s para 2 targets pequeños, más de 15 minutos para el cuarteto completo**.
@@ -297,11 +333,16 @@ alcanza). `makeResolver` se simplificó de paso: la rama de una fase ya
 contiene, por herencia de árbol, todo lo que no cambió respecto a la base —
 "probar rama, si falla probar base" nunca hacía falta.
 
-**Medido después del arreglo, mismo cuarteto real:** **~15.4s** (`Date.now()`
-antes/después del proceso completo, no una estimación) — de más de 15 minutos
-a compatible con un hook en un solo cambio, sin tocar la superficie pública
-del CLI. Comportamiento verificado sin cambios: los 17 tests de
-`check-phase-overlap.test.sh` siguen en verde tras el refactor.
+**Medido después del arreglo, mismo cuarteto real:** en esta sesión, ~15.4s
+(`Date.now()` antes/después del proceso completo, en este entorno Windows +
+Git Bash, con el overhead de proceso que eso conlleva). **El review (ronda 3)
+midió, en su entorno, números bastante mejores**: un par pequeño en 1.8s, el
+cuarteto en modo dispatch-time (sin ramas) en 2.5s, y el cuarteto post-hoc
+(con las cuatro ramas reales) en 6.6s — es decir, mi cifra subestimó la
+mejora, no al revés. De más de 15 minutos a segundos en un solo cambio, sin
+tocar la superficie pública del CLI. Comportamiento verificado sin cambios:
+los 21 tests de `check-phase-overlap.test.sh` (17 + 4 de la ronda 3, ver
+"Mutación verificada") siguen en verde tras el refactor.
 
 **Efecto colateral encontrado y corregido en el camino:** el mismo repo real
 expuso un crash — un candidato de `resolveSpecifier` sin extensión puede
@@ -421,17 +462,22 @@ alias), se abre como spec nuevo, no como fase de éste.
       mutación verificada en cada regla.
 - [x] `check-phase-overlap.mjs` + `.sh`: CLI, integración con `git diff`/`git
       show`/`git ls-tree` contra un repo temporal real (no fixtures
-      fabricadas), write set vacío rechazado con exit 3 (bloqueante 3) — TDD,
-      17/17 verde, mutación verificada en el exit code y en el tope de
-      profundidad por defecto de la CLI.
+      fabricadas), write set vacío rechazado con exit 3 (bloqueante 3),
+      advertencia explícita de ceguera SQL en el mensaje (M-3) — TDD,
+      24/24 verde, mutación verificada en el exit code, el tope de
+      profundidad por defecto de la CLI, el nombre de campo
+      `directories`/`directoryConflicts` por el camino real (ronda 3), la
+      exclusión de `docs/**` por el camino real (M-2), y la advertencia SQL.
 - [x] `check-spec-fields.sh`: regla `**Archivos:**` obligatoria en fases
       `[pending]`/`[in_progress]`, exenta en las demás — TDD, 34/34 verde.
 - [x] Corrida real en **modo dispatch-time** (sin ramas) y en modo post-hoc
       (con las cuatro ramas reales) — ver "Validado contra la realidad"
       arriba para ambas salidas completas y la cuenta de fases en
-      "no puedo juzgar" (17/24 juzgables hoy, 4/24 genuinamente no
-      verificables sin backfill ni rama).
-- [x] Rendimiento: 15min → ~15.4s en el cuarteto real (bloqueante/medio 7).
+      "no puedo juzgar" (23/25 juzgables hoy — 22 por declaración directa, 1
+      más si se pasa la rama existente —, 2/25 genuinamente no verificables
+      sin backfill ni rama; corregido en ronda 3, ver más abajo).
+- [x] Rendimiento: >15min → segundos en el cuarteto real (bloqueante/medio 7;
+      medido de forma independiente por dos entornos, ver "Rendimiento").
 
 **Ronda 2 de review — hallazgos cerrados:**
 - Bloqueante 1 (falso positivo en `docs/**` entre fases hermanas del mismo
@@ -463,16 +509,51 @@ alias), se abre como spec nuevo, no como fase de éste.
   real del árbol de trabajo — `EISDIR` crasheaba la corrida en vez de tratar
   el candidato como "no encontrado". Corregido con test de regresión.
 
+**Ronda 3 de review — hallazgos cerrados:**
+- **Bloqueante — desajuste de nombre de campo (`declaredDirs` vs
+  `directories`)** entre `check-phase-overlap.mjs` y
+  `check-phase-overlap-closure.mjs`. El `?? []` de `computeOverlap` lo
+  absorbía en silencio: `directoryConflicts` nunca iteraba nada desde el CLI,
+  aunque los 22 tests de `check-phase-overlap-closure.test.mjs` siguieran en
+  verde — construían el objeto con la clave correcta a mano. Corregido
+  unificando el nombre, con 4 tests nuevos en `check-phase-overlap.test.sh`
+  que ejercen el camino real (spec → CLI → git diff → closure), y mutación
+  verificada tanto en el nombre de campo como en `directoryConflicts` (un
+  `return` inmediato ahí también hace morir esos 4 tests).
+- **Daño colateral del bug anterior:** una fase que declara **sólo** un
+  directorio (spec-88 fase 5, spec-84 fase 3 — la forma canónica del corpus
+  para trabajo pgTAP/migración) quedaba con `writeSet.size === 0` y caía en
+  "no puedo juzgar" con un mensaje que afirmaba, falso, que no había
+  `**Archivos:**` declarado. Corregido: el chequeo de "no puedo juzgar" ahora
+  excluye a los targets con `directories.length > 0`.
+- **M-2** (exclusión de `docs/**`, bloqueante 1 de la ronda 1, sin cobertura
+  extremo a extremo — mismo tipo de agujero que dejó pasar el bug de arriba)
+  — test nuevo en `check-phase-overlap.test.sh` con dos ramas reales que
+  sólo editan su spec compartido, mutación verificada.
+- **M-3** (ceguera a colisiones en SQL, de "rojo accidental" en la ronda 1 a
+  "verde silencioso" tras el bloqueante 1) — el mensaje del CLI ahora imprime
+  una advertencia explícita cuando algún target incluye un `.sql` en su
+  superficie, con test y mutación.
+- **Conteos corregidos** en "El número que importa" (arriba): la sección
+  decía «24 activas, 7 sin declarar, 71%» en el mismo commit que ya había
+  añadido las cuatro líneas de spec-88 que nombraba como carentes —
+  autocontradicción señalada por el coordinador. Recontado contra el árbol
+  real: 25 activas, 3 sin campo, 2 genuinamente no juzgables (8%, no 29%).
+
 **Lo que NO se atacó, y por qué:** la ceguera a colisiones en SQL puro
 (bloqueante 2 del review) — ver el bullet correspondiente en "Deliberadamente
-NO es" arriba. `import()` dinámico/side-effect imports y
+NO es" arriba; sí se le añadió la advertencia explícita (M-3) sin resolver el
+problema estructural. `import()` dinámico/side-effect imports y
 `template.tsx`/`error.tsx`/`loading.tsx` — hueco latente documentado, sin
 uso activo en el repo hoy (verificado, ver bullets correspondientes).
 
-> Implementado por: una sola sesión, spec + implementación, dos rondas de
+> Implementado por: una sola sesión, spec + implementación, tres rondas de
 > review adversarial atendidas en la misma rama (`feat/spec-89-guardarrail-paralelismo`).
 > Review: ronda 1 (10 hallazgos: 5 bloqueantes, 2 medios, 2 menores, 1 "no
-> atacar") y ronda 2 (escalada del bloqueante 5 con evidencia de spec-86) —
-> ver el resumen de hallazgos cerrados arriba. Sin review de una tercera
-> ronda todavía — pendiente antes de merge.
-> QA: PR #691 abierto, sin auto-merge — pendiente `gh pr checks`.
+> atacar"), ronda 2 (escalada del bloqueante 5 con evidencia de spec-86), y
+> ronda 3 (desajuste de nombre de campo que dejaba la regla de directorio
+> como código muerto en producción, más dos notas para el futuro hook) — ver
+> los resúmenes de hallazgos cerrados arriba. Pendiente de una cuarta ronda
+> antes de merge.
+> QA: PR #691 abierto, sin auto-merge — `gh pr checks 691` verde tras cada
+> ronda (ver reporte de cierre de sesión para el detalle por commit).

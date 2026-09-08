@@ -201,7 +201,15 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   return {
     name,
     declared,
-    declaredDirs,
+    // Field name MUST match what computeOverlap/directoryConflicts reads
+    // (check-phase-overlap-closure.mjs): `a.directories`. A mismatch here
+    // is silent — `a.directories ?? []` in that function swallows it into
+    // an empty array with no error, so directoryConflicts never iterates
+    // anything and the whole rule is dead code with a passing test suite
+    // (the unit tests build their own fixture objects with the right key,
+    // so they never exercise this seam). Found by review round 3 against
+    // real data, not by any test.
+    directories: declaredDirs,
     diffFiles,
     writeSet,
     closure,
@@ -213,8 +221,8 @@ function printReport(targets, overlap) {
   for (const t of targets) {
     console.log(`  ${t.name}`);
     console.log(`    declarado (**Archivos:**): ${t.declared.length ? t.declared.join(', ') : '(ninguno)'}`);
-    if (t.declaredDirs && t.declaredDirs.length) {
-      console.log(`    directorios declarados (no resueltos a fichero — ver warning arriba): ${t.declaredDirs.join(', ')}`);
+    if (t.directories && t.directories.length) {
+      console.log(`    directorios declarados (no resueltos a fichero — ver warning arriba): ${t.directories.join(', ')}`);
     }
     console.log(`    diff real: ${t.diffFiles.length ? t.diffFiles.join(', ') : '(sin commits aún)'}`);
   }
@@ -248,6 +256,22 @@ function printReport(targets, overlap) {
   } else {
     console.log('VEREDICTO: despachable en paralelo — superficies disjuntas.');
   }
+
+  // Review round 3, M-3: SQL collision-blindness is a known, ACCEPTED
+  // limitation (ver "Deliberadamente NO es" en el spec) — dos migraciones
+  // distintas pueden hacer `CREATE OR REPLACE FUNCTION` sobre la MISMA
+  // función y este guard no lo ve, porque cada una es un fichero `.sql`
+  // diferente. Aceptar la limitación no es lo mismo que ocultarla: el
+  // mensaje tiene que decirlo cada vez que aplique, no dejar que quien lea
+  // "superficies disjuntas" lo dé por sentado.
+  const touchesSql = targets.some((t) => [...t.writeSet].some((f) => f.endsWith('.sql')));
+  if (touchesSql) {
+    console.log('');
+    console.log('NOTA: al menos un target toca SQL. Este guard no detecta que dos');
+    console.log('migraciones DISTINTAS hagan CREATE OR REPLACE sobre la MISMA función —');
+    console.log('es ceguera a colisiones en SQL, limitación conocida y aceptada (ver el');
+    console.log('spec). Revisa a mano si ambos targets tocan la misma función.');
+  }
 }
 
 function main() {
@@ -266,7 +290,16 @@ function main() {
   // difference. Verified against real data: spec-80 fase 1b (no
   // **Archivos:**, no branch given) reported "despachable en paralelo —
   // superficies disjuntas" while the real branches collided on two files.
-  const unjudgeable = targets.filter((t) => t.writeSet.size === 0);
+  //
+  // Review round 3: a target that declares ONLY a directory (no concrete
+  // file, no branch) also has writeSet.size === 0 — the same shape as
+  // nothing declared at all — but a directory IS real information
+  // (directoryConflicts can still compare it against another target's
+  // concrete files). spec-88 fase 5 and spec-84 fase 3 both use exactly this
+  // form ("test pgTAP en `packages/.../tests/`") and DO have **Archivos:**;
+  // refusing them here would tell an agent to add a field that already
+  // exists.
+  const unjudgeable = targets.filter((t) => t.writeSet.size === 0 && t.directories.length === 0);
   if (unjudgeable.length > 0) {
     console.error('check-phase-overlap: no puedo juzgar — target(s) sin superficie alguna:');
     for (const t of unjudgeable) {

@@ -108,6 +108,18 @@ MD
 **Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
 MD
 
+  cat > docs/specs/spec-94-x.md <<'MD'
+### Fase 1 — sólo declara un directorio `[pending]`
+
+**Archivos:** `packages/database/supabase/migrations/`
+MD
+
+  cat > docs/specs/spec-95-x.md <<'MD'
+### Fase 1 — dos ramas hermanas, sin Archivos, sólo tocan este .md `[in_progress]`
+
+Prosa nada más.
+MD
+
   git add -A
   git commit -q -m base
   echo "$(git symbolic-ref --short HEAD)" > "$TMP/base_ref"
@@ -291,6 +303,80 @@ assert_exit 0 "a specifier resolving to a real (uncommitted) directory does not 
   bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
   "docs/specs/spec-93-x.md#Fase 1" \
   "docs/specs/spec-81-x.md#Fase 2@feat/spec-81-fase-2"
+
+# ── Review round 3: directory-vs-file through the REAL path, not a unit-test
+# fixture that fabricates the correct field name. This is exactly the seam
+# that broke: check-phase-overlap.mjs returned `declaredDirs`, computeOverlap
+# read `a.directories`, the `?? []` in that function swallowed the mismatch
+# silently, and the unit tests never caught it because their `target()`
+# helper builds the object with the right key by construction.
+assert_exit 1 "directory-only declaration hard-conflicts with a concrete file under it (CLI end-to-end, not a closure fixture)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-94-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+assert_contains "packages/database/supabase/migrations/0001_x.sql" "directory-vs-file names the concrete colliding file" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-94-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+# A directory-only declaration paired with a target that does NOT touch that
+# directory must NOT collide — same "dir-vs-dir/unrelated never blocks" rule.
+assert_exit 0 "directory-only declaration vs an unrelated target: clean" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-94-x.md#Fase 1" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
+# ── Review round 3: a target that declares ONLY a directory (no concrete
+# file, no branch) has writeSet.size === 0 — the SAME shape as a target with
+# nothing declared at all. It must NOT be refused as "no puedo juzgar": a
+# directory declaration IS real information (it can still collide with a
+# concrete file elsewhere), and refusing it here would tell the truth for
+# the wrong reason — the field exists, the tool just wasn't reading it.
+assert_exit 1 "directory-only declaration is NOT refused as unjudgeable (exit 1, a real conflict, not exit 3)" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-94-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+# ── Review round 3, M-3: SQL collision-blindness must be an explicit warning
+# in the tool's own message, not a fact the orchestrator has to already know.
+# Two different migration files can each do `CREATE OR REPLACE FUNCTION` on
+# the SAME Postgres function and this guard reports "disjoint" — correct
+# per its own file-level model (see "Deliberadamente NO es" in the spec),
+# but silent about the risk unless it says so.
+assert_contains "ceguera a colisiones en SQL" "SQL-blindness warning appears when a target's surface includes a .sql file" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-88-x.md#Fase 2" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
+assert_exit 0 "SQL-blindness warning does not turn into a hard block by itself" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-88-x.md#Fase 2" \
+  "docs/specs/spec-82-x.md#Fase 1"
+
+# ── Review round 3, M-2: docs/** exclusion (bloqueante 1) had the same class
+# of hole as the directory bug — only a closure-fixture test, no test that
+# goes spec -> CLI -> git diff -> computeOverlap. Two branches of the SAME
+# spec/fase (no **Archivos:** declared, so nothing but the doc edit itself
+# is in either write set), each editing ONLY that spec's own .md — must not
+# collide with each other, and must still be judgeable (non-empty write set
+# via the real diff, not refused per blocker 3 either).
+(
+  cd "$REPO"
+  git checkout -qb feat/spec-95-fase-1-a "$BASE_REF"
+  echo "Nota de cierre de fase, rama A." >> docs/specs/spec-95-x.md
+  git add -A
+  git commit -q -m "spec-95-x: nota de cierre (rama A, sólo doc)"
+  git checkout -qb feat/spec-95-fase-1-b "$BASE_REF"
+  echo "Nota de cierre de fase, rama B." >> docs/specs/spec-95-x.md
+  git add -A
+  git commit -q -m "spec-95-x: nota de cierre (rama B, sólo doc)"
+  git checkout -q "$BASE_REF"
+)
+assert_exit 0 "docs/** exclusion through the real CLI path: two sibling branches editing only their shared spec.md don't collide" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-a" \
+  "docs/specs/spec-95-x.md#Fase 1@feat/spec-95-fase-1-b"
 
 echo
 echo "$pass passed, $fail failed"
