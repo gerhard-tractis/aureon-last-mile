@@ -3,6 +3,21 @@ import { render, screen } from '@testing-library/react';
 import { OrderLifecycleTimeline } from './OrderLifecycleTimeline';
 import type { AuditEntry } from '@/hooks/useOrderDetail';
 
+/**
+ * A real status transition as the DB trigger writes it: action is always
+ * `UPDATE_orders`, and the milestone lives in `changes_json`. The old
+ * fixtures used invented actions ('RECEPTION', 'DELIVERED') that nothing in
+ * the system produces, which is why keyword matching looked like it worked.
+ */
+function transition(to: string, timestamp: string, from = 'ingresado'): AuditEntry {
+  return {
+    id: `a-${to}`,
+    action: 'UPDATE_orders',
+    timestamp,
+    changes_json: { before: { status: from }, after: { status: to } },
+  };
+}
+
 function entry(overrides: Partial<AuditEntry>): AuditEntry {
   return {
     id: 'a-1',
@@ -35,7 +50,7 @@ describe('OrderLifecycleTimeline', () => {
       <OrderLifecycleTimeline
         auditLogs={[
           entry({ id: 'a-1', action: 'CSV_IMPORT', timestamp: '2026-08-11T22:04:00' }),
-          entry({ id: 'a-2', action: 'RECEPTION', timestamp: '2026-08-12T17:40:00' }),
+          transition('en_bodega', '2026-08-12T17:40:00', 'verificado'),
         ]}
       />,
     );
@@ -66,7 +81,7 @@ describe('OrderLifecycleTimeline', () => {
       <OrderLifecycleTimeline
         auditLogs={[
           entry({ id: 'a-1', action: 'CSV_IMPORT', timestamp: '2026-08-11T22:04:00' }),
-          entry({ id: 'a-2', action: 'DELIVERED', timestamp: '2026-08-13T09:20:00' }),
+          transition('entregado', '2026-08-13T09:20:00', 'en_ruta'),
         ]}
       />,
     );
@@ -79,5 +94,39 @@ describe('OrderLifecycleTimeline', () => {
       <OrderLifecycleTimeline auditLogs={[entry({ id: 'a-1', action: 'CSV_IMPORT', timestamp: null })]} />,
     );
     expect(screen.getByTestId('milestone-importada')).toHaveAttribute('data-state', 'future');
+  });
+});
+
+describe('OrderLifecycleTimeline — the importadas bug', () => {
+  // Reported from Musan QA: orders sitting at `verificado` still read as
+  // "Importada". Milestones were matched against `audit_logs.action`, and the
+  // trigger only ever writes INSERT_orders / UPDATE_orders / DELETE_orders —
+  // so 'insert_orders' hit Importada and nothing else could ever match.
+  it('advances a verified order past Importada to Recogida', () => {
+    render(
+      <OrderLifecycleTimeline
+        auditLogs={[
+          entry({ id: 'a-1', action: 'INSERT_orders', timestamp: '2026-09-07T15:13:48' }),
+          transition('verificado', '2026-09-07T17:11:58'),
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('milestone-importada')).toHaveAttribute('data-state', 'done');
+    expect(screen.getByTestId('milestone-recogida')).toHaveAttribute('data-state', 'current');
+    expect(screen.getByText('07/09 17:11')).toBeInTheDocument();
+  });
+
+  it('does not strand an order at Importada just because every action reads UPDATE_orders', () => {
+    render(
+      <OrderLifecycleTimeline
+        auditLogs={[
+          entry({ id: 'a-1', action: 'INSERT_orders', timestamp: '2026-09-07T15:13:48' }),
+          transition('verificado', '2026-09-07T17:11:58'),
+          transition('en_bodega', '2026-09-07T17:43:03', 'verificado'),
+        ]}
+      />,
+    );
+    expect(screen.getByTestId('milestone-recogida')).toHaveAttribute('data-state', 'done');
+    expect(screen.getByTestId('milestone-recepcion')).toHaveAttribute('data-state', 'current');
   });
 });

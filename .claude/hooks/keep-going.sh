@@ -79,7 +79,73 @@ first_token() {
     | sed -E 's/^#+[[:space:]]*//; s/[[:space:]]*`?\['"$1"'\]`?[[:space:]]*$//' || true
 }
 
-PENDING="$(count_token pending)"
+# --- Una fase con rama abierta ya esta tomada, diga lo que diga el token ---
+#
+# El token vive en el archivo del spec, que es POR RAMA. Cuando se delega una
+# fase y el implementer trabaja en su propia rama, la rama del spec sigue
+# diciendo [pending] hasta que aquello mergee — asi que este hook, y cualquier
+# otra sesion, ven trabajo libre que en realidad esta tomado. Observado el
+# 2026-09-07: la fase 1 de spec-87 se senalo como pendiente tres turnos
+# seguidos mientras un implementer la construia.
+#
+# Las ramas SI son estado global: se leen de las refs locales de seguimiento,
+# sin red y sin merge. Por eso son la senal fiable de "esto ya esta tomado".
+#
+# Convencion: la rama de una fase lleva <spec-id>-fase-<n> en el nombre
+# (feat/spec-85-fase-1-esquema). Sin eso no hay forma de relacionarlas.
+#
+# Limitacion honesta: usa las refs de la ultima vez que se hizo fetch. Una rama
+# recien empujada por otra maquina no se ve hasta el siguiente fetch. Se acepta:
+# este hook no puede hacer red (dispara en cada fin de turno).
+ALL_BRANCHES="$(git branch -a --format='%(refname:short)' 2>/dev/null || true)"
+
+# Dos fallos reales del matcher original, los dos vistos el 2026-09-07:
+#
+#   FALSO POSITIVO  docs/spec-80-fase-1-alcance era un PR que corregia el TEXTO
+#                   del spec, no una implementacion — y marcaba la fase como
+#                   tomada. Una rama docs/ habla DE la fase; no la construye.
+#
+#   FALSO NEGATIVO  feat/spec-87-fase1-cuarentena no casaba, porque el patron
+#                   exigia separador entre "fase" y el numero. El implementer
+#                   escribio "fase1" y la fase quedo invisible.
+#
+# El separador pasa a ser opcional, y las ramas docs/ dejan de contar. Lo que NO
+# se relaja es el limite del numero: fase-1 no puede casar fase-10, o delegar la
+# 1 silenciaria la 10.
+phase_taken() { # $1 = numero de fase
+  [ -n "${1:-}" ] || return 1
+  printf '%s
+' "$ALL_BRANCHES"     | grep -viE '(^|/)docs/'     | grep -qiE "${SPEC_ID}[-_](fase|phase)[-_]?$1([^0-9]|$)"
+}
+
+# Cuenta las [pending] que NADIE tiene tomada.
+count_free_pending() {
+  local n=0 num
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    num="$(printf '%s' "$line" | grep -oiE '(fase|phase|step)[[:space:]]+[0-9]+(\.[0-9]+)?' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)"
+    phase_taken "$num" || n=$((n + 1))
+  done <<EOF
+$(grep -E "^#{2,4} .*\[pending\]${BT}?[[:space:]]*$" "$SPEC_FILE" 2>/dev/null || true)
+EOF
+  printf '%s' "$n"
+}
+
+first_free_pending() {
+  local num
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    num="$(printf '%s' "$line" | grep -oiE '(fase|phase|step)[[:space:]]+[0-9]+(\.[0-9]+)?' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)"
+    if ! phase_taken "$num"; then
+      printf '%s' "$line" | sed -E 's/^#+[[:space:]]*//; s/[[:space:]]*`?\[pending\]`?[[:space:]]*$//'
+      return 0
+    fi
+  done <<EOF
+$(grep -E "^#{2,4} .*\[pending\]${BT}?[[:space:]]*$" "$SPEC_FILE" 2>/dev/null || true)
+EOF
+}
+
+PENDING="$(count_free_pending)"
 INPROG="$(count_token in_progress)"
 
 # Nada declarado sin cerrar -> se puede terminar
@@ -142,7 +208,7 @@ if [ "$PENDING" -gt 0 ]; then
   cat >&2 <<MSG
 Quedan ${PENDING} fase(s) [pending] en ${SPEC_FILE}.
 
-Siguiente: $(first_token pending)
+Siguiente: $(first_free_pending)
 
 Continúa con ella ahora. No pidas autorización para pasar de una fase a la siguiente.
 ${RULES}

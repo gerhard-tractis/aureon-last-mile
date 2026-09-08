@@ -105,6 +105,34 @@ Rules:
 
 Los dos hacen que el hook se salte trabajo disponible, que es justo lo que existe para evitar.
 
+## La rama de una fase lleva su número
+
+Cuando se delega una fase, la rama **debe** llevar `<spec-id>-fase-<n>` en el
+nombre:
+
+```
+feat/spec-85-fase-1-esquema      ✅
+feat/spec-80-fase-0-reconectar-firma  ✅
+work/spec-85-fix                 ❌ no dice qué fase
+```
+
+**Por qué es obligatorio y no estético.** El token `[in_progress]` vive en el
+archivo del spec, que es **por rama**: mientras el trabajo no mergee, la rama del
+spec sigue diciendo `[pending]`. Así que ni el hook `Stop` ni otra sesión pueden
+saber por el archivo que la fase está tomada.
+
+Las ramas sí son estado global. `keep-going.sh` lee las refs locales de
+seguimiento y **trata como tomada toda fase que tenga una rama con su número**,
+diga lo que diga el token. Sin el número en el nombre, esa relación no existe.
+
+Ocurrió el 2026-09-07: la fase 1 de spec-87 se señaló como pendiente tres turnos
+seguidos mientras un implementer la construía. Con una sesión eso es ruido; con
+dos en paralelo es trabajo duplicado sobre los mismos archivos.
+
+**Limitación honesta:** el hook usa las refs del último `fetch`. Una rama recién
+empujada desde otra máquina no se ve hasta el siguiente. Se acepta a propósito —
+el hook dispara en cada fin de turno y no puede hacer red.
+
 ## Evidencia por fase — quién implementó, quién revisó, qué dijo QA
 
 El flujo de implementación es **determinista y delegado**. La sesión principal

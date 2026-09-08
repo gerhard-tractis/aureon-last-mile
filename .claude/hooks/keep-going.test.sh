@@ -115,6 +115,54 @@ spec "$d5" spec-95 "Ver [spec-42](spec-42.md)" "Fase 1 [done]"
 check "link markdown no cuenta como fase" 0 "$(run "$d5" '{}')"
 
 
+# --- Una fase con rama abierta ya esta tomada -------------------------------
+# El token vive en el archivo del spec, que es POR RAMA: cuando se delega una
+# fase, la rama del spec sigue diciendo [pending] hasta que el trabajo mergee.
+# Las ramas si son estado global, asi que son la senal fiable.
+
+d6="$(setup feat/spec-96-x)"; touch "$d6/.claude/keep-going.on"
+spec "$d6" spec-96 "Fase 1 \`[pending]\`"
+( cd "$d6" && git branch -q feat/spec-96-fase-1-algo )
+check "fase pending con rama abierta -> no la reclama" 0 "$(run "$d6" '{}')"
+
+d7="$(setup feat/spec-97-x)"; touch "$d7/.claude/keep-going.on"
+spec "$d7" spec-97 "Fase 1 \`[pending]\`"
+check "fase pending sin rama -> sigue bloqueando" 2 "$(run "$d7" '{}')"
+
+# fase-1 no debe casar con fase-10: si casara, delegar la 1 silenciaria la 10.
+d8="$(setup feat/spec-98-x)"; touch "$d8/.claude/keep-going.on"
+spec "$d8" spec-98 "Fase 10 \`[pending]\`"
+( cd "$d8" && git branch -q feat/spec-98-fase-1-algo )
+check "fase-1 no silencia a fase-10" 2 "$(run "$d8" '{}')"
+
+# Una tomada y otra libre: reclama la libre, no la tomada.
+d9="$(setup feat/spec-99-x)"; touch "$d9/.claude/keep-going.on"
+spec "$d9" spec-99 "Fase 1 \`[pending]\`" "Fase 2 \`[pending]\`"
+( cd "$d9" && git branch -q feat/spec-99-fase-1-algo )
+r9="$(run "$d9" '{}')"
+check "con una tomada, sigue reclamando la libre" 2 "$r9"
+case "$r9" in *"Fase 2"*) echo "  ok   nombra la fase libre, no la tomada"; PASS=$((PASS+1));;
+  *) echo "  FAIL nombra la fase libre, no la tomada"; FAIL=$((FAIL+1));; esac
+
+# --- El matcher: dos fallos reales del 2026-09-07 ---------------------------
+d10="$(setup feat/spec-100-x)"; touch "$d10/.claude/keep-going.on"
+spec "$d10" spec-100 "Fase 1 \`[pending]\`"
+( cd "$d10" && git branch -q feat/spec-100-fase1-sin-guion )
+check "sin guion (fase1) tambien cuenta como tomada" 0 "$(run "$d10" '{}')"
+
+# Una rama docs/ habla DE la fase, no la construye. Marcarla como tomada dejo
+# spec-80 fase 1 invisible para el hook mientras nadie la implementaba.
+d11="$(setup feat/spec-101-x)"; touch "$d11/.claude/keep-going.on"
+spec "$d11" spec-101 "Fase 1 \`[pending]\`"
+( cd "$d11" && git branch -q docs/spec-101-fase-1-alcance )
+check "una rama docs/ NO marca la fase como tomada" 2 "$(run "$d11" '{}')"
+
+# El limite del numero sigue firme con el separador opcional.
+d12="$(setup feat/spec-102-x)"; touch "$d12/.claude/keep-going.on"
+spec "$d12" spec-102 "Fase 10 \`[pending]\`"
+( cd "$d12" && git branch -q feat/spec-102-fase1-algo )
+check "fase1 sin guion tampoco silencia a fase-10" 2 "$(run "$d12" '{}')"
+
 echo
 echo "  $PASS ok, $FAIL fail"
 [ "$FAIL" -eq 0 ]
