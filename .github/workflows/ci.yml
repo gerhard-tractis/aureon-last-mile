@@ -50,6 +50,14 @@ jobs:
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible
       # date, expiry renewed past the 30-day horizon) on the PR instead.
+      #
+      # Does NOT fail on an already-expired entry (review round 2, H3) —
+      # there is no report here, so this step cannot know whether that
+      # entry's test still fails, and blocking every unrelated PR over a
+      # date would be the wrong failure mode. It prints a ::warning:: for
+      # one instead: e2e-qa on the VPS is what actually fails once the entry
+      # expires, which THIS step alone would otherwise leave invisible until
+      # that next run.
       - name: Validate quarantine.json
         run: node ./scripts/check-quarantine.mjs --validate-only apps/frontend/e2e/quarantine.json
 

@@ -657,15 +657,18 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      # Runs only if an earlier step in this job actually failed — meaning an
+      # undeclared failure, an expired quarantine entry, or a stale one
+      # (spec-87 fase 1), never a raw red exit code from npm run e2e:qa
+      # (which no longer fails the job on its own — see "Run E2E against QA"
+      # above). approve-production requires needs.e2e-qa.result == 'success'
+      # (enforced by check-deploy-gating.mjs), so this DOES block the
+      # production deploy — false to say otherwise, which an earlier draft
+      # of this step's own echo output did until 2026-09-03.
       - name: Report failure
         if: failure()
         run: |
           echo "::error::E2E against QA failed on ${DEPLOY_SHA}."
-          # False since 2026-09-03: approve-production requires
-          # needs.e2e-qa.result == 'success' (see check-deploy-gating.mjs),
-          # and since spec-87 fase 1 "failed" here means an undeclared
-          # failure, an expired quarantine entry, or a stale one — not a raw
-          # red exit code. This DOES block the production deploy.
           echo "Download the 'e2e-qa-report-*' artifact for traces and video."
 
   # ─── 8. Production approval gate ─────────────────────────────────────────────
