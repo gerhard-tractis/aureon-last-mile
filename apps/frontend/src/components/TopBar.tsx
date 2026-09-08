@@ -76,7 +76,7 @@ export function TopBar({
 
         {/* Sync state lives here rather than in a fixed banner over the page —
             see SyncChip. It renders nothing while online and drained. */}
-        <SyncChip />
+        <SyncChip operatorId={operatorId} />
 
         {showOpsTools && <CapacityAlertBell operatorId={operatorId} />}
 

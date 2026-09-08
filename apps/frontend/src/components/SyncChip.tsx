@@ -13,33 +13,53 @@ import { useSyncQueue } from '@/hooks/useSyncQueue';
  * work, not that the network is down. "SIN CONEXIÓN · 14 EN COLA" tells them
  * their scans are held and counted; the panel beside the count says they can
  * keep working.
+ *
+ * `operatorId` — spec-81 fase 2: the Recogida side of the count
+ * (`pickup_queue`) is now per operator, not device-global (see
+ * `useSyncQueue`). Without it, an operator who logs out on a dock phone
+ * leaves a stale count the next operator can neither drain nor purge.
  */
-export function SyncChip() {
-  const { status, queuedCount } = useSyncQueue();
+export function SyncChip({ operatorId = null }: { operatorId?: string | null }) {
+  const { status, queuedCount, blockedCount } = useSyncQueue(operatorId);
 
-  // Online and nothing outstanding is the normal state and needs no chrome.
-  if (status === 'online' && queuedCount === 0) return null;
+  // Online, nothing outstanding, nothing blocked is the normal state and
+  // needs no chrome.
+  if (status === 'online' && queuedCount === 0 && blockedCount === 0) return null;
 
-  const tone =
-    status === 'offline'
+  // B3, ronda 2 de review del PR #679 (bloqueante) — un `dead` no puede
+  // pintarse en el verde de éxito: es un bloqueo que necesita ayuda, no
+  // "todo va bien, está en cola". Mientras haya algo bloqueado, el tono deja
+  // de ser success sea cual sea `status`. La afordancia completa (a dónde
+  // lleva esto, qué se puede hacer) es fase 4 — este chip sólo deja de
+  // mentir.
+  const blocked = blockedCount > 0;
+
+  const tone = blocked
+    ? 'border-status-warning-border bg-status-warning-bg text-status-warning-text'
+    : status === 'offline'
       ? 'border-status-warning-border bg-status-warning-bg text-status-warning-text'
       : status === 'syncing'
         ? 'border-border bg-surface-raised text-text-secondary'
         : 'border-status-success-border bg-status-success-bg text-status-success-text';
 
-  const dot =
-    status === 'offline'
+  const dot = blocked
+    ? 'bg-status-warning'
+    : status === 'offline'
       ? 'bg-status-warning'
       : status === 'syncing'
         ? 'bg-text-muted'
         : 'bg-status-success';
 
+  const queuedLabel = queuedCount > 0 ? `${queuedCount} EN COLA` : '';
+  const blockedLabel = blocked ? `${blockedCount} REQUIERE AYUDA` : '';
+  const combinedLabel = [queuedLabel, blockedLabel].filter(Boolean).join(' · ');
+
   const label =
     status === 'offline'
-      ? `SIN CONEXIÓN · ${queuedCount} EN COLA`
+      ? `SIN CONEXIÓN · ${combinedLabel || `${queuedCount} EN COLA`}`
       : status === 'syncing'
         ? 'SINCRONIZANDO…'
-        : `${queuedCount} EN COLA`;
+        : combinedLabel;
 
   return (
     <div

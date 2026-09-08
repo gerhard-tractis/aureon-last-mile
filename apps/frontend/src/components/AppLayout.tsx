@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { useGlobal } from '@/lib/context/GlobalContext';
@@ -9,6 +9,9 @@ import { ModuleKey } from '@/lib/modules/registry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils';
+import { createSPAClient } from '@/lib/supabase/client';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { createLazyPickupQueueSender } from '@/lib/pickup/offlineQueueSender';
 import { useSidebarPin } from './sidebar/useSidebarPin';
 import { SidebarNavItem } from './sidebar/SidebarNavItem';
 import { SidebarBrand } from './sidebar/SidebarBrand';
@@ -42,8 +45,46 @@ export default function AppLayout({
   children: React.ReactNode;
   enabledModules?: ReadonlyArray<ModuleKey>;
 }) {
-  const { role, permissions, operatorId } = useGlobal();
+  const { role, permissions, operatorId, user } = useGlobal();
   const { logoUrl, companyName } = useBranding();
+
+  // spec-81 fase 2, B2 (ronda 1 de review del PR #679) — el drenador de la
+  // cola offline de Recogida (`pickup_queue`) se monta aquí, en el shell
+  // global, con el mismo alcance que `SyncChip`/`useSyncQueue` (dentro de
+  // `TopBar`, más abajo). Sin esto el hook existía pero nadie lo llamaba en
+  // producción: un `close_manifest` encolado sin señal nunca se drenaba, ni
+  // al volver la conexión ni al reabrir la PWA.
+  //
+  // `useMemo` (m5, misma ronda de review) — `useOfflineQueue` mete `send` en
+  // las deps de su efecto; un sender nuevo en cada render reiniciaría la
+  // cadena de reintentos programados (`scheduleRetry`/`clearTimeout`) en
+  // cada montaje de `AppLayout`, así que el sender necesita identidad
+  // ESTABLE.
+  //
+  // Hallazgo del coordinador, revisión del PR #679 tras la ronda 4 de
+  // spec-81 fase 2 — `createPickupQueueSender(createSPAClient())` (versión
+  // anterior de esta línea) llamaba a `createSPAClient()` en el CUERPO del
+  // render. `AppLayout` es `"use client"`, pero Next.js igual ejecuta ese
+  // cuerpo durante el prerender/SSR, y `useMemo` corre en esa pasada.
+  // `createSPAClient()` exige `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en ese
+  // momento — sin ellas (el build de Vercel Preview de este PR no las
+  // tenía), lanza `@supabase/ssr: Your project's URL and API key are
+  // required` prerenderizando cualquier ruta bajo `AppLayout`, rompiendo el
+  // build entero. `createLazyPickupQueueSender` resuelve las dos exigencias
+  // sin elegir entre ellas: identidad estable desde el primer render (lo
+  // que `useMemo` memoiza aquí), pero el cliente Supabase se construye
+  // perezosamente en el primer envío real — en SSR nunca se envía nada, así
+  // que `createSPAClient` nunca se llama.
+  //
+  // B4, ronda 2 de review del PR #679 (bloqueante) — `operatorId` es la
+  // tenencia (`claims.operator_id`), no la persona. Un teléfono de muelle
+  // compartido puede tener dos conductores de la MISMA empresa en sesiones
+  // sucesivas; sin `userId`, el drenador de quien acaba de iniciar sesión
+  // enviaba (y firmaba con su propio nombre, vía `auth.uid()` en el
+  // servidor) lo que el conductor anterior había encolado. `user.id` es ese
+  // mismo `auth.uid()`.
+  const pickupQueueSender = useMemo(() => createLazyPickupQueueSender(createSPAClient), []);
+  useOfflineQueue(operatorId, user?.id ?? null, pickupQueueSender);
   const { pinned, togglePin } = useSidebarPin();
   const pathname = usePathname();
   const [logoError, setLogoError] = useState(false);

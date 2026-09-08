@@ -10,6 +10,7 @@ import { ScanResultCard } from '@/components/pickup/ScanResultCard';
 import { usePickupScans, useScanMutation } from '@/hooks/pickup/usePickupScans';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
+import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
 import { createSPAClient } from '@/lib/supabase/client';
 import { XCircle, Clock, ArrowLeft, Printer } from 'lucide-react';
 import { useManifestOrders } from '@/hooks/pickup/useManifestOrders';
@@ -44,7 +45,7 @@ export default function ScanningPage() {
   // `db.pickup_queue` from this screen yet — that's spec-81 fase 2 — so
   // `queuedCount` is still 0 in practice, but the count is correct
   // infrastructure rather than a hard-coded value waiting on a rewrite.
-  const sync = useSyncQueue();
+  const sync = useSyncQueue(operatorId);
 
   // spec-53 — second entry point. Labels are normally printed from the pickup
   // list before departure, but the crew also needs them here: this is the
@@ -172,6 +173,20 @@ export default function ScanningPage() {
     [manifestId, operatorId, userId, loadId, scanMutation, pickupRouteId, router, handleScanError]
   );
 
+  // M-3, ronda 5 de review del PR #679 (mayor) — `blockedCount` incluye
+  // bloqueos cross-user que este botón no puede resolver (sólo revive
+  // `dead`, vía `retryBlockedManifest`/`retryDead`). Sin este feedback, el
+  // operario tocaba "REQUIERE AYUDA" sobre un bloqueo cross-user y no veía
+  // ningún cambio — ni éxito ni error, la misma pantalla de siempre.
+  const handleRetryBlocked = useCallback(() => {
+    if (!manifestId || !operatorId) return;
+    void retryBlockedManifest(operatorId, manifestId).then((revived) => {
+      if (revived === 0) {
+        toast.info('Nada que reintentar todavía. Puede que otro operario lo esté procesando.');
+      }
+    });
+  }, [manifestId, operatorId]);
+
   return (
     <>
       <div className="space-y-4 p-4 sm:p-6 pb-28 max-w-2xl mx-auto">
@@ -228,6 +243,12 @@ export default function ScanningPage() {
           scanned={verifiedCount}
           total={totalPackages}
           queuedCount={sync.queuedCount}
+          blockedCount={sync.blockedCount}
+          // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679,
+          // B-1) — "el operario puede reintentar desde la app". Sólo se
+          // ofrece una vez que el manifiesto cargó: sin `manifestId` no hay
+          // a qué carga aplicar el reintento.
+          onRetryBlocked={manifestId && operatorId ? handleRetryBlocked : undefined}
         />
 
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />

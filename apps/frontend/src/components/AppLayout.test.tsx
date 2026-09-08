@@ -5,10 +5,11 @@ import React from 'react';
 let mockRole = 'admin';
 let mockPermissions: string[] = [];
 let mockOperatorId: string | null = 'op-test';
+let mockUserId: string | null = 'user-test';
 
 vi.mock('@/lib/context/GlobalContext', () => ({
   useGlobal: () => ({
-    user: { email: 'test@example.com' },
+    user: { email: 'test@example.com', id: mockUserId },
     role: mockRole,
     permissions: mockPermissions,
     operatorId: mockOperatorId,
@@ -17,6 +18,32 @@ vi.mock('@/lib/context/GlobalContext', () => ({
 
 vi.mock('@/lib/supabase/client', () => ({
   createSPASassClient: () => Promise.resolve({ logout: vi.fn() }),
+  createSPAClient: () => ({ rpc: vi.fn() }),
+}));
+
+// spec-81 fase 2, B2 (ronda 1 de review del PR #679) — AppLayout monta el
+// drenador de la cola offline de Recogida. El hook y el sender real se
+// mockean aquí: lo que este archivo verifica es SOLO que AppLayout los
+// conecta con el operatorId correcto, no la lógica de drenado (cubierta en
+// useOfflineQueue.test.ts) ni la del sender (offlineQueueSender.test.ts).
+const mockDrainNow = vi.fn();
+const useOfflineQueueSpy = vi.fn(() => ({ drainNow: mockDrainNow }));
+vi.mock('@/hooks/useOfflineQueue', () => ({
+  useOfflineQueue: (...args: unknown[]) => useOfflineQueueSpy(...args),
+}));
+
+// Hallazgo del coordinador, revisión del PR #679 tras la ronda 4 de spec-81
+// fase 2 — AppLayout pasó de `createPickupQueueSender(createSPAClient())`
+// (construye el cliente Supabase EN el render, rompía el prerender/SSR sin
+// las env vars) a `createLazyPickupQueueSender(createSPAClient)` (identidad
+// estable desde el render, cliente construido perezosamente en el primer
+// envío real — ver offlineQueueSender.test.ts para esa laziness). Este
+// archivo sigue verificando sólo el cableado (operatorId/userId correctos,
+// identidad estable), no la laziness en sí.
+const mockSender = vi.fn();
+const createLazyPickupQueueSenderSpy = vi.fn(() => mockSender);
+vi.mock('@/lib/pickup/offlineQueueSender', () => ({
+  createLazyPickupQueueSender: (...args: unknown[]) => createLazyPickupQueueSenderSpy(...args),
 }));
 
 const mockBranding = {
@@ -99,10 +126,85 @@ beforeEach(() => {
   mockRole = 'admin';
   mockPermissions = [];
   mockOperatorId = 'op-test';
+  mockUserId = 'user-test';
   mockBranding.logoUrl = null;
   mockBranding.companyName = null;
   mockIsTablet = false;
   mockPathname = '/app';
+  mockDrainNow.mockClear();
+  useOfflineQueueSpy.mockClear();
+  mockSender.mockClear();
+  createLazyPickupQueueSenderSpy.mockClear();
+});
+
+describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review PR #679)', () => {
+  it('mounts useOfflineQueue with the current operatorId, userId and a real Supabase-backed sender', () => {
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalled();
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockUserId, mockSender);
+  });
+
+  it('passes null operatorId through when it is not known yet, instead of skipping the mount', () => {
+    mockOperatorId = null;
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(null, mockUserId, mockSender);
+  });
+
+  // B4, ronda 2 de review del PR #679 (bloqueante) — `operatorId` es la
+  // tenencia (`claims.operator_id`), no la persona; `useGlobal().user.id`
+  // es `auth.uid()`, el mismo valor que `close_manifest` usa en el servidor
+  // para derivar `signature_operator_name`. Sin pasar ambos, el drenador de
+  // un usuario B podía enviar (y firmar con su propio nombre) la entrada
+  // que un usuario A de la MISMA empresa había encolado en un teléfono
+  // compartido.
+  it("passes null userId through when it is not known yet, instead of the previous user's id lingering", () => {
+    mockUserId = null;
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, null, mockSender);
+  });
+
+  // m9, ronda 2 de review del PR #679 (menor) — el `useMemo` alrededor de
+  // `createLazyPickupQueueSender` no estaba testeado: sustituirlo por la
+  // llamada directa deja 63/63 en verde, porque el mock de arriba
+  // (`createLazyPickupQueueSenderSpy`) devuelve siempre el mismo objeto sin
+  // importar cuántas veces se llame — la estabilidad de IDENTIDAD, que es
+  // lo que el `useMemo` arregla (un sender nuevo en cada render reiniciaría
+  // la cadena de reintentos programados de `useOfflineQueue`), era
+  // inobservable. Esto comprueba la llamada en sí, no sólo su resultado.
+  it('m9 — memoizes the sender: a re-render does not call createLazyPickupQueueSender again', () => {
+    const { rerender } = render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+
+    mockRole = 'operations_manager';
+    rerender(
+      <AppLayout>
+        <div>content, again</div>
+      </AppLayout>,
+    );
+
+    expect(createLazyPickupQueueSenderSpy).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('AppLayout sidebar branding', () => {
