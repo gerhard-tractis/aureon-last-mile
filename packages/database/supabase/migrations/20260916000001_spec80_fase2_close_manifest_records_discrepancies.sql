@@ -14,11 +14,20 @@
 -- Por qué SQL manda la nota, no el frontend: el texto que el operario
 -- escribió en 5e (Revisión) vive hoy en discrepancy_notes
 -- (manifest_id, package_id, note) — la pantalla la guarda ANTES de llegar
--- aquí. close_manifest la lee con un LEFT JOIN; un bulto faltante sin nota
--- (nunca alcanzable desde 5e, que bloquea el cierre sin ella — ver
--- lib/pickup/reviewCloseGate.ts, allMissingNotesComplete) se registra de
--- todos modos con note=NULL, para no dejar un faltante fuera del respaldo
--- sólo porque el cliente saltó la pantalla de revisión.
+-- aquí, si el operario decide escribirla. close_manifest la lee con un
+-- LEFT JOIN; un bulto faltante sin nota SÍ es alcanzable desde 5e — la nota
+-- es opcional (decisión del usuario, 2026-09-08: "Es opcional, y la dejaría
+-- editable en el futuro"; el mock 5e muestra el CTA de cierre totalmente
+-- opaco con bultos sin nota, sin ningún estado deshabilitado) — se registra
+-- de todos modos con note=NULL. discrepancies.note no tiene NOT NULL, así
+-- que esto no es una corrección de esquema, sólo de comentario: la fila que
+-- este bloque ya insertaba con NULL antes de esta nota corregida es
+-- exactamente la misma fila que inserta ahora. Nota (2026-09-08): hoy no
+-- existe ningún camino para EDITAR esa nota después de capturada — ni
+-- record_discrepancies ni resolve_discrepancy escriben sobre
+-- discrepancies.note una vez insertada (resolve_discrepancy escribe
+-- `resolution`, un campo distinto). Queda como trabajo pendiente, declarado
+-- en spec-80 fase 2, no resuelto aquí.
 --
 -- record_discrepancies acepta p_items=[] y devuelve el conjunto vacío sin
 -- lanzar (spec-85 fase 2, M5) — el caso de un cierre limpio (0 faltantes,

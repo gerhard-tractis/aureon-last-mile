@@ -1,30 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeReviewCounts,
-  dedupeNotFoundBarcodes,
-  allMissingNotesComplete,
+  dedupeNotFoundScans,
   closeButtonLabel,
+  primaryButtonLabel,
+  missingHeadingLabel,
 } from './reviewCloseGate';
 
-describe('dedupeNotFoundBarcodes', () => {
-  it('returns distinct barcodes among not_found scans', () => {
+describe('dedupeNotFoundScans', () => {
+  it('returns distinct barcodes among not_found scans, keeping the first scanned_at seen', () => {
     const scans = [
-      { scan_result: 'verified', barcode_scanned: 'A' },
-      { scan_result: 'not_found', barcode_scanned: 'B' },
-      { scan_result: 'not_found', barcode_scanned: 'B' },
-      { scan_result: 'not_found', barcode_scanned: 'C' },
+      { scan_result: 'verified', barcode_scanned: 'A', scanned_at: '2026-09-08T08:00:00Z' },
+      { scan_result: 'not_found', barcode_scanned: 'B', scanned_at: '2026-09-08T08:47:00Z' },
+      { scan_result: 'not_found', barcode_scanned: 'B', scanned_at: '2026-09-08T08:50:00Z' },
+      { scan_result: 'not_found', barcode_scanned: 'C', scanned_at: '2026-09-08T08:48:00Z' },
     ];
-    expect(dedupeNotFoundBarcodes(scans)).toEqual(['B', 'C']);
+    expect(dedupeNotFoundScans(scans)).toEqual([
+      { barcode: 'B', scannedAt: '2026-09-08T08:47:00Z' },
+      { barcode: 'C', scannedAt: '2026-09-08T08:48:00Z' },
+    ]);
   });
 
   it('ignores not_found scans with no barcode', () => {
-    const scans = [{ scan_result: 'not_found', barcode_scanned: null }];
-    expect(dedupeNotFoundBarcodes(scans)).toEqual([]);
+    const scans = [{ scan_result: 'not_found', barcode_scanned: null, scanned_at: '2026-09-08T08:00:00Z' }];
+    expect(dedupeNotFoundScans(scans)).toEqual([]);
   });
 
   it('returns an empty array when nothing is not_found', () => {
-    const scans = [{ scan_result: 'verified', barcode_scanned: 'A' }];
-    expect(dedupeNotFoundBarcodes(scans)).toEqual([]);
+    const scans = [{ scan_result: 'verified', barcode_scanned: 'A', scanned_at: '2026-09-08T08:00:00Z' }];
+    expect(dedupeNotFoundScans(scans)).toEqual([]);
   });
 });
 
@@ -57,40 +61,32 @@ describe('computeReviewCounts', () => {
   });
 });
 
-describe('allMissingNotesComplete', () => {
-  it('is true when there are no missing packages', () => {
-    expect(allMissingNotesComplete([], new Map())).toBe(true);
-  });
-
-  it('is false when a missing package has no note', () => {
-    const noteMap = new Map([['pkg1', 'Se cayó del camión']]);
-    expect(allMissingNotesComplete(['pkg1', 'pkg2'], noteMap)).toBe(false);
-  });
-
-  it('is false when a note is only whitespace', () => {
-    const noteMap = new Map([['pkg1', '   ']]);
-    expect(allMissingNotesComplete(['pkg1'], noteMap)).toBe(false);
-  });
-
-  it('is true when every missing package has a non-empty note', () => {
-    const noteMap = new Map([
-      ['pkg1', 'Se cayó del camión'],
-      ['pkg2', 'No llegó al local'],
-    ]);
-    expect(allMissingNotesComplete(['pkg1', 'pkg2'], noteMap)).toBe(true);
-  });
-});
-
 describe('closeButtonLabel', () => {
-  it('reads "Continuar a firma" when there are no missing packages', () => {
-    expect(closeButtonLabel(0)).toBe('Continuar a firma');
-  });
-
   it('reads singular for exactly one missing package', () => {
     expect(closeButtonLabel(1)).toBe('Cerrar con 1 faltante');
   });
 
   it('reads plural for more than one missing package', () => {
     expect(closeButtonLabel(3)).toBe('Cerrar con 3 faltantes');
+  });
+});
+
+describe('primaryButtonLabel', () => {
+  it('reads "Seguir escaneando" while there are missing packages — mock 5e keeps this the gold/primary action, not the close', () => {
+    expect(primaryButtonLabel(3)).toBe('Seguir escaneando');
+  });
+
+  it('reads "Continuar a firma" once there is nothing missing', () => {
+    expect(primaryButtonLabel(0)).toBe('Continuar a firma');
+  });
+});
+
+describe('missingHeadingLabel', () => {
+  it('reads singular "Falta 1 paquete" for exactly one missing package', () => {
+    expect(missingHeadingLabel(1)).toBe('Falta 1 paquete');
+  });
+
+  it('reads plural "Faltan N paquetes" for more than one', () => {
+    expect(missingHeadingLabel(3)).toBe('Faltan 3 paquetes');
   });
 });

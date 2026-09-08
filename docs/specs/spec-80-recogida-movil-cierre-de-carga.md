@@ -434,21 +434,74 @@ Con 0 faltantes la pantalla no bloquea: pasa directo a `5f`.
 
 > Implementado por: sesión de agente, rama `feat/spec-80-fase-2-bloqueo-faltantes`.
 > `lib/pickup/reviewCloseGate.ts` (conteo puro), `components/pickup/UnverifiedPackagesBlock.tsx`
-> (advertencia + `SIN VERIFICAR` + `NO ESTABAN EN LA CARGA`), y `review/[loadId]/page.tsx`
-> reescrito contra `5e`. El "cablear al RPC de la fase 1" resultó ser cambio de SQL, no de
-> frontend: `close_manifest` (migración `20260916000001`, `CREATE OR REPLACE` sobre la
-> última, `20260913000004`) ahora construye `p_items` desde los paquetes
-> declarados-y-no-verificados (con su nota de `discrepancy_notes` si la hay) y los barcodes
-> `not_found` deduplicados, y llama a `record_discrepancies('pickup', manifest_id, items)`
-> en la MISMA transacción que fija status/firmas — así lo pedía la sección "Cambios de
-> flujo de datos #1" del spec. `complete/[loadId]/page.tsx` (5f, fase 3) no se tocó — sigue
-> llamando a `close_manifest` sin pasar faltantes, que ya no acepta. No se tocó ningún
-> fichero de la cola offline (spec-81, en su tercera ronda en paralelo) ni `PickupFlowHeader`.
-> pgTAP: `spec80_fase2_close_manifest_discrepancies.test.sql`, 11/11 vía `pgtap-local.sh`
-> (más `spec80_close_manifest.sql`, `spec80_close_manifest_acl.test.sql`,
-> `spec85_discrepancies_rpcs.test.sql`, `spec85_discrepancies_schema.test.sql`,
-> `spec81_fase3_close_manifest_idempotency.test.sql` re-corridos en verde). Review y QA
-> pendientes — no se marca `[done]` aquí.
+> (advertencia + `SIN VERIFICAR` + `NO ESTABAN EN LA CARGA`), `components/pickup/MissingPackageRow.tsx`
+> (fila por bulto), y `review/[loadId]/page.tsx` reescrito contra `5e`. El "cablear al RPC de la
+> fase 1" resultó ser cambio de SQL, no de frontend: `close_manifest` (migración `20260916000001`,
+> `CREATE OR REPLACE` sobre la última, `20260913000004`) ahora construye `p_items` desde los
+> paquetes declarados-y-no-verificados (con su nota de `discrepancy_notes` si la hay) y los
+> barcodes `not_found` deduplicados, y llama a `record_discrepancies('pickup', manifest_id, items)`
+> en la MISMA transacción que fija status/firmas. `complete/[loadId]/page.tsx` (5f, fase 3) no se
+> tocó. No se tocó ningún fichero de la cola offline (spec-81) ni `PickupFlowHeader`.
+> pgTAP: `spec80_fase2_close_manifest_discrepancies.test.sql`, 11/11 vía `pgtap-local.sh`.
+>
+> **Validado contra el mock real** (`docs/design/Recogida.dc.html`, `5e Cierre con faltantes`)
+> después de una primera ronda construida sólo contra la prosa del spec — sin acceso al diseño en
+> ese momento. Correcciones de esa auditoría:
+> - Los dos CTAs estaban invertidos: `Seguir escaneando` es el primario dorado de 60px a ancho
+>   completo (empuja a seguir buscando bultos); `Cerrar con N faltantes` es el secundario, contorno
+>   rojo (`status-error`). Estaban al revés en la primera versión, y el test lo fijaba como
+>   intencional — corregido, con el test reescrito.
+> - «Faltan N paquetes» / «X de Y verificados» viven DENTRO de la tarjeta de alarma roja, junto
+>   con la frase literal — no en una cabecera dorada aparte. La cabecera dorada (heredada de
+>   spec-19) se quitó de esta pantalla.
+> - `SIN VERIFICAR · N` y `NO ESTABAN EN LA CARGA · N` usan separador `·`, no `(N)`.
+> - `NO ESTABAN EN LA CARGA` es `status-error` (rojo), con la sublínea `escaneado HH:MM · no
+>   pertenece a este manifiesto` — antes usaba `status-warning` (ámbar) sin timestamp.
+> - «Faltan 1 paquetes» → «Falta 1 paquete» (concordancia singular). Con 0 faltantes la tarjeta de
+>   alarma no se renderiza en absoluto (ya era así), así que nunca sale «Faltan 0 paquetes».
+> - El botón **Nota** por bulto es literal: `MissingPackageRow.tsx` reemplaza el textarea
+>   siempre-abierto de la primera ronda (reutilizaba `DiscrepancyItem`) por un chip `Nota` de 44px
+>   que abre un campo inline, y un chip `CON NOTA` + la nota entrecomillada de sólo lectura una vez
+>   guardada — igual que el mock. `DiscrepancyItem.tsx` queda sin usar (comentario añadido; no se
+>   borra por si otro spec lo retoma).
+>
+> **Decisión del usuario (2026-09-08) sobre si la nota es obligatoria:** *"Es opcional, y la
+> dejaría editable en el futuro."* El mock ya lo mostraba así (CTA de cierre totalmente opaco con
+> bultos sin nota, sin estado deshabilitado en ningún caso) y ni el spec ni el mock pedían lo
+> contrario — la obligatoriedad se había inventado en la primera ronda de implementación y luego
+> se citaba a sí misma como premisa en el comentario de la migración SQL. Revertido: se quitó
+> `allMissingNotesComplete` de `reviewCloseGate.ts` (y sus tests) y el CTA de cierre ya no se
+> deshabilita nunca por falta de notas. Los placeholders «(obligatorio)» de `MissingPackageRow.tsx`
+> y `DiscrepancyItem.tsx` pasan a «(opcional)». El comentario de la migración `20260916000001` que
+> afirmaba la premisa falsa quedó corregido — **no cambió ningún comportamiento SQL**:
+> `discrepancies.note` nunca tuvo `NOT NULL`, así que la fila que ese bloque insertaba con
+> `note=NULL` antes de la nota corregida es exactamente la misma que inserta ahora.
+>
+> **Hallazgo (no implementado, sólo declarado, por instrucción explícita del usuario):** hoy no
+> existe ningún camino para EDITAR la nota de una discrepancia ya registrada. Verificado leyendo
+> `20260913000001` (esquema: `discrepancies.note`, sin trigger de escritura) y `20260913000003`
+> (`record_discrepancies` sólo INSERTa; `resolve_discrepancy` hace `UPDATE ... SET status,
+> resolution, resolved_at, resolved_by_user_id` — nunca toca `note`). Ningún otro archivo tiene un
+> `UPDATE` sobre `discrepancies.note`. Consecuencia sobre lo que ya se puede crear hoy en
+> producción: ninguna — la nota opcional en captura no rompe ni migra nada existente, sólo permite
+> que una fila `missing` nueva se inserte con `note=NULL` cuando antes (con la puerta indebida)
+> nunca habría llegado a insertarse sin nota. Este spec **no** decide dónde vive la edición futura
+> — candidatos razonables son spec-86 fase 3 (panel de resolución de discrepancias) o una fase
+> nueva de spec-85; la decisión de cuál es del orquestador, no de esta fase.
+>
+> **Aplazamiento declarado — nota "Alcance corregido" (2026-09-07, ronda 3):** esa nota pide que
+> `PickupMobileView` gane una forma de llegar a un manifiesto de rescate (uno que
+> `trg_route_receptions_status_sync` completó sin firma) sin escritorio y sin teclear la URL —
+> una pestaña Completados en móvil. **No se construyó en esta fase.** Razón: `PickupMobileView.tsx`
+> es, por lo visto en los tests existentes (agrupación de manifiestos por cliente, tarjetas KPI,
+> tarjeta "próxima carga"), el mismo fichero que spec-82 fase 1 (`5b`/`5c`, la lista de
+> manifiestos y las recogidas del día) está editando en paralelo ahora mismo — tocarlo aquí
+> arriesgaba un conflicto de tres ramas sobre el mismo componente, el escenario que la
+> coordinación de esta sesión pidió evitar explícitamente. Queda como trabajo pendiente de esta
+> fase, no resuelto: alguien debe decidir si es una fase 2b de spec-80, o si se absorbe dentro de
+> spec-82 fase 1 dado que ya toca el mismo fichero.
+>
+> Review y QA pendientes — no se marca `[done]` aquí.
 
 ### Fase 3 — `5f` firma y fotos `[pending]`
 

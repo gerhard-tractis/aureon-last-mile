@@ -39,9 +39,9 @@ vi.mock('@/lib/supabase/client', () => ({
   }),
 }));
 
-vi.mock('@/components/pickup/DiscrepancyItem', () => ({
-  DiscrepancyItem: ({ packageLabel }: { packageLabel: string }) => (
-    <div data-testid="discrepancy-item">{packageLabel}</div>
+vi.mock('@/components/pickup/MissingPackageRow', () => ({
+  MissingPackageRow: ({ packageLabel }: { packageLabel: string }) => (
+    <div data-testid="missing-package-row">{packageLabel}</div>
   ),
 }));
 
@@ -61,7 +61,13 @@ describe('DiscrepancyReviewPage (5e)', () => {
       data: [
         { id: 's1', scan_result: 'verified', package_id: 'p1' },
         { id: 's2', scan_result: 'verified', package_id: 'p2' },
-        { id: 's3', scan_result: 'not_found', package_id: null, barcode_scanned: 'BC999' },
+        {
+          id: 's3',
+          scan_result: 'not_found',
+          package_id: null,
+          barcode_scanned: 'BC999',
+          scanned_at: '2026-09-08T08:47:00Z',
+        },
       ],
     });
     mockUseMissingPackages.mockReturnValue({
@@ -72,9 +78,9 @@ describe('DiscrepancyReviewPage (5e)', () => {
     mockPush.mockClear();
   });
 
-  it('shows the "Faltan N paquetes" header', async () => {
+  it('shows the "Falta 1 paquete" heading inside the warning card (singular)', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText('Faltan 1 paquetes')).toBeInTheDocument();
+    expect(await screen.findByText('Falta 1 paquete')).toBeInTheDocument();
   });
 
   it('shows the "X de Y verificados" subheading', async () => {
@@ -82,33 +88,39 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(await screen.findByText('2 de 3 verificados')).toBeInTheDocument();
   });
 
-  it('renders the SIN VERIFICAR list from UnverifiedPackagesBlock', async () => {
+  it('renders the SIN VERIFICAR · N list from UnverifiedPackagesBlock', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText(/sin verificar \(1\)/i)).toBeInTheDocument();
-    expect(screen.getByTestId('discrepancy-item')).toHaveTextContent('PKG-001');
+    expect(await screen.findByText('SIN VERIFICAR · 1')).toBeInTheDocument();
+    expect(screen.getByTestId('missing-package-row')).toHaveTextContent('PKG-001');
   });
 
-  it('renders the NO ESTABAN EN LA CARGA block', async () => {
+  it('renders the NO ESTABAN EN LA CARGA · N block', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(await screen.findByText(/no estaban en la carga \(1\)/i)).toBeInTheDocument();
+    expect(await screen.findByText('NO ESTABAN EN LA CARGA · 1')).toBeInTheDocument();
   });
 
-  it('the primary CTA reads "Cerrar con 1 faltante" while missing packages exist', async () => {
+  it('"Seguir escaneando" is the gold/primary CTA while there are missing packages', async () => {
     render(<DiscrepancyReviewPage />);
-    expect(
-      await screen.findByRole('button', { name: /cerrar con 1 faltante/i })
-    ).toBeInTheDocument();
+    const btn = await screen.findByRole('button', { name: /seguir escaneando/i });
+    fireEvent.click(btn);
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
   });
 
-  it('keeps the close CTA disabled while a missing package has no note', async () => {
+  // Decisión del usuario (2026-09-08): la nota del faltante es OPCIONAL — "Es
+  // opcional, y la dejaría editable en el futuro". El mock 5e muestra el CTA
+  // "Cerrar con 3 faltantes" totalmente opaco con dos bultos SIN nota; no hay
+  // atenuación de deshabilitado en ningún estado del mock. Pin: el CTA nunca
+  // se bloquea por falta de notas, con o sin ellas.
+  it('"Cerrar con N faltantes" is the secondary CTA and is never disabled by missing notes', async () => {
     render(<DiscrepancyReviewPage />);
     const cta = await screen.findByRole('button', { name: /cerrar con 1 faltante/i });
-    expect(cta).toBeDisabled();
+    expect(cta).not.toBeDisabled();
+
     fireEvent.click(cta);
-    expect(mockPush).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
   });
 
-  it('enables the close CTA and navigates to Firma once every missing package has a note', async () => {
+  it('closing with a missing package that already has a note still navigates to Firma', async () => {
     mockUseDiscrepancyNotes.mockReturnValue({
       data: [{ package_id: 'pkg1', note: 'El local no lo encontró en bodega.' }],
     });
@@ -121,14 +133,7 @@ describe('DiscrepancyReviewPage (5e)', () => {
     expect(mockPush).toHaveBeenCalledWith('/app/pickup/complete/CARGA-001');
   });
 
-  it('renders the "Seguir escaneando" exit back to scanning', async () => {
-    render(<DiscrepancyReviewPage />);
-    const btn = await screen.findByRole('button', { name: /seguir escaneando/i });
-    fireEvent.click(btn);
-    expect(mockPush).toHaveBeenCalledWith('/app/pickup/scan/CARGA-001');
-  });
-
-  it('passes straight through with zero missing packages: no warning, CTA reads "Continuar a firma" and is enabled', async () => {
+  it('passes straight through with zero missing packages: single gold CTA "Continuar a firma", no "Seguir escaneando", no warning', async () => {
     mockUseMissingPackages.mockReturnValue({ data: [] });
     mockUsePickupScans.mockReturnValue({
       data: [
@@ -140,6 +145,7 @@ describe('DiscrepancyReviewPage (5e)', () => {
     render(<DiscrepancyReviewPage />);
     const cta = await screen.findByRole('button', { name: /continuar a firma/i });
     expect(cta).not.toBeDisabled();
+    expect(screen.queryByRole('button', { name: /seguir escaneando/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/sin verificar/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/quedan registrados como faltantes/i)).not.toBeInTheDocument();
 

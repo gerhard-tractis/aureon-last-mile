@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react';
 import { Package } from 'lucide-react';
 
+// spec-80 fase 2 (2026-09-08): superseded by MissingPackageRow.tsx on the
+// `5e` review screen — validated against the real mock, which uses a
+// `Nota` button + `CON NOTA` badge/readback, not this always-open textarea.
+// Left in place, unreferenced, in case another spec still wants this shape;
+// not wired into any screen as of this note.
+
 interface DiscrepancyItemProps {
   packageId: string;
   packageLabel: string;
@@ -41,7 +47,7 @@ export function DiscrepancyItem({
         value={note}
         onChange={(e) => setNote(e.target.value)}
         onBlur={handleBlur}
-        placeholder="Motivo del faltante (obligatorio)..."
+        placeholder="Motivo del faltante (opcional)..."
         className="w-full p-2 text-sm bg-surface border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-accent/40 text-text"
         rows={2}
         aria-label={`Nota para paquete ${packageLabel}`}

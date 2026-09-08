@@ -12,22 +12,30 @@ import {
 } from '@/hooks/pickup/useDiscrepancies';
 import {
   computeReviewCounts,
-  dedupeNotFoundBarcodes,
-  allMissingNotesComplete,
+  dedupeNotFoundScans,
   closeButtonLabel,
+  primaryButtonLabel,
 } from '@/lib/pickup/reviewCloseGate';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
-import { ArrowLeft } from 'lucide-react';
 import { PickupStepBreadcrumb } from '@/components/pickup/PickupStepBreadcrumb';
 import { Skeleton } from '@/components/ui/skeleton';
 
 /**
  * spec-80 fase 2, mock `5e`. Replaces spec-47's review screen at the same
- * point in the flow: no longer just informational — it is the "el bloqueo
- * que faltaba en 5d" the mock's own label calls it. A missing package
- * without a note keeps the crew here; the client signs on `5f` over
- * whatever counts leave this screen.
+ * point in the flow: no longer just informational — it is "el bloqueo que
+ * faltaba en 5d" the mock's own label calls it. The client signs on `5f`
+ * over whatever counts leave this screen (verified/missing/unexpected); a
+ * missing package's note is optional and does not block the close (user
+ * decision, 2026-09-08 — see reviewCloseGate.ts).
+ *
+ * Validated against `docs/design/Recogida.dc.html` (`5e Cierre con
+ * faltantes`): "Faltan N paquetes" / "X de Y verificados" live inside the
+ * red warning card (UnverifiedPackagesBlock), not in a page header — this
+ * screen's own header is just the load id. "Seguir escaneando" is the
+ * gold/primary CTA while anything is missing; "Cerrar con N faltantes" is
+ * the secondary, red-outlined one, never disabled. With zero missing, a
+ * single gold "Continuar a firma" replaces both.
  */
 export default function DiscrepancyReviewPage() {
   const params = useParams();
@@ -65,7 +73,7 @@ export default function DiscrepancyReviewPage() {
   const { data: notes = [] } = useDiscrepancyNotes(manifestId);
   const saveNote = useSaveDiscrepancyNote();
 
-  const notFoundBarcodes = useMemo(() => dedupeNotFoundBarcodes(scans), [scans]);
+  const notFoundScans = useMemo(() => dedupeNotFoundScans(scans), [scans]);
 
   const counts = useMemo(
     () => computeReviewCounts(scans, missingPackages.length),
@@ -75,15 +83,6 @@ export default function DiscrepancyReviewPage() {
   const noteMap = useMemo(
     () => new Map(notes.map((n) => [n.package_id, n.note])),
     [notes]
-  );
-
-  const canClose = useMemo(
-    () =>
-      allMissingNotesComplete(
-        missingPackages.map((p) => p.id),
-        noteMap
-      ),
-    [missingPackages, noteMap]
   );
 
   const handleSaveNote = (packageId: string, note: string) => {
@@ -97,9 +96,16 @@ export default function DiscrepancyReviewPage() {
     });
   };
 
+  // Decisión del usuario (2026-09-08): la nota del faltante es OPCIONAL —
+  // "Es opcional, y la dejaría editable en el futuro". El mock 5e muestra el
+  // CTA de cierre totalmente opaco con bultos SIN nota; no hay estado
+  // deshabilitado en ningún caso de este flujo. No gatear el cierre por notas.
   const goToFirma = () => {
-    if (!canClose) return;
     router.push(`/app/pickup/complete/${encodeURIComponent(loadId)}`);
+  };
+
+  const goToScan = () => {
+    router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`);
   };
 
   if (!manifestId) {
@@ -118,20 +124,14 @@ export default function DiscrepancyReviewPage() {
       <div className="space-y-4 p-4 sm:p-6 pb-24 max-w-2xl mx-auto">
         <PickupStepBreadcrumb current="review" />
 
-        {/* Gold header */}
-        <div className="bg-accent text-accent-foreground dark:bg-accent-muted dark:text-accent p-4 -mx-4 rounded-none">
-          <p className="text-xs opacity-80">{loadId}</p>
-          <p className="font-semibold text-base mt-0.5">
-            Faltan {counts.missingCount} paquetes
-          </p>
-          <p className="text-xs opacity-80 mt-0.5">
-            {counts.verifiedCount} de {counts.totalCount} verificados
-          </p>
+        <div className="flex flex-col gap-0.5">
+          <span className="text-lg font-semibold text-text">{loadId}</span>
         </div>
 
         <UnverifiedPackagesBlock
+          counts={counts}
           missingPackages={missingPackages}
-          notFoundBarcodes={notFoundBarcodes}
+          notFoundScans={notFoundScans}
           noteMap={noteMap}
           onSaveNote={handleSaveNote}
         />
@@ -139,24 +139,26 @@ export default function DiscrepancyReviewPage() {
 
       {/* Sticky footer — always visible on tablet/mobile */}
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
-        <div className="max-w-2xl mx-auto flex gap-3">
-          <Button
-            variant="outline"
-            onClick={() =>
-              router.push(`/app/pickup/scan/${encodeURIComponent(loadId)}`)
-            }
-            className="flex items-center gap-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Seguir escaneando
-          </Button>
-          <Button
-            onClick={goToFirma}
-            disabled={!canClose}
-            className="flex-1 disabled:opacity-50"
-          >
-            {closeButtonLabel(counts.missingCount)}
-          </Button>
+        <div className="max-w-2xl mx-auto flex flex-col gap-3">
+          {counts.missingCount > 0 ? (
+            <Button onClick={goToScan} className="w-full">
+              {primaryButtonLabel(counts.missingCount)}
+            </Button>
+          ) : null}
+
+          {counts.missingCount > 0 ? (
+            <Button
+              variant="outline"
+              onClick={goToFirma}
+              className="w-full border-status-error-border text-status-error hover:bg-status-error-bg"
+            >
+              {closeButtonLabel(counts.missingCount)}
+            </Button>
+          ) : (
+            <Button onClick={goToFirma} className="w-full">
+              {primaryButtonLabel(counts.missingCount)}
+            </Button>
+          )}
         </div>
       </div>
     </>
