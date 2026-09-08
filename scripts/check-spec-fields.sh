@@ -166,6 +166,29 @@ for f in $FILES; do
       ;;
   esac
 
+  # **Archivos:** — la superficie de ficheros que la fase va a tocar. Es lo
+  # que scripts/check-phase-overlap.mjs lee para decidir si dos fases se
+  # pueden despachar en paralelo sin pisarse (ver spec-89). Sólo se exige en
+  # [pending]/[in_progress] — el trabajo que un agente todavía puede tomar.
+  # No en [done]/[blocked]/[parked]/[awaiting_user_test]: retrofitear esa
+  # línea a fases ya cerradas o paradas no ayuda a nadie a decidir un
+  # dispatch futuro, y rompería en bloque las que nunca la llevaron.
+  awk '
+    function flush() {
+      if (pend && !seen) print lineno "\t" head
+    }
+    /^#{2,4} .*\[(pending|in_progress)\]`?[ \t]*$/ { flush(); pend=1; seen=0; head=$0; lineno=NR; next }
+    /^#{2,4} /                                     { flush(); pend=0; next }
+    /^\*\*Archivos:\*\*/                           { if (pend) seen=1 }
+    END { flush() }
+  ' "$f" > "/tmp/_arch_$$" 2>/dev/null || true
+  if [ -s "/tmp/_arch_$$" ]; then
+    echo "::error file=$f::Fase(s) [pending]/[in_progress] sin **Archivos:**. Declara qué ficheros toca la fase — scripts/check-phase-overlap.mjs lo necesita para el guardarraíl de paralelismo (ver docs/specs/spec-89-guardarrail-de-paralelismo.md)."
+    while IFS="$(printf '\t')" read -r ln head; do echo "    $f:$ln: $head"; done < "/tmp/_arch_$$"
+    FAILED=1
+  fi
+  rm -f "/tmp/_arch_$$"
+
   phases="$(grep -cE "^#{2,4} .*\[($VALID)${TOKEN_END}" "$f" 2>/dev/null || true)"
   [ -n "$phases" ] || phases=0
 
