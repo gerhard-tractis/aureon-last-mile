@@ -50,6 +50,41 @@ function resolveSpecifier(specifier, fromFile, resolveContent) {
   return null;
 }
 
+const APP_ROUTER_ROOT = 'apps/frontend/src/app';
+
+function isNextPageFile(file) {
+  return file.startsWith(`${APP_ROUTER_ROOT}/`) && /\/page\.(tsx|ts|jsx|js)$/.test(file);
+}
+
+/**
+ * Next.js App Router applies a `layout.tsx` to every route beneath it by
+ * FILE-SYSTEM CONVENTION, never by an `import` statement — real code in
+ * this repo: `apps/frontend/src/app/app/layout.tsx` imports `AppLayout` and
+ * wraps every page under `app/app/**`, but no `page.tsx` ever imports that
+ * layout file. A plain import-graph walk is structurally blind to this
+ * edge, which is exactly the shape of the coupling this guard exists to
+ * catch (a page depends on a shared shell it never names). Returns every
+ * `layout.{tsx,ts}` from the page's own directory up to (and including)
+ * the app-router root.
+ */
+function nextLayoutAncestors(file, resolveContent) {
+  if (!isNextPageFile(file)) return [];
+  const results = [];
+  let dir = file.split('/').slice(0, -1).join('/');
+  while (dir.length >= APP_ROUTER_ROOT.length) {
+    for (const ext of ['.tsx', '.ts']) {
+      const candidate = `${dir}/layout${ext}`;
+      if (resolveContent(candidate) !== null) {
+        results.push(candidate);
+        break;
+      }
+    }
+    if (dir === APP_ROUTER_ROOT) break;
+    dir = dir.split('/').slice(0, -1).join('/');
+  }
+  return results;
+}
+
 /**
  * BFS import closure from `seedFiles`, capped at `maxDepth` hops.
  *
@@ -76,15 +111,27 @@ export function buildClosure(seedFiles, { resolveContent, maxDepth = 2 }) {
     const next = [];
     for (const file of frontier) {
       const content = resolveContent(file);
-      if (content === null) continue;
-      for (const imp of parseImportSpecifiers(content)) {
-        const resolved = resolveSpecifier(imp.specifier, file, resolveContent);
-        if (!resolved || visited.has(resolved)) continue;
-        visited.set(resolved, {
+      if (content !== null) {
+        for (const imp of parseImportSpecifiers(content)) {
+          const resolved = resolveSpecifier(imp.specifier, file, resolveContent);
+          if (!resolved || visited.has(resolved)) continue;
+          visited.set(resolved, {
+            depth,
+            via: { from: file, specifier: imp.specifier, isType: imp.isType },
+          });
+          next.push(resolved);
+        }
+      }
+      // Convention edge, independent of whether `file` itself has content
+      // (resolveContent may be null for a brand-new page with no commit yet
+      // — its ancestor layouts still exist and still apply to it).
+      for (const layoutFile of nextLayoutAncestors(file, resolveContent)) {
+        if (visited.has(layoutFile)) continue;
+        visited.set(layoutFile, {
           depth,
-          via: { from: file, specifier: imp.specifier, isType: imp.isType },
+          via: { from: file, specifier: '(Next.js layout ancestor, no import statement)', isType: false },
         });
-        next.push(resolved);
+        next.push(layoutFile);
       }
     }
     frontier = next;

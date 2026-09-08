@@ -96,6 +96,13 @@ test('extractArchivosFiles reports no Archivos line as an empty, found phase', (
   assert.deepEqual(r.files, []);
 });
 
+test('extractArchivosFiles works with CRLF line endings (git on Windows checks specs out this way)', () => {
+  const crlf = SPEC_MD.replace(/\n/g, '\r\n');
+  const r = extractArchivosFiles(crlf, 'Fase 2');
+  assert.equal(r.headingFound, true);
+  assert.deepEqual(r.files, ['apps/frontend/src/hooks/useOfflineQueue.ts']);
+});
+
 // ── normalizeFrontendPath ────────────────────────────────────────────────
 test('normalizeFrontendPath prefixes a bare app/ shorthand', () => {
   assert.equal(

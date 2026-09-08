@@ -91,6 +91,57 @@ test('buildClosure returns just the seed when resolveContent has nothing (new, u
   assert.ok(c.has('apps/frontend/src/lib/offline/brand-new.ts'));
 });
 
+// ── Next.js App Router: a page.tsx is wrapped by every ancestor layout.tsx
+// via FILE-SYSTEM convention, never via an `import` statement — real code
+// in this repo (apps/frontend/src/app/app/layout.tsx imports AppLayout and
+// wraps every page under app/app/**). A plain import-graph walk is blind to
+// this; buildClosure adds it as a synthetic edge from page.tsx to each
+// ancestor layout.tsx, exactly the shape that let spec-81's AppLayout.tsx
+// change go unnoticed by spec-80/spec-82's page.tsx closures.
+const FILES_WITH_LAYOUT = {
+  ...FILES,
+  'apps/frontend/src/app/app/layout.tsx': `
+import { AppLayout } from '@/components/AppLayout';
+`,
+  'apps/frontend/src/app/app/pickup/layout.tsx': `// section layout, no imports of its own`,
+  // A decoy that only exists to make the "non-page file" test meaningful:
+  // without the isNextPageFile guard, the ancestor-walk from
+  // DigitalizeManifestTrigger.tsx's OWN directory would climb into this
+  // file by pure path arithmetic — even though a layout.tsx here is not
+  // valid Next.js (layout.tsx only applies under app/). A test that expects
+  // this to stay unreached only proves the guard when a hit is possible.
+  'apps/frontend/src/components/pickup/layout.tsx': `// decoy — must never be reached, not a real page`,
+};
+function resolveWithLayout(path) {
+  return Object.prototype.hasOwnProperty.call(FILES_WITH_LAYOUT, path) ? FILES_WITH_LAYOUT[path] : null;
+}
+
+test('buildClosure reaches the App Router layout ancestor of a page.tsx without an import statement', () => {
+  const c = buildClosure(
+    ['apps/frontend/src/app/app/pickup/route/active/page.tsx'],
+    { resolveContent: resolveWithLayout, maxDepth: 1 }
+  );
+  assert.ok(c.has('apps/frontend/src/app/app/pickup/layout.tsx'), 'nearest section layout');
+  assert.ok(c.has('apps/frontend/src/app/app/layout.tsx'), 'router-root layout');
+});
+
+test('buildClosure reaches AppLayout.tsx two hops from a page.tsx: page -> layout.tsx (convention) -> AppLayout (import)', () => {
+  const c = buildClosure(
+    ['apps/frontend/src/app/app/pickup/route/active/page.tsx'],
+    { resolveContent: resolveWithLayout, maxDepth: 2 }
+  );
+  assert.ok(c.has('apps/frontend/src/components/AppLayout.tsx'));
+});
+
+test('buildClosure does not apply the layout-ancestor rule to a non-page file', () => {
+  const c = buildClosure(
+    ['apps/frontend/src/components/pickup/DigitalizeManifestTrigger.tsx'],
+    { resolveContent: resolveWithLayout, maxDepth: 2 }
+  );
+  assert.ok(!c.has('apps/frontend/src/app/app/layout.tsx'));
+  assert.ok(!c.has('apps/frontend/src/components/pickup/layout.tsx'), 'decoy layout.tsx outside app/ must never be reached');
+});
+
 // ── computeOverlap ───────────────────────────────────────────────────────
 function target(name, writeFiles, seedForClosure = writeFiles, maxDepth = 2) {
   return {

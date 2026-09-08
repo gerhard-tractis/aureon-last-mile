@@ -47,7 +47,11 @@ const HEADING_RE = /^#{2,4}\s+.*$/;
  * `` `+ test` `` or a bare identifier quoted for emphasis.
  */
 export function extractArchivosFiles(mdContent, faseMatch) {
-  const lines = mdContent.split('\n');
+  // Normalize CRLF first: `$` in HEADING_RE anchors to end-of-string, and
+  // `.` never matches `\r` — on a Windows checkout (CRLF line endings) the
+  // trailing `\r` sits between the last real character and `$`, so the
+  // anchor never lines up and every heading silently fails to match.
+  const lines = mdContent.replace(/\r\n/g, '\n').split('\n');
   let phaseStart = -1;
   for (let i = 0; i < lines.length; i++) {
     if (HEADING_RE.test(lines[i]) && lines[i].includes(faseMatch)) {
