@@ -28,17 +28,43 @@ const EXPECTED_QUARANTINE_INVOCATION =
  * this joins them back into one "logical line" per shell statement before any
  * shape is asserted, and collapses whitespace so re-indentation cannot change
  * whether a line matches.
+ *
+ * Round 6 (B1) replaced a laxer join rule with bash's actual one, live-tested
+ * against `bash --noprofile --norc -e -o pipefail` (how GitHub runs a step):
+ * bash only splices a physical line into the next when it ends in an ODD
+ * number of `\` immediately adjacent to the newline — nothing trimmed first.
+ * The old rule trimmed the line, then asked `endsWith('\\')`, which is a
+ * strictly laxer test than bash's: it joined on an EVEN backslash count
+ * (`# nota \\`, verified live to run as a normal, non-continuing comment)
+ * and joined across a trailing space after the backslash (`# nota \ `,
+ * verified live the same way) because trim() silently ate the space bash
+ * treats as significant. Both let a whitelisted `#` line absorb an
+ * arbitrary next line — trap, set, or a decoy `npm run e2e:qa` that moves
+ * the H2 anchor — while this guard still saw one inert comment.
+ *
+ * A comment is additionally immune to continuation altogether, at any
+ * backslash count: verified live that `# note \` (a single, odd,
+ * newline-adjacent backslash — bash's own continuation trigger everywhere
+ * else) still does NOT splice into the next physical line when it starts a
+ * comment. Bash discards a comment to the next raw newline outright; only a
+ * non-comment line's trailing-backslash parity decides continuation.
  */
 function logicalLines(run) {
   const lines = [];
   let buf = '';
   for (const raw of run.split('\n')) {
-    const line = raw.trim();
-    buf = buf ? `${buf} ${line}` : line;
-    if (buf.endsWith('\\')) {
-      buf = buf.slice(0, -1).trim();
+    const withoutCr = raw.replace(/\r$/, '');
+    if (buf === '' && /^\s*#/.test(withoutCr)) {
+      // A comment consumes the rest of ITS OWN physical line, full stop —
+      // no amount of trailing backslash splices it into the next line.
+      lines.push(withoutCr.trim().replace(/\s+/g, ' '));
       continue;
     }
+    const trailingBackslashes = (withoutCr.match(/(\\+)$/) || [''])[0].length;
+    const continues = trailingBackslashes % 2 === 1;
+    const content = continues ? withoutCr.slice(0, -1) : withoutCr;
+    buf = buf ? `${buf} ${content.trim()}` : content.trim();
+    if (continues) continue;
     lines.push(buf.replace(/\s+/g, ' ').trim());
     buf = '';
   }
@@ -74,6 +100,13 @@ const ALLOWED_EXTRA_LINE = /^#/;
  * being on the list, with no vector anyone had to have predicted first.
  */
 function hasValidQuarantineInvocation(run) {
+  // B2 (round 6): this guard parses the YAML TEMPLATE; GitHub substitutes
+  // `${{ ... }}` BEFORE bash ever reads the line, so a value the guard never
+  // sees (e.g. a multi-line commit message) can turn a tolerated `# ...`
+  // line into comment + statement at runtime. Reject the whole run: outright
+  // if it contains `${{` anywhere, whitelist or not — the guard cannot
+  // reason about what GitHub will substitute there.
+  if (run.includes('${{')) return false;
   const lines = logicalLines(run);
   const invocationCount = lines.filter((l) => l === EXPECTED_QUARANTINE_INVOCATION).length;
   if (invocationCount !== 1) return false;
@@ -95,6 +128,24 @@ function effectiveShell(step, job, doc) {
   const wfShell = doc && doc.defaults && doc.defaults.run && doc.defaults.run.shell;
   if (wfShell != null) return wfShell;
   return 'bash';
+}
+
+/**
+ * Same step → job → workflow resolution chain as effectiveShell, now applied
+ * to working-directory (round 6, M4). The real step pins
+ * `working-directory: .` explicitly (deploy.yml:655) — its own author
+ * treated it as load-bearing — but until now this guard had no equivalent
+ * chain for it, so a job- or workflow-level `defaults.run.working-directory`
+ * could move the step's cwd with nothing here to notice. GitHub's own
+ * default, absent any of the three, is the repo root — `.`.
+ */
+function effectiveWorkingDirectory(step, job, doc) {
+  if (step['working-directory'] != null) return step['working-directory'];
+  const jobWd = job && job.defaults && job.defaults.run && job.defaults.run['working-directory'];
+  if (jobWd != null) return jobWd;
+  const wfWd = doc && doc.defaults && doc.defaults.run && doc.defaults.run['working-directory'];
+  if (wfWd != null) return wfWd;
+  return '.';
 }
 
 /**
@@ -164,7 +215,21 @@ export function checkQuarantineStep(jobs, doc) {
     );
   }
 
-  // ── M4: order, not just presence ──────────────────────────────────────
+  // ── Round 6, M4: working-directory now has the same resolution chain as
+  // shell (effectiveShell above) — see effectiveWorkingDirectory's comment.
+  const workingDirectory = effectiveWorkingDirectory(quarantineStep, e2eQa, doc);
+  if (workingDirectory !== '.') {
+    errors.push(
+      `the "Check quarantine" step's effective working-directory: must be "." (found: ` +
+        `${JSON.stringify(workingDirectory)}, resolved from step['working-directory'], then ` +
+        "e2e-qa's defaults.run.working-directory, then the workflow's defaults.run.working-directory) " +
+        '— any other value, set at any of those three levels, can point the two report-relative ' +
+        'arguments the script reads (apps/frontend/e2e/quarantine.json, ' +
+        'apps/frontend/playwright-report-qa/results.json) somewhere else entirely'
+    );
+  }
+
+  // ── M4 (round 3): order, not just presence ──────────────────────────────
   // steps.filter (round 3) proved a decoy step could not stand in for a
   // deleted real one, but it never looked at WHERE the real step sits.
   // Moving "Check quarantine" before the step that runs Playwright leaves

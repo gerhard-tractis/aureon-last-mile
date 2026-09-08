@@ -61,6 +61,9 @@ jobs:
       - name: Test the deploy-gating guard — quarantine veto step (round 5)
         run: bash ./scripts/check-deploy-gating-quarantine-r5.test.sh
 
+      - name: Test the deploy-gating guard — quarantine veto step (round 6)
+        run: bash ./scripts/check-deploy-gating-quarantine-r6.test.sh
+
       # A malformed quarantine.json only fails today's e2e-qa run on the VPS —
       # by then it has already re-blocked production, the exact state spec-87
       # fase 1 exists to end. Catch a bad entry (missing field, impossible
