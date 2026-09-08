@@ -258,7 +258,36 @@ assert_exit 0 "quarantine entry with e2e/ prefix matches a real report's unprefi
 # ── The reverse form must also match: an entry written WITHOUT the prefix ──
 # against a report file WITH one (e.g. a future config change, or a fixture
 # someone hand-writes the old way). Both forms are accepted; this is not the
-# same as a loose endsWith — see the negative case below.
+# same as a loose endsWith — see the negative case below. Uses its OWN report
+# fixture with a literal `e2e/`-prefixed `file`, distinct from
+# REAL_REPORT_NO_PREFIX/ONE_FAILING_REPORT above (which are now both
+# prefix-free, matching the real reporter) — otherwise this assertion would
+# pass even if only entry.spec were normalized and spec.file never was,
+# because neither side would carry a prefix to begin with. Caught by mutation
+# testing: an implementation that strips ONLY entry.spec survived this test
+# before the fixture below existed.
+REPORT_WITH_PREFIX='{
+  "suites": [
+    {
+      "title": "despacho-tablet-dock.spec.ts",
+      "suites": [
+        {
+          "title": "spec-78 Despacho dock tablet — 3a",
+          "specs": [
+            {
+              "file": "e2e/despacho-tablet-dock.spec.ts",
+              "title": "2d — assigns the seeded truck at the dock viewport, before the flag is set",
+              "ok": false,
+              "tests": [ { "results": [ { "status": "failed" } ] } ]
+            }
+          ]
+        }
+      ],
+      "specs": []
+    }
+  ],
+  "stats": { "expected": 0, "unexpected": 1, "flaky": 0 }
+}'
 DECLARED_ACTIVE_NO_PREFIX='[
   { "spec": "despacho-tablet-dock.spec.ts",
     "test": "2d — assigns the seeded truck",
@@ -266,7 +295,7 @@ DECLARED_ACTIVE_NO_PREFIX='[
     "owner": "spec-78", "expires": "2026-09-21" }
 ]'
 assert_exit 0 "quarantine entry WITHOUT e2e/ prefix matches a report file WITH one" \
-  "2026-09-07" "$DECLARED_ACTIVE_NO_PREFIX" "$ONE_FAILING_REPORT"
+  "2026-09-07" "$DECLARED_ACTIVE_NO_PREFIX" "$REPORT_WITH_PREFIX"
 
 # ── Negative case: normalization must not turn into a loose suffix match ───
 # Two DIFFERENT directories that happen to share a basename must NOT match
@@ -279,6 +308,17 @@ DIFFERENT_DIR_ENTRY='[
 ]'
 assert_exit 1 "an entry under a different directory must NOT match e2e/'s file of the same basename" \
   "2026-09-07" "$DIFFERENT_DIR_ENTRY" "$ONE_FAILING_REPORT"
+
+# ── Negative case: a partial filename must NOT match via substring/suffix ──
+# Pins the comparison to exact equality (after prefix-stripping), not a
+# substring/includes/endsWith check either.
+PARTIAL_NAME_ENTRY='[
+  { "spec": "tablet-dock.spec.ts",
+    "test": "2d — assigns the seeded truck",
+    "reason": "x", "owner": "spec-78", "expires": "2026-09-21" }
+]'
+assert_exit 1 "a partial filename must NOT match via substring of the real file" \
+  "2026-09-07" "$PARTIAL_NAME_ENTRY" "$ONE_FAILING_REPORT"
 
 # The empty/all-skipped/blank-report cases (H2) and the --validate-only
 # expiry warning (H3) live in check-quarantine-report.test.sh.
