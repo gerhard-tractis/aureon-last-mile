@@ -179,6 +179,8 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
 ### Fase 1 — Captura por paquete al cerrar la recepción `[pending]`
 
+**Archivos:** migración (`complete_route_reception`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260820000002_spec61_pickup_route_crew.sql`), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/hooks/reception/useCompleteRouteReception.ts`, `apps/frontend/src/app/app/reception/ReturnReceptionSession.tsx`, y sus tests
+
 `complete_route_reception(p_route_id, p_discrepancy_notes text)` (SECURITY
 DEFINER, def viva en QA) hoy sólo exige texto cuando
 `received_count < expected_count`, y no escribe nada por paquete.
@@ -207,6 +209,8 @@ registro del faltante.
 > la define, nunca la original.
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`
+
+**Archivos:** migración (`trg_reception_scan_advance_package_status`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260812000002_spec52_package_state_engine.sql`), test pgTAP en `packages/database/supabase/tests/`
 
 El bulto aparece, se escanea en recepción, el paquete avanza a `en_bodega`
 por el camino normal (`trg_reception_scan_advance_package_status`) y la
@@ -273,6 +277,8 @@ que se consideró, no como trabajo pendiente de esta fase.
 > previsto en vez de rehacerla después.
 
 ### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
+
+**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/lib/ops-control/stage.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), y sus tests
 
 Lista las discrepancias abiertas con orden, paquete, carga, ruta, quién cerró la
 recepción y desde cuándo está abierta, leyendo `get_discrepancies(
