@@ -275,6 +275,15 @@ Lo que sí puede pasar: cuando una discrepancia se marca `lost`, el bulto pase a
 > `route_reception_id`, `source_id` ni los tres RPCs. Corregido en la fase 2 de
 > esta spec, no aquí — la fase 1 ya estaba `[done]` y mergeada; se deja esta nota
 > para que la reconciliación quede completa.
+>
+> **Corrección (ronda de arreglos 3, C2):** el párrafo de arriba decía que
+> spec-80/spec-83 ya estaban corregidos (PR #653 / "la rama de spec-80 fase
+> 1") — falso contra el árbol: los dos seguían escritos contra
+> `source_process` al llegar aquí (spec-80 tiene código mergeado en `main`,
+> PR #657, y describía su propia columna con un nombre que nunca existió).
+> Corregido ahora, en la ronda 3 de esta misma fase: los dos usan
+> `operation_type`/`discrepancy_operation_enum` y citan el RPC real
+> (`record_discrepancies`/`get_discrepancies`, spec-85 fase 2).
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
@@ -340,7 +349,7 @@ no puede tumbar un deploy), pero ya no es silencioso en los logs.
 - [x] Implementar.
 
 Migración `20260913000003_spec85_discrepancies_rpcs.sql`, tests en
-`spec85_discrepancies_rpcs.test.sql` (29 tests, tras la ronda de arreglos 2).
+`spec85_discrepancies_rpcs.test.sql` (36 tests, tras la ronda de arreglos 3).
 `record_discrepancies` valida que `p_source_id` (manifiesto o recepción según
 `p_operation_type`) y cada `package_id` pertenezcan al operador del JWT antes
 de insertar — nada por debajo lo hace, porque la RLS efectiva de la tabla es
@@ -496,6 +505,41 @@ Los 7 tests nuevos (2b, 3c, 8c, 14b, 15b, 10b, 10c) se verificaron con
 **mutación real** sobre el contenedor pgTAP en vivo para cada hallazgo de
 B-1/B-2/M-4/M-5 — no sólo lectura del texto de la migración. Suite completa:
 29/29 en verde tras cada fix.
+
+**Ronda de arreglos 3 (adversarial), cerrada — B1/B2/B3, huecos de cobertura
+sobre el contrato de errores que la ronda 2 documentó pero no probó:**
+- **B1 — 12 de los 13 prefijos centinela de la tabla de arriba no tenían
+  ningún test.** Un `sed` que los quita (dejando sólo `NO_OPERATOR_IN_JWT:`)
+  daba 29/29 en verde. Se añadió la aserción del prefijo a los tests
+  existentes que ya ejercitan cada guard (4, 4b, 5, 5c, 8, 8c, 9, 10, 13) y
+  cinco tests nuevos (17-21) para los guards que ningún test alcanzaba:
+  `INVALID_ITEMS`, `UNKNOWN_OPERATION_TYPE`, `MISSING_REQUIRES_PACKAGE_ID`,
+  `UNEXPECTED_REQUIRES_BARCODE`, `UNKNOWN_KIND` — estos cinco también cierran
+  m6 de la ronda 2.
+- **B2 — `RESOLUTION_REQUIRED` (mig:257-259) sin test ni respaldo en el
+  esquema.** El único `CHECK` de la tabla
+  (`discrepancy_resolved_has_when`) no exige `resolution`; mutar el `IF`
+  entero a `NULL;` daba 29/29 en verde. TEST 22 llama
+  `resolve_discrepancy(<fila abierta>, 'lost', '   ')` y afirma el ERRCODE,
+  el prefijo, y — el punto probatorio real — que la fila queda intacta:
+  la corrupción silenciosa (`status='lost'` sin motivo escrito) es el fallo
+  que importa, no la excepción.
+- **B3 — el filtro `p_operation_type` de `get_discrepancies` no
+  discriminaba.** El fixture de TEST 11 era 100% `'pickup'`, así que
+  sustituir el predicado completo por `TRUE` daba 29/29 en verde. TEST 23
+  añade una fila `'reception'` y afirma que filtrar por `'pickup'` la
+  excluye y filtrar por `'reception'` la incluye — la costura exacta que
+  spec-86 fase 3 usa (`get_discrepancies(p_operation_type := 'reception',
+  p_status := 'open')`).
+- **m7 (no bloqueante, incluido de paso):** `ORDER BY detected_at DESC`
+  (mig:343) sin cobertura — mutarlo a `ASC` daba 29/29 en verde. TEST 24 lo
+  fija.
+
+Los cuatro mutantes (B1, B2, B3, m7) se verificaron uno por uno contra el
+contenedor pgTAP en vivo: cada uno hace fallar exactamente el test nuevo que
+lo cubre, y la migración real (sin cambios — los tres blockers eran huecos de
+cobertura, no bugs) vuelve a dar la suite completa en verde tras revertir cada
+mutante. Suite completa: 36/36 en verde.
 
 **Documentado, no codificado (aplazamiento deliberado):**
 - **m4 — cardinalidad de retorno.** `record_discrepancies` hace
