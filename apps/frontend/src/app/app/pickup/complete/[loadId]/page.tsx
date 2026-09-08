@@ -153,6 +153,23 @@ export default function CompletionPage() {
       // rechazando para siempre, y re-habilitar el botón para que el
       // operario corrija o pida ayuda.
       const classified = classifyCloseManifestError(err);
+
+      // P0, ronda 3 de review del PR #679 (bloqueante) — `idempotent` (23505
+      // `MANIFEST_ALREADY_SIGNED`) significa que el cierre YA SE APLICÓ: la
+      // respuesta se perdió en el camino (túnel, o el propio
+      // `AbortSignal.timeout` del sender), no que el intento fallara. Sin
+      // esta rama caía al `toast.error` genérico de abajo, dejando al
+      // operario atrapado en esta pantalla para siempre después de un cierre
+      // que sí funcionó — refrescar no ayuda, el `useEffect` recarga el
+      // mismo manifiesto ya firmado. `offlineQueueSender.ts` ya trata este
+      // mismo `kind` como éxito para el drenador de fondo; esto alinea el
+      // camino interactivo con esa misma lectura.
+      if (classified.kind === 'idempotent') {
+        toast.success(classified.message);
+        router.push('/app/pickup');
+        return;
+      }
+
       if (classified.kind === 'offline') {
         // M5, ronda 2 de review del PR #679 (mayor): `enqueue` puede lanzar
         // por su cuenta — el tope de 500 entradas sin confirmar

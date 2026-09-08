@@ -228,6 +228,7 @@ export default function ScanningPage() {
           scanned={verifiedCount}
           total={totalPackages}
           queuedCount={sync.queuedCount}
+          blockedCount={sync.blockedCount}
         />
 
         <ScannerInput onScan={handleScan} disabled={scanMutation.isPending} />

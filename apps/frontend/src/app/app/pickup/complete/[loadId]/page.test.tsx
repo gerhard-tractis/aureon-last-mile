@@ -209,7 +209,23 @@ describe('CompletionPage', () => {
     fireEvent.click(confirmButton);
   };
 
-  it('maps MANIFEST_ALREADY_SIGNED to a Spanish message, not the raw RPC text', async () => {
+  // P0, ronda 3 de review del PR #679 (bloqueante) — `classifyCloseManifestError`
+  // distingue CUATRO `kind` desde la ronda 2 (`offline`/`idempotent`/
+  // `permanent`/`transient`); esta pantalla sólo distinguía DOS (`offline` y
+  // "todo lo demás"), así que `idempotent` caía al mismo `toast.error` +
+  // botón re-habilitado que un rechazo permanente de verdad. Escenario: la
+  // cuadrilla firma y tapea "Confirmar y completar". `close_manifest`
+  // COMMITEA — manifiesto cerrado, firmas escritas — y la respuesta se
+  // pierde en un túnel. El operario tapea otra vez, choca con
+  // `MANIFEST_ALREADY_SIGNED` (23505) — que la propia migración documenta
+  // como "an idempotent 409", el mismo cierre que YA SE APLICÓ — pero la
+  // pantalla lo trataba como si nunca hubiera funcionado: toast rojo, sin
+  // navegar, el operario atrapado en `5f` para siempre (refrescar no ayuda,
+  // el `useEffect` recarga el mismo manifiesto). El drenador de fondo
+  // (`offlineQueueSender.ts:98-103`) ya mapea `idempotent -> 'sent'`
+  // correctamente — esta era la otra costura sobre la misma función de
+  // clasificación que no se había alineado.
+  it('MANIFEST_ALREADY_SIGNED (idempotent 409) is treated as success and navigates away — the close already applied', async () => {
     mockRpc.mockResolvedValueOnce({
       data: null,
       error: { message: 'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature' },
@@ -219,22 +235,12 @@ describe('CompletionPage', () => {
     await completeAndSubmit();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
-      const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(message).not.toContain('MANIFEST_ALREADY_SIGNED');
-      // Discriminant, not just "has an accent": a test that only checks for
-      // a Spanish-looking character survives swapping this message with the
-      // MANIFEST_NOT_CLOSABLE one below — both are Spanish sentences.
-      expect(message).toMatch(/ya fue firmado/i);
+      expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/ya fue firmado/i));
     });
-
-    // The button must be re-enabled so the operator can retry or investigate
-    // instead of being stuck on a spinner forever.
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: /completar y generar recibo/i })
-      ).not.toBeDisabled();
+      expect(mockPush).toHaveBeenCalledWith('/app/pickup');
     });
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {

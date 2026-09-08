@@ -153,6 +153,43 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     expect(result.current.blockedCount).toBe(0);
   });
 
+  // m7, ronda 3 de review del PR #679 (menor) — el gate de polling
+  // (`status === 'online' && queuedCount === 0`) ignoraba `blockedCount`.
+  // Con la última `pending` convertida en `dead` (B3), el polling se
+  // detenía aunque hubiera bloqueados; cuando una fase futura añada la
+  // resolución del bloqueo desde el servidor, el chip no la reflejaría
+  // hasta un remount.
+  it('m7 — keeps polling while blockedCount > 0, even with queuedCount at 0 and status online', async () => {
+    await seedPickupQueue(1);
+    const [only] = await db.pickup_queue.toArray();
+    await db.pickup_queue.update(only.id!, { status: 'dead' });
+
+    const { result } = renderHook(() => useSyncQueue('op-1'));
+
+    await waitFor(() => expect(result.current.blockedCount).toBe(1));
+    expect(result.current.queuedCount).toBe(0);
+    expect(result.current.status).toBe('online');
+
+    // A new pending entry arrives on this device (e.g. a fresh scan)
+    // without any `online`/`offline` event firing — only the poll interval
+    // (real time; `POLL_MS` = 2000ms) can pick it up.
+    await db.pickup_queue.add({
+      clientOperationId: 'client-op-new',
+      operatorId: 'op-1',
+      manifestId: 'manifest-1',
+      type: 'pickup_scan',
+      payload: { barcode: 'SCAN-NEW' },
+      status: 'pending',
+      retryCount: 0,
+      claimToken: null,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      createdAt: new Date().toISOString(),
+    });
+
+    await waitFor(() => expect(result.current.queuedCount).toBe(1), { timeout: 5_000 });
+  }, 10_000);
+
   it('requests persistent storage on mount (M4 — "GUARDADO EN EL DISPOSITIVO" must be true)', async () => {
     const persist = vi.fn().mockResolvedValue(true);
     Object.defineProperty(navigator, 'storage', {

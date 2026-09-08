@@ -143,10 +143,15 @@ export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
   useEffect(() => {
     // Only poll while something is outstanding or the link is down. Online
     // with an empty queue is the common case and should cost nothing.
-    if (status === 'online' && queuedCount === 0) return;
+    // m7, ronda 3 de review del PR #679 (menor) — `blockedCount` (B3) tiene
+    // que mantener el polling vivo igual que `queuedCount`: la última
+    // `pending` de un manifiesto pasando a `dead` no debe apagar el único
+    // mecanismo (aparte de un remount) que refleja que un bloqueo se
+    // resolvió.
+    if (status === 'online' && queuedCount === 0 && blockedCount === 0) return;
     const id = setInterval(() => void read(), POLL_MS);
     return () => clearInterval(id);
-  }, [status, queuedCount, read]);
+  }, [status, queuedCount, blockedCount, read]);
 
   return { status, queuedCount, scanQueueCount, blockedCount, recent, retryNow, isRetrying };
 }
