@@ -107,11 +107,17 @@ SELECT is(
 -- =============================================================================
 -- TEST 3 — a retry of the SAME close (offline queue resend after a lost
 -- 200) is rejected as 23505, not silently re-applied and not 404/P0002.
+--
+-- M2 (round 1 of review): the retry deliberately carries a DIFFERENT
+-- signature (BBB, not AAA) so TEST 5 below has power — with the same value,
+-- TEST 4/5/6 would still pass even if the guard were removed entirely,
+-- because an unguarded re-close would just overwrite signature_operator with
+-- the value it already had.
 -- =============================================================================
 SELECT throws_ok(
   $$ SELECT public.close_manifest(
        (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008200' AND external_load_id = 'CARGA-81F3-1'),
-       '{"operator_signature":"data:image/png;base64,AAA"}'::jsonb
+       '{"operator_signature":"data:image/png;base64,BBB"}'::jsonb
      ) $$,
   '23505',
   'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature',
