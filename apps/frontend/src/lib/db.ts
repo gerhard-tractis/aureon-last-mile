@@ -66,6 +66,18 @@ export interface PickupQueueEntry {
   status: PickupQueueEntryStatus;
   retryCount: number;
   lastError?: string;
+  /**
+   * Token de propiedad de la reclamación en curso — `crypto.randomUUID()`,
+   * generado por `claimPending` en cada reclamación y comparado por
+   * `markSent`/`markFailed`/`markDead` antes de tocar una entrada. Antes de
+   * fase 2 esto era el propio `lastAttemptAt` (una marca de milisegundo):
+   * dos reclamaciones sucesivas de la misma entrada dentro del mismo
+   * milisegundo (el caso común sin señal, donde `fetch` rechaza casi al
+   * instante) producían el mismo token y el guard volvía a pasar. Ver
+   * spec-81, checklist de fase 2, residual "el token es una marca de
+   * milisegundo, no un nonce".
+   */
+  claimToken: string | null;
   /** ISO 8601. Cuándo se intentó por última vez — persistido, no en memoria,
    * para que el backoff exponencial de fase 2 sobreviva a que la PWA se
    * cierre y reabra a mitad de reintento (spec-81 fase 1, ronda 1, B3). */
@@ -77,7 +89,17 @@ export interface PickupQueueEntry {
 }
 
 // Dexie Database Class (Task 3.1)
-class AureonOfflineDB extends Dexie {
+// Exported as a type-only surface (spec-81 fase 2) so `lib/offline/queue.ts`
+// can type its `db` parameter against the real Dexie shape (`import type`,
+// no runtime import) instead of a hand-rolled structural interface. Dexie's
+// `Table.modify()` is overloaded (a change-object form and a callback form,
+// the latter also passing a `ctx` second argument) — TypeScript does not
+// treat an overloaded method as assignable to a single union-parameter
+// signature, even when every real call site is compatible. `tsc` never
+// caught this because it excludes `*.test.ts`, and nothing outside tests
+// called these functions with the real `db` until `useOfflineQueue` (fase
+// 2, first production caller).
+export class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
 
@@ -103,13 +125,33 @@ class AureonOfflineDB extends Dexie {
 export const db = new AureonOfflineDB();
 
 /**
- * Cuántas entradas de la cola de Recogida siguen sin confirmar, en todo el
- * dispositivo. Deliberadamente no filtra por operador — mismo criterio que
- * `getUnsynced()` de abajo, que tampoco lo hace: el badge del topbar es
- * global al dispositivo, no por operador.
+ * Cuántas entradas de la cola de Recogida de un operador siguen sin
+ * confirmar: `pending`, `sending` (reclamada, en vuelo) y `dead` (rechazo de
+ * negocio irrecuperable, todavía visible para el operario).
+ *
+ * spec-81 fase 2 — pasó de device-global a por operador. Device-global
+ * dejaba huérfano el contador de un operador que cerraba sesión en un
+ * teléfono de muelle: ni el drenado del siguiente operador ni su
+ * `purgeConfirmed` tocan las entradas del anterior, así que el badge nunca
+ * bajaba a 0 para el operador entrante (ver "Alcance del contador" en
+ * docs/specs/spec-81-recogida-cola-offline.md).
+ *
+ * Cuenta también `sending` y `dead`, no sólo `pending` — `useSyncQueue`
+ * corta su polling cuando el conteo combinado llega a 0; una sola entrada
+ * huérfana en `sending` (pestaña muerta a mitad de envío, antes de que
+ * `reclaimStale` la recupere) haría caer el conteo a 0, deteniendo el
+ * polling y congelando la pantalla en "todo subido" con el escaneo sin
+ * enviar de verdad.
  */
-export async function getPendingPickupCount(): Promise<number> {
-  return db.pickup_queue.where('status').equals('pending').count();
+export async function getPendingPickupCount(operatorId: string): Promise<number> {
+  return db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and(
+      (entry) =>
+        entry.status === 'pending' || entry.status === 'sending' || entry.status === 'dead',
+    )
+    .count();
 }
 
 /**
