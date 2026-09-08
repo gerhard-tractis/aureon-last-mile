@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Camera } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { CameraIntake } from './CameraIntake';
@@ -30,6 +31,19 @@ import { CameraIntake } from './CameraIntake';
  */
 export function DigitalizeManifestTrigger() {
   const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+
+  // spec-82 fase 1 ronda 2 — un manifiesto digitalizado aquí queda sin
+  // pickup_route_id, así que es candidato para el AddManifestSheet ("+").
+  // useUnassignedManifests vive montado a nivel de página con staleTime de
+  // 10s y no se remonta al abrir el sheet, así que sin invalidar aquí el
+  // conductor no ve el manifiesto recién creado sin perder el contexto de
+  // la ruta activa. Coincidencia parcial de queryKey a propósito: cubre
+  // la entrada para cualquier operatorId sin necesitar leerlo aquí.
+  const handleClose = () => {
+    setOpen(false);
+    queryClient.invalidateQueries({ queryKey: ['pickup', 'unassigned-manifests'] });
+  };
 
   return (
     <>
@@ -48,7 +62,7 @@ export function DigitalizeManifestTrigger() {
           <DialogHeader>
             <DialogTitle>Digitalizar manifiesto</DialogTitle>
           </DialogHeader>
-          <CameraIntake onClose={() => setOpen(false)} />
+          <CameraIntake onClose={handleClose} />
         </DialogContent>
       </Dialog>
     </>

@@ -78,4 +78,26 @@ describe('DigitalizeManifestTrigger', () => {
     fireEvent.click(screen.getByText('Cancelar'));
     expect(screen.queryByTestId('client-select')).not.toBeInTheDocument();
   });
+
+  // spec-82 fase 1 ronda 2 — digitalizar desde la ruta activa y luego pulsar
+  // "+" para agregarlo no mostraba el manifiesto recién creado:
+  // useUnassignedManifests (staleTime 10s) está montada a nivel de página y
+  // no se remonta al abrir el AddManifestSheet. Sin invalidación, el
+  // conductor no puede recargar la lista sin perder el contexto de la ruta.
+  it('invalidates the unassigned-manifests query when the intake dialog closes', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(DigitalizeManifestTrigger),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /digitalizar manifiesto/i }));
+    fireEvent.click(screen.getByText('Cancelar'));
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ['pickup', 'unassigned-manifests'],
+    });
+  });
 });
