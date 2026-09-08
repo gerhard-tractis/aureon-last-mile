@@ -165,7 +165,16 @@ TEMPLATE_IN_COMMENT_STEP='      - name: Check quarantine
 WF=$(wf_with_e2e_step "$TEMPLATE_IN_COMMENT_STEP")
 assert_exit 1 "B2: a \${{ ... }} template expression anywhere in the veto step's run: is rejected" "$WF"
 
-# ── M4: working-directory now has the same step→job→workflow resolution
+# ── Round 7: the `${{` rejection needs its own message. Before this, a step
+# with a template expression fell through to the generic "no step whose run:
+# is exactly ..." error, byte-for-byte identical to the invocation it was
+# comparing against — the next person to read that message would spend time
+# diffing two strings that already match, never learning `${{` was the real
+# cause.
+assert_contains 'contains `${{' \
+  "round 7: the \${{ rejection names itself, not the generic no-valid-step message" "$WF"
+
+
 # chain as shell already had. The real step pins working-directory: . — a
 # job-level (or workflow-level) defaults.run.working-directory that moves it
 # elsewhere must fail loudly instead of being invisible to this guard.
@@ -182,6 +191,77 @@ assert_exit 1 "M4: a job-level defaults.run.working-directory moving the veto st
 # shape) must still pass.
 WF=$(wf_with_e2e_step "$CLEAN_STEP")
 assert_exit 0 "M4: an explicit working-directory: . on the veto step still passes" "$WF"
+
+# ── Round 7: M4 was only ever tested at JOB level (JOB_LEVEL_WD above).
+# effectiveWorkingDirectory() also falls back to a WORKFLOW-level
+# defaults.run.working-directory when neither the step nor the job set one —
+# that branch (`if (wfWd != null) return wfWd;`) had no test moving it, so a
+# mutant deleting it survived. wf_with_e2e_step has no hook for a top-level
+# `defaults:` key (it only injects at job level via job_extra), so this
+# builds the document directly instead of reusing the helper.
+WORKFLOW_LEVEL_WD_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF="defaults:
+  run:
+    working-directory: apps/frontend
+$(wf_with_e2e_step "$WORKFLOW_LEVEL_WD_STEP")"
+assert_exit 1 "round 7: a WORKFLOW-level defaults.run.working-directory moving the veto step is rejected" "$WF"
+
+# ── Round 7: the step-level working-directory check (`if
+# (step['working-directory'] != null)`) had no test where deleting it would
+# change the outcome — the real deploy.yml fixture happens to set
+# working-directory: . on the step AND resolve to '.' by the base case too,
+# so removing the step-level branch was invisible against that one fixture.
+# Here the step pins an explicit, WRONG working-directory while neither the
+# job nor the workflow sets any default (so the fallback base case is '.') —
+# only reading the step's own value catches the mismatch.
+STEP_LEVEL_WD_WRONG_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        working-directory: apps/frontend
+        run: bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$STEP_LEVEL_WD_WRONG_STEP")
+assert_exit 1 "round 7: an explicit step-level working-directory other than . is rejected even with no job/workflow default to fall back to" "$WF"
+
+# ── Round 7: coverage for the trailing-backslash PARITY branch (logicalLines
+# :63-64) on a NON-comment line. 11a/11b (above) both exercise parity only
+# through the comment early-return (:57) — a comment is terminal regardless
+# of backslash count, so neither test can tell the parity check apart from
+# "comments never continue". This is a genuinely even (non-continuing) count
+# on an ordinary, non-comment line: it must NOT join with the next line, so
+# the two halves stay as two separate logical lines and neither matches the
+# expected invocation — the run: is rejected. (The odd-count non-comment case
+# is already covered by MULTILINE_CONTINUATION_STEP passing, and the
+# single-backslash-plus-space case by TRAILING_SPACE_NONCOMMENT_STEP; this
+# fills the even-count gap the re-review pointed out.)
+EVEN_BACKSLASH_NONCOMMENT_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        working-directory: .
+        run: |
+          bash scripts/check-quarantine.sh \\
+          apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json'
+WF=$(wf_with_e2e_step "$EVEN_BACKSLASH_NONCOMMENT_STEP")
+assert_exit 1 "round 7: an EVEN trailing-backslash count on a non-comment line does not continue (parity, not just presence)" "$WF"
+
+# ── Round 7: the final flush (`if (buf) lines.push(...)`) has no test moving
+# it. It matters only for the run:'s LAST physical line, when that line ends
+# in an odd (continuing) backslash count with no following line to join —
+# `run: |-` (block chomping) delivers exactly that shape verbatim, with
+# nothing trimmed. Here the invocation is a clean, complete first line, and a
+# `trap` statement is the dangling, backslash-terminated LAST line with no
+# trailing newline. Dropping the flush would silently discard that trap line
+# from `lines` entirely, leaving only the invocation behind — an accidental
+# ACCEPT of a run: that plants a trap. With the flush (current code), the
+# trap line survives into `lines`, fails the `#`-only whitelist for anything
+# beyond the invocation, and the guard correctly rejects.
+BUF_FLUSH_STEP='      - name: Check quarantine
+        if: steps.qa.outputs.provisioned == '"'"'true'"'"'
+        working-directory: .
+        run: |-
+          bash scripts/check-quarantine.sh apps/frontend/e2e/quarantine.json apps/frontend/playwright-report-qa/results.json
+          trap '"'"'exit 0'"'"' EXIT \'
+WF=$(wf_with_e2e_step "$BUF_FLUSH_STEP")
+assert_exit 1 "round 7: a dangling, backslash-terminated trap as the run:'s final unflushed line is rejected" "$WF"
 
 echo
 echo "  $pass passed, $fail failed"

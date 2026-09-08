@@ -170,6 +170,24 @@ export function checkQuarantineStep(jobs, doc) {
   const mentionsScript = steps.filter(
     (s) => typeof s.run === 'string' && s.run.includes('check-quarantine.sh')
   );
+
+  // B2's `${{` rejection (below, inside hasValidQuarantineInvocation) used to
+  // fall through into the generic "no step whose run: is exactly ..." error
+  // below — which quotes the invocation this guard IS looking for, byte for
+  // byte identical to what's sitting right there in the step. Re-review
+  // round 7: whoever hits this next spends time diffing two matching
+  // strings before finding the real cause. Name it.
+  const templatedSteps = mentionsScript.filter((s) => s.run.includes('${{'));
+  if (templatedSteps.length > 0) {
+    errors.push(
+      'e2e-qa has a step invoking check-quarantine.sh whose run: contains `${{ ... }}` — ' +
+        'GitHub substitutes that BEFORE bash ever reads the line, so this guard cannot reason ' +
+        'about what will actually run there (see spec-87 fase 1, round 6 B2); remove the ' +
+        'template expression from that step\'s run:'
+    );
+    return errors;
+  }
+
   const realSteps = mentionsScript.filter((s) => hasValidQuarantineInvocation(s.run));
 
   if (realSteps.length === 0) {
