@@ -34,8 +34,13 @@ export function NextManifestCard({ manifest, index, onVerify }: NextManifestCard
   return (
     <div className="rounded-lg border-2 border-accent bg-surface p-4" data-testid="next-manifest-card">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="font-mono text-[9.5px] font-medium uppercase tracking-[.1em] text-text-muted">
-          Siguiente manifiesto
+        {/* spec-82 fase 1 ronda 2 (mock 5c) — the mock's header row is the
+            carga id itself; the chip REPLACES a "SIGUIENTE MANIFIESTO"
+            eyebrow, it does not sit next to one. The removed eyebrow
+            duplicated the chip's own text for assistive tech ("Siguiente
+            manifiesto, Siguiente"). No test asserted the eyebrow string. */}
+        <p className="font-mono text-sm font-bold text-text truncate">
+          {manifest.external_load_id}
         </p>
         {/* spec-82 fase 1 (mock 5c) — same chip PickupMobileNextLoadCard
             (mock 3h) already shows for this exact state; reused verbatim
@@ -53,7 +58,7 @@ export function NextManifestCard({ manifest, index, onVerify }: NextManifestCard
             {manifest.retailer_name ?? 'Retailer desconocido'}
           </p>
           <p className="text-[11.5px] text-text-secondary mt-0.5 truncate">
-            {manifest.external_load_id} · {manifest.total_orders ?? 0} órdenes ·{' '}
+            {manifest.total_orders ?? 0} órdenes ·{' '}
             {expectedLabel(manifest.total_packages)} paquetes
           </p>
           {manifest.pickup_location && (
