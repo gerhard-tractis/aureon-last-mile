@@ -121,6 +121,7 @@ export function RoutePanel({
         <div className="mb-3.5">
           <div className="text-[11px] text-text-muted mb-1.5">Camión</div>
           <select
+            data-testid="route-panel-vehicle-select"
             value={selectedVehicle}
             onChange={(e) => onVehicleChange(e.target.value)}
             disabled={!canAssignVehicle}

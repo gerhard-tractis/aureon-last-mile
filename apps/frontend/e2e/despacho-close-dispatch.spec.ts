@@ -73,9 +73,22 @@ async function assignVehicle(page: Page, externalId: string) {
 test.describe('spec-77/79 Despacho móvil — cerrar y despachar (2i-2l)', () => {
   let ctx: BrowserContext;
   let page: Page;
+  // spec-87 follow-up B2 — captured right after seed(), BEFORE Route H or R
+  // dispatch (test.describe.configure({ mode: 'serial' }) above runs them
+  // first). Route L's own test used to take this baseline inside itself,
+  // which is AFTER H and R have already dispatched in the same run: any
+  // regression that made H's or R's dispatch payload also carry
+  // `E2E77-L-ORD` (manifest contamination — the class of bug force_split/
+  // loadedPackageIds can produce) would land inside the baseline instead of
+  // showing up as a delta, and the old absolute `toBe(1)` this replaced
+  // would have caught exactly that. Capturing here restores that coverage
+  // without going back to an absolute count (see the comment on Route L's
+  // own test for why the count is never absolute).
+  let lOrderBaselineCount: number;
 
   test.beforeAll(async ({ browser }) => {
     await seed();
+    lOrderBaselineCount = await createRouteCallCount(L_ORDER);
     ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await suppressCookieBanner(ctx);
     page = await ctx.newPage();
@@ -157,18 +170,19 @@ test.describe('spec-77/79 Despacho móvil — cerrar y despachar (2i-2l)', () =>
   });
 
   test('Route L — DT accepts, local write fails, retry completes WITHOUT a second DT route', async () => {
-    // spec-87 fase 2 — baseline BEFORE either dispatch attempt, not an
-    // absolute `toBe(1)`. `L_ORDER` (`E2E77-L-ORD`) is a fixed constant and
-    // the DT mock (infra/supabase-qa/dispatchtrack-mock/server.mjs) is a
-    // long-lived systemd process whose `createdRoutes` accumulate across
-    // every run of this suite — nothing calls its `/__test__/reset`, and it
-    // is a live, shared QA fixture (an n8n poll also reads it), so this test
-    // must not reset it out from under that. `handleCreateCallCount` counts
-    // ALL historical routes carrying this identifier, so an absolute count
-    // grows by exactly +1 per run and eventually fails no matter how
-    // correct the retry logic is. The delta is what item 22 actually
-    // claims: this run's retry created no second route.
-    const baselineCount = await createRouteCallCount(L_ORDER);
+    // spec-87 fase 2 — delta against a baseline, not an absolute `toBe(1)`.
+    // `L_ORDER` (`E2E77-L-ORD`) is a fixed constant and the DT mock
+    // (infra/supabase-qa/dispatchtrack-mock/server.mjs) is a long-lived
+    // systemd process whose `createdRoutes` accumulate across every run of
+    // this suite — nothing calls its `/__test__/reset`, and it is a live,
+    // shared QA fixture (an n8n poll also reads it), so this test must not
+    // reset it out from under that. `handleCreateCallCount` counts ALL
+    // historical routes carrying this identifier, so an absolute count grows
+    // by exactly +1 per run and eventually fails no matter how correct the
+    // retry logic is. The delta is what item 22 actually claims: this run's
+    // retry created no second route. The baseline itself is captured in
+    // `beforeAll`, before Route H/R run — see `lOrderBaselineCount` above
+    // (spec-87 follow-up B2).
 
     const route = await openRouteForOrders(page, [L_ORDER]);
     await page.goto(`/app/dispatch/${route.id}`);
@@ -208,10 +222,10 @@ test.describe('spec-77/79 Despacho móvil — cerrar y despachar (2i-2l)', () =>
 
     // Item 22 — the whole point: exactly ONE route was created at DT for
     // this guide DURING THIS RUN, across both the failed attempt and the
-    // retry — measured against the baseline captured above, not an
-    // absolute count (see that comment).
+    // retry — measured against `lOrderBaselineCount` captured in
+    // `beforeAll` (spec-87 follow-up B2), not an absolute count.
     const count = await createRouteCallCount(L_ORDER);
-    expect(count - baselineCount).toBe(1);
+    expect(count - lOrderBaselineCount).toBe(1);
 
     const { rows } = await db().query(`SELECT status FROM packages WHERE label = $1`, [L_PACKAGE]);
     expect(rows[0].status).toBe('en_ruta');
