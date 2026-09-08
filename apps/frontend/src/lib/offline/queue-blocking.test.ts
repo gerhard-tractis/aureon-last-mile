@@ -25,7 +25,10 @@ import {
   manifestBlockedForUser,
   manifestIsBlocked,
   manifestHead,
+  manifestRetryEta,
 } from './queue-blocking';
+
+const RECLAIM_STALE_MS = 90_000;
 
 const OPERATOR_A = 'operator-a';
 const USER_A = 'user-a';
@@ -156,6 +159,91 @@ describe('queue-blocking', () => {
         payload: {},
       });
       expect(await manifestIsBlocked(db, OPERATOR_A, MANIFEST_1, USER_A)).toBe(false);
+    });
+  });
+
+  // Residual de la ronda 5 de review del PR #679 — "¿quién vuelve?" tras
+  // costura 3. `drainManifest` sale correctamente cuando la cabeza no es
+  // reclamable, pero `soonest` (`useOfflineQueue.ts`) nunca veía ninguno de
+  // los dos plazos reales de recuperación (`RECLAIM_STALE_MS`,
+  // `CROSS_USER_RECLAIM_MS`) — sólo miraba `nextAttemptAt` de entradas
+  // `pending` no bloqueadas. `manifestRetryEta` es la pieza que le da a
+  // `drain()` el instante correcto para programar el siguiente intento en
+  // los dos casos que antes no tenían ninguno.
+  describe('manifestRetryEta', () => {
+    it('returns null when nothing is pending or sending in the manifest', async () => {
+      expect(
+        await manifestRetryEta(db, OPERATOR_A, MANIFEST_1, USER_A, RECLAIM_STALE_MS),
+      ).toBeNull();
+    });
+
+    it('returns null when the manifest is permanently blocked by a dead entry — no timer can help', async () => {
+      const dead = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+      await db.pickup_queue.update(dead.id!, { status: 'dead' });
+
+      expect(
+        await manifestRetryEta(db, OPERATOR_A, MANIFEST_1, USER_A, RECLAIM_STALE_MS),
+      ).toBeNull();
+    });
+
+    it('returns null when the head is directly actionable by this session (own pending)', async () => {
+      await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+
+      expect(
+        await manifestRetryEta(db, OPERATOR_A, MANIFEST_1, USER_A, RECLAIM_STALE_MS),
+      ).toBeNull();
+    });
+
+    // S1 — la cabeza es una `sending` PROPIA huérfana: el único plazo real
+    // es `reclaimStaleMs` desde su último toque.
+    it('S1 — returns lastAttemptAt + reclaimStaleMs when the head is an orphaned sending row (own or not)', async () => {
+      const stuck = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+      const lastAttemptAt = new Date('2026-09-08T10:00:00.000Z');
+      await db.pickup_queue.update(stuck.id!, {
+        status: 'sending',
+        claimToken: 'orphan',
+        lastAttemptAt: lastAttemptAt.toISOString(),
+      });
+
+      const eta = await manifestRetryEta(db, OPERATOR_A, MANIFEST_1, USER_A, RECLAIM_STALE_MS);
+
+      expect(eta).toBe(lastAttemptAt.getTime() + RECLAIM_STALE_MS);
+    });
+
+    // S2 — la cabeza es una `pending` fresca de OTRO usuario: el único
+    // plazo real es `CROSS_USER_RECLAIM_MS` desde su último toque.
+    it('S2 — returns lastTouchedAt + CROSS_USER_RECLAIM_MS when the head is a fresh cross-user pending entry', async () => {
+      const otherUsers = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_B,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+      const createdAt = new Date('2026-09-08T10:00:00.000Z');
+      await db.pickup_queue.update(otherUsers.id!, { createdAt: createdAt.toISOString() });
+
+      const eta = await manifestRetryEta(db, OPERATOR_A, MANIFEST_1, USER_A, RECLAIM_STALE_MS);
+
+      expect(eta).toBe(createdAt.getTime() + CROSS_USER_RECLAIM_MS);
     });
   });
 });

@@ -12,7 +12,12 @@ import {
   reclaimStale,
   retryDead,
 } from '@/lib/offline/queue';
-import { isClaimable, manifestHead, manifestIsBlocked } from '@/lib/offline/queue-blocking';
+import {
+  isClaimable,
+  manifestHead,
+  manifestIsBlocked,
+  manifestRetryEta,
+} from '@/lib/offline/queue-blocking';
 
 /**
  * spec-81 fase 2 — el drenador de `pickup_queue`.
@@ -89,7 +94,7 @@ export type OfflineQueueSender = (entry: PickupQueueEntry) => Promise<OfflineQue
  * valor sólo necesita superar ESE, con margen. 90s deja 30s de margen sobre
  * los 60s del sender.
  */
-const RECLAIM_STALE_MS = 90_000;
+export const RECLAIM_STALE_MS = 90_000;
 
 const BASE_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
@@ -392,21 +397,37 @@ export function useOfflineQueue(
       // no pueden divergir porque son una sola función.
       const remainingAll = ownEntries(await listPending(db, operatorId), userId);
       const remainingManifestIds = Array.from(new Set(remainingAll.map((e) => e.manifestId)));
+      // Residual, ronda 5 de review del PR #679 — "¿quién vuelve?", la otra
+      // mitad de la costura 3. `drainManifest` sale correctamente por
+      // `return` cuando la cabeza no es reclamable (`isClaimable`) o el
+      // manifiesto está bloqueado (`manifestIsBlocked`), pero hasta esta
+      // ronda `soonest` (más abajo) sólo miraba `nextAttemptAt` de entradas
+      // `pending` no bloqueadas — nunca los dos plazos reales de
+      // recuperación (`RECLAIM_STALE_MS` para una `sending` huérfana,
+      // `CROSS_USER_RECLAIM_MS` para un bloqueo cross-user). Una `sending`
+      // huérfana no tiene `nextAttemptAt` y no está en `remaining`; una
+      // entrada detrás de un bloqueo cross-user queda excluida de
+      // `remaining` por completo. Sin `manifestRetryEta`, ninguno de los dos
+      // programaba nada — `reclaimStale` (quien de verdad libera la cabeza)
+      // sólo corre al INICIO de una pasada, y ninguna pasada nueva volvía a
+      // empezar. Medido por el reviewer: `pending = 2, blocked = 0` en el
+      // badge, un `close_manifest` firmado que nunca sube, sin botón que
+      // tocar (S1); ninguna vía de escape hasta desmontar o recargar.
+      const manifestChecks = await Promise.all(
+        remainingManifestIds.map(async (id) => ({
+          id,
+          blocked: await manifestIsBlocked(db, operatorId, id, userId),
+          retryEta: await manifestRetryEta(db, operatorId, id, userId, RECLAIM_STALE_MS),
+        })),
+      );
       const blockedManifestIds = new Set(
-        (
-          await Promise.all(
-            remainingManifestIds.map(async (id) => ({
-              id,
-              blocked: await manifestIsBlocked(db, operatorId, id, userId),
-            })),
-          )
-        )
-          .filter((m) => m.blocked)
-          .map((m) => m.id),
+        manifestChecks.filter((m) => m.blocked).map((m) => m.id),
       );
       const remaining = remainingAll.filter((e) => !blockedManifestIds.has(e.manifestId));
-      const soonest = remaining
-        .map((e) => (e.nextAttemptAt ? Date.parse(e.nextAttemptAt) : null))
+      const soonest = [
+        ...remaining.map((e) => (e.nextAttemptAt ? Date.parse(e.nextAttemptAt) : null)),
+        ...manifestChecks.map((m) => m.retryEta),
+      ]
         .filter((t): t is number => t !== null)
         .sort((a, b) => a - b)[0];
       if (soonest !== undefined) {

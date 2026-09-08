@@ -13,7 +13,7 @@ import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
-import { retryBlockedManifest } from '@/hooks/useOfflineQueue';
+import { retryBlockedManifest, PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
 import { createSPAClient } from '@/lib/supabase/client';
 import { db } from '@/lib/db';
 import { enqueue } from '@/lib/offline/queue';
@@ -219,6 +219,13 @@ export default function CompletionPage() {
               },
             },
           });
+          // Nota menor, ronda 6 de review del PR #679 — sin esto, la entrada
+          // recién encolada esperaba al próximo `online` real (o a un timer
+          // de backoff de OTRA entrada) para intentarse por primera vez. El
+          // drenador ya está montado globalmente en `AppLayout`; este evento
+          // es la misma señal que `retryBlockedManifest` ya usa para
+          // despertarlo sin fingir una reconexión que no ocurrió.
+          window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
           toast.success(classified.message);
           router.push('/app/pickup');
           return;

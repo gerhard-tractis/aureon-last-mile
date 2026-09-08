@@ -21,8 +21,10 @@ import {
   useOfflineQueue,
   retryBlockedManifest,
   MAX_RETRY_ATTEMPTS,
+  RECLAIM_STALE_MS,
   type OfflineQueueSender,
 } from './useOfflineQueue';
+import { CROSS_USER_RECLAIM_MS } from '@/lib/offline/queue-blocking';
 
 const OPERATOR_A = 'operator-a';
 const USER_A = 'user-a';
@@ -1123,6 +1125,13 @@ describe('useOfflineQueue', () => {
     // siguiente entra después. Sin el arreglo de E5b, ni siquiera esperar a
     // que `reclaimStale` pudiera recuperarla (una vez pasado
     // `RECLAIM_STALE_MS`) sirve de nada: `drainNow()` ya no hace nada.
+    // Nota de la ronda 6 de review del PR #679 — este test llama a
+    // `drainNow()` a mano tras simular el paso del tiempo. Eso demuestra que
+    // `drainingRef` ya no se atasca (la propiedad que E8 nombra), pero EN
+    // PRODUCCIÓN nadie llama a `drainNow()`: la muleta esquivaba el residual
+    // real (¿quién programa esa pasada?), que el reviewer nombró aparte y
+    // que `S1`/`S2` (más abajo, sin ningún `drainNow()` manual) sí prueban.
+    // Se deja como evidencia de la propiedad más estrecha que sí demuestra.
     it('E8 — once the orphaned head becomes reclaimable, a later drainNow() actually resumes (drainingRef is not stuck)', async () => {
       const stuckSending = await enqueue(db, {
         operatorId: OPERATOR_A,
@@ -1166,6 +1175,112 @@ describe('useOfflineQueue', () => {
         },
         { timeout: 5_000 },
       );
+    });
+
+    // S1 — residual de la ronda 5 de review del PR #679, la otra mitad de
+    // la costura 3. `drainManifest` sale correctamente cuando la cabeza no
+    // es reclamable, pero eso sólo mueve la pregunta a "¿quién vuelve?". Los
+    // cuatro disparadores reales de una pasada son el montaje, `online`,
+    // `PICKUP_QUEUE_WAKE_EVENT`, y los timers de `scheduleRetry` — y ese
+    // último sólo se programaba sobre `nextAttemptAt` de entradas `pending`,
+    // nunca sobre el plazo real de una `sending` huérfana
+    // (`RECLAIM_STALE_MS`). Sin `manifestRetryEta`, ningún timer se
+    // programaba, así que `reclaimStale` —que sólo corre al INICIO de una
+    // pasada— nunca volvía a tener una pasada donde correr. Medido por el
+    // reviewer: `pending = 2, blocked = 0` en el badge, sin vía de escape.
+    //
+    // A diferencia de `E8`, este test NUNCA llama a `drainNow()` a mano —
+    // sólo deja pasar tiempo REAL. Si el drenador no programa su propio
+    // reintento, este `waitFor` agota su plazo sin que nada se envíe,
+    // exactamente como en producción.
+    //
+    // El tiempo real es corto a propósito: `lastAttemptAt` se siembra a
+    // sólo ~200ms de volverse reclamable (`RECLAIM_STALE_MS - 200`, no un
+    // atajo al valor de producción) — la aritmética real de `scheduleRetry`
+    // sigue siendo la que corre, sólo que el margen que hay que esperar de
+    // verdad es de milisegundos, no de 90 segundos.
+    it('S1 — an own orphaned sending head schedules its own recovery, with no manual drainNow anywhere', async () => {
+      const stuckSending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+      await db.pickup_queue.update(stuckSending.id!, {
+        status: 'sending',
+        claimToken: 'orphan',
+        lastAttemptAt: new Date(Date.now() - RECLAIM_STALE_MS + 200).toISOString(),
+      });
+      const behindIt = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      // Mount's own pass settles, blocked behind the non-reclaimable head —
+      // give it a moment, then confirm nothing sent yet.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(send).not.toHaveBeenCalled();
+
+      // No `drainNow()`, no `online` event — only the drainer's OWN
+      // scheduled timer (from `manifestRetryEta`) can make this happen.
+      await waitFor(
+        async () => {
+          const stored = await db.pickup_queue.get(behindIt.id!);
+          expect(stored).toBeUndefined(); // sent, then purged
+        },
+        { timeout: 2_000 },
+      );
+      expect(send).toHaveBeenCalled();
+    });
+
+    // S2 — la misma pregunta, del lado cross-user. Una entrada detrás de un
+    // bloqueo cross-user queda excluida de `remaining` por completo — sin
+    // `manifestRetryEta`, `CROSS_USER_RECLAIM_MS` tampoco alimentaba
+    // `soonest`. Medido por el reviewer junto a S1. Mismo truco de margen
+    // real corto: `createdAt` a ~200ms de que expire `CROSS_USER_RECLAIM_MS`
+    // (15 min), no un atajo a ese valor.
+    it('S2 — a cross-user block schedules its own expiry, with no manual drainNow anywhere', async () => {
+      const otherUsersEntry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: 'user-b',
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: {},
+      });
+      await db.pickup_queue.update(otherUsersEntry.id!, {
+        createdAt: new Date(Date.now() - CROSS_USER_RECLAIM_MS + 200).toISOString(),
+      });
+      const ownEntry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(send).not.toHaveBeenCalled();
+
+      // Once reclaimable, this session may process the other user's stale
+      // head too (decisión del usuario, ronda 4) before its own.
+      await waitFor(
+        async () => {
+          const stored = await db.pickup_queue.get(ownEntry.id!);
+          expect(stored).toBeUndefined(); // sent, then purged
+        },
+        { timeout: 2_000 },
+      );
+      expect(send).toHaveBeenCalled();
     });
   });
 

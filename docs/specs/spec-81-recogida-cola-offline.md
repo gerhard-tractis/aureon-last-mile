@@ -770,6 +770,64 @@ para "¿es reclamable esta fila?", igual que `manifestIsBlocked` lo es para
 del lado de producción (un evento propio, una memoización real, un valor
 de retorno que antes no existía), no parches sobre sus síntomas.
 
+**Ronda 6 de review del PR #679 (2026-09-08) — un residual, "la otra mitad
+del mismo agujero de la ronda 4", y una nota menor.** El review confirmó
+primero el veredicto de fondo sobre las cinco rondas: la ronda 5 **no abrió
+un quinto flanco** — convirtió un bucle infinito con la cola muerta para
+toda la sesión en una parada que se cura con cualquier reconexión o
+recarga, "estrictamente mejor". Y la cola **no necesita rediseño**: las
+rondas 1–4 sí mostraban el patrón "cada arreglo abre un estado nuevo"; la
+5 y la 6 no — el residual se enuncia en una frase y se cierra donde ya
+está escrito el cálculo. Ese cambio de forma es la señal de que converge.
+
+**El residual — "¿quién vuelve?".** `drainManifest` sale por `return`
+cuando la cabeza no es reclamable (costura 3) — correcto, no se puede
+saltar la cabeza. Pero eso sólo mueve la pregunta: los cuatro disparadores
+reales de una pasada son el montaje, `online` real,
+`PICKUP_QUEUE_WAKE_EVENT`, y los timers de `scheduleRetry` — y ese último
+sólo se programaba sobre `nextAttemptAt` de entradas `pending` NO
+bloqueadas. Una `sending` huérfana no tiene `nextAttemptAt` y `listPending`
+la excluye; una entrada detrás de un bloqueo cross-user queda excluida de
+`remaining` por completo. Sin ver ninguno de los dos plazos reales
+(`RECLAIM_STALE_MS`, `CROSS_USER_RECLAIM_MS`), `soonest` nunca programaba
+nada — y `reclaimStale`, quien de verdad libera la cabeza, sólo corre al
+INICIO de una pasada que ya nunca volvía a empezar. Medido por el
+reviewer: `pending = 2, blocked = 0` en el badge (verde), un
+`close_manifest` firmado que nunca sube, sin botón que tocar (S1 no tiene
+ni siquiera la vía de escape del badge que S2 sí tiene).
+
+**Implementado:** `manifestRetryEta` (`lib/offline/queue-blocking.ts`)
+devuelve el instante en el que un manifiesto podría dejar de estar
+atascado — `lastAttemptAt(cabeza) + RECLAIM_STALE_MS` si la cabeza es
+`sending` (huérfana propia, o de otra sesión en vuelo), `lastTouchedAt(cabeza)
++ CROSS_USER_RECLAIM_MS` si es `pending` de otro usuario, o `null` si es
+directamente accionable por esta sesión (nada que programar, `drainManifest`
+ya la habrá tomado en esta misma pasada) o si el manifiesto está bloqueado
+de forma permanente (`dead`, ningún temporizador ayuda). `drain()` mezcla
+este valor con los `nextAttemptAt` de las entradas propias al calcular
+`soonest` — el MISMO mecanismo de programación que ya existía, cerrando
+los tres plazos con el mecanismo que ya existe, tal como pidió el reviewer.
+
+**La lección del review, sobre el propio E8 de la ronda 5:** ese test
+llamaba a `result.current.drainNow()` a mano tras simular el paso del
+tiempo — demuestra que `drainingRef` ya no se atasca (una propiedad real y
+necesaria), pero EN PRODUCCIÓN nadie llama a `drainNow()`. Cuando un test
+necesita un empujón manual para llegar al estado bueno, esa muleta es una
+pregunta abierta sin responder, no parte del arnés. `S1`/`S2`
+(`useOfflineQueue.test.ts`) reproducen el residual sin ningún `drainNow()`
+manual — sólo tiempo real, sembrando los timestamps a ~200ms de volverse
+reclamables (no un atajo a los valores de producción, un margen real corto
+para no esperar 90s/15min de verdad en un test). Verificados en rojo
+contra el código de la ronda 5 antes de arreglar. Mutation-testeados.
+
+**Nota menor — encolar offline en `5f` ahora despierta al drenador.**
+`complete/[loadId]/page.tsx` encolaba la entrada offline y navegaba fuera
+sin disparar ninguna señal — descansaba en el mismo supuesto de "ya vendrá
+un `online`" que el residual mostró que no basta por sí solo. Ahora
+dispara `PICKUP_QUEUE_WAKE_EVENT` justo tras encolar, la misma señal que
+`retryBlockedManifest` ya usa, para que el envío se intente de inmediato
+en vez de esperar la próxima reconexión real.
+
 ### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,

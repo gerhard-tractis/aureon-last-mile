@@ -107,6 +107,7 @@ vi.mock('@/hooks/useSyncQueue', () => ({
 const mockRetryBlockedManifest = vi.fn();
 vi.mock('@/hooks/useOfflineQueue', () => ({
   retryBlockedManifest: (...args: unknown[]) => mockRetryBlockedManifest(...args),
+  PICKUP_QUEUE_WAKE_EVENT: 'aureon:pickup-queue-wake',
 }));
 
 describe('CompletionPage', () => {
@@ -430,6 +431,34 @@ describe('CompletionPage', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/app/pickup');
     });
+  });
+
+  // Nota menor de la ronda 6 de review del PR #679 — encolar offline aquí
+  // no despertaba al drenador ya montado en `AppLayout`: descansaba en el
+  // mismo supuesto de "ya vendrá un `online`" que el residual de la ronda 5
+  // (S1/S2, `useOfflineQueue.test.ts`) mostró que no basta por sí solo.
+  // Disparar `PICKUP_QUEUE_WAKE_EVENT` justo tras encolar hace que el envío
+  // se intente de inmediato, en vez de esperar la próxima reconexión real.
+  it('wakes the already-mounted drainer right after queuing the offline close, instead of waiting for the next real online event', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'TypeError: Failed to fetch',
+        details: '',
+        hint: '',
+        code: '',
+      },
+    });
+    const wakeListener = vi.fn();
+    window.addEventListener('aureon:pickup-queue-wake', wakeListener);
+
+    try {
+      await completeAndSubmit();
+
+      await waitFor(() => expect(wakeListener).toHaveBeenCalledTimes(1));
+    } finally {
+      window.removeEventListener('aureon:pickup-queue-wake', wakeListener);
+    }
   });
 
   // M5, ronda 2 de review del PR #679 (mayor): `enqueue` corre DENTRO del

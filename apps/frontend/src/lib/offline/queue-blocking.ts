@@ -138,3 +138,57 @@ export async function manifestIsBlocked(
 export function isClaimable(entry: PickupQueueEntry): boolean {
   return entry.status === 'pending';
 }
+
+/**
+ * Residual de la ronda 5 de review del PR #679, señalado por el reviewer —
+ * "la otra mitad del mismo agujero de la ronda 4". `drainManifest` sale
+ * correctamente por `return` cuando la cabeza no es reclamable (costura 3),
+ * pero eso sólo mueve la pregunta: ¿quién vuelve a intentarlo? Los cuatro
+ * disparadores reales de una pasada son el montaje, `online`,
+ * `PICKUP_QUEUE_WAKE_EVENT`, y los timers de `scheduleRetry` — y ese último
+ * sólo se programaba sobre `nextAttemptAt` de entradas `pending` no
+ * bloqueadas. Una `sending` huérfana no tiene `nextAttemptAt` y no está en
+ * `remaining`; una entrada detrás de un bloqueo cross-user queda excluida
+ * de `remaining` por completo. Sin este cálculo, `soonest` nunca ve ninguno
+ * de los dos plazos reales (`RECLAIM_STALE_MS`, `CROSS_USER_RECLAIM_MS`), y
+ * `reclaimStale` — que es quien de verdad libera la cabeza — sólo corre al
+ * principio de una pasada que ya nunca vuelve a empezar. Medido por el
+ * reviewer: dos manifiestos con `pending = 2, blocked = 0` en el badge, un
+ * `close_manifest` firmado que nunca sube, sin botón que tocar (S1 no tiene
+ * ni siquiera la vía de escape del badge que S2 sí tiene).
+ *
+ * Devuelve el instante (ms epoch) en el que este manifiesto podría dejar de
+ * estar atascado, o `null` si ningún temporizador puede ayudar (`dead`
+ * permanente, o si su cabeza ya es directamente accionable por esta
+ * sesión — en ese caso `drainManifest` ya la habrá procesado en esta misma
+ * pasada, y no hace falta programar nada). `drain()` mezcla este valor con
+ * los `nextAttemptAt` de las entradas propias al calcular `soonest` — el
+ * MISMO mecanismo de programación que ya existe, no uno nuevo.
+ */
+export async function manifestRetryEta(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+  userId: string,
+  reclaimStaleMs: number,
+): Promise<number | null> {
+  if (await manifestHasDeadEntry(db, operatorId, manifestId)) return null;
+
+  const head = await manifestHead(db, operatorId, manifestId);
+  if (!head) return null;
+
+  if (head.status === 'sending') {
+    // Cualquier `sending` — huérfana propia, o de otra sesión en vuelo —
+    // `reclaimStale` (por operador, no filtra por usuario) la libera a los
+    // `reclaimStaleMs` de su último toque, desde CUALQUIER pasada de
+    // `drain()` de este operador, no sólo la de esta sesión.
+    return lastTouchedAt(head) + reclaimStaleMs;
+  }
+
+  // `pending`: si es nuestra, ya es directamente accionable — esta misma
+  // pasada de `drainManifest` la habrá tomado, sin necesidad de programar
+  // nada más. Si es de otro usuario, el reloj de `CROSS_USER_RECLAIM_MS`
+  // (`manifestBlockedForUser`) es el único plazo real.
+  if (head.userId === userId) return null;
+  return lastTouchedAt(head) + CROSS_USER_RECLAIM_MS;
+}
