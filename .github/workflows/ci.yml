@@ -193,6 +193,12 @@ jobs:
       - name: Test the harness guard
         run: bash ./scripts/check-harness-present.test.sh
 
+      # post-merge-remind.sh (spec-91 fase 1): recuerda cerrar el token de
+      # fase tras un `gh pr merge` real — corre contra un `gh` falso en PATH,
+      # nunca la red.
+      - name: Test the post-merge reminder hook
+        run: bash ./.claude/hooks/post-merge-remind.test.sh
+
       # check-phase-overlap: "¿estas fases, si se despachan en paralelo,
       # pueden pisarse?" (spec-89). No es un gate — el orquestador lo corre
       # antes de dispatchar; sólo sus tests corren en CI.

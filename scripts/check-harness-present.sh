@@ -27,7 +27,7 @@ FAILED=0
 # Si se añade uno nuevo, va aquí: un agente que el flujo usa pero que nadie
 # verifica es el mismo agujero otra vez.
 REQUIRED_AGENTS="implementer reviewer qa-e2e"
-REQUIRED_HOOKS="keep-going.sh resume-check.sh"
+REQUIRED_HOOKS="keep-going.sh resume-check.sh post-merge-remind.sh"
 
 for a in $REQUIRED_AGENTS; do
   f=".claude/agents/${a}.md"
