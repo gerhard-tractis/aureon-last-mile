@@ -396,7 +396,26 @@ export function useOfflineQueue(
       // `drainManifest` — aquí cierra la costura de raíz: las dos guardas ya
       // no pueden divergir porque son una sola función.
       const remainingAll = ownEntries(await listPending(db, operatorId), userId);
-      const remainingManifestIds = Array.from(new Set(remainingAll.map((e) => e.manifestId)));
+      // Ronda 7 de review del PR #679 (bloqueante) — `listPending` excluye
+      // `sending` por diseño, así que un manifiesto cuya ÚNICA entrada
+      // propia es una `sending` huérfana nunca aparecía en
+      // `remainingManifestIds` — y sin eso, `manifestChecks` (más abajo)
+      // nunca le calculaba `manifestRetryEta`. S1 (ronda 5/6) cubría el caso
+      // de dos o más entradas propias (la huérfana con una `pending` detrás,
+      // que sí mantenía el manifiesto en la lista vía esa `pending`); esta
+      // consulta cubre la de una sola — la única forma que existe HOY:
+      // `close_manifest` es el único productor real, y `complete/[loadId]`
+      // encola exactamente una entrada por manifiesto.
+      const ownSendingManifestIds = (
+        await db.pickup_queue
+          .where('operatorId')
+          .equals(operatorId)
+          .and((entry) => entry.userId === userId && entry.status === 'sending')
+          .toArray()
+      ).map((entry) => entry.manifestId);
+      const remainingManifestIds = Array.from(
+        new Set([...remainingAll.map((e) => e.manifestId), ...ownSendingManifestIds]),
+      );
       // Residual, ronda 5 de review del PR #679 — "¿quién vuelve?", la otra
       // mitad de la costura 3. `drainManifest` sale correctamente por
       // `return` cuando la cabeza no es reclamable (`isClaimable`) o el

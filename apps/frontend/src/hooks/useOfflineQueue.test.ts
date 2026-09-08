@@ -1235,7 +1235,13 @@ describe('useOfflineQueue', () => {
           const stored = await db.pickup_queue.get(behindIt.id!);
           expect(stored).toBeUndefined(); // sent, then purged
         },
-        { timeout: 2_000 },
+        // Ronda 7 de review del PR #679 (menor) — 5s, no 2s: el mismo
+        // ensanche que la ronda 3 adoptó para esta exacta razón (stalls en
+        // frío bajo contención de CPU entre ficheros de test en paralelo).
+        // No cambia lo que se prueba: lo programado es un único `setTimeout`
+        // que va a disparar solo — si algo falla aquí es por plazo agotado,
+        // no por una carrera nueva.
+        { timeout: 5_000 },
       );
       expect(send).toHaveBeenCalled();
     });
@@ -1278,7 +1284,61 @@ describe('useOfflineQueue', () => {
           const stored = await db.pickup_queue.get(ownEntry.id!);
           expect(stored).toBeUndefined(); // sent, then purged
         },
-        { timeout: 2_000 },
+        // Ronda 7 de review del PR #679 (menor) — 5s, no 2s: el mismo
+        // ensanche que la ronda 3 adoptó para esta exacta razón (stalls en
+        // frío bajo contención de CPU entre ficheros de test en paralelo).
+        // No cambia lo que se prueba: lo programado es un único `setTimeout`
+        // que va a disparar solo — si algo falla aquí es por plazo agotado,
+        // no por una carrera nueva.
+        { timeout: 5_000 },
+      );
+      expect(send).toHaveBeenCalled();
+    });
+
+    // S3 — ronda 7 de review del PR #679 (bloqueante), un `status ===
+    // 'sending'` más en la lista que faltaba. `remainingManifestIds`
+    // (`drain()`) se calculaba a partir de `ownEntries(listPending(...))`,
+    // y `listPending` excluye `sending` por diseño — así que un manifiesto
+    // cuya ÚNICA entrada propia es la `sending` huérfana nunca entraba en
+    // `manifestChecks`, y nadie le calculaba `manifestRetryEta`. S1 cubría
+    // el caso de DOS o más entradas propias (la `sending` huérfana con una
+    // `pending` detrás, que sí mantenía el manifiesto en la lista); S3 es
+    // una sola entrada — y es la forma que existe HOY: `close_manifest` es
+    // el único productor real (`offlineQueueSender.ts`), y
+    // `complete/[loadId]` encola exactamente una entrada por manifiesto.
+    // Medido por el reviewer: `row = sending, sends: 0` tras 2s, con un
+    // control (el mismo estado más una `pending` detrás, es decir S1) que
+    // sí drena solo.
+    it('S3 — a manifest whose ONLY own entry is an orphaned sending row still schedules its own recovery', async () => {
+      const stuckSending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1 },
+      });
+      await db.pickup_queue.update(stuckSending.id!, {
+        status: 'sending',
+        claimToken: 'orphan',
+        lastAttemptAt: new Date(Date.now() - RECLAIM_STALE_MS + 200).toISOString(),
+      });
+
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(send).not.toHaveBeenCalled();
+
+      // No `drainNow()`, no `online` event — only the drainer's OWN
+      // scheduled timer can make this happen, and only if this manifest
+      // (with no OTHER own entry to keep it in `remainingManifestIds`) was
+      // ever considered at all.
+      await waitFor(
+        async () => {
+          const stored = await db.pickup_queue.get(stuckSending.id!);
+          expect(stored).toBeUndefined(); // sent, then purged
+        },
+        { timeout: 5_000 },
       );
       expect(send).toHaveBeenCalled();
     });

@@ -828,6 +828,43 @@ dispara `PICKUP_QUEUE_WAKE_EVENT` justo tras encolar, la misma señal que
 `retryBlockedManifest` ya usa, para que el envío se intente de inmediato
 en vez de esperar la próxima reconexión real.
 
+**Ronda 7 de review del PR #679 (2026-09-08) — un bloqueante de una línea,
+un menor, mergea al cerrar.** El reviewer confirmó primero, en las dos
+direcciones, que `S1`/`S2` prueban lo que dicen probar: verdes en la
+ronda 6 sin ninguna muleta en el cuerpo, y rojos al revertir `soonest` a
+la forma de la ronda 5. Y que `manifestRetryEta` tiene sus CUATRO ramas
+defendidas por mutación, no dos — incluida la que más preocupaba
+(`dead` devolviendo un instante en el pasado reabriría el bucle ocupado;
+la caza `B2`, viva desde la ronda 3, no un test nuevo de esta ronda).
+
+**El bloqueante — el mismo hueco de la ronda 5, un estado que faltaba en
+el filtro.** `remainingManifestIds` (`drain()`) se calculaba a partir de
+`ownEntries(listPending(...))`, y `listPending` excluye `sending` por
+diseño. Un manifiesto cuya ÚNICA entrada propia es la `sending` huérfana
+nunca entraba en `manifestChecks`, así que `manifestRetryEta` nunca se le
+calculaba — exactamente el mismo síntoma de S1/S2, por la puerta que
+quedaba abierta cuando la entrada `pending` que mantenía al manifiesto en
+la lista no existe. Y es la forma que existe HOY, no un caso futuro:
+`close_manifest` es el único productor real (`offlineQueueSender.ts`), y
+`complete/[loadId]` encola exactamente UNA entrada por manifiesto — así
+que todo manifiesto en `pickup_queue` hoy tiene una sola entrada. S1
+(dos o más) cubría la forma futura; S3 (una sola) es la única que existe
+ahora. Medido por el reviewer: `row = sending, sends: 0` tras 2s, con un
+control (el mismo estado más una `pending` detrás — o sea, S1) que sí
+drena solo.
+
+**Implementado:** una consulta adicional por las entradas propias
+`status === 'sending'` de este operador, uniendo sus `manifestId` al
+conjunto antes de calcular `manifestChecks`/`manifestRetryEta`. `S3`
+(`useOfflineQueue.test.ts`) reproduce la forma de una sola entrada, sin
+ningún `drainNow()` manual, verificado en rojo contra el código anterior a
+este arreglo y mutation-testeado.
+
+**Menor — `S1`/`S2` de 2s a 5s.** Mismo ensanche que la ronda 3 adoptó
+para la misma razón (stalls en frío bajo contención de CPU entre ficheros
+de test en paralelo). No cambia lo que se prueba: lo programado sigue
+siendo un único `setTimeout` real que dispara solo.
+
 ### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
