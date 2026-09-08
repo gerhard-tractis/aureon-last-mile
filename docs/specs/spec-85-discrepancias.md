@@ -393,6 +393,7 @@ lleva un prefijo centinela antes del `:`:
 | | `RESOLUTION_REQUIRED` | P0001 |
 | | `DISCREPANCY_NOT_FOUND` | 42501 |
 | | `DISCREPANCY_ALREADY_RESOLVED` | 23505 |
+| | `LOST_REQUIRES_OPERATIONS_MANAGER` (fase 3a) | 42501 |
 | `get_discrepancies` | (ninguna — no lanza) | — |
 
 Un consumidor de frontend hace `message.startsWith('PACKAGE_NOT_FOUND:')`,
@@ -598,7 +599,7 @@ lo que queda por decidir.
 Por eso la fase se parte en dos: el guard de permiso es backend puro y se puede construir
 ya; la pantalla y el workflow siguen esperando diseño.
 
-### Fase 3a — Solo el jefe de operaciones puede declarar `lost` `[pending]`
+### Fase 3a — Solo el jefe de operaciones puede declarar `lost` `[in_progress]`
 
 **Archivos:** migración nueva sobre `resolve_discrepancy`, test pgTAP.
 
@@ -608,19 +609,67 @@ autenticado del operador —un `pickup_crew`, un `warehouse_staff`— puede decl
 discrepancia, y `lost` es la rama que abre una indemnización. Eso contradice la decisión de
 arriba, y no depende de que exista la pantalla.
 
-- [ ] Test pgTAP primero: bajo un JWT de `pickup_crew`, `resolve_discrepancy(id, 'lost', …)`
+- [x] Test pgTAP primero: bajo un JWT de `pickup_crew`, `resolve_discrepancy(id, 'lost', …)`
       se rechaza; bajo `operations_manager`, pasa.
-- [ ] Decidir y **escribir** si `resolved` también se restringe o sigue abierta a cualquier
+- [x] Decidir y **escribir** si `resolved` también se restringe o sigue abierta a cualquier
       rol del operador. Resolver una discrepancia es operación de andén; declararla perdida
       es una decisión con consecuencia económica. Por defecto: `resolved` abierta, `lost`
       restringida — pero es una decisión, no un detalle, y va argumentada.
-- [ ] `CREATE OR REPLACE` desde la **última** definición de la función, no desde la
+- [x] `CREATE OR REPLACE` desde la **última** definición de la función, no desde la
       original — regla no negociable del repo.
-- [ ] Errcode y centinela coherentes con el contrato ya publicado: `42501` +
+- [x] Errcode y centinela coherentes con el contrato ya publicado: `42501` +
       `LOST_REQUIRES_OPERATIONS_MANAGER:` (o el nombre que encaje en la tabla de errores del
       spec), para que el frontend lo mapee por prefijo sin parsear texto libre.
-- [ ] Mutation-testear el guard: si borrar la comprobación de rol no rompe ningún test, el
+- [x] Mutation-testear el guard: si borrar la comprobación de rol no rompe ningún test, el
       test no vale.
+
+**Decisión: `resolved` sigue abierta a cualquier rol del operador; sólo `lost` se
+restringe.** Resolver una discrepancia constata un hecho físico — el bulto apareció — y lo
+hace quien lo tiene delante, en andén, igual que hoy. Declarar `lost` es distinto: es una
+determinación de que el bulto NO va a aparecer, y esa determinación es la que dispara el
+futuro flujo de indemnización (decisión del usuario, 2026-09-07). Restringir también
+`resolved` habría bloqueado sin necesidad el flujo de reintento que spec-81 (cola offline)
+y los TEST 9/9b de esta suite ya dan por sentado: nadie asume más riesgo económico cuando un
+bulto aparece, así que no hay nada que proteger ahí.
+
+**Roles permitidos para `lost`: `operations_manager`, `admin`, `super_admin`.** El usuario
+dijo "el jefe de operaciones", pero el repo tiene un patrón establecido y repetido —
+`cancel_pickup_route` (`20260821000001`), `add_manifest_to_route`/`remove_manifest_from_route`
+(`20260822000001`/`20260824000004`), la variante `ops_leader` de `start_pickup_route`
+(`20260824000003`), las RPCs de adyacencia y top-up de spec-73 — donde toda puerta que exige
+`operations_manager` deja pasar también a `admin`/`super_admin` como vía de escape
+administrativa. Restringir `lost` a únicamente `operations_manager`, dejando fuera a
+`admin`/`super_admin`, habría sido la primera excepción a ese patrón en todo el repo, sin que
+la frase del usuario pidiera esa excepción explícitamente. Si en el futuro se decide que ni
+siquiera un `admin` debe poder declarar `lost` sin ser también `operations_manager`, es una
+decisión a tomar aparte, con su propio razonamiento — no algo a inferir aquí.
+
+**Orden del guard dentro de `resolve_discrepancy`:** después del guard "ya resuelta" (23505)
+y después de la validación de `p_resolution`, antes del `UPDATE`. Así un reintento
+`resolved → lost` de un `pickup_crew` sigue devolviendo `23505` (no un `42501` distinto que
+rompería la semántica de "ya pasó, deja de reintentar" que spec-81 depende de leer), y un
+`pickup_crew` que manda una razón vacía sigue viendo `RESOLUTION_REQUIRED` antes que el
+rechazo de rol — el guard de rol sólo dispara en una transición real `open → lost` hecha por
+alguien sin autoridad, que es el caso que importa.
+
+> Implementado por: implementer — rama `feat/spec-85-fase-3a-lost-solo-ops-manager`,
+> migración `20260913000005_spec85_lost_requires_ops_manager.sql` (no `20260913000004`: ese
+> prefijo ya estaba tomado en el contenedor pgTAP compartido por otra rama en curso —
+> `spec80_close_manifest_acl_fix.sql`, sin mergear en `main` — así que se usó `000005` para no
+> chocar; `scripts/check-migration-versions.sh` confirma prefijos únicos dentro de este
+> repo). Test pgTAP: `TEST 25` (rechazo `pickup_crew`, con aserción de fila intacta —
+> `status`, `resolution`, `resolved_at`, `resolved_by_user_id` — no sólo de la excepción),
+> `TEST 26` (aceptación `operations_manager`), `TEST 27` (`resolved` sigue abierto a
+> `pickup_crew`, regresión explícita e independiente de TEST 6). `TEST 7` (existente, happy
+> path `open → lost`) se actualizó para actuar como `operations_manager` — con el guard
+> nuevo, el actor por defecto del fixture (`pickup_crew`) ya no puede completar esa
+> transición; ver el comentario dejado en el test. RED verificado antes del fix (TEST 25
+> falló por la razón correcta: `resolve_discrepancy let a pickup_crew caller declare lost`).
+> Mutation test: función mutante con el guard de rol eliminado, aplicada directamente sobre
+> el contenedor en vivo — sólo TEST 25 falla, los demás 40 `PASSED` se mantienen (incluidos
+> TEST 26/27, que corren después vía `ROLLBACK TO` y no se ven afectados por el abort de la
+> transacción interna de TEST 25). Función real restaurada y reconfirmada: 41 `PASSED`, 0
+> `ERROR`.
 
 ### Fase 3b — La pantalla y el workflow de indemnización `[blocked]`
 

@@ -31,7 +31,16 @@ INSERT INTO auth.users (
    '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
    'spec85r2-user-b@operators.test', crypt('x', gen_salt('bf')), NOW(),
    '{"operator_id":"bbbbbbbb-bbbb-bbbb-bbbb-000000000852"}'::jsonb,
-   '{"full_name":"Spec85r2 User B"}'::jsonb, NOW(), NOW(), '', '')
+   '{"full_name":"Spec85r2 User B"}'::jsonb, NOW(), NOW(), '', ''),
+  -- spec-85 fase 3a: an operations_manager for operator A, to exercise the
+  -- "who may declare lost" guard. Kept in the same fixture block as A/B
+  -- rather than a separate migration-adjacent insert, because it is the
+  -- same operator and the same transaction-scoped fixture set.
+  ('aaaaaaaa-0003-4000-a000-000000000852',
+   '00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+   'spec85r3-ops-manager-a@operators.test', crypt('x', gen_salt('bf')), NOW(),
+   '{"operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852"}'::jsonb,
+   '{"full_name":"Spec85r3 Ops Manager A"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.users (id, operator_id, email, full_name, permissions)
@@ -42,6 +51,18 @@ ON CONFLICT (id) DO UPDATE
   SET operator_id = EXCLUDED.operator_id,
       full_name   = EXCLUDED.full_name,
       permissions = EXCLUDED.permissions;
+
+-- spec-85 fase 3a: role column set explicitly here, unlike A/B above (which
+-- rely on the table default 'pickup_crew' — see role guard tests). This is
+-- the ONLY fixture user in this file whose role is not the default.
+INSERT INTO public.users (id, operator_id, email, full_name, permissions, role)
+VALUES
+  ('aaaaaaaa-0003-4000-a000-000000000852','aaaaaaaa-aaaa-aaaa-aaaa-000000000852','spec85r3-ops-manager-a@operators.test','Spec85r3 Ops Manager A',ARRAY['admin'],'operations_manager')
+ON CONFLICT (id) DO UPDATE
+  SET operator_id = EXCLUDED.operator_id,
+      full_name   = EXCLUDED.full_name,
+      permissions = EXCLUDED.permissions,
+      role        = EXCLUDED.role;
 
 INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone,
   delivery_address, comuna, delivery_date, raw_data, imported_via, imported_at)
@@ -100,6 +121,17 @@ CREATE OR REPLACE FUNCTION pg_temp.as_operator_b() RETURNS VOID AS $$
 BEGIN
   PERFORM set_config('request.jwt.claims',
     '{"sub":"bbbbbbbb-0000-4000-b000-000000000852","operator_id":"bbbbbbbb-bbbb-bbbb-bbbb-000000000852","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+END $$ LANGUAGE plpgsql;
+
+-- spec-85 fase 3a: operator A's operations_manager. "role":"authenticated"
+-- in the JWT claim is the Postgres role the connection assumes (matches
+-- every other helper here) — public.users.role, the RBAC column the new
+-- guard actually reads, is what differs about this fixture user.
+CREATE OR REPLACE FUNCTION pg_temp.as_operator_a_ops_manager() RETURNS VOID AS $$
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"aaaaaaaa-0003-4000-a000-000000000852","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000852","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 END $$ LANGUAGE plpgsql;
 
@@ -682,6 +714,12 @@ ROLLBACK TO test_6;
 
 -- =============================================================================
 -- TEST 7 — resolve_discrepancy, happy path open -> lost.
+--
+-- spec-85 fase 3a: updated to act as operator A's operations_manager, not
+-- the default pg_temp.as_operator_a() (role='pickup_crew' by table default —
+-- see the fixture note above). Before fase 3a this happy path worked for any
+-- authenticated user of the operator; TEST 25 below now covers that a
+-- pickup_crew caller is rejected on this exact transition.
 -- =============================================================================
 SAVEPOINT test_7;
 
@@ -696,7 +734,7 @@ BEGIN
           '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar')
   RETURNING id INTO v_id;
 
-  PERFORM pg_temp.as_operator_a();
+  PERFORM pg_temp.as_operator_a_ops_manager();
 
   PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, 'nunca apareció, se cierra el caso');
 
@@ -707,11 +745,11 @@ BEGIN
   IF v_status <> 'lost' THEN
     RAISE EXCEPTION 'TEST 7 FAILED: expected status lost, got %', v_status;
   END IF;
-  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0000-4000-a000-000000000852'::UUID THEN
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0003-4000-a000-000000000852'::UUID THEN
     RAISE EXCEPTION 'TEST 7 FAILED: resolved_by_user_id not attributed to the caller, got %', v_resolved_by;
   END IF;
 
-  RAISE NOTICE '✓ TEST 7 PASSED: resolve_discrepancy moves open -> lost with attribution';
+  RAISE NOTICE '✓ TEST 7 PASSED: resolve_discrepancy moves open -> lost with attribution (operations_manager)';
 END $$;
 RESET ROLE;
 
@@ -1803,5 +1841,164 @@ END $$;
 RESET ROLE;
 
 ROLLBACK TO test_24;
+
+-- =============================================================================
+-- TEST 25 (spec-85 fase 3a) — resolve_discrepancy rejects p_status = 'lost'
+-- from a caller whose role is not operations_manager/admin/super_admin.
+--
+-- The RED case this fase exists for: before this guard, ANY authenticated
+-- user of the operator — a pickup_crew member, e.g. — could declare a
+-- discrepancy 'lost', the branch that opens an indemnification. Operator A's
+-- default fixture user (pg_temp.as_operator_a()) is role='pickup_crew' by
+-- the public.users table default (20260216170542:36) — nothing in this file
+-- sets it otherwise for that user, so it is exactly the caller this guard
+-- must reject.
+--
+-- Same probative shape as TEST 8c/TEST 22: assert the row is untouched, not
+-- just that an exception was raised — a guard that raises but still lets the
+-- UPDATE run underneath it (e.g. misplaced inside a branch that falls
+-- through) would leave status='lost' with no authority behind it, which is
+-- the actual harm.
+-- =============================================================================
+SAVEPOINT test_25;
+
+DO $$
+DECLARE
+  v_id          UUID;
+  v_sqlstate    TEXT;
+  v_status      public.discrepancy_status_enum;
+  v_resolution  TEXT;
+  v_resolved_at TIMESTAMPTZ;
+  v_resolved_by UUID;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar sin autoridad')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a();
+
+  BEGIN
+    PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, 'nunca apareció');
+    RAISE EXCEPTION 'TEST 25 FAILED: resolve_discrepancy let a pickup_crew caller declare lost';
+  EXCEPTION
+    WHEN OTHERS THEN
+      IF SQLERRM LIKE 'TEST 25 FAILED%' THEN
+        RAISE;
+      END IF;
+      GET STACKED DIAGNOSTICS v_sqlstate = RETURNED_SQLSTATE;
+      IF v_sqlstate <> '42501' THEN
+        RAISE EXCEPTION 'TEST 25 FAILED: expected ERRCODE 42501 for a non-operations_manager caller declaring lost, got % (%)', v_sqlstate, SQLERRM;
+      END IF;
+      IF SQLERRM NOT LIKE 'LOST_REQUIRES_OPERATIONS_MANAGER:%' THEN
+        RAISE EXCEPTION 'TEST 25 FAILED: expected LOST_REQUIRES_OPERATIONS_MANAGER: sentinel prefix, got %', SQLERRM;
+      END IF;
+      RAISE NOTICE '✓ TEST 25 PASSED (rejection): pickup_crew caller rejected with 42501 (%)', SQLERRM;
+  END;
+
+  RESET ROLE;
+
+  SELECT status, resolution, resolved_at, resolved_by_user_id
+    INTO v_status, v_resolution, v_resolved_at, v_resolved_by
+    FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'open' THEN
+    RAISE EXCEPTION 'TEST 25 FAILED: row status changed despite rejection, got %', v_status;
+  END IF;
+  IF v_resolution IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 25 FAILED: resolution got populated on a rejected call, got %', v_resolution;
+  END IF;
+  IF v_resolved_at IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 25 FAILED: resolved_at got populated on a rejected call';
+  END IF;
+  IF v_resolved_by IS NOT NULL THEN
+    RAISE EXCEPTION 'TEST 25 FAILED: resolved_by_user_id got populated on a rejected call';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 25 PASSED: row left untouched after the rejected lost declaration';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_25;
+
+-- =============================================================================
+-- TEST 26 (spec-85 fase 3a) — resolve_discrepancy allows p_status = 'lost'
+-- from operator A's operations_manager. Mirrors TEST 25's fixture exactly,
+-- only the actor's role differs — the two together are the discriminating
+-- pair the guard exists to produce.
+-- =============================================================================
+SAVEPOINT test_26;
+
+DO $$
+DECLARE
+  v_id          UUID;
+  v_status      public.discrepancy_status_enum;
+  v_resolved_by UUID;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330002-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'para extraviar con autoridad')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a_ops_manager();
+
+  PERFORM public.resolve_discrepancy(v_id, 'lost'::public.discrepancy_status_enum, 'nunca apareció, cerrado por jefatura');
+
+  RESET ROLE;
+
+  SELECT status, resolved_by_user_id INTO v_status, v_resolved_by FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'lost' THEN
+    RAISE EXCEPTION 'TEST 26 FAILED: expected status lost for an operations_manager caller, got %', v_status;
+  END IF;
+  IF v_resolved_by IS DISTINCT FROM 'aaaaaaaa-0003-4000-a000-000000000852'::UUID THEN
+    RAISE EXCEPTION 'TEST 26 FAILED: resolved_by_user_id not attributed to the operations_manager caller, got %', v_resolved_by;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 26 PASSED: operations_manager caller declares lost successfully';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_26;
+
+-- =============================================================================
+-- TEST 27 (spec-85 fase 3a) — resolve_discrepancy still allows p_status =
+-- 'resolved' from a plain pickup_crew caller: the decision documented in
+-- spec-85-discrepancias.md ("Fase 3a") is that ONLY 'lost' is restricted —
+-- resolving a discrepancy (the bulto physically turned up) is dock work, not
+-- a decision with economic consequence. TEST 6 already exercises this happy
+-- path with the same default actor; this test exists so the fase 3a guard
+-- has its own explicit "resolved is NOT gated" regression, independent of
+-- TEST 6 possibly being edited for unrelated reasons later.
+-- =============================================================================
+SAVEPOINT test_27;
+
+DO $$
+DECLARE
+  v_id     UUID;
+  v_status public.discrepancy_status_enum;
+BEGIN
+  INSERT INTO public.discrepancies (operator_id, kind, operation_type, package_id, manifest_id, note)
+  VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-000000000852', 'missing', 'pickup',
+          '33330001-0000-0000-0000-000000000852', '44440001-0000-0000-0000-000000000852', 'apareció en andén')
+  RETURNING id INTO v_id;
+
+  PERFORM pg_temp.as_operator_a();
+
+  PERFORM public.resolve_discrepancy(v_id, 'resolved'::public.discrepancy_status_enum, 'apareció en el andén al reordenar');
+
+  RESET ROLE;
+
+  SELECT status INTO v_status FROM public.discrepancies WHERE id = v_id;
+
+  IF v_status <> 'resolved' THEN
+    RAISE EXCEPTION 'TEST 27 FAILED: expected status resolved for a pickup_crew caller, got %', v_status;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 27 PASSED: pickup_crew caller can still resolve (not declare lost)';
+END $$;
+RESET ROLE;
+
+ROLLBACK TO test_27;
 
 ROLLBACK;
