@@ -108,9 +108,29 @@ export async function listPending(
     .toArray();
 }
 
-/** Marca una entrada como confirmada por el servidor. */
-export async function markSent(db: PickupQueueStore, id: number): Promise<void> {
-  await db.pickup_queue.where(":id").equals(id).modify({ status: "sent" });
+/**
+ * Marca una entrada como confirmada por el servidor.
+ *
+ * `claimedAt`, opcional (M1, ronda 4 de review) — el token de propiedad que
+ * `claimPending` devolvió cuando esta llamada reclamó la entrada. Si se pasa
+ * y ya no coincide con el `lastAttemptAt` actual de la entrada, la llamada es
+ * un no-op completo: significa que otro drenador la reclamó de nuevo
+ * mientras esta seguía en vuelo (p. ej. tras un `reclaimStale` que la dio por
+ * huérfana), y un 200 tardío del primero no puede confirmar el envío del
+ * segundo, que sigue en curso. Sin `claimedAt` se comporta como antes —
+ * necesario porque `claimPending` no es la única vía de `pending` a
+ * `sending` para código que aún no rastrea el token.
+ */
+export async function markSent(
+  db: PickupQueueStore,
+  id: number,
+  claimedAt?: string,
+): Promise<void> {
+  await db.pickup_queue
+    .where(":id")
+    .equals(id)
+    .and((entry) => claimedAt === undefined || entry.lastAttemptAt === claimedAt)
+    .modify({ status: "sent" });
 }
 
 /**
@@ -122,10 +142,16 @@ export async function markSent(db: PickupQueueStore, id: number): Promise<void> 
  * así que sólo una de las dos llamadas concurrentes ve `count === 1`
  * (spec-81, ronda 1 de review, B3).
  *
- * Devuelve `true` si esta llamada ganó la reclamación, `false` si la entrada
- * ya no estaba `pending` (otro drenado se le adelantó, o no existe).
+ * Devuelve el `lastAttemptAt` (ISO 8601) que acaba de estampar si esta
+ * llamada ganó la reclamación, `null` si la entrada ya no estaba `pending`
+ * (otro drenado se le adelantó, o no existe). Ese valor devuelto ES el token
+ * de propiedad de la reclamación — el único dato que distingue "mi
+ * reclamación" de "la de otro drenador" cuando dos pasan por el mismo `id`
+ * (M1, ronda 4 de review: antes devolvía sólo un `boolean`, así que
+ * `markFailed`/`markSent` no podían hacer esa distinción y un zombi podía
+ * resolver la reclamación de otro).
  */
-export async function claimPending(db: PickupQueueStore, id: number): Promise<boolean> {
+export async function claimPending(db: PickupQueueStore, id: number): Promise<string | null> {
   const now = new Date().toISOString();
   const count = await db.pickup_queue
     .where(":id")
@@ -135,7 +161,7 @@ export async function claimPending(db: PickupQueueStore, id: number): Promise<bo
       entry.status = "sending";
       entry.lastAttemptAt = now;
     });
-  return count === 1;
+  return count === 1 ? now : null;
 }
 
 /**
@@ -149,16 +175,26 @@ export async function claimPending(db: PickupQueueStore, id: number): Promise<bo
  * concurrentes sobre la misma entrada nunca pierden un incremento — a
  * diferencia de la versión anterior (`get` + `update` en dos transacciones
  * separadas), que sí lo perdía (spec-81, ronda 1 de review, B2).
+ *
+ * `claimedAt`, opcional (M1, ronda 4 de review) — mismo contrato que en
+ * `markSent`: si se pasa y ya no coincide con el `lastAttemptAt` actual, la
+ * llamada entera es un no-op (ni incrementa `retryCount` ni toca `status`).
+ * Sin esto, el fallo tardío de un drenador zombi cuya reclamación ya expiró
+ * y fue reasignada por `reclaimStale` liberaba la reclamación **del segundo
+ * drenador**, con su envío real todavía en vuelo — `claimPending` vuelve a
+ * devolver esa entrada como disponible y produce un tercer envío.
  */
 export async function markFailed(
   db: PickupQueueStore,
   id: number,
   errorMessage: string,
+  claimedAt?: string,
 ): Promise<void> {
   const now = new Date().toISOString();
   await db.pickup_queue
     .where(":id")
     .equals(id)
+    .and((entry) => claimedAt === undefined || entry.lastAttemptAt === claimedAt)
     .modify((entry) => {
       entry.retryCount += 1;
       entry.lastError = errorMessage;
@@ -177,24 +213,47 @@ export async function markFailed(
 }
 
 /**
- * Devuelve a `pending` toda entrada `sending` cuyo `lastAttemptAt` supere
- * `olderThanMs`. Sin esto, `sending` es un estado sin salida: si la pestaña
- * muere justo después de `claimPending` (la PWA cerrada en segundo plano en
- * un muelle con la pantalla apagada), nadie vuelve a tener el `id` de esa
- * entrada — no aparece en `listPending` ni en `getPendingPickupCount`, pero
- * el escaneo sigue sin enviar en `pickup_queue`. `reclaimStale` es lo que un
- * drenador de fase 2 corre al arrancar (mount, evento `online`) para
- * recuperar reclamaciones huérfanas. Ver spec-81, ronda 3 de review, H1.
+ * Devuelve a `pending` toda entrada `sending` **del operador dado** cuyo
+ * `lastAttemptAt` supere `olderThanMs`. Sin esto, `sending` es un estado sin
+ * salida: si la pestaña muere justo después de `claimPending` (la PWA
+ * cerrada en segundo plano en un muelle con la pantalla apagada), nadie
+ * vuelve a tener el `id` de esa entrada — no aparece en `listPending` ni en
+ * `getPendingPickupCount`, pero el escaneo sigue sin enviar en
+ * `pickup_queue`. `reclaimStale` es lo que un drenador de fase 2 corre al
+ * arrancar (mount, evento `online`) para recuperar reclamaciones huérfanas.
+ * Ver spec-81, ronda 3 de review, H1.
+ *
+ * `operatorId` (M2, ronda 4 de review) — esto ES una escritura, a diferencia
+ * de un badge de sólo lectura; el no-negociable de `operator_id` no admite
+ * la excepción que sí se justifica para un contador. `listPending` y
+ * `purgeConfirmed` ya lo llevaban; sin llamador todavía hoy, así que añadir
+ * el parámetro no rompe nada — el momento estrictamente más barato para
+ * hacerlo es ahora, antes de que fase 2 lo invoque sin él.
+ *
+ * Llamador (fase 2): `olderThanMs` **debe** superar `timeout_http` de la
+ * petición de red que hace el drenado. Si no, una petición lenta pero
+ * legítima en 2G se reclama como huérfana antes de completarse, entra en un
+ * bucle reclaim → resend → resend, y produce el mismo envío duplicado que
+ * M1 corrige del lado de `markFailed`/`markSent`.
  */
 export async function reclaimStale(
   db: PickupQueueStore,
+  operatorId: string,
   olderThanMs: number,
 ): Promise<number> {
   const cutoff = Date.now() - olderThanMs;
   return db.pickup_queue
-    .where("status")
-    .equals("sending")
-    .and((entry) => entry.lastAttemptAt !== null && Date.parse(entry.lastAttemptAt) <= cutoff)
+    .where("operatorId")
+    .equals(operatorId)
+    .and(
+      (entry) =>
+        entry.status === "sending" &&
+        // `lastAttemptAt` es no-nulo siempre que el estado sea `sending`:
+        // `claimPending` es la única función que produce esa transición y
+        // siempre lo estampa en la misma escritura atómica. No hay otro
+        // camino a `sending` en este módulo.
+        Date.parse(entry.lastAttemptAt as string) <= cutoff,
+    )
     .modify({ status: "pending" });
 }
 

@@ -223,17 +223,33 @@ describe("recogida offline queue", () => {
       expect(pending).toHaveLength(0);
     });
 
-    it("H5 — queries the operatorId index instead of scanning the whole table", async () => {
+    it("H5 — does not do a full table scan (ronda 4 de review, N3)", async () => {
       // A full-table scan deserializes every row (including other operators'
       // and, from fase 5 on, each row's photo Blob) just to discard most of
       // them. `.where("operatorId")` already gives FIFO order for free — see
       // the docstring above — so nothing is gained by scanning.
-      const whereSpy = vi.spyOn(db.pickup_queue, "where");
+      //
+      // N3 (ronda 4 de review) — the previous version of this test asserted
+      // `where` was called with "operatorId" specifically. A legitimate
+      // future refactor to the compound index `[operatorId+status]` still
+      // calls `.where(...)`, just with a different argument, so that
+      // assertion would fail for the WRONG reason on the exact improvement
+      // this test exists to allow. What actually distinguishes "indexed
+      // lookup" from "table scan" is whether a full-collection method ran
+      // at all — assert that negative instead.
+      const filterSpy = vi.spyOn(db.pickup_queue, "filter");
+      const toCollectionSpy = vi.spyOn(db.pickup_queue, "toCollection");
+      const orderBySpy = vi.spyOn(db.pickup_queue, "orderBy");
 
       await listPending(db, OPERATOR_A);
 
-      expect(whereSpy).toHaveBeenCalledWith("operatorId");
-      whereSpy.mockRestore();
+      expect(filterSpy).not.toHaveBeenCalled();
+      expect(toCollectionSpy).not.toHaveBeenCalled();
+      expect(orderBySpy).not.toHaveBeenCalled();
+
+      filterSpy.mockRestore();
+      toCollectionSpy.mockRestore();
+      orderBySpy.mockRestore();
     });
 
     it("does not return entries claimed in-flight (sending) or dead-lettered", async () => {
@@ -260,7 +276,7 @@ describe("recogida offline queue", () => {
   });
 
   describe("claimPending (B3 — in-flight guard)", () => {
-    it("transitions a pending entry to sending and returns true", async () => {
+    it("transitions a pending entry to sending and returns the ownership token it stamped (M1)", async () => {
       const entry = await enqueue(db, {
         operatorId: OPERATOR_A,
         manifestId: MANIFEST_1,
@@ -270,9 +286,27 @@ describe("recogida offline queue", () => {
 
       const claimed = await claimPending(db, entry.id!);
 
-      expect(claimed).toBe(true);
+      expect(claimed).not.toBeNull();
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
+      // The returned value IS the lastAttemptAt it stamped — the token
+      // markFailed/markSent compare against later to tell "my reclamation"
+      // from "someone else's" (M1, ronda 4 de review).
+      expect(claimed).toBe(stored?.lastAttemptAt);
+    });
+
+    it("returns null when the entry was not pending", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await claimPending(db, entry.id!);
+
+      const secondAttempt = await claimPending(db, entry.id!);
+
+      expect(secondAttempt).toBeNull();
     });
 
     it("refuses a second concurrent claim of the same entry", async () => {
@@ -329,7 +363,7 @@ describe("recogida offline queue", () => {
       // markFailed. 10 minutes pass before anyone looks again.
       vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
 
-      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+      const reclaimedCount = await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
 
       expect(reclaimedCount).toBe(1);
       const stored = await db.pickup_queue.get(entry.id!);
@@ -352,7 +386,7 @@ describe("recogida offline queue", () => {
 
       vi.setSystemTime(new Date("2026-09-07T09:01:00.000Z"));
 
-      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+      const reclaimedCount = await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
 
       expect(reclaimedCount).toBe(0);
       const stored = await db.pickup_queue.get(entry.id!);
@@ -378,14 +412,62 @@ describe("recogida offline queue", () => {
         payload: { barcode: "SCAN-2" },
       });
       await markSent(db, sent.id!);
+      // N5 — the promise this title makes ("does not touch dead entries")
+      // was never exercised: no `dead` entry existed in this test. Now one
+      // does, so a regression that let reclaimStale touch `dead` would
+      // actually fail here.
+      const dead = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 1 },
+      });
+      await markDead(db, dead.id!, "MANIFEST_NOT_CLOSABLE");
 
       vi.setSystemTime(new Date("2026-09-07T10:00:00.000Z"));
 
-      const reclaimedCount = await reclaimStale(db, 5 * 60 * 1000);
+      const reclaimedCount = await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
 
       expect(reclaimedCount).toBe(0);
       expect((await db.pickup_queue.get(pending.id!))?.status).toBe("pending");
       expect((await db.pickup_queue.get(sent.id!))?.status).toBe("sent");
+      expect((await db.pickup_queue.get(dead.id!))?.status).toBe("dead");
+
+      vi.useRealTimers();
+    });
+
+    // M2 (ronda 4 de review) — reclaimStale operaba sobre todo el
+    // dispositivo, sin `operatorId`, mientras que listPending y
+    // purgeConfirmed sí lo llevan. Sin llamador todavía no hay fuga real,
+    // pero es una ESCRITURA, y el spec insiste en que el no-negociable de
+    // operator_id no admite excepción "porque es sólo un badge" — eso vale
+    // para lecturas, no para esto.
+    it("M2 — only reclaims the requesting operator's stale entries, not another operator's", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entryA = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-A" },
+      });
+      const entryB = await enqueue(db, {
+        operatorId: OPERATOR_B,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-B" },
+      });
+      await claimPending(db, entryA.id!);
+      await claimPending(db, entryB.id!);
+
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+
+      const reclaimedCount = await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
+
+      expect(reclaimedCount).toBe(1);
+      expect((await db.pickup_queue.get(entryA.id!))?.status).toBe("pending");
+      expect((await db.pickup_queue.get(entryB.id!))?.status).toBe("sending");
 
       vi.useRealTimers();
     });
@@ -488,6 +570,124 @@ describe("recogida offline queue", () => {
 
       // A late 500 arriving after a local timeout already marked this sent.
       await markFailed(db, entry.id!, "late 500 after local timeout");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sent");
+    });
+
+    // M1 (ronda 4 de review) — claimPending devolvía sólo un boolean, así
+    // que markFailed/markSent no podían distinguir "mi reclamación" de "la
+    // de otro drenador" — sólo miraban el status, y `sending` es el mismo
+    // valor para cualquiera que lo tenga. Ahora claimPending devuelve el
+    // `lastAttemptAt` que estampó como token de propiedad, y markFailed lo
+    // compara antes de tocar nada.
+    it("M1 — a stale claimant's markFailed does not release a live claimant's reclamation", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      // Drainer 1 claims. Its request hangs.
+      const staleToken = await claimPending(db, entry.id!);
+      expect(staleToken).not.toBeNull();
+
+      // 10 minutes pass; reclaimStale frees it for a second drainer.
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+      await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
+
+      // Drainer 2 claims the now-pending entry; its request is genuinely
+      // in flight.
+      const liveToken = await claimPending(db, entry.id!);
+      expect(liveToken).not.toBeNull();
+      expect(liveToken).not.toBe(staleToken);
+
+      // Drainer 1's zombie request finally times out and reports failure,
+      // still carrying its now-stale token.
+      await markFailed(db, entry.id!, "network timeout", staleToken!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      // Must still be drainer 2's claim, untouched — not bounced back to
+      // pending, which would let a third send happen on top of drainer 2's
+      // in-flight one.
+      expect(stored?.status).toBe("sending");
+      expect(stored?.lastAttemptAt).toBe(liveToken);
+
+      vi.useRealTimers();
+    });
+
+    it("M1 — a matching token still releases the claim as before", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      await markFailed(db, entry.id!, "network error", token!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("pending");
+    });
+  });
+
+  describe("markSent (M1 — a stale claim cannot confirm a live one's in-flight send)", () => {
+    it("does not mark sent when the caller's token no longer matches the current claim", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const staleToken = await claimPending(db, entry.id!);
+
+      vi.setSystemTime(new Date("2026-09-07T09:10:00.000Z"));
+      await reclaimStale(db, OPERATOR_A, 5 * 60 * 1000);
+      const liveToken = await claimPending(db, entry.id!);
+
+      // The zombie request's late 200 arrives, still carrying the stale
+      // token — it must not confirm an entry whose real send is still in
+      // flight under a different claim.
+      await markSent(db, entry.id!, staleToken!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+      expect(stored?.lastAttemptAt).toBe(liveToken);
+
+      vi.useRealTimers();
+    });
+
+    it("marks sent when the caller's token matches the current claim", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      await markSent(db, entry.id!, token!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sent");
+    });
+
+    it("still marks sent with no token given, for backward compatibility with the untracked path", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      await markSent(db, entry.id!);
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
