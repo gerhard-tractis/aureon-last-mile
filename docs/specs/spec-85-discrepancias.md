@@ -330,8 +330,31 @@ no puede tumbar un deploy), pero ya no es silencioso en los logs.
 - `resolve_discrepancy(p_id, p_status, p_resolution)` — sólo `open → resolved | lost`. Rechaza reabrir: una discrepancia cerrada es evidencia, y editarla después destruye su valor.
 - Lectura por operación y por estado, para la pantalla de resolución.
 
-- [ ] Tests pgTAP primero, incluyendo el rechazo cross-tenant y el rechazo de reapertura.
-- [ ] Implementar.
+- [x] Tests pgTAP primero, incluyendo el rechazo cross-tenant y el rechazo de reapertura.
+- [x] Implementar.
+
+Migración `20260913000003_spec85_discrepancies_rpcs.sql`, tests en
+`spec85_discrepancies_rpcs.test.sql` (11 tests). `record_discrepancies` valida
+que `p_source_id` (manifiesto o recepción según `p_operation_type`) y cada
+`package_id` pertenezcan al operador del JWT antes de insertar — nada por
+debajo lo hace, porque la RLS efectiva de la tabla es sólo `SELECT` y el RPC
+corre `SECURITY DEFINER`. `resolve_discrepancy` rechaza cualquier transición
+que no sea `open → resolved|lost` (incluida `resolved → lost`) con `ERRCODE
+P0002`, distinto del `P0001` de las validaciones (estado destino inválido,
+resolución vacía) — mismo split que `close_manifest` para que la cola offline
+de spec-81 distinga "ya cerrada, no reintentar" de "petición mal formada".
+`get_discrepancies` es `SECURITY INVOKER`: la tabla ya concede `SELECT` a
+`authenticated` y la RLS filtra por `operator_id`, así que una consulta
+directa ya queda acotada por tenant; el filtro explícito por
+`get_operator_id()` en el cuerpo es defensa en profundidad, no lo único que
+impide una fuga cross-tenant.
+
+**Nota sobre `p_resolution`:** el spec no decía si es obligatorio.
+`expand_carton`/`delete_minted_carton` exigen `p_reason` no vacío para
+cualquier acción que deja rastro sobre evidencia, así que `resolve_discrepancy`
+sigue el mismo patrón. Si la pantalla de resolución necesita cerrar sin texto
+libre (p.ej. un botón "apareció" sin campo), se ajusta aquí, no inventando una
+regla distinta en el frontend.
 
 ### Fase 3 — `lost` e indemnización `[blocked]`
 
