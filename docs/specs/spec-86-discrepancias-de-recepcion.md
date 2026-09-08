@@ -214,9 +214,25 @@ avance de estado ya vive en producción.
 
 Pasa a `lost` vía el mismo `resolve_discrepancy`, con autor y motivo, y marca
 la indemnización según la decisión abierta de más abajo (*Decisión abierta
-que hereda spec-85*) y de spec-85 fase 3 ("`lost` e indemnización", sigue
-`[blocked]`). Ambas esperan al usuario — éste es el único bloqueo legítimo
-que queda en todo el spec.
+que hereda spec-85*) y de spec-85 fase 3b. Sigue siendo el único bloqueo
+legítimo que queda en todo el spec.
+
+> **Actualización (2026-09-08).** El usuario decidió **quién** declara el `lost`:
+> el jefe de operaciones, desde una pantalla todavía sin definir. Eso zanja que
+> **nada lo dispara automáticamente** — no hay regla ni temporizador — y que el
+> rol es `operations_manager`, que ya existe en el RBAC. Lo que sigue bloqueado
+> aquí es el **efecto aguas abajo** (si el bulto pasa a `extraviado`, si se abre
+> una `exceptions` con `settlement_id`) y **dónde vive la pantalla**.
+>
+> El guard de permiso correspondiente es **spec-85 fase 3a**, que ya está
+> `[pending]` y desbloqueada: hoy `resolve_discrepancy` no comprueba ningún rol,
+> así que cualquier usuario del operador puede declarar `lost`. Esta fase 2b no
+> debería construirse antes que 3a.
+>
+> Y ojo con la pantalla: la candidata natural es el panel que describe la **fase 3
+> de este mismo spec**, que está desbloqueada. Si esa fase se construye antes de
+> que se decida dónde vive la declaración de `lost`, conviene dejarle el hueco
+> previsto en vez de rehacerla después.
 
 ### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
 
