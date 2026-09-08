@@ -202,6 +202,18 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
   `apps/frontend/src/lib/types.ts` y `packages/database/src/database.types.ts`
   (`Row`/`Insert`/`Update` de `pickup_scans`) — sin esto, la fase 2 no puede
   compilar un `.insert({ …, client_operation_id })` contra el cliente tipado.
+- [x] **Ronda 2 de review — M-1 (bloqueante):** TEST 6 corregido (mismo
+  `package_id` en ambas filas) para que vuelva a tener poder sobre
+  `operator_id`. Mutación re-verificada.
+- [x] **Ronda 2 de review — M-6/m4:** TEST 1/2 convertidos de
+  `DO $$ … RAISE EXCEPTION $$` a aserciones pgTAP; plan de 13 a 20.
+  Mutación de B1 re-corrida tras la conversión — ahora sí ejercita TEST 3-20
+  bajo una mutación de TEST 1/2.
+- [x] **Ronda 2 de review — M-2/M-3/M-4/m-5/n-8:** cabecera de la migración
+  corregida en los cinco puntos; TEST 14 nuevo (SQL) y
+  `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend) congelan
+  el alcance real de M-3. Residual de M-4 (bucle de reintento sin techo de
+  `retryCount`) documentado, no resuelto — pendiente de la fase 2.
 
 **Decisiones tomadas:**
 
@@ -278,16 +290,6 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 **Límites conocidos, documentados y no resueltos aquí (menores, ronda 1 de
 review):**
 
-- **m4 — los TEST 1/2 de `spec81_fase3_pickup_scans_idempotency.test.sql`
-  usan `DO $$ … RAISE EXCEPTION $$`, no aserciones pgTAP.** Un fallo aborta la
-  transacción: no se imprime `not ok`, `plan()` no se cierra, y las
-  aserciones siguientes no corren — sólo `current transaction is aborted`
-  repetido. Verificado mutando el índice: la salida real fue exactamente esa,
-  no un `not ok`. Combinado con que `pgtap-local.sh` no cuenta `not ok`
-  (sólo reporta el exit code del script), un fallo estructural se lee como
-  «salida rara» hasta que alguien corre `psql` crudo. No se convirtió a
-  `ok()`/`is()` en esta ronda — queda como riesgo conocido del arnés de test,
-  no del código de producción.
 - **m5 — TEST 6 (cross-tenant) inserta una fila de un manifiesto del
   operador A bajo el `operator_id` del operador B.** Corre como `postgres`,
   así que RLS no aplica y la fixture entra; un manifiesto propio de B
@@ -299,6 +301,15 @@ review):**
   cola aún `pending` con ese id lo reinsertaría. No hay ningún camino de
   soft-delete de `pickup_scans` en el frontend hoy — sólo aplicaría a una
   corrección manual por SQL de soporte. Trade-off aceptado, no un cambio.
+  **Ronda 2 (M-2):** con un lote de N filas bajo un único
+  `client_operation_id`, esta ventana es peor de lo descrito arriba —
+  soft-deletear sólo UNA fila del lote y dejar que la cola reintente el LOTE
+  ENTERO (un único statement atómico) hace que el reintento choque contra
+  las N-1 filas vivas y se rechace completo: la fila borrada nunca se
+  reinserta, y el manifiesto queda corto en el bulto exacto que el cliente
+  firma. Sigue mitigado por lo mismo que m6 — no hay soft-delete de
+  `pickup_scans` desde el frontend hoy — pero la cabecera de la migración
+  quedaba corregida: ver `20260913000007:157-170`.
 - **n7 — el header de la migración (`20260913000007:104-109`) desmonta la
   regla 2 de `check-migration-safety.mjs` pero no la 3**, y el warning que
   CI emite sobre este archivo es de la regla 3. Es un falso positivo
@@ -309,9 +320,71 @@ review):**
   escaneo real. Probabilidad ~0 con 122 bits de entropía por UUID v4,
   aceptado explícitamente.
 
-> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 1
-> de review corregida (B1/B2 bloqueantes, M2, residuales documentados). Falta
-> PR y QA antes de poder marcar esta fase `[done]`.
+**Ronda 2 de review — correcciones y residuales nuevos:**
+
+- **M-1 (bloqueante):** TEST 6 de `spec81_fase3_pickup_scans_idempotency.test.sql`
+  se volvió vacuo al añadir `package_id` a la clave — con `package_id` NULL en
+  la fila de op_B contra `package_id` real en la de op_A, las dos ternas ya
+  discriminaban por `package_id`, así que el test pasaba aunque `operator_id`
+  no estuviera en el índice (verificado por mutación: cero `not ok` mutando
+  el índice a `(client_operation_id, package_id)`). Corregido dándole a la
+  fila de op_B el MISMO `package_id` que la de op_A — ahora `operator_id` es
+  la única columna que sigue discriminando, y un mutante que lo quite falla
+  el test por comportamiento, no sólo por el `ILIKE` textual de TEST 2.
+- **M-6/m4 — TEST 1/2 pasaron de `DO $$ … RAISE EXCEPTION $$` a aserciones
+  pgTAP (`ok`/`is`).** Una `RAISE` aborta la transacción entera: los TEST 3+
+  nunca corrían bajo una mutación de TEST 1/2, así que la evidencia de
+  mutación de B1 nunca había ejercitado el comportamiento real hasta que el
+  reviewer quitó TEST 2 a mano. Re-verificado tras la conversión: mutando el
+  índice, ahora se ven `not ok` reales y el resto del archivo sigue
+  corriendo.
+- **M-2 — la justificación de `deleted_at IS NULL` en la cabecera era falsa
+  para lotes N>1.** Corregido en `20260913000007:157-170`; ver bullet de m6
+  arriba.
+- **M-3 — «la auto-colisión ya no ocurre» estaba sobre-afirmado.** Bajo
+  `NULLS NOT DISTINCT`, un lote de 2+ filas con el MISMO
+  `client_operation_id` y `package_id IS NULL` en todas vuelve a
+  auto-colisionar en el primer intento — es B1 otra vez, en el carril NULL.
+  No alcanzable hoy vía `usePickupScans.ts` (`scan-validator.ts` sólo produce
+  `packageIds.length > 1` con ids reales de `packages.id`, nunca NULL), pero
+  es una propiedad de las escrituras de HOY, no del índice en general.
+  Corregido en `20260913000007:178-192`; congelado con
+  `spec81_fase3_pickup_scans_idempotency.test.sql` TEST 14 (SQL, general) y
+  `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend, la premisa
+  de hoy).
+- **M-4 — la cabecera citaba el contrato de la fase 2 al revés.** Decía que
+  la fase 2 trata todo 409 idempotente como éxito ya resuelto; el docstring
+  real de `OfflineQueueSender` (`useOfflineQueue.ts`, PR #679) dice lo
+  contrario — un sender debe releer el conteo real antes de devolver
+  `'sent'`. Corregido en `20260913000007:56-76`.
+
+  **Residual nuevo (M-4):** un 409 causado por un lote incompleto (el
+  escenario de M-2/m6) hace que un sender correcto nunca vea el conteo
+  esperado y siga devolviendo `'retry'` indefinidamente —
+  `drainManifest` (`useOfflineQueue.ts`, fase 2) no tiene transición a
+  `'dead'` por `retryCount`, sólo el sender puede devolver `'dead'`. Sin que
+  el sender implemente ese corte, la entrada queda en bucle con retroceso
+  exponencial topado en 30s, para siempre. No resuelto en esta fase ni en la
+  2 — decisión pendiente de quien escriba el sender real (fase 2 o una fase
+  futura).
+- **m-5 — la cabecera afirmaba PG 15.8 como la versión de producción.** Falso:
+  producción y QA corren PG 17
+  (`packages/database/supabase/config.toml`'s `major_version = 17`,
+  `infra/supabase-qa/docker-compose.yml`'s `supabase/postgres:17.6.1.136`);
+  15.8 es sólo la imagen de `scripts/pgtap-local.sh`. Sin impacto funcional
+  — verificado también contra `postgres:17.10` — pero la única prueba de
+  esta migración corre en un major distinto al de destino. Corregido en
+  `20260913000007:124-133`.
+- **n-8 — la cabecera daba la razón equivocada para omitir `CONCURRENTLY`.**
+  Decía «no hay backfill»; la razón real es que `pickup_scans` es pequeña
+  hoy, así que el lock `SHARE` que `CREATE UNIQUE INDEX` sí toma dentro de
+  `BEGIN` (bloqueando escrituras mientras escanea la tabla) es breve. La
+  ausencia de backfill es la razón de otra cosa (por qué no hace falta el
+  patrón COUNT(*)-guard). Corregido en `20260913000007:194-204`.
+
+> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 2
+> de review corregida (M-1 bloqueante, M-2/M-3/M-4/m-5/n-8, TEST 1/2
+> convertidos a pgTAP). Falta PR y QA antes de poder marcar esta fase `[done]`.
 
 ### Fase 4 — Chip de sync `[pending]`
 

@@ -53,21 +53,39 @@
 -- descartaría en vez de resolverlo — justo el bug que esta migración existe
 -- para no reintroducir.
 --
--- La fase 2 (frontend, checklist propio) decide tratar un 409 idempotente
--- como éxito ya resuelto — "un 409 idempotente SÍ la marca resuelta". Esto
--- no contradice que el servidor devuelva un error: el contrato queda más
--- claro exactamente así, con las dos mitades de acuerdo en el CÓDIGO
--- (23505/409) y en desacuerdo a propósito en la INTERPRETACIÓN (el servidor
--- lo cuenta como conflicto porque la fila ya existe; el cliente lo cuenta
--- como éxito porque su intención ya se cumplió). Que el servidor devolviera
--- 200 silenciosamente en el duplicado escondería, para cualquier OTRO
+-- M-4 (ronda 2 de review): la fase 2 (otra rama, PR #679) NO trata todo 409
+-- como éxito ya resuelto — el docstring de `OfflineQueueSender` en
+-- `useOfflineQueue.ts` (revisión del PR #678, 2026-09-08) dice lo contrario:
+-- un sender contra `pickup_scans` que reciba 409 debe releer cuántas filas
+-- hay para ese `client_operation_id` antes de devolver `'sent'`, porque un
+-- lote de N filas bajo un único `client_operation_id` puede devolver 409 en
+-- su PRIMER envío por chocar consigo mismo (ver M-3 abajo), no por ser un
+-- reintento — tratar ESE 409 como `'sent'` marcaría resuelto un escaneo que
+-- nunca se guardó. El acuerdo entre las dos mitades no es "409 = ya
+-- resuelto"; es más estrecho: el servidor SIEMPRE devuelve 409/23505 ante
+-- cualquier colisión de la clave (retiro idempotente o auto-colisión de
+-- lote — no las distingue, no puede), y es la fase 2 quien decide, releyendo
+-- el estado real, si ESE 409 concreto corresponde a una operación ya
+-- completa o a un lote que falló a medias. Que el servidor devolviera 200
+-- silenciosamente en el duplicado escondería, para cualquier OTRO
 -- consumidor de este INSERT que no sea la cola offline (un futuro import,
 -- un script de soporte), que dos peticiones distintas de verdad no crearon
 -- dos filas — eso es lo que un `INSERT ... ON CONFLICT DO NOTHING` con
 -- retorno vacío haría mal: parecería un éxito normal sin decir que no pasó
 -- nada. Un 23505 explícito no permite esa ambigüedad; sólo la cola offline,
--- que YA sabe que está reintentando, tiene motivo para tratarlo como
--- resuelto.
+-- releyendo el estado real, tiene motivo para tratarlo como resuelto.
+--
+-- Residual (M-4, ronda 2 de review): un 409 causado por un lote INCOMPLETO
+-- (M-2 abajo — N-1 filas sobreviven un soft-delete parcial, o cualquier otra
+-- causa de que el lote quede corto) hace que un sender correcto (el descrito
+-- arriba) nunca vea el conteo esperado y siga devolviendo `'retry'`
+-- indefinidamente — `drainManifest` (useOfflineQueue.ts) no tiene transición
+-- a `'dead'` por `retryCount`, sólo el sender puede devolver `'dead'`. Sin
+-- que el sender implemente ese corte, la entrada queda en bucle con
+-- retroceso exponencial topado en 30s, para siempre. No se resuelve en esta
+-- fase — es una decisión de la fase 2 (o de una fase futura), documentada
+-- aquí y en `docs/specs/spec-81-recogida-cola-offline.md` para que quien
+-- escriba el sender real lo tenga presente.
 --
 -- pickup_scans no pasa por una RPC, así que este 23505 no lleva un prefijo
 -- centinela en el mensaje (RAISE EXCEPTION '...' USING ERRCODE) — es el
@@ -101,8 +119,18 @@
 -- Postgres trata NULL <> NULL, así que el reintento de ESE escaneo (misma
 -- terna operator_id/coid/NULL) no colisionaría con el original y se
 -- insertaría una segunda fila en silencio, precisamente el caso que
--- client_operation_id existe para impedir. PG 15.8 (la imagen del harness
--- local y la de producción) soporta el modificador.
+-- client_operation_id existe para impedir.
+--
+-- m-5 (ronda 2 de review): NULLS NOT DISTINCT lo soporta PG 15 en adelante.
+-- La imagen del harness local (`scripts/pgtap-local.sh`) es 15.8; producción
+-- y QA corren PG 17 (`packages/database/supabase/config.toml`'s
+-- `major_version = 17`, `infra/supabase-qa/docker-compose.yml`'s
+-- `supabase/postgres:17.6.1.136`) — ningún ambiente corre 15.8 salvo el
+-- harness de test. Sin impacto funcional aquí (el modificador se comporta
+-- igual en 15-17, verificado también contra `postgres:17.10`), pero la
+-- única prueba de esta migración corre en un major distinto al de destino —
+-- vale decirlo, no restringirse a features de 15/16 por error de lectura de
+-- este comentario.
 --
 -- operator_id en la clave por la regla no negociable del repo — sin él, dos
 -- operadores generando por azar el mismo UUID (o dos dispositivos de
@@ -126,19 +154,54 @@
 --     dejar que la cola reintente con el MISMO id, porque fase 1 nunca lo
 --     regenera) no podría reinsertarse.
 --
--- Con este cambio, 23505 en pickup_scans deja de tener dos causas
--- indistinguibles (reintento idempotente vs. auto-colisión del lote dentro
--- del mismo statement): la auto-colisión ya no ocurre, así que el único
--- camino a 23505 vuelve a ser "esta terna ya existe" — el discriminador
--- limpio que la decisión 2 de arriba asume.
+--     M-2 (ronda 2 de review): esa frase es correcta SOLO para un escaneo
+--     1:1 (una fila, un client_operation_id). El INSERT de un lote (N filas,
+--     un client_operation_id, ver decisión de índice abajo) es un único
+--     statement atómico: si se soft-deletea SÓLO una de las N filas y la
+--     cola reintenta el LOTE ENTERO, el reintento choca contra las N-1 filas
+--     que siguen vivas y el INSERT completo se rechaza — la fila borrada
+--     NUNCA se reinserta, y el manifiesto queda corto exactamente en el
+--     número que el cliente firma. Probado contra la base: lote de 2 filas,
+--     soft-delete de 1, reintento del lote completo → 23505 sobre la fila
+--     viva restante, 1 fila viva tras el reintento rechazado, no 2. Mitigado
+--     hoy (m6, sin cambios en esta fase) porque no hay ningún camino de
+--     soft-delete de `pickup_scans` desde el frontend — sólo aplicaría a una
+--     corrección manual por SQL de soporte, y esa corrección tendría que
+--     borrar las N filas del lote a la vez para no perder un bulto.
 --
--- Sin CONCURRENTLY: pickup_scans no está en la lista de tablas grandes del
--- repo (packages/orders/dispatches/routes, ver
--- scripts/check-migration-safety.mjs) y esta migración no mezcla DDL con un
--- backfill — no hace falta rellenar client_operation_id en filas
--- existentes: son NULL, y el predicado parcial de arriba ya las excluye del
--- índice sin tocarlas. Esto desmonta la regla 2 del script (CONCURRENTLY
--- sobre tabla grande).
+-- Con este cambio, 23505 en pickup_scans YA NO tiene dos causas
+-- indistinguibles PARA UN ESCANEO 1:1 (reintento idempotente vs.
+-- auto-colisión de un lote de una sola fila dentro del mismo statement — que
+-- no existe cuando N=1): el discriminador limpio que la decisión 2 de arriba
+-- asume vale para ese caso.
+--
+-- M-3 (ronda 2 de review): para N>1, la auto-colisión NO desaparece, se
+-- desplaza al carril NULL — un statement que inserte dos o más filas
+-- compartiendo el mismo client_operation_id CON package_id IS NULL en TODAS
+-- ellas vuelve a colisionar consigo mismo en el primer intento (probado
+-- contra la base: 2 filas, mismo client_operation_id, ambas not_found →
+-- 23505 en el primer INSERT). Esto NO ocurre hoy a través de
+-- usePickupScans.ts: scan-validator.ts sólo produce packageIds con longitud
+-- > 1 en la rama de escaneo por número de pedido, cuyos ids vienen todos de
+-- packages.id (NOT NULL) — nunca de un resultado not_found/duplicate, que
+-- siempre devuelve packageIds: [] — y la rama 1:1 nunca batchea. Es una
+-- premisa sobre las FORMAS DE ESCRITURA DE HOY, no una propiedad general del
+-- índice; un futuro writer que agrupe varios resultados not_found bajo un
+-- único client_operation_id la rompe en silencio. Ver
+-- spec81_fase3_pickup_scans_idempotency.test.sql TEST 14 (SQL, general) y
+-- scan-validator.test.ts (frontend, congela la premisa de hoy).
+--
+-- n-8 (ronda 2 de review): la razón real por la que no hace falta
+-- CONCURRENTLY no es "esta migración no mezcla DDL con un backfill" —
+-- `CREATE UNIQUE INDEX` dentro de `BEGIN` SÍ toma un lock `SHARE` sobre
+-- `pickup_scans` y escanea la tabla para construir el índice, bloqueando
+-- escrituras (INSERT/UPDATE/DELETE, no SELECT) mientras dura, exactamente
+-- lo que CONCURRENTLY existe para evitar. Es seguro sin CONCURRENTLY porque
+-- `pickup_scans` no está en la lista de tablas grandes del repo
+-- (packages/orders/dispatches/routes, ver scripts/check-migration-safety.mjs)
+-- — hoy son pocas filas, así que el escaneo y el lock son breves — no porque
+-- no haya backfill. La ausencia de backfill es la razón de por qué no hace
+-- falta la regla 2 del script (COUNT(*)-guard), un punto distinto.
 --
 -- n7 (ronda 1 de review): check-migration-safety.mjs SÍ emite un warning
 -- (::warning::, no bloqueante) sobre este archivo — su regla 3, "CREATE
