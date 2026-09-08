@@ -235,7 +235,31 @@ export function useOfflineQueue(
       // reprogramar un intento cuando el más próximo esté debido. Sólo
       // sobre las entradas de esta sesión: reprogramar por la de otro
       // usuario no adelantaría nada (`drainManifest` las sigue ignorando).
-      const remaining = ownEntries(await listPending(db, operatorId), userId);
+      //
+      // B2, ronda 3 de review del PR #679 (bloqueante) — `drainManifest`
+      // sale por `manifestHasDeadEntry` ANTES de mirar `nextAttemptAt`, pero
+      // `listPending` sigue devolviendo esa entrada `pending` igual. Si su
+      // backoff ya venció, sin este filtro `soonest` calcula `delay === 0`
+      // en cada pasada — `drain()` se reprograma inmediato, repite el mismo
+      // estado, y vuelve a dar 0 — sin techo, sin salida (medido: ~49
+      // pasadas/s, 0 envíos). Se excluyen aquí las entradas cuyo manifiesto
+      // está bloqueado: nada que este drenador vaya a poder avanzar debe
+      // alimentar el temporizador de reintento.
+      const remainingAll = ownEntries(await listPending(db, operatorId), userId);
+      const remainingManifestIds = Array.from(new Set(remainingAll.map((e) => e.manifestId)));
+      const blockedManifestIds = new Set(
+        (
+          await Promise.all(
+            remainingManifestIds.map(async (id) => ({
+              id,
+              blocked: await manifestHasDeadEntry(db, operatorId, id),
+            })),
+          )
+        )
+          .filter((m) => m.blocked)
+          .map((m) => m.id),
+      );
+      const remaining = remainingAll.filter((e) => !blockedManifestIds.has(e.manifestId));
       const soonest = remaining
         .map((e) => (e.nextAttemptAt ? Date.parse(e.nextAttemptAt) : null))
         .filter((t): t is number => t !== null)
@@ -259,11 +283,18 @@ export function useOfflineQueue(
     const onOnline = () => void drain();
     window.addEventListener('online', onOnline);
 
-    const timers = timersRef.current;
     return () => {
       window.removeEventListener('online', onOnline);
-      timers.forEach(clearTimeout);
-      timers.length = 0;
+      // B1, ronda 3 de review del PR #679 (bloqueante) — leer
+      // `timersRef.current` AQUÍ, en vez de capturarlo en una variable local
+      // al montar el efecto. `scheduleRetry` reasigna `timersRef.current` a
+      // un array nuevo cuando el primer timer dispara (m10, ronda 2); una
+      // variable capturada al montar queda apuntando al array viejo en
+      // cuanto eso ocurre, y un segundo reintento programado DESPUÉS nunca
+      // se cancela al desmontar. Leer la ref en el momento de la limpieza
+      // siempre ve el array vivo, sin importar cuántas veces se reasignó.
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
     };
   }, [drain]);
 

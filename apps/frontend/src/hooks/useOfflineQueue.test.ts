@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { db } from '@/lib/db';
 import { enqueue, listPending } from '@/lib/offline/queue';
+import * as queueLib from '@/lib/offline/queue';
 import { useOfflineQueue, type OfflineQueueSender } from './useOfflineQueue';
 
 const OPERATOR_A = 'operator-a';
@@ -476,6 +477,86 @@ describe('useOfflineQueue', () => {
       expect(injectedSecondEntry).toBeDefined();
       expect(sent).toContain(injectedSecondEntry!.clientOperationId);
     });
+  });
+
+  // B1, ronda 3 de review del PR #679 (bloqueante) — `scheduleRetry`
+  // reasigna `timersRef.current` a un array NUEVO cuando el primer timer
+  // dispara (m10, ronda 2). El efecto de montaje captura `timersRef.current`
+  // en una variable local (`const timers = timersRef.current`) ANTES de que
+  // eso ocurra; su cleanup limpia esa referencia vieja, no la actual. Un
+  // segundo reintento programado DESPUÉS de que el primero disparó queda en
+  // el array nuevo, invisible para la limpieza — desmontar no lo cancela.
+  // Escenario real: A cierra sesión entre el primer y el segundo reintento
+  // de un `close_manifest` suyo; B entra; el timer huérfano de A dispara
+  // igual, ejecutando el closure viejo de `drain` (operatorId/userId de A)
+  // contra el cliente Supabase actual (sesión de B) — el cierre de A queda
+  // firmado con el nombre de B.
+  it('B1 — unmounting after the first scheduled retry fires cancels the second one too', async () => {
+    const { first } = await seed();
+    let calls = 0;
+    const send: OfflineQueueSender = vi.fn(async () => {
+      calls += 1;
+      return { outcome: 'retry', reason: `attempt ${calls}` };
+    });
+
+    const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+    // Mount's drain pass fails once (retryCount 0 -> 1s backoff scheduled).
+    await waitFor(() => expect(calls).toBe(1));
+
+    // Let that FIRST retry timer actually fire — this is the timer whose
+    // callback reassigns `timersRef.current` (m10's array filter). This is
+    // the moment B1 strands the mount effect's captured cleanup reference.
+    await waitFor(() => expect(calls).toBe(2), { timeout: 2_000 });
+
+    // A second retry (2s backoff, retryCount 1 -> 2^1) is now scheduled in
+    // the NEW array. Unmount before it fires: a correct cleanup must cancel
+    // it regardless of which array it landed in.
+    unmount();
+    void first;
+
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+
+    expect(calls).toBe(2);
+  }, 10_000);
+
+  // B2, ronda 3 de review del PR #679 (bloqueante) — `drainManifest` sale
+  // por `manifestHasDeadEntry` ANTES de mirar `nextAttemptAt`, pero el
+  // `remaining` que `drain()` usa para reprogramar el próximo intento sigue
+  // incluyendo esa entrada. Si su `nextAttemptAt` ya venció, `delay === 0`
+  // -> `drain()` inmediato -> mismo estado -> 0 otra vez. Sin techo, sin
+  // salida: medido en el review, ~49 pasadas por segundo, cero envíos.
+  it('B2 — does not busy-loop rescheduling at 0ms when a manifest is blocked by a dead entry', async () => {
+    const { first, second } = await seed();
+    // `first` is dead — blocks the whole manifest (manifestHasDeadEntry).
+    await db.pickup_queue.update(first.id!, {
+      status: 'dead',
+      lastError: 'PACKAGE_NOT_IN_MANIFEST',
+    });
+    // `second` is still pending, with a backoff that already expired — this
+    // is what feeds `soonest` a `delay === 0` on every pass, forever, if the
+    // blocked manifest isn't excluded before computing it.
+    await db.pickup_queue.update(second.id!, {
+      nextAttemptAt: new Date(Date.now() - 1_000).toISOString(),
+      retryCount: 1,
+    });
+
+    const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+    const listPendingSpy = vi.spyOn(queueLib, 'listPending');
+
+    const { unmount } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    unmount();
+
+    // Blocked manifest — the drainer must never touch anything in it.
+    expect(send).not.toHaveBeenCalled();
+    // A correct drainer settles after a handful of passes (mount, and maybe
+    // one rerun) and stops rescheduling once it recognizes nothing in
+    // `remaining` can make progress. A busy loop at delay=0 produced ~49
+    // passes/second in the review's measurement — bound this generously
+    // below that to catch a regression without being timing-flaky.
+    expect(listPendingSpy.mock.calls.length).toBeLessThan(15);
   });
 
   it('does nothing when operatorId is not known yet', async () => {
