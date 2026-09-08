@@ -151,7 +151,37 @@ Cada fase es un PR revisable por separado.
 
 **No** se toca `complete/[loadId]` en esta fase. Sigue siendo la pantalla de spec-19, sin fotos. Es deuda declarada que la fase 3 sustituye.
 
-### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[in_progress]`
+### Fase 1 — `close_manifest(p_manifest_id, p_signatures)` `[done]`
+
+> Implementado por: `implementer` con TDD. Rama `feat/spec-80-fase-1-close-manifest`,
+> SHA final `c4249c8`, PR #657 (merge `20782d2`, 2026-09-08T00:59:41Z).
+> Review: `reviewer` adversarial, **tres rondas**. Ronda 1 y 2 devolvieron
+> bloqueantes; la 3 aprobó el código y dejó un único bloqueante documental.
+> Hallazgos que cambiaron el código: `P0002` → `23505` para «ya firmado»
+> (`P0002` es `no_data_found`, PostgREST lo mapea a 404 y el repo ya lo gasta en
+> «no existe» en 8 sitios), prefijos centinela en los tres errores que compartían
+> `P0001`, y eliminación de una rama muerta (`full_name` es `NOT NULL` sin
+> `DROP NOT NULL` posterior). Guardas H1/H4 verificadas por mutación **en las dos
+> direcciones**: desactivar cada una mata tests, y endurecerla de más también.
+> QA: `qa-e2e` contra la base real de QA, no contra el color del PR.
+> `20260913000002` aplicada; `pg_proc.prosrc` byte-idéntico a la migración; las
+> cuatro guardas probadas en transacciones con `ROLLBACK` sin tocar Musan (H1 →
+> `23505` con centinela, H4 → `P0001`, firma ausente → `P0001`, cross-tenant →
+> `42501`); y el chunk servido en `qa.aureon.tractis.ai` contiene el mensaje en
+> español, así que no es un bundle rancio. `spec52-pickup-reception-end-to-end`
+> pasa. **`e2e-qa` en conjunto sigue rojo** por `despacho-close-dispatch` y
+> `despacho-tablet-dock`, ajenas a este cambio — por eso esto está en QA pero
+> **no en producción**; lo desbloquea spec-87 fase 1.
+> Downstream: revisado spec-81 — **sí cambió**: se le añadió a su fase 2 el
+> requisito de distinguir la rama «sin conexión» del rechazo de negocio
+> irrecuperable, porque `mapCloseManifestError` da hoy el mismo texto a un
+> `TypeError: Failed to fetch` y a un `MANIFEST_NOT_CLOSABLE`, y rehabilita el
+> mismo botón para ambos. Revisado spec-82, spec-83 y spec-84 — sin cambios.
+> **Deuda abierta sobre esta misma migración**, detectada al revisar spec-85
+> fase 2: `close_manifest` sólo hace `GRANT … TO authenticated` sin ningún
+> `REVOKE`, así que su ACL real es `PUBLIC` **y** `anon` con `EXECUTE`; y sus dos
+> `RAISE` de `42501` (`:53`, `:92`) no llevan prefijo centinela. Necesita su
+> propia fase y su propio PR.
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, test pgTAP en `packages/database/supabase/tests/`
 
