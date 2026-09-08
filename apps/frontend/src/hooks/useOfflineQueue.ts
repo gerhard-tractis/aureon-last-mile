@@ -5,6 +5,7 @@ import { db, type PickupQueueEntry } from '@/lib/db';
 import {
   claimPending,
   listPending,
+  manifestHasDeadEntry,
   markDead,
   markFailed,
   markSent,
@@ -84,6 +85,14 @@ async function drainManifest(
   send: OfflineQueueSender,
 ): Promise<void> {
   for (;;) {
+    // B3, ronda 1 de review del PR #679: un escaneo `dead` en este
+    // manifiesto bloquea TODO lo que va detrás, incluido `close_manifest` —
+    // ver el docstring de `manifestHasDeadEntry`. Se comprueba en cada
+    // vuelta, no sólo antes del bucle, para atrapar tanto un `dead` ya
+    // persistido de una pasada anterior como uno que este mismo bucle
+    // acaba de producir.
+    if (await manifestHasDeadEntry(db, operatorId, manifestId)) return;
+
     const [next] = await listPending(db, operatorId, manifestId);
     if (!next) return;
 

@@ -181,6 +181,60 @@ describe('useOfflineQueue', () => {
     expect(stored?.lastError).toBe('MANIFEST_NOT_CLOSABLE');
   });
 
+  // B3, ronda 1 de review del PR #679: `listPending` excluye `dead` — así
+  // que sin este guard, un escaneo muerto simplemente desaparece de la cola
+  // y el `close_manifest` detrás de él pasa a la cabeza en la SIGUIENTE
+  // pasada, cerrando el manifiesto con un bulto menos del que el operario
+  // contó. El FIFO estricto por manifiesto (spec-81, "Orden: FIFO estricto
+  // por manifiesto") existía sólo para la rama `retry`, no para `dead`.
+  it('a dead scan blocks the close_manifest behind it in the same manifest — it never drains', async () => {
+    const { first, second, close } = await seed();
+    const sentOrder: string[] = [];
+    const send: OfflineQueueSender = vi.fn(async (entry) => {
+      if (entry.clientOperationId === first.clientOperationId) {
+        return { outcome: 'dead', reason: 'PACKAGE_NOT_IN_MANIFEST' };
+      }
+      sentOrder.push(entry.type);
+      return { outcome: 'sent' };
+    });
+
+    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+
+    await waitFor(async () => {
+      const stored = await db.pickup_queue.get(first.id!);
+      expect(stored?.status).toBe('dead');
+    });
+
+    // Give the drainer every chance to (wrongly) keep going past the dead
+    // entry — if it does, `close_manifest` would show up in sentOrder.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(sentOrder).not.toContain('close_manifest');
+    const secondEntry = await db.pickup_queue.get(second.id!);
+    const closeEntry = await db.pickup_queue.get(close.id!);
+    expect(secondEntry?.status).toBe('pending');
+    expect(closeEntry?.status).toBe('pending');
+  });
+
+  it('a manifest with a pre-existing dead entry stays blocked even across a fresh mount', async () => {
+    const { first, close } = await seed();
+    await db.pickup_queue.update(first.id!, {
+      status: 'dead',
+      lastError: 'PACKAGE_NOT_IN_MANIFEST',
+    });
+    const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+
+    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ clientOperationId: close.clientOperationId }),
+    );
+    const closeEntry = await db.pickup_queue.get(close.id!);
+    expect(closeEntry?.status).toBe('pending');
+  });
+
   it('reclaims stale (orphaned) claims before draining, on mount', async () => {
     // A previous tab claimed this entry and died before ever calling
     // markFailed/markSent — it must not sit invisible in `sending` forever.

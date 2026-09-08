@@ -104,6 +104,39 @@ export async function listPending(
 }
 
 /**
+ * B3, ronda 1 de review del PR #679 — `listPending` excluye `dead` (a
+ * propósito, ver su docstring), lo que significa que un escaneo muerto
+ * simplemente desaparece de la cola: sin este check, el `close_manifest`
+ * que iba detrás en el FIFO pasa a la cabeza en la pasada siguiente y
+ * cierra el manifiesto con un bulto menos del que el operario contó — el
+ * riesgo nº1 que el spec declara.
+ *
+ * Por qué basta con "¿hay ALGÚN `dead` en este manifiesto?" en vez de
+ * comparar ids: para que una entrada llegue a `dead`, tuvo que ser la
+ * cabeza del FIFO en su momento — así que todo lo que tenía un id menor ya
+ * se resolvió (`sent`) en una pasada anterior. Ninguna entrada con id menor
+ * puede seguir `pending` cuando existe una `dead` en el mismo manifiesto,
+ * así que "algún `dead`" y "hay un `dead` por delante de esta entrada" son
+ * equivalentes aquí.
+ *
+ * Deliberadamente permanente: nada en este módulo vuelve a poner en marcha
+ * un manifiesto envenenado — eso es una decisión de negocio (resolver la
+ * discrepancia), no algo que este drenador deba automatizar.
+ */
+export async function manifestHasDeadEntry(
+  db: PickupQueueStore,
+  operatorId: string,
+  manifestId: string,
+): Promise<boolean> {
+  const count = await db.pickup_queue
+    .where("operatorId")
+    .equals(operatorId)
+    .and((entry) => entry.manifestId === manifestId && entry.status === "dead")
+    .count();
+  return count > 0;
+}
+
+/**
  * Borra las entradas ya confirmadas (`sent`) de un operador. Ver spec-81,
  * "Riesgos" — tope declarado de 500 entradas sin confirmar por operador;
  * `purgeConfirmed` es lo que mantiene la cuota bajo control una vez que
