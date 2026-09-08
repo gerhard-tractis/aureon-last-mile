@@ -193,6 +193,15 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 
 - [x] Columna `client_operation_id` con índice único parcial por operador.
 - [x] Test pgTAP: la misma operación dos veces deja una fila y no altera conteos. Corrido con `scripts/pgtap-local.sh`.
+- [x] **Ronda 1 de review — B1:** test pgTAP para el caso de LOTE (un escaneo por
+  número de pedido inserta N filas, un `client_operation_id`, un solo
+  `.insert()`) — el lote debe sobrevivir su propio primer intento y su
+  reintento debe rechazarse sin duplicar ninguna fila. Corrido con
+  `scripts/pgtap-local.sh`, mutación verificada (ver decisión 3 revisada).
+- [x] **Ronda 1 de review — B2:** `client_operation_id` añadido a
+  `apps/frontend/src/lib/types.ts` y `packages/database/src/database.types.ts`
+  (`Row`/`Insert`/`Update` de `pickup_scans`) — sin esto, la fase 2 no puede
+  compilar un `.insert({ …, client_operation_id })` contra el cliente tipado.
 
 **Decisiones tomadas:**
 
@@ -210,6 +219,24 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
    propósito. Ver el header de la migración para el argumento completo, y
    `spec81_fase3_close_manifest_idempotency.test.sql`, que prueba la
    idempotencia de `close_manifest` **sin tocar su cuerpo**.
+
+   **Residual conocido (M1, ronda 1 de review):** esta decisión cubre los
+   CONTEOS de `close_manifest` (verified/missing/unexpected), no que «esta
+   operación concreta se aplicó». `signature_operator IS NOT NULL` es «no
+   puedo firmar dos veces», no «tu operación ya se aplicó» — un reintento con
+   `p_signatures` **distinto** también da 23505, pero la firma original queda
+   intacta sin que el cliente lo sepa. Escenario real bajo
+   `20260913000004` (cualquier usuario autenticado del operador puede firmar
+   cualquier manifiesto suyo): el operario A firma en su teléfono y se pierde
+   el 200; el operario B cierra el MISMO manifiesto desde otro teléfono con
+   **su** firma y su `client_name`; la cola de A reintenta → 23505 → la fase 2
+   lo marca resuelto → A ve «subido, todo bien», pero la evidencia de custodia
+   almacenada es la de B. No se añade una columna a `manifests` para esto — el
+   checklist literal de esta fase está cumplido — pero es un límite conocido,
+   no un caso cubierto. `spec81_fase3_close_manifest_idempotency.test.sql`
+   TEST 3/5 lo documenta: el reintento lleva una firma deliberadamente
+   distinta (`BBB` contra la `AAA` original) precisamente para que el test
+   tenga poder de detectar esta clase de bug si el guard se debilitara.
 2. **Duplicado = error 23505 (409), nunca éxito silencioso ni P0002/404.**
    Mismo idioma que `close_manifest`/`record_discrepancies`. La fase 2
    (otra rama) decide tratar ese 409 como resuelto desde el cliente — las
@@ -219,13 +246,72 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
    `unique_violation` crudo de Postgres, sin prefijo centinela — el único
    discriminador que la cola necesita es el ERRCODE, no un mensaje (a
    diferencia de `close_manifest`, que comparte 42501 entre tres causas).
-3. **Índice:** `UNIQUE (operator_id, client_operation_id) WHERE
-   client_operation_id IS NOT NULL AND deleted_at IS NULL` — mismo patrón
-   que `uniq_open_discrepancy_per_package`/`_per_barcode` (spec-85 fase 1).
-   `operator_id` en la clave por la regla no negociable del repo.
 
-> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Falta
-> review adversarial, PR y QA antes de poder marcar esta fase `[done]`.
+   Nota (n8, ronda 1 de review): el header de la migración argumenta que un
+   200 silencioso «escondería» el duplicado y por eso es malo — eso es
+   correcto para `pickup_scans`, pero el `ON CONFLICT DO NOTHING` que
+   spec-85 usa para `discrepancies` es exactamente esa forma. Ambas son
+   correctas en su contexto (RPC con llave de negocio propia vs. INSERT
+   directo sin ninguna), pero quien lea sólo el header de esta migración
+   puede leerlo como una regla general — no lo es. La fase 2 maneja las dos
+   formas de «éxito»: 23505 aquí, 200 con fila vacía en discrepancies.
+3. **Índice:** `UNIQUE (operator_id, client_operation_id, package_id) NULLS
+   NOT DISTINCT WHERE client_operation_id IS NOT NULL AND deleted_at IS
+   NULL` — mismo patrón que `uniq_open_discrepancy_per_package`/`_per_barcode`
+   (spec-85 fase 1), con `package_id` añadido y `NULLS NOT DISTINCT` (ronda 1
+   de review, B1 bloqueante). La clave original de dos columnas
+   `(operator_id, client_operation_id)` colisionaba consigo misma en el
+   PRIMER intento de un escaneo por número de pedido: `usePickupScans.ts`
+   inserta N filas — una por bulto — en un único `.insert(rows)`, y las N
+   comparten el mismo `client_operation_id` (fase 1 estampa uno por entrada
+   de cola, no uno por fila física). `package_id` en la clave arregla el
+   lote; `NULLS NOT DISTINCT` es necesario porque `package_id` es `NULL` en
+   un escaneo `not_found`/`duplicate` — sin el modificador, el reintento de
+   ESE escaneo no colisionaría consigo mismo (Postgres trata `NULL <> NULL`
+   por defecto) y se perdería la idempotencia justo donde el barcode no
+   resolvió a un paquete. `operator_id` en la clave por la regla no
+   negociable del repo. Ver el header de la migración para el detalle
+   completo, incluida la razón por la que `client_operation_id IS NOT NULL`
+   pasa de ser honesto-pero-redundante a necesario una vez que `NULLS NOT
+   DISTINCT` aplica a todo el índice, no columna por columna (m3).
+
+**Límites conocidos, documentados y no resueltos aquí (menores, ronda 1 de
+review):**
+
+- **m4 — los TEST 1/2 de `spec81_fase3_pickup_scans_idempotency.test.sql`
+  usan `DO $$ … RAISE EXCEPTION $$`, no aserciones pgTAP.** Un fallo aborta la
+  transacción: no se imprime `not ok`, `plan()` no se cierra, y las
+  aserciones siguientes no corren — sólo `current transaction is aborted`
+  repetido. Verificado mutando el índice: la salida real fue exactamente esa,
+  no un `not ok`. Combinado con que `pgtap-local.sh` no cuenta `not ok`
+  (sólo reporta el exit code del script), un fallo estructural se lee como
+  «salida rara» hasta que alguien corre `psql` crudo. No se convirtió a
+  `ok()`/`is()` en esta ronda — queda como riesgo conocido del arnés de test,
+  no del código de producción.
+- **m5 — TEST 6 (cross-tenant) inserta una fila de un manifiesto del
+  operador A bajo el `operator_id` del operador B.** Corre como `postgres`,
+  así que RLS no aplica y la fixture entra; un manifiesto propio de B
+  costaría cuatro líneas más. Ninguno de los dos ficheros de esta fase
+  ejercita el camino bajo el rol `authenticated` — «el cliente recibe 23505»
+  está probado como superusuario, no como el actor real.
+- **m6 — la ventana de `deleted_at IS NULL` es real y hoy sin explotador.**
+  Un escaneo soft-borrado libera su `client_operation_id`, y una entrada de
+  cola aún `pending` con ese id lo reinsertaría. No hay ningún camino de
+  soft-delete de `pickup_scans` en el frontend hoy — sólo aplicaría a una
+  corrección manual por SQL de soporte. Trade-off aceptado, no un cambio.
+- **n7 — el header de la migración (`20260913000007:104-109`) desmonta la
+  regla 2 de `check-migration-safety.mjs` pero no la 3**, y el warning que
+  CI emite sobre este archivo es de la regla 3. Es un falso positivo
+  legítimo — el predicado parcial excluye todas las filas existentes, así
+  que no hace falta backfill — pero el header no lo dice explícitamente.
+- **Dos operarios del mismo operador generando por azar el mismo UUID v4**
+  → el segundo recibe 409 y la fase 2 lo da por resuelto, perdiendo un
+  escaneo real. Probabilidad ~0 con 122 bits de entropía por UUID v4,
+  aceptado explícitamente.
+
+> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 1
+> de review corregida (B1/B2 bloqueantes, M2, residuales documentados). Falta
+> PR y QA antes de poder marcar esta fase `[done]`.
 
 ### Fase 4 — Chip de sync `[pending]`
 
