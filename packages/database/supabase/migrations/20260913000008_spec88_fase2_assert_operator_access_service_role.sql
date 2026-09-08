@@ -5,9 +5,13 @@
 -- =============================================================================
 -- Auditoría completa y diseño: docs/specs/spec-88-anon-security-definer-audit.md
 -- ("El problema de assert_operator_access — la decisión de diseño de este
--- spec"). Templated from 20260821000002's CREATE OR REPLACE — the LATEST
--- definition of this function's body, per CLAUDE.md; 20260913000006 (fase 1
--- of this same spec) only touched the ACL, never the body.
+-- spec"). Templated from 20260729000001's CREATE OR REPLACE (line 26) — the
+-- LATEST definition of THIS FUNCTION'S BODY, per CLAUDE.md. 20260821000002
+-- never redefines assert_operator_access itself — it only redefines
+-- get_active_routes_with_dispatches, one of this function's two callers.
+-- 20260913000006 (fase 1 of this same spec) only touched the ACL, never the
+-- body. (An earlier draft of this migration cited 20260821000002 for the
+-- body — wrong file; corrected here after review.)
 --
 -- THE BUG THIS FASE CLOSES (the class, not just the case fase 1 already
 -- closed via REVOKE): the guard's only test for "no end-user session" was
@@ -20,22 +24,33 @@
 -- that reuses this guard and receives a broad grant is exposed again by the
 -- same silent RETURN. This fase removes that possibility at the source.
 --
--- WHY `request.jwt.claims ->> 'role'`, NOT `request.jwt.claim.role` (a
--- documented deviation from the spec's literal proposed snippet):
+-- WHY `auth.role()`, NOT a single GUC read (a documented correction from an
+-- earlier draft of this migration, made after review): the earlier draft
+-- read only the JSON GUC `request.jwt.claims ->> 'role'`, reasoning that
 -- infra/supabase-qa/docker-compose.yml sets PGRST_DB_USE_LEGACY_GUCS=false
--- for the `rest` (PostgREST) service. With legacy GUCs off, PostgREST never
--- populates the per-claim GUCs (`request.jwt.claim.role`, `.sub`, etc.) —
--- only the single JSON GUC `request.jwt.claims`. auth.uid() itself already
--- reads claims this way (standard Supabase definition:
--- `request.jwt.claims::json->>'sub'`), and this repo's own RLS policies do
--- the same for `role`
--- (20260413000004_spec33_pickup_points_write_rls.sql). Using
--- `request.jwt.claim.role` as the spec's design section literally shows
--- would read a GUC that is NEVER set in this project's real PostgREST
--- config — always NULL, always failing the service_role check, breaking
--- every service_role caller. Using the JSON claims GUC is the same
--- distinction the spec asks for, expressed the way this project's
--- PostgREST actually exposes it.
+-- for QA's `rest` (PostgREST) service, so the singular per-claim GUC
+-- (`request.jwt.claim.role`) is never populated there. That's true for QA,
+-- but QA's docker-compose does not describe production — production is a
+-- Supabase-*managed* project (apps/frontend/docs/deployment-runbook.md:137),
+-- whose PostgREST legacy-GUC setting is not controlled by this repo and is
+-- not confirmed here. If the managed PostgREST runs in legacy mode, it
+-- populates ONLY `request.jwt.claim.role`, never the JSON `request.jwt.claims`
+-- object — and a discriminator that reads only the JSON form would see NULL
+-- and reject every real service_role caller, reproducing the exact silent
+-- failure mode this fase exists to close, one layer down. The correct fix is
+-- not to swap which single source to trust — it's to read BOTH, coalesced,
+-- exactly like `auth.uid()` and `auth.role()` themselves already do (both
+-- read `request.jwt.claim.<name>` first, falling back to
+-- `request.jwt.claims ->> '<name>'`; see the standard Supabase definitions,
+-- reproduced for the local test harness in scripts/pgtap-local.sh's
+-- bootstrap() step). This migration calls `auth.role()` directly — it
+-- already exists in every Supabase project (this is not new schema surface)
+-- and already implements exactly this coalesce, so duplicating its GUC
+-- lookups inline here would just be a second place to keep in sync with it.
+-- auth.uid() has the identical two-source shape for `sub`; nothing here
+-- changes it, but earlier prose in this fase's design section describing
+-- auth.uid() as reading only the JSON `request.jwt.claims` GUC was
+-- incomplete — corrected in the spec.
 --
 -- INVENTORY OF service_role CALLERS (required before this rewrite lands,
 -- per the spec's fase 2 checklist): assert_operator_access is invoked from
@@ -79,8 +94,7 @@ BEGIN
     -- An anon caller, or any caller whose JWT role claim is not
     -- service_role, reaches this branch with auth.uid() IS NULL too, and
     -- must now be rejected explicitly rather than let through silently.
-    IF NULLIF(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
-         IS DISTINCT FROM 'service_role' THEN
+    IF auth.role() IS DISTINCT FROM 'service_role' THEN
       RAISE EXCEPTION 'operator_id mismatch: caller may not access another tenant''s data'
         USING ERRCODE = '42501';
     END IF;
@@ -95,7 +109,7 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.assert_operator_access(UUID) IS
-  'Raises 42501 when an authenticated caller passes an operator_id other than their own, and when a caller with no end-user session cannot prove it is a real service_role connection via the request.jwt.claims role claim. Use in any SECURITY DEFINER function that accepts p_operator_id. (spec-88 fase 2)';
+  'Raises 42501 when an authenticated caller passes an operator_id other than their own, and when a caller with no end-user session cannot prove it is a real service_role connection via auth.role() (coalesces both the legacy request.jwt.claim.role GUC and the JSON request.jwt.claims role claim, matching auth.uid()''s own two-source read). Use in any SECURITY DEFINER function that accepts p_operator_id. (spec-88 fase 2)';
 
 -- ACL is untouched by this migration — fase 1 (20260913000006) already
 -- revoked PUBLIC/anon/authenticated and left only the pre-existing GRANT TO
@@ -112,6 +126,7 @@ DECLARE
   v_has_public  BOOLEAN;
   v_has_anon    BOOLEAN;
   v_has_authenticated BOOLEAN;
+  v_has_service_role BOOLEAN;
 BEGIN
   SELECT p.prosrc INTO v_src
     FROM pg_proc p
@@ -143,6 +158,12 @@ BEGIN
     JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'authenticated'
     WHERE n.nspname = 'public' AND p.proname = 'assert_operator_access'
   ) INTO v_has_authenticated;
+  SELECT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    JOIN aclexplode(p.proacl) a ON a.privilege_type = 'EXECUTE'
+    JOIN pg_roles r ON r.oid = a.grantee AND r.rolname = 'service_role'
+    WHERE n.nspname = 'public' AND p.proname = 'assert_operator_access'
+  ) INTO v_has_service_role;
 
   IF v_has_public THEN
     RAISE EXCEPTION 'assert_operator_access: CREATE OR REPLACE reopened PUBLIC — fase 1''s REVOKE was undone';
@@ -152,6 +173,14 @@ BEGIN
   END IF;
   IF v_has_authenticated THEN
     RAISE EXCEPTION 'assert_operator_access: CREATE OR REPLACE reopened authenticated — fase 1''s REVOKE was undone';
+  END IF;
+  IF NOT v_has_service_role THEN
+    -- Symmetric to the three checks above: a FUTURE migration that
+    -- over-revokes (e.g. a blanket `REVOKE ALL ... FROM PUBLIC` without the
+    -- matching `GRANT ... TO service_role`) would otherwise leave this
+    -- validation green while the function is unusable by its only intended
+    -- caller.
+    RAISE EXCEPTION 'assert_operator_access: service_role has no EXECUTE grant — function is unusable by its intended caller';
   END IF;
 
   RAISE NOTICE '✓ spec-88 fase 2 — assert_operator_access now requires a confirmed service_role claim, ACL from fase 1 intact';

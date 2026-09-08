@@ -29,7 +29,7 @@
 -- Fixture style follows spec88_assert_operator_access_internal_guard.test.sql.
 
 BEGIN;
-SELECT plan(6);
+SELECT plan(8);
 
 INSERT INTO public.operators (id, name, slug, country_code)
 VALUES ('dddddddd-dddd-4ddd-8ddd-000000000088', 'Test Op 88 Fase2', 'test-op-88-fase2', 'CL')
@@ -127,6 +127,27 @@ RESET request.jwt.claims;
 RESET ROLE;
 
 -- =============================================================================
+-- TEST 3b — legacy-GUC-mode service_role: PostgREST with
+-- PGRST_DB_USE_LEGACY_GUCS=true (or any managed Supabase project running in
+-- that mode, including possibly production — see spec-88 fase 2's review)
+-- populates ONLY the singular `request.jwt.claim.role` GUC, never the JSON
+-- `request.jwt.claims` object. A discriminator that reads only the JSON GUC
+-- sees NULL here and wrongly rejects a real service_role connection. The
+-- guard must read both sources, exactly like `auth.role()` already does.
+-- =============================================================================
+SET LOCAL ROLE service_role;
+RESET request.jwt.claims;
+SET LOCAL request.jwt.claim.role = 'service_role';
+
+SELECT lives_ok(
+  $$ SELECT public.assert_operator_access('dddddddd-dddd-4ddd-8ddd-000000000088'::uuid) $$,
+  'confirmed service_role via legacy request.jwt.claim.role GUC (request.jwt.claims unset) still passes'
+);
+
+RESET request.jwt.claim.role;
+RESET ROLE;
+
+-- =============================================================================
 -- TEST 4 — regression: an authenticated caller with a MATCHING operator_id
 -- must still pass. This fase only changes the auth.uid() IS NULL branch;
 -- the authenticated branch's own logic must be untouched. Calls through a
@@ -154,6 +175,26 @@ SELECT is(
   pg_temp.spec88_fase2_probe('dddddddd-dddd-4ddd-8ddd-000000000088'::uuid),
   'ok',
   'authenticated caller with matching operator_id still passes (unchanged by this fase)'
+);
+
+RESET request.jwt.claims;
+RESET ROLE;
+
+-- =============================================================================
+-- TEST 4b — regression, other branch: an authenticated caller with a
+-- MISMATCHED operator_id must still be rejected with 42501. Anchors the
+-- `p_operator_id IS DISTINCT FROM get_operator_id()` check itself — TEST 4
+-- alone only proves the matching case still works and would not notice that
+-- check being deleted outright.
+-- =============================================================================
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claims = '{"sub":"dddddddd-0000-4000-d000-000000000088","role":"authenticated"}';
+
+SELECT throws_ok(
+  $$ SELECT pg_temp.spec88_fase2_probe('99999999-9999-4999-8999-999999999999'::uuid) $$,
+  '42501',
+  NULL,
+  'authenticated caller with a MISMATCHED operator_id is still rejected (unchanged by this fase)'
 );
 
 RESET request.jwt.claims;
