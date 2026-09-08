@@ -185,12 +185,47 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
 - [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
 - [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
 
-### Fase 3 — Idempotencia en el servidor `[pending]`
+### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
-**Archivos:** migración nueva; afecta a `close_manifest` (spec-80 fase 1) y a la escritura de `pickup_scans`
+**Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
+`packages/database/supabase/tests/spec81_fase3_pickup_scans_idempotency.test.sql`,
+`packages/database/supabase/tests/spec81_fase3_close_manifest_idempotency.test.sql`
 
-- [ ] Columna `client_operation_id` con índice único parcial por operador.
-- [ ] Test pgTAP: la misma operación dos veces deja una fila y no altera conteos. Correr con `scripts/pgtap-local.sh`.
+- [x] Columna `client_operation_id` con índice único parcial por operador.
+- [x] Test pgTAP: la misma operación dos veces deja una fila y no altera conteos. Corrido con `scripts/pgtap-local.sh`.
+
+**Decisiones tomadas:**
+
+1. **Qué tablas llevan la columna: sólo `pickup_scans`.** `manifests`
+   (close_manifest) y `discrepancies` ya tienen su propia idempotencia por
+   llave de negocio — un manifiesto se firma una vez en su vida
+   (`signature_operator IS NOT NULL` → 23505 `MANIFEST_ALREADY_SIGNED`,
+   20260913000004), y `discrepancies` ya usa los dos índices únicos
+   parciales de spec-85 fase 1 + `ON CONFLICT DO NOTHING` — ese comentario
+   cita a spec-81 por nombre como el motivo. Añadir `client_operation_id`
+   ahí sería un segundo mecanismo sobre una llave que ya existe y ya está
+   probada. `pickup_scans` es distinta: se escribe con un `.insert()` directo
+   del cliente (no hay RPC de por medio) y no tiene ninguna llave de negocio
+   natural — un rescan legítimo del mismo barcode es una fila nueva a
+   propósito. Ver el header de la migración para el argumento completo, y
+   `spec81_fase3_close_manifest_idempotency.test.sql`, que prueba la
+   idempotencia de `close_manifest` **sin tocar su cuerpo**.
+2. **Duplicado = error 23505 (409), nunca éxito silencioso ni P0002/404.**
+   Mismo idioma que `close_manifest`/`record_discrepancies`. La fase 2
+   (otra rama) decide tratar ese 409 como resuelto desde el cliente — las
+   dos mitades están de acuerdo en el código (23505) y en desacuerdo a
+   propósito en la interpretación (servidor: conflicto; cliente: éxito ya
+   cumplido). `pickup_scans` no pasa por RPC, así que el 23505 es el
+   `unique_violation` crudo de Postgres, sin prefijo centinela — el único
+   discriminador que la cola necesita es el ERRCODE, no un mensaje (a
+   diferencia de `close_manifest`, que comparte 42501 entre tres causas).
+3. **Índice:** `UNIQUE (operator_id, client_operation_id) WHERE
+   client_operation_id IS NOT NULL AND deleted_at IS NULL` — mismo patrón
+   que `uniq_open_discrepancy_per_package`/`_per_barcode` (spec-85 fase 1).
+   `operator_id` en la clave por la regla no negociable del repo.
+
+> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Falta
+> review adversarial, PR y QA antes de poder marcar esta fase `[done]`.
 
 ### Fase 4 — Chip de sync `[pending]`
 
