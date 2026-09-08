@@ -18,23 +18,27 @@ import { enqueue, listPending } from '@/lib/offline/queue';
 import { useOfflineQueue, type OfflineQueueSender } from './useOfflineQueue';
 
 const OPERATOR_A = 'operator-a';
+const USER_A = 'user-a';
 const MANIFEST_1 = 'manifest-1';
 
 async function seed() {
   const first = await enqueue(db, {
     operatorId: OPERATOR_A,
+    userId: USER_A,
     manifestId: MANIFEST_1,
     type: 'pickup_scan',
     payload: { barcode: 'SCAN-1' },
   });
   const second = await enqueue(db, {
     operatorId: OPERATOR_A,
+    userId: USER_A,
     manifestId: MANIFEST_1,
     type: 'pickup_scan',
     payload: { barcode: 'SCAN-2' },
   });
   const close = await enqueue(db, {
     operatorId: OPERATOR_A,
+    userId: USER_A,
     manifestId: MANIFEST_1,
     type: 'close_manifest',
     payload: { manifestId: MANIFEST_1, count: 2 },
@@ -60,7 +64,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const pending = await listPending(db, OPERATOR_A);
@@ -78,7 +82,7 @@ describe('useOfflineQueue', () => {
     const { first } = await seed();
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
     await waitFor(async () => {
       const pending = await listPending(db, OPERATOR_A);
       expect(pending).toHaveLength(0);
@@ -87,6 +91,7 @@ describe('useOfflineQueue', () => {
     // A new scan arrives while offline, then signal returns.
     await enqueue(db, {
       operatorId: OPERATOR_A,
+      userId: USER_A,
       manifestId: MANIFEST_1,
       type: 'pickup_scan',
       payload: { barcode: 'SCAN-3' },
@@ -114,7 +119,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const stored = await db.pickup_queue.get(first.id!);
@@ -143,7 +148,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'retry', reason: '500 server error' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(() => {
       expect(send).toHaveBeenCalled();
@@ -176,7 +181,7 @@ describe('useOfflineQueue', () => {
         return { outcome: 'sent' };
       });
 
-      renderHook(() => useOfflineQueue(OPERATOR_A, send));
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
       await waitFor(async () => {
         const stored = await db.pickup_queue.get(first.id!);
@@ -204,7 +209,7 @@ describe('useOfflineQueue', () => {
     });
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -236,7 +241,7 @@ describe('useOfflineQueue', () => {
     const { first, second, close } = await seed();
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const remaining = await db.pickup_queue.toArray();
@@ -269,7 +274,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const stored = await db.pickup_queue.get(first.id!);
@@ -304,7 +309,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'dead', reason: 'PACKAGE_NOT_IN_MANIFEST' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(() => {
       expect(send).toHaveBeenCalled();
@@ -326,7 +331,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const stored = await db.pickup_queue.get(close.id!);
@@ -354,7 +359,7 @@ describe('useOfflineQueue', () => {
       return { outcome: 'sent' };
     });
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(async () => {
       const stored = await db.pickup_queue.get(first.id!);
@@ -380,7 +385,7 @@ describe('useOfflineQueue', () => {
     });
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -402,7 +407,7 @@ describe('useOfflineQueue', () => {
     });
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(OPERATOR_A, send));
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
     await waitFor(() => {
       expect(send).toHaveBeenCalledWith(
@@ -411,14 +416,168 @@ describe('useOfflineQueue', () => {
     });
   });
 
+  // M6, ronda 2 de review del PR #679 (mayor): `if (!operatorId || !userId
+  // || drainingRef.current) return;` no reprogramaba nada en la rama
+  // `drainingRef.current` — un evento `online` (o un reintento programado)
+  // que llega mientras un `drain()` ya está corriendo se perdía sin dejar
+  // rastro. Con señal intermitente los eventos `online` son frecuentes; esa
+  // entrada no se reintentaba hasta el próximo `online` o hasta reabrir la
+  // PWA.
+  it('M6 — an online event that arrives mid-drain is not lost: a manifest enqueued during that drain still gets picked up', async () => {
+    const MANIFEST_2 = 'manifest-2';
+    let releaseFirstSend: (() => void) | undefined;
+    const firstSendGate = new Promise<void>((resolve) => {
+      releaseFirstSend = resolve;
+    });
+
+    const firstEntry = await enqueue(db, {
+      operatorId: OPERATOR_A,
+      userId: USER_A,
+      manifestId: MANIFEST_1,
+      type: 'pickup_scan',
+      payload: { barcode: 'FIRST' },
+    });
+
+    const sent: string[] = [];
+    let injectedSecondEntry: Awaited<ReturnType<typeof enqueue>> | undefined;
+
+    const send: OfflineQueueSender = vi.fn(async (entry) => {
+      sent.push(entry.clientOperationId);
+      if (entry.clientOperationId === firstEntry.clientOperationId) {
+        // While THIS drain pass is still in flight (its manifestIds are
+        // already fixed), a second manifest's entry arrives and an
+        // `online` event fires. Neither can be seen by the running pass —
+        // only the rerun that M6 adds picks them up once it finishes.
+        injectedSecondEntry = await enqueue(db, {
+          operatorId: OPERATOR_A,
+          userId: USER_A,
+          manifestId: MANIFEST_2,
+          type: 'pickup_scan',
+          payload: { barcode: 'SECOND' },
+        });
+        window.dispatchEvent(new Event('online'));
+        await firstSendGate;
+      }
+      return { outcome: 'sent' };
+    });
+
+    renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+    await waitFor(() => expect(sent).toContain(firstEntry.clientOperationId));
+    releaseFirstSend?.();
+
+    await waitFor(() => {
+      expect(injectedSecondEntry).toBeDefined();
+      expect(sent).toContain(injectedSecondEntry!.clientOperationId);
+    });
+  });
+
   it('does nothing when operatorId is not known yet', async () => {
     await seed();
     const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
 
-    renderHook(() => useOfflineQueue(null, send));
+    renderHook(() => useOfflineQueue(null, USER_A, send));
 
     // Give any accidental async work a tick to run, then assert nothing did.
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when userId is not known yet, even with a known operatorId', async () => {
+    await seed();
+    const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+
+    renderHook(() => useOfflineQueue(OPERATOR_A, null, send));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  // B4, ronda 2 de review del PR #679 (bloqueante) — el escenario probado
+  // por el reviewer: un teléfono de muelle compartido. El conductor A
+  // firma sin señal → encolado bajo su propio userId. A cierra sesión; el
+  // mozo B, de la MISMA empresa (mismo operatorId), abre la app. Antes de
+  // este fix, `AppLayout` montaba un único drenador por `operatorId` — la
+  // sesión de B drenaba (y enviaba) la entrada de A. El servidor deriva
+  // `signature_operator_name` de `auth.uid()`: el cierre quedaba firmado
+  // con el nombre de B sobre la firma dibujada de A.
+  describe('scoped by (operatorId, userId) — B4', () => {
+    const USER_B = 'user-b';
+
+    it("never sends another user's entry under the same operator, even when it is the head of the FIFO", async () => {
+      await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1, signatures: { operator_signature: 'A-sig' } },
+      });
+      const send: OfflineQueueSender = vi.fn(async () => ({ outcome: 'sent' }));
+
+      // User B's session mounts the drainer — same operator, different
+      // person. A's entry must not be touched at all. 200ms of real wall
+      // clock is orders of magnitude more than every chained drain pass
+      // (mount's automatic one, plus any M6 rerun) needs to fully settle —
+      // fake-indexeddb work is microtask-scale, not real-timer-scale, so
+      // this is not a race against the fix, just a generous margin against
+      // a false pass from asserting too early.
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_B, send));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(send).not.toHaveBeenCalled();
+
+      const [stillThere] = await listPending(db, OPERATOR_A, MANIFEST_1);
+      expect(stillThere.status).toBe('pending');
+      expect(stillThere.userId).toBe(USER_A);
+    });
+
+    it("drains this user's own entry while a different user's entry in the SAME manifest waits untouched", async () => {
+      await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'A-SCAN' },
+      });
+      const bEntry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_B,
+        manifestId: MANIFEST_1,
+        type: 'pickup_scan',
+        payload: { barcode: 'B-SCAN' },
+      });
+      const sent: string[] = [];
+      const send: OfflineQueueSender = vi.fn(async (entry) => {
+        sent.push(entry.clientOperationId);
+        return { outcome: 'sent' };
+      });
+
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_B, send));
+
+      await waitFor(() => expect(sent).toEqual([bEntry.clientOperationId]));
+
+      const remaining = await listPending(db, OPERATOR_A, MANIFEST_1);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].userId).toBe(USER_A);
+    });
+
+    it("eventually drains once the enqueuing user's own session mounts the drainer", async () => {
+      const aEntry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: 'close_manifest',
+        payload: { manifestId: MANIFEST_1, signatures: { operator_signature: 'A-sig' } },
+      });
+      const sent: string[] = [];
+      const send: OfflineQueueSender = vi.fn(async (entry) => {
+        sent.push(entry.clientOperationId);
+        return { outcome: 'sent' };
+      });
+
+      renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
+
+      await waitFor(() => expect(sent).toEqual([aEntry.clientOperationId]));
+    });
   });
 });

@@ -34,7 +34,7 @@ export default function CompletionPage() {
   const params = useParams();
   const router = useRouter();
   const loadId = decodeURIComponent(params.loadId as string);
-  const { operatorId } = useOperatorId();
+  const { operatorId, userId } = useOperatorId();
 
   const [manifestId, setManifestId] = useState<string | null>(null);
   const [manifestStartedAt, setManifestStartedAt] = useState<string | null>(
@@ -111,7 +111,7 @@ export default function CompletionPage() {
   const canComplete = !!operatorSignature;
 
   const handleComplete = async () => {
-    if (!manifestId || !operatorId || !operatorSignature) return;
+    if (!manifestId || !operatorId || !userId || !operatorSignature) return;
     setIsSubmitting(true);
 
     try {
@@ -154,22 +154,41 @@ export default function CompletionPage() {
       // operario corrija o pida ayuda.
       const classified = classifyCloseManifestError(err);
       if (classified.kind === 'offline') {
-        await enqueue(db, {
-          operatorId,
-          manifestId,
-          type: 'close_manifest',
-          payload: {
+        // M5, ronda 2 de review del PR #679 (mayor): `enqueue` puede lanzar
+        // por su cuenta — el tope de 500 entradas sin confirmar
+        // (`lib/offline/queue.ts`), o cualquier `DOMException` real de
+        // IndexedDB (cuota agotada, modo privado de Safari). Antes, esa
+        // excepción escapaba de este `catch` sin capturar: `setIsSubmitting
+        // (false)` nunca corría, el botón quedaba deshabilitado con
+        // "Completando…" para siempre, sin toast, y la firma se perdía.
+        // "fallo silencioso contra la cuota" se convertía en "fallo
+        // silencioso con la pantalla colgada".
+        try {
+          await enqueue(db, {
+            operatorId,
+            userId,
             manifestId,
-            signatures: {
-              operator_signature: operatorSignature,
-              client_signature: clientSignature,
-              client_name: clientName || null,
+            type: 'close_manifest',
+            payload: {
+              manifestId,
+              signatures: {
+                operator_signature: operatorSignature,
+                client_signature: clientSignature,
+                client_name: clientName || null,
+              },
             },
-          },
-        });
-        toast.success(classified.message);
-        router.push('/app/pickup');
-        return;
+          });
+          toast.success(classified.message);
+          router.push('/app/pickup');
+          return;
+        } catch (enqueueErr) {
+          console.error('Failed to enqueue offline close_manifest:', enqueueErr);
+          toast.error(
+            enqueueErr instanceof Error ? enqueueErr.message : 'No se pudo completar el manifiesto',
+          );
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       toast.error(classified.message);

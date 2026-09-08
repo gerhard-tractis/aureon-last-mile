@@ -5,10 +5,11 @@ import React from 'react';
 let mockRole = 'admin';
 let mockPermissions: string[] = [];
 let mockOperatorId: string | null = 'op-test';
+let mockUserId: string | null = 'user-test';
 
 vi.mock('@/lib/context/GlobalContext', () => ({
   useGlobal: () => ({
-    user: { email: 'test@example.com' },
+    user: { email: 'test@example.com', id: mockUserId },
     role: mockRole,
     permissions: mockPermissions,
     operatorId: mockOperatorId,
@@ -117,6 +118,7 @@ beforeEach(() => {
   mockRole = 'admin';
   mockPermissions = [];
   mockOperatorId = 'op-test';
+  mockUserId = 'user-test';
   mockBranding.logoUrl = null;
   mockBranding.companyName = null;
   mockIsTablet = false;
@@ -128,7 +130,7 @@ beforeEach(() => {
 });
 
 describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review PR #679)', () => {
-  it('mounts useOfflineQueue with the current operatorId and a real Supabase-backed sender', () => {
+  it('mounts useOfflineQueue with the current operatorId, userId and a real Supabase-backed sender', () => {
     render(
       <AppLayout>
         <div>content</div>
@@ -136,10 +138,10 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
     );
 
     expect(createPickupQueueSenderSpy).toHaveBeenCalled();
-    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockSender);
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, mockUserId, mockSender);
   });
 
-  it('passes null through when operatorId is not known yet, instead of skipping the mount', () => {
+  it('passes null operatorId through when it is not known yet, instead of skipping the mount', () => {
     mockOperatorId = null;
 
     render(
@@ -148,7 +150,26 @@ describe('AppLayout — spec-81 fase 2 offline queue drainer (B2, ronda 1 review
       </AppLayout>,
     );
 
-    expect(useOfflineQueueSpy).toHaveBeenCalledWith(null, mockSender);
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(null, mockUserId, mockSender);
+  });
+
+  // B4, ronda 2 de review del PR #679 (bloqueante) — `operatorId` es la
+  // tenencia (`claims.operator_id`), no la persona; `useGlobal().user.id`
+  // es `auth.uid()`, el mismo valor que `close_manifest` usa en el servidor
+  // para derivar `signature_operator_name`. Sin pasar ambos, el drenador de
+  // un usuario B podía enviar (y firmar con su propio nombre) la entrada
+  // que un usuario A de la MISMA empresa había encolado en un teléfono
+  // compartido.
+  it("passes null userId through when it is not known yet, instead of the previous user's id lingering", () => {
+    mockUserId = null;
+
+    render(
+      <AppLayout>
+        <div>content</div>
+      </AppLayout>,
+    );
+
+    expect(useOfflineQueueSpy).toHaveBeenCalledWith(mockOperatorId, null, mockSender);
   });
 });
 

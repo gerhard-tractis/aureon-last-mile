@@ -13,7 +13,7 @@ vi.mock('@/hooks/pickup/useDiscrepancies', () => ({
 }));
 
 vi.mock('@/hooks/useOperatorId', () => ({
-  useOperatorId: () => ({ operatorId: 'op-1' }),
+  useOperatorId: () => ({ operatorId: 'op-1', userId: 'user-1' }),
 }));
 
 const mockRpc = vi.fn(() => Promise.resolve({ data: [{ out_verified_count: 2 }], error: null }));
@@ -280,6 +280,11 @@ describe('CompletionPage', () => {
       expect(mockEnqueue).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
+          operatorId: 'op-1',
+          // B4, ronda 2 de review del PR #679 — sin `userId` en el payload
+          // encolado, el drenador (`useOfflineQueue`) no tiene forma de
+          // saber que esta entrada le pertenece a esta sesión.
+          userId: 'user-1',
           manifestId: 'm1',
           type: 'close_manifest',
           payload: expect.objectContaining({
@@ -299,6 +304,42 @@ describe('CompletionPage', () => {
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith('/app/pickup');
     });
+  });
+
+  // M5, ronda 2 de review del PR #679 (mayor): `enqueue` corre DENTRO del
+  // catch de `handleComplete`, sin un `try` propio — si `enqueue` mismo
+  // lanza (el tope de 500 entradas sin confirmar de `queue.ts`, o cualquier
+  // `DOMException` de IndexedDB: cuota, modo privado), la excepción escapaba
+  // sin capturar. `setIsSubmitting(false)` nunca corría, el botón quedaba
+  // deshabilitado con "Completando…" para siempre, sin toast, y la firma se
+  // perdía — "fallo silencioso contra la cuota" se convertía en "fallo
+  // silencioso con la pantalla colgada".
+  it('M5 — when enqueue itself throws (e.g. the queue is full), shows an error and re-enables the button instead of hanging', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'TypeError: Failed to fetch',
+        details: '',
+        hint: '',
+        code: '',
+      },
+    });
+    mockEnqueue.mockRejectedValueOnce(
+      new Error('recogida offline queue: cola llena (500 entradas sin confirmar)'),
+    );
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: /completar y generar recibo/i }),
+      ).not.toBeDisabled();
+    });
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   it('falls back to a generic Spanish message for an unrecognized RPC error', async () => {

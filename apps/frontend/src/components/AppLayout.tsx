@@ -45,7 +45,7 @@ export default function AppLayout({
   children: React.ReactNode;
   enabledModules?: ReadonlyArray<ModuleKey>;
 }) {
-  const { role, permissions, operatorId } = useGlobal();
+  const { role, permissions, operatorId, user } = useGlobal();
   const { logoUrl, companyName } = useBranding();
 
   // spec-81 fase 2, B2 (ronda 1 de review del PR #679) — el drenador de la
@@ -61,8 +61,16 @@ export default function AppLayout({
   // cada montaje de `AppLayout`. `createSPAClient()` en sí es barato (no abre
   // conexión), pero el sender debe ser estable para el hook, no solo barato
   // de recrear.
+  //
+  // B4, ronda 2 de review del PR #679 (bloqueante) — `operatorId` es la
+  // tenencia (`claims.operator_id`), no la persona. Un teléfono de muelle
+  // compartido puede tener dos conductores de la MISMA empresa en sesiones
+  // sucesivas; sin `userId`, el drenador de quien acaba de iniciar sesión
+  // enviaba (y firmaba con su propio nombre, vía `auth.uid()` en el
+  // servidor) lo que el conductor anterior había encolado. `user.id` es ese
+  // mismo `auth.uid()`.
   const pickupQueueSender = useMemo(() => createPickupQueueSender(createSPAClient()), []);
-  useOfflineQueue(operatorId, pickupQueueSender);
+  useOfflineQueue(operatorId, user?.id ?? null, pickupQueueSender);
   const { pinned, togglePin } = useSidebarPin();
   const pathname = usePathname();
   const [logoError, setLogoError] = useState(false);

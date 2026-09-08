@@ -55,6 +55,18 @@ export interface PickupQueueEntry {
    * reintento. */
   clientOperationId: string;
   operatorId: string;
+  /**
+   * B4, ronda 2 de review del PR #679 (bloqueante) — `auth.users.id` de
+   * quien encoló esta entrada, no sólo el inquilino (`operatorId`). Un
+   * teléfono de muelle compartido puede tener dos conductores DE LA MISMA
+   * empresa (mismo `operatorId`) en sesiones sucesivas — sin esto, el
+   * drenador de la sesión de B enviaba la firma que A capturó, y
+   * `close_manifest` deriva `signature_operator_name` de `auth.uid()` en el
+   * servidor: el cierre quedaba firmado con el nombre de B sobre la firma
+   * dibujada de A. `useOfflineQueue` filtra por este campo antes de
+   * reclamar cualquier entrada — nunca toca una que esta sesión no encoló.
+   */
+  userId: string;
   manifestId: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;

@@ -22,6 +22,7 @@ import {
 
 const OPERATOR_A = "operator-a";
 const OPERATOR_B = "operator-b";
+const USER_A = "user-a";
 const MANIFEST_1 = "manifest-1";
 const MANIFEST_2 = "manifest-2";
 
@@ -77,6 +78,25 @@ describe("recogida offline queue", () => {
       expect(entry.retryCount).toBe(0);
       expect(entry.lastAttemptAt).toBeNull();
       expect(entry.nextAttemptAt).toBeNull();
+    });
+
+    // B4, ronda 2 de review del PR #679 (bloqueante) — la cola estaba
+    // acotada por inquilino (`operatorId`), no por persona. En un teléfono
+    // de muelle compartido, un conductor B (misma empresa) drenaba la
+    // entrada que un conductor A había encolado, firmando el cierre con el
+    // nombre de B (`signature_operator_name` se deriva de `auth.uid()` en
+    // el servidor). `userId` es lo que `useOfflineQueue` usa para que su
+    // drenado nunca toque una entrada que esta sesión no encoló.
+    it("stores the enqueuing user's id alongside the operator's", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "ABC123" },
+      });
+
+      expect(entry.userId).toBe(USER_A);
     });
 
     it("persists the payload's blob (B6 — a mutant dropping it must fail)", async () => {

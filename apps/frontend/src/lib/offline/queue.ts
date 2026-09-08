@@ -29,6 +29,10 @@ export {
 
 export interface EnqueueInput {
   operatorId: string;
+  /** B4, ronda 2 de review del PR #679 — ver el docstring de `userId` en
+   * `PickupQueueEntry` (`@/lib/db`). Requerido: sin él, el drenador no
+   * tiene forma de saber que esta entrada es suya. */
+  userId: string;
   manifestId: string;
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
@@ -70,6 +74,7 @@ export async function enqueue(
   const id = await db.pickup_queue.add({
     clientOperationId: crypto.randomUUID(),
     operatorId: input.operatorId,
+    userId: input.userId,
     manifestId: input.manifestId,
     type: input.type,
     payload: input.payload,

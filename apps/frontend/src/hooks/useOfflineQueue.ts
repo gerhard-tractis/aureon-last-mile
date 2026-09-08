@@ -89,8 +89,32 @@ function nextBackoffAt(retryCountBeforeThisFailure: number): string {
  * salir antes que los escaneos que produjeron su conteo, y una entrada aún
  * no debida (backoff) no se salta a favor de la que viene después.
  */
+/**
+ * B4, ronda 2 de review del PR #679 (bloqueante) — la cola estaba acotada
+ * por inquilino (`operatorId`), no por persona. En un teléfono de muelle
+ * compartido, dos conductores DE LA MISMA empresa pueden encolar en
+ * sesiones sucesivas; sin este filtro, la sesión de B drenaba (y enviaba,
+ * con la firma de A) la entrada que A había encolado — `close_manifest`
+ * deriva `signature_operator_name` de `auth.uid()` en el servidor.
+ *
+ * `manifestHasDeadEntry` (más abajo) sigue sin filtrar por usuario a
+ * propósito: un escaneo `dead` en un manifiesto es un problema del
+ * MANIFIESTO (una carga con un conteo que no cuadra), no de quién lo
+ * encoló — debe bloquear a cualquiera que intente cerrar ese manifiesto,
+ * no sólo a quien produjo el `dead`. `reclaimStale`/`purgeConfirmed`
+ * (drain(), más abajo) tampoco filtran por usuario: no tocan datos de
+ * negocio (sólo el estado de la reclamación / entradas ya confirmadas), así
+ * que reclamar o purgar la entrada de otro usuario no puede producir el
+ * problema de custodia que este filtro existe para cerrar — y sólo ESTE
+ * filtro decide qué se reclama y envía de verdad.
+ */
+function ownEntries(entries: PickupQueueEntry[], userId: string): PickupQueueEntry[] {
+  return entries.filter((entry) => entry.userId === userId);
+}
+
 async function drainManifest(
   operatorId: string,
+  userId: string,
   manifestId: string,
   send: OfflineQueueSender,
 ): Promise<void> {
@@ -103,7 +127,7 @@ async function drainManifest(
     // acaba de producir.
     if (await manifestHasDeadEntry(db, operatorId, manifestId)) return;
 
-    const [next] = await listPending(db, operatorId, manifestId);
+    const [next] = ownEntries(await listPending(db, operatorId, manifestId), userId);
     if (!next) return;
 
     if (next.nextAttemptAt && Date.parse(next.nextAttemptAt) > Date.now()) {
@@ -147,17 +171,41 @@ async function drainManifest(
   }
 }
 
-export function useOfflineQueue(operatorId: string | null, send: OfflineQueueSender) {
+export function useOfflineQueue(
+  operatorId: string | null,
+  userId: string | null,
+  send: OfflineQueueSender,
+) {
   const drainingRef = useRef(false);
+  // M6, ronda 2 de review del PR #679 (mayor): un reintento programado
+  // (`scheduleRetry`) o un evento `online` que llega MIENTRAS `drain()` ya
+  // está corriendo salía por el guard `drainingRef.current` de abajo sin
+  // dejar rastro — nada volvía a programar ese intento. Con señal
+  // intermitente los eventos `online` son frecuentes, así que esa entrada
+  // no se reintentaba hasta el próximo `online` o hasta reabrir la PWA. En
+  // vez de descartar la llamada, se marca "hace falta otra pasada" y el
+  // propio `drain()` la ejecuta al terminar la que está en curso.
+  const rerunRequestedRef = useRef(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const scheduleRetry = useCallback((delayMs: number, run: () => void) => {
-    const timer = setTimeout(run, delayMs);
+    const timer = setTimeout(() => {
+      // m10, ronda 2 de review del PR #679 (menor): sin esto, `timersRef`
+      // crece sin límite — un timer ya disparado nunca se quitaba del
+      // array, así que una sesión larga con muchos reintentos acumulaba
+      // referencias muertas indefinidamente.
+      timersRef.current = timersRef.current.filter((t) => t !== timer);
+      run();
+    }, delayMs);
     timersRef.current.push(timer);
   }, []);
 
   const drain = useCallback(async () => {
-    if (!operatorId || drainingRef.current) return;
+    if (!operatorId || !userId) return;
+    if (drainingRef.current) {
+      rerunRequestedRef.current = true;
+      return;
+    }
     drainingRef.current = true;
     try {
       // Checklist de fase 2: recuperar reclamaciones huérfanas ANTES de
@@ -166,18 +214,28 @@ export function useOfflineQueue(operatorId: string | null, send: OfflineQueueSen
       // ofrecer.
       await reclaimStale(db, operatorId, RECLAIM_STALE_MS);
 
-      const pending = await listPending(db, operatorId);
+      // B4, ronda 2 de review del PR #679 (bloqueante) — sólo los
+      // manifiestos con AL MENOS una entrada de ESTA sesión entran al
+      // drenado; `drainManifest` filtra de nuevo por `userId` en cada
+      // vuelta (ver `ownEntries`), así que ninguna entrada de otro usuario
+      // se reclama ni se envía nunca, aunque comparta manifiesto.
+      const pending = ownEntries(await listPending(db, operatorId), userId);
       const manifestIds = Array.from(new Set(pending.map((e) => e.manifestId)));
       // FIFO estricto DENTRO de un manifiesto; entre manifiestos distintos
       // puede ir en paralelo (spec-81, "Orden: FIFO estricto por
       // manifiesto").
-      await Promise.all(manifestIds.map((id) => drainManifest(operatorId, id, send)));
+      await Promise.all(manifestIds.map((id) => drainManifest(operatorId, userId, id, send)));
 
+      // `purgeConfirmed` no filtra por usuario — borra `sent` del operador
+      // entero. Es sólo limpieza de filas ya confirmadas por el servidor;
+      // no hay dato de negocio ni custodia que proteger ahí.
       await purgeConfirmed(db, operatorId);
 
       // Si algo quedó en backoff, no esperar a un nuevo evento `online` —
-      // reprogramar un intento cuando el más próximo esté debido.
-      const remaining = await listPending(db, operatorId);
+      // reprogramar un intento cuando el más próximo esté debido. Sólo
+      // sobre las entradas de esta sesión: reprogramar por la de otro
+      // usuario no adelantaría nada (`drainManifest` las sigue ignorando).
+      const remaining = ownEntries(await listPending(db, operatorId), userId);
       const soonest = remaining
         .map((e) => (e.nextAttemptAt ? Date.parse(e.nextAttemptAt) : null))
         .filter((t): t is number => t !== null)
@@ -188,8 +246,12 @@ export function useOfflineQueue(operatorId: string | null, send: OfflineQueueSen
       }
     } finally {
       drainingRef.current = false;
+      if (rerunRequestedRef.current) {
+        rerunRequestedRef.current = false;
+        void drain();
+      }
     }
-  }, [operatorId, send, scheduleRetry]);
+  }, [operatorId, userId, send, scheduleRetry]);
 
   useEffect(() => {
     void drain();
