@@ -74,54 +74,79 @@ Lo único que se toca aquí es lo que no necesita datos nuevos: jerarquía, chip
 - [x] Implementar sólo lo marcado «visual».
 - [x] Lista explícita en este spec de lo aplazado y por qué.
 
-**GAP declarado antes de empezar:** no hay acceso al proyecto de Claude Design
-donde viven `5b`/`5c` — ni imagen ni export. Todo lo de abajo se contrastó contra
-la **descripción textual** de este mismo spec, no contra un screenshot real. Es
-un diff más débil que el que el checklist pide, y se dice aquí en vez de fingir
-que se hizo el diff pixel a pixel.
+**Diff real hecho contra el mock**, tras recibir el export de Claude Design
+(`Recogida.dc.html`, artboards `5b`/`5c` con `data-screen-label`). Ya no es el
+diff textual más débil de la ronda anterior — lo de abajo se contrastó línea a
+línea contra el HTML real de cada artboard.
 
-**Lo que ya estaba (spec-54/spec-61), sin cambios porque ya coincide con el texto del mock:**
-- `5b` — eyebrow "MANIFIESTOS POR RETIRAR · N" (deliberadamente NO "asignados a
-  ti" — ver fase 3), agrupación Cliente → Punto → Manifiesto con
-  "N puntos · N paquetes", pie de conteo "N manifiestos · N paq." / "entran a la
-  ruta". `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx` — no tocados.
-- `5c` — cabecera con `route.code` y botón "Cerrar ruta y entregar"
-  (`RouteProgressHeader.tsx`, `CloseRouteButton.tsx`, ya en `route/active/page.tsx`).
+**Lo que ya estaba (spec-54/spec-61), confirmado contra el mock real, sin cambios:**
+- `5b` — eyebrow del mock es literalmente **"MANIFIESTOS ASIGNADOS A TI · 4"**,
+  no "MANIFIESTOS POR RETIRAR". El código dice a propósito "POR RETIRAR" — una
+  decisión de la ronda anterior para no mentir mientras la fase 3 (asignación
+  real) sigue bloqueada. Confirmado con el mock delante: es la decisión
+  correcta, no una laguna del diff — implementar el texto literal del mock
+  aquí congelaría la mentira que el spec (línea 37) pide explícitamente evitar.
+  Resto de `5b` (agrupación Cliente → Punto → Manifiesto, "N puntos ·
+  N paquetes", pie "N manifiestos · N paq. / entran a la ruta") coincide
+  exactamente. `PickupMobileStartRoute.tsx`, `PickupMobileClientGroup.tsx` —
+  no tocados.
+- `5c` — cabecera con `route.code`, agrupación por cliente con ícono de
+  expand/collapse (`RouteProgressHeader.tsx`, ya en `route/active/page.tsx`).
+  La cabecera real (metrics + barra de progreso) es más rica que la pastilla
+  compacta del mock; esa diferencia de densidad de información no es un "diff
+  visual" de fase 1 — es una reconstrucción de cabecera fuera de alcance, y no
+  se toca.
 
-**Implementado en esta fase:**
-- **"Digitalizar manifiesto" en `5c`.** Nuevo `DigitalizeManifestTrigger.tsx`
-  (botón + diálogo autocontenidos, reutiliza `CameraIntake`/`useCameraIntake`
-  íntegros — spec-47), montado en `app/app/pickup/route/active/page.tsx` junto
-  al botón "Agregar manifiesto". Deliberadamente **no** se tocó
-  `PickupMobileStartRoute.tsx` (`5b`/3j): spec-54 ya excluyó a propósito
-  "Nuevo Manifiesto" de esa pantalla, con un test de regresión que lo protege
-  (`app/app/pickup/page.test.tsx`, "shows 'Nuevo Manifiesto' on desktop and
-  hides it on mobile") — nada en el texto de spec-82 revisita esa decisión, y
-  la cita de "Digitalizar manifiesto" en el checklist de fase 1 sólo nombra
-  `5c`.
+**Implementado en esta fase, ahora con el mock como evidencia:**
+- **Chips `SIGUIENTE` y `COMPLETADA` por carga en `5c`.** Confirmado: **sí van
+  en `5c`**, no en `3h` — están presentes en el propio artboard `id="5c"` del
+  mock (`data-screen-label="5c Recogidas movil"`), no es una confusión con
+  `PickupMobileActiveRoute.tsx`. La ronda anterior tenía razón en no
+  inventarlos sin verlos; con el mock delante, la decisión es:
+  - `SIGUIENTE` → `NextManifestCard.tsx` (la tarjeta destacada con borde
+    `accent`, botón primario). Reutiliza **el mismo chip** ya construido para
+    el mismo estado en `PickupMobileNextLoadCard.tsx` (mock 3h) —
+    `rounded-full bg-accent-light … text-accent-light-foreground`, texto
+    "SIGUIENTE" — en vez de inventar un segundo estilo para la misma
+    semántica.
+  - `COMPLETADA` → `RouteManifestList.tsx`, por fila, cuando
+    `isManifestComplete(m)`. Reutiliza el mismo lenguaje visual que
+    `PickupMobileCompactRow.tsx` ya usa para su variante `completed`
+    (`status-success-border/bg/text`). Reemplaza el texto plano "Verificación
+    completa" que existía antes — el chip transmite lo mismo y es lo que el
+    mock muestra.
+  - `EN RUTA` **no se implementó** — ver "Aplazado" abajo, es un estado de
+    **grupo de cliente**, no de carga, y esta pantalla no agrupa por cliente.
+  - `DESCARGAR` **no se implementó** — confirmado en el mock como el mismo
+    chip de precarga que describe la fase 2 de este spec (depende de spec-81
+    fase 1); no aplica a fase 1.
+- **Copy "Cerrar ruta" (no "y entregar").** El mock dice literalmente «Cerrar
+  ruta», sin "y entregar". Es una diferencia real, no una paráfrasis del spec
+  — corregido en `CloseRouteButton.tsx`. Ningún test afirmaba el texto
+  anterior (`CloseRouteButton.test.tsx` y `route/active/page.test.tsx` usan
+  `data-testid="close-route-button"`), así que no rompe nada. La navegación
+  tras cerrar (`/app/pickup/route/:id/qr`) no cambia — el copy no implicaba
+  ese paso, sólo lo nombraba de más.
+- **"Digitalizar manifiesto" en `5c`.** (De la ronda anterior, sin cambios.)
+  `DigitalizeManifestTrigger.tsx` (botón + diálogo autocontenidos, reutiliza
+  `CameraIntake`/`useCameraIntake` íntegros — spec-47), montado en
+  `app/app/pickup/route/active/page.tsx`. El mock lo pone en una fila fija al
+  pie junto a un botón "Buscar" — ese "Buscar" no existe hoy en esta pantalla
+  (sólo en 3h) y añadirlo sería una capacidad nueva, no un diff visual; queda
+  fuera de fase 1 con esta razón. Deliberadamente **no** se tocó
+  `PickupMobileStartRoute.tsx` (`5b`/3j) — spec-54 ya excluyó a propósito
+  "Nuevo Manifiesto" de esa pantalla, con un test de regresión que lo protege.
 
 **Aplazado, con la razón:**
-- **Chips `EN RUTA` / `SIGUIENTE` / `COMPLETADA` por carga en `5c`.** No
-  implementados. La lista de archivos de esta fase nombra
-  `PickupMobileCompactRow.tsx`, pero ese componente pertenece a
-  `PickupMobileActiveRoute.tsx` (mock 3h de spec-54, la pantalla que
-  `PickupMobileView` renderiza en `/app/pickup` cuando ya hay ruta activa) —
-  una pantalla **distinta** de `5c`, que este mismo spec ata explícitamente a
-  `app/app/pickup/route/active/page.tsx` (mock 1i de spec-54, ver "Related" al
-  inicio del archivo). `route/active/page.tsx` reparte sus cargas en tres
-  componentes que no aparecen en la lista de archivos de esta fase
-  (`NextManifestCard.tsx`, `UpcomingManifestList.tsx`, `RouteManifestList.tsx`)
-  y hoy no llevan ningún chip de estado por carga. Sin ver `5c` no hay forma
-  honesta de decidir en cuál de los tres va cada chip, ni si el mock los quiere
-  en un listado plano distinto de los tres actuales — inventar esa distribución
-  sería exactamente el "criterio de volumen/diseño" que el spec pide no
-  confundir. Queda como hueco real de esta fase, no como "hecho en silencio".
-  El chip `DESCARGAR` de los cuatro no aplica aquí de todas formas — depende de
-  spec-81 fase 1 (fase 2 de este spec).
-- **Copy exacto de "Cerrar ruta" vs "Cerrar ruta y entregar".** El texto del
-  spec cita «Cerrar ruta»; el botón real dice «Cerrar ruta y entregar». Sin el
-  mock no se puede saber si es una paráfrasis del spec o una diferencia real —
-  cambiarlo a ciegas sería inventar. Sin tocar.
+- **Chip `EN RUTA` (grupo de cliente).** En el mock aparece en la cabecera del
+  grupo "Falabella" (2 puntos, 2 cargas), un estado **agregado** — no de una
+  carga individual, sino "este cliente tiene al menos una carga en curso en
+  esta ruta". `route/active/page.tsx` no agrupa manifiestos por cliente hoy:
+  `NextManifestCard`/`UpcomingManifestList`/`RouteManifestList` trabajan sobre
+  una lista plana de manifiestos. Construir esa agrupación (cliente → puntos →
+  cargas, con estado agregado) es la "jerarquía" del checklist llevada más
+  lejos que un diff — es la reconstrucción que la intro del spec dice
+  explícitamente que esta fase no es. Queda como hueco real, no inventado.
 - **Andén / "SIN DESCARGAR" / otras señales de `5c` fuera del texto citado por
   este spec.** Fuera de alcance de fase 1 por diseño (fases 2 y 4).
 

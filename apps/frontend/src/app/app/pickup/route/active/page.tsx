@@ -250,7 +250,7 @@ export default function ActiveRoutePage() {
 
       <div className="fixed bottom-0 inset-x-0 bg-background border-t border-border p-4 sm:p-6">
         {/* space-y-3: "Cancelar ruta" is destructive and sits directly under
-            the routine "Cerrar ruta y entregar". Flush, they are two
+            the routine "Cerrar ruta" CTA. Flush, they are two
             full-width 40px targets one thumb-width apart on a phone held
             one-handed, with only the confirm dialog between a mis-tap and
             detaching every manifest on the route. 3h already separates them

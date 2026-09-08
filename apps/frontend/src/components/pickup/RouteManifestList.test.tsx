@@ -77,6 +77,49 @@ describe('RouteManifestList', () => {
     expect(screen.queryByText('Verificación completa')).toBeNull();
   });
 
+  // spec-82 fase 1 (mock 5c) — a finished manifest carries a COMPLETADA
+  // chip, the same visual state PickupMobileCompactRow already shows for
+  // its `completed` variant on the 3h screen.
+  it('shows a COMPLETADA chip when the manifest is fully verified', () => {
+    render(
+      <RouteManifestList
+        manifests={[
+          {
+            id: 'm1',
+            external_load_id: 'LOAD-1',
+            retailer_name: 'A',
+            pickup_location: null,
+            total_orders: 1,
+            total_packages: 5,
+            verified_count: 5,
+          },
+        ]}
+        onManifestClick={() => {}}
+      />
+    );
+    expect(screen.getByText('COMPLETADA')).toBeInTheDocument();
+  });
+
+  it('does not show a COMPLETADA chip when the manifest is not fully verified', () => {
+    render(
+      <RouteManifestList
+        manifests={[
+          {
+            id: 'm1',
+            external_load_id: 'LOAD-1',
+            retailer_name: 'A',
+            pickup_location: null,
+            total_orders: 1,
+            total_packages: 5,
+            verified_count: 2,
+          },
+        ]}
+        onManifestClick={() => {}}
+      />
+    );
+    expect(screen.queryByText('COMPLETADA')).toBeNull();
+  });
+
   // spec-64 Task 3 — the remove control.
   function baseManifest(overrides: Partial<Parameters<typeof RouteManifestList>[0]['manifests'][0]> = {}) {
     return {
