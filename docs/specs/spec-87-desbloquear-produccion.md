@@ -393,13 +393,46 @@ explícitamente las aprobaciones de producción (2026-09-07). `approve-productio
 
 - [ ] El agente prepara y verifica cada lote; **el usuario aprueba cada uno**.
 
-### Fase 5 — Guardarraíles `[pending]`
+### Fase 5 — Guardarraíles `[in_progress]`
 
-**Archivos:** `scripts/check-migration-safety.sh` + test, cableado en CI
+> Implementado por: `implementer` — rama `feat/spec-87-fase-5-guardarrailes`, sin PR aún (lo abre
+> el orquestador tras esto). El token queda `[in_progress]` a propósito: falta review
+> adversarial y QA antes de `[done]`.
 
-- [ ] Rechazar una migración que mezcle **DDL y un backfill no acotado** en el mismo fichero. Son dos cosas con perfiles de riesgo opuestos: el esquema es rápido y debe ir en el deploy; el backfill es lento y debe ir aparte.
-- [ ] Avisar ante `CREATE INDEX` sin `CONCURRENTLY` sobre tablas grandes conocidas (`packages`, `orders`, `dispatches`, `routes`).
-- [ ] Avisar ante `CREATE UNIQUE INDEX` sobre filas vivas sin el guardia de conteo previo que `h5c` sí tiene.
+**Archivos:** `scripts/check-migration-safety.sh` (wrapper) + `scripts/check-migration-safety.mjs`
+(lógica) + `scripts/check-migration-safety.test.sh`/`-index.test.sh`/`-unique.test.sh`/
+`-real.test.sh` (suite partida en 4, cada una bajo 300 líneas, como `check-quarantine*.test.sh`),
+cableado en `ci.yml`.
+
+- [x] Rechazar una migración que mezcle **DDL y un backfill no acotado** en el mismo fichero. Son dos cosas con perfiles de riesgo opuestos: el esquema es rápido y debe ir en el deploy; el backfill es lento y debe ir aparte. Distingue un `UPDATE`/`INSERT ... SELECT` **a nivel superior** de uno dentro de `CREATE FUNCTION … $$ … $$` (blanquea el cuerpo dollar-quoted antes de buscar) — el patrón de `20260909000001` (spec-79: función con `UPDATE` dentro, nunca invocada) **no se marca peligroso**, confirmado corriendo el script contra las 12 migraciones reales.
+- [x] Avisar (`::warning::`, nunca `exit 1`) ante `CREATE INDEX`/`CREATE UNIQUE INDEX` sin `CONCURRENTLY` sobre tablas grandes conocidas (`packages`, `orders`, `dispatches`, `routes`). Corrido contra las 12: avisa exactamente sobre `20260909000001` (packages) y `20260911000002` (routes) — las dos que fase 3 ya marcó "medio" riesgo por esta misma razón.
+- [x] Avisar ante `CREATE UNIQUE INDEX` sobre una tabla **existente** (no creada en el mismo fichero, donde no puede haber filas vivas) sin el guardia de conteo previo que `h5c` (`20260911000002`) sí tiene. El guardia se detecta buscando `SELECT COUNT(*)` seguido de un `IF` antes del `CREATE UNIQUE INDEX` — funciona aunque el índice se cree vía `EXECUTE '...'` dentro de un `DO $$` (el patrón real de h5c), porque la búsqueda corre sobre texto crudo, no sobre SQL parseado.
+
+**Veredicto contra las 12 migraciones reales de fase 3** (`node scripts/check-migration-safety.mjs`
+con las 12 rutas explícitas): `exit 0` — ninguna rechazada — con exactamente dos `::warning::`:
+`20260909000001` (packages, sin `CONCURRENTLY`) y `20260911000002` (routes, sin `CONCURRENTLY`).
+Ninguna coincide con `20260909000001` marcada como peligrosa por mezclar DDL+backfill — el falso
+positivo que esta fase existe para evitar.
+
+**Alcance en CI: sólo migraciones nuevas del PR (`--base`), no todo el histórico.** La carpeta
+`packages/database/supabase/migrations/` tiene 90+ ficheros anteriores a este guard que
+mezclan DDL con un `UPDATE`/`INSERT...SELECT` de nivel superior legítimamente (confirmado
+corriendo el script sin `--base` contra el directorio completo: rechaza 8 migraciones viejas,
+entre ellas `20260313000001_epic5_enum_migration.sql` y `20260321000001_chile_comunas_normalization.sql`).
+Escanear el histórico completo habría rechazado el build para siempre. `ci.yml` invoca
+`check-migration-safety.sh --base "$BASE" packages/database/supabase/migrations`, con el mismo
+patrón de fallback de dos puntos (`git diff --diff-filter=A base...HEAD`, y si viene vacío
+`git diff --diff-filter=A base`) que `check-spec-fields.sh` ya usa para el mismo problema de
+fetch superficial.
+
+**Mutation-testing, confirmado a mano** (desactivar la regla → correr la suite → ver el flip
+esperado → revertir): las tres reglas (`checkDdlBackfillMix`, `checkIndexConcurrency`,
+`checkUniqueIndexGuard`), más el `continue` de tabla-creada-en-el-mismo-fichero y el `continue`
+de `CONCURRENTLY` — cada mutante hace fallar exactamente los tests que esa regla debería fijar,
+ninguno más.
+
+**No verificado por este agente:** review adversarial (lo hace `reviewer`) y `gh pr checks`/merge
+(los confirma el orquestador tras abrir el PR).
 
 ---
 

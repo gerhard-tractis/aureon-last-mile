@@ -37,6 +37,35 @@ jobs:
       - name: Check migration version prefixes are unique
         run: bash ./scripts/check-migration-versions.sh
 
+      # spec-87 fase 5: production was down six days (2026-09-02 to
+      # 2026-09-08) partly because nobody could tell, without hours of
+      # reading SQL by hand, whether the 12 pending migrations were safe.
+      # Only checks migrations ADDED in this PR — the directory holds 90+
+      # older migrations that predate this guard and legitimately mix DDL
+      # with a top-level backfill; scanning the whole history would reject
+      # the build forever on files nobody is touching.
+      - name: Check new migrations for unsafe patterns
+        run: |
+          BASE="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$BASE" ]; then
+            echo "No es un pull_request; este guard compara contra el base del PR. Saltando."
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
+          bash ./scripts/check-migration-safety.sh --base "$BASE" packages/database/supabase/migrations
+
+      - name: Test the migration-safety guard — rule 1 (DDL + backfill mix)
+        run: bash ./scripts/check-migration-safety.test.sh
+
+      - name: Test the migration-safety guard — rule 2 (index concurrency)
+        run: bash ./scripts/check-migration-safety-index.test.sh
+
+      - name: Test the migration-safety guard — rule 3 (unique index guard)
+        run: bash ./scripts/check-migration-safety-unique.test.sh
+
+      - name: Test the migration-safety guard — real migrations + --base scoping
+        run: bash ./scripts/check-migration-safety-real.test.sh
+
       # The production gate is only as good as its wiring, and this file has a
       # history of gating bugs that shipped green. Fails the build if any prod
       # deploy job stops depending on approve-production (spec-57).
