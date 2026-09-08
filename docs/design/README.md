@@ -18,7 +18,28 @@ Ocurrió el 2026-09-08 con spec-82 fase 1: el agente no pudo decidir dónde iban
 
 | Fichero | Proyecto | Pantallas |
 |---|---|---|
-| `Recogida.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **5a–5i** (Recogida) y **1a/1d/1l/1z** (móvil del conductor) |
+| `Recogida.dc.html` | `4656dcbc-00da-4548-a4da-b53e614264c1` | **`5a`–`5i`**, y solo esas: `5a` es el escritorio, `5b`–`5i` el móvil de cuadrilla |
+
+Verificable en el propio fichero:
+
+```
+grep -oE 'dv-opt" id="[^"]*"' docs/design/Recogida.dc.html
+```
+
+devuelve exactamente nueve artboards, `5a` a `5i`, y la etiqueta de turno del documento lo
+confirma: «Recogida · escritorio (5a) y móvil de cuadrilla (5b–5i)».
+
+> **Corrección (2026-09-08).** La primera versión de esta tabla afirmaba que el fichero cubría
+> además `1a/1d/1l/1z` (móvil del conductor). **Era falso** — salió de un `grep` mío demasiado
+> laxo que capturó coincidencias que no eran identificadores de pantalla. Lo detectaron dos
+> agentes por separado, cada uno mirando el fichero. Es exactamente el fallo que este directorio
+> existe para evitar: una afirmación sobre el diseño que nadie comprueba y que el siguiente
+> hereda.
+>
+> **Consecuencia práctica:** `spec-84` (móvil del conductor, `1g`/`1j`) **no** se valida con este
+> fichero. Esas pantallas pertenecen a la numeración del handoff original y, según el propio
+> spec-84, no se ha hecho una ronda nueva de reparto móvil. Tampoco se puede validar aquí el chip
+> global de sync (`SyncChip`), que es el mock `1e` de spec-54.
 
 No se copia `support.js`: es el runtime generado que renderiza el documento, no contenido de
 diseño.
