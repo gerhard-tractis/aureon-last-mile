@@ -1008,18 +1008,28 @@ describe('useOfflineQueue', () => {
 
       const { result } = renderHook(() => useOfflineQueue(OPERATOR_A, USER_A, send));
 
-      await waitFor(async () => {
-        const stored = await db.pickup_queue.get(entry.id!);
-        expect(stored?.retryCount).toBe(1);
-      });
+      await waitFor(
+        async () => {
+          const stored = await db.pickup_queue.get(entry.id!);
+          expect(stored?.retryCount).toBe(1);
+        },
+        { timeout: 5_000 },
+      );
 
-      // Drive well past MAX_RETRY_ATTEMPTS (10) worth of offline failures.
-      for (let i = 0; i < 14; i++) {
-        const stored = await db.pickup_queue.get(entry.id!);
-        if (stored?.status === 'dead') break;
-        await db.pickup_queue.update(entry.id!, { nextAttemptAt: null });
-        await result.current.drainNow();
-      }
+      // M-3, ronda 4 de review del PR #679 — mismo diagnóstico que M5: la
+      // primera falla deja un `setTimeout` real de 1000ms vivo, y conducir
+      // 14 vueltas reales de `drainNow()` bajo la contención de CPU de la
+      // suite completa puede tardar más que eso, dejando que ese timer
+      // dispare a mitad del bucle y compita por `drainingRef`. Igual que en
+      // M5: sembrar `retryCount` bien por encima de `MAX_RETRY_ATTEMPTS`
+      // directamente reduce a UNA sola pasada real necesaria — y es, de
+      // hecho, una prueba MÁS directa de lo que E4 afirma ("offline nunca
+      // cuenta contra el techo, sin importar cuántos intentos lleve ya"):
+      // si el drenador aplicara el techo a `offline` por error, esta única
+      // pasada con `retryCount` ya muy por encima de 10 lo revelaría de
+      // inmediato.
+      await db.pickup_queue.update(entry.id!, { retryCount: 15, nextAttemptAt: null });
+      await result.current.drainNow();
 
       const afterOutage = await db.pickup_queue.get(entry.id!);
       expect(afterOutage?.status).toBe('pending');
