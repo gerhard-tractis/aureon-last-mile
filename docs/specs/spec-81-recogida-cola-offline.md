@@ -155,15 +155,15 @@ Lógica pura y testeable sin navegador: encolar, listar pendientes, reclamar par
 - [x] **Ronda 5 de review — n6 (nitpick):** el docstring de `claimPending` decía que el token era "el único dato que distingue mi reclamación de la de otro drenador" sin acotar el alcance. Corregido: es único por entrada y milisegundo, no globalmente — inerte para este módulo (todo comparador acota primero por `:id`), pero no serviría como clave de un `Map<token, request>` entre entradas distintas.
 - [x] **Ronda 5 de review — comentario del test de N3:** el test negativo de H5/N3 también mata una "cuarta vía" (`toArray()` + filtro en memoria) sin un cuarto spy, porque Dexie implementa `Table.toArray()` como `this.toCollection().toArray()`. Documentado en el comentario del test para que no se lea como una enumeración incompleta.
 
-### Fase 2 — Drenado `[pending]`
+### Fase 2 — Drenado `[in_progress]`
 
 **Archivos:** `apps/frontend/src/hooks/useOfflineQueue.ts`, `+ test`
 
 Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con techo. FIFO por manifiesto.
 
-- [ ] Test: dos escaneos y un cierre encolados sin red → al reconectar salen en orden y el cierre va último.
-- [ ] Test: un 500 no descarta la entrada; un 409 idempotente sí la marca resuelta.
-- [ ] **Requisito (2026-09-07, hallazgo de la ronda 3 de review de spec-80
+- [x] Test: dos escaneos y un cierre encolados sin red → al reconectar salen en orden y el cierre va último.
+- [x] Test: un 500 no descarta la entrada; un 409 idempotente sí la marca resuelta.
+- [x] **Requisito (2026-09-07, hallazgo de la ronda 3 de review de spec-80
       fase 1).** `mapCloseManifestError` (spec-80) hoy da al operario **el
       mismo texto** para un `TypeError: Failed to fetch` (fallo de red — el
       caso normal en este muelle, la premisa de este spec) y para un
@@ -176,14 +176,57 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
       "sin conexión" del rechazo de negocio irrecuperable, y presentarle al
       operario mensajes y afordancias distintos para cada una (encolar y
       seguir vs. detenerse y pedir ayuda).
-- [ ] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1.
-- [ ] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
-- [ ] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
-- [ ] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
-- [ ] **El token deja de ser una marca de milisegundo y pasa a ser un nonce** (`crypto.randomUUID()` en un campo `claimToken` propio, o `${now}#${contador}`). Hoy `claimPending` usa `new Date().toISOString()`, así que **dos reclamaciones sucesivas de la misma entrada dentro del mismo ms producen el mismo token** y el guard vuelve a pasar: es el bug M1 otra vez, dentro de una ventana de 1 ms. Y no es hipotético — el docstring de `markFailed` señala que sin señal `fetch` rechaza casi al instante, así que claim y fallo caen en el mismo ms **como caso común**. Verificado: `claim → markFailed(t) → claim → markFailed(t)` deja `retryCount 2` y `pending`, cuando lo correcto es `retryCount 1` y `sending`. Mitigado si el drenador respeta `nextAttemptAt` con retroceso, pero no conviene depender de eso.
-- [ ] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
-- [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
-- [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
+      **Implementado:** `classifyCloseManifestError` (`lib/pickup/closeManifestErrors.ts`)
+      devuelve `{ kind: 'offline' | 'business', message }` — `offline` sólo
+      para un `TypeError` sin `code` de Postgrest y sin prefijo sentinela
+      reconocido; todo lo demás (incluido lo desconocido) es `business` por
+      defecto seguro. `complete/[loadId]/page.tsx` encola el cierre
+      (`enqueue(db, { type: 'close_manifest', ... })`) y navega fuera en la
+      rama offline; en la rama business deja el botón re-habilitado y no
+      encola nada.
+- [x] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1. **Implementado:** `RECLAIM_STALE_MS = 45_000` en `useOfflineQueue.ts`.
+- [x] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
+- [x] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
+- [x] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
+- [x] **El token deja de ser una marca de milisegundo y pasa a ser un nonce** (`crypto.randomUUID()` en un campo `claimToken` propio, o `${now}#${contador}`). Hoy `claimPending` usa `new Date().toISOString()`, así que **dos reclamaciones sucesivas de la misma entrada dentro del mismo ms producen el mismo token** y el guard vuelve a pasar: es el bug M1 otra vez, dentro de una ventana de 1 ms. Y no es hipotético — el docstring de `markFailed` señala que sin señal `fetch` rechaza casi al instante, así que claim y fallo caen en el mismo ms **como caso común**. Verificado: `claim → markFailed(t) → claim → markFailed(t)` deja `retryCount 2` y `pending`, cuando lo correcto es `retryCount 1` y `sending`. Mitigado si el drenador respeta `nextAttemptAt` con retroceso, pero no conviene depender de eso. **Implementado:** `claimToken` propio, `crypto.randomUUID()`.
+- [x] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
+- [x] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola. **Implementado:** `.modify({ status: "pending", claimToken: null })`; combinado con que `matchesClaim` ya exige `status === "sending"`, es defensa en profundidad, no la única barrera.
+- [x] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings. **Implementado:** helper `matchesClaim(entry, claimedAt)` compartido por los tres; los tres devuelven `Promise<number>`.
+
+**Nota de coordinación con fase 3 (review del PR #678, 2026-09-08):**
+`usePickupScans.ts` inserta N filas (una por bulto) bajo un único
+`clientOperationId` cuando el escaneo es a nivel de pedido — con el índice
+único simple que fase 3 tenía planeado, ese lote choca **consigo mismo** en
+el primer envío, no en un reintento, y un drenador que trate ciegamente
+"409 = ya aplicado" marcaría `sent` un escaneo que nunca se guardó. Decisión
+tomada en fase 3 (no tocada aquí): la clave pasa a
+`(operator_id, client_operation_id, package_id)` con `NULLS NOT DISTINCT`.
+Del lado de esta fase: `OfflineQueueSender.outcome === 'sent'` está
+documentado explícitamente (docstring en `useOfflineQueue.ts`) como "el
+servidor confirma que la operación COMPLETA está aplicada", no "recibí un
+409" — el hook no inspecciona códigos HTTP, confía en lo que el sender le
+diga, y el sender es responsabilidad de quien lo inyecte (aún sin escritor
+real para `pickup_scans` en esta fase; ver más abajo). Esta fase **no**
+escribe `client_operation_id` en ninguna tabla de Supabase — el único
+camino de red que añade (`close_manifest` en la rama offline) sigue sin
+tocar; se limita a encolar localmente — así que no depende de la columna ni
+de los tipos que fase 3 añade, y no hay nada que coordinar en el merge más
+allá de lo ya escrito arriba.
+
+**Alcance decidido en esta fase — sin escritor de `pickup_scan` real.** El
+`Goal` del spec señala que "no existe ningún escritor" para Recogida; esta
+fase entrega el **drenador** (`useOfflineQueue`, genérico sobre un
+`OfflineQueueSender` inyectado) y lo conecta a un único productor real:
+`complete/[loadId]/page.tsx` encola `close_manifest` cuando `close_manifest`
+falla por causa offline. Conectar `pickup/scan/[loadId]/page.tsx` (el
+escritor de escaneos individuales) al mismo drenador — decidir cuándo un
+escaneo se intenta en línea vs. se encola directamente sin intentarlo, y
+escribir el `OfflineQueueSender` real contra `pickup_scans` — no estaba en
+el checklist de esta fase (que lista sólo `useOfflineQueue.ts` como
+archivo) y además queda bloqueado por la columna `client_operation_id` de
+fase 3. Queda para cuando fase 3 mergee, como trabajo de conexión, no de
+diseño nuevo: la forma del `OfflineQueueSender` ya existe y está pensada
+para eso.
 
 ### Fase 3 — Idempotencia en el servidor `[in_progress]`
 
