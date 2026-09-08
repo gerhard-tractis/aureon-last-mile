@@ -14,7 +14,7 @@ newrepo() { # imprime la ruta de un repo con el harness completo y trackeado
   git -C "$d" config user.email t@t; git -C "$d" config user.name t
   mkdir -p "$d/.claude/agents" "$d/.claude/hooks"
   for a in implementer reviewer qa-e2e; do
-    printf -- '---\nname: %s\ndescription: hace cosas\n---\ncuerpo\n' "$a" > "$d/.claude/agents/$a.md"
+    printf -- '---\nname: %s\ndescription: hace cosas\n---\ncuerpo\n\n## No declares algo imposible\n\ntabla de capacidades\n' "$a" > "$d/.claude/agents/$a.md"
   done
   for h in keep-going.sh resume-check.sh; do echo '#!/usr/bin/env bash' > "$d/.claude/hooks/$h"; done
   echo '{}' > "$d/.claude/settings.json"
@@ -48,6 +48,12 @@ check "name del frontmatter que no coincide falla" 1 "$R"
 R="$(newrepo)"; sed -i '/^description:/d' "$R/.claude/agents/reviewer.md"
 git -C "$R" commit -aqm nodesc >/dev/null 2>&1
 check "agente sin description falla" 1 "$R"
+
+# spec-90: cada agente necesita la sección que le dice a quién escalar una
+# capacidad que le falta, en vez de declarar el bloqueo imposible en silencio.
+R="$(newrepo)"; sed -i '/^## No declares algo imposible$/,$d' "$R/.claude/agents/implementer.md"
+git -C "$R" commit -aqm nocapsection >/dev/null 2>&1
+check "agente sin seccion de capacidades falla" 1 "$R"
 
 R="$(newrepo)"; rm "$R/.claude/hooks/keep-going.sh"
 check "hook borrado falla" 1 "$R"
