@@ -207,6 +207,65 @@ Rechaza: manifiesto de otro operador, manifiesto ya `completed`, y firma del ope
 > columna (`GRANT UPDATE (status, started_at, total_orders, total_packages)`)
 > una vez `openPendingManifest.ts` sea la única vía de escritura fuera del
 > RPC. No se hizo aquí para no tocar ese flujo, fuera de alcance de esta fase.
+>
+> **Deuda declarada, no resuelta en esta fase (costura preexistente):**
+> `close_manifest` no comprueba `pickup_route_crew` ni
+> `assigned_to_user_id` — cualquier usuario del operador puede firmar la
+> carga de cualquier cuadrilla, no sólo la propia. Es preexistente (el
+> `.update()` crudo que este RPC reemplaza permitía exactamente lo mismo,
+> sin ningún guard), pero al pasar el cierre a `SECURITY DEFINER` server-side
+> esa falta de comprobación se vuelve más creíble como "correcta" de lo que
+> era. No se cierra aquí porque no era parte del alcance original de esta
+> fase — queda para cuando se defina la relación entre RPC y cuadrilla
+> asignada.
+
+> **Fix round 2 (2026-09-07) — tres correcciones más al RPC, un hueco de
+> alcance en el spec, y un candidato de columna para más adelante.**
+>
+> 1. **`ERRCODE` de "ya firmado" corregido de `P0002` a `23505`.** `P0002`
+>    es el `no_data_found` estándar de Postgres, y este repo ya lo usa en 8
+>    sitios (`20260812000005`, `20260827000003`) para «no encontrado» —
+>    PostgREST lo mapea a HTTP 404, no a 409. Un handler que siguiera el
+>    patrón del repo (`rpcError.code === 'P0002' && message.startsWith(...)`,
+>    como `app/api/dispatch/routes/[id]/blocks/route.ts`) habría leído «ya
+>    firmado» como «no existe». El idioma correcto para «esto ya pasó» en
+>    este repo es `23505` (`20260820000003`, `20260824000003`), que PostgREST
+>    mapea a 409.
+> 2. **Prefijos centinela añadidos a los tres mensajes de error**
+>    (`MANIFEST_ALREADY_SIGNED`, `MANIFEST_NOT_CLOSABLE`,
+>    `OPERATOR_SIGNATURE_REQUIRED`), siguiendo el patrón `ROUTE_NOT_FOUND`/
+>    `ROUTE_SEALED` del repo — un consumidor discrimina por
+>    `message.startsWith(...)`, no por prosa en inglés. `complete/[loadId]/
+>    page.tsx` los mapea a castellano vía
+>    `lib/pickup/closeManifestErrors.ts`.
+> 3. **`signing user not found` (rama muerta) eliminada.**
+>    `get_operator_id()` ya resuelve `v_operator` desde `public.users` por
+>    `auth.uid()` con `deleted_at IS NULL`, y `full_name` es `NOT NULL` en el
+>    esquema — esa comprobación nunca podía dispararse. `close_manifest`
+>    ahora usa `auth.uid()` directamente para el nombre, sin duplicar la
+>    fuente vía `auth.jwt()->>'sub'`.
+>
+> **Hueco de alcance corregido en este mismo párrafo (no en el código):**
+> este documento afirmaba que el rescate de H1 "existe" sin decir que **no
+> hay ninguna forma de llegar a esa pantalla desde la app** para un
+> manifiesto que el hub ya cerró. La única navegación a
+> `/app/pickup/complete/[loadId]` es `review/[loadId]/page.tsx`, alcanzable
+> sólo desde la lista de manifiestos **pendientes** — un manifiesto que
+> `trg_route_receptions_status_sync` ya completó no aparece ahí, aparece en
+> `get_completed_manifests`/`get_in_transit_manifests`, y ninguna de esas
+> tarjetas enlaza a Firma. El RPC permite el rescate; la entrada de UI para
+> alcanzarlo sin teclear la URL a mano **es fase 2**, no esta.
+>
+> **Candidato para una fase posterior:** `completed_at` se preserva
+> correctamente vía `COALESCE` en el rescate (es "cuándo terminó la carga",
+> no "cuándo se firmó" — sobreescribirlo pondría el día de la firma sobre
+> una carga recibida el día anterior, rompiendo métricas de duración). Pero
+> eso deja el momento real de la firma sin ninguna columna consultable —
+> sólo en `updated_at` (sobreescribible por cualquier otro `UPDATE`) y en el
+> trigger de auditoría. Justo en el caso de rescate, que es cuando esa fecha
+> importa para un reclamo de indemnización, es recuperable pero no
+> consultable directamente. Un `signed_at TIMESTAMPTZ` es candidato de una
+> fase futura.
 
 - [ ] Test pgTAP primero, incluyendo el rechazo cross-tenant. Correr con `scripts/pgtap-local.sh` (los tests SQL **no** corren en CI; ver spec-51).
 - [ ] Implementar. Migración con prefijo de versión único.

@@ -10,6 +10,7 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { SignaturePad } from '@/components/pickup/SignaturePad';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
+import { mapCloseManifestError } from '@/lib/pickup/closeManifestErrors';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { createSPAClient } from '@/lib/supabase/client';
 import { CheckCircle, XCircle, Target, Shield } from 'lucide-react';
@@ -135,15 +136,12 @@ export default function CompletionPage() {
       // raw .update() almost always just succeeded. Swallowing the error
       // left the operator staring at a re-enabled button with no idea
       // whether the signature was captured — surface it.
-      // Supabase RPC errors (PostgrestError) are plain objects with a
-      // `message`, not `Error` instances — check for the property directly
-      // rather than `instanceof Error`.
-      const message =
-        (typeof err === 'object' && err !== null && 'message' in err
-          ? String((err as { message: unknown }).message)
-          : null) || 'No se pudo completar el manifiesto';
+      // F3 (fix round 2): close_manifest raises in English with a sentinel
+      // prefix (MANIFEST_ALREADY_SIGNED, MANIFEST_NOT_CLOSABLE,
+      // OPERATOR_SIGNATURE_REQUIRED) — map it to Spanish rather than
+      // painting raw Postgres text on an all-Spanish PWA.
       console.error('Failed to complete manifest:', err);
-      toast.error(message);
+      toast.error(mapCloseManifestError(err));
       setIsSubmitting(false);
     }
   };

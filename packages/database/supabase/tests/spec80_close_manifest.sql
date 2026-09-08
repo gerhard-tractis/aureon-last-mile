@@ -100,9 +100,15 @@ UPDATE public.manifests
 
 -- CARGA-80-3: the OTHER closer already ran (route reception finished the
 -- hub side) and left the manifest completed with no signature at all.
+-- reception_status='received' too (F6, fix round 2): the real trigger
+-- (trg_route_receptions_status_sync) sets it on this same UPDATE — matching
+-- it here means a future guard added on that column would actually be
+-- exercised by this fixture instead of silently passing on a NULL it would
+-- never see in production.
 UPDATE public.manifests
    SET status = 'completed', started_at = NOW() - INTERVAL '2 hours',
-       completed_at = NOW() - INTERVAL '1 hour'
+       completed_at = NOW() - INTERVAL '1 hour',
+       reception_status = 'received'
  WHERE operator_id = '00000000-0000-4000-8000-000000008000'
    AND external_load_id = 'CARGA-80-3';
 
@@ -136,13 +142,17 @@ SELECT set_config(
 );
 
 -- ── 1. Rejects missing operator signature ───────────────────────────────────
+-- F2 (fix round 2): sentinel prefix, so a caller discriminates by
+-- message.startsWith('OPERATOR_SIGNATURE_REQUIRED'), not by prose alone —
+-- the repo's own pattern (ROUTE_NOT_FOUND, ROUTE_SEALED, POSITION_NOT_FOUND
+-- in 20260827000003_spec71_load_position_assignment.sql).
 SELECT throws_ok(
   $$ SELECT public.close_manifest(
        (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008000' AND external_load_id = 'CARGA-80-1'),
        '{}'::jsonb
      ) $$,
   'P0001',
-  'operator signature is required',
+  'OPERATOR_SIGNATURE_REQUIRED: operator signature is required',
   'close_manifest rejects a call with no operator signature'
 );
 
@@ -295,14 +305,23 @@ SELECT is(
 );
 
 -- ── 7. Rejects a manifest that is already signed (idempotent double-close) ─
+-- F2 (fix round 2, BLOCKING): P0002 is Postgres's standard no_data_found —
+-- the repo already uses it for "not found" in 8 places (20260812000005,
+-- 20260827000003) and app/api/dispatch/routes/[id]/blocks/route.ts reads
+-- rpcError.code === 'P0002' to mean 404. PostgREST maps P0002 to HTTP 404.
+-- "Already signed" is a 409 idempotent-conflict, not a 404 — the repo's own
+-- idiom for that is 23505 (unique_violation), used by
+-- 20260820000003_spec61_start_pickup_route_crew.sql and
+-- 20260824000003_spec66_start_pickup_route_ops_leader.sql for the same
+-- "this already happened" shape, and PostgREST maps 23505 to 409.
 SELECT throws_ok(
   $$ SELECT public.close_manifest(
        (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-000000008000' AND external_load_id = 'CARGA-80-1'),
        '{"operator_signature":"data:image/png;base64,CCC"}'::jsonb
      ) $$,
-  'P0002',
-  'manifest already signed',
-  'close_manifest rejects a manifest whose operator signature is already recorded'
+  '23505',
+  'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature',
+  'close_manifest rejects a manifest whose operator signature is already recorded, as a 409 (23505) not a 404 (P0002)'
 );
 
 -- ── 8. H1 — rescues the signature onto a manifest the OTHER closer (hub
@@ -343,7 +362,7 @@ SELECT throws_ok(
        '{"operator_signature":"data:image/png;base64,GGG"}'::jsonb
      ) $$,
   'P0001',
-  'manifest is not in a closable state (status: pending)',
+  'MANIFEST_NOT_CLOSABLE: manifest is not in a closable state (status: pending)',
   'close_manifest refuses to sign a manifest that remove_manifest_from_route returned to pending'
 );
 

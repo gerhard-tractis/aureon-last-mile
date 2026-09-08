@@ -178,13 +178,11 @@ describe('CompletionPage', () => {
     });
   });
 
-  it('surfaces an RPC rejection to the operator instead of failing silently (H2)', async () => {
-    mockRpc.mockResolvedValueOnce({
-      data: null,
-      error: { message: 'manifest already signed' },
-    });
-    const { toast } = await import('sonner');
-
+  // F3 (fix round 2): close_manifest raises in English with a sentinel
+  // prefix (repo pattern — see app/api/dispatch/routes/[id]/blocks/route.ts
+  // reading rpcError.code + message.startsWith(...)). A crew leader on an
+  // all-Spanish PWA must never see that raw Postgres text.
+  const completeAndSubmit = async () => {
     render(<CompletionPage />);
     const sigPad = await screen.findByTestId('signature-pad-Firma del operador (obligatoria)');
     fireEvent.click(sigPad);
@@ -198,11 +196,22 @@ describe('CompletionPage', () => {
       name: /confirmar y completar/i,
     });
     fireEvent.click(confirmButton);
+  };
+
+  it('maps MANIFEST_ALREADY_SIGNED to a Spanish message, not the raw RPC text', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
-        expect.stringContaining('manifest already signed')
-      );
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+      const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(message).not.toContain('MANIFEST_ALREADY_SIGNED');
+      expect(message).toMatch(/[áéíóúñ]|ya (fue|está)/i);
     });
 
     // The button must be re-enabled so the operator can retry or investigate
@@ -211,6 +220,37 @@ describe('CompletionPage', () => {
       expect(
         screen.getByRole('button', { name: /completar y generar recibo/i })
       ).not.toBeDisabled();
+    });
+  });
+
+  it('maps MANIFEST_NOT_CLOSABLE to a Spanish message', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'MANIFEST_NOT_CLOSABLE: manifest is not in a closable state (status: pending)' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(expect.any(String));
+      const [message] = (toast.error as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(message).not.toContain('MANIFEST_NOT_CLOSABLE');
+      expect(message).toMatch(/[áéíóúñ]/i);
+    });
+  });
+
+  it('falls back to a generic Spanish message for an unrecognized RPC error', async () => {
+    mockRpc.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'manifest not found' },
+    });
+    const { toast } = await import('sonner');
+
+    await completeAndSubmit();
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith('No se pudo completar el manifiesto');
     });
   });
 });
