@@ -175,6 +175,22 @@ describe('useBlockedPickupEntries', () => {
     });
   });
 
+  // Carrera entre las dos lecturas independientes: `blockedCount`
+  // (`useSyncQueue`, su propio poll) puede llegar STALE — más chico que lo
+  // que esta lectura, más reciente, ya encuentra. `crossUserBlockedCount`
+  // no puede irse a negativo en ese caso.
+  it('clamps crossUserBlockedCount to 0 when a stale blockedCount is smaller than what this read finds', async () => {
+    await db.pickup_queue.bulkAdd([
+      { ...baseEntry, clientOperationId: 'dead-1', manifestId: 'm-1', type: 'close_manifest', status: 'dead', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      { ...baseEntry, clientOperationId: 'dead-2', manifestId: 'm-2', type: 'close_manifest', status: 'dead', lastError: 'MANIFEST_NOT_CLOSABLE' },
+    ]);
+    // blockedCount stale en 1, pero ya hay 2 dead reales.
+    const { result } = renderHook(() => useBlockedPickupEntries('op-1', 1));
+
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.crossUserBlockedCount).toBe(0);
+  });
+
   // Menor (ronda 2 de review del PR #725) — un mutante que quitara el
   // `setEntries([])` de la rama `idle` sobrevivía porque ningún test volvía
   // a `blockedCount: 0` DESPUÉS de haber cargado filas.

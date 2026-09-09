@@ -280,6 +280,15 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
     });
 
     it('does not include a pending entry merely blocked behind another dead or cross-user entry — only literal dead rows', async () => {
+      // Nota (ronda 2 de review del PR #725, spec-81 fase 4): esta misma
+      // forma de datos (un `dead` + una `pending` en el MISMO manifiesto)
+      // es exactamente el caso que `useBlockedPickupEntries.test.ts`
+      // ("sameManifestBlockedCount vs crossUserBlockedCount") ejercita del
+      // lado del chip — esa `pending` no se libera sola, se resuelve
+      // cuando el `dead` de aquí se resuelva. Este test sólo mide el
+      // alcance de `listDeadPickupEntries`; el otro mide qué le dice el
+      // chip al operario sobre ella.
+      //
       // `getBlockedPickupCount` cuenta esta `pending` como bloqueada
       // (M-2, ronda 4 del PR #679) porque no puede avanzar — pero no tiene
       // `lastError` ni ningún rechazo que explicar; contarla aquí

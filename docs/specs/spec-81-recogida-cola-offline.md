@@ -1140,7 +1140,10 @@ review):**
 
 ### Fase 4 — Chip de sync `[in_progress]`
 
-**Archivos:** `components/ConnectionStatusBanner.tsx` → chip; su test e i18n
+**Archivos:** `components/SyncChip.tsx` (el `ConnectionStatusBanner.tsx` de
+este campo no existe desde 2026-08-16, `0fb4184` — ver el ítem 1 abajo),
+`hooks/useBlockedPickupEntries.ts`, `lib/offline/queue.ts`
+(`countPendingInManifests`), sus tests, `lib/i18n/es.ts`
 
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
@@ -1178,19 +1181,64 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
       como bloqueada en `getBlockedPickupCount` pero ya NO frena
       `close_manifest`; el chip lo dice explícitamente en vez de dejar que
       el operario asuma que si el badge está en rojo, la carga no puede
-      cerrarse). Vía de resolución: texto "Contacta a soporte u
-      operaciones para resolverlo" — no un botón de reintento nuevo (el
-      spec pide explícitamente "no necesariamente reintentar solo, dado
-      que `dead` es un rechazo de negocio, no de red"; el reintento ya
-      vive en la pantalla de cierre desde fase 2). El detalle también
-      declara lo que NO puede explicar: `getBlockedPickupCount` cuenta
-      también una `pending` bloqueada temporalmente detrás de otro
-      operario (se libera sola, nunca tuvo `lastError`) —
-      `listDeadPickupEntries` no la trae a propósito (mezclar "espera 15
-      minutos" con "pide ayuda" sería la misma mentira al revés), y el
-      panel lo dice explícitamente ("+N más esperando a otro operario; se
-      liberan solas") en vez de hacer desaparecer esa diferencia entre el
-      conteo del badge y las filas listadas.
+      cerrarse).
+
+      **Ronda 2 de review del PR #725 (2026-09-09) — B1 bloqueante, corregido
+      aquí y no sólo en el código.** La primera versión de este párrafo
+      afirmaba que "el resto de `blockedCount` no explicado por
+      `listDeadPickupEntries` es espera cross-user que se libera sola" —
+      **falso**. `manifestIsBlocked` (`queue-blocking.ts`) prueba PRIMERO
+      `manifestHasDeadEntry`, y esa rama domina: cualquier `pending` del
+      MISMO manifiesto que un `dead` cuenta como bloqueada sin que exista
+      ningún otro operario, y esa `pending` no se libera sola — se resuelve
+      cuando el `dead` de arriba se resuelva. Medido con Dexie (mismo
+      operador, mismo usuario, un `close_manifest` `dead` y cuatro
+      `pickup_scan` `pending` en el mismo manifiesto): `getBlockedPickupCount
+      = 5`, `listDeadPickupEntries = 1`, resto = 4, y el texto anterior
+      habría dicho "+4 esperando a otro operario; se liberan solas" sobre
+      cuatro filas que no van a salir hasta que se resuelva la de arriba.
+      **Corregido:** `countPendingInManifests` (`lib/offline/queue.ts`)
+      cuenta las `pending` que comparten manifiesto con un `dead` ya
+      listado; `useBlockedPickupEntries` separa `sameManifestBlockedCount`
+      (se resuelven cuando el `dead` de arriba se resuelva, nunca solas) de
+      `crossUserBlockedCount` (el resto, sin ningún `dead` que lo explique
+      — esa sí se libera sola). El panel muestra las dos causas por
+      separado, nunca mezcladas.
+
+      **M1 (mayor, misma ronda).** El texto original de la vía de
+      resolución ("Contacta a soporte u operaciones para resolverlo")
+      nombraba al actor equivocado: `retryDead` ya existe y ya está
+      cableado al botón "REQUIERE AYUDA · Toca para reintentar" en
+      `complete/[loadId]/page.tsx` — el operario puede resolver esto con un
+      toque, sin ningún ticket. **Corregido:** cada `dead` listado dice
+      "Abre la carga `<manifestId>` y toca REQUIERE AYUDA para reintentar."
+      Sigue sin añadirse ningún botón nuevo al chip — eso seguía siendo
+      correcto — pero "no añadir botón" no es lo mismo que "mandar a
+      soporte".
+
+      **M2/M3 (menores, mismos huecos de test, sin cambio de comportamiento
+      nuevo).** El test de "bloquea el cierre" no anclaba el regex (la rama
+      contraria, "No bloquea el cierre…", lo satisfacía como substring) y
+      la rama "nada requiere ayuda" podía coexistir sin test con un `dead`
+      ya listado (contradictorio: la carga de arriba SÍ requiere ayuda).
+      Cerrados con regex ancladas y aserciones negativas cruzadas.
+
+      **Menor:** el panel quedaba en blanco mientras el hook seguía en
+      `idle` con `blockedCount > 0` (la ventana entre el mount y su primera
+      lectura) — rama nueva "Cargando detalle…".
+
+      **Fuera de alcance, declarado en la ronda 2 de review del PR #725, no
+      arreglado aquí.** `complete/[loadId]/page.tsx:296` pinta el
+      `blockedCount` GLOBAL (device/operador, no por manifiesto) en una
+      pantalla que es POR carga, y su `handleRetryBlocked` sólo reintenta
+      el manifiesto que esa pantalla tiene abierto. Un `dead` en la carga
+      m-1 hace que la pantalla de m-2 muestre "1 REQUIERE AYUDA" también, y
+      tocarlo ahí revive cero filas. Es preexistente a esta fase (el badge
+      ya existía desde fase 2) — pero el panel de `SyncChip`, que sí nombra
+      el manifiesto real, es lo que lo vuelve visible como contradicción.
+      Queda anotado, no resuelto: la pantalla de cierre necesitaría filtrar
+      `blockedCount`/las entradas `dead` por el `manifestId` que tiene
+      abierto, trabajo de una fase futura si se decide que vale la pena.
 
 ### Fase 5 — Fotos `[in_progress]`
 
