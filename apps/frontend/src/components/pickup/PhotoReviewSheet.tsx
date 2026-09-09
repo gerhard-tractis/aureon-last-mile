@@ -8,10 +8,17 @@ interface PhotoReviewSheetProps {
   loadLabel: string;
   /** Hoja N que se acaba de capturar. */
   sheetNumber: number;
-  photo: File | Blob;
+  /**
+   * M2, ronda 2 de review del PR #713 — estrechado a `File`: es lo único
+   * que produce `ManifestCameraSheet` (canvas y fallback por igual).
+   * `useUploadManifestDocument` exige `File`, y `File | Blob` no compilaba
+   * en el punto de inserción real. La rama offline de spec-81 encaja igual
+   * (`File extends Blob`).
+   */
+  photo: File;
   onRetake: () => void;
   /** El caller decide qué hacer con la foto (subir de inmediato, o encolar sin red). */
-  onUsePhoto: (photo: File | Blob) => void;
+  onUsePhoto: (photo: File) => void;
   /**
    * Deshabilita ambas acciones mientras el caller procesa `onUsePhoto`
    * (p.ej. una subida en curso). Opcional: el guardado puede ser
@@ -24,10 +31,13 @@ interface PhotoReviewSheetProps {
  * spec-80 fase 4, mock `5h` — "revisión de la foto antes de guardarla".
  *
  * Puramente presentacional: no sube nada ni decide el destino de la foto.
- * `onUsePhoto` recibe el mismo `File`/`Blob` capturado por `5g` y es quien
- * la monta (fuera de esta fase) quien decide si sube de inmediato o la
- * encola sin red — ver "diseña asumiendo que la subida puede diferirse" en
- * el spec.
+ * `onUsePhoto` recibe el mismo `File` capturado por `5g` y es quien la monta
+ * (fuera de esta fase) quien decide si sube de inmediato o la encola sin
+ * red — ver "diseña asumiendo que la subida puede diferirse" en el spec.
+ *
+ * M4, ronda 2 de review del PR #713 (seguimiento, no bloqueante) — sin
+ * `role="dialog"`, sin trampa de foco, sin manejo de `Escape`/atrás de
+ * Android. Anotado en el spec; no se implementa aquí.
  */
 export function PhotoReviewSheet({
   loadLabel,
@@ -46,7 +56,12 @@ export function PhotoReviewSheet({
   }, [photo]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0a0908] text-[#f5ecd7]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Revisar hoja ${sheetNumber}`}
+      className="fixed inset-0 z-50 flex flex-col bg-[#0a0908] text-[#f5ecd7]"
+    >
       <div className="flex-none flex items-center gap-3 h-14 px-4">
         <div className="flex flex-col gap-0.5 min-w-0">
           <span className="text-sm font-semibold">Revisar hoja {sheetNumber}</span>

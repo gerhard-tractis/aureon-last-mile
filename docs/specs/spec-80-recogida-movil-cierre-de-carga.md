@@ -915,10 +915,38 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 `5g`: encuadre a pantalla completa, «Encuadra la hoja completa, con la firma visible», tira de `YA CAPTURADAS`, botón **Listo**.
 `5h`: revisión con la pregunta del mock — «¿Se lee la firma? Una foto borrosa no sirve como respaldo» — y **Repetir** / **Usar foto**.
 
-- [ ] Tests con `getUserMedia` mockeado.
+- [x] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
 
 **Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
+
+> **Ronda 2 de review del PR #713 — bloqueante cerrado, más seguimientos.**
+> B1 (bloqueante): el obturador estaba habilitado desde el primer render, antes
+> de que `getUserMedia` resolviera — un toque durante el diálogo de permiso del
+> sistema producía un canvas 1080×1440 sin señal (negro sólido, ~1.5MB, `File`
+> "válido") entregado como si fuera el respaldo fotográfico. Corregido: el
+> obturador se gatea con `videoReady` (derivado de `loadedmetadata` +
+> `videoWidth/videoHeight > 0`), y `handleShutter` rechaza defensivamente
+> `videoWidth === 0` en vez de sustituirlo por un tamaño por defecto.
+> M2: `PhotoReviewSheet.onUsePhoto`/`photo` se estrechó de `File | Blob` a
+> `File` — es lo único que `ManifestCameraSheet` produce, y `File | Blob` no
+> compilaba contra `useUploadManifestDocument`.
+> M3: el fallback (`<input capture>`) ahora valida tamaño (10MiB) y mime
+> contra la lista del bucket `manifests`
+> (`20260430000001_create_manifests_storage_bucket.sql`) **en la captura**,
+> no al drenar la cola de spec-81 horas después sin nadie para repetir la foto.
+> M1 (seguimiento, no bloqueante): `ManifestCameraSheet` acepta `open` para
+> quien siga la convención local de Radix (montado siempre); documentado que
+> `5g`/`5h` nunca deben montarse/abrirse a la vez.
+> M4 (seguimiento, no bloqueante): ambas pantallas llevan `role="dialog"`/
+> `aria-modal`, pero siguen sin trampa de foco ni manejo de `Escape`/atrás de
+> Android — queda declarado como hueco, no resuelto aquí.
+> El icono `Zap` decorativo del header de `5g` (parecía un control sin
+> función) se quitó en vez de implementarse.
+> Mutation-testing repetido tras los arreglos, incluidos los 5 mutantes que la
+> ronda 2 señaló como sobrevivientes (calidad JPEG, `capture`, bytes del
+> `File`, mime derivado del blob real, y los nuevos guards de B1/M1/M3) —
+> todos mueren contra su test.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 
