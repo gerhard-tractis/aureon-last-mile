@@ -504,8 +504,8 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
 > sin cambios.
 
-**Archivos** (actualizado en ronda 4 — el índice se había quedado en el plan
-de ronda 1, ver `> Bloqueo C` de la ronda 4 en la evidencia de arriba):
+**Archivos:** (actualizado en ronda 4 — el índice se había quedado en el plan
+de ronda 1, ver el hallazgo C de la ronda 4 en la evidencia de arriba):
 
 - `packages/database/supabase/migrations/20260922000001_spec88_fase3_custom_access_token_hook_acl.sql`
   — `GRANT EXECUTE ... TO supabase_auth_admin`, `REVOKE ALL ... FROM PUBLIC`,
