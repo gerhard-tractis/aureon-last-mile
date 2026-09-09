@@ -113,9 +113,54 @@ export interface PickupQueueEntry {
 // caught this because it excludes `*.test.ts`, and nothing outside tests
 // called these functions with the real `db` until `useOfflineQueue` (fase
 // 2, first production caller).
+/**
+ * spec-82 fase 2 — caché de LECTURA offline por manifiesto ("DESCARGAR" de
+ * `5c`). Hermana de `pickup_queue` pero de naturaleza distinta: `pickup_queue`
+ * es trabajo por ENVIAR (con `status`/reintentos); esto es una fotografía ya
+ * RECIBIDA, sin reintento — se re-descarga a mano, nunca sola. Ver "Por qué
+ * una tabla nueva" en docs/specs/spec-82-recogida-movil-asignacion-y-ruta.md,
+ * fase 2.
+ *
+ * Un registro por `(operatorId, externalLoadId)` — nunca dos: `saveManifestSnapshot`
+ * (`lib/offline/manifest-cache.ts`) sobrescribe la fila existente en vez de
+ * agregar una segunda, para que una re-descarga no deje una copia vieja
+ * compitiendo con la nueva.
+ */
+export interface CachedManifestOrder {
+  id: string;
+  order_number: string;
+  customer_name: string;
+  comuna: string;
+  delivery_address: string;
+  packages: Array<{
+    id: string;
+    label: string;
+    package_number: string | null;
+    sku_items: Array<{ sku: string; description: string; quantity: number }>;
+    declared_weight_kg: number | null;
+  }>;
+}
+
+export interface CachedManifestRow {
+  id?: number;
+  operatorId: string;
+  externalLoadId: string;
+  manifestId: string;
+  totalPackages: number | null;
+  pickupRouteId: string | null;
+  retailerName: string | null;
+  pickupLocation: string | null;
+  orders: CachedManifestOrder[];
+  /** ISO 8601 — cuándo se tomó esta fotografía. Sin invalidación automática
+   * (ver el spec): una fila vieja sigue sirviendo hasta que alguien vuelva a
+   * tocar "DESCARGAR" con señal. */
+  downloadedAt: string;
+}
+
 export class AureonOfflineDB extends Dexie {
   scan_queue!: EntityTable<ScanQueue, 'id'>;
   pickup_queue!: EntityTable<PickupQueueEntry, 'id'>;
+  manifest_cache!: EntityTable<CachedManifestRow, 'id'>;
 
   constructor() {
     super('aureon_offline');
@@ -131,6 +176,14 @@ export class AureonOfflineDB extends Dexie {
     // publicaron (ver spec-81, ronda 1, B7).
     this.version(2).stores({
       pickup_queue: '++id, clientOperationId, operatorId, manifestId, status',
+    });
+
+    // spec-82 fase 2 — caché de lectura offline por manifiesto. Igual
+    // congelamiento de índices que arriba: si una fase futura necesita otro
+    // índice, va en una versión nueva, no editando ésta.
+    this.version(3).stores({
+      manifest_cache:
+        '++id, operatorId, externalLoadId, [operatorId+externalLoadId]',
     });
   }
 }
