@@ -7,7 +7,13 @@
  * nueva (version 2) en la misma base que ya usa `db.scan_queue`.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { db, getBlockedPickupCount, getPendingPickupCount, requestPersistentStorage } from './db';
+import {
+  db,
+  getBlockedPickupCount,
+  getPendingPickupCount,
+  listDeadPickupEntries,
+  requestPersistentStorage,
+} from './db';
 import * as queueBlockingLib from './offline/queue-blocking';
 
 describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
@@ -226,6 +232,87 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
       await getPendingPickupCount('op-1');
 
       expect(manifestIsBlockedSpy.mock.calls.length).toBeLessThanOrEqual(1);
+    });
+  });
+
+  // spec-81 fase 4 — el detalle detrás de `getBlockedPickupCount`. Ese
+  // contador mezcla dos cosas que necesitan afordancias distintas: un
+  // `dead` real (rechazo de negocio, tiene `lastError`, necesita ayuda
+  // humana) y un `pending` bloqueado temporalmente por otro operario
+  // (`manifestBlockedForUser` — se libera solo, nunca tuvo `lastError`
+  // porque nunca llegó a intentarse). El chip necesita SÓLO lo primero para
+  // explicar "qué manifiesto está bloqueado y por qué" — mostrar lo segundo
+  // como si necesitara ayuda sería mentir en la otra dirección.
+  describe('listDeadPickupEntries', () => {
+    const baseEntry = {
+      manifestId: 'm-1',
+      type: 'pickup_scan' as const,
+      payload: {},
+      retryCount: 3,
+      claimToken: null,
+      lastAttemptAt: null,
+      nextAttemptAt: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    it('returns only dead entries for the requesting operator, with their manifest and lastError', async () => {
+      await db.pickup_queue.bulkAdd([
+        {
+          ...baseEntry,
+          clientOperationId: 'a',
+          operatorId: 'op-1',
+          userId: 'user-a',
+          status: 'dead',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', userId: 'user-a', status: 'pending' },
+        {
+          ...baseEntry,
+          clientOperationId: 'c',
+          operatorId: 'op-2',
+          userId: 'user-a',
+          status: 'dead',
+          lastError: 'OPERATOR_SIGNATURE_REQUIRED',
+        },
+      ]);
+
+      const entries = await listDeadPickupEntries('op-1');
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0].clientOperationId).toBe('a');
+      expect(entries[0].manifestId).toBe('m-1');
+      expect(entries[0].lastError).toBe('MANIFEST_NOT_CLOSABLE');
+    });
+
+    it('does not include a pending entry merely blocked behind another dead or cross-user entry — only literal dead rows', async () => {
+      // `getBlockedPickupCount` cuenta esta `pending` como bloqueada
+      // (M-2, ronda 4 del PR #679) porque no puede avanzar — pero no tiene
+      // `lastError` ni ningún rechazo que explicar; contarla aquí
+      // convertiría "está detrás de un dead" en "esta fila necesita ayuda",
+      // que no es cierto para ELLA.
+      await db.pickup_queue.bulkAdd([
+        {
+          ...baseEntry,
+          clientOperationId: 'a',
+          operatorId: 'op-1',
+          userId: 'user-a',
+          status: 'dead',
+          lastError: 'MANIFEST_NOT_CLOSABLE',
+        },
+        { ...baseEntry, clientOperationId: 'b', operatorId: 'op-1', userId: 'user-a', status: 'pending' },
+      ]);
+
+      const entries = await listDeadPickupEntries('op-1');
+
+      expect(entries.map((e) => e.clientOperationId)).toEqual(['a']);
+    });
+
+    it('is empty when nothing is dead', async () => {
+      await db.pickup_queue.bulkAdd([
+        { ...baseEntry, clientOperationId: 'a', operatorId: 'op-1', userId: 'user-a', status: 'pending' },
+      ]);
+
+      await expect(listDeadPickupEntries('op-1')).resolves.toEqual([]);
     });
   });
 
