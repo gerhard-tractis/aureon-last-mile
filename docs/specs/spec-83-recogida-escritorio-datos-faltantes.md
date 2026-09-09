@@ -2,7 +2,11 @@
 
 > **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; **corrección 2026-09-09**: la asignación no aterriza aquí — el usuario decidió que la define el líder de recogida en el punto de retiro, in-situ, no desde este panel de escritorio), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
-**Status:** in progress
+**Status:** awaiting_user_test — fase 1 y 4 `[done]`, fase 3 `[parked]`
+(decisión del usuario, se retoma cuando el rollout lo pida). Sólo queda fase 2
+`[blocked]`: falta que el usuario decida qué gana el borde izquierdo de la
+fila cuando ventana y merma coinciden (ver `> Bloqueo:` en la fase 2). Ningún
+agente puede tomar nada más aquí hasta esa decisión.
 **Verify:** unit, e2e-qa
 
 > **Nota (2026-09-07).** El punto 1 («Merma en cierres», «2 faltantes de 44»)
@@ -199,6 +203,14 @@ izquierdo de la fila.
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
 - [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
 
+> Bloqueo: se intentó resolver qué gana el borde izquierdo de la fila y
+> devolvió un choque sin árbitro — verificado en `ManifestTable.tsx:103-110`,
+> que ya usa `border-l-*` para dos señales existentes (selección y "en
+> progreso"/merma); añadirle una tercera (proximidad al cierre de ventana)
+> sin decidir si reemplaza o convive con las otras dos no tiene mock que lo
+> especifique — 2026-09-08 — desbloquea: usuario (qué gana el borde izquierdo
+> cuando ambas señales aplican a la vez).
+
 ### Fase 3 — Ocupación `[parked]`
 
 **Decisión del usuario (2026-09-09), textual:** «No hay capacity para esto
@@ -212,7 +224,7 @@ nada.
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
 
-### Fase 4 — Diff visual `[in_progress]`
+### Fase 4 — Diff visual `[done]`
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/StatTile.tsx`, y sus tests
 
@@ -247,6 +259,23 @@ Tests nuevos para cada uno de los cuatro, TDD confirmando rojo por la razón cor
 - **spec-82** declara a spec-83 como downstream suyo, pero no al revés: `spec-82-recogida-movil-asignacion-y-ruta.md` no menciona `ManifestTable`, `PickupRouteDraftPanel`, `TodayClosuresPanel` ni `StatTile` (verificado con `grep`) — es enteramente móvil (`5b`–`5i`). Nada que reconciliar en esa dirección.
 - **Ningún otro spec activo describe estos cuatro componentes de escritorio** más allá de spec-54 (que ya se citó como el origen y quedó superado por este mismo spec) y este propio spec-83.
 - El **filtro de merma `status <> 'resolved'`** (spec-85, fase 1 de este spec) no se tocó: esta fase no cambió ninguna consulta ni el hook `useManifests`, sólo el render de campos ya presentes en `CompletedManifest` y `ManifestRow`. El mock no pide nada que lo contradiga — `5a` no distingue estados de discrepancia, sólo muestra el conteo.
+
+> Implementado por: implementer — rama `feat/spec-83-fase-4-diff-visual`, PR #702 (mergeado como `8a626ab`).
+> Review: reviewer — dos rondas sobre PR #702. Ronda 1: el spec afirmaba
+> fidelidad al mock donde no la había, en tres puntos dentro del alcance
+> declarado más dos citados textualmente en el propio spec — de ahí nacieron
+> los hallazgos 1-4 y las cinco divergencias declaradas arriba. Ronda 2:
+> aprobado, con siete mutaciones aplicadas por el reviewer sobre los tests
+> nuevos (confirmando que cada fix tiene un test que lo protege) y
+> confirmación de que la reescritura del archivo de tests de
+> `TodayClosuresPanel` no perdió cobertura de la fase 1.
+> QA: PR #702 merged 2026-09-09T03:22:18Z — `gh pr checks 702` verde (Lint,
+> Type-Check, Test, Build x2; Vercel). Suite completa de `components/pickup`
+> (46 archivos, 423 tests) en verde. Deploy Production sobre el merge commit
+> `8a626ab` (`run 34307544481`) llegó completo hasta `Deploy Supabase
+> Migrations` → `Verify Production Migrations` → `Deploy to Vercel`, los tres
+> en success — esta fase no trae migración propia, pero es la única de este
+> lote con el pipeline de producción confirmado de punta a punta.
 
 ---
 

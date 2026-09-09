@@ -627,7 +627,7 @@ pestaña Completados en absoluto.
 - [ ] Tests primero.
 - [ ] Cablear a `review/[loadId]` (fase 2, ya construida) como destino final.
 
-### Fase 3 — `5f` firma y fotos `[in_progress]`
+### Fase 3 — `5f` firma y fotos `[done]`
 
 > **Corrección (2026-09-08) a la nota de abajo sobre la leyenda offline.**
 > El checklist original decía que «Todo queda en el teléfono y se sube al
@@ -691,7 +691,7 @@ CREATE TABLE public.manifest_documents (
       exageraba el alcance real del cambio.
 - [x] ~~La leyenda … no se muestra hasta spec-81~~ — ya la muestra desde spec-81 fase 2 (ver corrección arriba); esta fase la deja donde estaba y sólo la reordena bajo el bloque de fotos.
 
-> Implementado por: sesión de agente, rama `feat/spec-80-fase-3-firma-y-fotos`.
+> Implementado por: implementer — rama `feat/spec-80-fase-3-firma-y-fotos`, PR #706 (mergeado como `2f80d83`).
 > `manifest_documents` (migración `20260918000001`, mismo patrón que
 > `discrepancy_notes` — `FOR ALL`/`WITH CHECK` sobre `operator_id`, GRANT a
 > `authenticated`, REVOKE de `anon` — **client-writable**, no un RPC
@@ -808,9 +808,31 @@ CREATE TABLE public.manifest_documents (
 > mata el test de doble toque; volver al `err.message` crudo mata el test del
 > mensaje fijo en español.
 >
-> QA: **pendiente** — falta PR, `gh pr checks` y lectura de `e2e-qa`. La
-> fase queda en `[in_progress]`, no en `[done]`; la cierra el orquestador
-> tras review y CI.
+> Review: reviewer — tres rondas sobre PR #706. Ronda 1: dos bloqueantes (la
+> leyenda offline prometía supervivencia de fotos que el código no tenía; doble
+> toque en "Agregar" dejaba un huérfano garantizado en el bucket + 23505 en el
+> insert). Ronda 2: patrón `discrepancy_notes` copiado a medias — faltaba el
+> trigger de auditoría, y sin él un `authenticated` normal podía reescribir
+> `storage_path`/`uploaded_by`/`captured_at` y borrar físicamente evidencia
+> (corregido con `REVOKE DELETE` + trigger + `WITH CHECK` de `uploaded_by`).
+> Ronda 3: aprobado ("¿Mergeable? Sí") con tres seguimientos exigidos antes de
+> mergear — el test que decía cubrir el `USING` lo ejercitaba sólo por
+> accidente (la policy de SELECT tapaba el hueco antes de que el `FOR ALL`
+> se evaluara), sustituido por una aserción estructural sobre
+> `pg_get_expr(polqual, polrelid)`; y al verificar el `DROP CONSTRAINT` se
+> encontró un segundo hueco: `CREATE POLICY ... EXCEPTION WHEN
+> duplicate_object` se traga el choque y deja viva la policy vieja. Los tres
+> corregidos en la misma rama, detalle completo arriba.
+> QA: PR #706 merged 2026-09-09T05:23:35Z — `gh pr checks 706` verde (Lint,
+> Type-Check, Test, Build x2; Vercel). Suite completa de frontend: 637
+> archivos / 6205 tests, 1 fallo (flake preexistente en
+> `useOfflineQueue.test.ts`, no tocado por este PR). pgTAP mutation-testeado
+> según el detalle de la nota de implementación arriba. **No se pudo
+> verificar el despliegue a producción de la migración `20260918000001`**: el
+> run de `Deploy Production` sobre el merge commit quedó parado en el gate
+> manual `Approve Production Deploy` (`run 34314908665`, "E2E against QA"
+> verde, sin avanzar a `Deploy Supabase Migrations`) — no es un fallo, es una
+> aprobación pendiente que no depende de este spec.
 > Downstream: revisado spec-81, spec-82, spec-83, spec-86 sin cambios; spec-84
 > corregido arriba tras #703 (fase 3 quedó `[parked]`, no depende de este
 > patrón) — ver "Impacto downstream de la fase 3" más abajo, también
