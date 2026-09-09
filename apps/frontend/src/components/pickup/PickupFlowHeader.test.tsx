@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PickupFlowHeader } from './PickupFlowHeader';
 
 describe('PickupFlowHeader', () => {
@@ -12,6 +13,7 @@ describe('PickupFlowHeader', () => {
         scanned={5}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByText('CARGA-001')).toBeInTheDocument();
@@ -26,6 +28,7 @@ describe('PickupFlowHeader', () => {
         scanned={5}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByText('Falabella · Mall Plaza Vespucio')).toBeInTheDocument();
@@ -42,6 +45,7 @@ describe('PickupFlowHeader', () => {
         scanned={5}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.queryByTestId('flow-header-subtitle')).not.toBeInTheDocument();
@@ -56,6 +60,7 @@ describe('PickupFlowHeader', () => {
         scanned={12}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByText('12')).toBeInTheDocument();
@@ -71,6 +76,7 @@ describe('PickupFlowHeader', () => {
         scanned={9}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByText('50%')).toBeInTheDocument();
@@ -85,6 +91,7 @@ describe('PickupFlowHeader', () => {
         scanned={9}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
@@ -99,6 +106,7 @@ describe('PickupFlowHeader', () => {
         scanned={9}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     const bar = screen.getByRole('progressbar');
@@ -114,6 +122,7 @@ describe('PickupFlowHeader', () => {
         scanned={20}
         total={18}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     const bar = screen.getByRole('progressbar');
@@ -129,6 +138,7 @@ describe('PickupFlowHeader', () => {
         scanned={0}
         total={0}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     const bar = screen.getByRole('progressbar');
@@ -146,6 +156,7 @@ describe('PickupFlowHeader', () => {
         scanned={199}
         total={200}
         queuedCount={0}
+        blockedCount={0}
       />
     );
     expect(screen.getByText('99%')).toBeInTheDocument();
@@ -162,6 +173,7 @@ describe('PickupFlowHeader', () => {
           scanned={5}
           total={18}
           queuedCount={27}
+          blockedCount={0}
         />
       );
       expect(screen.getByText('COLA 27')).toBeInTheDocument();
@@ -178,9 +190,141 @@ describe('PickupFlowHeader', () => {
           scanned={5}
           total={18}
           queuedCount={0}
+          blockedCount={0}
         />
       );
       expect(screen.queryByTestId('queue-badge')).not.toBeInTheDocument();
+    });
+  });
+
+  // m6, ronda 3 de review del PR #679 (menor) — B3 (ronda 2) sacó `dead` de
+  // `queuedCount` sin darle a esta pantalla un lugar donde mostrarlo. Neto:
+  // en la pantalla que el conductor tiene delante mientras escanea, una
+  // entrada bloqueada pasó de mostrarse como "COLA 1" a no mostrarse en
+  // absoluto — cuarta vez del hermano olvidado en este spec.
+  describe('blocked badge', () => {
+    it('shows "N REQUIERE AYUDA" when something is blocked, even with an empty queue', () => {
+      render(
+        <PickupFlowHeader
+          loadId="CARGA-001"
+          retailerName={null}
+          pickupPoint={null}
+          scanned={5}
+          total={18}
+          queuedCount={0}
+          blockedCount={1}
+        />
+      );
+      expect(screen.getByTestId('blocked-badge')).toHaveTextContent('1 REQUIERE AYUDA');
+    });
+
+    it('hides the blocked badge entirely when nothing is blocked', () => {
+      render(
+        <PickupFlowHeader
+          loadId="CARGA-001"
+          retailerName={null}
+          pickupPoint={null}
+          scanned={5}
+          total={18}
+          queuedCount={0}
+          blockedCount={0}
+        />
+      );
+      expect(screen.queryByTestId('blocked-badge')).not.toBeInTheDocument();
+    });
+
+    it('shows both badges together when something is queued and something else is blocked', () => {
+      render(
+        <PickupFlowHeader
+          loadId="CARGA-001"
+          retailerName={null}
+          pickupPoint={null}
+          scanned={5}
+          total={18}
+          queuedCount={2}
+          blockedCount={1}
+        />
+      );
+      expect(screen.getByTestId('queue-badge')).toHaveTextContent('COLA 2');
+      expect(screen.getByTestId('blocked-badge')).toHaveTextContent('1 REQUIERE AYUDA');
+    });
+
+    // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1)
+    // — "el operario puede reintentar desde la app". El badge se vuelve
+    // pulsable cuando hay a dónde reintentar.
+    describe('retry (B-1, ronda 4 de review del PR #679)', () => {
+      it('renders the blocked badge as a button when onRetryBlocked is provided', () => {
+        render(
+          <PickupFlowHeader
+            loadId="CARGA-001"
+            retailerName={null}
+            pickupPoint={null}
+            scanned={5}
+            total={18}
+            queuedCount={0}
+            blockedCount={1}
+            onRetryBlocked={() => {}}
+          />
+        );
+        expect(screen.getByTestId('blocked-badge').tagName).toBe('BUTTON');
+      });
+
+      it('calls onRetryBlocked when the blocked badge is pressed', async () => {
+        const user = userEvent.setup();
+        const onRetryBlocked = vi.fn();
+        render(
+          <PickupFlowHeader
+            loadId="CARGA-001"
+            retailerName={null}
+            pickupPoint={null}
+            scanned={5}
+            total={18}
+            queuedCount={0}
+            blockedCount={1}
+            onRetryBlocked={onRetryBlocked}
+          />
+        );
+
+        await user.click(screen.getByTestId('blocked-badge'));
+
+        expect(onRetryBlocked).toHaveBeenCalledTimes(1);
+      });
+
+      it('renders the blocked badge as plain text (not a button) when onRetryBlocked is not provided', () => {
+        render(
+          <PickupFlowHeader
+            loadId="CARGA-001"
+            retailerName={null}
+            pickupPoint={null}
+            scanned={5}
+            total={18}
+            queuedCount={0}
+            blockedCount={1}
+          />
+        );
+        expect(screen.getByTestId('blocked-badge').tagName).not.toBe('BUTTON');
+      });
+
+      // Menor 5, ronda 4 — "REQUIERE AYUDA" usaba las mismas clases que
+      // "COLA N" (`status-warning-*`): dos severidades opuestas, mismo
+      // color.
+      it('uses a distinct (error, not warning) color from the queue badge', () => {
+        render(
+          <PickupFlowHeader
+            loadId="CARGA-001"
+            retailerName={null}
+            pickupPoint={null}
+            scanned={5}
+            total={18}
+            queuedCount={2}
+            blockedCount={1}
+          />
+        );
+        const blocked = screen.getByTestId('blocked-badge');
+        const queued = screen.getByTestId('queue-badge');
+        expect(blocked.className).not.toBe(queued.className);
+        expect(blocked.className).toMatch(/status-error/);
+      });
     });
   });
 });

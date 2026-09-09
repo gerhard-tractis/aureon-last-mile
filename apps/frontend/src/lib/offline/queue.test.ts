@@ -18,10 +18,12 @@ import {
   claimPending,
   markDead,
   reclaimStale,
+  retryDead,
 } from "./queue";
 
 const OPERATOR_A = "operator-a";
 const OPERATOR_B = "operator-b";
+const USER_A = "user-a";
 const MANIFEST_1 = "manifest-1";
 const MANIFEST_2 = "manifest-2";
 
@@ -79,6 +81,25 @@ describe("recogida offline queue", () => {
       expect(entry.nextAttemptAt).toBeNull();
     });
 
+    // B4, ronda 2 de review del PR #679 (bloqueante) — la cola estaba
+    // acotada por inquilino (`operatorId`), no por persona. En un teléfono
+    // de muelle compartido, un conductor B (misma empresa) drenaba la
+    // entrada que un conductor A había encolado, firmando el cierre con el
+    // nombre de B (`signature_operator_name` se deriva de `auth.uid()` en
+    // el servidor). `userId` es lo que `useOfflineQueue` usa para que su
+    // drenado nunca toque una entrada que esta sesión no encoló.
+    it("stores the enqueuing user's id alongside the operator's", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        userId: USER_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "ABC123" },
+      });
+
+      expect(entry.userId).toBe(USER_A);
+    });
+
     it("persists the payload's blob (B6 — a mutant dropping it must fail)", async () => {
       // fake-indexeddb's structured-clone polyfill does not round-trip a
       // real Blob's identity (it comes back as `{}`), so asserting on a
@@ -113,6 +134,92 @@ describe("recogida offline queue", () => {
       expect(entry.createdAt).toBe("2026-09-07T12:34:56.000Z");
 
       vi.useRealTimers();
+    });
+
+    // m3, ronda 1 de review del PR #679 — "Riesgos" declara este tope
+    // vigente desde fase 2 ("encolar por encima de ese número debe
+    // rechazarse con un error explícito en vez de fallar en silencio contra
+    // la cuota real del navegador"), pero `enqueue` no lo comprobaba: el
+    // spec afirmaba algo que el código no hacía.
+    it("rejects enqueue past 500 unconfirmed (non-sent) entries for the same operator", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `seed-${i}`,
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `SEED-${i}` },
+          status: "pending",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "ONE-TOO-MANY" },
+        }),
+      ).rejects.toThrow(/500|quota|cola llena/i);
+    });
+
+    it("does not count sent (purged-eligible) entries against the 500 cap", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `sent-${i}`,
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `SENT-${i}` },
+          status: "sent",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "STILL-FINE" },
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it("does not count another operator's entries against this operator's cap", async () => {
+      for (let i = 0; i < 500; i += 1) {
+        await db.pickup_queue.add({
+          clientOperationId: `other-op-${i}`,
+          operatorId: OPERATOR_B,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: `OTHER-${i}` },
+          status: "pending",
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      await expect(
+        enqueue(db, {
+          operatorId: OPERATOR_A,
+          manifestId: MANIFEST_1,
+          type: "pickup_scan",
+          payload: { barcode: "STILL-FINE" },
+        }),
+      ).resolves.toBeDefined();
     });
   });
 
@@ -296,10 +403,49 @@ describe("recogida offline queue", () => {
       expect(claimed).not.toBeNull();
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      // The returned value IS the lastAttemptAt it stamped — the token
-      // markFailed/markSent compare against later to tell "my reclamation"
-      // from "someone else's" (M1, ronda 4 de review).
-      expect(claimed).toBe(stored?.lastAttemptAt);
+      // The returned value IS the claimToken it stamped (fase 2 — a
+      // crypto.randomUUID() nonce, not the lastAttemptAt timestamp) — what
+      // markFailed/markSent/markDead compare against later to tell "my
+      // reclamation" from "someone else's" (M1, ronda 4; nonce, fase 2).
+      expect(claimed).toBe(stored?.claimToken);
+      expect(stored?.lastAttemptAt).not.toBeNull();
+    });
+
+    it("fase 2 — two claims of the same entry within the same millisecond get different tokens (nonce, not a timestamp)", async () => {
+      // Verified bug (spec-81 fase 2 checklist): before this fix, claim →
+      // markFailed(t) → claim → markFailed(t) left retryCount 2 and
+      // `pending` — the second claim, landing in the same millisecond,
+      // stamped the SAME token as the first, so a stale token reused by
+      // mistake still matched. crypto.randomUUID() makes that impossible.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-09-07T09:00:00.000Z"));
+
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      const token1 = await claimPending(db, entry.id!);
+      await markFailed(db, entry.id!, "network error", token1!);
+      // Time never advances — this is the common case offline: fetch
+      // rejects almost instantly.
+      const token2 = await claimPending(db, entry.id!);
+
+      expect(token2).not.toBeNull();
+      expect(token2).not.toBe(token1);
+
+      // A caller that (by mistake) reuses the first, now-stale token must
+      // be a complete no-op against the entry's real, current claim.
+      await markFailed(db, entry.id!, "reused stale token", token1!);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("sending");
+      expect(stored?.retryCount).toBe(1);
+      expect(stored?.claimToken).toBe(token2);
+
+      vi.useRealTimers();
     });
 
     it("returns null when the entry was not pending", async () => {
@@ -564,6 +710,13 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("dead");
+      // Fase 2 residual — H3 protected `status`, not the rest of the row.
+      // A no-token markFailed on a dead entry used to conserve `status` but
+      // still overwrite `lastError`, wiping the only record of *why* that
+      // scan was discarded, and `retryCount`, which the operator never
+      // needed to know about again.
+      expect(stored?.lastError).toBe("MANIFEST_NOT_CLOSABLE");
+      expect(stored?.retryCount).toBe(0);
     });
 
     it("H3 — never resurrects an already-confirmed (sent) entry back to pending", async () => {
@@ -580,6 +733,10 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
+      // Same residual as above, the `sent` side: no genuine retry count for
+      // a confirmed operation.
+      expect(stored?.retryCount).toBe(0);
+      expect(stored?.lastError).toBeUndefined();
     });
 
     // M1 (ronda 4 de review) — claimPending devolvía sólo un boolean, así
@@ -621,7 +778,7 @@ describe("recogida offline queue", () => {
       // pending, which would let a third send happen on top of drainer 2's
       // in-flight one.
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
@@ -668,6 +825,20 @@ describe("recogida offline queue", () => {
 
       vi.useRealTimers();
     });
+
+    it("fase 2 — persists nextAttemptAt when the drainer computes a backoff", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      await markFailed(db, entry.id!, "500 server error", undefined, "2026-09-07T09:05:00.000Z");
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.nextAttemptAt).toBe("2026-09-07T09:05:00.000Z");
+    });
   });
 
   describe("markSent (M1 — a stale claim cannot confirm a live one's in-flight send)", () => {
@@ -694,7 +865,7 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
@@ -810,6 +981,37 @@ describe("recogida offline queue", () => {
       expect(pending).toHaveLength(0);
     });
 
+    // Fase 2 — unifica el contrato: los tres escritores terminales
+    // (markSent, markFailed, markDead) devuelven ahora el `count` real de
+    // `.modify()`, no sólo markSent (m4, ronda 5). Un `count === 0` en
+    // markDead significa "tu reclamación fue robada" — información que el
+    // drenador necesita para no seguir tratando el envío como en curso.
+    it("fase 2 — returns the real modify() count (1 confirmed, 0 when the claim was stolen)", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "close_manifest",
+        payload: { manifestId: MANIFEST_1, count: 42 },
+      });
+      const token = await claimPending(db, entry.id!);
+
+      const confirmed = await markDead(db, entry.id!, "MANIFEST_NOT_CLOSABLE", token!);
+      expect(confirmed).toBe(1);
+
+      const other = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const staleToken = await claimPending(db, other.id!);
+      await reclaimStale(db, OPERATOR_A, 0);
+      await claimPending(db, other.id!);
+
+      const stolen = await markDead(db, other.id!, "late rejection", staleToken!);
+      expect(stolen).toBe(0);
+    });
+
     // B1 (ronda 5 de review) — markDead era el único de los tres escritores
     // terminales (markSent, markFailed, markDead) sin guard de token. Mismo
     // escenario que el M1 de markFailed/markSent, con el tercer escritor:
@@ -840,7 +1042,7 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sending");
-      expect(stored?.lastAttemptAt).toBe(liveToken);
+      expect(stored?.claimToken).toBe(liveToken);
 
       vi.useRealTimers();
     });
@@ -877,6 +1079,72 @@ describe("recogida offline queue", () => {
 
       const stored = await db.pickup_queue.get(entry.id!);
       expect(stored?.status).toBe("sent");
+    });
+  });
+
+  // Decisión del usuario, 2026-09-08 (ronda 4 de review del PR #679, B-1) —
+  // "el operario puede reintentar desde la app": el botón "REQUIERE AYUDA"
+  // de `PickupFlowHeader` devuelve las entradas `dead` de un manifiesto a
+  // `pending`, reseteando el contador de reintentos — la afordancia mínima
+  // que convierte "muerto" en "atascado", y lo que hace defendible el techo
+  // de `MAX_RETRY_ATTEMPTS` (si agotarlo fuera un callejón sin salida, el
+  // techo sería sólo un modo distinto de perder el escaneo).
+  describe("retryDead (B-1, ronda 4 de review del PR #679)", () => {
+    it("returns dead entries in a manifest to pending, with retryCount reset to 0", async () => {
+      const entry = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      await markDead(db, entry.id!, "PACKAGE_NOT_IN_MANIFEST");
+      await db.pickup_queue.update(entry.id!, { retryCount: 9 });
+
+      const count = await retryDead(db, OPERATOR_A, MANIFEST_1);
+      expect(count).toBe(1);
+
+      const stored = await db.pickup_queue.get(entry.id!);
+      expect(stored?.status).toBe("pending");
+      expect(stored?.retryCount).toBe(0);
+      expect(stored?.nextAttemptAt).toBeNull();
+      expect(stored?.claimToken).toBeNull();
+    });
+
+    it("does not touch dead entries in a different manifest", async () => {
+      const inScope = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+      const otherManifest = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_2,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-2" },
+      });
+      await markDead(db, inScope.id!, "PACKAGE_NOT_IN_MANIFEST");
+      await markDead(db, otherManifest.id!, "PACKAGE_NOT_IN_MANIFEST");
+
+      await retryDead(db, OPERATOR_A, MANIFEST_1);
+
+      const untouched = await db.pickup_queue.get(otherManifest.id!);
+      expect(untouched?.status).toBe("dead");
+    });
+
+    it("does not touch non-dead entries in the same manifest", async () => {
+      const stillPending = await enqueue(db, {
+        operatorId: OPERATOR_A,
+        manifestId: MANIFEST_1,
+        type: "pickup_scan",
+        payload: { barcode: "SCAN-1" },
+      });
+
+      await retryDead(db, OPERATOR_A, MANIFEST_1);
+
+      const stored = await db.pickup_queue.get(stillPending.id!);
+      expect(stored?.status).toBe("pending");
+      expect(stored?.retryCount).toBe(0);
     });
   });
 

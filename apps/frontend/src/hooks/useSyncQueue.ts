@@ -1,7 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { db, getPendingPickupCount, requestPersistentStorage, type ScanQueue } from '@/lib/db';
+import {
+  db,
+  getBlockedPickupCount,
+  getPendingPickupCount,
+  requestPersistentStorage,
+  type ScanQueue,
+} from '@/lib/db';
 import { syncManager } from '@/lib/sync-manager';
 
 /**
@@ -32,6 +38,14 @@ export interface SyncQueueState {
    * combined count would show a header number the list below and the
    * "Reintentar ahora" button can't back up (spec-81, ronda 3, H2). */
   scanQueueCount: number;
+  /**
+   * B3, ronda 2 de review del PR #679 — entradas de `pickup_queue` que
+   * agotaron los reintentos con un rechazo de negocio irrecuperable
+   * (`status === 'dead'`). Separado de `queuedCount` a propósito: no son
+   * "todavía en cola", son un bloqueo que necesita ayuda humana, y
+   * `SyncChip` no puede pintar eso en su verde de éxito.
+   */
+  blockedCount: number;
   /** Most recent scans, newest first — both queued and recently synced. */
   recent: ScanQueue[];
   retryNow: () => void;
@@ -42,10 +56,19 @@ export interface SyncQueueState {
 const POLL_MS = 2_000;
 const RECENT_LIMIT = 25;
 
-export function useSyncQueue(): SyncQueueState {
+/**
+ * `operatorId` — spec-81 fase 2: `getPendingPickupCount` pasó de
+ * device-global a por operador (ver "Alcance del contador" en el spec). Sin
+ * un operador conocido no hay a quién atribuirle la cuenta de
+ * `pickup_queue`, así que esta vista sólo suma `scan_queue` hasta que
+ * `operatorId` llegue — normalmente un instante después del mount, cuando
+ * `useOperatorId` resuelve la sesión.
+ */
+export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
   const [status, setStatus] = useState<ConnectionState>('online');
   const [queuedCount, setQueuedCount] = useState(0);
   const [scanQueueCount, setScanQueueCount] = useState(0);
+  const [blockedCount, setBlockedCount] = useState(0);
   const [recent, setRecent] = useState<ScanQueue[]>([]);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -57,17 +80,19 @@ export function useSyncQueue(): SyncQueueState {
       // IndexedDB: Recepción's `scan_queue` and Recogida's `pickup_queue`.
       // Without the second term this reads 0 while Recogida scans wait for
       // signal (ronda 1 de review de spec-81 fase 1, B1).
-      const [outstandingScans, outstandingPickups] = await Promise.all([
+      const [outstandingScans, outstandingPickups, blocked] = await Promise.all([
         db.scan_queue.filter((s) => !s.synced).count(),
-        getPendingPickupCount(),
+        operatorId ? getPendingPickupCount(operatorId) : Promise.resolve(0),
+        operatorId ? getBlockedPickupCount(operatorId) : Promise.resolve(0),
       ]);
       setScanQueueCount(outstandingScans);
       setQueuedCount(outstandingScans + outstandingPickups);
+      setBlockedCount(blocked);
     } catch {
       // IndexedDB unavailable (private browsing, quota). The chip simply
       // reports the network state; it must never take the screen down.
     }
-  }, []);
+  }, [operatorId]);
 
   const retryNow = useCallback(() => {
     setIsRetrying(true);
@@ -118,10 +143,15 @@ export function useSyncQueue(): SyncQueueState {
   useEffect(() => {
     // Only poll while something is outstanding or the link is down. Online
     // with an empty queue is the common case and should cost nothing.
-    if (status === 'online' && queuedCount === 0) return;
+    // m7, ronda 3 de review del PR #679 (menor) — `blockedCount` (B3) tiene
+    // que mantener el polling vivo igual que `queuedCount`: la última
+    // `pending` de un manifiesto pasando a `dead` no debe apagar el único
+    // mecanismo (aparte de un remount) que refleja que un bloqueo se
+    // resolvió.
+    if (status === 'online' && queuedCount === 0 && blockedCount === 0) return;
     const id = setInterval(() => void read(), POLL_MS);
     return () => clearInterval(id);
-  }, [status, queuedCount, read]);
+  }, [status, queuedCount, blockedCount, read]);
 
-  return { status, queuedCount, scanQueueCount, recent, retryNow, isRetrying };
+  return { status, queuedCount, scanQueueCount, blockedCount, recent, retryNow, isRetrying };
 }

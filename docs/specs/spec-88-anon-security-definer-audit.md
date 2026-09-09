@@ -191,15 +191,15 @@ Esto cierra la fuga **incluso si alguien vuelve a olvidar un `REVOKE`** en una f
 
 1. **GoTrue en QA no tiene ningún `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_*` en su entorno.** `docker inspect supabase-qa-auth` no muestra ninguna variable de hook — sólo `GOTRUE_JWT_*`, `GOTRUE_DB_*`, etc. `packages/database/supabase/config.toml` sí declara el hook (`[auth.hook.custom_access_token]`, `enabled = true`), pero ese archivo es config del **Supabase CLI para desarrollo local** — no se traduce automáticamente a variables de entorno del contenedor GoTrue self-hosted que corre en la VPS. `packages/database/supabase/MANUAL_STEPS.md` lo confirma: el hook requiere registro manual vía "Authentication > Hooks" del Dashboard de Supabase, un paso que el self-hosted de este proyecto no tiene documentado como ejecutado.
 2. **El mecanismo que realmente puebla el JWT en QA es un trigger, no el hook.** `sync_claims_to_auth_metadata()` — trigger `sync_claims_on_user_change` sobre `public.users`, confirmado `ENABLED` (`tgenabled = 'O'`) — escribe `operator_id`/`role`/`permissions` directo en `auth.users.raw_app_meta_data` en cada INSERT/UPDATE de `public.users`. GoTrue incluye `app_metadata` en el JWT sin necesitar ningún hook. **En QA, `custom_access_token_hook` es código muerto del lado del login** — nada lo invoca en el flujo real, sólo sigue siendo alcanzable por PostgREST como cualquier otra función.
-3. **Si producción SÍ tiene el hook activo (no puedo confirmarlo — ver más abajo), quien lo invoca es GoTrue, con su propio rol de conexión (`supabase_auth_admin`, tomado de `GOTRUE_DB_DATABASE_URL`), nunca `anon` ni `authenticated`.** `supabase_auth_admin` existe como rol separado en QA (confirmado con `SELECT rolname FROM pg_roles`). Esto es la pieza central del argumento: **revocar el `EXECUTE` de `anon` (y de PUBLIC) sobre `custom_access_token_hook` no puede romper la llamada de GoTrue**, porque GoTrue nunca fue `anon` para empezar — hoy `supabase_auth_admin` tiene acceso sólo por heredar el grant implícito de PUBLIC (`=X`), nunca por un grant propio. **Lo que sí rompería el hook, si producción lo usa,** es revocar PUBLIC sin añadir, en la misma migración, un `GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO supabase_auth_admin` explícito.
+3. **Producción SÍ tiene el hook activo — confirmado 2026-09-09, ver fase 3. Quien lo invoca es GoTrue, con su propio rol de conexión (`supabase_auth_admin`, tomado de `GOTRUE_DB_DATABASE_URL`), nunca `anon` ni `authenticated`.** `supabase_auth_admin` existe como rol separado en QA (confirmado con `SELECT rolname FROM pg_roles`). Esto es la pieza central del argumento: **revocar el `EXECUTE` de `anon` (y de PUBLIC) sobre `custom_access_token_hook` no puede romper la llamada de GoTrue**, porque GoTrue nunca fue `anon` para empezar — hoy `supabase_auth_admin` tiene acceso sólo por heredar el grant implícito de PUBLIC (`=X`), nunca por un grant propio. **Lo que sí rompería el hook, si producción lo usa,** es revocar PUBLIC sin añadir, en la misma migración, un `GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO supabase_auth_admin` explícito.
 
-**Lo que no puedo confirmar sin credenciales de producción:** si el hook está activo ahí. Si lo está, la fase que toque esta función debe: (a) confirmarlo primero, con acceso real a producción; (b) incluir el `GRANT ... TO supabase_auth_admin` en la misma migración que cualquier `REVOKE`; (c) probar el login end-to-end en QA primero (los seis usuarios `qa-*@qa.test`), y sólo después en producción, antes de dar la fase por cerrada. Esto no es una tarea de una línea — es la razón por la que el spec la separa del resto.
+**Confirmado (2026-09-09), ya no es una incógnita:** el hook está activo en producción (`hook_custom_access_token_enabled=true`, ver fase 3). La fase que toque esta función debe: (a) incluir el `GRANT ... TO supabase_auth_admin` en la misma migración que cualquier `REVOKE`, antes del `REVOKE`; (b) probar el login end-to-end en QA primero (los seis usuarios `qa-*@qa.test`), y sólo después en producción, antes de dar la fase por cerrada. Esto no es una tarea de una línea — es la razón por la que el spec la separa del resto.
 
 **Corrección — el `docker inspect` de producción que este documento pedía originalmente es imposible, y nadie lo comprobó durante horas.** Producción **no es self-hosted como QA**: es un proyecto Supabase gestionado (ref `wfwlcpnkkxxzdvhvvsxb`, visible en la URL del check "Supabase Preview" de cualquier PR). No hay contenedor GoTrue de producción que inspeccionar — `~/.ssh/config` (`aureon-vps`) sólo tiene los contenedores de QA (`supabase-qa-auth`, `supabase-qa-db`, etc.). La comprobación equivalente es la **Management API de Supabase**: `GET https://api.supabase.com/v1/projects/<ref>/config/auth` devuelve `hook_custom_access_token_enabled` y `hook_custom_access_token_uri`. Necesita un PAT — existe como secreto de GitHub (`SUPABASE_ACCESS_TOKEN`, junto con `SUPABASE_PROJECT_REF`, confirmados con `gh secret list`), pero el valor no es legible fuera de un workflow.
 
-**Comprobación real, hecha en esta fase:** `.github/workflows/check-prod-auth-hook.yml` — un `workflow_dispatch` de una sola tarea que hace ese `curl` contra la Management API y sólo imprime el booleano `hook_custom_access_token_enabled` (nunca el PAT ni el cuerpo completo de la respuesta). No puede lanzarse sin permiso — sólo lectura contra producción, pero producción al fin — así que queda como PR sin mergear hasta que el usuario lo lance y reporte el resultado.
+**Comprobación real, hecha en esta fase:** `.github/workflows/check-prod-auth-hook.yml` — un `workflow_dispatch` de una sola tarea que hace ese `curl` contra la Management API y sólo imprime el booleano `hook_custom_access_token_enabled` (nunca el PAT ni el cuerpo completo de la respuesta). El usuario lo lanzó (`workflow_dispatch`, run `34240504022`, 2026-09-08T14:47:08Z) y el resultado ya está leído — ver fase 3, más abajo.
 
-**Argumento de apoyo, no prueba, mientras ese resultado no llegue:** el mecanismo que puebla los claims en QA es un **trigger** (`sync_claims_on_user_change` sobre `public.users`, vía `sync_claims_to_auth_metadata()`, escribiendo en `auth.users.raw_app_meta_data`), definido en `packages/database/supabase/migrations/20260312120000_sync_app_metadata_claims.sql`. Esa migración está aplicada en producción — spec-87 documenta el ledger de producción coincidiendo con el repo, 190 migraciones aplicadas (`docs/specs/spec-87-desbloquear-produccion.md:369`). Si el trigger es lo que puebla los claims en ambos entornos —y no hay ninguna señal en el repo de que producción tenga un mecanismo de login distinto al de QA—, el hook es redundante en producción igual que en QA. Esto **no sustituye** la lectura de la Management API; sólo hace que "no activo" sea la hipótesis más probable mientras se espera esa lectura.
+**Argumento de apoyo, no prueba — refutado por la medición (2026-09-09), se deja para explicar por qué se creyó lo contrario:** el mecanismo que puebla los claims en QA es un **trigger** (`sync_claims_on_user_change` sobre `public.users`, vía `sync_claims_to_auth_metadata()`, escribiendo en `auth.users.raw_app_meta_data`), definido en `packages/database/supabase/migrations/20260312120000_sync_app_metadata_claims.sql`. Esa migración está aplicada en producción — spec-87 documenta el ledger de producción coincidiendo con el repo, 190 migraciones aplicadas (`docs/specs/spec-87-desbloquear-produccion.md:369`). El razonamiento era: si el trigger es lo que puebla los claims en ambos entornos, el hook sería redundante en producción igual que en QA. **La Management API dice lo contrario: `hook_custom_access_token_enabled=true` en producción.** El trigger estar aplicado en ambos entornos no implica que el hook esté inactivo en ambos — la inferencia estructural se equivocó de lado. Ver fase 3.
 
 ## El overload huérfano — `start_pickup_route`
 
@@ -233,7 +233,7 @@ Ordenadas por riesgo y por lo que se puede hacer sin arriesgar el login.
 | **5 — Defensa en profundidad del resto** | `REVOKE` sobre las 17 funciones guardadas-pero-nunca-revocadas — sin urgencia, sin riesgo, cierre de higiene | no |
 | **6 — `set_config` deja de ser un bypass genérico de GUC** | Allowlist de `setting_name` o `REVOKE` de `authenticated`, según lo que muestre el inventario de llamantes reales — cierra la vía hallada en el review de la fase 2 (no alcanzable por HTTP, sí por sesión Postgres directa) | no |
 
-### Fase 1 — REVOKE mecánico `[in_progress]`
+### Fase 1 — REVOKE mecánico `[done]`
 
 **Archivos:** migración nueva en `packages/database/supabase/migrations/`, `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql`
 
@@ -251,7 +251,26 @@ Cierra, con una sola migración (`CREATE OR REPLACE` no es necesario donde el cu
 
 **Excepción declarada al límite de 300 líneas por archivo:** `packages/database/supabase/tests/spec88_fase1_revoke_anon.test.sql` es SQL repetitivo — cada una de las 16 funciones necesita su propio `has_function()` + de 2 a 4 aserciones `aclexplode()` casi idénticas (PUBLIC, `anon`, a veces `authenticated`/`service_role`), y partirlo por grupo (A/B/C) rompería la sección `plan(N)` única que pgTAP exige por transacción. Se deja como un solo archivo en vez de dividirlo artificialmente.
 
-### Fase 2 — Reescritura de `assert_operator_access` `[in_progress]`
+> Implementado por: rama `feat/spec-88-fase-1-revoke-anon`, SHA `a9aeb646`,
+> PR #675 (merge `d77fe792`, 2026-09-08T10:38:42Z).
+> Review: al menos una ronda — corrigió la clasificación de
+> `start_pickup_route` (la firma viva `uuid,uuid[]` estaba mal marcada como
+> "ya cerrada"; el total de funciones subió a 16) y confirmó por test, no
+> por suposición, que `assert_operator_access` sigue funcionando como guard
+> interno tras el `REVOKE` (`SECURITY DEFINER` ejecuta con los privilegios
+> del dueño, no del rol del llamante).
+> QA: `gh pr checks 675` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración está aplicada en producción — confirmado
+> `git merge-base --is-ancestor d77fe792 32667d0d`, el `headSha` del run
+> `34265192142` ("Deploy Production"), cuyo job `Verify Production
+> Migrations` cerró en verde. ACL real verificado en QA antes/después,
+> citado en el PR (`aclexplode` sobre las 16 funciones).
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera). Fase 2 de este mismo spec depende de que
+> `assert_operator_access` siga revocada de PUBLIC/anon/authenticated tras
+> esta fase — sin cambios sobre esa premisa.
+
+### Fase 2 — Reescritura de `assert_operator_access` `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000008_spec88_fase2_assert_operator_access_service_role.sql`, `packages/database/supabase/tests/spec88_fase2_assert_operator_access_service_role.test.sql`, `packages/database/supabase/tests/cross_tenant_definer_rpcs_test.sql`
 
@@ -268,19 +287,86 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 
 **Alcance real de "cierra la clase de bug" — acotado tras review (PR #683):** esta fase cierra la inferencia de `service_role` por ausencia de `auth.uid()` — el bug original. No cierra `public.set_config(text,text,boolean)`: es `SECURITY DEFINER`, sin allowlist de nombre de GUC, y conserva `GRANT EXECUTE ... TO authenticated` desde la fase 1 (`20260913000006:134`). Un caller `authenticated` puede ejecutar `SELECT public.set_config('request.jwt.claims','{"role":"service_role"}',true)` y la siguiente llamada en la misma sesión pasaría el guard de esta fase. No es una regresión de esta fase (el cuerpo viejo con `RETURN` temprano lograba el mismo resultado) y **no es alcanzable por HTTP real**: PostgREST abre una transacción nueva por request y refija los claims JWT en cada una, así que no hay una segunda llamada dentro de la misma sesión donde el `set_config` del paso anterior siga vigente. Sigue siendo una vía real desde `psql`/cualquier cliente directo a Postgres autenticado como `authenticated`. Ver fase 6.
 
-### Fase 3 — `custom_access_token_hook` `[blocked]`
+> Implementado por: rama `feat/spec-88-fase-2-assert-operator-access`, SHA
+> `291a5e76`, PR #683 (merge `ffcf5972`, 2026-09-08T17:47:04Z).
+> Review: dos rondas. La ronda 1 bloqueó porque el discriminador leía sólo
+> el GUC JSON individual (`request.jwt.claim.role`, que nunca se puebla con
+> `PGRST_DB_USE_LEGACY_GUCS=false`); se cambió a `auth.role()`, que coalesce
+> ambas fuentes. El reviewer reprodujo el RED (`not ok 6` sólo con el cuerpo
+> viejo) y comparó el comportamiento de `auth.role()` contra un contenedor
+> Supabase de otro proyecto con la imagen oficial — hash del `prosrc`
+> idéntico. Esa misma ronda abrió la fase 6 (`set_config`) al acotar la
+> afirmación de "cierra la clase de bug" a lo que de verdad cierra (arriba).
+> QA: `gh pr checks 683` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000008` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor ffcf5972 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde — cierra el "ver `> QA:`
+> pendiente" que dejó el párrafo de arriba: no se probó contra QA en vivo en
+> el momento de implementar (sin credenciales VPS en esa sesión), pero la
+> migración sí llegó a producción y su verificación de ledger pasó. Suites
+> citadas en el PR: 8/8, 64/64, 4/4, 5/5, sobre salida cruda de `psql`.
+> Downstream: ninguno declarado para este spec (`**Downstream:** ninguno
+> todavía`, cabecera).
+
+### Fase 3 — `custom_access_token_hook` `[pending]`
+
+**Archivos:** migración nueva en `packages/database/supabase/migrations/`
+(`GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO
+supabase_auth_admin` seguido de `REVOKE ALL ... FROM PUBLIC` y `REVOKE ALL ...
+FROM anon`), test pgTAP en `packages/database/supabase/tests/` siguiendo el
+patrón de `20260913000006` (fase 1).
 
 **Corrección sobre el planteamiento original de esta fase:** el spec pedía confirmar el estado del hook con `docker inspect` contra "el contenedor de GoTrue de producción". **Eso es imposible y estaba mal** — producción no es self-hosted como QA, es un proyecto Supabase gestionado (ref `wfwlcpnkkxxzdvhvvsxb`), y no existe ningún contenedor GoTrue de producción que inspeccionar. `~/.ssh/config` (`aureon-vps`) sólo aloja QA. Este error se sostuvo sin comprobarse durante horas; ver la sección de arriba ("Corrección — el `docker inspect`...") para el detalle.
 
-**La comprobación correcta ya está lista, sin lanzar:** `.github/workflows/check-prod-auth-hook.yml`, un `workflow_dispatch` de una sola tarea que llama a `GET https://api.supabase.com/v1/projects/<ref>/config/auth` con el PAT de `SUPABASE_ACCESS_TOKEN` y sólo imprime el booleano `hook_custom_access_token_enabled` — nunca el token ni el cuerpo completo. Bloqueada en el usuario porque tocar producción, aunque sea sólo lectura, requiere su lanzamiento manual del workflow.
+**Resultado confirmado (2026-09-09) — la fase ya no espera nada.** El usuario
+lanzó `.github/workflows/check-prod-auth-hook.yml`
+(`workflow_dispatch`, run `34240504022`, éxito, 2026-09-08T14:47:08Z). El log
+imprime:
 
-**Argumento de apoyo (no prueba) mientras ese resultado no llega:** en QA, quien puebla los claims del JWT es el trigger `sync_claims_on_user_change` (`packages/database/supabase/migrations/20260312120000_sync_app_metadata_claims.sql`), no el hook — confirmado `ENABLED` en QA. Esa migración está aplicada en producción (ledger de producción documentado coincidiendo con el repo en spec-87, 190 migraciones). Si el mismo trigger puebla los claims en ambos entornos, el hook es redundante en producción igual que en QA — pero esto es inferencia estructural, no una lectura directa del estado de producción.
+```
+hook_custom_access_token_enabled=true
+```
 
-**Una vez confirmado el booleano** (lanzando el workflow):
-- Si producción **no** usa el hook (igual que QA — hipótesis más probable dado el argumento de arriba): `REVOKE ALL ... FROM PUBLIC; REVOKE ALL ... FROM anon;` sin más — cierra la fuga #2 sin riesgo. Test pgTAP siguiendo el patrón de la fase 1 (`20260913000006`): `has_function()` + `aclexplode()` confirmando ausencia de `anon`/PUBLIC tras el `REVOKE`.
-- Si producción **sí** lo usa: la misma migración debe incluir `GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO supabase_auth_admin` antes del `REVOKE FROM PUBLIC`, y el login de los seis usuarios QA (`qa-*@qa.test`) debe probarse end-to-end **antes** de que la migración llegue a producción — no basta con que el RPC en sí devuelva `permission denied` a `anon`; **el criterio de aceptación real es que un login normal siga emitiendo un JWT con `operator_id`, `role` y `permissions` correctos**, no sólo que el RPC rechace a `anon`.
+**Producción SÍ usa el hook.** Es la rama menos probable de las dos que este
+spec contemplaba, y la peligrosa — la que exige el `GRANT` antes del `REVOKE`.
 
-Esta fase queda **desbloqueada para tomarse** en cuanto el resultado del workflow llegue — no se implementa en esta tarea de investigación.
+**El "argumento de apoyo" de abajo queda refutado por la medición, no borrado
+— explica por qué se creyó lo contrario.** ~~Argumento de apoyo (no prueba)
+mientras ese resultado no llega: en QA, quien puebla los claims del JWT es el
+trigger `sync_claims_on_user_change`
+(`packages/database/supabase/migrations/20260312120000_sync_app_metadata_claims.sql`),
+no el hook — confirmado `ENABLED` en QA. Esa migración está aplicada en
+producción (ledger de producción documentado coincidiendo con el repo en
+spec-87, 190 migraciones). Si el mismo trigger puebla los claims en ambos
+entornos, el hook es redundante en producción igual que en QA~~ — **falso**:
+producción tiene el hook activo además del trigger. El trigger estar aplicado
+en ambos entornos no implica que el hook esté inactivo en ambos; la inferencia
+estructural se equivocó de lado.
+
+**Lo que esta fase debe hacer, ahora que el booleano es `true`:**
+
+- La migración **debe** incluir `GRANT EXECUTE ON FUNCTION
+  public.custom_access_token_hook(jsonb) TO supabase_auth_admin` **antes** del
+  `REVOKE ALL ... FROM PUBLIC`. Sin ese `GRANT`, el `REVOKE` **rompe el login
+  de todos los usuarios de producción** — GoTrue invoca el hook como
+  `supabase_auth_admin`, y ese rol hoy sólo tiene acceso por heredar el grant
+  implícito de PUBLIC (`=X`), nunca por un grant propio.
+- **El criterio de aceptación no es que el RPC rechace a `anon`.** Es que **un
+  login normal siga emitiendo un JWT con `operator_id`, `role` y `permissions`
+  correctos** — probado end-to-end con los seis usuarios `qa-*@qa.test`
+  **antes** de que la migración llegue a producción. Que
+  `custom_access_token_hook(...)` devuelva `permission denied` a una sesión
+  `anon` no prueba nada sobre si GoTrue puede seguir invocándolo.
+- Orden de la migración: `GRANT ... TO supabase_auth_admin` → login QA
+  end-to-end verificado → `REVOKE ALL ... FROM PUBLIC` → `REVOKE ALL ... FROM
+  anon` (redundante tras el `REVOKE FROM PUBLIC`, pero explícito por
+  simetría con el resto del spec) → test pgTAP con `has_function()` +
+  `aclexplode()` confirmando `supabase_auth_admin` presente y `anon`/PUBLIC
+  ausentes tras el `REVOKE`.
+
+Esta fase queda **desbloqueada para tomarse** — la investigación que la
+bloqueaba ya se hizo y el resultado ya se leyó.
 
 ### Fase 4 — Check automático de ACL huérfana `[pending]`
 

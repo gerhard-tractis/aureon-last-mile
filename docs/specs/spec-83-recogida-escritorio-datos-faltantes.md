@@ -1,8 +1,8 @@
 # Spec-83: Recogida en escritorio (`5a`) — ventana de retiro, ocupación y merma
 
-> **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; la asignación puede aterrizar aquí), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
+> **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; **corrección 2026-09-09**: la asignación no aterriza aquí — el usuario decidió que la define el líder de recogida en el punto de retiro, in-situ, no desde este panel de escritorio), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
-**Status:** backlog
+**Status:** in progress
 **Verify:** unit, e2e-qa
 
 > **Nota (2026-09-07).** El punto 1 («Merma en cierres», «2 faltantes de 44»)
@@ -115,7 +115,7 @@ Si spec-73 no lo resolvió, la posición honesta sigue siendo la de spec-54: **o
 | **3 — Ocupación** | El porcentaje, o su omisión razonada | spec-73 |
 | **4 — Diff visual del resto** | Lo que difiera entre `1l` y `5a` sin datos nuevos | — |
 
-### Fase 1 — Merma `[pending]`
+### Fase 1 — Merma `[done]`
 
 **Archivos:** migración (`get_completed_manifests`), `components/pickup/TodayClosuresPanel.tsx`, tests
 
@@ -139,7 +139,51 @@ esto.
 
 - [ ] Test pgTAP del RPC con un manifiesto cerrado con faltantes y otro limpio.
 - [ ] Test del panel: paleta warning sólo cuando hay merma.
-- [ ] Implementar.
+- [x] Implementar.
+
+> Implementado por: `feat/spec-83-fase-1-merma`, PR #696 (mergeado 2026-09-09,
+> squash). Migración `20260917000002` — renumerada desde `...0001` por colisión
+> de timestamp con spec-84 fase 1 (#698). Plantilla tomada de
+> `20260813000001_spec53_package_labels.sql`, la más reciente que define
+> `get_completed_manifests`, tras repetir el `git grep` que este spec exige:
+> usar la de abril habría borrado `labels_printed_at`/`labels_printed_by_name`.
+> Review: dos rondas adversariales. Ronda 1 — tres bloqueantes: el pgTAP
+> abortaba en el fixture antes de la primera aserción (una fila `resolved` sin
+> `resolved_at` violaba `discrepancy_resolved_has_when`, inmediato y no
+> diferible: 0 `ok` de 5 planeadas); el filtro de estado faltaba; y la aserción
+> que protege las columnas de spec-53 era vacua (vaciar `u.full_name` a `NULL`
+> dejaba los 5 tests en verde). Ronda 2 — aprobada, más el cambio de
+> `COUNT(*)` a `COUNT(DISTINCT d.package_id)`.
+> QA: pgTAP ejecutado contra `spec52-pg` leyendo las líneas TAP crudas de
+> `psql` (el resumen de `scripts/pgtap-local.sh` sólo hace `grep ERROR:` y es
+> ciego a `not ok`): **6/6 `ok`**. Mutación verificada por el revisor sobre esa
+> misma salida: `status = 'open'` voltea 1/4/5; sin filtro de estado voltea 1;
+> `u.full_name` → `NULL::TEXT` voltea 6. Frontend 31/31 con `--pool=forks`.
+> CI verde en `932d1ca`; Vercel desplegado.
+
+**Decisión de producto (2026-09-09).** `missing_count` filtra
+`status <> 'resolved'`, no `= 'open'`. Una merma resuelta deja de ser merma
+—criterio del usuario— pero **`lost` sigue contando**: es el disparador del
+futuro workflow de indemnización (`20260913000005`), no un cierre limpio. Con
+`= 'open'`, el jefe de operaciones declarando un bulto perdido habría apagado
+la alarma y pintado el peor desenlace como carga completa. El fixture
+`CARGA-83-3` (un `'lost'` solo, sin ninguna `'open'`) existe para impedir esa
+regresión.
+
+El histórico que el usuario pidió **ya existe y no hizo falta construirlo**:
+`discrepancies` guarda `status`, `detected_at`, `resolved_at` y
+`resolved_by_user_id`, y la tabla lleva trigger de auditoría
+(`audit_discrepancies_changes`), así que cada transición queda en `audit_logs`
+con actor y momento.
+
+> Downstream: si el panel llega a querer distinguir «cerró con merma en su día»
+> de «tiene merma ahora», la vía barata son dos columnas —`missing_count` (lo
+> que pinta la alarma) y `missing_ever_count` (todas, como texto neutro)— sobre
+> el dato que ya está. Fase aparte, no ampliación de ésta.
+> Heredado, no arreglado aquí: `TodayClosuresPanel.tsx` usa
+> `{row.total_packages ?? 0}`, así que un manifiesto sin conteo muestra
+> «N faltantes de 0». Viene de spec-54 y está igual en la rama de cierre
+> limpio — va a un barrido de copy, no a esta fase.
 
 ### Fase 2 — Ventana `[blocked]`
 
@@ -155,17 +199,54 @@ izquierdo de la fila.
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
 - [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
 
-### Fase 3 — Ocupación `[pending]`
+### Fase 3 — Ocupación `[parked]`
+
+**Decisión del usuario (2026-09-09), textual:** «No hay capacity para esto
+ahora, y no es bloqueante para el rollout con tenant. Se retoma cuando el
+rollout lo pida.»
+
+No se mueve a otro spec: se retoma **en este mismo spec** cuando el rollout lo
+pida, no se descarta. Hasta entonces no se toma ni se despacha en paralelo con
+nada.
 
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
 
-### Fase 4 — Diff visual `[pending]`
+### Fase 4 — Diff visual `[in_progress]`
 
 **Archivos:** `apps/frontend/src/components/pickup/ManifestTable.tsx`, `apps/frontend/src/components/pickup/PickupRouteDraftPanel.tsx`, `apps/frontend/src/components/pickup/TodayClosuresPanel.tsx`, `apps/frontend/src/components/StatTile.tsx`, y sus tests
 
-- [ ] Screenshot diff `1l` contra `5a`. Se espera poco: `5a` es el mismo diseño con los datos que faltaban.
-- [ ] **Conservar la séptima columna** (impresión de etiquetas, spec-53). El mock no la tiene y spec-54 la añadió a propósito: quitarla sería una regresión funcional disfrazada de fidelidad al diseño.
+- [x] Diff contra el mock. **Nota:** `1l` ya no existe como artboard independiente en `docs/design/`; el único mock de Recogida en el repo es `docs/design/Recogida.dc.html`, artboard **`5a`** (línea 50 en adelante). Ese es el que se usó como fuente de verdad — no hay un `1l` contra el cual comparar por separado, así que el diff fue "código actual contra `5a`", filtrando lo que `5a` pide y que depende de datos que las fases 2 y 3 (bloqueadas/pendientes) todavía no proveen.
+- [x] **Conservar la séptima columna** (impresión de etiquetas, spec-53). Sigue ahí — no se tocó `GRID` ni la columna de impresión.
+
+**Hallazgos y fixes (dentro del alcance declarado, sin datos nuevos):**
+
+1. **`TodayClosuresPanel.tsx` — «de 0» inventado, en las dos ramas.** La línea de merma usaba `{row.total_packages ?? 0}` (heredado de spec-54). Un manifiesto cerrado con `total_packages` nulo mostraba «N faltantes de 0», que lee como si no se hubiera esperado nada. **Ronda 1 sólo arregló la rama con merma** y la nota que dejé aquí mismo decía que la rama limpia tenía el mismo `?? 0` — la leí, arreglé una y dejé la nota describiendo un estado que ya sólo era medio verdad. Corregido ahora en ambas: si `total_packages` es `null`, se omite la cláusula numérica en las dos ramas («N faltante(s)» sin «de M»; sólo el nombre del cliente sin «M paquetes»).
+2. **`TodayClosuresPanel.tsx` — retailer ausente en la línea de merma.** El spec (línea 99) y el mock (`5a`, línea 266) dicen `Ripley · 2 faltantes de 44`; el código de la ronda 1 sólo mostraba `2 faltantes de 44`, sin el cliente — pese a que la rama limpia, tres líneas más abajo, sí lo mostraba. Corregido: ambas ramas anteponen `{retailer_name ?? 'Sin cliente'} · `.
+3. **`TodayClosuresPanel.tsx` — cierre limpio como razón verificado/total, no total pelado.** El mock (`5a`, líneas 261, 271, 276) muestra `38/38 paquetes`, no `38 paquetes`. Corregido: `verificados = total_packages - missing_count` (en la rama limpia `missing_count` es siempre 0, así que `verificados === total`, pero la fórmula generaliza si el día de mañana un cierre limpio deja de implicar cero discrepancias).
+4. **`PickupRouteDraftPanel.tsx` — falta el punto de recogida en la fila de manifiesto de la ruta en armado.** El mock (`Recogida.dc.html:238`) muestra `Falabella · La Florida · 42 paq.`; el código sólo mostraba `Falabella · 12 paq.`. `pickupPoint` ya existe en `ManifestRow` (se usa en `ManifestTable.tsx`) — no era un dato faltante, sólo no se leía en este componente. Corregido.
+
+Tests nuevos para cada uno de los cuatro, TDD confirmando rojo por la razón correcta antes de implementar. Mutation-tested manualmente: revertir el prefijo del retailer en la línea de merma mata 2 tests; revertir el ratio verificado/total a un total pelado mata el test que exige `38/38`; ambos confirmados con la implementación restaurada después.
+
+**Divergencias encontradas y NO tocadas (declaradas, no arregladas):**
+1. **Fondo de fila completo en `TodayClosuresPanel` cuando hay merma.** El mock (`5a`, líneas 264-268) sólo tiñe el badge del ícono (`bg:var(--warn-bg)`) — la fila en sí no lleva fondo, sólo el `border-bottom` normal. El código actual aplica `bg-status-warning-bg` a la fila completa. **Reencuadre tras revisión:** no es una decisión de producto del usuario — la fase 1 pedía «paleta warning **sólo cuando hay merma**», sin especificar a nivel de fila o de ícono; el teñido de fila completa fue una elección de implementación de `#696` y de su propio test (`TodayClosuresPanel.test.tsx`, que exige `row.className` contenga `'status-warning'`). Bajo la regla de desempate del propio spec-83 («El mock manda en diseño; este spec manda en comportamiento. Si discrepan, se implementa el mock y la discrepancia se escribe aquí»), el mock gana en este punto porque es diseño puro, no comportamiento. **No lo cambié** en esta fase porque tocarlo rompe el test de fase 1 escrito hace minutos y el criterio de esta fase es no interferir con lo que otra acaba de cerrar — pero el registro correcto es: *hallazgo abierto, mock vs. una implementación que fijó más de lo que la fase 1 pedía*, no una decisión cerrada del usuario.
+2. **Panel "VEHÍCULO Y CONDUCTOR" inline con barra de ocupación** (`5a`, dentro del panel de ruta en armado). El mock muestra el vehículo/conductor elegidos inline, con "Cambiar", antes de crear la ruta. La implementación actual (`PickupRouteDraftPanel.tsx` + `StartRouteButton.tsx`, spec-61) selecciona el vehículo en un diálogo modal al momento de confirmar, y no hay conductor que elegir (lo asigna quien lidera la ruta). **No es un dato faltante** — es un modelo de interacción distinto, decidido en spec-61 con sus propios tests. `StartRouteButton.tsx` y `VehicleSelect.tsx` no están en el alcance de archivos de esta fase, y reescribir el flujo de creación de ruta para que coincida con el mock sería un cambio de comportamiento, no un diff visual. Se declara sin tocar.
+3. **Texto del botón de confirmación.** Mock: "Crear ruta y generar QR". Código: "Iniciar ruta de retiro" (en `StartRouteButton.tsx`, fuera de alcance). Mismo motivo que (2): cambiar el texto sin cambiar el archivo que lo posee, o cambiar el archivo fuera del alcance declarado, no corresponde a esta fase.
+4. **La barra de ocupación estimada** (68%) — ya cubierta por la fase 3 de este mismo spec (`[pending]`, depende de spec-73); no se inventó ningún porcentaje aquí, consistente con la decisión de spec-54.
+5. **La columna VENTANA y el semáforo de cierre** — cubiertos por la fase 2 (`[blocked]`); `ManifestTable.tsx` sigue sin esa columna, correctamente.
+
+**Seguimiento declarado, no implementado (fuera de lo que esta fase puede tomar sin ampliar alcance):**
+- **`ManifestTable` — falta el pie de paginación del mock** (`5a`, líneas 202-208: "7 de 12 · página 1 de 2" + Anterior/Siguiente). No existe paginación en ningún componente de Recogida escritorio hoy. Es comportamiento, no un ajuste visual, así que no se implementa aquí — pero queda declarado para que el siguiente que toque esta pantalla no asuma que ya está.
+- **Nit adjunto:** el badge de merma del mock (`5a:265`) es el glifo `!` en mono 700; el código usa el ícono `TriangleAlert` de `lucide-react`. Cosmético, no tocado.
+- **`5a` la pintan 8 componentes; esta fase diffeó 4.** También la pintan `PickupDesktopView.tsx`, `PickupDesktopHeader.tsx`, `PickupManifestTabs.tsx` y `ClientFilter.tsx` (el mock pone el buscador en la cabecera, `5a:58-64`; el código lo pone bajo los `StatTile`). Es una limitación de los `**Archivos:**` que este spec declaró para la fase, no una omisión de quien la ejecutó — pero **`5a` no está completamente revisado** por esta fase, sólo la porción de esos 4 archivos.
+- **Referencias muertas a `1l` corregidas donde se tocó el archivo** (`TodayClosuresPanel.tsx`, `PickupRouteDraftPanel.tsx`, `ManifestTable.tsx` — los tres docstrings y comentarios que decían "mock 1l" ahora dicen `5a`). **Quedan sin tocar** en archivos fuera del alcance de esta fase: `PickupDesktopView.tsx` (docstring y dos comentarios), `PickupDesktopHeader.tsx` (docstring), `PickupMobileView.tsx` (comentario) y `PickupRouteDraftPanel.test.tsx` (comentario de test). El hallazgo de esta fase es que `1l` no existe como artboard independiente — el mock vivo es `5a`.
+
+`ManifestTable.tsx` y `StatTile.tsx` ya coincidían con lo que `5a` pide sin datos nuevos — tipografías, tamaños, paletas de estado y la séptima columna de impresión ya son fieles. **`StatTile.tsx` no se modificó** — se comprobó `git grep StatTile` y lo usan además `distribution/page.tsx`, `reception/page.tsx`, `DistributionMobileView.tsx`, `PickupMobileActiveRoute.tsx`, `ReceptionCounts.tsx` y un componente local homónimo en `DispatchTabletSidePanel.tsx` que no importa el compartido; al no tocarlo, ninguna de esas pantallas ni sus specs quedan afectadas.
+
+**Impacto downstream.**
+- **spec-82** declara a spec-83 como downstream suyo, pero no al revés: `spec-82-recogida-movil-asignacion-y-ruta.md` no menciona `ManifestTable`, `PickupRouteDraftPanel`, `TodayClosuresPanel` ni `StatTile` (verificado con `grep`) — es enteramente móvil (`5b`–`5i`). Nada que reconciliar en esa dirección.
+- **Ningún otro spec activo describe estos cuatro componentes de escritorio** más allá de spec-54 (que ya se citó como el origen y quedó superado por este mismo spec) y este propio spec-83.
+- El **filtro de merma `status <> 'resolved'`** (spec-85, fase 1 de este spec) no se tocó: esta fase no cambió ninguna consulta ni el hook `useManifests`, sólo el render de campos ya presentes en `CompletedManifest` y `ManifestRow`. El mock no pide nada que lo contradiga — `5a` no distingue estados de discrepancia, sólo muestra el conteo.
 
 ---
 

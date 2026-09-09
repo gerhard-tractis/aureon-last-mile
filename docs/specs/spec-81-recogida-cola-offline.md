@@ -172,15 +172,15 @@ Lógica pura y testeable sin navegador: encolar, listar pendientes, reclamar par
 - [x] **Ronda 5 de review — n6 (nitpick):** el docstring de `claimPending` decía que el token era "el único dato que distingue mi reclamación de la de otro drenador" sin acotar el alcance. Corregido: es único por entrada y milisegundo, no globalmente — inerte para este módulo (todo comparador acota primero por `:id`), pero no serviría como clave de un `Map<token, request>` entre entradas distintas.
 - [x] **Ronda 5 de review — comentario del test de N3:** el test negativo de H5/N3 también mata una "cuarta vía" (`toArray()` + filtro en memoria) sin un cuarto spy, porque Dexie implementa `Table.toArray()` como `this.toCollection().toArray()`. Documentado en el comentario del test para que no se lea como una enumeración incompleta.
 
-### Fase 2 — Drenado `[pending]`
+### Fase 2 — Drenado `[done]`
 
 **Archivos:** `apps/frontend/src/hooks/useOfflineQueue.ts`, `+ test`
 
 Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con techo. FIFO por manifiesto.
 
-- [ ] Test: dos escaneos y un cierre encolados sin red → al reconectar salen en orden y el cierre va último.
-- [ ] Test: un 500 no descarta la entrada; un 409 idempotente sí la marca resuelta.
-- [ ] **Requisito (2026-09-07, hallazgo de la ronda 3 de review de spec-80
+- [x] Test: dos escaneos y un cierre encolados sin red → al reconectar salen en orden y el cierre va último.
+- [x] Test: un 500 no descarta la entrada; un 409 idempotente sí la marca resuelta.
+- [x] **Requisito (2026-09-07, hallazgo de la ronda 3 de review de spec-80
       fase 1).** `mapCloseManifestError` (spec-80) hoy da al operario **el
       mismo texto** para un `TypeError: Failed to fetch` (fallo de red — el
       caso normal en este muelle, la premisa de este spec) y para un
@@ -193,16 +193,720 @@ Drena al recuperar `navigator.onLine` y al montar. Retroceso exponencial con tec
       "sin conexión" del rechazo de negocio irrecuperable, y presentarle al
       operario mensajes y afordancias distintos para cada una (encolar y
       seguir vs. detenerse y pedir ayuda).
-- [ ] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1.
-- [ ] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
-- [ ] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
-- [ ] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
-- [ ] **El token deja de ser una marca de milisegundo y pasa a ser un nonce** (`crypto.randomUUID()` en un campo `claimToken` propio, o `${now}#${contador}`). Hoy `claimPending` usa `new Date().toISOString()`, así que **dos reclamaciones sucesivas de la misma entrada dentro del mismo ms producen el mismo token** y el guard vuelve a pasar: es el bug M1 otra vez, dentro de una ventana de 1 ms. Y no es hipotético — el docstring de `markFailed` señala que sin señal `fetch` rechaza casi al instante, así que claim y fallo caen en el mismo ms **como caso común**. Verificado: `claim → markFailed(t) → claim → markFailed(t)` deja `retryCount 2` y `pending`, cuando lo correcto es `retryCount 1` y `sending`. Mitigado si el drenador respeta `nextAttemptAt` con retroceso, pero no conviene depender de eso.
-- [ ] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
-- [ ] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola.
-- [ ] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings.
+      **Implementado (m11, ronda 2 de review del PR #679 — este párrafo citaba
+      la regla ANTERIOR a B1/B2, que la contradice; ver esas dos entradas
+      más abajo para la vigente):** `classifyCloseManifestError`
+      (`lib/pickup/closeManifestErrors.ts`) devuelve
+      `{ kind: 'offline' | 'idempotent' | 'permanent' | 'transient', message }`
+      — `offline` para la forma de red/timeout de `postgrest-js` (`code`
+      presente pero vacío, o un `TypeError`/`AbortError` nativo sin
+      centinela); `idempotent` para `MANIFEST_ALREADY_SIGNED` (el cierre ya
+      se aplicó); `permanent` sólo para los cuatro rechazos que
+      `close_manifest` declara explícitamente irrecuperables
+      (`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, y los dos
+      cross-tenant `42501`); todo lo demás, incluido lo desconocido, es
+      `transient` — el valor por defecto seguro para un drenador de fondo
+      pasó de "detenerse" a "reintentar". `complete/[loadId]/page.tsx`
+      encola el cierre (`enqueue(db, { type: 'close_manifest', ... })`) y
+      navega fuera en la rama offline; en cualquier otra rama deja el botón
+      re-habilitado y no encola nada — el sender (`offlineQueueSender.ts`)
+      es quien traduce `idempotent`/`permanent`/`transient` a
+      `sent`/`dead`/`retry` para el drenador de fondo.
+- [x] Al arrancar el drenado (mount y evento `online`), llamar `reclaimStale(db, operatorId, olderThanMs)` antes de `listPending` — recupera reclamaciones huérfanas de una pestaña muerta a mitad de envío (spec-81, ronda 3 de review, H1). `reclaimStale` ya requiere `operatorId` desde fase 1 (ronda 4 de review, M2). **Restricción del contrato:** `olderThanMs` debe superar `timeout_http`; si no, una petición lenta legítima en 2G se reclama antes de completarse y entra en bucle reclaim → resend → resend, generando el duplicado del que protege M1. **Implementado (ronda 1 de review del PR #679, B4):** `timeout_http` no existía como valor propio — `postgrest-js` no fija ninguno y el sender no pasaba `signal`, así que el límite real era el default de `fetch` del navegador (~300s), muy por encima de los 45s que se afirmaban como margen. `offlineQueueSender.ts` ahora impone `AbortSignal.timeout(60_000)` sobre `close_manifest`, y `RECLAIM_STALE_MS = 90_000` en `useOfflineQueue.ts` — 30s de margen sobre ESE valor, que sí es real.
+- [x] **`getPendingPickupCount` pasa a ser por operador** (recibe `operatorId`, o se reemplaza por la longitud de `listPending(db, operatorId)`), y sus consumidores (`useSyncQueue`, `SyncChip`, `PickupFlowHeader`, `ReceptionMobileSession`) pasan a requerir `operatorId` — ver "Alcance del contador" en Decisiones de diseño. Sin esto, un operador que cierra sesión en un teléfono de muelle deja un contador huérfano que el siguiente operador no puede drenar ni purgar.
+- [x] **`getPendingPickupCount` cuenta también `sending` y `dead`, no sólo `pending`** (movido aquí desde fase 4 — ronda 5 de review de fase 1, B2). Hoy sólo cuenta `pending`. `useSyncQueue.ts:121` corta el polling cuando `status === 'online' && queuedCount === 0` — con una sola entrada huérfana en `sending` (pestaña muerta a mitad de envío, el escenario que `reclaimStale` existe para cubrir), `queuedCount` cae a 0, el polling se detiene, y la pantalla se congela en «todo subido» hasta un remount, mientras el operario cierra la carga con un conteo falso — el riesgo nº1 declarado del spec. No puede esperar a fase 4: el spec declara que las fases 1–3 van juntas o no va ninguna.
+- [x] El drenador pasa el token que `claimPending` devuelve a `markFailed`/`markSent`/`markDead` como `claimedAt` (implementado en fase 1, ronda 4 y 5 de review, M1/B1 — ver checklist de esa fase) — sin esto la protección existe en el contrato pero ningún llamador la usa.
+- [x] **El token deja de ser una marca de milisegundo y pasa a ser un nonce** (`crypto.randomUUID()` en un campo `claimToken` propio, o `${now}#${contador}`). Hoy `claimPending` usa `new Date().toISOString()`, así que **dos reclamaciones sucesivas de la misma entrada dentro del mismo ms producen el mismo token** y el guard vuelve a pasar: es el bug M1 otra vez, dentro de una ventana de 1 ms. Y no es hipotético — el docstring de `markFailed` señala que sin señal `fetch` rechaza casi al instante, así que claim y fallo caen en el mismo ms **como caso común**. Verificado: `claim → markFailed(t) → claim → markFailed(t)` deja `retryCount 2` y `pending`, cuando lo correcto es `retryCount 1` y `sending`. Mitigado si el drenador respeta `nextAttemptAt` con retroceso, pero no conviene depender de eso. **Implementado:** `claimToken` propio, `crypto.randomUUID()`.
+- [x] **`markFailed` sin token deja de pisar entradas terminales.** H3 protegió `status`, no el resto: sobre una entrada `dead`, un `markFailed(id, "Failed to fetch")` sin token conserva el estado pero **sustituye `lastError`** — y `lastError` es el único registro de por qué ese escaneo se descartó. Convierte un rechazo de negocio diagnosticable en un fallo de red genérico justo antes de que fase 4 se lo enseñe al operario. Mismo efecto sobre `sent` (`retryCount` a 1 en una entrada ya confirmada).
+- [x] **`reclaimStale` invalida el token al devolver la entrada a `pending`.** Hoy no refresca `lastAttemptAt`, así que el token del drenador zombi sigue coincidiendo: en esa ventana, `markDead(id, r, tokenViejo)` marca muerta una entrada que `reclaimStale` acababa de devolver a la cola. **Implementado:** `.modify({ status: "pending", claimToken: null })`; combinado con que `matchesClaim` ya exige `status === "sending"`, es defensa en profundidad, no la única barrera.
+- [x] **Los tres escritores terminales no tienen el mismo contrato**, aunque sus docstrings lo afirmen. `markSent` no exige `status === "sending"` y bloquea `dead`; `markFailed` sí lo exige y no bloquea ninguno; `markDead` no lo exige y bloquea `sent`. Y sólo `markSent` devuelve `count` — pero un `count === 0` es información que el drenador necesita **más** en `markFailed`/`markDead`, donde significa «tu reclamación fue robada». Unificar el contrato y corregir los docstrings. **Implementado:** helper `matchesClaim(entry, claimedAt)` compartido por los tres; los tres devuelven `Promise<number>`.
 
-### Fase 3 — Idempotencia en el servidor `[in_progress]`
+**Ronda 1 de review del PR #679 (2026-09-08) — cuatro bloqueantes:**
+
+- **B1.** `classifyCloseManifestError` nunca veía el error que la app produce
+  de verdad: `supabase.rpc('close_manifest', …)` no rechaza con un
+  `TypeError` sin señal — `postgrest-js@1.21.4` captura el fallo de `fetch` y
+  RESUELVE con `{ message, details, hint: '', code: '' }`. El check original
+  (`'code' in err`) clasificaba esa forma como `business` siempre, cero
+  cobertura real de la rama offline. **Implementado:** un `code` presente
+  pero vacío es ahora la señal (un `code` de Postgrest real nunca es la
+  cadena vacía — siempre un SQLSTATE de 5 caracteres).
+- **B2.** `useOfflineQueue` no tenía ningún llamador de producción — la fase
+  «Drenado» no drenaba nada. **Implementado:** `lib/pickup/offlineQueueSender.ts`
+  (el `OfflineQueueSender` real contra `close_manifest`) montado en
+  `AppLayout.tsx`, mismo alcance global que `SyncChip`/`useSyncQueue`.
+- **B3.** Un escaneo `dead` no bloqueaba el `close_manifest` detrás de él —
+  `listPending` excluye `dead` a propósito, así que en la siguiente pasada el
+  cierre pasaba a la cabeza y se enviaba con un bulto menos del que el
+  operario contó. **Implementado:** `manifestHasDeadEntry` en `queue.ts`,
+  comprobado en cada vuelta de `drainManifest` antes de listar pendientes.
+- **B4.** Ver la nota sobre `RECLAIM_STALE_MS` arriba.
+
+Cuatro mayores (mutantes que sobrevivían 7/7, cerrados con tests que se
+verificaron contra el mutante real, no sólo escritos): M1 (el camino de
+éxito — `markSent`, `purgeConfirmed`, y el `claimToken` en `markFailed`/
+`markDead` — no tenía ninguna aserción que lo exigiera), M2 (el retroceso
+exponencial no tenía ningún test, ni la puerta que lo honra), M3 (el test
+del 409 tenía las dos ramas devolviendo `'sent'`, no discriminaba nada —
+dividido en dos tests reales), M4 (integration test nuevo en
+`complete/[loadId]/page.test.tsx` con la forma real de postgrest-js —
+verificado a mano que habría atrapado B1).
+
+m3 (menor): el tope de 500 entradas sin confirmar por operador que
+"Riesgos" declaraba vigente desde esta fase no estaba implementado.
+**Implementado:** `enqueue` lo comprueba y rechaza con error explícito.
+
+m4 (menor, sin cerrar — alcance documentado, no arreglado): la rama offline
+de `complete/[loadId]/page.tsx` es casi inalcanzable en la práctica.
+`manifestId` se pide con un `supabase.from('manifests')` crudo en un
+`useEffect` sin caché (líneas ~52-66) y la página muestra un skeleton
+mientras `!manifestId`. Sin señal, recargar la página deja el skeleton
+permanente — nunca llega a mostrar el botón de completar. La única ventana
+real en la que la rama offline dispara es «la pantalla cargó con señal →
+la señal se cae → el operario pulsa Completar». No bloqueante para esta
+ronda; queda anotado para que una fase futura decida si cachear
+`manifestId` en IndexedDB vale la pena.
+
+**Ronda 2 de review del PR #679 (2026-09-08) — cuatro bloqueantes más:**
+
+- **B1.** `MANIFEST_ALREADY_SIGNED` (23505) se clasificaba `business` →
+  `dead` en el sender. La migración lo llama explícitamente "an idempotent
+  409": el reintento de un cierre que SÍ se aplicó (respuesta perdida en un
+  túnel, o abortada por el propio `AbortSignal.timeout` de B4 de la ronda
+  1) volvía a chocar con `signature_operator IS NOT NULL` y mataba el
+  manifiesto para siempre — un envío exitoso convertido en bloqueo
+  permanente. **Implementado:** `classifyCloseManifestError` gana un kind
+  `idempotent`, separado de `permanent`; el sender lo reporta `sent`.
+- **B2.** Todo lo no-offline caía a `dead` sin distinguir. Verificado
+  contra el sender real: un JWT expirado (`PGRST301`), un 502 de Kong sin
+  `code`, un `statement timeout` (`57014`) y un deadlock (`40P01`) — los
+  cuatro recuperables reintentando, los cuatro mataban el manifiesto.
+  **Implementado:** `permanent` se reserva a los cuatro rechazos que
+  `close_manifest` declara explícitamente irrecuperables
+  (`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, los dos
+  cross-tenant `42501`); todo lo demás, `transient` (retry).
+- **B3.** `getPendingPickupCount` sumaba `dead` a `queuedCount`, y
+  `SyncChip` pinta `queuedCount > 0` en verde de éxito — un rechazo
+  irrecuperable se mostraba, para siempre, como "todo va bien, está en
+  cola". **Implementado:** `dead` deja de contar en `queuedCount`;
+  `getBlockedPickupCount`/`useSyncQueue().blockedCount` es su propio
+  contador, y `SyncChip` anuncia "N REQUIERE AYUDA" con tono de aviso, no
+  de éxito. `dead` sigue siendo permanente por decisión explícita del
+  reviewer (soltar el cierre detrás de un escaneo muerto es el riesgo nº1);
+  la afordancia humana completa (a dónde lleva el bloqueo, cómo se
+  resuelve) queda como ítem nuevo en el checklist de fase 4, con su razón
+  — no existía en ninguna fase antes de esta ronda.
+- **B4.** La cola estaba acotada por inquilino (`operatorId`), no por
+  persona — dos conductores de la MISMA empresa en un teléfono de muelle
+  compartido, en sesiones sucesivas, comparten `operatorId`. El drenador de
+  quien inicia sesión después enviaba (y firmaba con su propio nombre, vía
+  `auth.uid()` en el servidor) lo que el conductor anterior había encolado.
+  **Implementado:** `PickupQueueEntry` gana `userId`; `useOfflineQueue`
+  recibe `(operatorId, userId, send)` y filtra por `userId` antes de
+  reclamar o enviar cualquier entrada — nunca toca una que la sesión actual
+  no encoló, aunque comparta manifiesto. `manifestHasDeadEntry`/
+  `reclaimStale`/`purgeConfirmed` siguen sin filtrar por usuario a
+  propósito (documentado en el código de `useOfflineQueue.ts`): o son una
+  protección conservadora que debe aplicar a cualquiera, o no tocan datos
+  de negocio.
+
+Dos mayores: **M5** — `enqueue` corría dentro del `catch` de
+`handleComplete` sin un `try` propio; si lanzaba (el tope de 500, o un
+`DOMException` de IndexedDB), la excepción escapaba sin capturar y el botón
+quedaba colgado en "Completando…" para siempre. Capturado, con toast y
+botón re-habilitado. **M6** — un reintento programado o un evento `online`
+que llegaba mientras un `drain()` ya corría se perdía sin dejar rastro; el
+guard `drainingRef.current` no reprogramaba nada. Ahora marca "hace falta
+otra pasada" y la ejecuta al terminar la que está en curso.
+
+m7-m12 (menores): timeout del sender fijado a un valor exacto en vez de
+sólo `toBeInstanceOf` (m7); detección de característica para
+`AbortSignal.timeout` en WebViews sin soporte (m8); test de estabilidad de
+identidad del `useMemo` de `AppLayout` (m9); `timersRef` ya no crece sin
+límite (m10); esta cabecera del checklist citaba la regla de clasificación
+ANTERIOR a B1/B2 (m11); una aserción vacua en
+`useOfflineQueue.test.ts` que el drenado del mount ya satisfacía, corregida
+para discriminar sobre el escaneo encolado después del mount (m12).
+
+**Nota de coordinación con fase 3 (review del PR #678, 2026-09-08):**
+`usePickupScans.ts` inserta N filas (una por bulto) bajo un único
+`clientOperationId` cuando el escaneo es a nivel de pedido — con el índice
+único simple que fase 3 tenía planeado, ese lote choca **consigo mismo** en
+el primer envío, no en un reintento, y un drenador que trate ciegamente
+"409 = ya aplicado" marcaría `sent` un escaneo que nunca se guardó. Decisión
+tomada en fase 3 (no tocada aquí): la clave pasa a
+`(operator_id, client_operation_id, package_id)` con `NULLS NOT DISTINCT`.
+Del lado de esta fase: `OfflineQueueSender.outcome === 'sent'` está
+documentado explícitamente (docstring en `useOfflineQueue.ts`) como "el
+servidor confirma que la operación COMPLETA está aplicada", no "recibí un
+409" — el hook no inspecciona códigos HTTP, confía en lo que el sender le
+diga, y el sender es responsabilidad de quien lo inyecte (aún sin escritor
+real para `pickup_scans` en esta fase; ver más abajo). Esta fase **no**
+escribe `client_operation_id` en ninguna tabla de Supabase — el único
+camino de red que añade (`close_manifest` en la rama offline) sigue sin
+tocar; se limita a encolar localmente — así que no depende de la columna ni
+de los tipos que fase 3 añade, y no hay nada que coordinar en el merge más
+allá de lo ya escrito arriba.
+
+**Alcance decidido en esta fase — sin escritor de `pickup_scan` real.** El
+`Goal` del spec señala que "no existe ningún escritor" para Recogida; esta
+fase entrega el **drenador** (`useOfflineQueue`, genérico sobre un
+`OfflineQueueSender` inyectado) y lo conecta a un único productor real:
+`complete/[loadId]/page.tsx` encola `close_manifest` cuando `close_manifest`
+falla por causa offline. Conectar `pickup/scan/[loadId]/page.tsx` (el
+escritor de escaneos individuales) al mismo drenador — decidir cuándo un
+escaneo se intenta en línea vs. se encola directamente sin intentarlo, y
+escribir el `OfflineQueueSender` real contra `pickup_scans` — no estaba en
+el checklist de esta fase (que lista sólo `useOfflineQueue.ts` como
+archivo) y además queda bloqueado por la columna `client_operation_id` de
+fase 3. Queda para cuando fase 3 mergee, como trabajo de conexión, no de
+diseño nuevo: la forma del `OfflineQueueSender` ya existe y está pensada
+para eso.
+
+**Ronda 3 de review del PR #679 (2026-09-08) — dos bloqueantes, ambos en
+`useOfflineQueue.ts`, y el segundo introducido por un arreglo menor de la
+ronda 2 (m10):**
+
+- **B1.** m10 (ronda 2) evitaba que `timersRef` creciera sin límite quitando
+  cada timer del array en cuanto disparaba — pero lo hacía **reasignando**
+  `timersRef.current` a un array nuevo (`.filter(...)`), y la limpieza del
+  efecto de montaje capturaba `timersRef.current` en una variable local AL
+  MONTAR, no al desmontar. En cuanto el primer timer disparaba, esa variable
+  quedaba apuntando al array viejo — cualquier reintento programado
+  DESPUÉS quedaba en el array nuevo, invisible para el `clearTimeout` del
+  desmontaje. Escenario: A cierra sesión entre el primer y el segundo
+  reintento de su propio `close_manifest`; B entra; el timer huérfano de A
+  dispara igual, ejecutando el closure viejo de `drain` (operatorId/userId
+  de A) contra el cliente Supabase actual (sesión de B) — `close_manifest`
+  deriva `signature_operator_name` de `auth.uid()`, así que el cierre de A
+  queda firmado con el nombre de B. **Implementado:** la limpieza lee
+  `timersRef.current` en el momento en que se ejecuta, no una variable
+  capturada al montar. **Seguimiento descubierto durante el mutation-test de
+  este arreglo, no en el review original:** un `drain()` en vuelo en el
+  momento exacto del desmontaje puede llamar a `scheduleRetry` DESPUÉS de
+  que la limpieza ya corrió — la limpieza no puede cancelar un timer que
+  todavía no existe. Cerrado con `mountedRef`: `scheduleRetry` es un no-op
+  si el componente ya se desmontó, sin importar cuándo dentro del `drain()`
+  en vuelo se intente llamar. Test dedicado
+  (`useOfflineQueue.test.ts`, "B1 (seguimiento)") gatea `send()` para
+  desmontar mientras sigue pendiente y confirma que ningún reintento llega
+  a programarse.
+- **B2.** `drainManifest` sale por `manifestHasDeadEntry` ANTES de mirar
+  `nextAttemptAt`, pero el `remaining` que `drain()` usaba para reprogramar
+  el próximo intento seguía incluyendo esa entrada. Si su backoff ya había
+  vencido, `delay === 0` en cada pasada — `drain()` se reprogramaba
+  inmediato, repetía el mismo estado bloqueado, y volvía a dar 0. Sin
+  techo, sin salida: medido en el review, ~49 pasadas por segundo, cero
+  envíos, alcanzable tanto cross-user (el `dead` de un usuario bloquea el
+  manifiesto para otro) como con dos pestañas del mismo usuario.
+  **Implementado:** antes de calcular `soonest`, se excluyen las entradas
+  cuyo manifiesto está bloqueado por un `dead` (`manifestHasDeadEntry`) —
+  nada que este drenador no vaya a poder avanzar debe alimentar el
+  temporizador de reintento.
+
+Dos mayores que el review pidió arreglar, no sólo anotar:
+
+- **M3.** `ownEntries` rompía el FIFO entre usuarios: `drainManifest`
+  filtraba por `userId` ANTES de mirar si había una entrada `pending` de
+  OTRO usuario por delante en el mismo manifiesto — el propio docstring de
+  `manifestHasDeadEntry` da el argumento que lo contradice ("un `dead` en un
+  manifiesto es un problema del MANIFIESTO, no de quién lo encoló"); un
+  `pending` por delante es lo mismo, sólo temporal. Y había un test
+  (`useOfflineQueue.test.ts`) que **consagraba** el bug como comportamiento
+  correcto. Escenario: A escanea 5 bultos sin red y cierra sesión; B entra,
+  escanea 3 y firma; el drenador de B se saltaba los 5 de A — el manifiesto
+  se cerraba corto de lo que el cliente firmó. Hoy no es explotable
+  (`pickup_scan` no tiene productor real todavía), pero el test bloqueaba el
+  arreglo correcto para cuando lo tenga. **Implementado:** guarda hermana de
+  `manifestHasDeadEntry` (`manifestBlockedForUser`) — la cabeza real del
+  FIFO del manifiesto (sin filtrar por usuario) tiene que ser de esta sesión
+  antes de tocar nada en él. Test corregido para afirmar el comportamiento
+  correcto.
+- **M4.** `useOfflineQueue.test.ts` ("a 500 (retry) does not discard the
+  entry") no desmontaba ni congelaba el reloj, y `drain()` deja un
+  reintento real a +1000ms tras la primera respuesta 'retry'; el mock de
+  `send` devuelve `'sent'` en su segunda llamada. Bajo un stall de reloj
+  real (contención de CPU con el resto de la suite, GC) ese timer podía
+  disparar para real entre el fin del test y la limpieza automática,
+  enviando y purgando una fila que el test asumía seguía `pending`. No es
+  la carrera de M6 ni contención de recursos sin mecanismo — es un test con
+  deadline de reloj real, y el review pidió arreglarlo, no etiquetarlo
+  "flaky". **Implementado:** el test desmonta explícitamente antes de leer
+  el estado final — con B1 corregido, eso cancela el timer de forma
+  determinista sin depender de cuándo llegue el runner a su `afterEach`.
+
+Un mayor nuevo, del checklist original de esta fase (nunca implementado):
+
+- **M5.** El techo de `retryCount` seguía sin existir — `spec-81`
+  (fase 3, M-4) ya declaraba este residual "pendiente de la fase 2". `dead`
+  sólo se alcanzaba vía `outcome: 'dead'` del sender (los centinelas
+  `permanent`/`idempotent`); nada más agotaba reintentos nunca. Con
+  `MAX_BACKOFF_MS` topado en 30s, un error `transient` desconocido (un
+  42501 sin reconocer, o el 409 de lote de fase 3 que el sender nunca puede
+  confirmar completo) reintentaba cada 30s para siempre, y
+  `getPendingPickupCount` lo contaba como `pending` — `SyncChip` pintaba
+  verde de éxito "1 EN COLA" indefinidamente. Mismo síntoma que B3 (ronda
+  2) corrigió para `dead`. **Implementado:** `MAX_RETRY_ATTEMPTS = 10`
+  (~3 minutos de reintentos con el backoff topado antes de dar por muerta
+  una entrada) — al agotarse, `markDead` en vez de otro `markFailed`.
+
+Bloqueante nuevo, hallado por el usuario auditando contra el mock de diseño
+(no del review de mutación):
+
+- **P0.** El camino interactivo de `complete/[loadId]/page.tsx` trataba
+  `classifyCloseManifestError`'s `kind: 'idempotent'` como un rechazo de
+  negocio genérico — caía al mismo `toast.error` + botón re-habilitado que
+  un `permanent` de verdad, en vez de a la rama de éxito. Escenario: la
+  cuadrilla firma y tapea "Confirmar y completar"; `close_manifest`
+  COMMITEA — manifiesto cerrado, firmas escritas — y la respuesta se pierde
+  en un túnel; el operario tapea otra vez, choca con `MANIFEST_ALREADY_SIGNED`
+  (23505, "an idempotent 409" según la propia migración), ve un toast rojo,
+  y queda atrapado en `5f` para siempre (refrescar no ayuda, el `useEffect`
+  recarga el mismo manifiesto ya firmado). El drenador de fondo
+  (`offlineQueueSender.ts`) ya mapeaba `idempotent -> 'sent'` correctamente
+  — era la otra costura sobre la misma función de clasificación, escrita en
+  el mismo PR, que no se había alineado. **Implementado:** `kind ===
+  'idempotent'` navega fuera con un toast de éxito, igual que la rama
+  offline.
+
+**Decisión del usuario, 2026-09-08 — la línea estática del mock de `5f`.**
+El mock (`docs/design/Recogida.dc.html`, PR #685, mergeado a `main`) tiene
+una línea **estática, siempre visible, antes de que el operario firme**:
+*"Todo queda en el teléfono y se sube al recuperar señal. Las fotos
+también."* Hasta esta ronda, la pantalla sólo explicaba el offline
+**después** de un fallo (un toast tras el error del RPC) — afordancias
+opuestas: el mock tranquiliza antes de decidir firmar, el código mostraba
+un error y luego decía que en realidad había ido bien. Razón por la que
+esto se había inventado en tres rondas de review en vez de estar decidido
+desde el principio: **el mock nunca cubrió el camino de fallo en
+absoluto** — cero coincidencias de "error"/"reintentar"/"no se pudo" en
+todo el fichero. El usuario tomó la recomendación del review tal cual:
+**añadir la línea del mock, texto literal, antes de firmar — el toast se
+queda, como confirmación de que el cierre se encoló, no como reemplazo**.
+Implementado en `complete/[loadId]/page.tsx`, antes de la sección de firma
+del operador (mismo orden que el mock, justo antes de "FIRMA DEL LOCAL").
+
+**Hueco de diseño declarado, no decidido:** el mock de `5f` **sigue sin
+cubrir** qué ve el operario ante un rechazo de negocio irrecuperable
+(`MANIFEST_NOT_CLOSABLE`, `OPERATOR_SIGNATURE_REQUIRED`, los dos
+cross-tenant `42501`) — esa pantalla (toast de error + botón re-habilitado,
+sin más afordancia sobre a dónde ir o qué hacer) sigue siendo invención de
+review, no una decisión de diseño. Queda anotado para que no se lea como
+resuelto.
+
+**Ronda 4 de review del PR #679 (2026-09-08) — BLOQUEADA por segunda vez, con
+mediciones (E1-E4), no lectura.** El patrón de las tres rondas anteriores era
+que cada arreglo correcto abría el siguiente agujero por un flanco
+adyacente — "la costura entre ellos", en palabras del reviewer. Esta ronda
+cerró las dos costuras de diseño, no otra tanda de parches sueltos.
+
+**Costura 1 (offline no debe consumir presupuesto de reintentos) — cerrada
+estructuralmente.** `offlineQueueSender.ts` colapsaba `case 'offline'` y
+`case 'transient'` en el mismo `outcome: 'retry'` — el hook no podía
+distinguir "el servidor devolvió algo raro" de "el operario está en un
+sótano". Medido por el reviewer: 149s de backoff real (~10 intentos) bastan
+para que una caída de señal de unos minutos en el muelle agote
+`MAX_RETRY_ATTEMPTS`, `markDead` bloquee el manifiesto entero
+(`manifestHasDeadEntry`, "deliberadamente permanente"), y la promesa de `5f`
+("se sube al recuperar señal") se vuelva falsa — verificado con
+`retryCount: 9`, `lastError: "retries exhausted..."`, `sent: 0` tras volver
+la señal. **Implementado:** `OfflineQueueOutcome` gana `{ outcome: 'offline';
+reason }`, distinto de `'retry'`; el sender lo reporta por separado
+(`classifyCloseManifestError` ya lo clasificaba así — el colapso ocurría al
+cruzar hacia el hook). `drainManifest` trata `'offline'` con el mismo
+retroceso exponencial que `'retry'` pero **nunca** lo cuenta contra
+`MAX_RETRY_ATTEMPTS` ni lo deja llegar a `dead` por agotarlo. La línea de
+`5f` vuelve a ser verdad porque ahora lo es: reproducido en un test
+determinista (`E4`, `useOfflineQueue.test.ts`) que conduce 14 fallos
+`'offline'` seguidos y afirma que la entrada sigue `pending` — verificado en
+rojo contra el código de la ronda 3 antes de arreglar.
+
+**Costura 2 (el filtro de B2 no cubre lo que M3 bloquea) — cerrada
+estructuralmente.** `manifestHasDeadEntry` y `manifestBlockedForUser` (M3,
+ronda 3) eran dos predicados independientes: `drainManifest` los comprobaba
+juntos, pero el cómputo de `remaining`/`soonest` de `drain()` (el que decide
+cuándo reprogramar el próximo intento) sólo miraba el primero. Un manifiesto
+bloqueado únicamente por M3 con un backoff ya vencido detrás alimentaba
+`soonest` con `delay === 0` en cada pasada — spin sin techo. Medido por el
+reviewer: ~45 pasadas/s, 0 envíos, sin salida hasta desmontar. **Implementado:**
+nuevo módulo `lib/offline/queue-blocking.ts` con `manifestIsBlocked`, el
+ÚNICO predicado que decide si un manifiesto puede avanzar — lo consumen
+`drainManifest` (gating) y `drain()` (filtro de `remaining` antes de
+`soonest`) por igual. Con una sola fuente de verdad, esta clase de bug no
+puede volver a divergir por un tercer flanco. Reproducido en `E1`
+(`useOfflineQueue.test.ts`, spía sobre `listPending`) — bajo el código de la
+ronda 3 el conteo de pasadas llegó a 105 en 1s; con la costura cerrada, se
+mantiene por debajo de 15.
+
+**Decisión del usuario, 2026-09-08 — el bloqueo cross-user deja de ser
+permanente.** Hasta esta ronda, `manifestBlockedForUser` bloqueaba para
+siempre a cualquier sesión distinta del dueño de la entrada `pending` que
+encabeza el FIFO — sin límite temporal, y `reclaimStale` no toca `pending`
+(sólo `sending` huérfanas). Un turno de recogida dura horas; 15 minutos sin
+que el dueño mueva su entrada significa que ya no está, y el trabajo tiene
+que seguir sin intervención humana. **Implementado:** `CROSS_USER_RECLAIM_MS`
+(15 min, `lib/offline/queue-blocking.ts`) — deliberadamente **distinta** de
+`RECLAIM_STALE_MS` (90s, `useOfflineQueue.ts`): esa recupera una reclamación
+`sending` huérfana **de la misma sesión** (pestaña muerta a mitad de envío);
+ésta reclama una entrada `pending` **de otra persona** que nunca llegó a
+intentarse. Pasado ese tiempo desde el último toque de la entrada
+(`lastAttemptAt` o, si nunca se intentó, `createdAt`), cualquier sesión de
+este operador puede procesarla — `drainManifest` ya no filtra `next` por
+`ownEntries`, usa `manifestHead` (la cabeza real del FIFO, de cualquier
+dueño) una vez que `manifestIsBlocked` confirma que el manifiesto no está
+bloqueado. **Riesgo asumido explícitamente por el usuario:** si los dos
+operarios están activos a la vez, uno puede enviar lo que encoló el otro —
+aceptable porque el envío es idempotente (`client_operation_id`, spec-81
+fase 3) y `close_manifest` deriva el firmante de `auth.uid()` en el
+servidor, no del payload; nada se pierde ni se duplica, aunque el nombre del
+firmante en el registro de custodia puede no ser el que dibujó la firma si
+la reclamación ocurre. Una entrada `sending` de otro usuario sigue
+bloqueando siempre (sin temporizador propio) — `reclaimStale` (90s, no
+filtra por usuario a propósito) es quien la devuelve a `pending`, momento en
+el que el temporizador de 15 min empieza a aplicar.
+
+**Decisión del usuario, 2026-09-08 — B-1, el operario puede reintentar desde
+la app.** El badge "REQUIERE AYUDA" de `PickupFlowHeader` se vuelve pulsable
+cuando la pantalla que lo monta pasa `onRetryBlocked`; al tocarlo, devuelve
+todas las entradas `dead` de ESE manifiesto a `pending`, reseteando
+`retryCount` a 0 y limpiando `nextAttemptAt`/`claimToken`. **Implementado:**
+`retryDead` (`lib/offline/queue-claims.ts`, acotado por `manifestId` — nunca
+por todo el operador, para no reabrir un manifiesto que el operario no tiene
+delante) + `retryBlockedManifest` (`hooks/useOfflineQueue.ts`), que llama a
+`retryDead` y dispara un `window.dispatchEvent(new Event('online'))` para
+que el drenador ya montado en `AppLayout` (que no expone su `drainNow` a
+ninguna pantalla, y `AppLayout.tsx` está fuera de alcance esta ronda) recoja
+la pasada de inmediato — el mismo mecanismo al que ya está suscrito, no uno
+nuevo. Es la afordancia mínima que convierte "muerto" en "atascado", y lo
+que hace defendible el techo de `MAX_RETRY_ATTEMPTS` — sin ella, agotarlo
+sería sólo otro callejón sin salida. **Menor 5 cerrado en la misma pasada:**
+`5f` (`complete/[loadId]/page.tsx`) no montaba `PickupFlowHeader` ni ningún
+indicador de bloqueo — era la única pantalla del flujo que hace la promesa
+"se sube al recuperar señal" sin forma de saber si algo estaba, de hecho,
+bloqueado. En vez de montar el header completo (pide `total`/`retailerName`/
+`pickupPoint` que esta pantalla no carga), se añadió un indicador ligero
+propio con el mismo `onRetryBlocked`, y color `status-error-*` (no
+`status-warning-*`, que ya usa el badge "COLA N" — dos severidades opuestas
+no pueden compartir color, la otra mitad del menor 5).
+
+**M-2, el badge no puede pintar "COLA N" sobre algo bloqueado — cerrado.**
+`getPendingPickupCount`/`getBlockedPickupCount` (`lib/db.ts`) contaban por
+`status` solamente, sin mirar si el manifiesto de cada entrada podía avanzar
+de verdad — la misma mentira que B3 (ronda 2) corrigió para `dead`,
+reintroducida por el bloqueo cross-user. **Implementado:** ambos contadores
+recorren sus entradas candidatas y consultan `manifestIsBlocked` por cada
+una (excepto `sending`, siempre activa, nunca bloqueada); una entrada
+bloqueada resta de `getPendingPickupCount` y suma en `getBlockedPickupCount`.
+Cubierto en `lib/db.test.ts` (nuevo).
+
+**M-1, `mountedRef` sólo protegía los timers — cerrado.** `drainManifest`
+seguía enviando tras el desmontaje por dos vías que `mountedRef` no cubría:
+el bucle `for(;;)` no lo consultaba (E2 medido: `sends after unmount: [S1,
+S2, close]`), y `rerunRequestedRef` disparaba una pasada nueva en el
+`finally` de `drain()` sin mirarlo (E3 medido: 2 envíos tras el desmontaje,
+incluyendo una entrada encolada DESPUÉS de desmontar). Riesgo real, no
+cosmético: `pickupQueueSender` (`AppLayout.tsx`) resuelve la sesión en el
+momento de la petición — una pasada que sobrevive al desmontaje (cerrar
+sesión) envía con el JWT que haya entonces. **Implementado:** `drainManifest`
+recibe `isMounted: () => boolean` y lo comprueba al inicio de cada vuelta y
+antes/después de `send()`, abandonando sin escribir el resultado si ya se
+desmontó (la entrada queda `sending`, huérfana; `reclaimStale` en un futuro
+montaje la recupera — el mismo mecanismo que ya existe para una pestaña que
+muere a mitad de envío). El `finally` de `drain()` sólo ejecuta el rerun si
+`mountedRef.current` sigue `true`. Reproducido en `E2`/`E3`
+(`useOfflineQueue.test.ts`), verificados en rojo contra el código de la
+ronda 3.
+
+**M-3, la suite era inestable en frío — diagnosticado, no etiquetado
+"flaky".** Con los 10 ficheros del área juntos y caché fría, 4 tests fallaban
+intermitentemente (2/5 ejecuciones en la medición del reviewer). Causa real,
+no "contención genérica": tres de los cuatro (`useSyncQueue` H2, "drains two
+scans...", "a dead scan blocks...") usaban `waitFor` con el timeout por
+defecto (1000ms) contra trabajo que, bajo la contención de CPU real de 10
+ficheros de test corriendo en paralelo (`--pool=forks`), puede tardar más
+que eso sin que el mecanismo bajo prueba esté roto — el mismo patrón que M6
+(ronda 3) ya había tenido que ensanchar. Ensanchados a 5s. El cuarto (M5,
+nuevo de la ronda 3) tenía una causa distinta y más concreta: la primera
+falla de mount deja un `setTimeout` real de 1000ms vivo
+(`nextBackoffAt(0)`), y el bucle manual de 20 vueltas que conduce el resto
+de los reintentos podía, bajo esa misma contención, tardar más que eso —
+permitiendo que ese timer disparara A MITAD del bucle y compitiera por
+`drainingRef` con la vuelta manual en curso, convirtiéndola en un no-op.
+**Implementado:** en vez de conducir las 9 vueltas reales necesarias para
+llegar al techo (que es lo que abría la ventana de colisión), el test siembra
+`retryCount` a `MAX_RETRY_ATTEMPTS - 1` directamente y sólo necesita UNA
+pasada real que sí se ejecute — el bucle de 20 vueltas queda como red de
+seguridad idempotente, no como el mecanismo principal. Verificado: 191/191
+en 3 de 5 ejecuciones de los 10 ficheros juntos con caché fría; las otras 2
+no fallaron en absoluto (el propio M5 se reprodujo una vez más y quedó
+corregido con el fix de arriba).
+
+**Menores cerrados en esta ronda:** 1 (el test de la línea estática de `5f`
+sólo hacía `findByText`, sin comprobar el orden respecto a `SignaturePad` —
+anclado con `compareDocumentPosition`); 2 (`manifestBlockedForUser` usaba
+`listPending`, que excluye `sending` — una entrada ajena atascada en
+`sending` no bloqueaba, ventana de hasta 90s de salto de FIFO entre
+usuarios; `manifestHead`, el reemplazo, incluye `sending` a propósito); 6
+(el checklist de esta fase no registraba que M5 llega a `dead`, que `dead`
+es el bloqueo permanente de B3, ni que `offline` contaba para el techo antes
+de esta ronda — corregido arriba; el docstring de `MAX_RETRY_ATTEMPTS` decía
+"~3 minutos", medido son 149s).
+
+**Menor 3, declarado, no arreglado — fuera de alcance esta ronda.**
+`MANIFEST_ALREADY_SIGNED` lo levanta la migración
+(`20260913000004_spec80_close_manifest_acl_fix.sql:140`) con `IF
+v_manifest.signature_operator IS NOT NULL`, sin mirar QUIÉN firmó. Si otro
+operario cerró el manifiesto antes, este operario ve `toast.success` verde y
+sale, con la firma del cliente que acaba de capturar descartada en silencio
+— el texto es honesto, el canal (éxito + navegar fuera) no. Arreglarlo exige
+que la migración devuelva (o el RPC exponga) quién firmó, para que el
+cliente pueda distinguir "mi propio reintento aterrizó" de "alguien más ya
+cerró esto" — y las migraciones SQL están fuera de alcance de esta ronda
+(lista de "no tocar" del encargo). Queda anotado para una fase futura que sí
+toque `close_manifest`.
+
+**Qué se cerró estructuralmente y qué se parchó, tal como pidió el
+usuario:** las DOS costuras (1 y 2) se cerraron estructuralmente —
+`queue-blocking.ts` es la única fuente de verdad para "¿puede avanzar este
+manifiesto?", y `OfflineQueueOutcome` distingue `offline` de `transient` en
+el tipo, no sólo en un comentario. Nada de esta ronda es un parche sobre las
+mismas dos costuras. M-3 (la inestabilidad de tests) sí tiene un componente
+de parche honesto: ensanchar `waitFor` a 5s en tres de los cuatro tests no
+cambia el código bajo prueba, sólo el margen de la aserción — la causa raíz
+ahí es contención de CI, no un bug del drenador, así que no había una
+"costura" que cerrar del lado de producción. El cuarto (M5) sí tuvo un
+arreglo estructural del lado del TEST (reducir de 9 pasadas reales
+necesarias a 1), no del código de producción.
+
+**Ronda 5 de review del PR #679 (2026-09-08) — un bloqueante (el cuarto
+flanco de la cola de reintentos), tres mayores acotados, y el arreglo de
+Vercel del coordinador (fuera de la cola, en `AppLayout.tsx`).** El review
+confirmó primero que las costuras 1 y 2 de la ronda 4 estaban genuinamente
+cerradas (9 mutantes probados, todos muertos) y que E4 corrió de punta a
+punta con el sender real (750s de outage simulada, 30 intentos reales,
+`retryCount: 30`, la fila sobrevive y sube al volver la señal) — el riesgo
+de producto nº1 quedó confirmado cerrado, no sólo con el sender de prueba.
+
+**Bloqueante — costura 3 ("¿es reclamable esta fila?"), cerrada
+estructuralmente.** `manifestHead` (`queue-blocking.ts`) incluye `sending`
+a propósito desde la ronda 4 (menor 2, cierra el bloqueo cross-user), pero
+`claimPending` sólo reclama `status === 'pending'`. Una cabeza `sending`
+PROPIA — huérfana, abandonada por el guard `isMounted` del M-1 de la ronda
+4 tras un desmontaje a mitad de envío, o por una pestaña muerta que
+`reclaimStale` aún no alcanzó — no está bloqueada por `manifestIsBlocked`
+(las entradas de un usuario nunca lo bloquean a él mismo), así que
+`manifestHead` la seguía devolviendo, seguía sin ser reclamable, y el
+bucle de `drainManifest` volvía a pedirla en la vuelta siguiente sin salir
+jamás — `drainingRef.current` se quedaba `true` para siempre, así que ni
+`drainNow()` ni un futuro evento `online` volvían a hacer nada. Medido por
+el reviewer: 1446 iteraciones/segundo, 0 envíos (E5b); y la consecuencia
+—cambio de turno en el muelle: el siguiente conductor entra, y la cola no
+vuelve a moverse mientras la app siga abierta, ni siquiera pasado
+`RECLAIM_STALE_MS`— medida aparte (E8). **Implementado:** `isClaimable`
+(`queue-blocking.ts`) es el único predicado para "¿puedo reclamar esta
+fila ahora?" (hoy: `status === 'pending'`); `drainManifest` lo comprueba
+justo después de `manifestHead` y `return`s (no `continue`) si es falso —
+nada que este drenador pueda hacer con esta cabeza en esta pasada; la
+siguiente pasada de `drain()` (que sí corre `reclaimStale` primero) es
+quien puede liberarla. Reproducido en `E5b` (conteo de iteraciones,
+verificado en rojo contra el código de la ronda 4 antes de arreglar: 1269
+iteraciones/s) y `E8` (la cadena completa: la reclamación se libera tras
+`RECLAIM_STALE_MS` y un `drainNow()` posterior sí reanuda). Mutation-
+testeado: quitar el guard revive el mismo síntoma medido.
+
+**M-1, ronda 5 — el evento `online` sintético dejó de mentirle al resto de
+la app.** `retryBlockedManifest` despertaba al drenador con
+`window.dispatchEvent(new Event('online'))` — un evento GLOBAL con siete
+suscriptores reales (`Providers.tsx`: React Query's `onlineManager`;
+`useSyncQueue.ts`; `scanStore.ts`; entre otros). Tocar "REQUIERE AYUDA"
+sin señal de verdad les mentía a todos a la vez, y nada se autocorregía
+porque el estado de red real nunca cambiaba. Medido: `navigator.onLine
+=== false` pero `SyncChip.status === 'online'` y
+`onlineManager.isOnline() === true` tras un solo tap. **Implementado:**
+`PICKUP_QUEUE_WAKE_EVENT` (`'aureon:pickup-queue-wake'`), un evento propio
+con un solo suscriptor (el propio `useOfflineQueue`) — "hay trabajo nuevo,
+no esperes al backoff" sin fingir que la red volvió. `window.addEventListener`
+sigue escuchando `online` TAMBIÉN (la reconexión real sigue disparando una
+pasada), sólo `retryBlockedManifest` cambió qué dispara.
+
+**M-2, ronda 5 — los contadores dejaron de ser O(N²).**
+`getPendingPickupCount`/`getBlockedPickupCount` (`db.ts`) llamaban
+`manifestIsBlocked` una vez POR ENTRADA, y cada llamada hace 2 escaneos
+completos del índice. `useSyncQueue` invoca ambos cada `POLL_MS` (2s).
+Medido: N=200 (dentro del tope de 500 que declara `enqueue`, el escenario
+normal de una carga escaneada sin red) tardaba 21 SEGUNDOS por contador.
+**Implementado:** `createBlockedChecker` (`db.ts`) memoiza
+`manifestIsBlocked` por `(manifestId, userId)` — el resultado sólo depende
+de ese par, nunca de la entrada en sí — reduciendo el coste al número de
+pares distintos realmente presentes (unos pocos manifiestos), no al número
+de entradas. Test dedicado con 200 entradas en un mismo manifiesto:
+`manifestIsBlocked` pasa de 200 llamadas a ≤1.
+
+**M-3, ronda 5 — el badge cuenta bloqueos que el botón no podía
+desbloquear.** `blockedCount` incluye desde la ronda 4 los `pending`
+bloqueados cross-user, pero `retryBlockedManifest` sólo revive `dead` (un
+bloqueo cross-user se resuelve solo, con `CROSS_USER_RECLAIM_MS`, no con
+un botón). El operario leía "1 REQUIERE AYUDA / Toca para reintentar",
+tocaba, y no pasaba nada — sin cambio, sin feedback. **Implementado:**
+`retryBlockedManifest` devuelve cuántas entradas `dead` revivió de verdad
+(antes `void`); `PickupFlowHeader`'s dos pantallas (`scan/[loadId]` y
+`complete/[loadId]`) muestran `toast.info('Nada que reintentar
+todavía. Puede que otro operario lo esté procesando.')` cuando el conteo
+es 0. No se amplió el alcance del botón (revivir un bloqueo cross-user
+sigue siendo automático, por tiempo) — se cerró el hueco de feedback.
+
+**Menores cerrados:** 1 (`db.pickup-queue.test.ts:66` remitía a
+`db.test.ts`, borrado en `98e941f` al consolidar — corregido a apuntar al
+test real en el mismo fichero); 2 (se perdió `does not let one blocked
+manifest affect the count of an unrelated one` al consolidar — recuperada);
+3 (`queue-blocking.ts` re-exportaba `listPending` "porque `db.ts` lo
+necesita" — `db.ts` no lo importa; código muerto con comentario falso,
+eliminado).
+
+**Fuera de la cola — el arreglo de Vercel del coordinador.** `AppLayout.tsx`
+montaba el sender con `useMemo(() => createPickupQueueSender(createSPAClient()),
+[])`; Next.js ejecuta el cuerpo de un componente `"use client"` durante el
+prerender/SSR, y `createSPAClient()` exige las env vars de Supabase en ese
+momento — sin ellas (el deploy preview de este PR), rompía el build entero
+en `/admin`, `/admin/audit-logs` y `/admin/tools/wismo`. **Implementado:**
+`createLazyPickupQueueSender` (`offlineQueueSender.ts`) — identidad
+estable desde el primer render (lo que `useMemo` memoiza), pero el cliente
+Supabase se construye perezosamente en el primer envío real, cacheado
+después; en SSR nunca se envía nada, así que `createSPAClient` nunca se
+llama. Verificado con el criterio falsable pedido: `next build` sin
+`NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` en el entorno compila las tres rutas
+sin error (antes: `Error occurred prerendering page...`, reproducido
+primero contra el código sin arreglar). `AppLayout.tsx` no estaba en
+alcance de esta fase hasta este hallazgo — la instrucción de tocarlo vino
+del coordinador, no de una decisión propia de esta ronda.
+
+**Qué se cerró estructuralmente y qué se parchó, otra vez:** la costura 3
+se cerró estructuralmente — `isClaimable` es la única fuente de verdad
+para "¿es reclamable esta fila?", igual que `manifestIsBlocked` lo es para
+"¿puede avanzar el manifiesto?". M-1, M-2 y M-3 son arreglos estructurales
+del lado de producción (un evento propio, una memoización real, un valor
+de retorno que antes no existía), no parches sobre sus síntomas.
+
+**Ronda 6 de review del PR #679 (2026-09-08) — un residual, "la otra mitad
+del mismo agujero de la ronda 4", y una nota menor.** El review confirmó
+primero el veredicto de fondo sobre las cinco rondas: la ronda 5 **no abrió
+un quinto flanco** — convirtió un bucle infinito con la cola muerta para
+toda la sesión en una parada que se cura con cualquier reconexión o
+recarga, "estrictamente mejor". Y la cola **no necesita rediseño**: las
+rondas 1–4 sí mostraban el patrón "cada arreglo abre un estado nuevo"; la
+5 y la 6 no — el residual se enuncia en una frase y se cierra donde ya
+está escrito el cálculo. Ese cambio de forma es la señal de que converge.
+
+**El residual — "¿quién vuelve?".** `drainManifest` sale por `return`
+cuando la cabeza no es reclamable (costura 3) — correcto, no se puede
+saltar la cabeza. Pero eso sólo mueve la pregunta: los cuatro disparadores
+reales de una pasada son el montaje, `online` real,
+`PICKUP_QUEUE_WAKE_EVENT`, y los timers de `scheduleRetry` — y ese último
+sólo se programaba sobre `nextAttemptAt` de entradas `pending` NO
+bloqueadas. Una `sending` huérfana no tiene `nextAttemptAt` y `listPending`
+la excluye; una entrada detrás de un bloqueo cross-user queda excluida de
+`remaining` por completo. Sin ver ninguno de los dos plazos reales
+(`RECLAIM_STALE_MS`, `CROSS_USER_RECLAIM_MS`), `soonest` nunca programaba
+nada — y `reclaimStale`, quien de verdad libera la cabeza, sólo corre al
+INICIO de una pasada que ya nunca volvía a empezar. Medido por el
+reviewer: `pending = 2, blocked = 0` en el badge (verde), un
+`close_manifest` firmado que nunca sube, sin botón que tocar (S1 no tiene
+ni siquiera la vía de escape del badge que S2 sí tiene).
+
+**Implementado:** `manifestRetryEta` (`lib/offline/queue-blocking.ts`)
+devuelve el instante en el que un manifiesto podría dejar de estar
+atascado — `lastAttemptAt(cabeza) + RECLAIM_STALE_MS` si la cabeza es
+`sending` (huérfana propia, o de otra sesión en vuelo), `lastTouchedAt(cabeza)
++ CROSS_USER_RECLAIM_MS` si es `pending` de otro usuario, o `null` si es
+directamente accionable por esta sesión (nada que programar, `drainManifest`
+ya la habrá tomado en esta misma pasada) o si el manifiesto está bloqueado
+de forma permanente (`dead`, ningún temporizador ayuda). `drain()` mezcla
+este valor con los `nextAttemptAt` de las entradas propias al calcular
+`soonest` — el MISMO mecanismo de programación que ya existía, cerrando
+los tres plazos con el mecanismo que ya existe, tal como pidió el reviewer.
+
+**La lección del review, sobre el propio E8 de la ronda 5:** ese test
+llamaba a `result.current.drainNow()` a mano tras simular el paso del
+tiempo — demuestra que `drainingRef` ya no se atasca (una propiedad real y
+necesaria), pero EN PRODUCCIÓN nadie llama a `drainNow()`. Cuando un test
+necesita un empujón manual para llegar al estado bueno, esa muleta es una
+pregunta abierta sin responder, no parte del arnés. `S1`/`S2`
+(`useOfflineQueue.test.ts`) reproducen el residual sin ningún `drainNow()`
+manual — sólo tiempo real, sembrando los timestamps a ~200ms de volverse
+reclamables (no un atajo a los valores de producción, un margen real corto
+para no esperar 90s/15min de verdad en un test). Verificados en rojo
+contra el código de la ronda 5 antes de arreglar. Mutation-testeados.
+
+**Nota menor — encolar offline en `5f` ahora despierta al drenador.**
+`complete/[loadId]/page.tsx` encolaba la entrada offline y navegaba fuera
+sin disparar ninguna señal — descansaba en el mismo supuesto de "ya vendrá
+un `online`" que el residual mostró que no basta por sí solo. Ahora
+dispara `PICKUP_QUEUE_WAKE_EVENT` justo tras encolar, la misma señal que
+`retryBlockedManifest` ya usa, para que el envío se intente de inmediato
+en vez de esperar la próxima reconexión real.
+
+**Ronda 7 de review del PR #679 (2026-09-08) — un bloqueante de una línea,
+un menor, mergea al cerrar.** El reviewer confirmó primero, en las dos
+direcciones, que `S1`/`S2` prueban lo que dicen probar: verdes en la
+ronda 6 sin ninguna muleta en el cuerpo, y rojos al revertir `soonest` a
+la forma de la ronda 5. Y que `manifestRetryEta` tiene sus CUATRO ramas
+defendidas por mutación, no dos — incluida la que más preocupaba
+(`dead` devolviendo un instante en el pasado reabriría el bucle ocupado;
+la caza `B2`, viva desde la ronda 3, no un test nuevo de esta ronda).
+
+**El bloqueante — el mismo hueco de la ronda 5, un estado que faltaba en
+el filtro.** `remainingManifestIds` (`drain()`) se calculaba a partir de
+`ownEntries(listPending(...))`, y `listPending` excluye `sending` por
+diseño. Un manifiesto cuya ÚNICA entrada propia es la `sending` huérfana
+nunca entraba en `manifestChecks`, así que `manifestRetryEta` nunca se le
+calculaba — exactamente el mismo síntoma de S1/S2, por la puerta que
+quedaba abierta cuando la entrada `pending` que mantenía al manifiesto en
+la lista no existe. Y es la forma que existe HOY, no un caso futuro:
+`close_manifest` es el único productor real (`offlineQueueSender.ts`), y
+`complete/[loadId]` encola exactamente UNA entrada por manifiesto — así
+que todo manifiesto en `pickup_queue` hoy tiene una sola entrada. S1
+(dos o más) cubría la forma futura; S3 (una sola) es la única que existe
+ahora. Medido por el reviewer: `row = sending, sends: 0` tras 2s, con un
+control (el mismo estado más una `pending` detrás — o sea, S1) que sí
+drena solo.
+
+**Implementado:** una consulta adicional por las entradas propias
+`status === 'sending'` de este operador, uniendo sus `manifestId` al
+conjunto antes de calcular `manifestChecks`/`manifestRetryEta`. `S3`
+(`useOfflineQueue.test.ts`) reproduce la forma de una sola entrada, sin
+ningún `drainNow()` manual, verificado en rojo contra el código anterior a
+este arreglo y mutation-testeado.
+
+**Menor — `S1`/`S2` de 2s a 5s.** Mismo ensanche que la ronda 3 adoptó
+para la misma razón (stalls en frío bajo contención de CPU entre ficheros
+de test en paralelo). No cambia lo que se prueba: lo programado sigue
+siendo un único `setTimeout` real que dispara solo.
+
+> Cierre (2026-09-08, orquestador). Esta fase se declaraba `[in_progress]`
+> con el PR todavía abierto al empezar esta tarea de cierre de tokens; en el
+> curso de la sesión, PR #679 (rama `feat/spec-81-fase-2-drenado`, SHA
+> `72f16f3c`) mergeó (merge `a169dfb0`, 2026-09-08T23:34:57Z) tras su séptima
+> ronda de review — se cierra aquí también, aunque no estaba en la lista
+> original de seis, porque dejarla en `[in_progress]` habría sido exactamente
+> el mismo tipo de token rancio que esta tarea existe para corregir.
+> Implementado por: rama `feat/spec-81-fase-2-drenado`, SHA `72f16f3c`, PR #679.
+> Review: siete rondas adversariales, todas cerradas en la misma rama (ver
+> arriba) — de un `classifyCloseManifestError` que nunca veía la forma real
+> del error de `postgrest-js` (ronda 1) a un hueco final de una línea en
+> `remainingManifestIds`, que excluía manifiestos cuya única entrada propia
+> estaba `sending` (ronda 7, "mergea al cerrar").
+> QA: `gh pr checks 679` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). Citado en el PR: `vitest run` — 5943 passed, 45 skipped, 0
+> failed sobre `@aureon/frontend`. `e2e-qa`/`Verify Production Migrations`:
+> no verificado en esta sesión — el merge es demasiado reciente para que un
+> run de `Deploy Production` posterior lo confirme; sin migración propia (el
+> único cambio de esquema de esta fase lo trae fase 3, ya verificado
+> arriba), así que no aplica `Verify Production Migrations`.
+> Downstream: revisado spec-82 — sin cambios; spec-82 fase 2 (`DESCARGAR`)
+> sigue bloqueada por la misma dependencia declarada (spec-81 fase 1, ya
+> `[done]`), no por esta fase.
+
+### Fase 3 — Idempotencia en el servidor `[done]`
 
 **Archivos:** `packages/database/supabase/migrations/20260913000007_spec81_fase3_pickup_scans_idempotency.sql`,
 `packages/database/supabase/tests/spec81_fase3_pickup_scans_idempotency.test.sql`,
@@ -327,7 +1031,9 @@ review):**
   firma. Sigue mitigado por lo mismo que m6 — no hay soft-delete de
   `pickup_scans` desde el frontend hoy — pero la cabecera de la migración
   quedaba corregida: ver `20260913000007:157-170`.
-- **n7 — el header de la migración (`20260913000007:104-109`) desmonta la
+- **n7 — el header de la migración (`20260913000007:206-213`, corregido en
+  ronda 2 de review del PR #679 — citaba `104-109`, obsoleto tras
+  reordenarse la migración) desmonta la
   regla 2 de `check-migration-safety.mjs` pero no la 3**, y el warning que
   CI emite sobre este archivo es de la regla 3. Es un falso positivo
   legítimo — el predicado parcial excluye todas las filas existentes, así
@@ -369,6 +1075,14 @@ review):**
   `spec81_fase3_pickup_scans_idempotency.test.sql` TEST 14 (SQL, general) y
   `scan-validator.test.ts`'s "freezes the M-3 premise" (frontend, la premisa
   de hoy).
+
+  **Seguimiento cerrado (fase 2, ronda 2 de review del PR #679):** el test
+  de arriba sólo congelaba la mitad de la premisa — que la rama de número de
+  pedido nunca devuelve ids nulos, no que sea la ÚNICA rama que puede
+  devolver más de uno. Mutar la rama 1:1 (`scan-validator.ts:72`) o la de
+  duplicado (`:66`) para devolver dos ids sobrevivía. Cerrado con
+  `expect(result.packageIds).toEqual([])` en el test de duplicado y un test
+  nuevo de la rama 1:1 con `toHaveLength(1)`; ambos mutation-verificados.
 - **M-4 — la cabecera citaba el contrato de la fase 2 al revés.** Decía que
   la fase 2 trata todo 409 idempotente como éxito ya resuelto; el docstring
   real de `OfflineQueueSender` (`useOfflineQueue.ts`, PR #679) dice lo
@@ -399,9 +1113,30 @@ review):**
   ausencia de backfill es la razón de otra cosa (por qué no hace falta el
   patrón COUNT(*)-guard). Corregido en `20260913000007:194-204`.
 
-> Implementación en curso en `feat/spec-81-fase-3-idempotencia-servidor`. Ronda 2
-> de review corregida (M-1 bloqueante, M-2/M-3/M-4/m-5/n-8, TEST 1/2
-> convertidos a pgTAP). Falta PR y QA antes de poder marcar esta fase `[done]`.
+> Implementado por: rama `feat/spec-81-fase-3-idempotencia-servidor`, SHA
+> `a5dfaee9`, PR #678 (merge `a93941f7`, 2026-09-08T12:22:00Z).
+> Review: rondas 1 y 2 de review, ambas cerradas en la misma rama — ronda 1
+> (B1 bloqueante: colisión de lote sin `package_id` en la clave; B2: tipos
+> generados) y ronda 2 (M-1 bloqueante: TEST 6 se había vuelto vacuo tras
+> añadir `package_id`, corregido dándole a ambas filas el mismo `package_id`
+> para que `operator_id` siga siendo la única columna discriminante; M-2 a
+> M-4, m-5, n-8 y la conversión de TEST 1/2 de `RAISE EXCEPTION` a
+> aserciones pgTAP, documentadas arriba). Límites conocidos m5/m6/n7 y el
+> residual de dos operarios generando el mismo UUID quedan declarados, no
+> resueltos, por decisión explícita (ver arriba).
+> QA: `gh pr checks 678` verde (Lint/Type-Check/Test/Build en ambos jobs,
+> Vercel deploy). La migración `20260913000007` está aplicada en
+> producción — confirmado `git merge-base --is-ancestor a93941f7 32667d0d`,
+> el `headSha` del run `34265192142` ("Deploy Production"), cuyo job
+> `Verify Production Migrations` cerró en verde. `e2e-qa` no aplica como
+> pantalla nueva — verificado en su lugar con `scripts/pgtap-local.sh`: 15
+> aserciones nuevas, mutation-testeadas (índice sin `operator_id`, sin el
+> predicado `deleted_at IS NULL`, índice ausente), más 12 tests SQL
+> downstream (spec-47, 53, 61, 64, 80, 85) re-corridos en verde según el PR.
+> Downstream: revisado spec-82 — sin cambios; spec-82 fase 1 no toca
+> `pickup_scans` ni ningún fichero de la cola offline (confirmado arriba,
+> en la propia fase 1 de spec-82). Revisado también spec-80 (fase 2, en
+> paralelo) — coordinado explícitamente en el PR para no compartir archivos.
 
 ### Fase 4 — Chip de sync `[pending]`
 
@@ -410,6 +1145,25 @@ review):**
 Redacción del handoff: «se guardan en el dispositivo y se envían solos…». Cuenta pendientes, como pide `5i`.
 
 - [ ] Desmontar el `fixed top-0` sin romper auth ni landing, que hoy también lo montan.
+- [ ] **Afordancia humana para `dead` (B3, ronda 2 de review del PR #679 —
+      bloqueante en fase 2, no cerrado del todo ahí).** `dead` es
+      deliberadamente permanente — ver el docstring de `manifestHasDeadEntry`
+      y la decisión de no revertirlo tomada en la ronda 2: soltar el cierre
+      detrás de un escaneo muerto cierra la carga con un bulto de menos, que
+      es el riesgo nº1 del spec. Pero hoy, tras la ronda 2, `dead` sólo dejó
+      de mentir (`getBlockedPickupCount`, separado de `queuedCount`;
+      `SyncChip` ya no lo pinta en verde de éxito) — no tiene ninguna salida.
+      Grep de `'dead'` en todo `apps/frontend/src`: sólo aparece en el tipo,
+      en los guards de `queue-claims.ts`, en `manifestHasDeadEntry` y en
+      `getBlockedPickupCount` (para contarlo). Ninguna pantalla, botón,
+      `markAlive` ni purga manual. Sin esto el operario recibió el toast
+      «tu firma se guardó y el cierre se enviará solo» y nada se lo
+      desmiente nunca — el chip ahora dice «requiere ayuda» pero no dice a
+      quién pedírsela ni qué hacer. Esta fase, que ya toca `SyncChip` y su
+      pantalla, debe: mostrar qué manifiesto está bloqueado y por qué
+      (`lastError`), y dar una vía para que un humano lo resuelva (contactar
+      soporte/operaciones — no necesariamente reintentar solo, dado que
+      `dead` es un rechazo de negocio, no de red).
 
 ### Fase 5 — Fotos `[pending]`
 
@@ -423,5 +1177,5 @@ Redacción del handoff: «se guardan en el dispositivo y se envían solos…». 
 ## Riesgos
 
 - **Una cola a medias es peor que ninguna.** Si `5d` dice «guardado en el dispositivo» y la entrada se pierde, el operario cierra una carga con un conteo falso y el cliente firma sobre esa cifra. Las fases 1–3 van juntas o no va ninguna; sólo la 4 y la 5 son separables.
-- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado (fase 1, no aplicado todavía):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso (fase 2 la invoca ahí); el tope duro para entradas `pending`/`failed` sin confirmar se fija en **500 por operador** — a partir de fase 2, encolar por encima de ese número debe rechazarse con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
+- **Cuota de IndexedDB.** Varias hojas por carga y varias cargas por ruta llenan el disco del teléfono. Hace falta política de purga de lo ya subido y un tope declarado. **Tope declarado y aplicado (fase 2, ronda 1 de review del PR #679, m3):** `purgeConfirmed` borra las entradas `sent` de un operador tras cada drenado exitoso; el tope duro para entradas sin confirmar (`status !== 'sent'`) se fija en **500 por operador** y `enqueue` lo comprueba, rechazando con un error explícito en vez de fallar en silencio contra la cuota real del navegador. Con blobs de fotos (fase 5) el límite relevante deja de ser el conteo y pasa a ser bytes; esa fase redefine el tope en tamaño, no en número de filas.
 - **El alcance puede tentar a crecer** a Recepción y Despacho. Este spec entrega la infraestructura y **sólo** conecta Recogida; adoptarla en otros módulos es trabajo posterior con sus propios specs.

@@ -30,6 +30,7 @@ function completed(over: Partial<CompletedManifest> = {}): CompletedManifest {
     pickup_point: 'Mall Plaza Vespucio',
     labels_printed_at: null,
     labels_printed_by_name: null,
+    missing_count: 0,
     ...over,
   };
 }

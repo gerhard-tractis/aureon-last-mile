@@ -30,6 +30,9 @@ export interface CompletedManifest {
   pickup_point: string | null;
   labels_printed_at: string | null;
   labels_printed_by_name: string | null;
+  /** spec-83 fase 1 — count of this manifest's open-or-resolved 'missing'
+   * discrepancies (spec-85). 0 on a clean close. */
+  missing_count: number;
 }
 
 export interface InTransitManifest {

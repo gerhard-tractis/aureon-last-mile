@@ -60,6 +60,12 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- 2. Two drivers (fleet_type_enum: 'own' | 'external')
+--
+-- Neither row sets user_id here on purpose: this file runs BEFORE
+-- create-qa-users.sh (setup-qa.sh:189-195), so no auth.users/public.users
+-- rows exist yet to link against. spec-84 fase 1 links QA Driver Uno to the
+-- qa-pickup-crew@qa.test login from create-qa-users.sh instead, once that
+-- user exists — see the UPDATE at the end of that script for the reasoning.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.drivers (
   id, operator_id, fleet_type, full_name, rut, phone, status, zones
