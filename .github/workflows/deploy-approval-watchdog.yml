@@ -52,12 +52,26 @@ jobs:
           RUNS="$(gh api "repos/${{ github.repository }}/actions/workflows/deploy.yml/runs?per_page=20" \
                     --jq '[.workflow_runs[] | {databaseId: .id, headSha: .head_sha, status: .status, conclusion: .conclusion, createdAt: .created_at}]')"
 
+          # M3 (review 2026-09-09, PR #716) — the `production` environment's
+          # required-reviewer rule is live GitHub config, invisible to any
+          # YAML guard in this repo. If it is missing OR the query itself
+          # fails, that fails closed as "not protected" — a query failure is
+          # not the same as a confirmed-fine environment.
+          PROD_ENV_PROTECTED=false
+          if PROTECTION_RULES="$(gh api "repos/${{ github.repository }}/environments/production" \
+                                    --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' 2>/dev/null)"; then
+            if [ "${PROTECTION_RULES:-0}" -gt 0 ]; then
+              PROD_ENV_PROTECTED=true
+            fi
+          fi
+
           jq -n \
             --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --arg mainSha "$(printf '%s' "$MAIN" | jq -r .sha)" \
             --arg mainCommittedAt "$(printf '%s' "$MAIN" | jq -r .commit.committer.date)" \
             --argjson runs "$RUNS" \
-            '{now: $now, mainSha: $mainSha, mainCommittedAt: $mainCommittedAt, graceMinutes: 60, runs: $runs}' \
+            --argjson productionGateProtected "$PROD_ENV_PROTECTED" \
+            '{now: $now, mainSha: $mainSha, mainCommittedAt: $mainCommittedAt, graceMinutes: 60, runs: $runs, productionGateProtected: $productionGateProtected}' \
             > deploy-state.json
 
       - name: Decide
@@ -65,7 +79,10 @@ jobs:
         run: node scripts/deploy-approval-watchdog.mjs deploy-state.json >> "$GITHUB_OUTPUT"
 
       - name: Report
-        run: echo "::notice::${{ steps.decide.outputs.action }} — ${{ steps.decide.outputs.reason }}"
+        env:
+          ACTION: ${{ steps.decide.outputs.action }}
+          REASON: ${{ steps.decide.outputs.reason }}
+        run: echo "::notice::${ACTION} — ${REASON}"
 
       # One open issue, updated — not a new one every 15 minutes.
       - name: Raise the alarm

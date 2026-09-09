@@ -130,6 +130,68 @@ assert_output "cancel" "recommends cancelling the older run" '{
   ]
 }'
 
+# ── B2 (review 2026-09-09, PR #716) — stale failed/cancelled runs from days
+# ago must not count as "unresolved" forever. Reproduces the measured bug
+# exactly: no run yet for main's recent tip (nothing wrong — it just merged),
+# but 3 old cancelled/failed runs from ~36h ago are still in the last-20-runs
+# window. Verified against the pre-fix decide(): it returned
+# action=alert ("3 runs are unresolved for different commits at once")
+# because `distinctUnresolvedShas.size > 1` counted them regardless of age —
+# permanently, since a completed-but-failed run never left the list.
+assert_action in_flight "old cancelled/failed runs (36h) do not count as live-unresolved" '{
+  "now": "2026-09-09T15:00:00Z", "mainSha": "jjj0000", "mainCommittedAt": "2026-09-09T14:55:00Z",
+  "graceMinutes": 60,
+  "runs": [
+    {"databaseId": 7, "headSha": "old-a", "status": "completed", "conclusion": "cancelled", "createdAt": "2026-09-08T03:00:00Z"},
+    {"databaseId": 8, "headSha": "old-b", "status": "completed", "conclusion": "failure", "createdAt": "2026-09-08T05:00:00Z"},
+    {"databaseId": 9, "headSha": "old-c", "status": "completed", "conclusion": "cancelled", "createdAt": "2026-09-08T09:00:00Z"}
+  ]
+}'
+
+# ── M4 (review 2026-09-09, PR #716) — a run for an OLDER commit that failed
+# RECENTLY (still within grace) must not be hidden just because a NEWER
+# commit's run succeeded. This is the 2026-08-17→22 incident shape: A fails,
+# B (unrelated, later) merges and goes green. Verified against the pre-fix
+# decide(): it checked `run && isResolved(run)` FIRST and returned
+# action=ok unconditionally, closing the issue with A's failure unaddressed.
+assert_action alert "a recent failed run for an older commit is not hidden by a newer success" '{
+  "now": "2026-09-09T14:20:00Z", "mainSha": "kkk1111", "mainCommittedAt": "2026-09-09T14:15:00Z",
+  "graceMinutes": 60,
+  "runs": [
+    {"databaseId": 12, "headSha": "kkk1111", "status": "completed", "conclusion": "success", "createdAt": "2026-09-09T14:16:00Z"},
+    {"databaseId": 11, "headSha": "old-failed", "status": "completed", "conclusion": "failure", "createdAt": "2026-09-09T14:00:00Z"}
+  ]
+}'
+assert_output "run(s) 11" "names the unaddressed older failed run" '{
+  "now": "2026-09-09T14:20:00Z", "mainSha": "kkk1111", "mainCommittedAt": "2026-09-09T14:15:00Z",
+  "graceMinutes": 60,
+  "runs": [
+    {"databaseId": 12, "headSha": "kkk1111", "status": "completed", "conclusion": "success", "createdAt": "2026-09-09T14:16:00Z"},
+    {"databaseId": 11, "headSha": "old-failed", "status": "completed", "conclusion": "failure", "createdAt": "2026-09-09T14:00:00Z"}
+  ]
+}'
+
+# ── M3 (review 2026-09-09, PR #716) — an unprotected production gate alerts
+# even when the deploy itself looks perfectly clean. Nothing else in this
+# repo watches whether the `production` environment still has its
+# required-reviewer rule; it is live GitHub config, invisible to any YAML
+# guard.
+assert_action alert "productionGateProtected: false overrides an otherwise-clean ok" '{
+  "now": "'"$NOW"'", "mainSha": "lll2222", "mainCommittedAt": "2026-09-09T14:59:00Z",
+  "graceMinutes": 60, "productionGateProtected": false,
+  "runs": [{"databaseId": 13, "headSha": "lll2222", "status": "completed", "conclusion": "success", "createdAt": "2026-09-09T14:59:30Z"}]
+}'
+assert_output "required-reviewer rule" "names the lost protection" '{
+  "now": "'"$NOW"'", "mainSha": "lll2222", "mainCommittedAt": "2026-09-09T14:59:00Z",
+  "graceMinutes": 60, "productionGateProtected": false,
+  "runs": [{"databaseId": 13, "headSha": "lll2222", "status": "completed", "conclusion": "success", "createdAt": "2026-09-09T14:59:30Z"}]
+}'
+assert_action ok "productionGateProtected: true does not change prior behaviour" '{
+  "now": "'"$NOW"'", "mainSha": "mmm3333", "mainCommittedAt": "2026-09-09T14:59:00Z",
+  "graceMinutes": 60, "productionGateProtected": true,
+  "runs": [{"databaseId": 14, "headSha": "mmm3333", "status": "completed", "conclusion": "success", "createdAt": "2026-09-09T14:59:30Z"}]
+}'
+
 # ── Fail closed: incomplete/invalid state must never resolve to ok/alert ─────
 assert_exit_code 2 "missing mainSha refuses to guess" '{
   "now": "'"$NOW"'", "mainCommittedAt": "2026-09-09T13:00:00Z", "runs": []

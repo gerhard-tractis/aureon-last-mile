@@ -16,7 +16,20 @@
  * Usage: node scripts/deploy-approval-watchdog.mjs <state.json>
  *
  * State: { now, mainSha, mainCommittedAt, graceMinutes, runs: [
- *            { databaseId, headSha, status, conclusion, createdAt } ] }
+ *            { databaseId, headSha, status, conclusion, createdAt } ],
+ *          productionGateProtected? }
+ *
+ * `productionGateProtected` (M3, review 2026-09-09, PR #716) — the auto-
+ * approve path (spec-92) depends entirely on the `production` GitHub
+ * environment still carrying its required-reviewer rule for auth-hook
+ * changes; nothing in deploy.yml or its guards can see that LIVE config —
+ * it is a fact about GitHub's settings, not the workflow file. If it is
+ * removed (by hand, or by mistake), the auth-hook path silently starts
+ * auto-approving too, and no existing check would notice. Optional and
+ * additive: when explicitly `false`, it overrides everything else below —
+ * an unprotected gate matters independent of any single commit's deploy
+ * status. Absent (older callers, or a workflow that hasn't been updated
+ * to gather it) leaves prior behaviour unchanged.
  *
  * Prints GITHUB_OUTPUT-shaped lines:
  *   action=ok|in_flight|alert
@@ -56,33 +69,69 @@ if (!Array.isArray(state.runs)) {
 }
 
 const decide = (s) => {
+  // M3 — checked first and unconditionally: an unprotected human gate is a
+  // standing security problem, not a per-commit deploy-status question. A
+  // clean deploy history must not mask it.
+  if (s.productionGateProtected === false) {
+    return {
+      action: 'alert',
+      reason: "the production environment has lost its required-reviewer rule — the auth-hook " +
+        'path (spec-92) is no longer gated by a human click, or this could not be confirmed',
+    };
+  }
+
   const grace = s.graceMinutes ?? 60;
   const short = `main ${s.mainSha.slice(0, 7)}`;
   const ageMinutes = (new Date(s.now) - new Date(s.mainCommittedAt)) / 60_000;
+  const ageOfRun = (r) => (new Date(s.now) - new Date(r.createdAt)) / 60_000;
+  const isResolved = (r) => r.status === 'completed' && r.conclusion === 'success';
   const run = s.runs.find((r) => r.headSha === s.mainSha);
 
-  const isResolved = (r) => r.status === 'completed' && r.conclusion === 'success';
+  // "Live" unresolved: still actively running/queued/waiting, OR
+  // completed-but-failed/cancelled AND still within the grace window of ITS
+  // OWN creation. A run that failed hours or days ago is old news, not a
+  // live race — B2 (review 2026-09-09, PR #716): the naive "ever unresolved"
+  // version alerted permanently against 15 stale cancelled/failed runs from
+  // the previous 36h, measured against the real repo state, and never
+  // self-healed because completed-but-failed runs never leave the list.
+  const liveUnresolved = s.runs.filter(
+    (r) => !isResolved(r) && (r.status !== 'completed' || ageOfRun(r) < grace)
+  );
+  const distinctShas = new Set(liveUnresolved.map((r) => r.headSha));
 
-  if (run && isResolved(run)) {
-    return { action: 'ok', reason: `${short} deployed successfully (run ${run.databaseId})` };
-  }
-
-  // Two or more runs unresolved at once, for DIFFERENT commits, is checked
-  // BEFORE the grace window — this is the race spec-57 flagged and never
-  // closed (approving/letting an older queued run through after a newer
-  // one landed deploys stale code), and it matters within minutes, not
-  // after an hour of silence.
-  const unresolved = s.runs.filter((r) => !isResolved(r));
-  const distinctUnresolvedShas = new Set(unresolved.map((r) => r.headSha));
-  if (distinctUnresolvedShas.size > 1) {
-    const others = unresolved.filter((r) => r.headSha !== s.mainSha);
+  // Two or more DIFFERENT commits live-unresolved at once — checked first,
+  // before anything else: this is the race spec-57 flagged and never closed
+  // (approving/letting an older queued run through after a newer merge
+  // landed deploys stale code), and it matters within minutes, not after an
+  // hour of silence.
+  if (distinctShas.size > 1) {
+    const others = liveUnresolved.filter((r) => r.headSha !== s.mainSha);
     const otherIds = others.map((r) => r.databaseId).join(', ');
     return {
       action: 'alert',
       runId: run ? run.databaseId : undefined,
-      reason: `${short} — ${unresolved.length} runs are unresolved for different commits at once ` +
+      reason: `${short} — ${liveUnresolved.length} runs are unresolved for different commits at once ` +
         `(other run(s): ${otherIds}); an older one deploying after a newer merge landed would ship ` +
         `stale code — cancel the older run(s), approve only the one for ${short}`,
+    };
+  }
+
+  if (run && isResolved(run)) {
+    // main's tip deployed — but do not close over a still-live unresolved
+    // run for a DIFFERENT (older) commit. M4 (review 2026-09-09, PR #716):
+    // decide() used to check `run` first and return 'ok' unconditionally,
+    // closing the issue even though an earlier commit's run had failed and
+    // nobody had looked at it — the run that failed does not become fine
+    // just because a later, unrelated commit happened to succeed.
+    const otherCommitUnresolved = liveUnresolved.filter((r) => r.headSha !== s.mainSha);
+    if (otherCommitUnresolved.length === 0) {
+      return { action: 'ok', reason: `${short} deployed successfully (run ${run.databaseId})` };
+    }
+    const otherIds = otherCommitUnresolved.map((r) => r.databaseId).join(', ');
+    return {
+      action: 'alert',
+      reason: `${short} deployed successfully (run ${run.databaseId}), but run(s) ${otherIds} for ` +
+        `other commits are still unresolved and need attention`,
     };
   }
 
