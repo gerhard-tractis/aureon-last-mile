@@ -179,7 +179,7 @@ Una tabla, un panel, y nunca se etiqueta mal de quién es la pérdida.
 
 ### Fase 1 — Captura por paquete al cerrar la recepción `[in_progress]`
 
-**Archivos:** migración (`complete_route_reception`, `CREATE OR REPLACE` sobre la última definición, `packages/database/supabase/migrations/20260820000002_spec61_pickup_route_crew.sql`), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/hooks/reception/useCompleteRouteReception.ts`, `apps/frontend/src/app/app/reception/ReturnReceptionSession.tsx`, y sus tests
+**Archivos:** migración (`complete_route_reception`, `DROP FUNCTION` + `CREATE` sobre la última definición real, `packages/database/supabase/migrations/20260625000001_spec47_pickup_routes_consolidated_reception.sql:566` — no `20260820000002`, que sólo la menciona en un comentario; `20260812000006` PART 3 dice explícitamente que no la toca), test pgTAP en `packages/database/supabase/tests/`, `apps/frontend/src/lib/types.ts` (firma hand-mantenida del RPC). El llamador real es `apps/frontend/src/app/app/reception/route/[routeId]/page.tsx` vía `useCompleteRouteReception.ts` — no se tocó ninguno de los dos (ver nota de implementación abajo); `ReturnReceptionSession.tsx` no es un archivo de esta fase (es la pantalla de reingresos, un flujo distinto).
 
 `complete_route_reception(p_route_id, p_discrepancy_notes text)` (SECURITY
 DEFINER, def viva en QA) hoy sólo exige texto cuando
@@ -252,11 +252,12 @@ registro del faltante.
 > **Implementado por:** implementer — rama `feat/spec-86-fase-1-captura-por-paquete`.
 > Migración: `packages/database/supabase/migrations/20260920000001_spec86_fase1_complete_route_reception_discrepancies.sql`.
 > Test pgTAP: `packages/database/supabase/tests/spec86_fase1_complete_route_reception_discrepancies.test.sql`
-> (12 aserciones, corridas contra `psql` crudo en `spec52-pg`, no contra el
-> resumen de `pgtap-local.sh`). Mutation-tested: quitar `p.deleted_at IS NULL`
-> tumba 5/12 aserciones (con un efecto en cascada no anticipado — ver abajo);
-> quitar `rs.deleted_at IS NULL` tumba 1/12. Ambas restauradas y reverificadas
-> en verde antes de terminar.
+> (18 aserciones tras la ronda 2, ver abajo — 12 en la ronda 1; corridas
+> contra `psql` crudo en `spec52-pg`, no contra el resumen de
+> `pgtap-local.sh`). Mutation-tested (ronda 1): quitar `p.deleted_at IS
+> NULL` tumba 5/12 aserciones (con un efecto en cascada no anticipado — ver
+> abajo); quitar `rs.deleted_at IS NULL` tumba 1/12. Ambas restauradas y
+> reverificadas en verde antes de terminar.
 >
 > **Hallazgo del mutation test que vale la pena anotar:** quitar
 > `p.deleted_at IS NULL` no sólo deja pasar un paquete borrado como
@@ -268,8 +269,117 @@ registro del faltante.
 > guard: sin él, un solo bulto borrado en la ruta le impide cerrarse a los
 > demás faltantes reales.
 >
-> **Review:** no aplica todavía — pendiente del agente `reviewer` sobre este
-> rango de SHAs.
+> **Ronda 2 de review (PR #704).** Cuatro hallazgos, los cuatro cerrados en
+> esta misma fase, sin abrir un spec nuevo:
+>
+> 1. **Re-cerrar una recepción ya `completed` resucitaba discrepancias
+>    resueltas.** `record_discrepancies` sólo es idempotente sobre el índice
+>    parcial `WHERE status='open'` — en cuanto un humano resolvía una, un
+>    segundo cierre (doble-submit, o un reintento de la cola offline tras un
+>    ack perdido) volvía a abrir una fila idéntica y la resolución
+>    desaparecía de la cola de Ops. Antes de esta fase, re-cerrar era inerte
+>    (sólo refrescaba `completed_at`/notas); después de esta fase, sin este
+>    guard, fabrica evidencia y revierte una decisión humana — **no** es un
+>    defecto pre-existente. Cerrado con `IF v_rr.status = 'completed' THEN
+>    RAISE EXCEPTION ... USING ERRCODE = '23505'`, mismo patrón que
+>    `MANIFEST_ALREADY_SIGNED` de `close_manifest`. Mutation-tested:
+>    quitarlo deja pasar el segundo cierre, duplica la fila de `d2` (4→5) y
+>    la reabre a `open` pese a estar `resolved` — 2 aserciones caen y una
+>    tercera revienta con "more than one row returned" al intentar leer el
+>    estado de una fila que ahora es dos.
+> 2. **El comentario sobre payload malformado prometía una defensa que no
+>    existía.** Sólo se validaba `jsonb_typeof(...) <> 'array'` a nivel de
+>    array completo; un elemento bien formado con `package_id` no-UUID
+>    (`{"package_id":"nope"}`) pasaba esa guarda y reventaba en el `::UUID`
+>    (`22P02`), abortando el cierre entero — inalcanzable hoy porque ningún
+>    cliente manda el parámetro, pero el comentario mentía. Cerrado con un
+>    guard de forma (`~ '^[0-9a-fA-F]{8}-...'`) antes del cast; un
+>    `package_id` no-UUID o que no matchea ningún faltante pierde su nota en
+>    silencio, no aborta nada. Cubierto en la aserción 1 del test (payload
+>    con una entrada válida + una malformada, ambas en la misma llamada).
+> 3. **Faltaban dos aserciones — las gemelas de `CTN80B-3` en spec-80 fase
+>    2.** El test no detectaba quitar `rs.reception_id = v_rr.id` (0/12) ni
+>    `rs.scan_result = 'received'` (0/12) — los guards estaban bien, nadie
+>    los probaba. Añadidos `d6` (paquete esperado en la ruta A, con su único
+>    `reception_scan` `'received'` colgando de la recepción de la ruta B —
+>    llegó en otro camión, caso normal de spec-52) y `d7` (escaneado en la
+>    recepción correcta pero con `scan_result='route_mismatch'`, no
+>    `'received'`). Ambos deben seguir contando como faltantes en la ruta A;
+>    ambos mutation-tested y confirmados (matan exactamente esas 3
+>    aserciones cada uno, incluida la del conteo total).
+> 4. **La línea `**Archivos:**` de esta fase seguía citando la migración y el
+>    fichero de frontend equivocados**, con la corrección 30 líneas más abajo
+>    en esta misma nota — el próximo que sólo lee `**Archivos:**` repite el
+>    error. Corregida arriba.
+>
+> El test pasó de 12 a 18 aserciones; el pgTAP sigue en 171 líneas (límite
+> 300). Regresión verificada de nuevo tras estos cambios contra spec47
+> (`spec47_complete_route_cascades_manifest_status`), spec52
+> (`spec52_unexpected_count`) y spec80 fase 2
+> (`spec80_fase2_close_manifest_discrepancies`) — sin fallos.
+>
+> **Deuda declarada, no cerrada en esta fase** (hallazgos legítimos de la
+> ronda 2 que no bloquean el criterio de aceptación de fase 1, pero que fase
+> 2a/3 o una fase de contrato posterior necesitan conocer):
+>
+> - **Tres definiciones de "esperado" que no coinciden entre sí, y la
+>   pantalla puede contradecir al registro.** El trigger que fija
+>   `route_receptions.expected_count`
+>   (`trg_pickup_routes_set_manifest_reception_status`, `20260625000001:184`)
+>   y `get_route_reception_snapshot.expected_packages` (misma migración,
+>   ~línea 529) **no filtran `pk.deleted_at IS NULL`**; esta fase sí lo hace
+>   (`p.deleted_at IS NULL`, deliberado — ver criterio de soft-delete
+>   arriba). Con un paquete declarado y luego borrado antes del cierre, la
+>   pantalla que ve el recepcionista (`expected_count`/`expected_packages`)
+>   cuenta ese bulto y el registro de discrepancias que esta fase escribe
+>   no — el recepcionista firma "faltan 3" y Ops recibe 2 discrepancias.
+>   Nuestro guard es el correcto (un bulto borrado no es una merma real);
+>   el desalineamiento está en el otro lado, y alguien tiene que decidir si
+>   se reconcilia (filtrar `deleted_at` ahí también) o se documenta como
+>   discrepancia esperada entre "lo declarado" y "lo exigible".
+> - **La consulta de paquetes esperados de esta fase no sigue del todo su
+>   propia plantilla.** `close_manifest` filtra `ps.deleted_at IS NULL` en
+>   *todas* sus consultas equivalentes; las líneas de esta fase que arman
+>   el CTE `expected` no filtran `ps.deleted_at IS NULL` ni `m.deleted_at IS
+>   NULL`, y tampoco repiten `m.operator_id = v_operator` (no-negociable del
+>   repo: `operator_id` en toda query) — hoy es inofensivo porque
+>   `pickup_route_id = p_route_id` ya viene de una fila ya verificada contra
+>   `v_operator` en el `SELECT ... FOR UPDATE` de arriba, pero un
+>   `pickup_scan` soft-deleted, o (si algún día existiera) de OTRO operador
+>   colándose en la ruta, llegaría hasta el `package_id` y potencialmente
+>   haría fallar el cierre entero vía `PACKAGE_NOT_FOUND` de
+>   `record_discrepancies` (mismo mecanismo del hallazgo de
+>   `p.deleted_at IS NULL` de arriba). `useRoutePreview.ts:63-68` (el lector
+>   de la app) sí filtra. No cerrado aquí porque hoy no hay manera
+>   alcanzable de producirlo (el estado real del repo no permite un
+>   `pickup_scan` de otro operador ni uno soft-deleted en un manifest activo
+>   asociado a esta ruta) — declarado para que la próxima fase que toque
+>   esta consulta no la copie sin el guard.
+> - **Una razón enviada por el cliente en `p_missing_reasons` para un
+>   paquete ya recibido o ya borrado se pierde en silencio, sin error ni
+>   rastro.** Es la consecuencia correcta del diseño (el registro no
+>   depende de las razones), pero si algún día `p_missing_reasons` tiene un
+>   consumidor real, ese consumidor necesita saber que un envío
+>   "exitoso" no garantiza que la razón quedó escrita en ninguna parte.
+> - **`rs.deleted_at IS NULL` (el guard de la aserción 6/mutante 2) tiene
+>   hoy un disparador inalcanzable** — ningún código de este repo pone
+>   `deleted_at` en `reception_scans` — **y contradice deliberadamente** a
+>   `get_route_reception_snapshot`, que no lo filtra a propósito (comentario
+>   de spec-52: pantalla y registro "nunca deben discrepar"). Se mantiene
+>   por el no-negociable de soft-deletes del repo (cualquier tabla puede
+>   ganar un soft-delete futuro sin que este guard necesite tocarse), pero
+>   si `reception_scans` nunca gana un soft-delete real, este guard y el de
+>   `get_route_reception_snapshot` divergen sobre qué significa "recibido"
+>   el día en que alguien sí lo use.
+> - **`p_missing_reasons` es código muerto hoy.** No existe llamador ni UI
+>   que lo pueble — su única cobertura es este pgTAP. Es la contraparte
+>   honesta de la decisión (defendible) de no construir la UI de razones por
+>   paquete en esta fase: se mergea superficie de API sin consumidor.
+>
+> **Review:** reviewer (Opus) — ronda 1: núcleo verificado sólido (ACL
+> correcto tras el `DROP FUNCTION`, una sola función instalada, TAP real
+> 12/12); ronda 2 (arriba): 4 hallazgos, los 4 cerrados en esta fase — sin
+> hallazgos abiertos pendientes de otra ronda.
 > **QA:** no aplica todavía — pendiente de PR + `qa-e2e`.
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`

@@ -67,15 +67,40 @@ BEGIN
     RAISE EXCEPTION 'route_reception for route % not found', p_route_id;
   END IF;
 
+  -- Ronda 2 de review (#704): before this fase, re-closing an already-
+  -- completed route_reception was inert (it only refreshed completed_at/
+  -- discrepancy_notes). After this fase it is NOT inert: a second call would
+  -- re-run the missing-package scan and re-call record_discrepancies, which
+  -- reopens a fresh 'open' row for any package whose discrepancy a human
+  -- already resolved -- record_discrepancies' idempotency is scoped to
+  -- status='open' (uniq_open_discrepancy_per_package), not to "has this
+  -- source_id already been processed". A resolved discrepancy would vanish
+  -- from Ops' queue and reappear as unresolved, silently. Reachable: any
+  -- double-submit, or a retried offline-queue call (spec-81) after a success
+  -- whose ack was lost. Same precedent and same ERRCODE as close_manifest's
+  -- MANIFEST_ALREADY_SIGNED (20260916000001) -- 23505 (unique_violation,
+  -- "this already happened" -> HTTP 409 under PostgREST), not P0001.
+  IF v_rr.status = 'completed' THEN
+    RAISE EXCEPTION 'ROUTE_RECEPTION_ALREADY_COMPLETED: route_reception % is already completed -- re-closing it would resurrect discrepancies a human already resolved', v_rr.id
+      USING ERRCODE = '23505';
+  END IF;
+
   IF v_rr.received_count < v_rr.expected_count
      AND (p_discrepancy_notes IS NULL OR length(trim(p_discrepancy_notes)) = 0) THEN
     RAISE EXCEPTION 'discrepancy_notes required when received (%) < expected (%)',
       v_rr.received_count, v_rr.expected_count;
   END IF;
 
-  -- Defensive: a malformed/absent payload behaves exactly like an empty one
-  -- -- it must never block the close, only the missing-package detection
-  -- below (which does not depend on this at all) records the discrepancy.
+  -- Ronda 2 de review (#704): this top-level check alone did NOT deliver what
+  -- its old comment promised ("a malformed payload must never block the
+  -- close") -- it only catches a malformed ARRAY. A well-formed array whose
+  -- element has a non-UUID-shaped package_id (e.g. {"package_id":"nope"})
+  -- passed this check and then blew up on the ::UUID cast below (22P02),
+  -- aborting the whole close. A scalar element (["oops"]) was ALREADY safe:
+  -- ->> on a jsonb value that is not an object returns NULL, no cast, no
+  -- error -- that half of the old comment was accurate. The regex guard
+  -- added below (search for "UUID-shape") is what actually closes the gap;
+  -- this top-level check only handles NULL/non-array p_missing_reasons.
   IF p_missing_reasons IS NULL OR jsonb_typeof(p_missing_reasons) <> 'array' THEN
     p_missing_reasons := '[]'::jsonb;
   END IF;
@@ -90,9 +115,21 @@ BEGIN
            'kind', 'missing',
            'package_id', p.id,
            'note', (
+             -- UUID-shape guard (ronda 2 de review, #704): checked BEFORE
+             -- the ::UUID cast, not after. A non-UUID-shaped string here
+             -- (typo, a foreign id format, anything) simply fails the regex
+             -- and never reaches the cast -- no 22P02, no aborted close.
+             -- Silent by design, same as a reason for an already-received
+             -- or soft-deleted package_id (neither is in the missing set
+             -- this subquery runs against, so its note is dropped the same
+             -- way): this fase's automatic backstop does not depend on
+             -- p_missing_reasons at all, so a malformed or unmatched entry
+             -- in it is data the client sent about nothing this call cares
+             -- about, not an error.
              SELECT reason ->> 'note'
                FROM jsonb_array_elements(p_missing_reasons) reason
-              WHERE NULLIF(reason ->> 'package_id', '')::UUID = p.id
+              WHERE reason ->> 'package_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+                AND (reason ->> 'package_id')::UUID = p.id
               LIMIT 1
            )
          )), '[]'::jsonb) INTO v_items
@@ -137,7 +174,7 @@ BEGIN
 END $$;
 
 COMMENT ON FUNCTION public.complete_route_reception(UUID, TEXT, JSONB)
-  IS 'Finaliza una route_reception; el trigger cascada manifest + pickup_route (spec-47). spec-86 fase 1: en la MISMA transacción, abre una discrepancia (public.discrepancies, operation_type=''reception'') por cada paquete esperado (verificado en pickup_scans de esta ruta) sin un reception_scan ''received'' para esta route_reception -- con o sin razón: p_missing_reasons es un array opcional de {package_id, note} que el cliente puede mandar, pero el registro NO depende de él, así que un payload vacío o parcial no vuelve a tragarse un bulto en silencio. p_source_id de record_discrepancies es route_reception_id (v_rr.id), no manifest_id. discrepancy_notes del cierre sigue siendo el comentario libre de la recepción, ya no el único registro del faltante.';
+  IS 'Finaliza una route_reception; el trigger cascada manifest + pickup_route (spec-47). spec-86 fase 1: en la MISMA transacción, abre una discrepancia (public.discrepancies, operation_type=''reception'') por cada paquete esperado (verificado en pickup_scans de esta ruta) sin un reception_scan ''received'' para esta route_reception -- con o sin razón: p_missing_reasons es un array opcional de {package_id, note} que el cliente puede mandar, pero el registro NO depende de él, así que un payload vacío o parcial no vuelve a tragarse un bulto en silencio. Un elemento con package_id que no tiene forma de UUID, o que no matchea ningún paquete faltante (ya recibido, borrado, o ajeno), pierde su nota en silencio -- no es un error, es una razón sobre algo que esta llamada no necesitaba. p_source_id de record_discrepancies es route_reception_id (v_rr.id), no manifest_id. discrepancy_notes del cierre sigue siendo el comentario libre de la recepción, ya no el único registro del faltante. Rechaza re-cerrar una route_reception ya ''completed'' (23505, ROUTE_RECEPTION_ALREADY_COMPLETED) -- un segundo cierre re-abriría como ''open'' cualquier discrepancia que un humano ya hubiera resuelto, mismo patrón que MANIFEST_ALREADY_SIGNED en close_manifest (20260916000001).';
 
 -- Repo convention (ver comentario de 20260916000001, misma regla): CREATE OR
 -- REPLACE conserva el proacl existente, así que el REVOKE/GRANT explícito de
