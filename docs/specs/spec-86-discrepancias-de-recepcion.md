@@ -312,7 +312,7 @@ registro del faltante.
 >    en esta misma nota — el próximo que sólo lee `**Archivos:**` repite el
 >    error. Corregida arriba.
 >
-> El test pasó de 12 a 18 aserciones; el pgTAP sigue en 171 líneas (límite
+> El test pasó de 12 a 18 aserciones; el pgTAP sigue en 176 líneas (límite
 > 300). Regresión verificada de nuevo tras estos cambios contra spec47
 > (`spec47_complete_route_cascades_manifest_status`), spec52
 > (`spec52_unexpected_count`) y spec80 fase 2
@@ -376,10 +376,13 @@ registro del faltante.
 >   honesta de la decisión (defendible) de no construir la UI de razones por
 >   paquete en esta fase: se mergea superficie de API sin consumidor.
 >
-> **Review:** reviewer (Opus) — ronda 1: núcleo verificado sólido (ACL
-> correcto tras el `DROP FUNCTION`, una sola función instalada, TAP real
-> 12/12); ronda 2 (arriba): 4 hallazgos, los 4 cerrados en esta fase — sin
-> hallazgos abiertos pendientes de otra ronda.
+> **Nota del implementer, no del reviewer:** dejo `> Review:` vacía a
+> propósito. La escribí en un borrador anterior de esta nota antes de que el
+> review ocurriera — cierto en el resultado, pero firmé por adelantado una
+> línea que sólo el reviewer puede firmar honestamente. Corregido: la línea
+> de abajo la completa quien ejecute el review, no yo.
+>
+> **Review:**
 > **QA:** no aplica todavía — pendiente de PR + `qa-e2e`.
 
 ### Fase 2a — Resolver: el bulto aparece `[pending]`
