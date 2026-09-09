@@ -53,11 +53,11 @@ describe('GET /api/admin/drivers', () => {
     expect(res.status).toBe(403);
   });
 
-  it('200s with the driver list for admin', async () => {
+  it.each(['admin', 'operations_manager'])('200s with the driver list for role %s', async (role) => {
     const drivers = [
       { id: 'd1', operator_id: 'op-1', full_name: 'Driver Uno', phone: '+56911111101', rut: null, fleet_type: 'own', status: 'active', user_id: null, users: null },
     ];
-    const client = buildClient({ role: 'admin', drivers });
+    const client = buildClient({ role, drivers });
     vi.mocked(createSSRClient).mockResolvedValue(client as never);
 
     const res = await GET();

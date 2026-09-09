@@ -116,12 +116,41 @@ Ver arriba. Reparto móvil no tiene ronda propia.
       guard como advertencia en CI; corregido antes de mergear). No hace falta
       backfill: la columna está 100% `NULL` hoy (nadie la escribe todavía),
       así que el guard es defensivo, no una corrección de datos reales. Test
-      pgTAP en `spec84_fase1_drivers_user_id.test.sql` cubre same-operator
-      (TEST 2), cross-operator (TEST 3) y soft-delete liberando el `user_id`
-      (TEST 4). **No ejecutado** — Docker Desktop estaba caído (500 en todo
-      comando) durante esta implementación; `scripts/pgtap-local.sh` no pudo
-      construir/aplicar/correr nada. Pendiente de correr antes de confiar en
-      este archivo.
+      pgTAP en `spec84_fase1_drivers_user_id.test.sql` (8 tests) cubre
+      unicidad UNIQUE-a-nivel-de-esquema (TEST 1), same-operator (TEST 2),
+      cross-operator (TEST 3), soft-delete liberando el `user_id` (TEST 4), y
+      RLS de `drivers_admin_write` — admin puede (TEST 6), pickup_crew no
+      puede (TEST 7), `WITH CHECK` bloquea re-parentar a otro operador
+      (TEST 8). **Corrido de verdad contra `spec52-pg`** (ronda 2 de review;
+      Docker había estado caído en la implementación original). Corrección de
+      ronda 2: TESTs 6/7/8 apuntaban al driver `…0002`, el mismo id que
+      TEST 2 espera que sea RECHAZADO por el índice — ese `INSERT` vive dentro
+      de un `BEGIN/EXCEPTION` anidado (subtransacción que revierte), así que
+      la fila nunca existía y esos tres tests no probaban nada (uno fallaba
+      por la razón equivocada, uno pasaba vacuamente). Corregido con un
+      quinto driver de fixture (`…0005`), ajeno a TESTs 2-4, más una
+      aserción positiva en TEST 7 que exige el estado post-TEST-6 antes de
+      aceptar el resultado. Salida cruda (cero líneas `ERROR:`, todos los
+      `DO` completan, `ROLLBACK` limpio):
+      ```
+      BEGIN
+      INSERT 0 2
+      INSERT 0 4
+      INSERT 0 1
+      DO
+      DO
+      DO
+      DO
+      DO
+      DO
+      RESET
+      DO
+      RESET
+      DO
+      RESET
+      {}
+      ROLLBACK
+      ```
 - [x] `drivers.user_id` se puebla vía admin, no por backfill masivo — decisión
       documentada en el comentario de la migración y en
       `infra/supabase-qa/create-qa-users.sh`: no hay heurística de
@@ -154,7 +183,14 @@ Ver arriba. Reparto móvil no tiene ronda propia.
    sólo encuentra `apps/agents/src/dev/test-orders.ts`, un script de
    desarrollo; `git grep "FROM public.drivers\|JOIN public.drivers"` sobre
    todas las migraciones no encuentra nada). Es la tabla que esta fase hace
-   usable, pero hoy no la usa nada en producción.
+   usable, pero hoy no la usa nada en producción. **Matiz (ronda 2 review):**
+   "cero consumidores" es cierto para lectores/escritores en código, pero no
+   es una tabla aislada — cinco tablas más del agent suite tienen FK a ella
+   (`assignments`, `conversations`, `driver_availabilities`, `exceptions`,
+   `settlement_periods`), igual de dormidas, formando un clúster mayor del
+   que sugiere el texto original. Relevante para dimensionar cuánto trae
+   consigo activar `drivers` de verdad (fase 2 en adelante), no para el
+   alcance de esta fase.
 2. **`pickup_routes.driver_id`** (`20260625000001_spec47_...:32`) —
    `UUID NOT NULL REFERENCES public.users(id)`, **no** a `drivers`. El
    conductor de una ruta de Recogida es literalmente un login de la
@@ -177,6 +213,53 @@ bloqueada por diseño) sería la primera en leerla. No se toca aquí qué hace
 inconsistencia real, pero resolverla es una decisión de producto (¿migrar
 Recogida a `drivers`? ¿dejar que cada módulo tenga su propio conductor?) fuera
 del alcance de esta fase, que sólo tenía que dejar `drivers.user_id` usable.
+
+**Seguimiento post-review (ronda 2, sin resolver aquí):**
+
+- **M-1 — el guard h5c de la migración degrada en silencio.** Si el pre-check
+  `COUNT(*) ... HAVING > 1` encuentra conflictos, la migración termina en
+  verde (sólo emite `RAISE NOTICE` y sigue) y `scripts/verify-prod-migrations.sh`
+  no lo detecta — ese script sólo compara el ledger de versiones aplicadas
+  contra el repo (`spec-51`), nunca el contenido real de un objeto. Es
+  literalmente la configuración que dejó `routes_one_vehicle_per_day`
+  inexistente en producción durante días tras `20260911000002`. Acción
+  pendiente: quien despliegue esta migración a producción debe correr, después
+  del deploy, y confirmar `t`:
+  ```sql
+  SELECT ix.indisunique FROM pg_index ix JOIN pg_class c ON c.oid = ix.indexrelid
+   WHERE c.relname = 'idx_drivers_user_id';
+  ```
+  Atenuante real: `drivers.user_id` está 100% `NULL` y sin escritores hoy (ver
+  inventario arriba), así que la rama de conflicto es hoy inalcanzable — pero
+  eso es argumento para **borrar el pre-check** (ya no hace falta) en vez de
+  dejarlo sin verificar indefinidamente. No se decide aquí cuál de las dos;
+  fase 2 (o quien despliegue primero a producción) debe elegir.
+- **M-2 — la unicidad global tiene un callejón sin salida de soporte.**
+  Nada impide hoy que un `drivers` de operador B tenga el `user_id` de un
+  usuario de operador A (no hay FK compuesta ni CHECK que lo impida — el
+  propio TEST 4 del pgTAP lo hace a propósito para probar la liberación por
+  soft-delete). Combinado con la unicidad global: un admin de A intenta
+  vincular a su usuario X, un `drivers` de B ya lo tiene, el `PATCH` pasa el
+  chequeo de `targetUser` (que sólo mira el operador del *driver* que se está
+  editando) y revienta con `23505` — el admin ve «ya está vinculado a otro
+  driver» sobre un driver que no puede ver, buscar ni desvincular. Probabilidad
+  hoy baja (cero escritores), pero nadie lo cierra. Pendiente: un trigger que
+  valide `NEW.user_id`'s `users.operator_id` = `NEW.operator_id` antes de
+  aceptar el UPDATE/INSERT, o al menos documentar el camino de soporte para
+  ese 23505.
+- **M-3 — `drivers_admin_write` es `FOR ALL`, no sólo `UPDATE`.** Un
+  admin/operations_manager puede hoy hacer `DELETE` duro de `drivers` vía
+  PostgREST — choca con el no-negociable de soft deletes del repo, y esta
+  fase sólo necesitaba `UPDATE` para vincular `user_id`. Hay precedente
+  (`pickup_points_admin_write` también es `FOR ALL`), así que no es una
+  invención de esta fase, pero es superficie que nadie pidió. Pendiente:
+  reducir a `FOR SELECT, UPDATE` si nadie necesita que un admin cree/borre
+  `drivers` desde esta policy.
+- **M-4 — `/admin/drivers` no es alcanzable desde ninguna parte de la UI.**
+  Cero enlaces hacia ella hoy. Deuda preexistente — `/admin/users` y
+  `/admin/audit-logs` están en la misma situación — pero una "superficie de
+  admin" que sólo se llega tecleando la URL no cumple del todo el criterio de
+  la fase. Pendiente: añadir un enlace desde `AdminPage`/`/admin`.
 
 ### Fase 2 — `1g` home del operario `[blocked]`
 

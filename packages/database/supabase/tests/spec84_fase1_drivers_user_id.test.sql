@@ -1,12 +1,16 @@
 -- pgTAP: spec-84 fase 1 — drivers.user_id usable.
 --
--- NOT RUN as part of this commit — Docker Desktop was down on the machine
--- that wrote this file (500 on every `docker` command), so
--- scripts/pgtap-local.sh could not build/apply/run it. Written test-first per
--- TDD, but the RED step ("watch it fail for the right reason") could not be
--- observed. Run `bash scripts/pgtap-local.sh sync && bash scripts/pgtap-local.sh apply
--- && bash scripts/pgtap-local.sh run spec84_fase1_drivers_user_id.test.sql`
--- once Docker is back, before trusting this file.
+-- Round 2 review fix: TESTs 6/7/8 originally targeted driver id …0002 —
+-- the SAME id TEST 2 expects to be REJECTED by the unique index. That
+-- INSERT lives inside a nested BEGIN/EXCEPTION block (a subtransaction that
+-- rolls back on the expected unique_violation), so the row never existed,
+-- and TESTs 6/7/8 were asserting UPDATE behaviour against a driver that was
+-- never there — TEST 6 failed for the wrong reason, TEST 7 passed
+-- vacuously (0 rows affected because 0 rows existed, not because RLS
+-- blocked anything). Fixed by adding a fifth driver (…0005) directly in the
+-- fixture, untouched by TESTs 2-4, and pointing TESTs 6/7/8 at it. Run for
+-- real against the shared spec52-pg container (previously blocked — Docker
+-- Desktop was down when this file was first written).
 --
 -- Covers:
 --   TEST 1 — idx_drivers_user_id is UNIQUE (schema-level, not just present).
@@ -65,6 +69,18 @@ INSERT INTO auth.users (
    '{"operator_id":"84444444-0000-4000-8000-00000000000a","role":"pickup_crew"}'::jsonb,
    '{"full_name":"Spec84 Driver User A"}'::jsonb, NOW(), NOW(), '', '')
 ON CONFLICT (id) DO NOTHING;
+
+-- A fifth driver, operator A, created directly in the fixture (not inside
+-- one of the EXCEPTION-guarded DO blocks below) and never touched by
+-- TESTs 2-4 — TESTs 6/7/8 (RLS on drivers_admin_write) need a row that
+-- actually exists after those run. Round 2 review finding: the driver ids
+-- TESTs 6/7/8 originally targeted (…0002) were themselves the ones TEST 2
+-- expects to be REJECTED — the INSERT never commits (it's inside a nested
+-- BEGIN/EXCEPTION block, i.e. a subtransaction that rolls back), so that row
+-- never existed and TESTs 6/7/8 were asserting against nothing.
+INSERT INTO public.drivers (id, operator_id, fleet_type, full_name, phone, user_id)
+VALUES ('84444444-2222-4000-8000-000000000005', '84444444-0000-4000-8000-00000000000a',
+        'own', 'Driver Five A (RLS fixture)', '+56900000005', NULL);
 
 -- ============================================================================
 -- TEST 1 — idx_drivers_user_id is UNIQUE, not merely present
@@ -150,7 +166,10 @@ END $$;
 
 -- ============================================================================
 -- TEST 5 — GUARD: the connection role bypasses RLS. If this ever reports
--- something other than "sees both", every test below is meaningless.
+-- something other than "sees all three", every test below is meaningless.
+-- Three rows exist at this point: 005 (fixture, operator A, unlinked),
+-- 001 (TEST 2, operator A, soft-deleted by TEST 4), 004 (TEST 4, operator B).
+-- 002/003 never exist — TESTs 2/3 assert their INSERTs are rejected.
 -- ============================================================================
 DO $$
 DECLARE c INT;
@@ -174,14 +193,12 @@ BEGIN
     '{"sub":"84444444-1111-4000-8000-000000000001","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 
-  -- Drop the existing link first so this UPDATE is a genuine re-link, not a
-  -- no-op that would pass even under a broken policy.
-  UPDATE public.drivers SET user_id = NULL
-   WHERE id = '84444444-2222-4000-8000-000000000002';
+  -- Driver 005 starts with user_id NULL (fixture) — this is a genuine link,
+  -- not a no-op that would pass even under a broken policy.
   UPDATE public.drivers SET user_id = '84444444-1111-4000-8000-000000000002'
-   WHERE id = '84444444-2222-4000-8000-000000000002';
+   WHERE id = '84444444-2222-4000-8000-000000000005';
   GET DIAGNOSTICS n = ROW_COUNT;
-  SELECT user_id INTO linked FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000002';
+  SELECT user_id INTO linked FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000005';
   RESET role;
 
   IF n <> 1 OR linked <> '84444444-1111-4000-8000-000000000002' THEN
@@ -196,20 +213,26 @@ RESET role;
 DO $$
 DECLARE n INT; before_uid UUID; after_uid UUID;
 BEGIN
-  SELECT user_id INTO before_uid FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000002';
+  SELECT user_id INTO before_uid FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000005';
 
   PERFORM set_config('request.jwt.claims',
     '{"sub":"84444444-1111-4000-8000-000000000002","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
   UPDATE public.drivers SET user_id = NULL
-   WHERE id = '84444444-2222-4000-8000-000000000002';
+   WHERE id = '84444444-2222-4000-8000-000000000005';
   GET DIAGNOSTICS n = ROW_COUNT;
   RESET role;
 
-  SELECT user_id INTO after_uid FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000002';
+  SELECT user_id INTO after_uid FROM public.drivers WHERE id = '84444444-2222-4000-8000-000000000005';
 
   IF n <> 0 OR after_uid IS DISTINCT FROM before_uid THEN
     RAISE EXCEPTION 'TEST 7 FAILED: pickup_crew changed % row(s); user_id went % -> %', n, before_uid, after_uid;
+  END IF;
+  -- Positive assertion the row still exists and is still linked, so a
+  -- version of this test that silently found nothing (n=0 because the row
+  -- itself was absent) cannot pass vacuously — round 2 review finding.
+  IF before_uid IS NULL OR before_uid <> '84444444-1111-4000-8000-000000000002' THEN
+    RAISE EXCEPTION 'TEST 7 INCONCLUSIVE: driver 005 was not in the linked state TEST 6 left it in (before_uid = %)', before_uid;
   END IF;
 END $$;
 RESET role;
@@ -228,7 +251,7 @@ BEGIN
   BEGIN
     UPDATE public.drivers
        SET operator_id = '84444444-0000-4000-8000-00000000000b'
-     WHERE id = '84444444-2222-4000-8000-000000000002';
+     WHERE id = '84444444-2222-4000-8000-000000000005';
   EXCEPTION WHEN insufficient_privilege THEN
     blocked := true;
   END;

@@ -128,8 +128,8 @@ describe('PATCH /api/admin/drivers/[id]', () => {
     expect(res.status).toBe(404);
   });
 
-  it('links the driver to the user and returns the updated row', async () => {
-    const client = buildClient({ updatedDriver: { id: 'd1', user_id: '11111111-1111-4111-8111-111111111111' } });
+  it.each(['admin', 'operations_manager'])('links the driver to the user for role %s and returns the updated row', async (role) => {
+    const client = buildClient({ role, updatedDriver: { id: 'd1', user_id: '11111111-1111-4111-8111-111111111111' } });
     vi.mocked(createSSRClient).mockResolvedValue(client as never);
 
     const res = await PATCH(buildRequest({ user_id: '11111111-1111-4111-8111-111111111111' }), { params });
