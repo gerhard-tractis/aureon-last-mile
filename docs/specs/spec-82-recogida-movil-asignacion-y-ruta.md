@@ -387,6 +387,21 @@ completa, no hay escaneo pendiente que hacer sin red.
 - [x] Precarga de manifiesto, órdenes y bultos al almacén nuevo (`manifest_cache`, no el de spec-81 — spec-81 es la cola de SALIDA; ver "Por qué una tabla nueva" arriba).
 - [x] Chip de estado por carga, con la precedencia de `COMPLETADA` resuelta arriba.
 
+**Límite honesto, declarado — no descubierto en review.** "Abrir `5d` sin
+red" significa que la pantalla RENDERIZA desde el caché: cabecera, punto de
+retiro, lista de órdenes/bultos. **Escanear un bulto sin red sigue sin
+funcionar** — `useScanMutation` (`hooks/pickup/usePickupScans.ts`) escribe
+directo a `pickup_scans` vía Supabase, sin pasar por la cola offline de
+spec-81 (`pickup_queue`); el propio código ya lo decía antes de esta fase
+("No writer populates `db.pickup_queue` from this screen yet"). Conectar el
+escaneo a esa cola es trabajo de spec-81, no de éste — esta fase no lo
+inventa ni lo silencia. Mismo límite para `usePickupScans` (lectura de
+escaneos ya confirmados): es una query de red con `networkMode` por
+defecto; sin señal queda en su `data = []` por defecto, así que el conteo
+"verificados" arranca en 0 en cada sesión offline en vez de recordar lo ya
+escaneado antes de perder señal. No se precachean escaneos en esta fase —
+sólo manifiesto+órdenes+bultos, como dice "Qué NO se precarga" arriba.
+
 ### Fase 3 — Asignación `[pending]`
 
 **Decisión del usuario (2026-09-09), textual:** «El líder de recogida define la
