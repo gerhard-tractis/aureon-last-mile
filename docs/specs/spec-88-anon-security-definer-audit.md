@@ -430,28 +430,94 @@ Implementa la distinción `service_role` real vs. `anon`/ausencia de sesión, pr
 > cobertura sin medir — exactamente lo que ronda 3 encontró falso, dos
 > veces. Retirada; ver la línea de QA de abajo para el estado real.
 >
+> **Ronda 4 (review adversarial, ejecutando contra `@supabase/ssr@0.5.2`
+> instalado y un compose de juguete real):** declarada **mergeable con
+> correcciones** — confirmó que el assert discrimina en las dos direcciones
+> (payload construido con el hook real ejecutado contra un `pickup_leader`
+> de `handle_new_user` → `PASS`; sin hook → `FAIL: operator_id got
+> undefined` — la ronda 2 daba `PASS` en los dos), que `up -d auth` sí
+> recrea por cambio de config (`docker compose` compara el config-hash, no
+> la imagen — probado: `Container ... Recreated`, ID de `auth` cambiado, el
+> de `db` no), que `CHANGED_QA_COMPOSE` dispara con diffs acumulados/
+> agrupados, que no hay regresión en `functions`, que el orden
+> `restart_functions → restart_auth → apps → post_checks` no deja ventana
+> para `e2e-qa` (job aparte, `needs: [deploy-qa]`), y cerró también mi
+> propia falsa alarma de ronda 3 sobre la URI del hook con evidencia
+> ejecutada (`gotrue:v2.192.0` arrancado con las tres variantes de URI —
+> `POSTGRES_DB` vacío también valida, el segmento se ignora; sólo una URI
+> genuinamente malformada mata el arranque, con mensaje explícito). Tres
+> hallazgos, cerrados aquí:
+> 1. **El arreglo de B2 (ronda 3) no tenía test**, pese a que
+>    `deploy-qa.functions.test.sh` ya existe para exactamente este patrón
+>    (`restart` reutiliza config, sólo `up -d` relee el compose) y ya corre
+>    en `.github/workflows/ci.yml:161`. Añadidos 8 tests: 4 para
+>    `restart_auth()` (recreate no restart, servicio correcto, env file,
+>    `--no-deps` — ver punto 3) y 3 para el widen de `CHANGED_QA_COMPOSE`
+>    (compose dispara, `functions/`-only NO dispara, no relacionado no
+>    dispara). Mutation-verificado: revertir `--no-deps` → 1 test rojo;
+>    borrar la línea de widen → 1 test rojo (el resto se mantuvo verde en
+>    ambos casos, confirmando que no son falsos positivos).
+> 2. **`post_checks()` no comprobaba `auth` en absoluto.** `up -d auth`
+>    espera a que `db` (su dependencia) esté sana, no a que `auth` mismo lo
+>    esté — y una config de hook mala mata a GoTrue en el arranque (ronda 4
+>    lo demostró). Nueva `container_health_check()`, leyendo
+>    `docker inspect --format='{{.State.Health.Status}}'` del contenedor
+>    (no un `http_check`: `auth` no publica puerto al host, y Kong no
+>    enruta `GET /auth/v1/health` — sólo `/verify`, `/callback`,
+>    `/authorize`, `/.well-known/jwks.json` y `/sso/*` son rutas abiertas),
+>    cableada en `post_checks()` sin condicionar a ningún `CHANGED_*` (igual
+>    que `db_check`, porque `auth` debe estar sano en todo deploy, no sólo
+>    en los que tocan el compose). 6 tests nuevos cubriendo healthy/
+>    unhealthy/starting/contenedor ausente, mutation-verificado forzando el
+>    check a pasar siempre → 4 de los 6 rojos.
+> 3. **`--no-deps` en `restart_auth()`** — sin él, `up -d auth` también
+>    recrearía `db` (Postgres de QA, con Musan) si SU config-hash cambiara
+>    por cualquier PR futuro que tocara el bloque `db:` del mismo compose,
+>    cortando conexiones vivas unos segundos como efecto colateral de un
+>    cambio ajeno a `auth:`. Seguro aquí porque `restart_auth()` corre
+>    después de que `apply_migrations`/`apply_seed`/`apply_qa_users` ya
+>    probaron `db` sano en el mismo `main()`. Anotado, no arreglado, en
+>    `restart_functions()`: misma exposición preexistente, fuera de
+>    alcance de esta fase.
+>
+> **Archivos** actualizado (índice de la fase completo, ver más abajo) —
+> ronda 4 encontró que seguía describiendo sólo el plan de ronda 1.
+>
 > PR: #710, **sin auto-merge** (deliberado — ver más abajo).
-> Review: ronda 2 y ronda 3 hechas (opus, adversarial) — hallazgos arriba,
+> Review: rondas 2, 3 y 4 hechas (opus, adversarial) — hallazgos arriba,
 > cerrados en esta misma rama.
-> QA: `gh pr checks 710` verde en rondas 1 y 2; pendiente reconfirmar tras
-> el push de ronda 3. **La prueba de login en vivo sigue sin ejecutarse en
-> esta sesión** (SSH al VPS bloqueado por el clasificador de permisos del
-> entorno, en las tres rondas). El mecanismo que la haría automática
-> (hook activo en QA + assert de claims en la raíz correcta + `auth` se
-> recrea en el deploy) está ahora escrito y verificado en aislamiento
-> (SQL en `spec52-pg`, simulación de JWT en Node, `DO` block ejecutado) —
+> QA: `gh pr checks 710` verde en rondas 1, 2 y 3; pendiente reconfirmar
+> tras el push de ronda 4. **La prueba de login en vivo sigue sin
+> ejecutarse en esta sesión** (SSH al VPS bloqueado por el clasificador de
+> permisos del entorno, en las cuatro rondas). El mecanismo que la haría
+> automática (hook activo en QA + assert de claims en la raíz correcta +
+> `auth` se recrea en el deploy + `post_checks` verifica que `auth` arrancó
+> sano) está ahora escrito y verificado en aislamiento (SQL en `spec52-pg`,
+> simulación de JWT en Node, `DO` block ejecutado, 21 tests de shell
+> mutation-verificados, compose de juguete real para `up -d`/config-hash) —
 > **pero nadie lo ha ejecutado de punta a punta contra la VPS real
 > todavía.** Eso ocurre la primera vez que este PR mergee y `deploy-qa`
-> corra sobre él; hasta entonces, el gate humano de "sin auto-merge" en
-> este PR sigue siendo la única red real.
+> corra sobre él. Pedido explícito del reviewer para ese primer deploy: leer
+> el log de `deploy-qa` y confirmar la línea de recreación de `auth`
+> seguida de un `e2e-qa` verde, antes de aprobar producción — lo hace el
+> orquestador, no un agente.
 > Downstream: `**Downstream:** ninguno todavía` en la cabecera del spec —
 > sin cambios.
 
-**Archivos:** migración nueva en `packages/database/supabase/migrations/`
-(`GRANT EXECUTE ON FUNCTION public.custom_access_token_hook(jsonb) TO
-supabase_auth_admin` seguido de `REVOKE ALL ... FROM PUBLIC` y `REVOKE ALL ...
-FROM anon`), test pgTAP en `packages/database/supabase/tests/` siguiendo el
-patrón de `20260913000006` (fase 1).
+**Archivos** (actualizado en ronda 4 — el índice se había quedado en el plan
+de ronda 1, ver `> Bloqueo C` de la ronda 4 en la evidencia de arriba):
+
+- `packages/database/supabase/migrations/20260922000001_spec88_fase3_custom_access_token_hook_acl.sql`
+  — `GRANT EXECUTE ... TO supabase_auth_admin`, `REVOKE ALL ... FROM PUBLIC`,
+  `REVOKE ALL ... FROM anon`, **y `REVOKE ALL ... FROM authenticated`**
+  (decisión propia de ronda 2, no en el plan original — ver evidencia).
+- `packages/database/supabase/tests/spec88_fase3_custom_access_token_hook_acl.test.sql`
+  — patrón de `20260913000006` (fase 1).
+- `infra/supabase-qa/docker-compose.yml` — `GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED`/`..._URI` en el servicio `auth` (ronda 2).
+- `infra/supabase-qa/deploy-qa.sh` — flag `CHANGED_QA_COMPOSE` y `restart_auth()` para que ese cambio de compose llegue al contenedor real (ronda 3), `--no-deps` en esa llamada y `container_health_check()`/su uso en `post_checks()` (ronda 4).
+- `infra/supabase-qa/deploy-qa.functions.test.sh` — cobertura TDD de lo anterior (ronda 4).
+- `apps/frontend/e2e/support/spec52-fixture.ts` — helper `getAccessTokenClaims()` (ronda 2).
+- `apps/frontend/e2e/spec52-pickup-reception-end-to-end.spec.ts` — assert sobre la raíz del JWT tras `signIn()` (ronda 2, corregido en ronda 3).
 
 **Corrección sobre el planteamiento original de esta fase:** el spec pedía confirmar el estado del hook con `docker inspect` contra "el contenedor de GoTrue de producción". **Eso es imposible y estaba mal** — producción no es self-hosted como QA, es un proyecto Supabase gestionado (ref `wfwlcpnkkxxzdvhvvsxb`), y no existe ningún contenedor GoTrue de producción que inspeccionar. `~/.ssh/config` (`aureon-vps`) sólo aloja QA. Este error se sostuvo sin comprobarse durante horas; ver la sección de arriba ("Corrección — el `docker inspect`...") para el detalle.
 

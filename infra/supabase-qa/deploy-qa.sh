@@ -275,11 +275,26 @@ restart_functions() {
 # `restart`, for the same reason: a restart would keep serving the
 # container's existing environment and ignore anything just added to its
 # `environment:` block in docker-compose.yml.
+#
+# --no-deps (ronda 4): `up -d auth` without it also recreates any dependency
+# whose own config-hash changed — `auth` declares `depends_on: db:
+# service_healthy`, and `db` is QA's Postgres, carrying Musan's data. A PR
+# that ever touches the compose file's `db:` block (not just `auth:`) would
+# otherwise recreate that container as a side effect of THIS call, cutting
+# every live QA connection for a few seconds (measured: the volume survives,
+# so no data loss — access tokens are self-contained JWTs Kong/PostgREST
+# validate without asking GoTrue, so live sessions are unaffected either;
+# only in-flight queries get dropped). Safe to skip dependency checks here
+# specifically because this call runs AFTER apply_migrations/apply_seed/
+# apply_qa_users already succeeded against `db` earlier in main() — its
+# health is already proven for this run. `restart_functions()` above has the
+# same exposure and predates this fix; not touched here, out of scope for
+# this phase.
 restart_auth() {
   local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
   log "recreating auth (GoTrue) container"
   docker compose -f "${infra_dir}/docker-compose.yml" \
-    --env-file "$QA_ENV_FILE" up -d auth
+    --env-file "$QA_ENV_FILE" up -d --no-deps auth
 }
 
 # Restarting the QA units needs passwordless sudo. The prod units have a
@@ -369,6 +384,31 @@ db_check() {
     record "db (5433)" ok "SELECT 1"
   else
     record "db (5433)" FAIL "not reachable"
+  fi
+}
+
+# spec-88 fase 3, ronda 4 — post_checks() had no assertion on `auth`
+# (GoTrue) at all. `restart_auth()`'s `up -d` only waits for its
+# dependencies (`db`) to be healthy, not for `auth` itself — and a bad hook
+# config kills GoTrue on startup (confirmed in ronda 4's review). Without
+# this, that scenario reports a green deploy and the failure only surfaces
+# 15 minutes later in `e2e-qa` as an opaque `waitForURL` timeout, with
+# nothing pointing at GoTrue.
+#
+# Not an http_check: `auth` publishes no host port (only reachable inside
+# the compose network), and Kong does not route GET /auth/v1/health — only
+# /verify, /callback, /authorize, /.well-known/jwks.json and /sso/* are
+# open, unauthenticated Kong routes (infra/supabase-qa/volumes/api/kong.yml).
+# The compose file already declares a container healthcheck for `auth`
+# (`wget http://localhost:9999/health` from inside the container) — read
+# that instead of inventing a second, less accurate probe from the host.
+container_health_check() { # $1 label, $2 container name
+  local status
+  status="$(docker inspect --format='{{.State.Health.Status}}' "$2" 2>/dev/null || true)"
+  if [ "$status" = "healthy" ]; then
+    record "$1" ok "healthy"
+  else
+    record "$1" FAIL "${status:-not found}"
   fi
 }
 
@@ -500,6 +540,7 @@ post_checks() {
   sleep 5
   http_check "kong (8100)" "http://localhost:8100/" any
   db_check
+  container_health_check "auth (GoTrue)" supabase-qa-auth
   sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
     http_check "frontend (3200)" "http://localhost:3200/" success
