@@ -208,6 +208,72 @@ describe('useSyncQueue — queuedCount includes the Recogida queue', () => {
     await waitFor(() => expect(result.current.queuedCount).toBe(1), { timeout: 5_000 });
   }, 10_000);
 
+  // spec-80 fase 5, mock `5i` — "N registros y N fotos esperan señal para
+  // subir" needs the two buckets split, not just their sum (`queuedCount`).
+  describe('pickupRecordsCount / pickupPhotoCount (spec-80 fase 5)', () => {
+    it('splits pending pickup_queue entries by type', async () => {
+      await db.pickup_queue.bulkAdd([
+        {
+          clientOperationId: 'a',
+          operatorId: 'op-1',
+          userId: 'user-1',
+          manifestId: 'manifest-1',
+          type: 'pickup_scan',
+          payload: {},
+          status: 'pending',
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          clientOperationId: 'b',
+          operatorId: 'op-1',
+          userId: 'user-1',
+          manifestId: 'manifest-1',
+          type: 'manifest_photo',
+          payload: {},
+          status: 'pending',
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        },
+        {
+          clientOperationId: 'c',
+          operatorId: 'op-1',
+          userId: 'user-1',
+          manifestId: 'manifest-1',
+          type: 'manifest_photo',
+          payload: {},
+          status: 'pending',
+          retryCount: 0,
+          claimToken: null,
+          lastAttemptAt: null,
+          nextAttemptAt: null,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+
+      const { result } = renderHook(() => useSyncQueue('op-1'));
+
+      await waitFor(() => expect(result.current.pickupPhotoCount).toBe(2));
+      expect(result.current.pickupRecordsCount).toBe(1);
+    });
+
+    it('is zero for both buckets when no operator is known yet', async () => {
+      await seedPickupQueue(4, 'op-1');
+
+      const { result } = renderHook(() => useSyncQueue(null));
+
+      await waitFor(() => expect(result.current.status).not.toBe('syncing'));
+      expect(result.current.pickupRecordsCount).toBe(0);
+      expect(result.current.pickupPhotoCount).toBe(0);
+    });
+  });
+
   it('requests persistent storage on mount (M4 — "GUARDADO EN EL DISPOSITIVO" must be true)', async () => {
     const persist = vi.fn().mockResolvedValue(true);
     Object.defineProperty(navigator, 'storage', {

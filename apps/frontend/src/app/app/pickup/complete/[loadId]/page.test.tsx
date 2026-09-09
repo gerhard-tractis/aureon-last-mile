@@ -16,6 +16,19 @@ vi.mock('@/hooks/pickup/useDiscrepancies', () => ({
   useMissingPackages: (...args: unknown[]) => mockUseMissingPackages(...args),
 }));
 
+// spec-80 fase 5 (5i) — "Respaldo" photo count and "Sigue en PR-…" pending
+// route figures. Mocked the same way as the other data hooks above: this
+// page renders under plain `render()`, no QueryClientProvider.
+const mockUseManifestDocuments = vi.fn();
+vi.mock('@/hooks/pickup/useManifestDocuments', () => ({
+  useManifestDocuments: (...args: unknown[]) => mockUseManifestDocuments(...args),
+}));
+
+const mockUseRouteManifests = vi.fn();
+vi.mock('@/hooks/pickup/useRouteManifests', () => ({
+  useRouteManifests: (...args: unknown[]) => mockUseRouteManifests(...args),
+}));
+
 vi.mock('@/hooks/useOperatorId', () => ({
   useOperatorId: () => ({ operatorId: 'op-1', userId: 'user-1' }),
 }));
@@ -129,10 +142,14 @@ describe('CompletionPage', () => {
       status: 'online',
       queuedCount: 0,
       blockedCount: 0,
+      pickupRecordsCount: 0,
+      pickupPhotoCount: 0,
       recent: [],
       retryNow: vi.fn(),
       isRetrying: false,
     });
+    mockUseManifestDocuments.mockReturnValue({ data: [] });
+    mockUseRouteManifests.mockReturnValue({ data: [] });
     // M-3, ronda 5 de review del PR #679 (mayor) — por defecto simula "sí
     // había algo que revivir"; el test dedicado abajo lo sobreescribe con 0.
     mockRetryBlockedManifest.mockResolvedValue(1);
@@ -372,7 +389,12 @@ describe('CompletionPage', () => {
   // (`offlineQueueSender.ts:98-103`) ya mapea `idempotent -> 'sent'`
   // correctamente — esta era la otra costura sobre la misma función de
   // clasificación que no se había alineado.
-  it('MANIFEST_ALREADY_SIGNED (idempotent 409) is treated as success and navigates away — the close already applied', async () => {
+  // spec-80 fase 5 (5i) — this used to navigate away to /app/pickup right
+  // after the toast; it now stays on this route and shows the closed
+  // summary (5i) instead. "Volver a mis recogidas", the summary's own CTA,
+  // is what navigates now — to /app/pickup/route/active (5c), not
+  // /app/pickup — and is asserted separately below.
+  it('MANIFEST_ALREADY_SIGNED (idempotent 409) is treated as success and shows the closed summary — the close already applied', async () => {
     mockRpc.mockResolvedValueOnce({
       data: null,
       error: { message: 'MANIFEST_ALREADY_SIGNED: manifest already has an operator signature' },
@@ -384,9 +406,8 @@ describe('CompletionPage', () => {
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/ya fue firmado/i));
     });
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/app/pickup');
-    });
+    expect(await screen.findByText('Carga cerrada')).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
   });
 
@@ -454,9 +475,10 @@ describe('CompletionPage', () => {
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/sin conexión|sin señal/i));
     });
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/app/pickup');
-    });
+    // spec-80 fase 5 (5i) — queuing offline also shows the closed summary
+    // in place, rather than navigating away immediately.
+    expect(await screen.findByText('Carga cerrada')).toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
   });
 
   // Nota menor de la ronda 6 de review del PR #679 — encolar offline aquí
@@ -521,6 +543,19 @@ describe('CompletionPage', () => {
       ).not.toBeDisabled();
     });
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  // spec-80 fase 5 (5i) — "Vuelve a 5c (/app/pickup/route/active), no a
+  // /app/pickup como hoy".
+  it('the closed summary\'s "Volver a mis recogidas" navigates to the active route, not /app/pickup', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    await completeAndSubmit();
+
+    const backButton = await screen.findByRole('button', { name: 'Volver a mis recogidas' });
+    await user.click(backButton);
+
+    expect(mockPush).toHaveBeenCalledWith('/app/pickup/route/active');
+    expect(mockPush).not.toHaveBeenCalledWith('/app/pickup');
   });
 
   it('falls back to a generic Spanish message for an unrecognized RPC error', async () => {

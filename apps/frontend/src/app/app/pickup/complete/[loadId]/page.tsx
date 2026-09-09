@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -8,9 +8,15 @@ import { MetricCard } from '@/components/metrics/MetricCard';
 import { ManifestPhotoStrip } from '@/components/pickup/ManifestPhotoStrip';
 import { ClientSignatureSection } from '@/components/pickup/ClientSignatureSection';
 import { OperatorSignatureSection } from '@/components/pickup/OperatorSignatureSection';
+import { ManifestClosedSummary } from '@/components/pickup/ManifestClosedSummary';
 import { usePickupScans } from '@/hooks/pickup/usePickupScans';
 import { useMissingPackages } from '@/hooks/pickup/useDiscrepancies';
+import { useManifestDocuments } from '@/hooks/pickup/useManifestDocuments';
+import { useRouteManifests } from '@/hooks/pickup/useRouteManifests';
+import { useManifestCompletionContext } from '@/hooks/pickup/useManifestCompletionContext';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
+import { dedupeNotFoundScans } from '@/lib/pickup/reviewCloseGate';
+import { summarizePendingRouteManifests } from '@/lib/pickup/manifestCloseSummary';
 import { useOperatorId } from '@/hooks/useOperatorId';
 import { useSyncQueue } from '@/hooks/useSyncQueue';
 import { retryBlockedManifest, PICKUP_QUEUE_WAKE_EVENT } from '@/hooks/useOfflineQueue';
@@ -38,11 +44,17 @@ export default function CompletionPage() {
   const loadId = decodeURIComponent(params.loadId as string);
   const { operatorId, userId } = useOperatorId();
 
-  const [manifestId, setManifestId] = useState<string | null>(null);
-  const [manifestStartedAt, setManifestStartedAt] = useState<string | null>(
-    null
-  );
-  const [operatorName, setOperatorName] = useState('');
+  // 5f/5i state — extracted to `useManifestCompletionContext` (spec-80 fase
+  // 5) to keep this file under the repo's file-size convention; same two
+  // Supabase round trips this page always made, unchanged.
+  const {
+    manifestId,
+    manifestStartedAt,
+    retailerName,
+    routeId,
+    routeExternalId,
+    operatorName,
+  } = useManifestCompletionContext(operatorId, loadId);
   const [operatorSignature, setOperatorSignature] = useState<string | null>(
     null
   );
@@ -50,6 +62,10 @@ export default function CompletionPage() {
   const [clientName, setClientName] = useState('');
   const [clientSignature, setClientSignature] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 5i — set once close_manifest succeeds (online, idempotent-recovered, or
+  // queued offline); replaces the signing form with the closed summary.
+  // `null` means "still signing".
+  const [isClosed, setIsClosed] = useState(false);
 
   // Menor 5, ronda 4 de review del PR #679 — `5f` es la pantalla que hace la
   // promesa "se sube al recuperar señal" (la línea estática de más abajo) y
@@ -73,48 +89,31 @@ export default function CompletionPage() {
     });
   };
 
-  useEffect(() => {
-    if (!operatorId) return;
-    const supabase = createSPAClient();
-    supabase
-      .from('manifests')
-      .select('id, started_at')
-      .eq('operator_id', operatorId)
-      .eq('external_load_id', loadId)
-      .is('deleted_at', null)
-      .single()
-      .then(({ data }) => {
-        if (data) {
-          setManifestId(data.id);
-          setManifestStartedAt(data.started_at);
-        }
-      });
-    // Get user full name for operator signature
-    supabase.auth.getUser().then(({ data }) => {
-      const userId = data.user?.id;
-      if (userId) {
-        supabase
-          .from('users')
-          .select('full_name')
-          .eq('id', userId)
-          .single()
-          .then(({ data: userData }) => {
-            setOperatorName(userData?.full_name ?? data.user?.email ?? '');
-          });
-      }
-    });
-  }, [operatorId, loadId]);
-
   const { data: scans = [] } = usePickupScans(manifestId, operatorId);
   const { data: missingPackages = [] } = useMissingPackages(
     operatorId,
     loadId,
     manifestId
   );
+  // 5i — same document count ManifestPhotoStrip already renders, read again
+  // here for the "Respaldo" row; react-query dedupes by query key.
+  const { data: documents = [] } = useManifestDocuments(operatorId, manifestId);
+  // 5i — "Sigue en PR-…": the OTHER manifests on this same route, so this
+  // screen can say how many are still pending and which is next.
+  const { data: routeManifests = [] } = useRouteManifests(routeId, operatorId);
 
   const verifiedCount = useMemo(
     () => scans.filter((s) => s.scan_result === 'verified').length,
     [scans]
+  );
+
+  // 5i — same dedupe rule close_manifest applies server-side (H3): distinct
+  // not_found barcodes, not a row count.
+  const unexpectedCount = useMemo(() => dedupeNotFoundScans(scans).length, [scans]);
+
+  const routeSummary = useMemo(
+    () => (manifestId ? summarizePendingRouteManifests(routeManifests, manifestId) : null),
+    [routeManifests, manifestId]
   );
 
   const precision = useMemo(() => {
@@ -155,7 +154,11 @@ export default function CompletionPage() {
 
       if (error) throw error;
       toast.success('Manifiesto completado exitosamente');
-      router.push('/app/pickup');
+      // 5i — spec-80 fase 5: stay on this route and show the closed
+      // summary instead of leaving immediately. "Volver a mis recogidas"
+      // (the summary's own CTA) is what now navigates to `/app/pickup/
+      // route/active` (5c) — see the render branch below.
+      setIsClosed(true);
     } catch (err) {
       // H2 (fix round 1): close_manifest now has three hard rejections
       // (cross-tenant, non-closable status, already signed) where the old
@@ -190,7 +193,7 @@ export default function CompletionPage() {
       // camino interactivo con esa misma lectura.
       if (classified.kind === 'idempotent') {
         toast.success(classified.message);
-        router.push('/app/pickup');
+        setIsClosed(true);
         return;
       }
 
@@ -227,7 +230,7 @@ export default function CompletionPage() {
           // despertarlo sin fingir una reconexión que no ocurrió.
           window.dispatchEvent(new Event(PICKUP_QUEUE_WAKE_EVENT));
           toast.success(classified.message);
-          router.push('/app/pickup');
+          setIsClosed(true);
           return;
         } catch (enqueueErr) {
           console.error('Failed to enqueue offline close_manifest:', enqueueErr);
@@ -258,6 +261,30 @@ export default function CompletionPage() {
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>
+    );
+  }
+
+  if (isClosed) {
+    return (
+      <ManifestClosedSummary
+        loadId={loadId}
+        retailerName={retailerName}
+        verifiedCount={verifiedCount}
+        missingCount={missingPackages.length}
+        unexpectedCount={unexpectedCount}
+        photosCount={documents.length}
+        signaturesCount={clientSignature ? 2 : 1}
+        pendingSync={{ records: sync.pickupRecordsCount, photos: sync.pickupPhotoCount }}
+        routeExternalId={routeExternalId}
+        pendingRouteCount={routeSummary?.pendingCount ?? 0}
+        nextManifestLabel={routeSummary?.nextManifestLabel ?? null}
+        onBackToRoute={() => router.push('/app/pickup/route/active')}
+        onViewSummary={() => {
+          document
+            .querySelector('[data-testid="manifest-closed-summary"]')
+            ?.scrollIntoView({ behavior: 'smooth' });
+        }}
+      />
     );
   }
 

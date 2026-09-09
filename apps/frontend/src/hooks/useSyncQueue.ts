@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   db,
   getBlockedPickupCount,
-  getPendingPickupCount,
+  getPendingPickupCountsByType,
   requestPersistentStorage,
   type ScanQueue,
 } from '@/lib/db';
@@ -46,6 +46,15 @@ export interface SyncQueueState {
    * `SyncChip` no puede pintar eso en su verde de éxito.
    */
   blockedCount: number;
+  /**
+   * spec-80 fase 5, mock `5i` — "N registros y N fotos esperan señal para
+   * subir": the mock draws two separate figures, not `queuedCount`'s single
+   * sum. `pickupRecordsCount` is `pickup_scan` + `close_manifest` entries;
+   * `pickupPhotoCount` is `manifest_photo` entries — same pending/sending/
+   * not-blocked rule as `queuedCount`'s pickup half, just split by type.
+   */
+  pickupRecordsCount: number;
+  pickupPhotoCount: number;
   /** Most recent scans, newest first — both queued and recently synced. */
   recent: ScanQueue[];
   retryNow: () => void;
@@ -69,6 +78,8 @@ export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
   const [queuedCount, setQueuedCount] = useState(0);
   const [scanQueueCount, setScanQueueCount] = useState(0);
   const [blockedCount, setBlockedCount] = useState(0);
+  const [pickupRecordsCount, setPickupRecordsCount] = useState(0);
+  const [pickupPhotoCount, setPickupPhotoCount] = useState(0);
   const [recent, setRecent] = useState<ScanQueue[]>([]);
   const [isRetrying, setIsRetrying] = useState(false);
 
@@ -80,13 +91,21 @@ export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
       // IndexedDB: Recepción's `scan_queue` and Recogida's `pickup_queue`.
       // Without the second term this reads 0 while Recogida scans wait for
       // signal (ronda 1 de review de spec-81 fase 1, B1).
-      const [outstandingScans, outstandingPickups, blocked] = await Promise.all([
+      //
+      // spec-80 fase 5 — `getPendingPickupCountsByType` replaces the plain
+      // `getPendingPickupCount` call: `queuedCount` still needs the total
+      // (records + photos), but 5i needs the two buckets on their own too.
+      const [outstandingScans, pickupByType, blocked] = await Promise.all([
         db.scan_queue.filter((s) => !s.synced).count(),
-        operatorId ? getPendingPickupCount(operatorId) : Promise.resolve(0),
+        operatorId
+          ? getPendingPickupCountsByType(operatorId)
+          : Promise.resolve({ records: 0, photos: 0 }),
         operatorId ? getBlockedPickupCount(operatorId) : Promise.resolve(0),
       ]);
       setScanQueueCount(outstandingScans);
-      setQueuedCount(outstandingScans + outstandingPickups);
+      setQueuedCount(outstandingScans + pickupByType.records + pickupByType.photos);
+      setPickupRecordsCount(pickupByType.records);
+      setPickupPhotoCount(pickupByType.photos);
       setBlockedCount(blocked);
     } catch {
       // IndexedDB unavailable (private browsing, quota). The chip simply
@@ -153,5 +172,15 @@ export function useSyncQueue(operatorId: string | null = null): SyncQueueState {
     return () => clearInterval(id);
   }, [status, queuedCount, blockedCount, read]);
 
-  return { status, queuedCount, scanQueueCount, blockedCount, recent, retryNow, isRetrying };
+  return {
+    status,
+    queuedCount,
+    scanQueueCount,
+    blockedCount,
+    pickupRecordsCount,
+    pickupPhotoCount,
+    recent,
+    retryNow,
+    isRetrying,
+  };
 }

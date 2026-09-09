@@ -194,6 +194,41 @@ export async function getPendingPickupCount(operatorId: string): Promise<number>
 }
 
 /**
+ * spec-80 fase 5, mock `5i` — "Guardado en el teléfono: N registros y N
+ * fotos esperan señal para subir". Mismo criterio que `getPendingPickupCount`
+ * (pending+sending, no dead, respeta el bloqueo cross-manifest/cross-user),
+ * pero separado en dos cubos por `entry.type` en vez de sumado en uno solo —
+ * el mock distingue "registros" de "fotos", así que un único número no
+ * alcanza para pintarlo.
+ */
+export interface PendingPickupCountsByType {
+  records: number;
+  photos: number;
+}
+
+export async function getPendingPickupCountsByType(
+  operatorId: string,
+): Promise<PendingPickupCountsByType> {
+  const entries = await db.pickup_queue
+    .where('operatorId')
+    .equals(operatorId)
+    .and((entry) => entry.status === 'pending' || entry.status === 'sending')
+    .toArray();
+
+  const isBlocked = createBlockedChecker(operatorId);
+  const result: PendingPickupCountsByType = { records: 0, photos: 0 };
+  for (const entry of entries) {
+    const bucket = entry.type === 'manifest_photo' ? 'photos' : 'records';
+    if (entry.status === 'sending') {
+      result[bucket] += 1;
+      continue;
+    }
+    if (!(await isBlocked(entry.manifestId, entry.userId))) result[bucket] += 1;
+  }
+  return result;
+}
+
+/**
  * Cuántas entradas de la cola de Recogida de un operador quedaron `dead`:
  * un rechazo de negocio irrecuperable que agotó los reintentos. Separado de
  * `getPendingPickupCount` (B3, ronda 2 de review del PR #679) — necesitan
