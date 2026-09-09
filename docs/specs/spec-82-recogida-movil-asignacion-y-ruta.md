@@ -293,31 +293,99 @@ línea contra el HTML real de cada artboard.
 > (fase 2, en paralelo) y spec-81 (fase 3, en paralelo) — confirmado sin
 > solape de archivos (ver "Coordinación con trabajo paralelo" en el PR).
 
-### Fase 2 — `DESCARGAR` `[pending]`
+### Fase 2 — `DESCARGAR` `[in_progress]`
 
-**Archivos:** (indeterminado — el segundo punto habla de precargar «al almacén
-de spec-81», pero `apps/frontend/src/lib/db.ts` hoy sólo tiene colas de SALIDA
-(`scan_queue`, `pickup_queue`), no un caché de lectura offline. No hay tabla,
-hook ni componente que nombrar sin inventarlo. `check-phase-overlap.mjs` la
-reporta como «no puedo juzgar» (exit 3). Rellenar este campo es parte de tomar
-la fase.
+**Decisión técnica (2026-09-09), tomada al implementar — ver corrección de
+arriba, esto no era del usuario.**
 
-**Corrección (2026-09-09): esto no era una decisión del usuario, y escalarla
-como tal fue un error de esta orquestación.** Qué tablas Dexie, qué se
-precarga y cómo se invalida es **ingeniería** — la toma quien implemente esta
-fase, no el usuario. Lo que sí era de producto — si "DESCARGAR una carga para
-trabajar sin red" es una capacidad que queremos — ya está decidido: lo pide el
-mock `5c`. Sigue en `exit 3` hasta que alguien tome la decisión técnica y la
-declare aquí; eso no cambia.)
+Nuevo almacén de **lectura** offline, hermano del de salida (`scan_queue`/
+`pickup_queue`) que ya vive en `lib/db.ts`: tabla Dexie `manifest_cache`
+(`AureonOfflineDB` versión 3, `++id, operatorId, externalLoadId,
+[operatorId+externalLoadId]`), una fila por `(operatorId, externalLoadId)`
+con el snapshot completo que `5d` necesita para escanear sin red: cabecera
+del manifiesto (`id`, `total_packages`, `pickup_route_id`, `retailer_name`,
+`pickup_location`) + `orders` (con sus `packages`, igual forma que
+`useManifestOrders`) + `downloadedAt`.
 
-- [ ] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
-- [ ] Precarga de manifiesto, órdenes y bultos al almacén de spec-81.
-- [ ] Chip de estado por carga. **Ver la nota "Colisión futura anotada" en
-      la sección "Implementado en esta fase" de Fase 1 (arriba, bajo
-      `COMPLETADA`)**: `RouteManifestList` ya usa ese mismo slot de fila
-      para el chip `COMPLETADA` (`isManifestComplete(m)`); decidir aquí qué
-      chip gana si ambos predicados aplicaran a la vez por un dato
-      inconsistente, antes de renderizar `DESCARGAR` ahí.
+**Por qué una tabla nueva y no reusar `pickup_queue`:** `pickup_queue` es
+una cola de **salida** (algo por enviar, con `status`/reintentos); esto es
+una **caché de lectura** (algo ya recibido, sin reintento — se re-descarga a
+mano, no se reintenta solo). Mezclar los dos en la misma tabla habría hecho
+que `getPendingPickupCount` (el badge "COLA N") tuviera que aprender a
+ignorar filas que no son trabajo pendiente.
+
+**Qué NO se precarga:** documentos/fotos del manifiesto
+(`useManifestDocuments`) — `5d` no los necesita para escanear, sólo para
+imprimir etiquetas (control aparte, ya oculto sin red porque requiere
+`window.print`). No inventar esa precarga sin que el checklist la pida.
+
+**Invalidación:** ninguna automática. `manifest_cache` es una fotografía
+tomada al tocar "DESCARGAR"; si el manifiesto cambia en el servidor después
+(una orden agregada, un bulto corregido) la fila local queda desactualizada
+hasta que alguien vuelva a tocar "DESCARGAR" con señal. Es la misma
+honestidad que ya tiene `5d` para el trabajo pendiente: mejor una carga
+descargada visiblemente vieja que ninguna carga descargable. Cerrar el
+manifiesto (`close_manifest`, ya en la cola de spec-81) no borra la fila —
+no hay señal de que limpiar el caché ayude más que dejarlo, y purgarlo son
+bytes, no un IndexedDB que se llena solo (ver `checkStorageQuota` en
+`lib/db.ts`, que ya barre lo viejo).
+
+**Estado de "descargando" nunca se persiste.** La descarga es una mutación
+de React Query (`useDownloadManifest`), no una fila con `status:
+'downloading'` en Dexie — así no hay estado de bloqueo que un fallo pueda
+dejar congelado para siempre (la regla dura del módulo offline, ver
+cabecera de esta tarea). Si la descarga falla a mitad, no queda nada escrito
+en `manifest_cache`: el chip `DESCARGAR` sigue ahí, tocar de nuevo reintenta
+limpio.
+
+**Tres estados, no dos, para "¿está descargada?":** `unknown` (todavía no se
+leyó Dexie — nunca se pinta como "no descargada"), `downloaded`,
+`not_downloaded`. El hook que lee `manifest_cache`
+(`useDownloadedManifestIds`) envuelve una lectura 100% local en
+`useQuery({ networkMode: 'always', … })` — **no** el `networkMode: 'online'`
+por defecto de TanStack Query, que pausaría la consulta con el dispositivo
+sin red y la dejaría en `data: undefined`/`isLoading: false` aunque IndexedDB
+sí tenga la respuesta. Ese es exactamente el error que este mismo spec (fase
+1, y la ronda de hoy en spec-81 fase 5) ya cometió dos veces en otros sitios.
+
+**Colisión con `COMPLETADA` (nota de fase 1): gana `COMPLETADA`.** Razón:
+`isManifestComplete` lee `verified_count`/`total_packages`, que vienen del
+servidor — es el estado autoritativo. `DESCARGAR`/nada-que-mostrar viene de
+una tabla local que sólo existe para tolerar la falta de red; si un dato
+inconsistente hiciera que ambos predicados fueran ciertos a la vez (una
+carga marcada completa en el servidor pero cuya fila local de caché no se
+escribió o quedó vieja), mostrar `DESCARGAR` sobre una carga ya verificada
+sería peor mentira que ocultar el estado de descarga de una carga que de
+todos modos ya no necesita re-descargarse para seguir trabajando: si está
+completa, no hay escaneo pendiente que hacer sin red.
+
+**Archivos:**
+- `apps/frontend/src/lib/db.ts` — tabla `manifest_cache` (versión 3).
+- `apps/frontend/src/lib/offline/manifest-cache.ts` (nuevo) — CRUD puro
+  sobre esa tabla, sin DOM/React, mismo patrón que `lib/offline/queue.ts`.
+- `apps/frontend/src/lib/offline/manifest-cache.test.ts` (nuevo).
+- `apps/frontend/src/hooks/pickup/useManifestDownload.ts` (nuevo) —
+  `useDownloadedManifestIds(operatorId)` (lectura, `networkMode: 'always'`)
+  y `useDownloadManifest(operatorId)` (mutación: trae manifiesto + órdenes
+  de Supabase y llama a `manifest-cache.ts`).
+- `apps/frontend/src/hooks/pickup/useManifestDownload.test.ts` (nuevo).
+- `apps/frontend/src/components/pickup/RouteManifestList.tsx` — chip
+  `DESCARGAR` por fila (botón), con la precedencia de `COMPLETADA` de
+  arriba.
+- `apps/frontend/src/components/pickup/RouteManifestList.test.tsx`.
+- `apps/frontend/src/app/app/pickup/route/active/page.tsx` — conecta los
+  hooks nuevos a `RouteManifestList`.
+- `apps/frontend/src/app/app/pickup/route/active/page.test.tsx`.
+- `apps/frontend/src/app/app/pickup/scan/[loadId]/page.tsx` — sin red y
+  con un snapshot cacheado, usa el snapshot para la cabecera y las órdenes
+  en vez del fetch directo a Supabase; sin red y sin snapshot, bloquea la
+  pantalla con el mensaje del estado "no descargada" en vez de dejar
+  escanear contra datos que no van a llegar.
+- `apps/frontend/src/app/app/pickup/scan/[loadId]/page.test.tsx`.
+
+- [x] Test: una carga descargada abre `5d` sin red; una no descargada muestra el estado del mock y no deja entrar.
+- [x] Precarga de manifiesto, órdenes y bultos al almacén nuevo (`manifest_cache`, no el de spec-81 — spec-81 es la cola de SALIDA; ver "Por qué una tabla nueva" arriba).
+- [x] Chip de estado por carga, con la precedencia de `COMPLETADA` resuelta arriba.
 
 ### Fase 3 — Asignación `[pending]`
 
