@@ -1,7 +1,7 @@
 /**
- * check-migration-safety.mjs (spec-87 fase 5)
+ * check-migration-safety.mjs (spec-87 fase 5; rules 4/5 added spec-88 fase 4)
  *
- * Three rules:
+ * Five rules:
  *
  *   1. REJECT (exit 1) a migration that mixes DDL (CREATE TABLE/TYPE/INDEX,
  *      ALTER TABLE) with a top-level, unbounded backfill. See
@@ -15,10 +15,24 @@
  *      no preceding COUNT(*)-guarded conditional — the h5c pattern
  *      (20260911000002) is the example of doing this correctly and must
  *      not warn.
+ *   4. WARN (::warning::, exit 0) on a CREATE/CREATE OR REPLACE FUNCTION
+ *      whose signature does not match any REVOKE issued anywhere in the
+ *      migrations corpus against a same-named function with a DIFFERENT
+ *      signature — the start_pickup_route(text) vs.
+ *      start_pickup_route(uuid, uuid[]) bug (spec-88). See
+ *      check-migration-safety-acl.mjs.
+ *   5. REJECT (exit 1) a migration that CREATEs/CREATE OR REPLACEs a
+ *      function and GRANTs EXECUTE on it TO authenticated, with NO REVOKE
+ *      statement anywhere in that same migration — the close_manifest /
+ *      add_dock_zone_adjacency_pair bug (spec-80 fase 1b, spec-88 fase 1).
+ *      See check-migration-safety-acl.mjs.
  *
- * A warning never fails the build. Turning rules 2/3 into rejections would
- * block CI on a legitimate CREATE INDEX and teach someone to disable this
- * guard — see the spec's own warning about that trade.
+ * A warning never fails the build. Turning rules 2/3/4 into rejections
+ * would block CI on a legitimate CREATE INDEX / overload and teach someone
+ * to disable this guard — see the spec's own warning about that trade. Rule
+ * 5 is different: it rejects, because unlike rules 2-4 it detects the exact
+ * shape of a bug this repo has shipped and had to fix by hand more than
+ * once, with no legitimate use for the pattern it flags.
  *
  * Usage:
  *   node check-migration-safety.mjs <file-or-dir> [<file-or-dir> ...]
@@ -44,144 +58,40 @@ import {
   findRule1Warnings,
 } from './check-migration-safety-rule1.mjs';
 import { listSqlFiles, changedFilesSince, newViolationsSinceBase } from './check-migration-safety-git.mjs';
+import {
+  buildRevokeIndex,
+  findOrphanedOverloadWarnings,
+  findGrantWithoutRevokeViolations,
+} from './check-migration-safety-acl.mjs';
+import { checkIndexConcurrency, checkUniqueIndexGuard } from './check-migration-safety-rule23.mjs';
 
 export { checkDdlBackfillMix } from './check-migration-safety-rule1.mjs';
 export { stripDollarQuotedBodies, stripFunctionBodies } from './check-migration-safety-rule1.mjs';
-
-const LARGE_TABLES = ['packages', 'orders', 'dispatches', 'routes'];
+export { checkIndexConcurrency, checkUniqueIndexGuard } from './check-migration-safety-rule23.mjs';
 
 export function usageError(msg) {
   console.error(`check-migration-safety: ${msg}`);
   process.exit(2);
 }
 
-/** Strips `-- ...` line comments so comment text never matches a rule. */
-function stripLineComments(sql) {
-  return sql
-    .split('\n')
-    .map((line) => line.replace(/--.*$/, ''))
-    .join('\n');
-}
-
-// m8: matches an optionally-quoted schema prefix (`public.` or `"public".`)
-// followed by an optionally-quoted table name, so `ON "public"."packages"`
-// resolves to table "packages", not "public".
-const ON_TABLE_RE = /\bON\s+(?:"?public"?\.)?"?(\w+)"?/i;
-
-/**
- * Rule 2. Returns a list of warning strings for CREATE INDEX / CREATE
- * UNIQUE INDEX statements without CONCURRENTLY over a known-large table.
- * Runs against comment-stripped text (m9: a `-- ...` comment mentioning
- * "CREATE INDEX" in prose used to produce a false warning) but NOT
- * dollar-stripped, so an index built via `EXECUTE '...'` inside a DO block
- * (h5c's own pattern) is still caught. The statement may end in `;` or at
- * end-of-file (m8: a regex requiring `;` made a semicolon-less final
- * statement invisible).
- */
-export function checkIndexConcurrency(rawSql) {
-  const sql = stripLineComments(rawSql);
-  const warnings = [];
-  const stmtRe = /CREATE\s+(UNIQUE\s+)?INDEX\b[\s\S]*?(?:;|$)/gi;
-  let m;
-  while ((m = stmtRe.exec(sql))) {
-    const stmt = m[0];
-    if (/CONCURRENTLY/i.test(stmt)) continue;
-    const onMatch = stmt.match(ON_TABLE_RE);
-    const table = onMatch ? onMatch[1] : null;
-    if (table && LARGE_TABLES.includes(table)) {
-      warnings.push(
-        `CREATE ${m[1] ? 'UNIQUE ' : ''}INDEX on "${table}" (known-large table) without CONCURRENTLY`
-      );
-    }
-  }
-  return warnings;
-}
-
-/** Index of the LAST match of `re` in `text` before `re` stops matching, or -1. */
-function lastMatchIndex(text, re) {
-  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
-  let m;
-  let last = -1;
-  while ((m = g.exec(text))) last = m.index;
-  return last;
-}
-
-/**
- * Rule 3. Returns a list of warning strings for a CREATE UNIQUE INDEX over
- * an existing (not created-in-this-file) table that has no preceding
- * COUNT(*) + IF conditional guard.
- */
-export function checkUniqueIndexGuard(rawSql) {
-  const sql = stripLineComments(rawSql); // m9: a mention in a comment must not count
-  const warnings = [];
-  const stmtRe = /CREATE\s+UNIQUE\s+INDEX\b[\s\S]*?(?:;|$)/gi; // m8: allow EOF, not just ';'
-  let m;
-  while ((m = stmtRe.exec(sql))) {
-    const stmt = m[0];
-    const idxStart = m.index;
-    const onMatch = stmt.match(ON_TABLE_RE); // m8: handle a quoted schema prefix
-    const table = onMatch ? onMatch[1] : null;
-    if (!table) continue;
-
-    // m7: match the table CREATE TABLE actually names, not "any word within
-    // 80 chars" — a column or a REFERENCES target sharing the table's name
-    // used to falsely count as "created in this file".
-    // F2 (review round 3): a BARE CREATE TABLE only — `IF NOT EXISTS` is
-    // precisely the syntax whose contract is "may already exist, with rows
-    // and readers", the opposite of "brand-new table, no live rows
-    // possible" this exemption exists for.
-    const createdHere = new RegExp(
-      `CREATE\\s+TABLE\\s+(?:"?public"?\\.)?"?${table}"?\\b`,
-      'i'
-    ).test(sql.slice(0, idxStart));
-    if (createdHere) continue; // brand-new table, no live rows possible
-
-    // M6: the NEAREST preceding COUNT(*), not just "any earlier one" — an
-    // unrelated function's own, unconnected COUNT(*)+IF used to "guard" an
-    // index it has nothing to do with. The guard only counts if that IF
-    // has not already closed (no END IF yet) by the time we reach the
-    // index — i.e. the index sits inside the guarded branch.
-    const before = sql.slice(0, idxStart);
-    const countIdx = lastMatchIndex(before, /SELECT\s+COUNT\s*\(\s*\*\s*\)/i);
-    let guarded = false;
-    if (countIdx !== -1) {
-      const between = before.slice(countIdx);
-      // Exclude the "IF" inside "END IF" itself — otherwise the closing
-      // token of an already-closed guard is mistaken for the opening one.
-      // m9 (review round 2): `(?<!END\s)` only excludes a SINGLE space/
-      // newline between END and IF — `END  IF` or `END\nIF` still matched
-      // as if it were the opening IF. `(?<!END\s+)` is a variable-width
-      // lookbehind, which V8 supports.
-      const lastIfIdx = lastMatchIndex(between, /(?<!END\s+)\bIF\b/i);
-      if (lastIfIdx !== -1) {
-        // Guarded only if that IF has not already closed (no END IF yet)
-        // by the time we reach the index — i.e. the index still sits
-        // inside the guarded branch, not after it.
-        guarded = !/\bEND\s+IF\b/i.test(between.slice(lastIfIdx));
-      }
-    }
-    if (!guarded) {
-      warnings.push(
-        `CREATE UNIQUE INDEX on "${table}" (existing table) with no preceding COUNT(*)-guarded conditional`
-      );
-    }
-  }
-  return warnings;
-}
-
-function checkFile(filePath) {
+function checkFile(filePath, revokeIndex) {
   const rawSql = readFileSync(filePath, 'utf8');
   const rejectReason = checkDdlBackfillMix(rawSql);
   // B3: the BLOCKING (not M6-downgraded) violations, kept per-statement so
   // --base scoping can diff against base by statement identity, not by the
   // generic reject-reason string every UPDATE-shaped violation shares.
   const blockingViolations = findRule1Violations(rawSql).filter((v) => !v.destinationCreatedHere);
+  // Rule 5 (spec-88 fase 4): its own reject list, separate from rule 1's —
+  // it has no base-diff pre-existing-violation downgrade (a migration that
+  // newly enters the diff with this shape is never "pre-existing" for it).
+  const aclRejections = findGrantWithoutRevokeViolations(rawSql);
   const warnings = [
     ...findRule1Warnings(rawSql),
     ...checkIndexConcurrency(rawSql),
     ...checkUniqueIndexGuard(rawSql),
+    ...findOrphanedOverloadWarnings(rawSql, revokeIndex),
   ];
-  return { filePath, rejectReason, blockingViolations, warnings };
+  return { filePath, rejectReason, blockingViolations, aclRejections, warnings };
 }
 
 function main(argv) {
@@ -219,11 +129,19 @@ function main(argv) {
     return 0;
   }
 
+  // Rule 4 needs the REVOKE history of the WHOLE corpus, not just the files
+  // changed by this PR — with --base, `positional[0]` is still the full
+  // migrations directory, so `listSqlFiles` there returns every migration,
+  // exactly like the non---base path already does via `files`.
+  const corpusFiles = base ? listSqlFiles(positional[0]) : files;
+  const revokeIndex = buildRevokeIndex(corpusFiles);
+
   let rejected = false;
+  let aclRejected = false;
   for (const f of files) {
     let result;
     try {
-      result = checkFile(f);
+      result = checkFile(f, revokeIndex);
     } catch (e) {
       usageError(`could not read ${f}: ${e.message}`);
     }
@@ -252,6 +170,11 @@ function main(argv) {
         console.error(`::error::${f} — ${reason}`);
       }
     }
+    for (const violation of result.aclRejections) {
+      rejected = true;
+      aclRejected = true;
+      console.error(`::error::${f} — ${violation}`);
+    }
     for (const w of result.warnings) {
       console.log(`::warning::${f} — ${w}`);
     }
@@ -262,6 +185,13 @@ function main(argv) {
       'check-migration-safety: at least one migration mixes DDL with an unbounded top-level backfill. ' +
         'Split the backfill into its own function, and call it by hand after measuring — see spec-87 fase 3/4.'
     );
+    if (aclRejected) {
+      console.error(
+        'check-migration-safety: at least one migration GRANTs EXECUTE ... TO authenticated on a new/replaced ' +
+          'function with no REVOKE anywhere in the same migration. CREATE OR REPLACE preserves the existing ACL, ' +
+          'and Supabase re-grants PUBLIC/anon by default — see spec-88 fase 1/4 and spec-80 fase 1b (20260913000004).'
+      );
+    }
     return 1;
   }
   console.log(`check-migration-safety: OK — checked ${files.length} migration(s)`);

@@ -87,12 +87,37 @@ if [ -d "$MIGRATIONS_DIR" ]; then
     pass=$((pass + 1))
     echo "  ok   20260909000001 (spec79_loaded_route_id) is not flagged dangerous"
   fi
-  # None of the OTHER eleven should hard-reject (::error::) — only
-  # 20260913000001 (F2) is expected to.
+  # None of the other EIGHT should hard-reject (::error::) — only
+  # 20260913000001 (F2, rule 1) is expected to, plus the three named below
+  # (rule 5, spec-88 fase 4): these three are GENUINE, independently-verified
+  # historical instances of the exact bug rule 5 exists to catch — CREATE OR
+  # REPLACE FUNCTION + GRANT EXECUTE ... TO authenticated with literally zero
+  # REVOKE anywhere in the file (`recompute_dispatch_stage`,
+  # `get_pre_route_snapshot`, `close_manifest`). They predate rule 5 by
+  # weeks; nobody noticed until spec-88's audit (close_manifest was fixed by
+  # hand in a LATER migration, 20260913000004/spec-80 fase 1b — not in this
+  # list, so this file alone still has the bug). CI never re-scans them
+  # (the `ci.yml` step always passes `--base`, so only files ADDED/MODIFIED
+  # by a PR are checked) — this full, no-`--base` scan of a fixed file list
+  # is the one place they get looked at directly, and hiding them here would
+  # defeat the point of rule 5 having found them.
+  RULE5_EXPECTED_HITS="20260907000001_spec76_en_bodega_not_dock_ready.sql 20260908000001_spec77_force_split.sql 20260913000002_spec80_close_manifest.sql"
   for name in $TWELVE; do
     if [ "$name" = "20260913000001_spec85_discrepancies_schema.sql" ]; then
       continue
     fi
+    case " $RULE5_EXPECTED_HITS " in
+      *" $name "*)
+        if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
+          pass=$((pass + 1))
+          echo "  ok   $name is rejected by rule 5 (genuine GRANT-without-REVOKE, verified by hand)"
+        else
+          fail=$((fail + 1))
+          echo "  FAIL $name was expected to be rejected by rule 5 but was not"
+        fi
+        continue
+        ;;
+    esac
     if printf '%s\n' "$output" | grep "::error::" | grep -qF "$name"; then
       fail=$((fail + 1))
       echo "  FAIL $name was unexpectedly rejected"

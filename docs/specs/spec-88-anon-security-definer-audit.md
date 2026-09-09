@@ -941,12 +941,407 @@ Cada uno de estos cuatro arreglos se mutation-testeó de uno en uno.
 
 ### Fase 4 — Check automático de ACL huérfana `[in_progress]`
 
-**Archivos:** `scripts/check-migration-safety.sh`, `scripts/check-migration-safety-rule1-match.mjs`, `+ test`
+**Archivos:** (actualizado tras la implementación — el plan original citaba
+`check-migration-safety-rule1-match.mjs`, que resultó no ser donde encajó
+la lógica nueva)
+- `scripts/check-migration-safety-acl.mjs` (nuevo) — reglas 4/5 y `buildRevokeIndex`
+- `scripts/check-migration-safety-acl.test.sh` (nuevo) — TDD, 12 assertions
+- `scripts/check-migration-safety.mjs` — wiring de las reglas 4/5 en `checkFile()`/`main()`
+- `scripts/check-migration-safety-rule23.mjs` (nuevo) — reglas 2/3 extraídas para mantener `check-migration-safety.mjs` bajo 300 líneas
+- `scripts/check-migration-safety-real.test.sh` — actualizado: 3 archivos históricos reales ahora esperan rechazo por la regla 5
+- `.github/workflows/ci.yml` — nuevo paso, mismo job duro (no advisory)
 
 Extiende `scripts/check-migration-safety.sh` (spec-87 fase 5, en construcción en paralelo — coordinar antes de duplicar trabajo) con dos chequeos nuevos, ambos basados en lo encontrado aquí:
 
 1. **Overload sin `REVOKE` propio.** Si una migración crea `CREATE [OR REPLACE] FUNCTION public.f(tipos_A)` y existe, en cualquier migración anterior, un `REVOKE ... ON FUNCTION public.f(tipos_B)` con `tipos_A ≠ tipos_B`, advertir que el `REVOKE` histórico no cubre la firma nueva. Éste es exactamente el bug de `start_pickup_route`.
 2. **`REVOKE ... FROM anon` sin `REVOKE ... FROM PUBLIC` que lo acompañe**, dentro de la misma o de una migración posterior sobre la misma firma. Éste es el bug de `add_dock_zone_adjacency_pair`/`open_route_reception`/`remove_dock_zone_adjacency_pair`/`reopen_pickup_route`. El check no puede saber si PUBLIC *sigue* expuesto sin consultar el ACL real (algo que un check estático sobre el SQL de las migraciones no puede hacer con certeza — dos migraciones pueden aplicar `REVOKE FROM PUBLIC` y `GRANT ... TO PUBLIC` en cualquier orden) — por eso el check correcto no es "cada `REVOKE FROM anon` debe ir con un `REVOKE FROM PUBLIC` en la misma migración" (demasiado rígido, rompería patrones legítimos donde PUBLIC nunca tuvo el grant para empezar), sino "toda migración `CREATE [OR REPLACE] FUNCTION` nueva que declare guardar el resultado con `GRANT EXECUTE ... TO authenticated` sin ningún `REVOKE` en la misma migración debe fallar" — que es el chequeo que spec-80 fase 1b ya necesitó a mano y que `check-migration-safety.sh` puede aplicar mecánicamente sobre el SQL de cada migración nueva, sin necesitar el ACL en vivo.
+
+> Implementado por: implementer — rama `feat/spec-88-fase-4-check-acl-huerfana`.
+> TDD (skill `superpowers:test-driven-development`): test primero
+> (`scripts/check-migration-safety-acl.test.sh`, 12 assertions), confirmado
+> en rojo por la razón correcta (las reglas 4/5 no existían — los casos
+> positivos fallaban, los negativos pasaban vacuamente porque no había nada
+> que las hiciera disparar), luego implementación mínima.
+>
+> **Regla 4 (WARN, no reject)** — `findOrphanedOverloadWarnings` en
+> `scripts/check-migration-safety-acl.mjs`: para cada `CREATE [OR REPLACE]
+> FUNCTION` en el archivo que se está chequeando, compara su firma
+> normalizada (sólo tipos, nombres de parámetro descartados) contra un
+> índice `nombre -> Set(firmas)` construido de TODO el corpus de
+> migraciones (no sólo el archivo tocado — el `REVOKE` histórico casi
+> siempre vive en una migración anterior). Si existe algún `REVOKE` para ese
+> nombre pero ninguno coincide exactamente con la firma nueva, avisa. Un
+> literal implementado tal como lo pide el texto de la fase — no intenta
+> inferir si la firma nueva "ya tiene su propio REVOKE en otro lado";
+> devuelve `::warning::`, nunca rompe el build.
+>
+> **Regla 5 (REJECT)** — `findGrantWithoutRevokeViolations`: para cada
+> `CREATE [OR REPLACE] FUNCTION` en el archivo que también tiene un `GRANT
+> EXECUTE ... TO authenticated` para esa misma firma, si el archivo no
+> contiene NINGÚN `REVOKE ALL ON FUNCTION` (para ninguna función), rechaza.
+> Decisión explícita del texto de la fase misma ("sin ningún REVOKE en la
+> misma migración" — literal, no "sin un REVOKE que apunte a esta misma
+> función"), verificada contra el bug real que motivó la fase:
+> `20260913000002` (`close_manifest`, fase 1 de spec-80, antes de que
+> `20260913000004`/fase 1b lo arreglara) — `CREATE OR REPLACE FUNCTION` +
+> `GRANT EXECUTE ... TO authenticated` sin un solo `REVOKE` en todo el
+> archivo. Un `GRANT` a `service_role` solo, o un `CREATE FUNCTION` sin
+> ningún `GRANT`, no dispara — ambos son patrones legítimos y frecuentes en
+> el repo.
+>
+> **Corrida contra el corpus real de migraciones (sin `--base`, sanity
+> check manual, no parte de CI): la regla 5 encontró tres instancias
+> genuinas y previamente desconocidas del mismo bug**, verificadas a mano
+> leyendo cada archivo — `recompute_dispatch_stage`
+> (`20260907000001_spec76_en_bodega_not_dock_ready.sql`),
+> `get_pre_route_snapshot` (`20260908000001_spec77_force_split.sql`), y
+> `close_manifest` en su forma original
+> (`20260913000002_spec80_close_manifest.sql`, el mismo archivo que motivó
+> esta fase — la fila de `close_manifest` en la tabla de fase 0 sólo cita el
+> ACL final, después de `20260913000004`; este archivo, por sí solo, sigue
+> teniendo el bug). Además una docena de casos históricos más, todos los
+> `SECURITY DEFINER` de la tabla de fase 0 marcados "nunca revocada" (fase
+> 5 de este mismo spec). Ninguno de estos rompe CI hoy: `ci.yml` invoca
+> `check-migration-safety.sh` siempre con `--base`, que sólo mira archivos
+> AÑADIDOS/MODIFICADOS por el PR — exactamente el mismo diseño que ya
+> protegía la regla 1 (spec-87 fase 5) contra los 90+ archivos históricos
+> que preceden ese guard. `scripts/check-migration-safety-real.test.sh`
+> (existente, spec-87 fase 5) corre estos 12 archivos reales SIN `--base`
+> como set de validación — actualizado para esperar el rechazo de estos
+> tres por nombre, con la razón documentada in situ, en vez de esconder que
+> la regla 5 los encuentra.
+>
+> **Wiring/CI**: `.github/workflows/ci.yml` corre
+> `check-migration-safety-acl.test.sh` como paso duro del job único
+> `Lint, Type-Check, Test, Build` (sin `continue-on-error`) — no es
+> advisory. El propio `check-migration-safety.sh --base "$BASE"` (ya
+> cableado desde spec-87 fase 5, sin cambios de wiring necesarios) ahora
+> ejecuta las reglas 4/5 sobre cualquier migración nueva de cualquier PR
+> futuro.
+>
+> **Límite de 300 líneas**: `check-migration-safety.mjs` superó las 300
+> líneas al añadir el glue de las reglas 4/5; se dividieron las reglas 2/3
+> a `scripts/check-migration-safety-rule23.mjs` (mismo patrón que
+> `rule1.mjs`) y `buildRevokeIndex` se movió a `check-migration-safety-acl.mjs`
+> junto al resto de la lógica ACL. Los tres archivos quedan bajo 300 líneas
+> (209/132/259).
+>
+> **Mutation-testing — probados 6 mutantes, uno a uno, cada uno restaurado
+> antes del siguiente** (no en bloque):
+> 1. Quitar el `if (hasAnyRevoke) return [];` de la regla 5 → mató
+>    exactamente los 2 tests del patrón correcto (REVOKE/GRANT/REVOKE deja
+>    de aceptarse).
+> 2. Quitar el `if (revokedSignatures.has(fn.signature)) continue;` de la
+>    regla 4 → mató exactamente 1 test (el de firma exacta ya cubierta deja
+>    de silenciarse).
+> 3. Quitar el filtro `role === 'authenticated'` de la regla 5 (cualquier
+>    `GRANT` cuenta) → mató exactamente 1 test (`GRANT ... TO service_role`
+>    empieza a rechazar cuando no debe).
+> 4. Borrar la línea que engancha `findOrphanedOverloadWarnings` en
+>    `checkFile()` → mató exactamente los 2 tests positivos de la regla 4
+>    (deja de avisar del todo).
+> 5. Vaciar el `for (const violation of result.aclRejections)` de `main()`
+>    (equivalente a `for (const violation of [])`) → mató exactamente los 3
+>    tests positivos de la regla 5 (deja de rechazar del todo — esto es el
+>    mutante que "ciega" el check pidiendo específicamente el spec: el guard
+>    deja de ver su propia señal de entrada y su self-test lo cazó).
+> Los 6 mutantes probados individualmente contra
+> `check-migration-safety-acl.test.sh`; cada uno restaurado a verde (12/12)
+> antes de aplicar el siguiente. No se afirma "todos mueren" sobre mutantes
+> no probados — éstos son los 6 que se probaron, contra la superficie nueva
+> de esta fase (reglas 4/5 y su wiring); no se mutó rule1/rule23/git.mjs
+> (fuera del alcance de esta fase, ya mutation-testeados en su propia
+> historia de review).
+>
+> **Regresión**: las 7 suites existentes de `check-migration-safety*`
+> siguen en verde (13, 11, 10, 12, 10, 8, 6 — 70 asserts), más las 12 nuevas
+> de esta fase. `node --check` limpio en los tres archivos `.mjs` tocados o
+> creados.
+>
+> **No corrido**: `scripts/verify.sh` (turbo lint/type-check/test:run) —
+> este worktree no tiene `node_modules` (regla del repo: nunca `npm
+> install`/`npm ci` en un worktree, ver `project_worktree_node_modules_junction`),
+> y el diff de esta fase no toca ningún workspace de la monorepo (sólo
+> `scripts/*.mjs`, `*.test.sh`, `.github/workflows/ci.yml` y este spec) — no
+> hay TS/JS de aplicación que lint/type-check/test:run pudiera ejercitar de
+> forma distinta a lo que las 8 suites de bash ya prueban directamente con
+> `node`/`bash`, sin dependencias npm. Decisión, no descuido.
+>
+> **Ronda 2 (review adversarial, ejecutado contra el objeto vivo, PR #723):**
+> declarada **mergeable con correcciones** — confirmó que el check tiene
+> dientes reales en el camino de CI (repo de cero + migración maliciosa +
+> `--base` → `::error::`/`EXIT=1` en el job duro), que la partición en tres
+> ficheros es limpia, que `extractParenGroup`/`splitTopLevelCommas` manejan
+> tipos anidados y firmas multilínea, y que el mutante nº5 de ronda 1 (y una
+> variante suya) sí muere. Tres bloqueantes, todos en la regla 5 — la
+> premisa de diseño de ronda 1 era falsa, probado contra la base real,
+> envenenando el ACL a propósito y en `ROLLBACK`:
+> - **B1**: `DROP FUNCTION; CREATE FUNCTION;` (sin `GRANT`, sin `REVOKE`) en
+>   un objeto cuyo ACL fase 1b había endurecido a mano vuelve a traer
+>   `anon=X` — Postgres re-concede `EXECUTE` a PUBLIC en toda función
+>   (re)creada, con o sin `GRANT` explícito. La regla 5 original disparaba
+>   sólo con `GRANT ... TO authenticated` presente — un `CREATE` sin ningún
+>   `GRANT` pasaba limpio, y el propio test de ronda 1
+>   (`rule5-no-grant-no-reject`) consagraba esa premisa falsa como "patrón
+>   seguro".
+> - **B2**: `hasAnyRevoke` era global al fichero, no por función — un
+>   `REVOKE` sobre CUALQUIER otra función apagaba la regla para las cinco
+>   que `20260616000004` crea en un solo fichero (caso normal, no
+>   hipotético).
+> - **B3**: `GRANT_RE`/`FROM\s+(\w+)` capturaban sólo el PRIMER rol de una
+>   lista — `TO anon, authenticated` se detectaba, `TO authenticated, anon`
+>   no, con SQL semánticamente idéntico.
+>
+> **Rediseño completo de la regla 5** (no un parche): en vez de disparar por
+> "hay `GRANT ... TO authenticated` y cero `REVOKE` en el fichero", ahora
+> dispara por función: toda `CREATE [OR REPLACE] FUNCTION ... SECURITY
+> DEFINER` sin un `REVOKE {ALL|EXECUTE} ... FROM PUBLIC` para su firma EXACTA
+> en el mismo fichero rechaza — el `GRANT` es irrelevante (B1), el chequeo es
+> por función (B2), y el rol se busca en la lista completa, no sólo el
+> primero (B3). Requirió una pieza nueva: `isSecurityDefinerClause()` en
+> `check-migration-safety-acl-parse.mjs`, que busca `SECURITY DEFINER` en la
+> ventana entre el cierre de paréntesis de parámetros y el inicio del cuerpo
+> (delimitado por el primer `$tag$`) — nunca dentro del cuerpo mismo, para
+> que un cuerpo que mencione esas palabras no produzca un falso positivo.
+> `SECURITY INVOKER` (o la ausencia de la cláusula, default de Postgres)
+> queda fuera de alcance: corre con los privilegios del LLAMANTE, así que
+> `anon` pudiendo invocarla no es escalamiento de privilegio.
+>
+> **La cifra de "instancias históricas genuinas" de ronda 1 era incorrecta,
+> y el propio rediseño lo expuso.** Ronda 1 afirmó 3
+> (`recompute_dispatch_stage`, `get_pre_route_snapshot`, `close_manifest`).
+> Verificado leyendo cada migración directamente: **dos de las tres son
+> `SECURITY INVOKER`, no DEFINER** — `recompute_dispatch_stage`
+> (`20260907000001:80`, `LANGUAGE plpgsql SECURITY INVOKER`) y
+> `get_pre_route_snapshot` (`20260908000001:121`, `LANGUAGE sql STABLE
+> SECURITY INVOKER`). Ninguna de las dos es explotable por este patrón — el
+> filtro `SECURITY DEFINER` que el rediseño añadió (por B1, no por esto) las
+> excluye correctamente. Sólo `close_manifest` (`20260913000002`, `SECURITY
+> DEFINER` confirmado) era genuina; sigue siéndolo bajo el diseño nuevo.
+> `scripts/check-migration-safety-real.test.sh` corregido: de los 12
+> archivos de la ventana de validación, sólo `close_manifest` se espera
+> rechazado por la regla 5 ahora (antes decía tres).
+>
+> **La cifra real sobre el corpus completo, medida de nuevo tras el
+> rediseño** (`node scripts/check-migration-safety.mjs
+> packages/database/supabase/migrations`, sin `--base`, sanity check manual,
+> no parte de CI): **87 violaciones de regla 5 en 50 ficheros distintos** —
+> más que el "3" de ronda 1 (que subcontaba, al no exigir `SECURITY
+> DEFINER`+`PUBLIC` específicamente) y más que el "63/33" que ronda 2 citó
+> contra el diseño de ronda 1 (ese diseño exigía `GRANT ... TO
+> authenticated`; el nuevo, más estricto — cualquier `SECURITY DEFINER` sin
+> `REVOKE ... FROM PUBLIC` propio, con o sin `GRANT` — encuentra más).
+> Ninguna de las 50 rompe CI hoy por la misma razón que protege a las 90+
+> migraciones de la regla 1: `ci.yml` siempre invoca `--base`, que sólo mira
+> archivos tocados por el PR.
+>
+> **Medios cerrados:** `REVOKE_RE` acepta ahora `ALL [PRIVILEGES]` o
+> `EXECUTE` (antes exigía literalmente `REVOKE ALL`, rechazando una
+> migración que cerraba correctamente con `REVOKE EXECUTE`). El mensaje de
+> resumen de rechazo separa `rule1Rejected` de `aclRejected`: cuando sólo
+> dispara la regla 5, ya no imprime el texto de la regla 1 ("mixes DDL with
+> an unbounded top-level backfill"), que mandaba a buscar un backfill
+> inexistente. `GRANT ... TO PUBLIC` (rol distinto de `authenticated`) y
+> `GRANT` sin paréntesis (legal en PG14+) **no se cerraron** — ya no son
+> relevantes para el disparo de la regla 5 tras el rediseño (que dejó de
+> mirar `GRANT` en absoluto), y arreglarlos en la utilidad exportada
+> `findGrantExecuteSignatures` sin que nada consuma el resultado no tenía
+> valor observable por CLI; documentado como deuda menor, no cerrado.
+> `GRANT ... ON ALL FUNCTIONS IN SCHEMA` tampoco se maneja — fuera de
+> alcance, no bloqueante per el propio review.
+>
+> **Bajo cerrado:** las advertencias de la regla 4 llevan ahora
+> `file=…,line=…` (formato de anotación de GitHub Actions), usando el
+> `index` que `findCreateFunctionSignatures` ya calculaba y que antes se
+> tiraba — nueva `lineNumberAt()` en el módulo de parseo.
+>
+> **Contexto para la fase 5, anotado sin auditar (dato del reviewer, no
+> verificado por mí):** el objeto vivo tiene **37 funciones `SECURITY
+> DEFINER` que `anon` puede ejecutar hoy** (`add_manifest_to_route`,
+> `expand_carton`, `get_route_reception_snapshot`,
+> `enable_module_for_operator`, entre otras) — el patrón que si sería
+> explotable. Nadie las ha auditado una por una. Ver nota añadida en fase 5
+> más abajo.
+>
+> **TDD de la ronda 2**: 11 tests nuevos escritos primero (B1×2, invoker
+> fuera de alcance, patrón correcto, `REVOKE FROM PUBLIC` sin `GRANT`, ACL
+> que miente con `FROM anon` solo, B2×2, comentario que no cuenta, `REVOKE
+> EXECUTE`, lista de roles con PUBLIC no-primero, mensaje sin ruido de regla
+> 1, más 2 fixtures `--base` nuevas) — confirmados en rojo contra el código
+> de ronda 1 antes de reescribir (11/23 fallando por la razón correcta), 23/23
+> verde después.
+>
+> **Mutation-testing de ronda 2 — 8 mutantes nuevos, uno a uno, restaurado
+> antes de cada siguiente** (además de los 6 de ronda 1, no repetidos aquí):
+> 1. Quitar el filtro `isSecurityDefiner` de la regla 5 → mató exactamente
+>    el test de SECURITY INVOKER fuera de alcance.
+> 2. Volver `hasPublicRevoke` global al fichero (B2 reintroducido) → mató
+>    exactamente los 2 tests de B2.
+> 3. Quitar `r.roles.includes('public')` (cualquier revoke cuenta) → mató
+>    exactamente el test "REVOKE FROM anon only rejects".
+> 4. Volver `splitRoleList` a capturar sólo el primer rol (B3 reintroducido)
+>    → mató exactamente el test "PUBLIC no-primero en la lista".
+> 5. Quitar `stripLineComments` de `findRevokeSignatures` → mató exactamente
+>    el test del REVOKE comentado.
+> 6. Volver `REVOKE_RE` a exigir sólo `ALL` → mató exactamente el test de
+>    `REVOKE EXECUTE`.
+> 7. Volver `corpusFiles` a `= files` (el mutante que el propio reviewer
+>    describió como "sobrevive 12/12 y deja la regla 4 muda en CI bajo
+>    `--base`") → mató exactamente el nuevo test `--base: rule 4 sees a
+>    REVOKE from a migration the PR did not touch` — el hueco de cobertura
+>    que ronda 2 pidió cerrar explícitamente.
+> 8. Volver el mensaje de rechazo a imprimir siempre el texto de regla 1
+>    (quitar el `if (rule1Rejected)`) → mató exactamente el test del mensaje
+>    sin ruido.
+> Los 8 probados individualmente contra los 23 tests de
+> `check-migration-safety-acl.test.sh` (que ahora incluye cobertura real de
+> `--base`, la ausencia que ronda 2 señaló como el hueco más importante); no
+> se afirma "todos mueren" sobre mutantes no probados.
+>
+> **Split adicional**: `check-migration-safety-acl.mjs` volvió a superar 300
+> líneas al añadir `isSecurityDefinerClause`/roles completos — el parseo de
+> bajo nivel (`findCreateFunctionSignatures`, `findRevokeSignatures`,
+> `findGrantExecuteSignatures`, `lineNumberAt`, y los helpers privados) se
+> movió a `check-migration-safety-acl-parse.mjs` nuevo; `acl.mjs` queda sólo
+> con las dos reglas y `buildRevokeIndex` (138 líneas; parse: 208; main: 232).
+>
+> **Regresión**: las 7 suites preexistentes de `check-migration-safety*`
+> siguen en verde (13, 11, 10, 10, 10, 8, 6 — 68 asserts; `real.test.sh` bajó
+> de 12 a 10 asserts al corregir la cifra de 3→1 hallazgos genuinos), más las
+> 23 de `check-migration-safety-acl.test.sh`. `node --check` limpio en los
+> cuatro `.mjs` tocados o creados.
+>
+> **Ronda 3 (review adversarial, contra el objeto vivo, PR #723): la
+> premisa del rediseño de ronda 2 era falsa, no sólo su ejecución.**
+> Medido contra la base viva, en `ROLLBACK`: `CREATE OR REPLACE FUNCTION`
+> **preserva** el ACL existente — no lo resetea al grant `PUBLIC` por
+> defecto. Sólo `DROP FUNCTION; CREATE FUNCTION;` (o una función
+> genuinamente nueva) resetea. Esto ya está documentado y **asegurado en
+> SQL, en este mismo repo**: `20260913000008` (fase 2 de este spec) tiene
+> un comentario (`:115-117`) y una aserción **que aborta la migración**
+> (`:169-175`) si `CREATE OR REPLACE` reabriera PUBLIC — y esa aserción ha
+> pasado, contra la base real, desde que esa migración se mergeó.
+> Consecuencia medida: la regla de ronda 2 rechazaba esa migración
+> correcta, y (encontrado en vivo, en CI, en este mismo PR) una función de
+> **trigger** de otro spec (`20261001000001`, `trg_reception_scan_advance_package_status`,
+> `RETURNS TRIGGER`) que su propio comentario ya decía "no REVOKE/GRANT
+> needed" — exactamente el tipo de función que la fase 0 de este spec
+> excluyó del conteo de invocables desde el principio.
+>
+> **Rediseño de la regla 5, de scan-por-fichero a máquina de estados
+> acumulativa.** `buildAclTimeline()` (en `check-migration-safety-acl.mjs`)
+> recorre TODO el corpus de migraciones en orden cronológico (por nombre de
+> archivo, que en este repo es el timestamp) y registra cada evento
+> `REVOKE`/`GRANT` que mencione `PUBLIC` — incluido un `GRANT ... ON ALL
+> FUNCTIONS IN SCHEMA public` que reabre cualquier función que cubra, aunque
+> nunca la nombre (punto 4b), y un `REVOKE` sin lista de argumentos (legal
+> en PG14+ cuando el nombre no es ambiguo), que cubre cualquier overload de
+> ese nombre. `isPublicOpenAt()` responde: como de este fichero (inclusive),
+> ¿cuál es el ÚLTIMO evento que afecta a esta función exacta (por
+> nombre+firma, un comodín del mismo nombre, o un grant de esquema
+> completo)? Ningún evento en absoluto significa que nunca se tocó — el
+> grant por defecto de Postgres sigue en pie, abierto. Esto también cierra
+> el hueco de sensibilidad al orden que ronda 2 se saltó por completo:
+> `REVOKE FROM PUBLIC` seguido de `GRANT TO PUBLIC` (mismo fichero) reabre —
+> medido contra la base viva por el reviewer, `exit 0` antes, `exit 1`
+> ahora (punto 4a).
+>
+> **Verificado contra los dos precedentes reales que motivaron la ronda:**
+> `20260913000008` (la migración que ronda 2 rechazaba) ya NO se rechaza al
+> escanear el corpus completo (`node scripts/check-migration-safety.mjs
+> packages/database/supabase/migrations` — sin `::error::` para ese
+> archivo; escaneado solo, sí rechaza, correctamente, porque en aislamiento
+> no ve el `REVOKE` de fase 1 en `20260913000006`, que es justo lo que la
+> máquina de estados existe para resolver mirando el corpus completo).
+> `20261001000001` (el archivo que tumbó CI) tampoco se rechaza —
+> verificado con el contenido real de `origin/main` (`git show
+> origin/main:.../20261001000001_....sql`, escaneado solo).
+>
+> **Menores cerrados:** `REVOKE ... FROM PUBLIC CASCADE` ya no corrompe el
+> rol en `"public cascade"` (CASCADE/RESTRICT se despoja antes de partir la
+> lista). `REVOKE ON FUNCTION nombre FROM PUBLIC` sin lista de argumentos
+> (legal PG14+, nombre no ambiguo) ya no es invisible para el parser — antes
+> exigía el paréntesis y la firma no se registraba en absoluto.
+>
+> **La cifra, re-medida con el diseño final** (mismo comando, corpus
+> completo): **56 violaciones de regla 5 en 35 ficheros** (baja de
+> 87/50 de ronda 2, porque la máquina de estados ahora reconoce
+> correctamente las migraciones que endurecieron una función más tarde y
+> deja de recontarlas en cada re-creación). Contando por **firma distinta,
+> no por fichero** (la métrica que más se acerca a "cuántas funciones están
+> abiertas hoy"): de 41 firmas `SECURITY DEFINER` no-trigger creadas alguna
+> vez, **18 siguen abiertas a `anon` según el historial de migraciones**
+> (script ad-hoc, no parte de la suite permanente — ver comando en el PR).
+> Esta cifra es un análisis estático del texto SQL, no una consulta contra
+> la base viva — puede diferir del "37" que el reviewer midió contra
+> `pg_proc`/`aclexplode` en vivo (fuente de verdad real). Las 18 coinciden
+> en su mayoría con las 17 de la fase 5 de este spec (más
+> `start_pickup_route(uuid)`, un overload de 1 argumento de
+> `20260812000003` que quedó huérfano antes de que se le añadiera el
+> parámetro de tripulación).
+>
+> **TDD de la ronda 3**: 12 tests nuevos escritos primero (B1 con historial
+> endurecido, exclusión de función trigger ×2 para regla 4 y regla 5, punto
+> 4a, punto 4b, CASCADE, revoke sin paréntesis, cobertura B2 con overload
+> distinto del mismo nombre, ventana de `SECURITY DEFINER` acotada al
+> cuerpo, dirección de la línea de tiempo (un evento futuro no debe filtrar
+> hacia atrás) — confirmados en rojo contra el código de ronda 2 antes de
+> reescribir (5/34 fallando por la razón correcta la primera vez; luego 2
+> más al reforzar cobertura de B2/trigger que pasaban por la razón
+> equivocada), 36/36 verde después.
+>
+> **Mutation-testing de ronda 3 — 8 mutantes nuevos, uno a uno, restaurado
+> antes de cada siguiente** (además de los 14 de rondas 1-2, no repetidos
+> aquí):
+> 1. Quitar `fn.returnsTrigger` del filtro de la regla 5 → mató exactamente
+>    el test de exclusión de trigger para la regla 5.
+> 2. Quitar `fn.returnsTrigger` del filtro de la regla 4 → sobrevivió contra
+>    el fixture original (sin historial de REVOKE, nunca llegaba a esa
+>    rama) — añadido un segundo fixture con historial de REVOKE para una
+>    firma distinta del mismo nombre; con él, el mutante muere.
+> 3. Quitar el recorte de `CASCADE`/`RESTRICT` → mató exactamente el test
+>    de CASCADE.
+> 4. Forzar `continue` cuando no hay paréntesis (revertir el soporte de
+>    referencia desnuda) → mató exactamente el test de REVOKE sin lista de
+>    argumentos.
+> 5. Quitar `timeline.schemaWide` del array de eventos de `isPublicOpenAt`
+>    → mató exactamente el test del punto 4b.
+> 6. Tomar `events[0]` en vez de `events[events.length - 1]` tras ordenar
+>    (invertir la sensibilidad al orden) → mató el punto 4a **y** el punto
+>    4b (ambos dependen del evento terminal correcto — esperado, no un
+>    falso positivo).
+> 7. Quitar el filtro `e.fileIdx <= uptoFileIdx` → mató exactamente el test
+>    de "un evento futuro no debe filtrar hacia atrás".
+> 8. Forzar `fileIdxOf` a devolver siempre `0` → mató exactamente el test
+>    del punto 4b (el evento de grant de esquema completo, en un fichero
+>    intermedio, deja de verse si todos los ficheros se tratan como
+>    posición 0).
+> Los 8 probados individualmente contra los 36 tests de
+> `check-migration-safety-acl.test.sh`; no se afirma "todos mueren" sobre
+> mutantes no probados.
+>
+> **Regresión**: las 7 suites preexistentes de `check-migration-safety*`
+> siguen en verde (13, 11, 10, 10, 10, 8, 6 — 68 asserts), más las 36 de
+> `check-migration-safety-acl.test.sh`. `node --check` limpio en los tres
+> `.mjs` de la superficie ACL. `check-migration-safety-acl.mjs` volvió a
+> superar 300 líneas al añadir la línea de tiempo; se separó el parseo de
+> bajo nivel (incluida la detección de `RETURNS TRIGGER` y las referencias
+> `ON FUNCTION` sin paréntesis) a `check-migration-safety-acl-parse.mjs`.
+> Los tres archivos quedan en 258/225/250 líneas.
+>
+> **No cerrado, documentado como deuda menor (no bloqueante per el propio
+> review):** `findGrantExecuteSignatures` dejó de estar "muerta" — la
+> reutiliza `buildAclTimeline` para detectar `GRANT ... TO PUBLIC` que
+> reabre una función — así que ese hallazgo de ronda 2 quedó resuelto por
+> el rediseño mismo, no por una limpieza aparte.
+>
+> PR: #723, **sin auto-merge**.
+> Review: ronda 3 completa (adversarial, contra el objeto vivo, incluida
+> verificación de los dos precedentes reales que motivaron la ronda) —
+> bloqueantes cerrados arriba. Pendiente una ronda de confirmación.
+> QA: pendiente — PR sin auto-merge, a la espera de review.
+> Downstream: ninguno declarado en la cabecera del spec — sin cambios.
+
 
 ### Fase 5 — Defensa en profundidad del resto `[in_progress]`
 

@@ -87,6 +87,9 @@ jobs:
       - name: Test the migration-safety guard — B3 per-violation base diff + m8 rename + F4
         run: bash ./scripts/check-migration-safety-basediff.test.sh
 
+      - name: Test the migration-safety guard — rules 4/5 (orphaned overload REVOKE, GRANT without REVOKE)
+        run: bash ./scripts/check-migration-safety-acl.test.sh
+
       # The production gate is only as good as its wiring, and this file has a
       # history of gating bugs that shipped green. Fails the build if any prod
       # deploy job stops depending on approve-production (spec-57).
