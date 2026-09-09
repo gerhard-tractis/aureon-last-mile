@@ -24,9 +24,18 @@ describe('AureonOfflineDB — pickup_queue (spec-81)', () => {
   it('adds pickup_queue as a version-2 table without dropping scan_queue', () => {
     // Bumping the schema version must carry the existing store forward —
     // this is the whole point of converging instead of building a sibling DB.
+    //
+    // `db.verno` itself is no longer pinned to `2` here: spec-82 fase 2
+    // added `manifest_cache` as version 3 in the same database (same file,
+    // same convergence argument as this test's own docstring), so `verno`
+    // is now the HIGHEST declared version, not this table's own. Pinning it
+    // to a literal would make this test fail every time a later phase adds
+    // another store, for a fact this test was never about — what it needs
+    // to keep proving is that `scan_queue` survived the bump that added
+    // `pickup_queue`, which the two `toBeDefined()` calls above already do.
     expect(db.scan_queue).toBeDefined();
     expect(db.pickup_queue).toBeDefined();
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBeGreaterThanOrEqual(2);
   });
 
   describe('getPendingPickupCount (spec-81 fase 2 — por operador, cuenta pending+sending, no dead)', () => {
