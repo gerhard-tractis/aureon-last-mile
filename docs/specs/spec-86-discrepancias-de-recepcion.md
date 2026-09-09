@@ -594,12 +594,19 @@ que están recibidas sería falso.
 > - **M4** — la afirmación "los nueve `operator_id` se probaron por
 >   separado" era falsa por segunda ronda consecutiva (1/9 realmente
 >   aislado). Corregido con 8 escenarios más, cada uno corrompiendo
->   exactamente un salto manteniendo el resto válido; 7/8 aíslan
->   limpiamente (verificado mutación por mutación contra `spec52-pg`), y el
->   octavo (`rr`) queda declarado honesto: su filtro es defensa en
->   profundidad real pero estructuralmente enmascarado por el filtro de
->   `prr`, no observable hoy vía ninguna columna de salida — misma clase de
->   hallazgo que el `COALESCE` que la ronda 2 ya había convertido en `CASE`.
+>   exactamente un salto manteniendo el resto válido; verificado mutación
+>   por mutación contra `spec52-pg`. **Corrección de seguimiento (#715,
+>   tercera ronda del mismo argumento cómodo):** el octavo (`rr`) se
+>   declaró aquí como "no aislable" porque `ruta` sólo llega por `prr` — pero
+>   `ruta` no es la única columna que `rr` alimenta: `rr.pickup_route_id`
+>   entra en la correlación del `LATERAL` (`m.pickup_route_id =
+>   rr.pickup_route_id`), que produce `carga`. Aislado sin columnas nuevas:
+>   un manifiesto de A cuyo `pickup_route_id` coincide por casualidad con el
+>   de la ruta de B hace que, sin el filtro de `rr`, `carga` se
+>   MISATRIBUYA a ese manifiesto propio (no una divulgación — el
+>   `external_load_id` filtrado sigue siendo del propio operador, porque
+>   `m.operator_id = get_operator_id()` sigue vigente). **9/9 aíslan
+>   limpiamente**, no 8/8.
 > - **Menores** — los buckets `open`/`lost` se solapan a propósito (anotado
 >   en el `COMMENT` del RPC); `<> 'resolved'` (no una lista) es
 >   deliberadamente permisivo ante estados futuros del enum (mismo criterio
@@ -609,6 +616,30 @@ que están recibidas sería falso.
 >   ejercido por este PR.
 > pgTAP: 33/33 verde vía `psql -tA -f` crudo (no el wrapper — ver cabecera
 > del test). Vitest: 232/232. `tsc --noEmit` y `eslint` limpios.
+>
+> **Seguimiento post-merge (#715, PR corto, rama `feat/spec-86-fase-3-seguimiento-rr`,
+> sin auto-merge) tras el merge de #715 (`a3caa7b`):**
+> 1. **`rr` corregido** — ver la corrección dentro de M4 arriba. Nueva
+>    migración `20260930000001` (comentario del RPC actualizado, sin cambio
+>    de comportamiento — mismo cuerpo byte a byte, `CREATE OR REPLACE` plano
+>    porque el tipo de retorno no cambia). pgTAP: **34/34** (la 9ª aserción
+>    de aislamiento, `rr` vía `carga`, mutation-tested: sin el filtro de
+>    `rr`, `carga` pasa de `NULL` a `CARGA-RR-LEAK`).
+> 2. **Anotado, no arreglado (por decisión explícita del reviewer):**
+>    `COUNT(*) OVER()` convierte `LIMIT 500` en un tope de TRANSFERENCIA, no
+>    de COSTE — Postgres materializa todas las filas que matchean el filtro
+>    antes de aplicar el `LIMIT`, y cada fila `reception` corre su propio
+>    `LATERAL`; el coste es O(total), no O(500), sobre una cola monótona
+>    creciente. Documentado en el `COMMENT` del RPC (`20260930000001`). Los
+>    KPIs del panel mezclan denominadores bajo truncamiento a propósito
+>    ("Sin resolver" usa `total_count` pre-`LIMIT`, "De recogida"/"De
+>    recepción" cuentan sólo las filas recibidas) — es la versión benigna
+>    del pecado de la ronda 1 porque el 4º KPI lo explica al lado.
+>    Documentado en `DiscrepancyTable.tsx`.
+> 3. **Nit sin acción** (según el reviewer): `Number(rows[0].total_count)`
+>    daría `NaN` si el campo faltara — hoy inalcanzable, la caché de
+>    TanStack es donde podría sobrevivir una forma vieja a un futuro deploy.
+>    No tocado.
 
 ---
 
@@ -666,7 +697,11 @@ que están recibidas sería falso.
   limpio); `statusStage()` para una orden `verificado` con carga `received`.
 - **E2E en QA** — replicar `PR-2026-2298`: 24 esperados, 22 escaneados, cerrar,
   y comprobar que las dos órdenes aparecen en Discrepancias en vez de
-  desaparecer. **No verificado todavía en este PR (#715, ronda 3, menor)** —
-  el criterio de aceptación 3 (`ORD-01`/`ORD-02` aparecen en Discrepancias)
-  quedó cubierto por pgTAP y Vitest, pero ningún job de este PR ejerce QA en
-  vivo contra ese escenario real. Pendiente antes de marcar esta fase `[done]`.
+  desaparecer. **No verificado todavía** — el criterio de aceptación 3
+  (`ORD-01`/`ORD-02` aparecen en Discrepancias) quedó cubierto por pgTAP y
+  Vitest, pero ningún job de #715 ni de su seguimiento ejerce QA en vivo
+  contra ese escenario real (`Supabase Preview` sale `skipping`, el filtro
+  de rutas del repo que ya esconde fallos de base de datos). **Bloqueado por
+  QA desincronizado de `main`** (deploy falló en un paso ajeno a este spec,
+  ya hay seguimiento en curso — no confundir con nada de lo implementado
+  aquí). Pendiente antes de marcar esta fase `[done]`.

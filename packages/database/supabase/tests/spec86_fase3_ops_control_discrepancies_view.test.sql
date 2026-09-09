@@ -42,7 +42,7 @@
 -- tenant. An empty operator B cannot distinguish "the join-level operator_id
 -- filters work" from "there was nothing to leak" (ronda 2, B3).
 BEGIN;
-SELECT plan(33);
+SELECT plan(34);
 
 -- ── Fixtures — operators, users, vehicles ─────────────────────────────────
 INSERT INTO public.operators (id, name, slug) VALUES
@@ -281,14 +281,14 @@ SELECT is((SELECT package_label FROM public.get_discrepancies_ops_control(NULL) 
 --       scenarios below, each corrupting exactly ONE join's target while
 --       keeping every other hop genuinely valid, so each predicate is the
 --       ONLY thing standing between NULL and a leak in its own assertion.
---       Measured one mutation at a time against spec52-pg (o, pm, prp, prr,
---       u, ps, m: 7/7 kill on their own assertion and no other). rr is the
---       exception, declared honestly where its scenario lives below: prr's
---       own filter already blocks the only column rr's data could leak
---       through, so rr's removal alone does not flip any assertion —real
---       defense-in-depth, not independently observable today. 8/9 total
---       joins now have a scenario that isolates them; the ninth (rr) has a
---       scenario and an honest note on why it cannot be isolated further. ──
+--       Measured one mutation at a time against spec52-pg: all NINE kill on
+--       their own assertion and no other (o, pm, prp, prr, u, ps, m directly;
+--       rr via carga — see its scenario below for the mechanism, corrected
+--       in a follow-up round after this file first shipped rr as "not
+--       independently observable", which was wrong: ruta is not the only
+--       column rr feeds — rr.pickup_route_id also drives the LATERAL's
+--       correlation, which produces carga). 9/9 joins now have a scenario
+--       that isolates them on their own. ──
 INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, manifest_id, detected_by_user_id, note) VALUES
   ('cccccccc-0000-4000-9999-000000000001','cccccccc-cccc-cccc-cccc-000000000863','missing','pickup',
    'dddddddd-0000-4000-d000-000000000863', -- operator B's package_id, on an operator-A row
@@ -384,19 +384,37 @@ SELECT is(
 
 -- rr: route_reception_id points directly at operator B's real route_reception.
 --
--- Ronda 3 (#715, M4 follow-up), honestly declared rather than overclaimed:
--- measured, removing ONLY rr's own operator_id filter does NOT flip this
--- assertion -- prr's independent filter (confirmed above to kill on its own)
--- already blocks the route code from propagating, because ruta only ever
--- reaches the client through prr, never through rr directly. rr's own
--- operator_id filter is real defense-in-depth (it would matter the moment a
--- future column selects off rr.* directly, or if prr's filter were ever
--- weakened at the same time), but it is NOT independently observable through
--- today's output columns -- the same class of finding as the COALESCE fixed
--- above by the CASE rewrite, except here restructuring the query to force
--- independence is not worth doing for a filter with no live column to leak
--- through. The two assertions below still hold and still regression-test the
--- no-leak property end to end; they just don't isolate rr from prr.
+-- Ronda 3 seguimiento (#715, tercera vez sobre el mismo argumento cómodo --
+-- esta vez corregido en vez de declarado): ruta NO es la única columna que rr
+-- alimenta. rr.pickup_route_id también entra en la correlación del LATERAL
+-- (`m.pickup_route_id = rr.pickup_route_id`), que produce `carga`. Con el
+-- filtro de rr intacto, rr es NULL cuando route_reception_id apunta a la fila
+-- real de B (rrB1) -- la correlación nunca es cierta (m.pickup_route_id =
+-- NULL) y carga es NULL. Con el filtro de rr removido, rr se resuelve a rrB1
+-- de verdad, rr.pickup_route_id pasa a ser el id de routeB1 -- y si existe un
+-- manifiesto DE A cuyo pickup_route_id coincide con ese id por casualidad
+-- (fixture de abajo, CARGA-RR-LEAK), la correlación SÍ es cierta y carga
+-- resuelve a ese manifiesto. Es una MISATRIBUCIÓN, no una divulgación: el
+-- external_load_id filtrado sigue siendo del propio operador A, porque
+-- m.operator_id = get_operator_id() (el filtro de `m`, ya aislado arriba)
+-- sigue vigente -- pero es exactamente lo que aísla rr de prr sin columnas
+-- nuevas ni reestructurar la consulta.
+INSERT INTO public.orders (id, operator_id, order_number, customer_name, customer_phone, delivery_address, comuna, delivery_date, external_load_id, retailer_name, raw_data, imported_via, imported_at) VALUES
+  ('cccccccc-0000-4000-c000-000000000877','cccccccc-cccc-cccc-cccc-000000000863','ORD-863-RRLEAK','Cliente 863','+56911111111','Calle 863','Santiago', CURRENT_DATE, 'CARGA-RR-LEAK','Retailer 863','{}'::jsonb,'MANUAL', NOW())
+ON CONFLICT (id) DO NOTHING;
+UPDATE public.manifests SET status = 'completed', started_at = NOW()
+ WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-RR-LEAK';
+-- Coincidencia deliberada: este manifiesto de A apunta al mismo
+-- pickup_route_id que routeB1 -- no porque routeB1 sea suyo (no lo es), sino
+-- para que la correlación del LATERAL empareje si rr.pickup_route_id llega a
+-- valer eso (rr's filter removido).
+UPDATE public.manifests SET pickup_route_id = 'dddddddd-0000-4000-e000-000000000863'
+ WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-RR-LEAK';
+INSERT INTO public.pickup_scans (id, operator_id, manifest_id, package_id, barcode_scanned, scan_result, scanned_at) VALUES
+  ('cccccccc-0000-4000-9000-000000000809','cccccccc-cccc-cccc-cccc-000000000863',
+   (SELECT id FROM public.manifests WHERE operator_id = 'cccccccc-cccc-cccc-cccc-000000000863' AND external_load_id = 'CARGA-RR-LEAK'),
+   'cccccccc-0000-4000-d000-000000000872','CTN863-9-RRLEAK','verified', NOW());
+
 INSERT INTO public.discrepancies (id, operator_id, kind, operation_type, package_id, route_reception_id, detected_by_user_id, note) VALUES
   ('cccccccc-0000-4000-9999-000000000004','cccccccc-cccc-cccc-cccc-000000000863','missing','reception',
    'cccccccc-0000-4000-d000-000000000872',
@@ -408,7 +426,11 @@ SELECT is(
 );
 SELECT is(
   (SELECT ruta FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000004'),
-  NULL, 'rr+prr: ruta does not leak operator B''s route (see comment above: this pins the pair, not rr alone)'
+  NULL, 'rr+prr: ruta does not leak operator B''s route (prr''s own filter, already isolated above)'
+);
+SELECT is(
+  (SELECT carga FROM public.get_discrepancies_ops_control(NULL) WHERE id = 'cccccccc-0000-4000-9999-000000000004'),
+  NULL, 'rr (isolated): carga does not misattribute to A''s own CARGA-RR-LEAK via rr.pickup_route_id coinciding with routeB1''s id'
 );
 
 -- prr: route_reception_id points at A's OWN route_reception (route1's,
