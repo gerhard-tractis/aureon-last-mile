@@ -453,18 +453,85 @@ que se consideró, no como trabajo pendiente de esta fase.
 > que se decida dónde vive la declaración de `lost`, conviene dejarle el hueco
 > previsto en vez de rehacerla después.
 
-### Fase 3 — Ver: la vista Discrepancias en Ops Control `[pending]`
+### Fase 3 — Ver: la vista Discrepancias en Ops Control `[in_progress]`
 
-**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/lib/ops-control/stage.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), y sus tests
+**Depende de:** spec-85 fase 2 (`[done]` — RPCs de `discrepancies`)
+
+**Archivos:** `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepanciesPanel.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/stage-panels/DiscrepancyTable.tsx` (nuevo), `apps/frontend/src/app/app/operations-control/components/StageRail.tsx`, `apps/frontend/src/app/app/operations-control/components/OpsControlDesktop.tsx`, `apps/frontend/src/app/app/operations-control/lib/labels.es.ts`, `apps/frontend/src/hooks/ops-control/useDiscrepancies.ts` (nuevo), `packages/database/supabase/migrations/20260925000001_spec86_fase3_ops_control_discrepancies_view.sql` (nuevo), y sus tests
 
 Lista las discrepancias abiertas con orden, paquete, carga, ruta, quién cerró la
-recepción y desde cuándo está abierta, leyendo `get_discrepancies(
-p_operation_type := 'reception', p_status := 'open')` (spec-85 fase 2). Sigue
-el patrón de panel de etapa que ya existe; no inventa una pantalla nueva.
+recepción y desde cuándo está abierta. Sigue el patrón de panel de etapa que ya
+existe; no inventa una pantalla nueva.
 
 Esto es lo que rescata a `ORD-01` / `ORD-02`: dejan de estar en ningún panel y
 pasan a estar en éste. **No** se las mete en Recepción — no llegaron, y decir
 que están recibidas sería falso.
+
+> **Implementado por:** implementer — rama `feat/spec-86-fase-3-vista-discrepancias`.
+>
+> **Dos afirmaciones del texto de arriba resultaron falsas al verificarlas
+> contra el código y se corrigieron en la implementación, no en el spec:**
+>
+> 1. **`get_discrepancies(p_operation_type := 'reception', p_status := 'open')`
+>    no basta.** Ese RPC (spec-85 fase 2) devuelve las columnas crudas de
+>    `discrepancies` — sin orden, sin paquete, sin carga, sin ruta, sin quién
+>    cerró — que es exactamente lo que este criterio de aceptación pide. Se
+>    creó `get_discrepancies_ops_control(p_status)` (SQL, `STABLE`, mismo
+>    patrón de ACL que `get_discrepancies`) que hace los `LEFT JOIN`
+>    necesarios contra `packages`, `orders`, `manifests`, `pickup_routes`,
+>    `route_receptions` y `users`. La derivación de "carga" para una fila
+>    `reception` no es directa (`route_receptions` no guarda `manifest_id`,
+>    consolida varias cargas) — se deriva vía el `pickup_scan` `'verified'`
+>    del propio paquete, acotado al mismo `pickup_route_id` de esa recepción
+>    (el mismo conjunto contra el que `complete_route_reception`, fase 1,
+>    decide "falta").
+> 2. **`p_operation_type := 'reception'` habría escondido la mitad de la
+>    tabla.** El brief de despacho de esta fase fue explícito en sentido
+>    contrario a este texto: *"La tabla `discrepancies` [...] spec-80 fase 2
+>    las puebla desde el cierre de Recogida [...] spec-86 fase 1 [...] desde
+>    el cierre de Recepción. Tu vista muestra las dos fuentes."* La vista
+>    construida NO filtra por `operation_type` — muestra `pickup` y
+>    `reception` juntas, con una columna "Etapa" que distingue una de otra y
+>    KPIs separados ("De recogida" / "De recepción"). Se documenta aquí
+>    porque diverge del texto original de este mismo criterio de aceptación,
+>    no porque el texto de arriba se haya reescrito con la corrección — queda
+>    tal cual estaba para que quien lo lea vea el error real que tenía.
+>
+> **Decisión de producto no cubierta por el spec:** dónde vive Discrepancias
+> en la UI. Se decidió como un octavo tile en `StageRail` (`ORDERED_KEYS` /
+> `STAGE_KEYS`, ya no 7 sino 8 — `md:grid-cols-8`), no como un panel aparte
+> fuera del "Flujo de la operación". Razón: es exactamente el mismo patrón de
+> navegación que las otras siete colas (clic en la tarjeta → panel a la
+> derecha), y `AtRiskPanel` ya ocupa el hueco de "vista por defecto sin
+> selección" — inventar un tercer mecanismo de acceso sólo para Discrepancias
+> habría sido la pantalla nueva que el spec pide explícitamente evitar. Conteo
+> y salud del tile NO salen del pipeline genérico basado en
+> `get_ops_control_snapshot` (`computeStageHealth`/`stagePackageCount`): una
+> discrepancia no es una orden ni una ruta, y forzarla por ese pipeline habría
+> exigido inventarle campos (`overdue_minutes`, etc.) que no tiene. Usa
+> `useDiscrepancies` directamente, con salud `warn` si hay alguna abierta,
+> `ok` si no.
+>
+> **El hueco heredado de fase 1** (`expected_count`/`route_receptions` y
+> `get_route_reception_snapshot` no filtran borrados; fase 1 sí, así que el
+> cierre puede firmar "faltan 3" y registrar 2): esta vista **no expone**
+> `expected_count`/`received_count` de `route_receptions`, a propósito —
+> mostrar ambos números invitaría a comparar "el cierre dijo N, Discrepancias
+> dice M" en la misma pantalla. Sólo enseña lo que `discrepancies` sabe con
+> certeza, fila por paquete — declarado en el comentario de cabecera de la
+> migración, no escondido.
+>
+> **Divergencia declarada con spec-83:** el panel de cierres de Recogida
+> cuenta merma con `status <> 'resolved'` (un `lost` sigue siendo merma). Esta
+> vista, en cambio, lista únicamente `status = 'open'` por defecto — es una
+> cola de "qué le falta actuar a Ops", no un contador de merma histórica; un
+> `lost` ya tiene desenlace y resolución, no acción pendiente. El RPC acepta
+> `p_status` (incluido `NULL`, todos los estados) para que una vista de
+> histórico futura no necesite otro RPC.
+>
+> **Downstream:** revisado spec-85 (no cambia nada de su superficie propia,
+> sólo la consume), spec-83 (su conteo de merma no se toca). Ninguna otra
+> fase de este spec depende de lo aquí construido.
 
 ---
 
