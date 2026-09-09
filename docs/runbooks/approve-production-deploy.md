@@ -103,8 +103,23 @@ beyond "still unresolved" or "resolved".
 
 Auto-approval removed the click for most merges, but the click was never a
 real defense against these either — declaring them here is more honest than
-letting them hide behind "someone approved it":
+letting them hide behind "someone approved it". Measured by the spec-92
+review (2026-09-09), six named classes — see the full table in
+`docs/specs/spec-92-gate-produccion-diferenciado.md`:
 
+1. **Migrations whose pgTAP is red against QA.** `sql_tests_check` in
+   `infra/supabase-qa/deploy-qa.sh` is advisory — it can report FAIL and
+   `deploy-qa` still succeeds. **This is why the spec's own merge does not
+   land until that check is blocking** (depends on PR #717).
+2. **QA compose changes outside the Edge Functions path** never reach the
+   container they modify in a normal CI/CD cycle.
+3. **Hook rewrites that don't match the detection signals** — a semantic
+   rewrite of the function body that never mentions
+   `custom_access_token_hook` or `supabase_auth_admin` as literal text.
+4–6. Cumulative-`--include-all` application, `workflow_dispatch` +
+   `force_db` backlogs, and >64KB migration diffs — all closed in the
+   spec-92 review round 2 (B1/M2); listed for the record of what was
+   checked, not because they're still open.
 - **Scale.** Production has ~112k dispatches and ~61k packages; a backfill
   that times out there does not time out in QA. Nobody measured table volume
   by clicking a button before this spec, and nothing measures it after.
@@ -112,6 +127,11 @@ letting them hide behind "someone approved it":
   for this class — until it lands, any QA↔prod config difference not yet
   named as an exception here has the same blind spot the auth hook had before
   this spec.
+- **The human gate itself losing its protection.** `deploy-approval-watchdog.yml`
+  now checks whether the `production` environment still carries its
+  required-reviewer rule on every run (15-minute cron) and alerts
+  immediately if not — this is live GitHub config, invisible to any YAML
+  guard in this repo.
 
 ## Managing who can approve
 
