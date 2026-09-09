@@ -235,5 +235,19 @@ FAKE_HEALTH="" container_health_check "auth (GoTrue)" supabase-qa-auth
 check_eq "missing container fails, not silently passes" "auth (GoTrue)|FAIL|not found" "${CHECKS[0]}"
 
 echo ""
+echo "wiring (spec-88 fase 3, ronda 5)"
+
+# Every test above proves the FUNCTIONS are correct in isolation — none of
+# them call main() or post_checks(), so none would notice if the CALL SITE
+# were ever deleted. That is exactly the bug this whole phase chased for
+# four rounds: restart_functions() was correct from the start; what was
+# missing was the caller for `auth`. Grep the actual wiring, the same way a
+# `git blame`/review would, so removing either line goes red here instead
+# of silently in production.
+deploy_qa_src="$(cat "$HERE/deploy-qa.sh")"
+check_contains "main() calls restart_auth when the compose changed" "$deploy_qa_src" 'CHANGED_QA_COMPOSE:-}"; then restart_auth'
+check_contains "post_checks() checks the auth container" "$deploy_qa_src" 'container_health_check "auth (GoTrue)"'
+
+echo ""
 echo "  $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
