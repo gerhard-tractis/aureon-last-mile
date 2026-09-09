@@ -232,18 +232,26 @@ token, la siguiente corrida lo saca de la lista y, si era la última, cierra
 el issue solo).
 
 **Dato a anotar (ronda 3 de review), para que la primera corrida no parezca
-un bug:** corrido en seco contra el estado real de hoy (`docs/specs/` +
-`gh pr list --state open`), la lista da **5 filas** — spec-81 fase 3, spec-82
-fase 1, spec-88 fases 1 y 2, spec-89 fase 1 —, todas genuinamente rancias
-(sin PR abierto que las nombre). Es un número que se mueve mientras haya
-trabajo en paralelo mergeando (otra sesión puede cerrar o abrir PRs entre
-que esto se escribe y la primera corrida real del workflow), así que no es
-una promesa exacta — **lo que sí es seguro es la dirección**: en cuanto este
-PR mismo mergee, las **5 fases de spec-91** (todas `[in_progress]` hoy,
-ninguna cerrada por el orquestador) pierden su único PR abierto y se suman a
-la lista en la corrida siguiente. Es el comportamiento correcto — nadie cerró
-esos tokens todavía —, pero es lo primero que va a aparecer, y no debería
-leerse como que el workflow está mal calibrado.
+un bug — y ejemplo vivo de por qué no vale la pena perseguir el número
+exacto:** una versión anterior de este párrafo decía "la lista da 5 filas",
+corrido contra el estado de ese momento. **Ese número quedó atrás del propio
+merge de este PR** — el mismo `git merge origin/main` que resolvió el
+conflicto con spec-84 (ver más abajo) trajo `docs: cerrar seis tokens de
+fase rancios` (#697), que cerró de un tirón las cinco fases que ese párrafo
+nombraba. Corrido de nuevo, hoy: **6 fases `[in_progress]`** —
+`spec-83 fase 4` (rancia, real, sin PR abierto) más las **5 fases de este
+mismo spec-91** (con PR abierto — no rancias todavía). Ese número también
+quedará atrás antes de que el workflow corra por primera vez de verdad.
+
+**Lo que sí es estable, y es lo único que vale la pena afirmar:** en cuanto
+este PR mergee, las 5 fases de spec-91 (ninguna cerrada por el orquestador
+todavía) pierden su único PR abierto y se suman a lo que sea que la lista
+diga en ese momento. Es el comportamiento correcto — nadie cerró esos
+tokens todavía —, pero es lo primero que va a aparecer, y no debería leerse
+como que el workflow está mal calibrado. Quien quiera el número exacto del
+día que lo lea: `node scripts/reconcile-stale-phases-lib.mjs` no tiene CLI
+de sólo-lectura hoy, pero la lógica es la misma que corre en CI — el propio
+issue de seguimiento es la fuente de verdad, no este párrafo.
 
 **Fallback en `keep-going.sh` para ramas sin nombre de spec: sigue sin
 construirse.** Ver el razonamiento original más abajo — la fase 5 lo
@@ -283,6 +291,19 @@ No se hace obligatorio en `check-spec-fields.sh` en este PR. Backfill del
 corpus existente va aparte (como fue `**Archivos:**` en #693); obligatoriedad
 en CI, después de eso. El orden explícito: **guard primero, backfill después,
 obligatoriedad al final.**
+
+**Dato para quien retome esto (R3-4, review ronda 3):** al mergear este PR,
+**ningún spec vivo declara `**Depende de:**`**. El único caso real que existió
+—`spec-84` fase 3, motivador de este guard— dejó de aplicar cuando una
+decisión de producto la aparcó y le quitó la dependencia mientras este spec
+seguía en review (ver la nota de reconciliación más abajo). El campo entra en
+`main` con **cero usuarios reales**: es consecuencia correcta de no
+backfillear —la instrucción explícita era no hacerlo en este PR—, pero
+significa que el guard nunca habrá corrido contra una declaración escrita de
+verdad por una persona, sólo contra los scratch specs de sus propios tests.
+Quien escriba la primera declaración real de `**Depende de:**` estrena el
+camino — vale la pena que lo sepa antes de asumir que "ya está probado en
+producción" porque los tests pasan.
 
 **(a) Chequeo duro de dependencia — nuevo exit code, separado del conflicto
 de superficie.** Cuando un target declara `spec-N fase M` y esa fase no está

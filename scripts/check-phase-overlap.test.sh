@@ -10,7 +10,15 @@ set -uo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/check-phase-overlap.sh"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+REAL_REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
+# R3-3 (review ronda 3): los scratch specs que se escriben DENTRO del repo
+# real (docs/specs/) — no en $TMP — tienen que limpiarse igual con un Ctrl-C
+# a mitad de corrida. Rutas fijas, en el trap desde el principio, en vez de
+# un `rm -f` en línea recta que un `exit`/señal se salta.
+SCRATCH_DEP_SPEC="$REAL_REPO/docs/specs/spec-998-scratch-dep-repro.md"
+SCRATCH_DEP_TARGET="$REAL_REPO/docs/specs/spec-997-scratch-dep-target.md"
+SCRATCH_B1_SPEC="$REAL_REPO/docs/specs/spec-999-scratch-b1-repro.md"
+trap 'rm -rf "$TMP"; rm -f "$SCRATCH_DEP_SPEC" "$SCRATCH_DEP_TARGET" "$SCRATCH_B1_SPEC"' EXIT
 pass=0
 fail=0
 
@@ -499,35 +507,61 @@ assert_exit 4 "order: exit 4 (unmet dependency) wins over exit 3 (unjudgeable su
   "docs/specs/spec-104-x.md#Fase 1" \
   "docs/specs/spec-105-x.md#Fase 1"
 
-# ── Real acceptance case, NOT a fixture: spec-80 fase 3 is genuinely
-# [pending] in this repo today. Runs against the actual worktree's
-# docs/specs/, not a copy — this is the exact class of case from the spec
-# ("el guard dictaminó superficies disjuntas ... ignorando el orden").
+# ── Real acceptance case, NOT a fixture on the resolving side: proves
+# `resolveDependency`/`findPhaseTokenByNumber` against the REAL docs/specs/
+# directory (real `readdirSync`, ~100 real files sitting alongside the two
+# scratch ones, real markdown-heading parsing) — only the DECLARING side is
+# fabricated (a `**Depende de:**` line, trivially parseable, already
+# covered by 25 unit tests). That split is the point: spec-89's lesson was
+# that fabricating the shape the CONSUMER validates proves nothing; here the
+# consumer-facing side (the target spec's real file, real token) stays real.
 #
-# Originally this used spec-84 fase 3 as the dependent (it declared
-# `**Depende de:** spec-80 fase 3` for real, motivating this whole guard).
-# A real product decision superseded that WHILE this spec was in review —
-# spec-84 fase 3 is now `[parked]`: "ya no depende de spec-80 fase 3 — no
-# depende de nada, está aparcada" (la prueba de entrega la genera
-# DispatchTrack, no este repo). Reusing a real spec's mutable content as a
-# fixture is fragile against exactly this kind of independent edit — the
-# same lesson as the Bloqueante 1 repro below, applied here too: a scratch
-# spec, created inside the real repo and deleted after, proves the same
-# mechanism against real data without depending on which real spec happens
-# to still declare a matching dependency today.
-REAL_REPO="$(cd "$(dirname "$SCRIPT")/.." && pwd)"
-SCRATCH_DEP_SPEC="$REAL_REPO/docs/specs/spec-998-scratch-dep-repro.md"
-cat > "$SCRATCH_DEP_SPEC" <<'MD'
-### Fase 1 — depende de spec-80 fase 3 `[pending]`
+# R3-1 (review ronda 3): the FIRST version of this test used spec-84 fase 3
+# as the dependent — a real spec that really declared this dependency,
+# motivating the whole guard. A product decision parked it mid-review
+# (fixed via a downstream-reconciliation commit). The SECOND version swapped
+# in spec-80 fase 3 as the target, reasoning "it's real and still pending" —
+# but `[pending]` isn't terminal the way `[done]` is (contrast the
+# Bloqueante-1 repro below, which asserts `exit 0` against phases that ARE
+# `[done]` — safe, because `done` never reverts). spec-80 fase 3 was in
+# review for closure at the exact moment this was written; the day it
+# lands, THIS test goes red in the PR that closes it, for a reason that has
+# nothing to do with that PR. Same fragility one step removed.
+#
+# Fix: BOTH sides are scratch specs now, freshly written each run — the
+# target's token is under this test's own control, so no real spec's
+# lifecycle can break it. Directory scan and markdown parsing stay real.
+cat > "$SCRATCH_DEP_TARGET" <<'MD'
+### Fase 1 — objetivo de dependencia, todavía no aterriza `[pending]`
 
-**Depende de:** spec-80 fase 3
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
+cat > "$SCRATCH_DEP_SPEC" <<'MD'
+### Fase 1 — depende de spec-997 fase 1 `[pending]`
+
+**Depende de:** spec-997 fase 1
 
 **Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
 MD
-assert_exit 4 "REAL REPO: a phase depending on spec-80 fase 3 (still [pending] today) gets exit 4, not 'disjoint'" \
+assert_exit 4 "REAL REPO: a phase depending on a [pending] target gets exit 4, not 'disjoint'" \
   bash "$SCRIPT" --repo "$REAL_REPO" \
   "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
-  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+
+# The transition itself, still against the real CLI/fs path: once the
+# target reaches [done], the SAME declared dependency resolves clean.
+sed -i "s/\[pending\]/[done]/" "$SCRATCH_DEP_TARGET"
+assert_exit 0 "REAL REPO: once the target reaches [done], the dependency resolves clean" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+# Reset for the next assertion below (message-naming test), which wants the
+# unmet case again.
+cat > "$SCRATCH_DEP_TARGET" <<'MD'
+### Fase 1 — objetivo de dependencia, todavía no aterriza `[pending]`
+
+**Archivos:** `apps/frontend/src/lib/offline/db.ts`
+MD
 
 # ── Bloqueante 1 (review ronda 2), reproducido contra el REPO REAL, no un
 # fixture: spec-85-discrepancias.md tiene un heading en prosa ("### La
@@ -537,8 +571,7 @@ assert_exit 4 "REAL REPO: a phase depending on spec-80 fase 3 (still [pending] t
 # spec-85 fase 2 SÍ está `[done]`. Se crea un spec temporal DENTRO del repo
 # real (necesario: la dependencia se resuelve leyendo docs/specs/ del propio
 # `--repo`) y se borra al terminar, sin commitear nada.
-SCRATCH_SPEC="$REAL_REPO/docs/specs/spec-999-scratch-b1-repro.md"
-cat > "$SCRATCH_SPEC" <<'MD'
+cat > "$SCRATCH_B1_SPEC" <<'MD'
 ### Fase 1 — depende de spec-85 fase 2 `[pending]`
 
 **Depende de:** spec-85 fase 2
@@ -549,7 +582,7 @@ assert_exit 0 "REAL REPO, Bloqueante 1: spec-85 fase 2 resolves [done] despite t
   bash "$SCRIPT" --repo "$REAL_REPO" \
   "docs/specs/spec-999-scratch-b1-repro.md#Fase 1" \
   "docs/specs/spec-88-anon-security-definer-audit.md#Fase 2"
-rm -f "$SCRATCH_SPEC"
+rm -f "$SCRATCH_B1_SPEC"
 
 # ── The genuinely-ambiguous case: a declared dependency on a fase number
 # that has NO real phase heading anywhere (only a prose mention) must warn,
@@ -579,11 +612,11 @@ assert_contains "no se pudo determinar su estado con certeza" "ambiguous depende
   "docs/specs/spec-102-x.md#Fase 1" \
   "docs/specs/spec-88-x.md#Fase 2"
 
-assert_contains "spec-80 fase 3" "REAL REPO: message names the real blocking phase" \
+assert_contains "spec-997 fase 1" "REAL REPO: message names the real blocking phase" \
   bash "$SCRIPT" --repo "$REAL_REPO" \
   "docs/specs/spec-998-scratch-dep-repro.md#Fase 1" \
-  "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
-rm -f "$SCRATCH_DEP_SPEC"
+  "docs/specs/spec-997-scratch-dep-target.md#Fase 1"
+rm -f "$SCRATCH_DEP_SPEC" "$SCRATCH_DEP_TARGET"
 
 # ── spec-91 fase 4: heuristic net — warns (::warning::) about an undeclared
 # spec-N fase M mention, never blocks (exit stays whatever the rest of the
