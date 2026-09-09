@@ -245,6 +245,36 @@ describe('createPickupQueueSender — close_manifest', () => {
     expect(result.outcome).toBe('retry');
     expect(rpc).not.toHaveBeenCalled();
   });
+
+  // spec-81 fase 5 — el mismo sender ahora despacha `manifest_photo` a
+  // `sendManifestPhoto` (`lib/offline/photos.ts`) en vez de caer al
+  // `'retry'` genérico de "tipo no reconocido" de arriba. Comportamiento
+  // completo de `sendManifestPhoto` (subida, insert, huérfano imposible,
+  // idempotencia) cubierto en `lib/offline/photos.test.ts`; aquí sólo se
+  // verifica el enrutamiento.
+  it('dispatches a manifest_photo entry to the storage/insert path instead of close_manifest', async () => {
+    const rpc = vi.fn();
+    const upload = vi.fn(async () => ({ data: { path: 'x' }, error: null }));
+    const insert = vi.fn(async () => ({ data: [{}], error: null }));
+    const supabase = {
+      rpc,
+      storage: { from: vi.fn(() => ({ upload, remove: vi.fn() })) },
+      from: vi.fn(() => ({ insert })),
+    } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const send = createPickupQueueSender(supabase);
+
+    const result = await send(
+      closeManifestEntry({
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(upload).toHaveBeenCalled();
+    expect(result).toEqual({ outcome: 'sent' });
+  });
 });
 
 /**

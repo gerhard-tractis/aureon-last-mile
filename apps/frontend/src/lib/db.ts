@@ -33,7 +33,7 @@ export interface ScanQueue {
  * dejaría esos contadores en 0 mientras las entradas de Recogida esperan en
  * otro origen de almacenamiento.
  */
-export type PickupQueueOperationType = 'pickup_scan' | 'close_manifest';
+export type PickupQueueOperationType = 'pickup_scan' | 'close_manifest' | 'manifest_photo';
 
 /**
  * `pending`: candidata a envío. `sending`: un drenador la reclamó — evita que
@@ -72,8 +72,9 @@ export interface PickupQueueEntry {
   type: PickupQueueOperationType;
   payload: Record<string, unknown>;
   /**
-   * Reservado para spec-81 fase 5 (fotos): el blob de la foto capturada.
-   * Deliberadamente sin usar en fase 1.
+   * spec-81 fase 5: el blob de la foto capturada, para entradas
+   * `type: 'manifest_photo'` — ver `lib/offline/photos.ts`. `undefined` para
+   * cualquier otro tipo de entrada.
    */
   blob?: Blob;
   status: PickupQueueEntryStatus;

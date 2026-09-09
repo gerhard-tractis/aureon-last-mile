@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PickupQueueEntry } from '@/lib/db';
 import type { OfflineQueueOutcome, OfflineQueueSender } from '@/hooks/useOfflineQueue';
 import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
+import { sendManifestPhoto } from '@/lib/offline/photos';
 
 /**
  * spec-81 fase 2, B2 (ronda 1 de review del PR #679) — el `OfflineQueueSender`
@@ -9,12 +10,15 @@ import { classifyCloseManifestError } from '@/lib/pickup/closeManifestErrors';
  * drenador sin nadie que lo llame. Se monta una única vez en `AppLayout`
  * (ver ese fichero) con el cliente Supabase del navegador.
  *
- * Sólo sabe enviar `close_manifest` — el único tipo que algún productor de
- * producción encola hoy (`complete/[loadId]/page.tsx`). `pickup_scan` no
- * tiene todavía ningún productor (el escritor de escaneos offline queda
- * diferido, coordinación con fase 3 documentada en `useOfflineQueue.ts`);
- * si alguna vez aparece uno antes de que este sender lo sepa enviar, la
- * entrada reintenta con retroceso en vez de tirar el drenador entero.
+ * Sabe enviar `close_manifest` y, desde spec-81 fase 5, `manifest_photo`
+ * (delegado en `sendManifestPhoto`, `lib/offline/photos.ts`) — los dos tipos
+ * que algún productor de producción encola hoy (`complete/[loadId]/page.tsx`
+ * para el cierre; el escritor de fotos que use `enqueueManifestPhoto` queda
+ * fuera de esta fase, ver `photos.ts`). `pickup_scan` no tiene todavía
+ * ningún productor (el escritor de escaneos offline queda diferido,
+ * coordinación con fase 3 documentada en `useOfflineQueue.ts`); si alguna
+ * vez aparece uno antes de que este sender lo sepa enviar, la entrada
+ * reintenta con retroceso en vez de tirar el drenador entero.
  */
 /**
  * B4, ronda 1 de review del PR #679 — `postgrest-js` no fija ningún timeout
@@ -52,6 +56,12 @@ function closeManifestTimeoutSignal(): AbortSignal | undefined {
 
 export function createPickupQueueSender(supabase: SupabaseClient): OfflineQueueSender {
   return async (entry: PickupQueueEntry): Promise<OfflineQueueOutcome> => {
+    // spec-81 fase 5 — `manifest_photo` (blob a subir al bucket `manifests`,
+    // ver `lib/offline/photos.ts`) tiene su propio camino de red, distinto
+    // del RPC `close_manifest` de abajo.
+    if (entry.type === 'manifest_photo') {
+      return sendManifestPhoto(supabase, entry);
+    }
     if (entry.type !== 'close_manifest') {
       return {
         outcome: 'retry',
