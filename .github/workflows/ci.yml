@@ -192,26 +192,27 @@ jobs:
       # confundía con "no es un PR, no hay nada que validar" justo en la
       # corrida que decide el merge. Mismo fallback de tres niveles.
       #
-      # Round 2, segunda vuelta: `pull_request.base.sha` es una foto fija del
-      # último `synchronize`, no la punta viva de `main`. `actions/checkout`
-      # sí trae `refs/pull/<PR>/merge` — el HEAD de esta corrida es el merge
-      # de esta rama con el `main` de AHORA, no con el de esa foto. Si otro PR
-      # toca mientras tanto un spec con `[blocked]` sin evidencia (pasó de
-      # verdad: PR #702/#703 tocaron spec-82/83/84/88 después de que este
-      # branch se abriera), ese spec aparece "tocado" en el diff contra la
-      # foto vieja aunque esta rama nunca lo tocó — y el guard lo bloquea por
-      # deuda ajena, exactamente lo que el diff-scoping existe para evitar.
-      # Se prefiere la punta viva de `main` (recién buscada) como base; el
-      # `base.sha` del evento queda de único respaldo si ese fetch falla.
+      # Round 2, segunda vuelta: el problema real no era QUÉ commit usar como
+      # base, sino contra QUÉ árbol se diffea. En `pull_request`,
+      # `actions/checkout` resuelve HEAD a `refs/pull/<N>/merge` — el merge
+      # sintético de esta rama con el `main` que fuera en el momento del
+      # checkout, no esta rama sola. Si otro PR toca mientras tanto un spec
+      # con `[blocked]` sin evidencia (pasó de verdad: #702/#703 tocaron
+      # spec-82/83/84/88 después de que esta rama se abriera), ese contenido
+      # queda horneado en el HEAD inflado, y diffearlo contra CUALQUIER base
+      # —vieja o recién buscada— lo muestra como "tocado" por esta rama
+      # aunque nunca lo tocó. Buscar un `main` más nuevo como base (intento
+      # anterior de este mismo commit) sólo cambia qué mitad de la deuda ajena
+      # aparece, no el problema.
+      #
+      # Arreglo real: diffear la base contra el commit real de la rama
+      # (`pull_request.head.sha`), nunca contra el HEAD implícito del
+      # checkout. Un diff de dos commits explícitos no necesita merge-base —
+      # funciona aunque el fetch sea shallow — y el resultado es exactamente
+      # lo que esta rama cambió, sin el relleno del merge sintético.
       - name: Check blocked-phase evidence on touched specs
         run: |
-          BASE=""
-          if git fetch --no-tags --depth=1 origin main 2>/dev/null; then
-            BASE="$(git rev-parse FETCH_HEAD)"
-          fi
-          if [ -z "$BASE" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-          fi
+          BASE="${{ github.event.pull_request.base.sha }}"
           if [ -z "$BASE" ]; then
             BASE="${{ github.event.merge_group.base_sha }}"
           fi
@@ -219,11 +220,22 @@ jobs:
             BASE="${{ github.event.before }}"
           fi
           if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
-            echo "No hay base determinable (ni main vivo, ni pull_request, ni merge_group, ni push con before) — saltando."
+            echo "No hay base determinable (ni pull_request, ni merge_group, ni push con before) — saltando."
             exit 0
           fi
           git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || git fetch --no-tags --unshallow 2>/dev/null || true
-          bash ./scripts/check-blocked-evidence.sh --base "$BASE"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          if [ -n "$HEAD_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$HEAD_SHA" 2>/dev/null || true
+            FILES="$(git diff --name-only "$BASE" "$HEAD_SHA" -- 'docs/specs/spec-*.md' 2>/dev/null || true)"
+            if [ -n "$FILES" ]; then
+              bash ./scripts/check-blocked-evidence.sh $FILES
+            else
+              echo "check-blocked-evidence: ningún spec tocado."
+            fi
+          else
+            bash ./scripts/check-blocked-evidence.sh --base "$BASE"
+          fi
 
       - name: Test the blocked-evidence guard
         run: bash ./scripts/check-blocked-evidence.test.sh
