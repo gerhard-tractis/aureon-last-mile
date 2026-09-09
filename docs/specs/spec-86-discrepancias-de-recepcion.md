@@ -540,6 +540,41 @@ que están recibidas sería falso.
 > sólo la consume), spec-83 (su conteo de merma no se toca, y ahora además
 > comparten la misma semántica de "qué cuenta como sin resolver"). Ninguna otra
 > fase de este spec depende de lo aquí construido.
+>
+> **Ronda 3 de review (#715) — mergeable con correcciones, todas aplicadas:**
+> - **M1** — el panel (`DiscrepanciesPanel.tsx`) heredaba `data ?? []` y
+>   afirmaba "Sin discrepancias sin resolver" con tres KPIs en cero mientras
+>   cargaba, offline o con error — justo cuando el usuario hace clic en la
+>   baldosa honesta ("—") del tile precisamente porque no sabe. Ahora
+>   comparte `isDiscrepanciesUnknown` con el tile (extraído a
+>   `useDiscrepancies.ts` para que los dos no puedan volver a discrepar) y
+>   muestra un estado "no se pudo confirmar" en vez de un cero falso.
+> - **M2** — el default (`open` = `<> 'resolved'`) incluye `lost`, pero la
+>   tabla y el KPI seguían diciendo "Abiertas" sin distinguir una fila
+>   `lost` de una `open`. Columna "Estado" nueva (Abierta/Perdida/Resuelta)
+>   y KPI renombrado a "Sin resolver".
+> - **M3** — `LIMIT 500` sin visibilidad tiraba silenciosamente las filas
+>   más viejas (`ORDER BY detected_at DESC`) sin avisar. `total_count`
+>   (`COUNT(*) OVER()`, calculado antes del `LIMIT`) viaja en cada fila;
+>   tile y panel muestran "N de M" cuando hay truncamiento.
+> - **M4** — la afirmación "los nueve `operator_id` se probaron por
+>   separado" era falsa por segunda ronda consecutiva (1/9 realmente
+>   aislado). Corregido con 8 escenarios más, cada uno corrompiendo
+>   exactamente un salto manteniendo el resto válido; 7/8 aíslan
+>   limpiamente (verificado mutación por mutación contra `spec52-pg`), y el
+>   octavo (`rr`) queda declarado honesto: su filtro es defensa en
+>   profundidad real pero estructuralmente enmascarado por el filtro de
+>   `prr`, no observable hoy vía ninguna columna de salida — misma clase de
+>   hallazgo que el `COALESCE` que la ronda 2 ya había convertido en `CASE`.
+> - **Menores** — los buckets `open`/`lost` se solapan a propósito (anotado
+>   en el `COMMENT` del RPC); `<> 'resolved'` (no una lista) es
+>   deliberadamente permisivo ante estados futuros del enum (mismo criterio
+>   que `20260917000002`); `liveLabel` gana `data-testid` para que
+>   `!== null` no pueda mutarse a `!== undefined` sin que un test lo note;
+>   E2E en QA del criterio de aceptación 3 declarado pendiente arriba, no
+>   ejercido por este PR.
+> pgTAP: 33/33 verde vía `psql -tA -f` crudo (no el wrapper — ver cabecera
+> del test). Vitest: 232/232. `tsc --noEmit` y `eslint` limpios.
 
 ---
 
@@ -597,4 +632,7 @@ que están recibidas sería falso.
   limpio); `statusStage()` para una orden `verificado` con carga `received`.
 - **E2E en QA** — replicar `PR-2026-2298`: 24 esperados, 22 escaneados, cerrar,
   y comprobar que las dos órdenes aparecen en Discrepancias en vez de
-  desaparecer.
+  desaparecer. **No verificado todavía en este PR (#715, ronda 3, menor)** —
+  el criterio de aceptación 3 (`ORD-01`/`ORD-02` aparecen en Discrepancias)
+  quedó cubierto por pgTAP y Vitest, pero ningún job de este PR ejerce QA en
+  vivo contra ese escenario real. Pendiente antes de marcar esta fase `[done]`.
