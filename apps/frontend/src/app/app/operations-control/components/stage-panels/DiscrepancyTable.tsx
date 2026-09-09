@@ -86,6 +86,19 @@ export function DiscrepancyTable({ rows, now = new Date() }: DiscrepancyTablePro
  * see the STATUS_LABELS comment above), and a 4th slot surfaces LIMIT 500
  * truncation (M3) instead of hiding it — 'Mostradas' equals 'Sin resolver'
  * except when the RPC's total_count says otherwise.
+ *
+ * Ronda 3 seguimiento (#715, anotado, no arreglado): under truncation the
+ * four KPIs mix denominators on purpose, and it is worth naming so nobody
+ * "fixes" it into something worse. 'Sin resolver' reads total_count — the
+ * real count BEFORE the RPC's LIMIT 500 (see 20260930000001's comment on the
+ * SQL side for why that is a genuine cost tradeoff, not free). 'De recogida'
+ * / 'De recepción' are computed over `rows` — the rows actually RECEIVED,
+ * i.e. AFTER the LIMIT. So "Sin resolver 617" next to "De recogida 250" + "De
+ * recepción 250" = 500, not 617, is expected, not a bug: the 4th KPI
+ * ('Mostradas: 500 de 617') sits right next to them and says why. This is
+ * the benign version of the ronda-1 sin — two numbers that do not add up on
+ * the same screen — benign specifically because the mismatch is explained in
+ * place, not silent.
  */
 export function computeDiscrepancyKpis(rows: DiscrepancyRow[]) {
   const pickup = rows.filter((r) => r.operation_type === 'pickup').length;
