@@ -1,6 +1,6 @@
 # Spec-83: Recogida en escritorio (`5a`) — ventana de retiro, ocupación y merma
 
-> **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; la asignación puede aterrizar aquí), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
+> **Related:** [spec-54](spec-54-ui-rebrand.md) (**su fase 4.4 construyó esta pantalla contra el mock `1l` y difirió estos tres datos con razón escrita**), [spec-80](spec-80-recogida-movil-cierre-de-carga.md) (el cierre que produce la merma que aquí se muestra), [spec-82](spec-82-recogida-movil-asignacion-y-ruta.md) (`5b`/`5c`; **corrección 2026-09-09**: la asignación no aterriza aquí — el usuario decidió que la define el líder de recogida en el punto de retiro, in-situ, no desde este panel de escritorio), [spec-61](spec-61-pickup-route-crew.md) (panel de armado de ruta), [spec-73](spec-73-capacity-ladder-truck-topup.md) (capacidad de vehículo en Despacho — precedente directo)
 
 **Status:** in progress
 **Verify:** unit, e2e-qa
@@ -199,14 +199,15 @@ izquierdo de la fila.
       escribe hoy) y hacer que `get_pending_manifests` los devuelva.
 - [ ] Columna y semáforo, con la decisión del borde ya tomada explícitamente.
 
-### Fase 3 — Ocupación `[pending]`
+### Fase 3 — Ocupación `[parked]`
 
-**Archivos:** (indeterminado — esta fase es **condicional**: su primer punto es
-decidir si se implementa. Si la decisión es «no», el write set real es cero
-ficheros de código. Declarar una lista antes de esa decisión sería inventarla.
-`check-phase-overlap.mjs` la reporta como «no puedo juzgar» (exit 3), que es la
-respuesta correcta: no se despacha en paralelo con nada hasta que la decisión
-esté tomada y este campo se rellene de verdad.)
+**Decisión del usuario (2026-09-09), textual:** «No hay capacity para esto
+ahora, y no es bloqueante para el rollout con tenant. Se retoma cuando el
+rollout lo pida.»
+
+No se mueve a otro spec: se retoma **en este mismo spec** cuando el rollout lo
+pida, no se descarta. Hasta entonces no se toma ni se despacha en paralelo con
+nada.
 
 - [ ] Leer spec-73 y decidir: mismo proxy, o omisión razonada escrita en este spec.
 - [ ] Si se implementa: capacidad en `vehicles` primero, que es la mitad barata y ya se muestra en el mock.
