@@ -66,7 +66,8 @@ export function TodayClosuresPanel({ rows }: { rows: CompletedManifest[] }) {
                   </span>
                   {hasMissing ? (
                     <span className="truncate text-[10.5px] font-semibold leading-none text-status-warning-text">
-                      {row.missing_count} faltantes de {row.total_packages ?? 0}
+                      {row.missing_count} {row.missing_count === 1 ? 'faltante' : 'faltantes'} de{' '}
+                      {row.total_packages ?? 0}
                     </span>
                   ) : (
                     <span className="truncate text-[10.5px] leading-none text-text-muted">

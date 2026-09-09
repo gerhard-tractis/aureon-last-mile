@@ -3,26 +3,44 @@
 -- query. TodayClosuresPanel uses it to show "2 faltantes de 44" in warning
 -- palette only when > 0.
 --
--- Fixture: one operator, two completed manifests:
---   CARGA-83-1 (44 packages) — has discrepancies:
---     d1: kind='missing', operation_type='pickup', status='open'   -> counts
---     d2: kind='missing', operation_type='pickup', status='resolved' -> counts
---         (mutation guard: sin esto, filtrar por status='open' dejaría la
---         merma histórica en 1 en vez de 2 una vez alguien resuelve una)
---     d3: kind='unexpected', operation_type='pickup', status='open' -> NO
---         cuenta (mutation guard: sin el filtro kind='missing', el sobrante
---         se sumaría a la merma, que son dos hechos distintos)
---     d4: kind='missing', operation_type='pickup', deleted_at=NOW() -> NO
---         cuenta (mutation guard: soft-delete no negociable)
+-- Fixture:
+--   CARGA-83-1 (44 packages) —
+--     d1: kind='missing', status='open'    -> counts
+--     d2: kind='missing', status='resolved' -> does NOT count (round-2
+--         product decision: "si se resolvió ya no es merma")
+--     d3: kind='unexpected', status='open' -> does NOT count (different
+--         fact — surplus, not shortfall)
+--     d4: kind='missing', deleted_at=NOW() -> does NOT count (soft-delete)
+--     d5: kind='missing', status='lost'    -> COUNTS. This is the row that
+--         distinguishes the correct filter (`status <> 'resolved'`) from
+--         the wrong one an ops manager would otherwise silently launder
+--         (`status = 'open'`) — 'lost' is the indemnity-workflow trigger
+--         (20260913000005), not a statement that the shortfall un-happened.
+--   CARGA-83-1 total missing_count = 2 (d1 + d5).
+--
 --   CARGA-83-2 (38 packages) — 0 discrepancies -> missing_count = 0 (cierre
---         limpio; TodayClosuresPanel no debe teñirlo de warning)
+--         limpio; TodayClosuresPanel no debe teñirlo de warning).
+--
+--   CARGA-83-3 (10 packages) — ONLY a 'lost' discrepancy, no 'open' one.
+--         missing_count must be 1. This is the fixture that would catch a
+--         regression back to `status = 'open'`: that wrong filter reports 0
+--         here, painting a real loss as a clean close.
+--
+--   CARGA-83-4 (5 packages) — the accepted double-count edge case: the SAME
+--         package_id has TWO non-resolved discrepancy rows on the SAME
+--         manifest (one 'open', one 'lost') — uniq_open_discrepancy_per_package
+--         only blocks two 'open' rows, not an 'open' + 'lost' pair. This
+--         locks in and documents the known behaviour (COUNT(*) inflates to
+--         2), it does not assert this is desirable.
 --
 -- Also asserts labels_printed_at/labels_printed_by_name survive this
--- CREATE OR REPLACE (spec-53's contract; the 2026-09-08 note on this spec
--- flags exactly this as the trap of templating off the wrong migration).
+-- CREATE OR REPLACE with a REAL name, not just a NULL check — a NULL check
+-- alone does not exercise the LEFT JOIN users at all (round-2 finding: the
+-- migration's join can be replaced with a NULL literal and this test would
+-- not notice).
 
 BEGIN;
-SELECT plan(5);
+SELECT plan(6);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────────
 INSERT INTO public.operators (id, name, slug)
@@ -57,7 +75,13 @@ INSERT INTO public.orders (
    'CARGA-83-1','Retailer 83','{}'::jsonb,'MANUAL', NOW()),
   ('00000000-0000-4000-8000-0000000083c1','00000000-0000-4000-8000-0000000083f0',
    'ORD-83-2','Cliente 83','+56911111111','Calle 83','Santiago', CURRENT_DATE,
-   'CARGA-83-2','Retailer 83','{}'::jsonb,'MANUAL', NOW())
+   'CARGA-83-2','Retailer 83','{}'::jsonb,'MANUAL', NOW()),
+  ('00000000-0000-4000-8000-0000000083c2','00000000-0000-4000-8000-0000000083f0',
+   'ORD-83-3','Cliente 83','+56911111111','Calle 83','Santiago', CURRENT_DATE,
+   'CARGA-83-3','Retailer 83','{}'::jsonb,'MANUAL', NOW()),
+  ('00000000-0000-4000-8000-0000000083c3','00000000-0000-4000-8000-0000000083f0',
+   'ORD-83-4','Cliente 83','+56911111111','Calle 83','Santiago', CURRENT_DATE,
+   'CARGA-83-4','Retailer 83','{}'::jsonb,'MANUAL', NOW())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO public.packages (id, operator_id, order_id, label, sku_items, raw_data, status)
@@ -67,13 +91,22 @@ VALUES
   ('00000000-0000-4000-8000-0000000083d1','00000000-0000-4000-8000-0000000083f0',
    '00000000-0000-4000-8000-0000000083c0','CTN83-2','[]'::jsonb,'{}'::jsonb,'ingresado'),
   ('00000000-0000-4000-8000-0000000083d2','00000000-0000-4000-8000-0000000083f0',
-   '00000000-0000-4000-8000-0000000083c0','CTN83-3','[]'::jsonb,'{}'::jsonb,'ingresado')
+   '00000000-0000-4000-8000-0000000083c0','CTN83-3','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-0000000083d3','00000000-0000-4000-8000-0000000083f0',
+   '00000000-0000-4000-8000-0000000083c0','CTN83-4','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-0000000083d4','00000000-0000-4000-8000-0000000083f0',
+   '00000000-0000-4000-8000-0000000083c2','CTN83-5','[]'::jsonb,'{}'::jsonb,'ingresado'),
+  ('00000000-0000-4000-8000-0000000083d5','00000000-0000-4000-8000-0000000083f0',
+   '00000000-0000-4000-8000-0000000083c3','CTN83-6','[]'::jsonb,'{}'::jsonb,'ingresado')
 ON CONFLICT (id) DO NOTHING;
 
 -- 20260814000001's trg_ensure_manifest_for_order already created a manifests
 -- row per load the moment its order was inserted (ids unpredictable).
+-- CARGA-83-1 also carries a real label print, to kill a mutant that swaps
+-- the LEFT JOIN users for a NULL literal (round-2 finding).
 UPDATE public.manifests
-   SET status = 'completed', completed_at = NOW(), total_packages = 44, total_orders = 1
+   SET status = 'completed', completed_at = NOW(), total_packages = 44, total_orders = 1,
+       labels_printed_at = NOW(), labels_printed_by = '00000000-0000-4000-8000-0000000083f1'
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-1';
 
@@ -82,37 +115,71 @@ UPDATE public.manifests
  WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
    AND external_load_id = 'CARGA-83-2';
 
+UPDATE public.manifests
+   SET status = 'completed', completed_at = NOW(), total_packages = 10, total_orders = 1
+ WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
+   AND external_load_id = 'CARGA-83-3';
+
+UPDATE public.manifests
+   SET status = 'completed', completed_at = NOW(), total_packages = 5, total_orders = 1
+ WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
+   AND external_load_id = 'CARGA-83-4';
+
+-- resolved_at is populated IN the INSERT (not via a later UPDATE) — the
+-- discrepancy_resolved_has_when CHECK is immediate/non-deferrable, so a
+-- resolved row without resolved_at in the SAME statement aborts the whole
+-- multi-row INSERT (round-2 finding: the previous version of this fixture
+-- set resolved_at via a follow-up UPDATE, which never ran because the
+-- INSERT itself had already failed).
 INSERT INTO public.discrepancies (
   operator_id, kind, operation_type, status, package_id, barcode, manifest_id,
-  detected_by_user_id, deleted_at
+  detected_by_user_id, resolved_at, resolved_by_user_id, resolution, deleted_at
 ) VALUES
   -- d1: open missing -> counts
   ('00000000-0000-4000-8000-0000000083f0','missing','pickup','open',
    '00000000-0000-4000-8000-0000000083d0', NULL,
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-1'),
-   '00000000-0000-4000-8000-0000000083f1', NULL),
-  -- d2: resolved missing -> still counts (merma histórica no depende del estado)
+   '00000000-0000-4000-8000-0000000083f1', NULL, NULL, NULL, NULL),
+  -- d2: resolved missing -> does NOT count
   ('00000000-0000-4000-8000-0000000083f0','missing','pickup','resolved',
    '00000000-0000-4000-8000-0000000083d1', NULL,
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-1'),
-   '00000000-0000-4000-8000-0000000083f1', NULL),
+   '00000000-0000-4000-8000-0000000083f1', NOW(), '00000000-0000-4000-8000-0000000083f1', 'Encontrado en bodega.', NULL),
   -- d3: unexpected -> must NOT count toward missing_count
   ('00000000-0000-4000-8000-0000000083f0','unexpected','pickup','open',
    NULL, 'CTN-AJENO-83',
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-1'),
-   '00000000-0000-4000-8000-0000000083f1', NULL),
+   '00000000-0000-4000-8000-0000000083f1', NULL, NULL, NULL, NULL),
   -- d4: soft-deleted missing -> must NOT count
   ('00000000-0000-4000-8000-0000000083f0','missing','pickup','open',
    '00000000-0000-4000-8000-0000000083d2', NULL,
    (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-1'),
-   '00000000-0000-4000-8000-0000000083f1', NOW());
-
--- Resolved rows require resolved_at (discrepancy_resolved_has_when).
-UPDATE public.discrepancies
-   SET resolved_at = NOW(), resolved_by_user_id = '00000000-0000-4000-8000-0000000083f1', resolution = 'Encontrado en bodega.'
- WHERE operator_id = '00000000-0000-4000-8000-0000000083f0'
-   AND package_id = '00000000-0000-4000-8000-0000000083d1'
-   AND status = 'resolved';
+   '00000000-0000-4000-8000-0000000083f1', NULL, NULL, NULL, NOW()),
+  -- d5: lost missing -> COUNTS (the row that distinguishes `<> 'resolved'`
+  -- from a wrong `= 'open'` filter).
+  ('00000000-0000-4000-8000-0000000083f0','missing','pickup','lost',
+   '00000000-0000-4000-8000-0000000083d3', NULL,
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-1'),
+   '00000000-0000-4000-8000-0000000083f1', NOW(), '00000000-0000-4000-8000-0000000083f1', 'Confirmado perdido, indemnizar.', NULL),
+  -- CARGA-83-3: ONLY a 'lost' row, no 'open' one. Kills a regression to
+  -- `status = 'open'`, which would report 0 here.
+  ('00000000-0000-4000-8000-0000000083f0','missing','pickup','lost',
+   '00000000-0000-4000-8000-0000000083d4', NULL,
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-3'),
+   '00000000-0000-4000-8000-0000000083f1', NOW(), '00000000-0000-4000-8000-0000000083f1', 'Confirmado perdido.', NULL),
+  -- CARGA-83-4: accepted double-count edge case — SAME package_id, SAME
+  -- manifest, two non-resolved rows ('open' + 'lost'). Documents that
+  -- COUNT(*) reports 2 here, not 1 — uniq_open_discrepancy_per_package only
+  -- blocks two 'open' rows for the same (package_id, source_id), not an
+  -- 'open' + 'lost' pair.
+  ('00000000-0000-4000-8000-0000000083f0','missing','pickup','open',
+   '00000000-0000-4000-8000-0000000083d5', NULL,
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-4'),
+   '00000000-0000-4000-8000-0000000083f1', NULL, NULL, NULL, NULL),
+  ('00000000-0000-4000-8000-0000000083f0','missing','pickup','lost',
+   '00000000-0000-4000-8000-0000000083d5', NULL,
+   (SELECT id FROM public.manifests WHERE operator_id = '00000000-0000-4000-8000-0000000083f0' AND external_load_id = 'CARGA-83-4'),
+   '00000000-0000-4000-8000-0000000083f1', NOW(), '00000000-0000-4000-8000-0000000083f1', 'Confirmado perdido tras un reintento.', NULL);
 
 SELECT set_config(
   'request.jwt.claims',
@@ -125,7 +192,7 @@ SELECT is(
   (SELECT missing_count FROM public.get_completed_manifests()
     WHERE external_load_id = 'CARGA-83-1'),
   2,
-  'CARGA-83-1: 2 missing discrepancies counted (1 open + 1 resolved), unexpected and soft-deleted excluded'
+  'CARGA-83-1: 2 missing discrepancies counted (open + lost); resolved, unexpected and soft-deleted excluded'
 );
 
 SELECT is(
@@ -142,25 +209,38 @@ SELECT is(
   'CARGA-83-1 still reports total_packages=44 (contract unchanged)'
 );
 
--- Mutation guard: without `kind = 'missing'` in the subquery, d3 (unexpected)
--- would inflate CARGA-83-1's count to 3.
-SELECT isnt(
+-- The fixture that distinguishes the correct filter (`status <> 'resolved'`)
+-- from the wrong one (`status = 'open'`): CARGA-83-3 has ONLY a 'lost' row.
+-- `= 'open'` would report 0 here — a real, ops-manager-confirmed loss
+-- painted as a clean close.
+SELECT is(
   (SELECT missing_count FROM public.get_completed_manifests()
-    WHERE external_load_id = 'CARGA-83-1'),
-  3,
-  'the unexpected discrepancy (d3) is not counted as missing'
+    WHERE external_load_id = 'CARGA-83-3'),
+  1,
+  'CARGA-83-3: a lone ''lost'' discrepancy still counts as missing — ''lost'' is not ''resolved'''
+);
+
+-- Documents (does not "fix") the accepted double-count edge case: the same
+-- package_id with an 'open' row AND a 'lost' row on the same manifest is
+-- counted twice, because uniq_open_discrepancy_per_package only blocks two
+-- OPEN rows for that pair.
+SELECT is(
+  (SELECT missing_count FROM public.get_completed_manifests()
+    WHERE external_load_id = 'CARGA-83-4'),
+  2,
+  'CARGA-83-4: known limitation — the same package with an open + a lost row counts as 2, not 1 (documented in the migration, not fixed here)'
 );
 
 -- spec-53 contract: labels_printed_at/labels_printed_by_name must survive
--- this CREATE OR REPLACE (the trap this spec's 2026-09-08 note documents —
--- templating off 20260428000001 instead of 20260813000001 would drop these
--- columns; referencing them here fails loudly at parse time if they are
--- missing, rather than silently passing).
+-- this CREATE OR REPLACE with a REAL value — asserting only "IS NULL" does
+-- not exercise the LEFT JOIN users at all (round-2 finding: swapping
+-- `u.full_name AS labels_printed_by_name` for `NULL::TEXT` left the old
+-- version of this test green).
 SELECT is(
-  (SELECT (labels_printed_at IS NULL, labels_printed_by_name IS NULL)
+  (SELECT (labels_printed_at IS NOT NULL, labels_printed_by_name)
      FROM public.get_completed_manifests() WHERE external_load_id = 'CARGA-83-1'),
-  (true, true),
-  'labels_printed_at/labels_printed_by_name columns survive this CREATE OR REPLACE (spec-53 contract) — both NULL since no print job was dispatched in this fixture'
+  (true, 'Crew 83'::text),
+  'labels_printed_at/labels_printed_by_name survive this CREATE OR REPLACE with the REAL printer name (spec-53 contract)'
 );
 
 SELECT * FROM finish();

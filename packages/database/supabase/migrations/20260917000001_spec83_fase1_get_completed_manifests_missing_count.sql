@@ -6,14 +6,31 @@
 -- item ("Los cierres no marcan faltantes") and spec-85's resolution (the
 -- merma is a COUNT over public.discrepancies, not a new packages status).
 --
--- missing_count = COUNT of this manifest's OWN open-or-resolved 'missing'
--- discrepancies (operation_type='pickup', not soft-deleted). Not filtered
--- by status: the panel shows what happened at close time, and resolving a
--- discrepancy later (spec-85's resolve_discrepancy) does not un-happen the
--- shortfall — it only means someone found the package afterwards. Excludes
+-- missing_count = COUNT of this manifest's 'missing' discrepancies
+-- (operation_type='pickup', not soft-deleted, status <> 'resolved').
+--
+-- Product decision (2026-09-08, round 2 review of this phase): "if it was
+-- resolved, it is no longer merma" — status='resolved' is excluded.
+-- status='lost' is NOT excluded: per 20260913000005's own comment, 'lost'
+-- is the trigger for a future indemnity workflow restricted to
+-- operations_manager, not a statement that the shortfall stopped existing.
+-- Filtering on `= 'open'` instead (the first draft of this migration) would
+-- have made the panel go GREEN the moment an ops manager marks a real loss
+-- as 'lost' — the worst possible outcome painted as a clean close. Excludes
 -- kind='unexpected' — a foreign barcode found at scan time is a different
 -- fact (surplus, not shortfall) and spec-54's "2 faltantes de 44" is
 -- specifically about what did NOT show up.
+--
+-- Known limitation, accepted rather than fixed here: this COUNTs rows, not
+-- DISTINCT package_id. uniq_open_discrepancy_per_package
+-- (20260913000001) only blocks two 'open' rows for the same
+-- (package_id, source_id) — it does NOT block an 'open' row coexisting with
+-- a 'lost' or already-'resolved' row for that same package on the same
+-- manifest. That combination is rare (it requires two separate
+-- record_discrepancies calls against the same still-open manifest) but not
+-- impossible, and would inflate missing_count by counting the same physical
+-- shortfall twice. Covered, not silently ignored, by this phase's pgTAP
+-- (see the CARGA-83-4 fixture).
 --
 -- Template (per CLAUDE.md, latest definition of get_completed_manifests as
 -- of 2026-09-08, verified with
@@ -62,10 +79,24 @@ AS $$
       SELECT COUNT(*)
         FROM public.discrepancies d
        WHERE d.manifest_id = m.id
+         -- Defense in depth, not load-bearing on its own: d.manifest_id
+         -- already FKs to a manifests row that the outer WHERE has scoped
+         -- to public.get_operator_id(), so a cross-operator d row could
+         -- only reach here via a manifest that isn't this operator's in the
+         -- first place — which the outer clause already excludes. No
+         -- fixture kills this line alone; it stays for the same reason the
+         -- rest of this repo re-checks tenant scope on every join.
          AND d.operator_id = m.operator_id
+         -- Redundant by discrepancy_source_matches_operation (20260913000001):
+         -- that CHECK forces operation_type='reception' rows to have
+         -- manifest_id IS NULL, so d.manifest_id = m.id above already
+         -- implies operation_type='pickup'. Kept for readability, not as a
+         -- second guard — do not go looking for a fixture that kills this
+         -- clause alone.
          AND d.operation_type = 'pickup'
          AND d.kind = 'missing'
          AND d.deleted_at IS NULL
+         AND d.status <> 'resolved'
     ), 0)::INT AS missing_count
   FROM manifests m
   LEFT JOIN users u ON u.id = m.labels_printed_by
@@ -75,7 +106,7 @@ AS $$
   ORDER BY m.created_at DESC
 $$;
 
-COMMENT ON FUNCTION public.get_completed_manifests() IS 'Completed manifests for the history tab. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, any status) for this manifest — TodayClosuresPanel uses it to show "N faltantes de M" in the warning palette only when > 0.';
+COMMENT ON FUNCTION public.get_completed_manifests() IS 'Completed manifests for the history tab. Sorted by manifest creation date DESC. pickup_point sourced from manifests.pickup_location. spec-53: adds labels_printed_at/labels_printed_by_name. spec-83 fase 1: adds missing_count, a COUNT over public.discrepancies (kind=''missing'', operation_type=''pickup'', not soft-deleted, status <> ''resolved'' — ''lost'' still counts, only ''resolved'' means the shortfall is no longer merma) for this manifest — TodayClosuresPanel uses it to show "N faltantes de M" in the warning palette only when > 0. Counts rows, not DISTINCT package_id — see the comment above the subquery for the accepted double-count edge case.';
 
 -- =============================================================================
 -- Verification

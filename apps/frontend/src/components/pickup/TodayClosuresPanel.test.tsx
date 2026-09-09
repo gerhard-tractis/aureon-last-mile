@@ -44,4 +44,19 @@ describe('TodayClosuresPanel', () => {
     expect(screen.getByText(/44 paquetes/)).toBeInTheDocument();
     expect(row.className).not.toContain('status-warning');
   });
+
+  // Round-2 review finding: "1 faltantes de 44" reads wrong to the warehouse
+  // lead who has to act on this line. Singular/plural must actually agree.
+  it('uses the singular "faltante" (not "faltantes") when missing_count is exactly 1', () => {
+    render(<TodayClosuresPanel rows={[completedManifest({ missing_count: 1 })]} />);
+
+    expect(screen.getByText('1 faltante de 44')).toBeInTheDocument();
+    expect(screen.queryByText(/1 faltantes/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the plural "faltantes" when missing_count is 2 or more', () => {
+    render(<TodayClosuresPanel rows={[completedManifest({ missing_count: 2 })]} />);
+
+    expect(screen.getByText('2 faltantes de 44')).toBeInTheDocument();
+  });
 });
