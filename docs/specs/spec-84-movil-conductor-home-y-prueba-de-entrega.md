@@ -116,22 +116,39 @@ Ver arriba. Reparto móvil no tiene ronda propia.
       guard como advertencia en CI; corregido antes de mergear). No hace falta
       backfill: la columna está 100% `NULL` hoy (nadie la escribe todavía),
       así que el guard es defensivo, no una corrección de datos reales. Test
-      pgTAP en `spec84_fase1_drivers_user_id.test.sql` (8 tests) cubre
+      pgTAP en `spec84_fase1_drivers_user_id.test.sql` (9 tests) cubre
       unicidad UNIQUE-a-nivel-de-esquema (TEST 1), same-operator (TEST 2),
       cross-operator (TEST 3), soft-delete liberando el `user_id` (TEST 4), y
       RLS de `drivers_admin_write` — admin puede (TEST 6), pickup_crew no
-      puede (TEST 7), `WITH CHECK` bloquea re-parentar a otro operador
-      (TEST 8). **Corrido de verdad contra `spec52-pg`** (ronda 2 de review;
-      Docker había estado caído en la implementación original). Corrección de
-      ronda 2: TESTs 6/7/8 apuntaban al driver `…0002`, el mismo id que
-      TEST 2 espera que sea RECHAZADO por el índice — ese `INSERT` vive dentro
-      de un `BEGIN/EXCEPTION` anidado (subtransacción que revierte), así que
-      la fila nunca existía y esos tres tests no probaban nada (uno fallaba
-      por la razón equivocada, uno pasaba vacuamente). Corregido con un
-      quinto driver de fixture (`…0005`), ajeno a TESTs 2-4, más una
-      aserción positiva en TEST 7 que exige el estado post-TEST-6 antes de
-      aceptar el resultado. Salida cruda (cero líneas `ERROR:`, todos los
-      `DO` completan, `ROLLBACK` limpio):
+      puede (TEST 7), `USING` bloquea re-parentar un driver existente a otro
+      operador vía `UPDATE` (TEST 8), `WITH CHECK` bloquea `INSERT`ar un
+      driver directamente en otro operador (TEST 9). **Corrido de verdad
+      contra `spec52-pg`** (rondas 2 y 3 de review; Docker había estado caído
+      en la implementación original).
+      Corrección de ronda 2: TESTs 6/7/8 apuntaban al driver `…0002`, el
+      mismo id que TEST 2 espera que sea RECHAZADO por el índice — ese
+      `INSERT` vive dentro de un `BEGIN/EXCEPTION` anidado (subtransacción
+      que revierte), así que la fila nunca existía y esos tres tests no
+      probaban nada (uno fallaba por la razón equivocada, uno pasaba
+      vacuamente). Corregido con un quinto driver de fixture (`…0005`),
+      ajeno a TESTs 2-4, más una aserción positiva en TEST 7 que exige el
+      estado post-TEST-6 antes de aceptar el resultado.
+      Corrección de ronda 3: TEST 8 se llamaba *"`WITH CHECK` stops
+      re-parenting"*, pero un `UPDATE` cross-operador lo bloquea `USING`
+      (la fila deja de ser visible para la sesión del admin en cuanto
+      pertenece a otro operador), no `WITH CHECK` — verificado mutando la
+      policy dos formas: `USING` scoped + `WITH CHECK (true)` sigue
+      bloqueando (42501); `USING (true)` + `WITH CHECK (true)` deja pasar el
+      mismo `UPDATE`. La cláusula `operator_id` de `WITH CHECK` sí es
+      portante, pero para `INSERT` — donde no hay fila vieja y `USING` nunca
+      se evalúa. TEST 8 renombrado a lo que de verdad prueba (`USING`);
+      TEST 9 añadido para probar `WITH CHECK` directamente vía `INSERT`
+      cross-tenant. Mutación de TEST 9 (vaciar la cláusula `operator_id` del
+      `WITH CHECK`, dejando sólo el rol) confirmada: **levanta**
+      (`TEST 9 FAILED: admin A INSERTed a driver directly into operator B`);
+      revertida y vuelto a correr limpio antes de dejar el contenedor
+      compartido como se encontró. Salida cruda del fichero completo (cero
+      líneas `ERROR:`, los 9 `DO` completan, `ROLLBACK` limpio):
       ```
       BEGIN
       INSERT 0 2
@@ -142,6 +159,8 @@ Ver arriba. Reparto móvil no tiene ronda propia.
       DO
       DO
       DO
+      DO
+      RESET
       DO
       RESET
       DO

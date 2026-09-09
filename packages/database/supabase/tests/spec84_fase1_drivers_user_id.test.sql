@@ -26,8 +26,20 @@
 --            for every test below it (pattern: rbac_users_test.sql).
 --   TEST 6 — admin can UPDATE drivers.user_id within its own operator.
 --   TEST 7 — pickup_crew cannot UPDATE drivers.user_id at all.
---   TEST 8 — WITH CHECK stops an admin re-parenting a driver to another
---            operator via the same UPDATE that sets user_id.
+--   TEST 8 — USING stops an admin re-parenting a driver to another operator
+--            via UPDATE (renamed round 3 — see below).
+--   TEST 9 — WITH CHECK stops an admin INSERTing a driver directly into
+--            another operator.
+--
+-- Round 3 review fix: TEST 8 was named "WITH CHECK stops...", but an
+-- UPDATE's old-row visibility is gated by USING, not WITH CHECK — the
+-- reviewer isolated this by mutating the policy two ways: USING scoped +
+-- WITH CHECK (true) still blocks the cross-operator UPDATE (42501); USING
+-- (true) + WITH CHECK (true) lets it through. WITH CHECK's operator_id
+-- clause is untested by TEST 8 and IS load-bearing — for INSERT, where
+-- there is no old row for USING to filter. TEST 9 exercises that: an admin
+-- of operator A cannot INSERT a driver with operator_id B. Renamed TEST 8
+-- to describe what it actually exercises (USING, not WITH CHECK).
 --
 -- Run inside a transaction; ROLLBACK at the end.
 
@@ -238,8 +250,13 @@ END $$;
 RESET role;
 
 -- ============================================================================
--- TEST 8 — WITH CHECK stops an admin re-parenting a driver to another
--- operator via the same UPDATE that touches user_id.
+-- TEST 8 — USING stops an admin re-parenting a driver to another operator
+-- via UPDATE (renamed round 3: this exercises USING, not WITH CHECK — the
+-- old row's operator_id is what USING filters on; the row is invisible to
+-- admin A's session once it belongs to operator B, so the UPDATE affects
+-- nothing and PostgREST/Postgres raise "no rows" as insufficient_privilege
+-- under RLS). WITH CHECK's own operator_id clause is untested here — see
+-- TEST 9, which exercises it directly via INSERT.
 -- ============================================================================
 DO $$
 DECLARE blocked BOOLEAN := false;
@@ -259,6 +276,37 @@ BEGIN
 
   IF NOT blocked THEN
     RAISE EXCEPTION 'TEST 8 FAILED: admin A re-parented a driver to operator B';
+  END IF;
+END $$;
+RESET role;
+
+-- ============================================================================
+-- TEST 9 — WITH CHECK stops an admin INSERTing a driver directly into
+-- another operator. INSERT has no old row, so USING (TEST 8) cannot be what
+-- blocks this — only WITH CHECK's own operator_id = get_operator_id() clause
+-- can. Round 3 review: a WITH CHECK narrowed to just the role check (no
+-- operator_id clause) lets this INSERT through silently — a live cross-tenant
+-- write, the repo's own non-negotiable — while TEST 8 keeps passing, because
+-- USING never runs on an INSERT.
+-- ============================================================================
+DO $$
+DECLARE blocked BOOLEAN := false;
+BEGIN
+  PERFORM set_config('request.jwt.claims',
+    '{"sub":"84444444-1111-4000-8000-000000000001","role":"authenticated"}', true);
+  SET LOCAL role = 'authenticated';
+
+  BEGIN
+    INSERT INTO public.drivers (id, operator_id, fleet_type, full_name, phone)
+    VALUES ('84444444-2222-4000-8000-000000000006', '84444444-0000-4000-8000-00000000000b',
+            'own', 'Driver Six B (cross-tenant INSERT attempt)', '+56900000006');
+  EXCEPTION WHEN insufficient_privilege THEN
+    blocked := true;
+  END;
+  RESET role;
+
+  IF NOT blocked THEN
+    RAISE EXCEPTION 'TEST 9 FAILED: admin A INSERTed a driver directly into operator B';
   END IF;
 END $$;
 RESET role;
