@@ -244,7 +244,13 @@ export function checkDependencies(targets, repo) {
       } else if (!res.found) {
         ambiguousDeps.push({ target: t.name, dep, specFile: res.specFile });
       } else if (res.token !== 'done') {
-        unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\`` });
+        // Menor (review ronda 2): resolveDependency lee el WORKING TREE del
+        // `--repo` dado — si ese checkout va detrás de `origin/main` (caso
+        // conocido de este repo, ver project_primary_checkout_goes_stale),
+        // este mensaje puede parecer un exit 4 "falso". Nombrar el fichero
+        // exacto que se leyó es lo mínimo para que quien lo vea sepa dónde
+        // mirar antes de asumir que el guard está mal.
+        unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\` en ${res.specFile} (leído del working tree de --repo)` });
       }
     }
   }
