@@ -29,7 +29,8 @@
 -- own primary key) and a LIMIT-bounded slice of `packages`.
 --
 -- Idempotent and resumable by construction, not by assumption (verified in
--- packages/database/supabase/tests/spec87_fase4_backfill_batching.test.sql):
+-- packages/database/supabase/tests/spec87_fase4_backfill_batching.test.sql and
+-- spec87_fase4_backfill_equivalence.test.sql):
 --   - `spec79_populate_...()` uses `INSERT ... ON CONFLICT (order_id) DO
 --     NOTHING` — calling it again after a partial run does not duplicate a
 --     candidate row.
@@ -67,7 +68,7 @@
 --     survived round 1's suite, including the exact two defects
 --     (`r.status IN (...)` and `COUNT(DISTINCT route_id)`) spec-79 fase 1g/
 --     H-2 spent three review rounds fixing in the ORIGINAL function.
---     `spec87_fase4_backfill_batching.test.sql` TEST 6 closes this: it runs
+--     `spec87_fase4_backfill_equivalence.test.sql` closes this: it runs
 --     the driver and the original function against the same 10-case fixture
 --     and requires byte-identical `loaded_route_id` per package. Verified
 --     to catch both H-2 defects and a removed `p.load_inferred` guard by

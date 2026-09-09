@@ -636,7 +636,11 @@ y con menos superficie para el error de lectura de CTE mencionado arriba.
 - **La función original existe y sigue intacta.** `spec79_loaded_route_id.test.sql` (10
   aserciones) sigue en verde después de aplicar la migración nueva — no se tocó su definición.
 - **El staging table y las dos funciones nuevas existen y hacen lo que dicen.**
-  `spec87_fase4_backfill_batching.test.sql`, 5 aserciones nuevas:
+  `spec87_fase4_backfill_batching.test.sql`, 5 aserciones (nota: TEST 3 fue reescrito en ronda 2 —
+  ver más abajo — porque su forma original asumía "exactamente 3 llamadas" sobre TODO el staging
+  compartido; la nueva versión sigue verificando lo mismo, sin ese supuesto frágil; y la
+  equivalencia contra la función original vive desde ronda 2 en un fichero separado,
+  `spec87_fase4_backfill_equivalence.test.sql`):
   1. `populate` + un solo `batch` backfillean una orden inequívoca y drenan la tabla de staging a 0.
   2. Una orden ambigua (dos rutas activas distintas) nunca entra a la tabla de staging.
   3. `p_batch_size` limita de verdad cuántas órdenes se drenan por llamada — 3 órdenes elegibles,

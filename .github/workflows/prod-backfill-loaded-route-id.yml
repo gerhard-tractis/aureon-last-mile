@@ -27,7 +27,7 @@ name: Production Backfill — loaded_route_id (spec-87 fase 4)
 # full design): a staging table populated once, drained in caller-controlled
 # batches. This workflow calls ONLY that driver, never the original function.
 # Round-2 review proved the two equivalent by construction (equivalence
-# assertion in spec87_fase4_backfill_batching.test.sql, TEST 6): same inputs,
+# assertion in spec87_fase4_backfill_equivalence.test.sql): same inputs,
 # byte-identical loaded_route_id per package, across every edge case that
 # cost spec-79 fase 1g three review rounds.
 #
