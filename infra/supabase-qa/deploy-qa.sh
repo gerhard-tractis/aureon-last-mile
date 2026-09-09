@@ -127,6 +127,7 @@ widen_changed_flags() {
     CHANGED_WORKER=true
     CHANGED_AGENTS=true
     CHANGED_EDGE_FUNCTIONS=true
+    CHANGED_QA_COMPOSE=true
     return 0
   fi
 
@@ -150,8 +151,21 @@ widen_changed_flags() {
   # container. Without this, adding a variable to the service changes nothing
   # on the VPS and the deploy still reports success.
   CHANGED_EDGE_FUNCTIONS="$(widen "${CHANGED_EDGE_FUNCTIONS:-false}" '^(packages/database/supabase/functions/|infra/supabase-qa/docker-compose\.yml$)')"
+  # spec-88 fase 3, ronda 3 of review — a SEPARATE flag from the one above,
+  # scoped only to the compose file itself (not the functions/ dir), because
+  # it drives a DIFFERENT container. `restart_functions()` only ever recreated
+  # `functions` — a compose edit to any OTHER service's `environment:` block
+  # (e.g. `auth`'s GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_*, added by
+  # 20260922000001) went completely unapplied on the VPS: `deploy-qa` never
+  # ran `docker compose up -d auth`, only `setup-qa.sh`'s one-time bootstrap
+  # did, and that script is not invoked here. The deploy reported success
+  # while the container kept its old environment — silent, and paired with
+  # a hook that degrades silently on its own EXCEPTION handler, doubly so.
+  # Scoping this to the compose file only avoids recreating `auth` on every
+  # unrelated functions/*.ts change.
+  CHANGED_QA_COMPOSE="$(widen "${CHANGED_QA_COMPOSE:-false}" '^infra/supabase-qa/docker-compose\.yml$')"
 
-  log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS}"
+  log "QA was at ${prev} — flags now frontend=${CHANGED_FRONTEND} worker=${CHANGED_WORKER} agents=${CHANGED_AGENTS} edge=${CHANGED_EDGE_FUNCTIONS} compose=${CHANGED_QA_COMPOSE}"
 }
 
 # --------------------------------------------------------------------------
@@ -256,6 +270,33 @@ restart_functions() {
     --env-file "$QA_ENV_FILE" up -d functions
 }
 
+# spec-88 fase 3, ronda 3 — the same "restart reuses old config" trap as
+# restart_functions() above, for the `auth` (GoTrue) service. `up -d`, not
+# `restart`, for the same reason: a restart would keep serving the
+# container's existing environment and ignore anything just added to its
+# `environment:` block in docker-compose.yml.
+#
+# --no-deps (ronda 4): `up -d auth` without it also recreates any dependency
+# whose own config-hash changed — `auth` declares `depends_on: db:
+# service_healthy`, and `db` is QA's Postgres, carrying Musan's data. A PR
+# that ever touches the compose file's `db:` block (not just `auth:`) would
+# otherwise recreate that container as a side effect of THIS call, cutting
+# every live QA connection for a few seconds (measured: the volume survives,
+# so no data loss — access tokens are self-contained JWTs Kong/PostgREST
+# validate without asking GoTrue, so live sessions are unaffected either;
+# only in-flight queries get dropped). Safe to skip dependency checks here
+# specifically because this call runs AFTER apply_migrations/apply_seed/
+# apply_qa_users already succeeded against `db` earlier in main() — its
+# health is already proven for this run. `restart_functions()` above has the
+# same exposure and predates this fix; not touched here, out of scope for
+# this phase.
+restart_auth() {
+  local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
+  log "recreating auth (GoTrue) container"
+  docker compose -f "${infra_dir}/docker-compose.yml" \
+    --env-file "$QA_ENV_FILE" up -d --no-deps auth
+}
+
 # Restarting the QA units needs passwordless sudo. The prod units have a
 # sudoers rule (apps/worker/scripts/deploy.sh relies on the same thing); the QA
 # units were never added to it, so the job used to build for five minutes and
@@ -343,6 +384,31 @@ db_check() {
     record "db (5433)" ok "SELECT 1"
   else
     record "db (5433)" FAIL "not reachable"
+  fi
+}
+
+# spec-88 fase 3, ronda 4 — post_checks() had no assertion on `auth`
+# (GoTrue) at all. `restart_auth()`'s `up -d` only waits for its
+# dependencies (`db`) to be healthy, not for `auth` itself — and a bad hook
+# config kills GoTrue on startup (confirmed in ronda 4's review). Without
+# this, that scenario reports a green deploy and the failure only surfaces
+# 15 minutes later in `e2e-qa` as an opaque `waitForURL` timeout, with
+# nothing pointing at GoTrue.
+#
+# Not an http_check: `auth` publishes no host port (only reachable inside
+# the compose network), and Kong does not route GET /auth/v1/health — only
+# /verify, /callback, /authorize, /.well-known/jwks.json and /sso/* are
+# open, unauthenticated Kong routes (infra/supabase-qa/volumes/api/kong.yml).
+# The compose file already declares a container healthcheck for `auth`
+# (`wget http://localhost:9999/health` from inside the container) — read
+# that instead of inventing a second, less accurate probe from the host.
+container_health_check() { # $1 label, $2 container name
+  local status
+  status="$(docker inspect --format='{{.State.Health.Status}}' "$2" 2>/dev/null || true)"
+  if [ "$status" = "healthy" ]; then
+    record "$1" ok "healthy"
+  else
+    record "$1" FAIL "${status:-not found}"
   fi
 }
 
@@ -474,6 +540,7 @@ post_checks() {
   sleep 5
   http_check "kong (8100)" "http://localhost:8100/" any
   db_check
+  container_health_check "auth (GoTrue)" supabase-qa-auth
   sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
     http_check "frontend (3200)" "http://localhost:3200/" success
@@ -527,6 +594,7 @@ main() {
   apply_seed
   apply_qa_users
   if is_true "${CHANGED_EDGE_FUNCTIONS:-}"; then restart_functions; fi
+  if is_true "${CHANGED_QA_COMPOSE:-}"; then restart_auth; fi
   if is_true "${CHANGED_FRONTEND:-}"; then deploy_frontend; fi
   if is_true "${CHANGED_AGENTS:-}"; then deploy_node_app agents; fi
   if is_true "${CHANGED_WORKER:-}"; then deploy_node_app worker; fi

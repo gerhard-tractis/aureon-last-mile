@@ -156,6 +156,16 @@ services:
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
 
+      # spec-88 fase 3 — matches production (hook_custom_access_token_enabled=
+      # true, confirmed via the Management API, workflow run 34240504022).
+      # Without this, QA's `e2e-qa` job never actually exercises
+      # custom_access_token_hook — it stayed dead code on the login path in
+      # QA (docs/specs/spec-88-anon-security-definer-audit.md said so, and it
+      # was true until this line). GoTrue calls it as `supabase_auth_admin`,
+      # already granted EXECUTE by 20260922000001.
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED: "true"
+      GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI: pg-functions://${POSTGRES_DB}/public/custom_access_token_hook
+
       GOTRUE_SITE_URL: ${SITE_URL}
       GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS}
       GOTRUE_DISABLE_SIGNUP: ${DISABLE_SIGNUP}
