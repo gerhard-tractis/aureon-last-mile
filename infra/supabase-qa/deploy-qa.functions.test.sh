@@ -235,6 +235,88 @@ FAKE_HEALTH="" container_health_check "auth (GoTrue)" supabase-qa-auth
 check_eq "missing container fails, not silently passes" "auth (GoTrue)|FAIL|not found" "${CHECKS[0]}"
 
 echo ""
+echo "clear_merge_dir() — the wipe that took QA down (run 34388997942)"
+
+# restart_functions() used to wipe the merge dir with `rm -rf "$merge_dir"/*`.
+# Under `set -euo pipefail` that line killed the entire QA sync on 2026-09-09:
+# the dir held files owned by uid 197609 (a manual scp that preserved numeric
+# ids, 2026-08-21), and the runner user `aureon` owns only the PARENT — so rm
+# could unlink the directory entry but not the files inside it. "Permission
+# denied", exit 1, QA drifted, production deploy blocked.
+#
+# It also silently skipped dotfiles, so a stale `.something` survived every
+# wipe. Clearing must either succeed completely, or say which entries survived
+# and how to fix them.
+
+{ echo "$(extract clear_merge_dir)"; } > "$STUB_DIR/clear-fns.sh"
+# shellcheck disable=SC1091
+. "$STUB_DIR/clear-fns.sh"
+
+# (1) an empty dir must stay a no-op (rm -f tolerated the unexpanded glob;
+# find must not regress that)
+EMPTY_DIR="$STUB_DIR/empty-merge"
+mkdir -p "$EMPTY_DIR"
+out="$(clear_merge_dir "$EMPTY_DIR" 2>&1)"; rc=$?
+check_eq "an already-empty merge dir clears cleanly" "0" "$rc"
+
+# (2) stale entries from a previous deploy are actually gone, dotfiles too
+STALE_DIR="$STUB_DIR/stale-merge"
+mkdir -p "$STALE_DIR/deleted-function"
+echo "// removed from the repo" > "$STALE_DIR/deleted-function/index.ts"
+echo "stale" > "$STALE_DIR/.hidden"
+clear_merge_dir "$STALE_DIR" >/dev/null 2>&1
+check_eq "a function deleted from the repo is wiped" "" "$(ls -A "$STALE_DIR")"
+
+# (3) an entry we cannot remove fails LOUDLY and actionably, naming the path
+# and the remediation — not a bare exit 1 with the reason buried in a
+# separately-buffered stream.
+DENIED_DIR="$STUB_DIR/denied-merge"
+mkdir -p "$DENIED_DIR/ghost"
+echo "// cannot be deleted" > "$DENIED_DIR/ghost/index.ts"
+chmod a-w "$DENIED_DIR/ghost" 2>/dev/null || true
+# Whether an unwritable directory actually blocks a delete is a property of
+# the user AND the filesystem, not of the uid: root ignores the mode bits, and
+# so do the Windows/Git-Bash and container-mount filesystems some of us run
+# these tests on. Probe it instead of guessing from `id -u` — a guess that
+# skips nothing on Windows and then fails the assertion for the wrong reason.
+if rm -f "$DENIED_DIR/ghost/index.ts" 2>/dev/null; then
+  echo "  skip unremovable-entry case (this user/filesystem does not enforce the mode bits)"
+  chmod u+w "$DENIED_DIR/ghost" 2>/dev/null || true
+else
+  out="$(clear_merge_dir "$DENIED_DIR" 2>&1)"; rc=$?
+  chmod u+w "$DENIED_DIR/ghost" 2>/dev/null || true  # let the EXIT trap clean up
+  check_eq "an unremovable entry fails the function" "1" "$rc"
+  check_contains "the error names the surviving path" "$out" "ghost/index.ts"
+  check_contains "the error names the owning uid" "$out" "uid"
+  check_contains "the error gives the exact remediation" "$out" "chown -R"
+fi
+
+echo ""
+echo "on_err() — an exit 1 must never be mute"
+
+# Run 34388997942 read as a silent failure: the last line in the log was
+# "refreshing merged edge-functions dir", then `##[error]Process completed
+# with exit code 1` with no reason. The reason WAS emitted — `rm: cannot
+# remove ...: Permission denied` — but it landed ~40 lines earlier, spliced
+# into the middle of create-qa-users.sh's output, because this script's own
+# stdout is block-buffered through the runner's pipe while a child's stderr
+# is not. Whoever reads the tail of a failing job sees nothing.
+#
+# on_err() closes that hole from the other end: whatever fails, and wherever
+# its raw stderr lands, the run gets an ::error:: annotation naming the line,
+# the exit code and the command.
+{ echo "$(extract on_err)"; } > "$STUB_DIR/err-fns.sh"
+# shellcheck disable=SC1091
+. "$STUB_DIR/err-fns.sh"
+
+out="$( (exit 7); on_err 261 'rm -rf "${merge_dir:?}"/*' 2>&1 )"
+check_contains "annotates the run so it shows outside the raw log" "$out" "::error::"
+check_contains "reports the failing line number" "$out" "261"
+check_contains "reports the exit code" "$out" "7"
+check_contains "reports the failing command" "$out" "rm -rf"
+check_contains "says plainly that QA is not in sync" "$out" "NOT in sync"
+
+echo ""
 echo "wiring (spec-88 fase 3, ronda 5)"
 
 # Every test above proves the FUNCTIONS are correct in isolation — none of
@@ -247,6 +329,17 @@ echo "wiring (spec-88 fase 3, ronda 5)"
 deploy_qa_src="$(cat "$HERE/deploy-qa.sh")"
 check_contains "main() calls restart_auth when the compose changed" "$deploy_qa_src" 'CHANGED_QA_COMPOSE:-}"; then restart_auth'
 check_contains "post_checks() checks the auth container" "$deploy_qa_src" 'container_health_check "auth (GoTrue)"'
+check_contains "post_checks() checks the edge functions container" "$deploy_qa_src" 'container_health_check "edge functions"'
+
+# The trap is only useful if it is actually installed, and it only fires
+# inside functions when errtrace (set -E) is on — `set -euo pipefail` alone
+# would let restart_functions() die without ever reaching on_err.
+check_contains "the script enables errtrace so the ERR trap fires in functions" "$deploy_qa_src" 'set -Eeuo pipefail'
+check_contains "main() installs the ERR trap" "$deploy_qa_src" "trap 'on_err"
+check_contains "restart_functions() delegates the wipe to clear_merge_dir" "$deploy_qa_src" 'clear_merge_dir "$merge_dir"'
+check_not_contains "the raw rm -rf glob is gone" "$deploy_qa_src" 'rm -rf "${merge_dir:?}"/\*'
+check_contains "stdout is line-buffered so log order survives the runner's pipes" "$deploy_qa_src" 'stdbuf -oL'
+
 
 echo ""
 echo "  $pass passed, $fail failed"

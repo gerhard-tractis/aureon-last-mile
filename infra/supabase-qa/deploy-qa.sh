@@ -33,7 +33,7 @@
 #   QA_ENV_FILE=<path>       QA env file (default /home/aureon/.env.qa)
 # The script can also be `source`d: functions are defined but nothing runs.
 
-set -euo pipefail
+set -Eeuo pipefail   # -E: the ERR trap main() installs must fire inside functions too
 
 QA_CHECKOUT_DIR="${QA_CHECKOUT_DIR:-/home/aureon/aureon-qa}"
 QA_ENV_FILE="${QA_ENV_FILE:-/home/aureon/.env.qa}"
@@ -42,6 +42,32 @@ log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 err() { log "ERROR: $*" >&2; }
 env_get() { { grep -E "^${1}=" "$QA_ENV_FILE" || true; } | tail -n1 | cut -d= -f2- | tr -d '\r'; }
 is_true() { [ "${1:-false}" = "true" ]; }
+
+# --------------------------------------------------------------------------
+# Failure reporting — an exit 1 from this script must never be mute.
+#
+# Run 34388997942 read as a silent death: the last log line was "refreshing
+# merged edge-functions dir at ...", immediately followed by `##[error]Process
+# completed with exit code 1`, no reason anywhere near it. The reason WAS
+# printed — `rm: cannot remove '.../index.ts': Permission denied` — but it sat
+# ~40 lines EARLIER, spliced into the middle of create-qa-users.sh's user
+# list, so reading the log top-to-bottom (or its tail) shows nothing.
+#
+# Why: this script's own stdout is a pipe to the runner, and libc block-buffers
+# it, so every log() line is held and flushed in one burst. A child's stderr is
+# unbuffered by convention and arrives the instant it is written. The runner
+# timestamps each stream as it reads it, so the two get interleaved by flush
+# order, not by program order. Both halves are fixed here:
+#
+#   - main() re-execs line-buffered, so log() lines land where they happened;
+#   - this trap prints an ::error:: annotation naming the line, exit code and
+#     command, so the run carries the reason in its summary no matter where
+#     the raw stderr ended up in the log body.
+on_err() { # $1 = LINENO, $2 = BASH_COMMAND. Installed by main(); needs set -E.
+  local ec=$?
+  printf '::error::deploy-qa.sh failed at line %s (exit %s): %s\n' "$1" "$ec" "$2" >&2
+  printf '::error::QA is NOT in sync with main. Fix the command above and re-run this job.\n' >&2
+}
 
 # --------------------------------------------------------------------------
 # Guards
@@ -249,16 +275,66 @@ npm_ci_once() {
   NPM_CI_DONE=1
 }
 
+# Empty the merged edge-functions dir, or say exactly why it could not be.
+#
+# This replaces the original one-line `rm -rf <merge_dir>/*`, which was latent
+# for weeks because CHANGED_EDGE_FUNCTIONS only widens on functions/ or the QA
+# compose file, and then took the whole QA sync down on 2026-09-09 (run
+# 34388997942). What it got wrong:
+#
+#   1. Permissions — the actual failure. The dir held files owned by uid
+#      197609, a manual copy from a Windows host that preserved numeric ids on
+#      2026-08-21. `aureon` owns the parent, so rm could see the entries but
+#      not unlink files inside a directory it cannot write: "Permission
+#      denied", exit 1 under `set -e`, QA left drifted and the production
+#      deploy blocked behind it — with the reason buried mid-log (see on_err).
+#   2. Dotfiles — `*` never matches them, so a stale `.something` survived
+#      every "wipe" and the mounted dir was never really rebuilt from scratch.
+#      `find -mindepth 1` covers both.
+#
+# (The unexpanded glob on an empty dir is NOT a third bug: `rm -f` ignores a
+# nonexistent operand and exits 0. Measured before writing this.)
+#
+# The dir is rebuilt from the repo on every deploy, so anything the runner
+# cannot delete is by definition foreign and will keep failing every future
+# deploy until a human intervenes — hence the explicit remediation.
+clear_merge_dir() { # $1 = dir to empty
+  local dir="$1" survivors
+  # find's status does not reflect rm's, and rm's own stderr lands in a
+  # different stream than our log; both are handled by the explicit re-check.
+  find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+  survivors="$(find "$dir" -mindepth 1 -printf '  %p (owner uid %U, mode %m)
+' 2>/dev/null || true)"
+  [ -n "$survivors" ] || return 0
+  err "cannot clear ${dir} — these entries survived the wipe:"
+  printf '%s
+' "$survivors" >&2
+  err "This directory is rebuilt from the repo on every deploy, so it must be"
+  err "entirely owned by the runner user ($(id -un)). Entries owned by another"
+  err "uid come from a manual copy that preserved numeric ids, or from a"
+  err "container writing as root."
+  err "Fix on the VPS, as root:  chown -R $(id -un):$(id -gn) ${dir}"
+  return 1
+}
+
 restart_functions() {
   # Rebuild the merged host dir the compose file mounts (repo functions +
   # vendored main router — see setup-qa.sh merge_functions_dir), then restart.
   local merge_dir="${QA_FUNCTIONS_MERGE_DIR:-/home/aureon/supabase-qa-functions}"
   local infra_dir="${QA_CHECKOUT_DIR}/infra/supabase-qa"
+  local src_functions="${QA_CHECKOUT_DIR}/packages/database/supabase/functions"
+  local src_main="${infra_dir}/volumes/functions/main"
+  # Checked before the wipe, not after: cp failing on a missing source would
+  # otherwise leave the mounted dir empty and the edge runtime serving nothing.
+  local src
+  for src in "$src_functions" "$src_main"; do
+    [ -d "$src" ] || { err "edge-functions source missing: $src"; return 1; }
+  done
   log "refreshing merged edge-functions dir at ${merge_dir}"
   mkdir -p "$merge_dir"
-  rm -rf "${merge_dir:?}"/*
-  cp -a "${QA_CHECKOUT_DIR}/packages/database/supabase/functions/." "$merge_dir/"
-  cp -a "${infra_dir}/volumes/functions/main" "$merge_dir/"
+  clear_merge_dir "$merge_dir"
+  cp -a "${src_functions}/." "$merge_dir/"
+  cp -a "$src_main" "$merge_dir/"
   # `up -d`, not `restart`: a restart reuses the container's existing config,
   # so anything added to the service's `environment:` block is ignored. That
   # is how BEETRACK_WEBHOOK_SECRET was added, deployed green, and never
@@ -541,6 +617,11 @@ post_checks() {
   http_check "kong (8100)" "http://localhost:8100/" any
   db_check
   container_health_check "auth (GoTrue)" supabase-qa-auth
+  # Checked for the same reason as auth, and because of a concrete miss: the
+  # edge runtime took a SIGTERM on 2026-09-07 and stayed down for two days
+  # without a single deploy noticing — every merge in between reported QA
+  # healthy while the beetrack webhook was dead.
+  container_health_check "edge functions" supabase-qa-edge-functions
   sql_tests_check
   if is_true "${CHANGED_FRONTEND:-}"; then
     http_check "frontend (3200)" "http://localhost:3200/" success
@@ -569,6 +650,16 @@ post_checks() {
 
 # --------------------------------------------------------------------------
 main() {
+  # Re-exec line-buffered so this script's log lines interleave with children's
+  # stderr in the order they actually happened — see on_err() for the failure
+  # this ordering bug produced. Guarded by the env var so the exec runs once,
+  # skipped on a terminal (already line-buffered) and where stdbuf is absent.
+  if [ -z "${DEPLOY_QA_LINE_BUFFERED:-}" ] && [ ! -t 1 ] && command -v stdbuf >/dev/null 2>&1; then
+    export DEPLOY_QA_LINE_BUFFERED=1
+    exec stdbuf -oL -eL bash "$0" "$@"
+  fi
+  trap 'on_err "$LINENO" "$BASH_COMMAND"' ERR
+
   guard_provisioned
   guard_env_file
   guard_inputs
