@@ -145,6 +145,59 @@ test('findPhaseTokenByNumber: not found when no heading matches', () => {
   assert.equal(r.found, false);
 });
 
+// ── Bloqueante 1 (review ronda 2): un heading intermedio que MENCIONA
+// "fase N" en prosa (no un heading de fase real, sin token) gana sobre el
+// heading de fase real que aparece DESPUÉS — reproducido literalmente con
+// spec-85-discrepancias.md: "### La costura entre esta fase y spec-80 fase 2"
+// (línea 222, sin token) casa `fase 2` antes que "### Fase 2 — RPCs `[done]`"
+// (línea 338, el heading real). spec-85 fase 2 es la dependencia más citada
+// del corpus (spec-86 fases 1/2a/2b/3, spec-80 fases 1/1b, spec-88 fase 1) —
+// este bug bloquearía el primer backfill de lleno.
+test('findPhaseTokenByNumber: a prose heading mentioning "fase N" with no token does not win over the real phase heading', () => {
+  const md = [
+    '### La costura entre esta fase y spec-80 fase 2',
+    '',
+    'Prosa que menciona "fase 2" pero no es un heading de fase — no lleva token.',
+    '',
+    '### Fase 2 — RPCs `[done]`',
+    '',
+    '> Implementado por: ...',
+  ].join('\n');
+  const r = findPhaseTokenByNumber(md, '2');
+  assert.equal(r.found, true);
+  assert.equal(r.token, 'done');
+});
+
+test('findPhaseTokenByNumber: real acceptance case — spec-85 fase 2 resolves to [done], not the unrelated prose heading', () => {
+  // Reproduce del texto real de docs/specs/spec-85-discrepancias.md, no una
+  // versión simplificada: el heading de la línea 222 no lleva token en
+  // absoluto (termina en prosa), y el heading real está más abajo.
+  const md = [
+    '### La costura entre esta fase y spec-80 fase 2',
+    '',
+    'Entre este merge y spec-80 fase 2, el frontend de Recogida sigue',
+    'escribiendo en `discrepancy_notes`, no en `discrepancies`.',
+    '',
+    '### Fase 2 — RPCs `[done]`',
+    '',
+    '> Implementado por: `implementer` con TDD, tres rondas.',
+  ].join('\n');
+  const r = findPhaseTokenByNumber(md, '2');
+  assert.equal(r.found, true);
+  assert.equal(r.token, 'done');
+});
+
+test('findPhaseTokenByNumber: a heading matching "fase N" with NO valid token anywhere in the doc is unresolved, not [null]', () => {
+  const md = [
+    '### La costura entre esta fase y spec-80 fase 2',
+    '',
+    'Nunca hay un heading real de "Fase 2" en este documento.',
+  ].join('\n');
+  const r = findPhaseTokenByNumber(md, '2');
+  assert.equal(r.found, false);
+  assert.equal(r.token, null);
+});
+
 test('findPhaseTokenByNumber: real acceptance case — spec-80 fase 3 is [pending] in the real repo file', () => {
   // Not a fixture: reads the actual spec-80 heading text inline, so this
   // test breaks (loudly) the day someone closes that phase without

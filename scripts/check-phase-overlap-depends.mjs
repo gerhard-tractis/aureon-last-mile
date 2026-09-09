@@ -114,12 +114,31 @@ export function extractDependsField(mdContent, faseMatch) {
   return { headingFound: true, fieldPresent: true, explicitNone: false, indeterminate: false, entries, raw };
 }
 
+const VALID_TOKENS = new Set(['pending', 'in_progress', 'blocked', 'awaiting_user_test', 'done', 'parked']);
+
 /**
  * Given ANOTHER spec's full markdown and a phase number (with optional
  * letter suffix, e.g. "1b"), finds the heading whose text contains
  * `Fase <N>` / `Phase <N>` as a whole token — not a substring match, so
  * looking for "1" does not match "Fase 1b" and vice versa — and returns its
  * status token.
+ *
+ * Bloqueante 1 (review ronda 2): a spec's prose routinely mentions "fase N"
+ * of ITSELF inside a heading that is not a phase heading at all — e.g.
+ * spec-85-discrepancias.md line 222: "### La costura entre esta fase y
+ * spec-80 fase 2", which has no token, sitting BEFORE the real
+ * "### Fase 2 — RPCs `[done]`" at line 338. Stopping at the FIRST heading
+ * that merely mentions the number returned `[null]` for spec-85 fase 2 —
+ * the most-cited dependency in the corpus (spec-86 fases 1/2a/2b/3, spec-80
+ * fases 1/1b, spec-88 fase 1) — which would have hard-blocked the first
+ * backfill outright.
+ *
+ * Fix: keep scanning past a heading that matches the number but carries no
+ * RECOGNIZED status token (this repo's actual phase headings always do);
+ * only a heading with a valid token counts as a real phase heading. If NO
+ * heading with a valid token is ever found, this is genuinely
+ * indeterminate — `found: false`, never a token of `null` presented as if
+ * it meant something.
  */
 export function findPhaseTokenByNumber(mdContent, faseNum) {
   const lines = mdContent.replace(/\r\n/g, '\n').split('\n');
@@ -132,8 +151,11 @@ export function findPhaseTokenByNumber(mdContent, faseNum) {
     if (!HEADING_RE.test(line)) continue;
     if (!headingHasFase.test(line)) continue;
     const tm = tokenRe.exec(line);
-    if (tm) return { found: true, token: tm[1] };
-    return { found: true, token: null }; // heading matched, no token on it
+    if (tm && VALID_TOKENS.has(tm[1].toLowerCase())) {
+      return { found: true, token: tm[1].toLowerCase() };
+    }
+    // Heading mentions the number but isn't a real phase heading (no
+    // recognized token) — keep looking, a later heading may be the real one.
   }
   return { found: false, token: null };
 }

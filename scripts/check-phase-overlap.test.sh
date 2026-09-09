@@ -487,6 +487,56 @@ assert_exit 4 "REAL REPO: spec-84 fase 3 depends on spec-80 fase 3, still [pendi
   "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \
   "docs/specs/spec-80-recogida-movil-cierre-de-carga.md#Fase 3"
 
+# ── Bloqueante 1 (review ronda 2), reproducido contra el REPO REAL, no un
+# fixture: spec-85-discrepancias.md tiene un heading en prosa ("### La
+# costura entre esta fase y spec-80 fase 2", línea 222, sin token) ANTES del
+# heading real "### Fase 2 — RPCs `[done]`" (línea 338). Un target que
+# declare depender de spec-85 fase 2 no debe recibir `[null]` ni exit 4 —
+# spec-85 fase 2 SÍ está `[done]`. Se crea un spec temporal DENTRO del repo
+# real (necesario: la dependencia se resuelve leyendo docs/specs/ del propio
+# `--repo`) y se borra al terminar, sin commitear nada.
+SCRATCH_SPEC="$REAL_REPO/docs/specs/spec-999-scratch-b1-repro.md"
+cat > "$SCRATCH_SPEC" <<'MD'
+### Fase 1 — depende de spec-85 fase 2 `[pending]`
+
+**Depende de:** spec-85 fase 2
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+assert_exit 0 "REAL REPO, Bloqueante 1: spec-85 fase 2 resolves [done] despite the earlier prose heading — no exit 4" \
+  bash "$SCRIPT" --repo "$REAL_REPO" \
+  "docs/specs/spec-999-scratch-b1-repro.md#Fase 1" \
+  "docs/specs/spec-88-anon-security-definer-audit.md#Fase 2"
+rm -f "$SCRATCH_SPEC"
+
+# ── The genuinely-ambiguous case: a declared dependency on a fase number
+# that has NO real phase heading anywhere (only a prose mention) must warn,
+# not exit 4 — the surface-overlap verdict still proceeds normally.
+cat > "$REPO/docs/specs/spec-101-x.md" <<'MD'
+### La costura entre esta fase y spec-102 fase 9
+
+Nunca hay un heading real de "Fase 9" en este documento — sólo esta mención
+en prosa, sin token.
+MD
+cat > "$REPO/docs/specs/spec-102-x.md" <<'MD'
+### Fase 1 — depende de una fase ambigua `[pending]`
+
+**Depende de:** spec-101 fase 9
+
+**Archivos:** `apps/frontend/src/lib/offline/deepest.ts`
+MD
+(cd "$REPO" && git add -A && git commit -q -m "add spec-101 (no real fase 9 heading) and spec-102 (depends on it)")
+
+assert_exit 0 "ambiguous dependency (no heading with a recognized token matches): does NOT force exit 4" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-102-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
+assert_contains "no se pudo determinar su estado con certeza" "ambiguous dependency: reported as a warning, not silently dropped" \
+  bash "$SCRIPT" --base "$BASE_REF" --repo "$REPO" \
+  "docs/specs/spec-102-x.md#Fase 1" \
+  "docs/specs/spec-88-x.md#Fase 2"
+
 assert_contains "spec-80 fase 3" "REAL REPO: message names the real blocking phase" \
   bash "$SCRIPT" --repo "$REAL_REPO" \
   "docs/specs/spec-84-movil-conductor-home-y-prueba-de-entrega.md#Fase 3" \

@@ -345,6 +345,14 @@ function main() {
   // que este chequeo corre primero y, si encuentra algo, ni siquiera llega
   // a calcular solapamiento (exit 4 gana sobre 1/3).
   const unmetDeps = [];
+  // Bloqueante 1 (review ronda 2): un heading que MENCIONA "fase N" pero no
+  // es un heading de fase real (sin token reconocido) no puede distinguirse
+  // aquí de un número de fase que genuinamente no existe — findPhaseTokenByNumber
+  // devuelve `found: false` en los dos casos, y a propósito: adivinar cuál de
+  // los dos es sería peor que reportarlo. Nunca bloquea (`exit 4`) por esto —
+  // sólo cuando el spec referenciado no existe en absoluto, o cuando SÍ se
+  // encontró un token real y no es `[done]`.
+  const ambiguousDeps = [];
   for (const t of targets) {
     if (!t.depends || !t.depends.fieldPresent || t.depends.explicitNone || t.depends.indeterminate) {
       continue; // ausente, "ninguna", o "(indeterminado — ...)": nada que chequear aquí
@@ -354,11 +362,16 @@ function main() {
       if (!res.specFound) {
         unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} no existe en docs/specs/` });
       } else if (!res.found) {
-        unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} fase ${dep.faseNum} no se encontró en ${res.specFile}` });
+        ambiguousDeps.push({ target: t.name, dep, specFile: res.specFile });
       } else if (res.token !== 'done') {
         unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\`` });
       }
     }
+  }
+  for (const a of ambiguousDeps) {
+    console.error(
+      `::warning:: ${a.target} depende de spec-${a.dep.specId} fase ${a.dep.faseNum}, pero no se pudo determinar su estado con certeza en ${a.specFile} (ningún heading con token reconocido calza ese número) — revisa a mano.`,
+    );
   }
   if (unmetDeps.length > 0) {
     console.error('check-phase-overlap: no despachable todavía — dependencia(s) declarada(s) sin satisfacer:');
