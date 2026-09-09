@@ -5,8 +5,9 @@ import { useOpsControlSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot
 import { useAtRiskOrders } from '@/hooks/ops-control/useAtRiskOrders';
 import { useDayPromise } from '@/hooks/ops-control/useDayPromise';
 import { useActiveRoutes } from '@/hooks/useActiveRoutes';
+import { useDiscrepancies } from '@/hooks/ops-control/useDiscrepancies';
 import { useStageQuery } from '../lib/useStageQuery';
-import { computeStageHealth } from '../lib/health';
+import { computeStageHealth, type HealthStatus } from '../lib/health';
 import { stagePackageCount } from '../lib/packages';
 import { STAGE_KEYS } from '../lib/labels.es';
 import type { OpsSnapshot } from '@/hooks/ops-control/useOpsControlSnapshot';
@@ -24,6 +25,7 @@ import { DocksPanel } from './stage-panels/DocksPanel';
 import { DeliveryPanel } from './stage-panels/DeliveryPanel';
 import { ReturnsPanel } from './stage-panels/ReturnsPanel';
 import { ReversePlaceholderPanel } from './stage-panels/ReversePlaceholderPanel';
+import { DiscrepanciesPanel } from './stage-panels/DiscrepanciesPanel';
 
 function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, unknown>[] {
   switch (key) {
@@ -37,6 +39,10 @@ function getItemsForStage(key: StageKey, snapshot: OpsSnapshot): Record<string, 
     case 'delivery':      return snapshot.routes.filter((r) => r['stage'] === 'delivery' || r['status'] === 'active') as Record<string, unknown>[];
     case 'returns':       return snapshot.returns as Record<string, unknown>[];
     case 'reverse':       return [];
+    // spec-86 fase 3: Discrepancias is not sourced from get_ops_control_snapshot
+    // at all — see useDiscrepancies below, which feeds its tile and panel
+    // directly from public.discrepancies.
+    case 'discrepancies': return [];
   }
 }
 
@@ -55,14 +61,15 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
     useAtRiskOrders(operatorId, new Date(), atRiskPage);
   const promise = useDayPromise(operatorId);
   const { data: activeRoutes, isLoading: routesLoading } = useActiveRoutes(operatorId);
+  const { data: openDiscrepancies } = useDiscrepancies(operatorId, 'open');
 
   if (isLoading && !snapshot) {
     // Geometry matches the loaded layout so the page does not reflow.
     return (
       <div className="flex flex-col gap-[18px]">
         <Skeleton className="h-9 w-64 rounded" />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
-          {Array.from({ length: 7 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
+          {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[92px] rounded-[10px]" />
           ))}
         </div>
@@ -75,7 +82,22 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
   }
 
   const now = new Date();
+  const discrepancyCount = openDiscrepancies?.length ?? 0;
   const stages = STAGE_KEYS.map((key) => {
+    // spec-86 fase 3: Discrepancias' count and health come from
+    // useDiscrepancies, not from the generic snapshot-driven pipeline below —
+    // its items are never part of get_ops_control_snapshot (see
+    // getItemsForStage's 'discrepancies' case).
+    if (key === 'discrepancies') {
+      const health: HealthStatus = discrepancyCount > 0 ? 'warn' : 'ok';
+      return {
+        key,
+        count: discrepancyCount,
+        delta: discrepancyCount > 0 ? `${discrepancyCount} sin resolver` : 'Sin incidencias',
+        health,
+        packageCount: null,
+      };
+    }
     const items = snapshot ? getItemsForStage(key, snapshot) : [];
     const health = computeStageHealth(key, items, now);
     return {
@@ -111,6 +133,7 @@ export function OpsControlDesktop({ operatorId, onSelectOrder }: OpsControlDeskt
       case 'delivery':      return <DeliveryPanel {...props} />;
       case 'returns':       return <ReturnsPanel {...props} />;
       case 'reverse':       return <ReversePlaceholderPanel {...props} />;
+      case 'discrepancies': return <DiscrepanciesPanel {...props} />;
     }
   };
 

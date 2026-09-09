@@ -11,14 +11,16 @@ const STAGES = [
   { key: 'delivery' as const, count: 8, delta: '+3', health: 'ok' as const, packageCount: null },
   { key: 'returns' as const, count: 1, delta: '0', health: 'warn' as const },
   { key: 'reverse' as const, count: 0, delta: '—', health: 'neutral' as const },
+  { key: 'discrepancies' as const, count: 2, delta: '—', health: 'neutral' as const },
 ];
 
 describe('StageRail', () => {
-  it('renders all 7 stages in flow order', () => {
+  it('renders all 8 stages in flow order', () => {
     render(<StageRail stages={STAGES} activeStage={null} onStageChange={() => {}} />);
-    expect(screen.getAllByRole('button')).toHaveLength(7);
+    expect(screen.getAllByRole('button')).toHaveLength(8);
     expect(screen.getByText('Recogida')).toBeInTheDocument();
     expect(screen.getByText('Cambios y Devoluciones')).toBeInTheDocument();
+    expect(screen.getByText('Discrepancias')).toBeInTheDocument();
   });
 
   it('shows the count for each stage', () => {
@@ -74,7 +76,7 @@ describe('StageRail', () => {
 
   it('still renders a stage the caller omitted, as neutral zero', () => {
     render(<StageRail stages={[STAGES[0]]} activeStage={null} onStageChange={() => {}} />);
-    expect(screen.getAllByRole('button')).toHaveLength(7);
+    expect(screen.getAllByRole('button')).toHaveLength(8);
     expect(screen.getByTestId('stage-health-delivery').className).toContain('bg-border');
   });
 

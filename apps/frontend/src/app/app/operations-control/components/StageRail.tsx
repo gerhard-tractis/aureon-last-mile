@@ -65,7 +65,7 @@ const HEALTH_TEXT: Record<HealthStatus, string> = {
 
 const ORDERED_KEYS: StageKey[] = [
   'pickup', 'reception', 'consolidation', 'docks',
-  'delivery', 'returns', 'reverse',
+  'delivery', 'returns', 'reverse', 'discrepancies',
 ];
 
 export function StageRail({ stages, activeStage, onStageChange }: StageRailProps) {
@@ -82,9 +82,10 @@ export function StageRail({ stages, activeStage, onStageChange }: StageRailProps
         </span>
       </div>
 
-      {/* 2 columns on phones, 4 on tablets, 7 on desktop — the breakpoints the
-          old StageStrip used, kept so nothing regresses on small screens. */}
-      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-7">
+      {/* 2 columns on phones, 4 on tablets, 8 on desktop (spec-86 fase 3 added
+          Discrepancias as the 8th tile) — the breakpoints the old StageStrip
+          used, kept so nothing regresses on small screens. */}
+      <div className="grid w-full grid-cols-2 gap-2 sm:grid-cols-4 md:grid-cols-8">
         {ORDERED_KEYS.map((key, i) => {
           const stage =
             stageMap.get(key) ??
