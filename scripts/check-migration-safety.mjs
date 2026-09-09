@@ -15,16 +15,19 @@
  *      no preceding COUNT(*)-guarded conditional — the h5c pattern
  *      (20260911000002) is the example of doing this correctly and must
  *      not warn.
- *   4. WARN (::warning::, exit 0) on a CREATE/CREATE OR REPLACE FUNCTION
- *      whose signature does not match any REVOKE issued anywhere in the
- *      migrations corpus against a same-named function with a DIFFERENT
- *      signature — the start_pickup_route(text) vs.
+ *   4. WARN (::warning::, exit 0) on a CREATE/CREATE OR REPLACE SECURITY
+ *      DEFINER FUNCTION whose signature does not match any REVOKE issued
+ *      anywhere in the migrations corpus against a same-named function
+ *      with a DIFFERENT signature — the start_pickup_route(text) vs.
  *      start_pickup_route(uuid, uuid[]) bug (spec-88). See
  *      check-migration-safety-acl.mjs.
  *   5. REJECT (exit 1) a migration that CREATEs/CREATE OR REPLACEs a
- *      function and GRANTs EXECUTE on it TO authenticated, with NO REVOKE
- *      statement anywhere in that same migration — the close_manifest /
- *      add_dock_zone_adjacency_pair bug (spec-80 fase 1b, spec-88 fase 1).
+ *      SECURITY DEFINER function with no REVOKE {ALL|EXECUTE} ... FROM
+ *      PUBLIC for that exact signature anywhere in the same migration —
+ *      the close_manifest / add_dock_zone_adjacency_pair bug (spec-80 fase
+ *      1b, spec-88 fase 1). Redesigned in review round 2 (PR #723, B1/B2) —
+ *      GRANT statements are irrelevant to this rule; only a REVOKE
+ *      targeting PUBLIC closes Postgres's default EXECUTE-to-PUBLIC grant.
  *      See check-migration-safety-acl.mjs.
  *
  * A warning never fails the build. Turning rules 2/3/4 into rejections
@@ -62,6 +65,7 @@ import {
   buildRevokeIndex,
   findOrphanedOverloadWarnings,
   findGrantWithoutRevokeViolations,
+  lineNumberAt,
 } from './check-migration-safety-acl.mjs';
 import { checkIndexConcurrency, checkUniqueIndexGuard } from './check-migration-safety-rule23.mjs';
 
@@ -85,13 +89,16 @@ function checkFile(filePath, revokeIndex) {
   // it has no base-diff pre-existing-violation downgrade (a migration that
   // newly enters the diff with this shape is never "pre-existing" for it).
   const aclRejections = findGrantWithoutRevokeViolations(rawSql);
-  const warnings = [
-    ...findRule1Warnings(rawSql),
-    ...checkIndexConcurrency(rawSql),
-    ...checkUniqueIndexGuard(rawSql),
-    ...findOrphanedOverloadWarnings(rawSql, revokeIndex),
-  ];
-  return { filePath, rejectReason, blockingViolations, aclRejections, warnings };
+  const warnings = [...findRule1Warnings(rawSql), ...checkIndexConcurrency(rawSql), ...checkUniqueIndexGuard(rawSql)];
+  // Rule 4's warnings carry a character offset so main() can annotate them
+  // with file=/line= (review round 2, low finding) — kept separate from the
+  // plain-string `warnings` above rather than retrofitting line numbers
+  // onto rules 1-3's warnings, which is out of scope for this fase.
+  const lineWarnings = findOrphanedOverloadWarnings(rawSql, revokeIndex).map((w) => ({
+    message: w.message,
+    line: lineNumberAt(rawSql, w.index),
+  }));
+  return { filePath, rejectReason, blockingViolations, aclRejections, warnings, lineWarnings };
 }
 
 function main(argv) {
@@ -137,6 +144,11 @@ function main(argv) {
   const revokeIndex = buildRevokeIndex(corpusFiles);
 
   let rejected = false;
+  // Tracked separately (review round 2, medium finding) so the rule-1
+  // summary message ("mixes DDL with an unbounded backfill") does not print
+  // — and send the reader chasing a backfill that does not exist — when the
+  // ONLY thing that rejected was an ACL violation (rule 5).
+  let rule1Rejected = false;
   let aclRejected = false;
   for (const f of files) {
     let result;
@@ -166,6 +178,7 @@ function main(argv) {
         );
       } else {
         rejected = true;
+        rule1Rejected = true;
         const reason = newOnes.length ? newOnes[0].message : result.rejectReason;
         console.error(`::error::${f} — ${reason}`);
       }
@@ -178,18 +191,28 @@ function main(argv) {
     for (const w of result.warnings) {
       console.log(`::warning::${f} — ${w}`);
     }
+    for (const lw of result.lineWarnings) {
+      // Low finding (review round 2): findCreateFunctionSignatures already
+      // computes the character offset — annotate the diff with file=/line=
+      // (the spec-90 lesson: a ::warning:: with neither is invisible in
+      // `gh pr checks`/the PR diff, where it's most useful).
+      console.log(`::warning file=${f},line=${lw.line}::${lw.message}`);
+    }
   }
 
   if (rejected) {
-    console.error(
-      'check-migration-safety: at least one migration mixes DDL with an unbounded top-level backfill. ' +
-        'Split the backfill into its own function, and call it by hand after measuring — see spec-87 fase 3/4.'
-    );
+    if (rule1Rejected) {
+      console.error(
+        'check-migration-safety: at least one migration mixes DDL with an unbounded top-level backfill. ' +
+          'Split the backfill into its own function, and call it by hand after measuring — see spec-87 fase 3/4.'
+      );
+    }
     if (aclRejected) {
       console.error(
-        'check-migration-safety: at least one migration GRANTs EXECUTE ... TO authenticated on a new/replaced ' +
-          'function with no REVOKE anywhere in the same migration. CREATE OR REPLACE preserves the existing ACL, ' +
-          'and Supabase re-grants PUBLIC/anon by default — see spec-88 fase 1/4 and spec-80 fase 1b (20260913000004).'
+        'check-migration-safety: at least one migration CREATEs/CREATE OR REPLACEs a SECURITY DEFINER function ' +
+          'with no REVOKE {ALL|EXECUTE} ... FROM PUBLIC for that exact signature. Postgres grants EXECUTE to ' +
+          'PUBLIC (which anon inherits) on every (re)created function by default, GRANT statement or not — ' +
+          'see spec-88 fase 1/4 and spec-80 fase 1b (20260913000004).'
       );
     }
     return 1;
