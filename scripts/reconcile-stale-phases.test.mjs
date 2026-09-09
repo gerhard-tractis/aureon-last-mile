@@ -165,5 +165,64 @@ test('existing CLOSED issue, a new stale phase appears: updates AND reopens', ()
   assert.equal(calls.reopenIssue[0], 42);
 });
 
+// ── F5-1 (review ronda 3, BLOQUEANTE): un blip de la API de gh no debe
+// crear un issue duplicado. `findTrackingIssue` que no puede determinar si
+// ya existe un issue (fallo de red/parseo) DEBE ser distinguible de "no hay
+// issue" — `null` es indistinguible de "no existe" para `runReconciliation`,
+// y ese blip inyectado con el issue #42 ya abierto reprodujo exactamente el
+// bug reportado: creaba un segundo issue en vez de abortar. Mismo tratamiento
+// que `listOpenPrBranches` ya tenía: fail open, abortar sin tocar nada.
+test('F5-1: findTrackingIssue reporting an error aborts WITHOUT creating a duplicate issue', () => {
+  const { deps, calls } = fakeDeps({
+    specFiles: [{ filename: 'spec-89-x.md', content: '### Fase 1 — algo `[in_progress]`\n' }],
+    listOpenPrBranches: () => [],
+    findTrackingIssue: () => ({ error: true }), // #42 ya existe, pero gh falló al buscarlo
+  });
+  const result = runReconciliation(deps);
+  assert.equal(result.action, 'error');
+  assert.equal(calls.createIssue.length, 0);
+  assert.equal(calls.updateIssue.length, 0);
+  assert.equal(calls.closeIssue.length, 0);
+});
+
+test('F5-1: findTrackingIssue error aborts even when there is nothing stale (would have been a no-op anyway)', () => {
+  const { deps, calls } = fakeDeps({
+    specFiles: [],
+    findTrackingIssue: () => ({ error: true }),
+  });
+  const result = runReconciliation(deps);
+  assert.equal(result.action, 'error');
+  assert.equal(calls.closeIssue.length, 0);
+});
+
+// ── F5-2 (seguimiento, ronda 3): el label `wontfix` es una escotilla que el
+// script respeta — cerrar el issue a mano no sirve (la corrida siguiente lo
+// reabre si sigue rancio), pero un label sí, porque el script lo lee antes
+// de decidir nada.
+test('F5-2: an issue labeled "wontfix" is left untouched, even with stale phases pending', () => {
+  const { deps, calls } = fakeDeps({
+    specFiles: [{ filename: 'spec-89-x.md', content: '### Fase 1 — algo `[in_progress]`\n' }],
+    listOpenPrBranches: () => [],
+    findTrackingIssue: () => ({ number: 42, body: '', state: 'CLOSED', labels: ['wontfix'] }),
+  });
+  const result = runReconciliation(deps);
+  assert.equal(result.action, 'skipped-wontfix');
+  assert.equal(calls.updateIssue.length, 0);
+  assert.equal(calls.reopenIssue.length, 0);
+  assert.equal(calls.closeIssue.length, 0);
+  assert.equal(calls.createIssue.length, 0);
+});
+
+test('F5-2: an issue WITHOUT "wontfix" behaves normally (labels array present, doesn\'t include it)', () => {
+  const { deps, calls } = fakeDeps({
+    specFiles: [{ filename: 'spec-89-x.md', content: '### Fase 1 — algo `[in_progress]`\n' }],
+    listOpenPrBranches: () => [],
+    findTrackingIssue: () => ({ number: 42, body: '', state: 'CLOSED', labels: ['stale-phase-reconciliation'] }),
+  });
+  const result = runReconciliation(deps);
+  assert.equal(result.action, 'updated');
+  assert.equal(calls.reopenIssue.length, 1);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

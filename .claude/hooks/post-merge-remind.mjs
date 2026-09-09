@@ -89,7 +89,13 @@ function readStdinJson() {
  */
 export function extractMergeSegment(command) {
   if (typeof command !== 'string') return null;
-  const segments = command.split(/&&|\|\||;|\|/).map((s) => s.trim());
+  // H-1 (review ronda 3): faltaba `\n`. La forma HABITUAL de escribir esta
+  // secuencia en este repo (CLAUDE.md) es una línea por comando —
+  // `git push` / `gh pr create` / `gh pr merge --auto --squash` — sin
+  // `&&`/`;` entre ellas. Sin partir por salto de línea, ese caso normal
+  // caía en "no matchea nada" (falso negativo, no un problema de seguridad,
+  // pero sí de cobertura real).
+  const segments = command.split(/&&|\|\||;|\||\n/).map((s) => s.trim());
   return segments.find((s) => /^gh\s+pr\s+merge\b/.test(s)) || null;
 }
 

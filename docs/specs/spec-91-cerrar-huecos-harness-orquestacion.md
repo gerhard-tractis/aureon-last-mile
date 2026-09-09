@@ -192,17 +192,27 @@ cualquier `docs:` trivial puede tocar). En su lugar, **el issue mismo dice
 lo lee ve de inmediato si es de hace cinco minutos (probablemente la ventana
 legítima) o de hace tres días (probablemente rancio de verdad).
 
-**Falso positivo conocido y aceptado: trabajo en una rama local sin
-pushear.** Si alguien tiene una fase `[in_progress]` en su spec local, con
-commits sin pushear, el workflow no ve ninguna rama remota que la nombre y
-la reporta como rancia. Es transitorio (desaparece en cuanto se pushea) e
-inofensivo (un issue no bloqueante, no un build rojo) — **se deja así a
-propósito**. Cualquier heurística para distinguir "de verdad abandonada" de
-"trabajo local sin pushear todavía" (por ejemplo, exigir que la fase lleve
+**Falso positivo conocido y aceptado, dos variantes de la misma clase
+(la segunda añadida en la ronda 3 de review, señalada por el reviewer sin que
+el cuerpo del issue la nombrara):**
+
+1. **Trabajo en una rama LOCAL sin pushear.** Si alguien tiene una fase
+   `[in_progress]` en su spec local, con commits sin pushear, el workflow no
+   ve ninguna rama remota que la nombre y la reporta como rancia.
+2. **Rama YA pusheada, pero sin PR abierto todavía** — la ventana entre
+   `git push` y `gh pr create` (o entre el push y que alguien se acuerde de
+   abrir el PR). `gh pr list --state open` tampoco ve nada que nombre esa
+   rama en ese momento, exactamente igual que en el caso 1.
+
+Las dos son transitorias (desaparecen en cuanto se pushea, o en cuanto se
+abre el PR) e inofensivas (un issue no bloqueante, no un build rojo) — **se
+dejan así a propósito**. Cualquier heurística para distinguir "de verdad
+abandonada" de "en tránsito todavía" (por ejemplo, exigir que la fase lleve
 `[in_progress]` más de N días) sería peor que el falso positivo: escondería
 fases genuinamente rancias detrás de una ventana de gracia que alguien
 tendría que calibrar sin datos, y el costo de un falso positivo aquí es leer
-una línea de un issue, no un despliegue roto.
+una línea de un issue, no un despliegue roto. El cuerpo del propio issue
+(`renderIssueBody`) nombra ambas variantes, no sólo la primera.
 
 **Propiedades que lo hacen distinto de todo lo que hay hoy en el harness:**
 no depende de `cwd`, no depende de que una sesión concreta corra un comando,
@@ -210,6 +220,20 @@ no depende de qué agente mergeó. Es idempotente (correrlo dos veces con el
 mismo estado no cambia nada) y auto-curativo (en cuanto alguien cierra el
 token, la siguiente corrida lo saca de la lista y, si era la última, cierra
 el issue solo).
+
+**Dato a anotar (ronda 3 de review), para que la primera corrida no parezca
+un bug:** corrido en seco contra el estado real de hoy (`docs/specs/` +
+`gh pr list --state open`), la lista da **5 filas** — spec-81 fase 3, spec-82
+fase 1, spec-88 fases 1 y 2, spec-89 fase 1 —, todas genuinamente rancias
+(sin PR abierto que las nombre). Es un número que se mueve mientras haya
+trabajo en paralelo mergeando (otra sesión puede cerrar o abrir PRs entre
+que esto se escribe y la primera corrida real del workflow), así que no es
+una promesa exacta — **lo que sí es seguro es la dirección**: en cuanto este
+PR mismo mergee, las **5 fases de spec-91** (todas `[in_progress]` hoy,
+ninguna cerrada por el orquestador) pierden su único PR abierto y se suman a
+la lista en la corrida siguiente. Es el comportamiento correcto — nadie cerró
+esos tokens todavía —, pero es lo primero que va a aparecer, y no debería
+leerse como que el workflow está mal calibrado.
 
 **Fallback en `keep-going.sh` para ramas sin nombre de spec: sigue sin
 construirse.** Ver el razonamiento original más abajo — la fase 5 lo
@@ -340,12 +364,27 @@ el razonamiento completo.
       recuerda las tres líneas de evidencia y el token `[done]`, remite a
       `docs/specs/CLAUDE.md`, y menciona que la fase 5 lo detecta igual si nadie
       actúa sobre el recordatorio.
-- [ ] `.sh`: filtro barato en bash (`case "$INPUT" in *gh*)`) antes de
-      invocar node — medido: ~950ms/llamada con node+gh, ~220ms sin match
-      (medio de la ronda 1: este hook dispara en CADA comando Bash, no una
-      vez por merge, así que el filtro es obligatorio). `command -v node`
+- [ ] `.sh`: filtro barato en bash antes de invocar node. **Estrechado en la
+      ronda 3 (H-3)** de `case "$INPUT" in *gh*)` a `*'gh pr merge'*)` — la
+      versión con `*gh*` pagaba el arranque de node por cualquier payload que
+      contuviera el bigrama "gh" en cualquier parte (incluido el
+      `tool_response`, que este hook también recibe por stdin: "through",
+      "right", un hash de git). Estrechar es gratis y correcto porque el
+      `.mjs` ya exige que un SEGMENTO empiece literalmente así
+      (`extractMergeSegment`) — el filtro de bash nunca puede rechazar algo
+      que el `.mjs` habría aceptado. Medido tres veces en la misma ventana
+      (medio de la ronda 1, recalibrado en la ronda 3 porque comparar tiempos
+      entre rondas en una máquina bajo carga variable no es válido): con un
+      payload sin "gh pr merge", este hook cuesta **lo mismo** que un `exit 0`
+      — el prefiltro corta antes de que node arranque. `command -v node`
       antes de invocar node — sin él, `node` ausente da un `exit 127` ruidoso
-      en cada llamada que mencione "gh" (M2 de la ronda 1).
+      en cada llamada que mencione "gh pr merge" (M2 de la ronda 1).
+- [ ] **H-1 (ronda 3):** `extractMergeSegment` partía el comando por
+      `&&`/`||`/`;`/`|` pero no por salto de línea — la forma HABITUAL de
+      escribir la secuencia que `CLAUDE.md` manda (`git push` / `gh pr
+      create` / `gh pr merge --auto --squash`, una línea por comando, sin
+      operadores de shell entre ellas) caía en "no matchea nada". Un
+      carácter (`\n`) en el regex de partición lo cierra.
 - [ ] Degradación: sin `gh` en PATH, sin red, o JSON inesperado → `exit 0`
       silencioso. Nunca bloquea un turno por un problema de infraestructura
       ajeno al trabajo.
@@ -485,6 +524,23 @@ sólo que resulta que el spec citado y el spec citante son el mismo. No es
 ruido a eliminar; es la razón por la que la exclusión de autorreferencia se
 limita al par exacto (spec, fase) y no a "toda mención del propio spec".
 
+**Segundo caveat, distinto del anterior y más grande — señalado en la ronda 3
+de review, verificado con la corrida real, no de oído:** el caveat de arriba
+describe el caso MÁS CHICO de los dos. El más grande es que **los specs que
+documentan el propio guard citan fases de ejemplo de OTROS specs**, y esas
+citas no son dependencias de orden — son ejemplos dentro de la prosa que
+explica cómo funciona la herramienta. Corrido contra el corpus real (51
+avisos, no 49 — la cifra de arriba quedó vieja tras esta misma ronda de
+fixes): `spec-89` fase 1 genera 4 avisos, `spec-91` fases 3/4/5 generan 11 —
+**15 de 51, el ~30 % del volumen total**, y ninguno de los 15 es una
+dependencia de orden real. Es ruido estructural inherente a que este guard
+se documenta a sí mismo citando ejemplos reales del corpus — no hay forma de
+excluirlo sin también excluir citas legítimas de otros specs a este mismo
+spec (que sí pueden ser dependencias reales). Aceptado, no arreglado, por la
+misma razón que el caveat anterior: adivinar cuál cita es "sólo un ejemplo
+de la documentación" y cuál es una dependencia real sería peor que avisar
+de más en un canal que no bloquea nada.
+
 ### Fase 5 — Reconciliación en servidor: la garantía real del Hueco 1 `[in_progress]`
 
 **Añadida en ronda 2 de review.** Ver "La garantía real: reconciliación en
@@ -532,7 +588,39 @@ fase existe porque ningún hook local puede cerrar el Hueco 1 de verdad.
       fase rancia nueva → actualiza el cuerpo Y lo reabre.
 - [ ] Fallo al listar PRs abiertos (red/auth) → aborta SIN tocar el issue —
       fail open a propósito: un error de listado no debe crear ruido falso
-      ("todo está rancio").
+      ("todo está rancio"). **F5-4 (ronda 3):** el `JSON.parse` de esa
+      respuesta vivía FUERA del mismo `try` — un `gh` que sale 0 con salida
+      no-JSON lanzaba sin capturar, contradiciendo el fail-open declarado.
+      Movido dentro.
+- [ ] **F5-1 (BLOQUEANTE, ronda 3), cerrado:** `findTrackingIssue` que no
+      pudo determinar si ya existe un issue (blip de red/parseo de `gh`)
+      devolvía `null` — indistinguible de "confirmado: no existe issue".
+      Reproducido con el issue #42 ya abierto: `runReconciliation` creaba un
+      SEGUNDO issue en vez de abortar. Corregido con un sentinel
+      (`{ error: true }`) que `runReconciliation` chequea antes de decidir
+      nada — mismo tratamiento fail-open que `listOpenPrBranches` ya tenía.
+      Corre en cada push a `main` (cada PR mergeado); sin este fix, un rate
+      limit o un 5xx puntual acumula issues duplicados para siempre (el
+      `--limit 1` de la búsqueda siempre engancha el más nuevo).
+- [ ] **F5-2 (seguimiento, ronda 3):** cerrar el issue a mano no sirve — la
+      corrida siguiente lo reabre si sigue habiendo algo rancio. Escotilla:
+      el label `wontfix` en el propio issue significa "no lo toques"; el
+      script lo respeta y no actualiza ni reabre ni cierra nada mientras
+      esté puesto.
+- [ ] **F5-3 (seguimiento, ronda 3):** la clave de identidad de una entrada
+      es spec + NÚMERO de fase (`faseKey`), no el texto completo del
+      heading — corregir el TÍTULO de una fase (después del número) ya no
+      resetea `firstSeen` a "hoy", que es justo la columna que el cuerpo del
+      issue le pide al lector usar para distinguir un falso positivo
+      transitorio de uno real.
+- [ ] **F5-5 (aceptado, no arreglado):** `--state all --limit 1` sobre el
+      label toma el issue más reciente con ese label. Si alguien abriera a
+      mano OTRO issue con el mismo label, el script lo secuestraría. Riesgo
+      bajo (el label es específico de esta herramienta, nadie lo usa para
+      otra cosa hoy) y el costo de blindarlo (comprobar también el título, o
+      un segundo campo de identidad) no se justifica todavía — se deja
+      escrito para que la próxima persona que lo toque no lo redescubra
+      desde cero.
 - [ ] Workflow `.github/workflows/reconcile-stale-phases.yml`: dispara en
       `push: main` y `schedule` diario. `permissions: issues: write,
       pull-requests: read, contents: read`. No bloquea CI — es su propio job
@@ -574,3 +662,15 @@ fase existe porque ningún hook local puede cerrar el Hueco 1 de verdad.
   documentada, no arreglada aquí" arriba): apagaría la señal justo para los
   `implementer` a los que existe para empujar. La solución es salir del
   worktree, no apagar el guard.
+- Partir `scripts/check-phase-overlap.mjs` en más módulos — evaluado y
+  descartado en la ronda 3 de review, con el dato exacto: el fichero estaba
+  en 318 líneas **antes** de que este spec lo tocara (herencia de spec-89),
+  y de las 388 actuales, 225 son código y 163 son comentario explicativo —
+  la regla de 300 líneas existe contra ficheros que nadie puede sostener en
+  la cabeza, no contra prosa que explica por qué una regla es como es. El
+  corte que sí se hizo aquí (`resolveDependency`/`checkDependencies` a
+  `-depends.mjs`) separó por concern, no por conteo, y es el corte correcto.
+  **Dicho eso: la PRÓXIMA adición a este fichero saca `buildTarget` y
+  `printReport`** a sus propios módulos — no hay margen para crecer más sin
+  hacerlo, y dejarlo dicho aquí es lo que evita que "no lo partas todavía"
+  se convierta en "nunca se parte".

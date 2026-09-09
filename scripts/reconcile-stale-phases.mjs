@@ -68,6 +68,28 @@ export function runReconciliation({
   const staleNow = computeStalePhases(inProgress, openSpecIds);
 
   const existing = findTrackingIssue();
+  // F5-1 (bloqueante, ronda 3): `null` ("no existe issue") tiene que ser
+  // distinguible de "no se pudo determinar" (un blip de la API de gh) —
+  // confundirlos creaba un issue DUPLICADO cada vez que la búsqueda fallaba
+  // con uno ya abierto. Mismo tratamiento que `listOpenPrBranches` más abajo
+  // (fail open: abortar sin tocar nada, nunca inventar un estado).
+  if (existing && existing.error) {
+    log('reconcile-stale-phases: no se pudo determinar si ya existe un issue de seguimiento — abortando sin tocarlo.');
+    return { action: 'error', staleCount: null, issueNumber: null };
+  }
+  // F5-2 (seguimiento, ronda 3): cerrar el issue A MANO no sirve de nada —
+  // la corrida siguiente lo reabre (`updateIssue` + `reopenIssue`) si sigue
+  // habiendo algo rancio. Cruzado con el falso positivo ya documentado
+  // (rama local sin pushear), alguien con trabajo de días se come el issue
+  // reabierto cada vez que corre la reconciliación, aunque el que reabre
+  // sea rancio de OTRA persona. Escotilla: el label `wontfix` en el propio
+  // issue significa "no lo toques" — se deja tal cual está, cerrado o
+  // abierto, hasta que alguien quite el label.
+  if (existing && Array.isArray(existing.labels) && existing.labels.includes('wontfix')) {
+    log(`reconcile-stale-phases: issue #${existing.number} tiene el label "wontfix" — no se toca.`);
+    return { action: 'skipped-wontfix', staleCount: staleNow.length, issueNumber: existing.number };
+  }
+
   const previousEntries = existing ? parseIssueBody(existing.body) : [];
   const merged = mergeStaleEntries(staleNow, previousEntries, today);
 
@@ -107,20 +129,29 @@ function gh(args) {
   return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
+/**
+ * F5-1 (bloqueante, ronda 3): `null` DEBE significar "confirmado: no existe
+ * issue" — nunca "no lo sé". Un fallo de `gh` (red, auth, rate limit) o una
+ * salida que no parsea como JSON no es lo mismo que un repo limpio sin
+ * issues, y tratarlos igual crea un duplicado en cada corrida que tropieza
+ * con la API mientras el issue real sigue abierto.
+ */
 function findTrackingIssueReal() {
   let out;
   try {
-    out = gh(['issue', 'list', '--state', 'all', '--label', ISSUE_LABEL, '--json', 'number,body,state', '--limit', '1']);
+    out = gh(['issue', 'list', '--state', 'all', '--label', ISSUE_LABEL, '--json', 'number,body,state,labels', '--limit', '1']);
   } catch {
-    return null;
+    return { error: true };
   }
   let issues;
   try {
     issues = JSON.parse(out);
   } catch {
-    return null;
+    return { error: true };
   }
-  return issues[0] || null;
+  if (!issues[0]) return null;
+  const { number, body, state, labels } = issues[0];
+  return { number, body, state, labels: (labels || []).map((l) => l.name) };
 }
 
 /** El label puede no existir todavía en un repo nuevo — se intenta crear y se ignora si ya está (mismo patrón que qa-drift-watchdog.yml). */
@@ -142,16 +173,23 @@ function main() {
   runReconciliation({
     specFiles,
     listOpenPrBranches: () => {
-      let out;
+      // F5-4 (ronda 3): el `JSON.parse` tiene que estar DENTRO del mismo
+      // try que el `gh` — un `gh` que sale 0 con salida no-JSON (raro, pero
+      // no imposible: un mensaje de estado inesperado en stdout) lanzaba sin
+      // capturar, contradiciendo el "fail open" que el comentario de al lado
+      // ya prometía.
+      let branches;
       try {
-        out = gh(['pr', 'list', '--state', 'open', '--json', 'headRefName', '--limit', '200']);
+        const out = gh(['pr', 'list', '--state', 'open', '--json', 'headRefName', '--limit', '200']);
+        branches = JSON.parse(out).map((p) => p.headRefName);
       } catch (e) {
-        // Fail open, a propósito: un fallo de red/auth listando PRs no debe
-        // crear ruido falso ("todo está rancio") — se aborta sin tocar el issue.
+        // Fail open, a propósito: un fallo de red/auth/parseo listando PRs
+        // no debe crear ruido falso ("todo está rancio") — se aborta sin
+        // tocar el issue.
         console.error('reconcile-stale-phases: no se pudo listar PRs abiertos, abortando sin tocar el issue:', e.message);
         process.exit(0);
       }
-      return JSON.parse(out).map((p) => p.headRefName);
+      return branches;
     },
     findTrackingIssue: findTrackingIssueReal,
     createIssue: (body) => {

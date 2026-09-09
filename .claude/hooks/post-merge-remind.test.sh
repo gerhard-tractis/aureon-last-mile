@@ -191,6 +191,17 @@ assert_exit 0 "Bloqueante 3: commit message mentioning gh pr merge — not a rea
 assert_exit 2 "a merge command chained after another (only the segment matters): still reminds" \
   "$(bash_tool_json 'echo about to merge && gh pr merge 693 --squash')" "$GHDIR"
 
+# ── H-1 (review ronda 3): the exact sequence CLAUDE.md itself mandates —
+# `git push`, `gh pr create`, `gh pr merge --auto --squash`, each on its own
+# LINE, not chained with `&&`/`;` — is the normal way this repo's own
+# workflow writes that sequence. A newline-only split (no `&&`/`;`/`|`
+# between commands) must still find the merge segment.
+MULTILINE_MERGE='git push origin feat/x
+gh pr create --title x --body y
+gh pr merge 693 --squash'
+assert_exit 2 "H-1: a multi-line command (newline-separated, CLAUDE.md's own mandated sequence) still finds the merge segment" \
+  "$(bash_tool_json "$MULTILINE_MERGE")" "$GHDIR"
+
 # ── Non-Bash tool: silent ───────────────────────────────────────────────────
 assert_exit 0 "non-Bash tool_name: silent" \
   '{"tool_name":"Read","tool_input":{"file_path":"x"}}' "$CRASH_IF_CALLED"
@@ -257,6 +268,27 @@ if [ -f "$MARKER" ]; then
   pass=$((pass + 1)); echo "  ok   M1: a real gh pr merge command DOES invoke node (the pre-filter isn't over-eager either)"
 else
   fail=$((fail + 1)); echo "  FAIL M1: a real gh pr merge command never invoked node — pre-filter is too aggressive"
+fi
+
+# ── H-3 (review ronda 3): the pre-filter narrowed from `*gh*` to
+# `*'gh pr merge'*` — a payload containing the bigram "gh" but NOT the
+# phrase "gh pr merge" (e.g. a `tool_response` mentioning "through", "right",
+# a git hash, or a `gh pr view`/`gh pr checks` command) must not pay node's
+# startup cost either.
+rm -f "$MARKER"
+printf '%s' "$(bash_tool_json 'gh pr checks 699')" | PATH="$NODEMARK_DIR:$BASH_DIR" bash "$HOOK" >/dev/null 2>&1
+if [ ! -f "$MARKER" ]; then
+  pass=$((pass + 1)); echo "  ok   H-3: a command with 'gh' but not 'gh pr merge' never invokes node"
+else
+  fail=$((fail + 1)); echo "  FAIL H-3: a 'gh pr checks' command invoked node — pre-filter is back to matching any 'gh'"
+fi
+
+rm -f "$MARKER"
+printf '%s' "$(bash_tool_json 'echo right through here')" | PATH="$NODEMARK_DIR:$BASH_DIR" bash "$HOOK" >/dev/null 2>&1
+if [ ! -f "$MARKER" ]; then
+  pass=$((pass + 1)); echo "  ok   H-3: a payload with the bigram 'gh' inside unrelated words ('right', 'through') never invokes node"
+else
+  fail=$((fail + 1)); echo "  FAIL H-3: an unrelated payload containing 'gh' as a substring invoked node"
 fi
 
 echo

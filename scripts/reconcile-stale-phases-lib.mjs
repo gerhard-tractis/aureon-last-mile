@@ -94,10 +94,13 @@ export function renderIssueBody(entries) {
     'Puede significar que el trabajo se mergeó (probablemente vía `gh pr merge --auto`,',
     'que no deja ningún comando local que un hook pueda interceptar — ver spec-91) y',
     'nadie cerró el token todavía. **También puede ser un falso positivo inofensivo:**',
-    'trabajo en una rama local sin pushear no tiene PR abierto que lo respalde y',
-    'aparece aquí igual — es transitorio, desaparece en cuanto se pushea. La columna',
-    '"detectado" ayuda a distinguir los dos: unos minutos, probablemente lo segundo;',
-    'unos días, probablemente lo primero.',
+    'trabajo en una rama LOCAL sin pushear todavía no tiene PR abierto que lo',
+    'respalde — y una rama YA pusheada pero sin PR abierto todavía (por ejemplo,',
+    'entre el push y el `gh pr create`) tampoco lo tiene. Los dos aparecen aquí',
+    'igual, y los dos son transitorios: desaparecen en cuanto se pushea o se abre',
+    'el PR. La columna "detectado" ayuda a distinguir esto de lo real: unos',
+    'minutos, probablemente alguno de estos dos casos; unos días, probablemente',
+    'un token que nadie cerró.',
     '',
     '| Spec | Fase | Detectado por primera vez |',
     '|---|---|---|',
@@ -114,16 +117,35 @@ export function renderIssueBody(entries) {
 }
 
 /**
+ * F5-3 (review ronda 3): la clave de identidad de una entrada es
+ * spec + NÚMERO de fase, no el texto completo del heading. `faseText` trae
+ * el título después del número ("Fase 2 — RPCs") y este repo corrige esos
+ * títulos a menudo — si la clave incluyera el texto completo, corregir un
+ * título reseteaba `firstSeen` a "hoy", justo la columna que el cuerpo del
+ * issue le pide al lector usar para distinguir un falso positivo (rama sin
+ * pushear, minutos) de uno real (días). Se extrae sólo el número (con
+ * sufijo de letra: "1b"); si el heading no trae uno reconocible (no debería
+ * pasar — `findInProgressPhases` sólo emite headings de fase reales), se
+ * cae al texto completo en vez de fusionar entradas de fases distintas por
+ * error.
+ */
+function faseKey(faseText) {
+  const m = /^(?:Fase|Phase)\s+(\d+[a-z]?)\b/i.exec(faseText || '');
+  return m ? m[1].toLowerCase() : faseText;
+}
+
+/**
  * Merges the phases that are stale RIGHT NOW against what the issue already
  * tracked: a phase still stale keeps its ORIGINAL `firstSeen` (never reset
- * to today just because the workflow ran again); a phase newly stale gets
- * `today`; a phase no longer stale is dropped — this is what makes the
+ * to today just because the workflow ran again — nor because someone fixed
+ * a typo in the phase's title, see `faseKey` above); a phase newly stale
+ * gets `today`; a phase no longer stale is dropped — this is what makes the
  * issue self-healing without anyone editing it by hand.
  */
 export function mergeStaleEntries(staleNow, previousEntries, today) {
-  const prevByKey = new Map(previousEntries.map((e) => [`${e.specId}\0${e.faseText}`, e]));
+  const prevByKey = new Map(previousEntries.map((e) => [`${e.specId}\0${faseKey(e.faseText)}`, e]));
   return staleNow.map((p) => {
-    const key = `${p.specId}\0${p.faseText}`;
+    const key = `${p.specId}\0${faseKey(p.faseText)}`;
     const prev = prevByKey.get(key);
     return { specId: p.specId, faseText: p.faseText, firstSeen: prev ? prev.firstSeen : today };
   });

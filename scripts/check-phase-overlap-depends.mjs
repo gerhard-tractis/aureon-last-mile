@@ -240,6 +240,13 @@ export function checkDependencies(targets, repo) {
     for (const dep of t.depends.entries) {
       const res = resolveDependency(repo, dep);
       if (!res.specFound) {
+        // H-4 (review ronda 3): esto SÍ bloquea (exit 4), a diferencia de un
+        // número de fase que no calza con ningún heading (que sólo avisa,
+        // ver ambiguousDeps abajo). Misma clase de error en el fondo — un
+        // typo en el campo `**Depende de:**` — pero acá no hay ambigüedad
+        // que resolver: `docs/specs/spec-<N>-*.md` o existe en el repo o no
+        // existe, sin la zona gris de "¿es un heading de fase real o sólo
+        // prosa que lo menciona?" que sí aplica al número de fase.
         unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} no existe en docs/specs/` });
       } else if (!res.found) {
         ambiguousDeps.push({ target: t.name, dep, specFile: res.specFile });

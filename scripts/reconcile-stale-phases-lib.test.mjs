@@ -148,5 +148,25 @@ test('mergeStaleEntries: a previously-tracked phase that is no longer stale is D
   assert.deepEqual(merged, []);
 });
 
+// F5-3 (review ronda 3): editar el TÍTULO de una fase (después del número)
+// no debe resetear firstSeen — el número de fase es la identidad, el texto
+// después de "—" es sólo descripción, y este repo corrige esos títulos a
+// menudo (ver spec-84 fase 3, corregida el 2026-09-08 sin cambiar de fase).
+test('mergeStaleEntries: correcting a phase TITLE (same number) keeps the original firstSeen', () => {
+  const staleNow = [{ specId: '80', faseText: 'Fase 2 — RPCs con manejo de errores (corregido)', file: 'spec-80-x.md' }];
+  const previous = [{ specId: '80', faseText: 'Fase 2 — RPCs', firstSeen: '2026-09-01' }];
+  const merged = mergeStaleEntries(staleNow, previous, '2026-09-08');
+  assert.deepEqual(merged, [
+    { specId: '80', faseText: 'Fase 2 — RPCs con manejo de errores (corregido)', firstSeen: '2026-09-01' },
+  ]);
+});
+
+test('mergeStaleEntries: a genuinely DIFFERENT phase number of the same spec gets its own firstSeen, not conflated', () => {
+  const staleNow = [{ specId: '80', faseText: 'Fase 3 — Otra fase', file: 'spec-80-x.md' }];
+  const previous = [{ specId: '80', faseText: 'Fase 2 — RPCs', firstSeen: '2026-09-01' }];
+  const merged = mergeStaleEntries(staleNow, previous, '2026-09-08');
+  assert.deepEqual(merged, [{ specId: '80', faseText: 'Fase 3 — Otra fase', firstSeen: '2026-09-08' }]);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
