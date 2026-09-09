@@ -1053,7 +1053,7 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 >   baja), pero la documentación promete menos de lo que el código hace.
 >   Cierre si algún día importa: `?? (tieneExtensión ? null : 'image/jpeg')`.
 
-### Fase 5 — `5i` carga cerrada `[pending]`
+### Fase 5 — `5i` carga cerrada `[in_progress]`
 
 **Archivos:** `app/app/pickup/complete/[loadId]/page.tsx` (estado post-cierre), o ruta hermana
 
