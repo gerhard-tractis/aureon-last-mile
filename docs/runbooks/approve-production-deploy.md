@@ -1,57 +1,78 @@
-# Runbook — Approving a production deploy
+# Runbook — production deploys, and the one case that still asks you
 
-Since spec-57, merging to `main` no longer ships to production on its own. A merge
-syncs the QA environment, then stops and waits for you.
+Since spec-92, a merge to `main` deploys to production automatically once
+`e2e-qa` is green and the run is still `main`'s current tip — no click. The
+click from spec-57 is still here, but it is now the **exception**: it only
+appears when the merge touches the auth hook, the one class of change QA does
+not exercise (see "Why the auth hook is different" below).
 
 Related: `.github/workflows/README.md` · `docs/qa-environment.md` ·
-`docs/runbooks/manual-deployment.md` · `docs/runbooks/rollback-production.md`
+`docs/runbooks/manual-deployment.md` · `docs/runbooks/rollback-production.md` ·
+`docs/specs/spec-92-gate-produccion-diferenciado.md`
 
 ---
 
-## What happens on a merge
+## What happens on a merge — two paths
 
 ```
-merge to main ──▶ CI ──▶ deploy-qa ──▶ approve-production ⏸ ──▶ production
-                          (QA VPS)        (you, here)
+merge to main ──▶ CI ──▶ deploy-qa ──▶ e2e-qa ──▶ approve-production
+                          (QA VPS)     (BLOCKING)      │
+                                                        ├─ auth_hook == 'true'?
+                                                        │    ⏸ YOU, here (environment: production)
+                                                        │    :  auto (environment: production-auto)
+                                                        └─▶ production
 ```
 
-If `deploy-qa` fails, `approve-production` never runs and you are never asked.
-Production is untouched. That is the intended behaviour — see *QA is down* below.
+If `deploy-qa` fails, or `e2e-qa` fails, `approve-production` never runs and
+nothing deploys — production is untouched. That is the intended behaviour, on
+both paths.
 
-## Where the approval appears
+**The common case: nothing to do.** If the merge did not touch the auth hook,
+`approve-production` runs immediately once `e2e-qa` is green, re-verifies the
+run is still `main`'s tip, and the production fan-out starts. You will not see
+a "Review deployments" banner for these.
+
+## When you WILL be asked
+
+Only when the diff touches:
+- anything naming `custom_access_token_hook` (the GoTrue auth hook), or
+- a migration granting to `supabase_auth_admin` (how the hook gets wired up)
+
+## Why the auth hook is different
+
+QA's GoTrue never invokes `custom_access_token_hook` at all — it is not
+registered in `infra/supabase-qa/docker-compose.yml`. And even where the hook
+degrades gracefully by design, `e2e-qa`'s sign-in step never reads the JWT, so
+a broken hook still produces a green login. `deploy-qa` + `e2e-qa` passing
+proves nothing about this class of change — the pipeline doesn't impose
+anything here, it just looks like it does. `docs/specs/spec-93-paridad-qa-produccion.md`
+is closing this class of gap at the root (a measured inventory of QA↔prod
+config surfaces, with a CI check for new ones); until it lands, this is a
+narrow, named exception, not a general "migrations pause" rule.
+
+## Where the approval appears, when it does
 
 1. GitHub → **Actions** → the **Deploy Production** run for your merge.
 2. A yellow banner: **"Review deployments"** (also emailed, and shown on the
-   repo's Environments page under `Production`).
+   repo's Environments page under `production`).
 3. Click it, tick `production`, then **Approve and deploy**.
 
 ## Before you approve
 
-**1. Confirm which commit you are approving.** Open the `Approve Production Deploy`
-job log. It prints:
+**1. Confirm which commit you are approving.** Open the `Approve Production
+Deploy` job log. It prints the commit and whether the diff touched the auth
+hook. Approving does not skip the freshness check — if a newer merge landed
+while you were deliberating, the job fails closed rather than deploying stale
+code on top of it. If that happens, re-run the workflow for the newer commit
+instead of retrying this one.
 
-```
-Commit approved for production: <sha>
-QA sync result: success
-```
+**2. Check QA.** https://qa.aureon.tractis.ai — running exactly that commit.
+Exercise the hook-adjacent change by hand; this is precisely the class of
+change QA's automated checks cannot see.
 
-That SHA is what deploys — **not** `main`'s tip. If you merged more PRs while
-deliberating, each queued as its own run with its own SHA. Approve them in order.
-
-**2. Check QA.** https://qa.aureon.tractis.ai — it is running exactly that commit.
-Exercise whatever the merge touched.
-
-**2b. Check the `E2E against QA` job.** Playwright drives the full spec-52
-pickup-and-reception workday through the real QA screens on that commit. It is
-**advisory** — a red suite does not block the deploy, so read it rather than
-relying on it to stop you. On failure, download the `e2e-qa-report-*` artifact
-for the trace and video. It covers spec-52 only; everything else in QA is still
-yours to check by hand.
-
-**3. Read `verify-prod-migrations`.** It is read-only and reports whether
-production's migration ledger already diverges from the repo. Deliberately not
-gated, so its output is available *before* you decide. If it is red, understand
-why before approving — the database has no automatic rollback.
+**3. Read `verify-prod-migrations`.** Read-only, reports whether production's
+migration ledger already diverges from the repo. Not gated, so its output is
+available *before* you decide.
 
 **4. Weigh the blast radius.** `supabase db push` is forward-only
 (`docs/runbooks/rollback-production.md`). Frontend and worker/agents roll back
@@ -59,45 +80,59 @@ automatically on deploy failure; **the database does not.**
 
 ## Rejecting
 
-Click **Reject**, or just leave it. Production is untouched — nothing has run.
-The merge stays on `main`, so the next merge's run will contain it too. To ship
-it later, re-run the workflow from the Actions UI and approve then.
+Click **Reject**, or just leave it. Production is untouched. Cancel the run
+instead if you want its queued production concurrency slot freed immediately.
 
-Cancel the run instead if you want the queued slot freed immediately.
+## A run that never resolves — `deploy-approval-stale`
 
-## QA is down and this is an emergency
+`deploy-approval-watchdog.yml` (spec-92) checks every 15 minutes whether the
+commit at `main`'s tip has reached production. If a run sits unresolved for
+more than 60 minutes — still waiting on a click, `e2e-qa` red, or anything
+else — it opens (or updates) a single issue labelled `deploy-approval-stale`.
+It also fires immediately, without waiting the 60 minutes, if two runs for
+different commits are unresolved at the same time: approving the older one
+after a newer merge landed would ship stale code, so cancel the older run
+rather than approving it.
 
-A QA VPS outage blocks production deploys by design. Do **not** fix this by
-editing the `needs:` chain in `deploy.yml` — `scripts/check-deploy-gating.sh`
-will fail CI, and that check exists precisely to stop the gate being quietly
-removed under pressure.
+The issue closes itself once a run reaches production. If you see it: open the
+linked run, find where it stopped (waiting for approval, a red `e2e-qa`, a
+failed freshness check), and act on that — the issue itself carries no state
+beyond "still unresolved" or "resolved".
 
-Use `docs/runbooks/manual-deployment.md` instead. If QA will be down for an
-extended period, temporarily removing the required-reviewer rule from the
-`Production` environment is the honest lever — it is visible, logged, and easy
-to put back:
+## What auto-approval does NOT cover — declared gaps
 
-```bash
-# inspect current state first
-gh api repos/:owner/:repo/environments/Production --jq '.protection_rules'
-```
+Auto-approval removed the click for most merges, but the click was never a
+real defense against these either — declaring them here is more honest than
+letting them hide behind "someone approved it":
 
-Put it back the same day.
+- **Scale.** Production has ~112k dispatches and ~61k packages; a backfill
+  that times out there does not time out in QA. Nobody measured table volume
+  by clicking a button before this spec, and nothing measures it after.
+- **Config divergence beyond the auth hook.** `spec-93` is the structural fix
+  for this class — until it lands, any QA↔prod config difference not yet
+  named as an exception here has the same blind spot the auth hook had before
+  this spec.
 
 ## Managing who can approve
 
 ```bash
 # who is currently required
-gh api repos/:owner/:repo/environments/Production --jq '.protection_rules'
+gh api repos/:owner/:repo/environments/production --jq '.protection_rules'
 
 # add a reviewer
-gh api -X PUT repos/:owner/:repo/environments/Production \
+gh api -X PUT repos/:owner/:repo/environments/production \
   -f 'prevent_self_review=false' \
   -F 'reviewers[][type]=User' \
   -F "reviewers[][id]=$(gh api users/<login> --jq .id)"
 ```
 
 `prevent_self_review` must stay `false` while there is a single maintainer —
-with `true`, the person who merged cannot approve, which makes every deploy
-unapprovable. This is the same trap that keeps required PR reviews off `main`
-(`REMEDIATION.md`, C2). Revisit both when a second maintainer exists.
+with `true`, the person who merged cannot approve, which makes every
+auth-hook deploy unapprovable. This is the same trap that keeps required PR
+reviews off `main` (`REMEDIATION.md`, C2). Revisit both when a second
+maintainer exists.
+
+`production-auto` (the environment `approve-production` resolves to when the
+diff does not touch the auth hook) has no protection rules by design — do not
+add reviewers to it; that would silently restore the pre-spec-92 pause for
+every merge.

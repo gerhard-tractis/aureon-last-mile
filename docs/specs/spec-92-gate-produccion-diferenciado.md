@@ -377,24 +377,27 @@ GitHub, no de leer un checkout en el VPS.
 
 ---
 
-### Fase 4 — documentación `[pending]`
+### Fase 4 — documentación `[in_progress]`
 
 **Archivos:**
 - Modificar: `.github/workflows/README.md`
 - Modificar: `docs/runbooks/approve-production-deploy.md`
 
-- [ ] Actualizar el diagrama de flujo: `approve-production` corre
-  automáticamente si `e2e-qa` está verde, el run es vigente, y el diff no
-  toca el hook de auth; pausa sólo en ese último caso.
-- [ ] Reescribir el runbook: la pausa deja de ser el caso normal.
-  Explicar cuándo aparece (hook de auth), cuándo un run no avanza sin
-  pausa visible (E2E rojo, run superado), qué significa el issue de
-  `deploy-approval-stale`, y cómo investigar un run atascado (sigue
-  existiendo el escape manual de `docs/runbooks/manual-deployment.md`).
-- [ ] Añadir la tabla de huecos declarados (escala, divergencia QA/prod
-  más allá del hook) al runbook o dejarla enlazada, y referenciar
-  `spec-93` como el trabajo que la va vaciando.
-- [ ] Commit.
+- [x] Actualizado el diagrama de flujo: `approve-production` corre
+  automáticamente si `e2e-qa` está verde y el run es vigente; pausa sólo
+  cuando el diff toca el hook de auth. Corregida además una imprecisión
+  preexistente en la tabla de jobs (`e2e-qa` decía "advisory" — es
+  bloqueante desde el 2026-09-03).
+- [x] Runbook reescrito: la pausa deja de ser el caso normal. Explica
+  cuándo aparece (hook de auth, con el porqué medido), cómo verificar qué
+  commit se está aprobando (incluyendo el freshness check), qué significa
+  el issue de `deploy-approval-stale`, y el escape manual
+  (`docs/runbooks/manual-deployment.md`). Corregido de paso el nombre del
+  entorno en los comandos `gh api` (era `Production`, capitalizado; el
+  real en `deploy.yml` es `production`, minúscula).
+- [x] Añadida la tabla de huecos declarados (escala, divergencia QA/prod
+  más allá del hook) al runbook, referenciando `spec-93`.
+- [x] Commit.
 
 **Verify:** unit
 
