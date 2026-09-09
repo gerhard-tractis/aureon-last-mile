@@ -169,6 +169,21 @@ describe('SyncChip', () => {
       expect(screen.getByText(/no bloquea el cierre/i)).toBeInTheDocument();
     });
 
+    // El caso puro cross-user: blockedCount > 0 sólo por una `pending`
+    // detrás de otro operario, sin ningún `dead` de por medio.
+    // `listDeadPickupEntries` no trae nada, y el panel no puede quedarse en
+    // silencio — tiene que decir que lo bloqueado no es un rechazo, se
+    // libera solo.
+    it('says nothing needs help when blocked is entirely a temporary cross-user wait, no dead entries at all', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [];
+      render(<SyncChip />);
+      expect(screen.getByText(/nada requiere ayuda/i)).toBeInTheDocument();
+      // Nadie necesita contactar a soporte por algo que se resuelve solo.
+      expect(screen.queryByText(/soporte|operaciones/i)).not.toBeInTheDocument();
+    });
+
     it('gives a human path to resolve it — contacting support/operations', () => {
       mockState.blockedCount = 1;
       mockDetail.status = 'ok';
@@ -193,6 +208,17 @@ describe('SyncChip', () => {
       ];
       render(<SyncChip />);
       expect(screen.getByText(/\+2/)).toBeInTheDocument();
+    });
+
+    it('does not claim there is more when the dead list already accounts for all of blockedCount', () => {
+      mockState.blockedCount = 1;
+      mockDetail.status = 'ok';
+      mockDetail.entries = [
+        { id: 1, manifestId: 'manifest-77', type: 'pickup_scan', lastError: 'MANIFEST_NOT_CLOSABLE' },
+      ];
+      render(<SyncChip />);
+      expect(screen.queryByText(/\+0/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/más esperando/i)).not.toBeInTheDocument();
     });
 
     it('distinguishes a failed read from "nothing is blocked" — never a silent zero', () => {
