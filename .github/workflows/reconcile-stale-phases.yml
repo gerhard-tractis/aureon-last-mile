@@ -1,0 +1,48 @@
+name: Reconcile stale phase tokens
+
+# spec-91 fase 5 — la garantía real de que un token de fase se cierre tras
+# un merge. Ningún hook local puede darla: el flujo obligatorio de este repo
+# (CLAUDE.md) corre `gh pr merge --auto --squash` inmediatamente después de
+# `gh pr create`, mientras el PR sigue OPEN — cuando GitHub lo mergea de
+# verdad, minutos después, no corre ningún comando Bash que un hook pueda
+# interceptar. Las seis fases [in_progress] rancias que motivaron spec-91
+# vinieron exactamente de ese camino. Misma razón por la que
+# check-spec-fields.sh vive en CI y no en un hook.
+#
+# No bloquea nada: el merge ya ocurrió, y fallar el CI de `main` por un
+# token de documentación castigaría los despliegues por un problema que no
+# es del código desplegado. La señal es un único issue, actualizado en cada
+# corrida, que se cierra solo cuando la lista de fases rancias queda vacía.
+#
+# Disparadores: push a main (detecta lo antes posible) y un cron diario
+# (cubre el caso en que nadie más pushea a main ese día).
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: reconcile-stale-phases
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Find phases with no open PR backing them
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Reconcile
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/reconcile-stale-phases.mjs "$GITHUB_WORKSPACE"

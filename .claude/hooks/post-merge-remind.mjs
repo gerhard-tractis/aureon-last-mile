@@ -1,31 +1,62 @@
 #!/usr/bin/env node
 // .claude/hooks/post-merge-remind.mjs — PostToolUse hook (matcher: Bash)
 //
-// Hueco 1 de spec-91: nadie cierra el token de fase tras un merge, y
-// keep-going.sh (hook Stop) identifica el spec activo por la rama del
-// WORKTREE DEL AGENTE — que casi nunca es la rama que se acaba de mergear
-// (el orquestador corre `gh pr merge` desde donde sea). Este hook lee la
-// rama REAL del PR mergeado, vía `gh`, y recuerda cerrar el token.
+// RONDA 2 (review adversarial). Este hook YA NO es la garantía de que un
+// token de fase se cierre — esa garantía no puede vivir en un hook local: el
+// flujo OBLIGATORIO de este repo (CLAUDE.md) corre
+// `gh pr merge --auto --squash` inmediatamente después de `gh pr create`,
+// mientras el PR sigue `OPEN` (auto-merge lo encola). Cuando GitHub lo
+// mergea de verdad, minutos después, NO CORRE NINGÚN COMANDO BASH — nada que
+// un hook pueda interceptar. Las seis fases rancias que motivaron este spec
+// vinieron exactamente de ese camino `--auto`. La garantía real es la fase 5
+// de este spec (reconciliación en servidor, `gh pr list` contra los tokens
+// `[in_progress]`, corre en CI — la misma razón por la que
+// `check-spec-fields.sh` vive en CI y no en un hook).
 //
-// Avisa, no bloquea: dispara DESPUES de que `gh pr merge` ya corrió. Si el
-// merge tuvo éxito, ya es un hecho consumado en GitHub — no hay nada que
-// "bloquear". `exit 2` en un hook PostToolUse no deshace la herramienta ya
-// ejecutada; inyecta stderr como contexto que el agente ve y con el que
-// tiene que lidiar antes de seguir limpio. Se usa exit 2 (no exit 0 con
-// stdout) porque el repo ya aprendió con keep-going.sh que un mensaje que se
-// puede ignorar, se ignora.
+// Lo que este hook SÍ sirve: un atajo de latencia cero para el camino
+// manual — alguien corre `gh pr merge <N> --squash` (sin `--auto`) y el
+// merge es inmediato. En ese caso, confirmar y recordar aquí es más rápido
+// que esperar a la próxima corrida de la fase 5.
 //
-// Una llamada a `gh` es defendible aquí (no lo sería en un hook Stop, que
-// dispara en cada fin de turno): este hook sólo dispara cuando el comando
-// bash matchea `gh pr merge`, es decir, una vez por PR mergeado — no una vez
-// por turno.
+// Bloqueantes de la ronda 1, cerrados en esta reescritura:
+//   B2 — el número de PR puede aparecer DESPUÉS de las flags
+//        (`gh pr merge --auto --squash 693`) — se escanea CADA token del
+//        segmento de comando, no sólo el primero.
+//   B3 — un `grep`/mensaje de commit que sólo MENCIONA "gh pr merge" no debe
+//        disparar nada — se exige que el comando, partido por los
+//        separadores de shell (&&, ||, ;, |), tenga un SEGMENTO que empiece
+//        literalmente con `gh pr merge`. Un `grep -rn "gh pr merge" .claude/`
+//        tiene un solo segmento (la invocación de grep), que no empieza así.
 //
-// Degradación: sin `gh` en PATH, sin red, JSON inesperado, o el propio
-// stdin malformado -> silencio (exit 0). Nunca bloquea un turno por un
+// Avisa, no bloquea: para cuando este hook confirma el estado, el merge (si
+// ocurrió) ya es un hecho consumado en GitHub. `exit 2` en un `PostToolUse`
+// no deshace nada — inyecta stderr como contexto que el agente tiene que
+// leer antes de seguir. Se usa exit 2 en vez de exit 0 + stdout porque este
+// repo ya aprendió con keep-going.sh que un mensaje ignorable, se ignora.
+//
+// Degradación: sin `gh` en PATH, sin red, sin auth, JSON inesperado, rama
+// sin `spec-NN` -> silencio (exit 0). Nunca bloquea un turno por un
 // problema de infraestructura ajeno al trabajo.
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+
+// Nota de plataforma (verificado en desarrollo local, no en abstracto):
+// `execFileSync('gh', args)` SIN shell no resuelve `PATHEXT` en Windows — un
+// `gh` instalado como `gh.cmd`/`gh.exe` da `ENOENT`. Probar el nombre exacto
+// (`gh.cmd`) tampoco sirve: Node rehúsa ejecutar un `.cmd`/`.bat` sin
+// `shell: true` (EINVAL, política de seguridad de Node desde la mitigación
+// de CVE-2024-27980). Y `execFileSync(bin, args, { shell: true })` emite un
+// `DEP0190` porque un array de args con `shell: true` no se escapa —
+// exactamente el caso que ese aviso existe para señalar.
+//
+// `execSync` con un ÚNICO string sí pasa por el shell del sistema sin ese
+// aviso, y es seguro AQUÍ porque lo único que se interpola es `prArg` —
+// validado como puramente numérico (o `null`) por `extractPrArg` antes de
+// llegar aquí — el resto de la cadena son literales fijos de este archivo.
+// (`reconcile-stale-phases.mjs`, que si necesita pasar texto arbitrario —
+// cuerpos de issue — como argumento, usa `execFileSync` con un array real en
+// vez de esto, precisamente porque ese texto no está acotado a dígitos.)
 
 function readStdinJson() {
   let raw;
@@ -42,14 +73,44 @@ function readStdinJson() {
 }
 
 /**
- * `gh pr merge 693 --squash` -> "693"
- * `gh pr merge https://github.com/x/y/pull/693 --squash` -> "693"
- * `gh pr merge --squash` (sin argumento posicional -> PR de la rama actual) -> null
+ * Bloqueante 3 (ronda 1): partir el comando por los separadores de shell y
+ * exigir que un SEGMENTO empiece con `gh pr merge` — no que el texto
+ * completo lo "mencione" en cualquier posición. Así, `grep -rn "gh pr merge"
+ * .claude/` (un único segmento, la invocación de grep, que NO empieza con
+ * `gh pr merge`) y `git commit -m "gh pr merge era el problema"` (un único
+ * segmento, `git commit ...`) nunca casan — le pasó literalmente al reviewer
+ * mientras revisaba esto en la ronda 1.
+ *
+ * Heurística deliberadamente simple (no un parser de shell completo): no
+ * entiende comillas que contengan `&&`/`;`/`|` literalmente. Igual que los
+ * demás parsers heurísticos de este repo (`keep-going.sh`, el `REF_RE` de
+ * check-phase-overlap-depends.mjs), es una aproximación barata, no un
+ * intérprete — y es estrictamente más precisa que la sustring que reemplaza.
  */
-export function extractPrArg(command) {
-  const m = command.match(/\bgh\s+pr\s+merge\s+(?:(\d+)\b|https?:\/\/\S+\/pull\/(\d+))/);
-  if (!m) return null;
-  return m[1] || m[2] || null;
+export function extractMergeSegment(command) {
+  if (typeof command !== 'string') return null;
+  const segments = command.split(/&&|\|\||;|\|/).map((s) => s.trim());
+  return segments.find((s) => /^gh\s+pr\s+merge\b/.test(s)) || null;
+}
+
+/**
+ * Bloqueante 2 (ronda 1): el número de PR puede aparecer en cualquier
+ * posición entre las flags (`gh pr merge --auto --squash 693`), no sólo
+ * justo después de `merge`. Escanea TODOS los tokens del segmento, no sólo
+ * el primero — y sólo acepta uno que sea puramente numérico, o una URL de
+ * pull request completa. `null` si no hay ninguno (el PR se resuelve contra
+ * la rama actual).
+ */
+export function extractPrArg(mergeSegment) {
+  if (!mergeSegment) return null;
+  const after = mergeSegment.replace(/^gh\s+pr\s+merge\b/, '');
+  const urlMatch = after.match(/https?:\/\/\S+\/pull\/(\d+)/);
+  if (urlMatch) return urlMatch[1];
+  const tokens = after.trim().split(/\s+/).filter(Boolean);
+  for (const t of tokens) {
+    if (/^\d+$/.test(t)) return t;
+  }
+  return null;
 }
 
 /** Mismo patrón que `keep-going.sh`: 'spec-' + dígitos + letra opcional. */
@@ -85,7 +146,8 @@ export function buildReminder({ prNumber, branch, specId, phaseHint }) {
   lines.push(
     'Si esto cierra una fase, actualiza su token a [done] con las tres líneas de',
     'evidencia (> Implementado por / > Review / > QA) — ver docs/specs/CLAUDE.md.',
-    'Cierra la fase el orquestador, no el implementer.',
+    'Cierra la fase el orquestador, no el implementer. (Si nadie lo hace, la',
+    'reconciliación de spec-91 fase 5 lo detecta igual en la próxima corrida.)',
   );
   return lines.join('\n');
 }
@@ -95,20 +157,10 @@ function main() {
   if (!payload || payload.tool_name !== 'Bash') process.exit(0);
 
   const command = payload.tool_input && payload.tool_input.command;
-  if (typeof command !== 'string' || !/\bgh\s+pr\s+merge\b/.test(command)) {
-    process.exit(0);
-  }
+  const segment = extractMergeSegment(command);
+  if (!segment) process.exit(0);
 
-  // execFileSync('gh', args) sin shell no hace la resolución de PATHEXT que
-  // sí hace un shell — en Windows, un `gh` instalado sólo como `gh.cmd`/
-  // `gh.exe` sin resolverse por su nombre exacto da ENOENT aunque esté
-  // genuinamente en el PATH (confirmado en desarrollo local). execSync SÍ
-  // pasa por el shell del sistema (cmd.exe en Windows, /bin/sh en POSIX), que
-  // resuelve la extensión correctamente en ambos. Todos los argumentos son
-  // internos (dígitos capturados por regex, o literales fijos) — nunca texto
-  // de usuario — así que construir un único string de comando es seguro; no
-  // hay ninguno que necesite escaparse.
-  const prArg = extractPrArg(command);
+  const prArg = extractPrArg(segment);
   const ghArgs = ['pr', 'view'];
   if (prArg) ghArgs.push(prArg);
   ghArgs.push('--json', 'number,headRefName,state,mergedAt');

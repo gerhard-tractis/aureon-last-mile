@@ -1,20 +1,29 @@
 /**
  * check-phase-overlap-depends.mjs (spec-91 fase 3/4)
  *
- * Pure text parsing for order-dependency, not surface-overlap. Kept
- * separate from check-phase-overlap-parse.mjs (which owns **Archivos:**)
- * the same way check-phase-overlap-closure.mjs is separate from it — a
- * distinct concern, easier to test in isolation.
+ * Text parsing for order-dependency, not surface-overlap. Kept separate from
+ * check-phase-overlap-parse.mjs (which owns **Archivos:**) the same way
+ * check-phase-overlap-closure.mjs is separate from it — a distinct concern,
+ * easier to test in isolation. Also where check-phase-overlap.mjs's
+ * dependency-checking logic moved to (review ronda 2, menor): that file was
+ * pushing past 300 líneas — the repo's own budget.
  *
- * Three concerns:
+ * Cuatro concerns:
  *   1. extractDependsField   — read **Depende de:** for one phase, in its
  *      three explicit states (ausente / ninguna / indeterminado) plus a
- *      list of declared `spec-N fase M` entries.
+ *      list of declared `spec-N fase M` entries. Pura.
  *   2. findPhaseTokenByNumber — given ANOTHER spec's markdown, find the
- *      status token of the phase numbered M.
+ *      status token of the phase numbered M. Pura.
  *   3. scanUndeclaredReferences — heuristic net: phase-number mentions in
- *      prose that are NOT in **Depende de:** (advisory only, never blocks).
+ *      prose that are NOT in **Depende de:** (advisory only, never blocks). Pura.
+ *   4. resolveDependency / checkDependencies — ÚNICA excepción a "pura": lee
+ *      `docs/specs/` del repo real para resolver una referencia declarada
+ *      contra el token de la OTRA fase. Toca `fs`, a propósito — moverlo
+ *      aquí (en vez de duplicar la lectura de ficheros en el CLI) es lo que
+ *      mantiene a `check-phase-overlap.mjs` bajo el límite de líneas.
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 
 const HEADING_RE = /^#{2,4}\s+.*$/;
 
@@ -189,4 +198,55 @@ export function scanUndeclaredReferences(mdContent, faseMatch, ownSpecId) {
     out.push(ref);
   }
   return out;
+}
+
+/**
+ * Resuelve una entrada de **Depende de:** contra el repo real: busca
+ * `docs/specs/spec-<N>-*.md` y lee el token de su fase `M`. Lee SIEMPRE del
+ * disco de trabajo (no de una rama/ref) — el estado de "¿está [done]?" de
+ * OTRA fase es una propiedad del repo, no de la rama del target evaluado.
+ */
+export function resolveDependency(repo, dep) {
+  const dir = path.join(repo, 'docs', 'specs');
+  let files;
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return { specFound: false };
+  }
+  const match = files.find((f) => f === `spec-${dep.specId}.md` || f.startsWith(`spec-${dep.specId}-`));
+  if (!match) return { specFound: false };
+  const md = readFileSync(path.join(dir, match), 'utf8');
+  const tokenInfo = findPhaseTokenByNumber(md, dep.faseNum);
+  return { specFound: true, specFile: match, ...tokenInfo };
+}
+
+/**
+ * Chequeo de orden para un conjunto de targets (spec-91 fase 3). Devuelve
+ * dos listas separadas — nunca una mezclada — porque tienen tratamiento
+ * distinto en el CLI: `unmetDeps` bloquea (`exit 4`); `ambiguousDeps` sólo
+ * se reporta (bloqueante 1 de la ronda 2: un heading que MENCIONA "fase N"
+ * sin ser un heading de fase real no puede distinguirse de un número de
+ * fase que genuinamente no existe — adivinar cuál de los dos es sería peor
+ * que reportarlo).
+ */
+export function checkDependencies(targets, repo) {
+  const unmetDeps = [];
+  const ambiguousDeps = [];
+  for (const t of targets) {
+    if (!t.depends || !t.depends.fieldPresent || t.depends.explicitNone || t.depends.indeterminate) {
+      continue; // ausente, "ninguna", o "(indeterminado — ...)": nada que chequear aquí
+    }
+    for (const dep of t.depends.entries) {
+      const res = resolveDependency(repo, dep);
+      if (!res.specFound) {
+        unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} no existe en docs/specs/` });
+      } else if (!res.found) {
+        ambiguousDeps.push({ target: t.name, dep, specFile: res.specFile });
+      } else if (res.token !== 'done') {
+        unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\`` });
+      }
+    }
+  }
+  return { unmetDeps, ambiguousDeps };
 }

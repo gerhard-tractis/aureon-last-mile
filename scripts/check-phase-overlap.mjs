@@ -35,10 +35,10 @@
  *      la pregunta de si los ficheros chocan todavía no toca.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, statSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { parseTarget, extractArchivosFiles, normalizeFrontendPath } from './check-phase-overlap-parse.mjs';
-import { extractDependsField, findPhaseTokenByNumber, scanUndeclaredReferences } from './check-phase-overlap-depends.mjs';
+import { extractDependsField, scanUndeclaredReferences, checkDependencies } from './check-phase-overlap-depends.mjs';
 import { buildClosure, computeOverlap } from './check-phase-overlap-closure.mjs';
 
 function usageError(msg) {
@@ -251,28 +251,6 @@ function buildTarget(targetStr, { repo, base, maxDepth }) {
   };
 }
 
-/**
- * Resuelve una entrada de **Depende de:** (spec-91 fase 3) contra el repo
- * real: busca `docs/specs/spec-<N>-*.md` y lee el token de su fase `M`. Lee
- * SIEMPRE del disco de trabajo (no de una rama/ref) — el estado de "¿está
- * [done]?" de OTRA fase es una propiedad del repo, no de la rama del target
- * que se está evaluando.
- */
-function resolveDependency(repo, dep) {
-  const dir = path.join(repo, 'docs', 'specs');
-  let files;
-  try {
-    files = readdirSync(dir);
-  } catch {
-    return { specFound: false };
-  }
-  const match = files.find((f) => f === `spec-${dep.specId}.md` || f.startsWith(`spec-${dep.specId}-`));
-  if (!match) return { specFound: false };
-  const md = readFileSync(path.join(dir, match), 'utf8');
-  const tokenInfo = findPhaseTokenByNumber(md, dep.faseNum);
-  return { specFound: true, specFile: match, ...tokenInfo };
-}
-
 function printReport(targets, overlap) {
   console.log('check-phase-overlap: superficies declaradas/reales por target\n');
   for (const t of targets) {
@@ -343,31 +321,12 @@ function main() {
   // fase declara **Depende de:** una fase que no está [done], discutir si
   // sus ficheros chocan con otra es una pregunta que todavía no toca — así
   // que este chequeo corre primero y, si encuentra algo, ni siquiera llega
-  // a calcular solapamiento (exit 4 gana sobre 1/3).
-  const unmetDeps = [];
-  // Bloqueante 1 (review ronda 2): un heading que MENCIONA "fase N" pero no
-  // es un heading de fase real (sin token reconocido) no puede distinguirse
-  // aquí de un número de fase que genuinamente no existe — findPhaseTokenByNumber
-  // devuelve `found: false` en los dos casos, y a propósito: adivinar cuál de
-  // los dos es sería peor que reportarlo. Nunca bloquea (`exit 4`) por esto —
-  // sólo cuando el spec referenciado no existe en absoluto, o cuando SÍ se
-  // encontró un token real y no es `[done]`.
-  const ambiguousDeps = [];
-  for (const t of targets) {
-    if (!t.depends || !t.depends.fieldPresent || t.depends.explicitNone || t.depends.indeterminate) {
-      continue; // ausente, "ninguna", o "(indeterminado — ...)": nada que chequear aquí
-    }
-    for (const dep of t.depends.entries) {
-      const res = resolveDependency(repo, dep);
-      if (!res.specFound) {
-        unmetDeps.push({ target: t.name, dep, reason: `spec-${dep.specId} no existe en docs/specs/` });
-      } else if (!res.found) {
-        ambiguousDeps.push({ target: t.name, dep, specFile: res.specFile });
-      } else if (res.token !== 'done') {
-        unmetDeps.push({ target: t.name, dep, reason: `sigue \`[${res.token}]\`` });
-      }
-    }
-  }
+  // a calcular solapamiento (exit 4 gana sobre 1/3). La lógica vive en
+  // check-phase-overlap-depends.mjs (bloqueante 1 de la ronda 2 incluido:
+  // un heading que MENCIONA "fase N" sin ser un heading de fase real se
+  // reporta como ambiguo, nunca bloquea) — movida ahí, junto al resto del
+  // módulo, para mantener este fichero bajo el límite de líneas del repo.
+  const { unmetDeps, ambiguousDeps } = checkDependencies(targets, repo);
   for (const a of ambiguousDeps) {
     console.error(
       `::warning:: ${a.target} depende de spec-${a.dep.specId} fase ${a.dep.faseNum}, pero no se pudo determinar su estado con certeza en ${a.specFile} (ningún heading con token reconocido calza ese número) — revisa a mano.`,

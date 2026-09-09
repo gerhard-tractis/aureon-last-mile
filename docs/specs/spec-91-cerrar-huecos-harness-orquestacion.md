@@ -97,65 +97,140 @@ la que no se hace obligatorio en `check-spec-fields.sh` todavía.
 
 ## Qué se construye — decisiones argumentadas
 
-### Hueco 1: hook `PostToolUse` sobre `gh pr merge`, avisa — no bloquea
+### Hueco 1, corregido en ronda 2 de review: **ningún hook local cierra este hueco**
 
-**¿Bloquea o avisa? Avisa.** Un hook `PostToolUse` dispara **después** de que
-el proceso ya corrió — el merge, si tuvo éxito, ya es un hecho consumado en
-GitHub. Bloquear no puede deshacerlo; lo único que puede hacer es negarse a
-dejar que el turno progrese con el efecto ya ocurrido, lo cual no protege nada
-que no proteja ya avisar. El contrato de Claude Code para `PostToolUse` es
-justamente ese: `exit 2` no impide que la herramienta ya ejecutada revierta —
-inyecta el `stderr` como contexto que el agente ve y con el que tiene que
-lidiar antes de continuar limpiamente. Uso `exit 2` en vez de `exit 0` con
-mensaje en `stdout` por eso: `stdout` de un `PostToolUse` no se garantiza que
-se lea con la misma prioridad que una razón de bloqueo — y este spec ya
-aprendió con `keep-going.sh` que un mensaje que se puede ignorar, se ignora.
+La primera versión de este spec razonaba sobre un hook `PostToolUse` con
+matcher `gh pr merge` como si fuera el mecanismo que garantiza el cierre. El
+review adversarial (ronda 2) lo tumbó con un hecho, no una opinión: **el
+flujo obligatorio de este repo** (`CLAUDE.md`) corre
 
-**¿Cómo resuelve el spec? El PR, no la rama del agente que corre el hook.**
-El hook vive en un worktree que casi nunca es el que mergeó — el orquestador
-corre `gh pr merge <N>` desde donde sea. Así que la fuente de verdad es
-`gh pr view <N> --json headRefName,state,mergedAt`: una sola llamada de red
-que da la rama real del PR mergeado, confirmando además que el merge fue real
-(no un `gh pr merge --auto` que sólo lo dejó en cola). El spec-id sale de esa
-rama con el mismo patrón que ya usa `keep-going.sh`
-(`grep -oE 'spec-[0-9]+[a-z]?'`), no de la rama en la que el hook corre.
+```
+gh pr create
+gh pr merge --auto --squash   # MANDATORY
+```
 
-**¿Y la fase?** No se infiere con confianza y no hace falta. El patrón de
-rama de este repo (`feat/spec-80-fase-2-bloqueo-faltantes`) casi siempre trae
-el número de fase, así que el hook lo extrae **como pista** (mismo patrón
-tolerante que `phase_taken()` en `keep-going.sh`: `fase` u opcional separador,
-número, sufijo de letra opcional) y lo nombra en el mensaje — pero no decide
-por sí solo qué fase cerrar. Inventar una heurística más fina (mapear PR →
-fase exacta con certeza) exigiría parsear `**Archivos:**` y cruzarlo contra el
-diff del PR, que es exactamente el trabajo que ya hace
-`check-phase-overlap.mjs` para un propósito distinto (paralelismo, no cierre).
-Reutilizar esa lógica aquí sería acoplar un hook de disparo frecuente-ish a un
-módulo que hace `git ls-tree`/`git show` por archivo — más caro de lo que un
-recordatorio necesita. El orquestador, que tiene el spec abierto, confirma la
-fase en dos segundos; la máquina no necesita adivinarla con certeza.
+**inmediatamente**, antes de que CI arranque. En ese instante el PR sigue
+`OPEN` — `--auto` sólo lo encola. Cuando GitHub lo mergea de verdad, minutos
+después, **no corre ningún comando Bash**: nada que un `PostToolUse` pueda
+interceptar, porque no hay evento local que observar. **Los seis tokens
+rancios que motivaron este spec vinieron exactamente de ese camino
+`--auto`** — verificado, no supuesto.
 
-**¿Por qué una llamada a `gh` es defendible aquí y no en `keep-going.sh`?**
-`keep-going.sh` documenta como principio ser "barato... porque dispara en
-CADA fin de turno" — docenas de veces por sesión. `PostToolUse` sobre un
-matcher de `gh pr merge` dispara, en el caso normal, **una vez por PR
-mergeado** — no por turno. El costo de una llamada de red bien vale la certeza
-de que el merge fue real (`state == MERGED`, `mergedAt` no vacío) en vez de
-adivinar desde texto de `stdout` cuyo formato exacto de `tool_response` no
-está documentado de forma estable para este runtime. Si `gh` falla (sin red,
-sin auth), el hook se degrada a silencio — nunca a bloquear un turno por un
-problema de conectividad ajeno al trabajo.
+**La conclusión no es "arreglar el hook": es que la garantía no puede vivir
+en un hook.** Es la misma lección que ya está escrita en este repo:
+`check-spec-fields.sh` funciona porque vive en **CI**, no en un hook local —
+un guard que depende de que alguien lo dispare desde su propia sesión no es
+un guardarraíl, es una esperanza. La garantía real es la **Fase 5**
+(reconciliación en servidor), más abajo.
 
-**Fallback en `keep-going.sh` para ramas sin nombre de spec: no se construye.**
-Evaluado y descartado. Escanear "toda fase `[in_progress]` cuya rama remota ya
-no existe" exigiría un `git fetch` (red) o confiar en refs locales
+**El hook no se descarta — cambia de papel.** Se queda como **atajo de
+latencia cero para el camino manual**: alguien corre `gh pr merge <N>
+--squash` (sin `--auto`) y el merge es inmediato: confirmar y recordar en
+ese momento es más rápido que esperar a la próxima corrida de la fase 5. Con
+ese papel nuevo — accesorio, no garantía — sus bugs de la ronda 1 seguían
+siendo baratos de arreglar y valía la pena hacerlo:
+
+- **B2** (el número de PR puede ir DESPUÉS de las flags —
+  `gh pr merge --auto --squash 693` — y el extractor original sólo miraba el
+  primer token): se escanea cada token del segmento de comando, no sólo el
+  primero.
+- **B3** (dispara con cualquier comando que *mencione* el texto — un
+  `grep -rn "gh pr merge" .claude/`, un mensaje de commit — le pasó
+  literalmente al reviewer mientras revisaba esto): el comando se parte por
+  los separadores de shell (`&&`, `||`, `;`, `|`) y se exige que un
+  **segmento completo** empiece con `gh pr merge`, no que el texto lo
+  contenga en cualquier posición.
+- **M1** (~950ms en **cada** llamada Bash, no en cada merge — medido: un
+  `.sh` que sólo hace `exit 0` tarda ~220ms): un `case` en bash antes del
+  `exec node` evita pagar el arranque de node salvo que el comando contenga
+  siquiera la palabra "gh". `keep-going.sh` es bash puro documentadamente
+  por este motivo; éste paga el costo por comando, no por turno, así que el
+  filtro barato es obligatorio, no opcional.
+- **M2** (sin `node` en el PATH, `exit 127` ruidoso en cada llamada): un
+  `command -v node` antes de invocar node degrada a silencio.
+
+El diseño se mantiene simple a propósito: sigue siendo **una** llamada a
+`gh pr view` (nunca cero, pero tampoco más de una), porque ya no es la
+garantía — es un adelanto opcional de lo que la fase 5 encuentra de todas
+formas.
+
+### La garantía real: reconciliación en servidor (detalle de la fase 5)
+
+**Por qué en CI y no en un hook.** Ningún evento local ocurre cuando
+`--auto` mergea — así que la única forma de detectarlo es **mirar
+periódicamente el estado real**, no esperar a que algo lo empuje. Un
+workflow de GitHub Actions, disparado por `push: main` **y** por `schedule`
+diario (para cubrir el caso en que nadie más pushea a `main` ese día):
+
+1. Recorre `docs/specs/spec-*.md`, extrae toda fase con token `[in_progress]`.
+2. Para cada una, `gh pr list --state open` y el mismo patrón que ya usa
+   `keep-going.sh` (`grep -oE 'spec-[0-9]+[a-z]?'`) sobre el nombre de cada
+   rama abierta: si **ningún** PR abierto nombra ese spec, el token es
+   rancio — el trabajo se mergeó (o se abandonó) y nadie cerró la fase.
+3. Mantiene **un único issue** con la lista viva de fases rancias — lo
+   actualiza en cada corrida, y lo **cierra solo** cuando la lista queda
+   vacía. No abre un issue nuevo por hallazgo: eso generaría ruido
+   proporcional al número de fases rancias en vez de una sola señal que se
+   lee de un vistazo.
+
+**No bloquea, y es deliberado.** El merge ya ocurrió — fallar el CI de
+`main` por un token de documentación castigaría los despliegues por un
+problema que no es del código que se está desplegando, y eso ya costó días
+de trabajo esta semana (ver `docs/architecture/...` u otras notas del
+historial de incidentes de este repo). El issue es la señal; nadie pierde un
+deploy por ella.
+
+**Ventana legítima, no un bug.** El token de una fase se cierra en un PR de
+**documentación posterior** al merge del código — hay minutos, a veces horas,
+en los que la fase está genuinamente `[in_progress]` con el PR de código ya
+mergeado y el de cierre todavía sin abrir. El workflow no intenta adivinar
+ese margen con un umbral de tiempo: eso exigiría timestamps que hoy no se
+registran en ningún lado fiable (el `git log` del propio spec podría
+usarse, pero acopla el guard a la historia de commits de un archivo que
+cualquier `docs:` trivial puede tocar). En su lugar, **el issue mismo dice
+"detectado por primera vez el <fecha>"**, actualizado en cada corrida — quien
+lo lee ve de inmediato si es de hace cinco minutos (probablemente la ventana
+legítima) o de hace tres días (probablemente rancio de verdad).
+
+**Falso positivo conocido y aceptado: trabajo en una rama local sin
+pushear.** Si alguien tiene una fase `[in_progress]` en su spec local, con
+commits sin pushear, el workflow no ve ninguna rama remota que la nombre y
+la reporta como rancia. Es transitorio (desaparece en cuanto se pushea) e
+inofensivo (un issue no bloqueante, no un build rojo) — **se deja así a
+propósito**. Cualquier heurística para distinguir "de verdad abandonada" de
+"trabajo local sin pushear todavía" (por ejemplo, exigir que la fase lleve
+`[in_progress]` más de N días) sería peor que el falso positivo: escondería
+fases genuinamente rancias detrás de una ventana de gracia que alguien
+tendría que calibrar sin datos, y el costo de un falso positivo aquí es leer
+una línea de un issue, no un despliegue roto.
+
+**Propiedades que lo hacen distinto de todo lo que hay hoy en el harness:**
+no depende de `cwd`, no depende de que una sesión concreta corra un comando,
+no depende de qué agente mergeó. Es idempotente (correrlo dos veces con el
+mismo estado no cambia nada) y auto-curativo (en cuanto alguien cierra el
+token, la siguiente corrida lo saca de la lista y, si era la última, cierra
+el issue solo).
+
+**Fallback en `keep-going.sh` para ramas sin nombre de spec: sigue sin
+construirse.** Ver el razonamiento original más abajo — la fase 5 lo
+reemplaza con una versión que sí funciona (corre en servidor, no en cada
+fin de turno de cada worktree).
+
+**Limitación conocida y documentada, no arreglada aquí:**
+`.claude/hooks/keep-going.sh` puede pedirle al orquestador que cierre la
+fase de OTRO worktree si la sesión se queda posicionada dentro de un
+worktree ajeno (identifica el spec activo por la rama del `cwd`). La
+solución es salir del worktree, no apagar el guard — apagarlo silenciaría la
+señal precisamente para los `implementer` a los que existe para empujar, a
+cambio de evitarle al orquestador una comprobación de dos segundos.
+
+**Evaluado y descartado (razón original, sigue aplicando):** un fallback
+directamente en `keep-going.sh` que escaneara "toda fase `[in_progress]` cuya
+rama remota ya no existe" exigiría red (`git fetch`) o refs locales
 potencialmente viejas, dentro de un hook que corre en cada fin de turno de
-**cualquier** worktree — incluidos los que no tienen nada que ver con el spec
-cuya rama desapareció. Cada worktree activo emitiría el mismo aviso sobre la
-misma fase huérfana, con la única señal real (`git branch -a` desactualizado
-por falta de red) mintiendo sobre cuán fresca es la comprobación. Es ruido
-correlacionado sin beneficio proporcional: el hook de `PostToolUse` ya cubre
-el momento correcto (justo tras el merge, en el worktree que lo hizo). No se
-construye.
+**cualquier** worktree — ruido correlacionado sin beneficio proporcional. La
+fase 5 lo reemplaza con una versión que sí corre donde debe: en servidor, una
+vez por push/día, no una vez por turno.
 
 ### Hueco 2: `**Depende de:**` con tres estados, más red heurística que avisa
 
@@ -224,18 +299,35 @@ cumplió ("declara `**Archivos:**`" cuando ya está declarado).
 
 ## Fases
 
-### Fase 1 — Hook `post-merge-remind.sh`: recordatorio tras `gh pr merge` `[in_progress]`
+### Fase 1 — Hook `post-merge-remind.sh`: atajo de latencia cero, no la garantía `[in_progress]`
 
-**Archivos:** `.claude/hooks/post-merge-remind.sh`, `.claude/hooks/post-merge-remind.test.sh`,
-`.claude/settings.json` (registro del hook `PostToolUse`), `scripts/check-harness-present.sh`
-(añadir a `REQUIRED_HOOKS`), `scripts/check-harness-present.test.sh`, `.github/workflows/ci.yml`
-(wiring del nuevo `.test.sh`)
+**Reescrita en ronda 2 de review.** La versión original de esta fase matcheaba
+`gh pr merge` y asumía que eso bastaba. El review adversarial lo tumbó con
+un hecho verificado: el flujo obligatorio de este repo corre
+`gh pr merge --auto --squash` **antes** de que CI arranque, dejando el PR
+`OPEN` — GitHub lo mergea de verdad minutos después, sin ningún comando Bash
+que un hook pueda interceptar. Las seis fases rancias que motivaron este
+spec vinieron exactamente de ese camino. **La garantía real es la fase 5**
+(reconciliación en servidor, más abajo). Este hook se queda como atajo
+opcional para el camino manual (`gh pr merge <N> --squash`, sin `--auto`,
+que sí mergea al instante) — ver "Hueco 1, corregido en ronda 2" arriba para
+el razonamiento completo.
 
-- [ ] `PostToolUse` matcher `Bash`, filtra por comando que casa `gh pr merge` (con o sin
-      número/flags).
-- [ ] Extrae el número de PR del comando si es un argumento numérico o URL; si no,
-      resuelve vía `gh pr view --json number,headRefName,state,mergedAt` (PR de la rama
-      actual) — una sola llamada.
+**Archivos:** `.claude/hooks/post-merge-remind.sh`, `.claude/hooks/post-merge-remind.mjs`,
+`.claude/hooks/post-merge-remind.test.sh`, `.claude/settings.json` (registro del hook
+`PostToolUse`), `scripts/check-harness-present.sh` (añadir a `REQUIRED_HOOKS`),
+`scripts/check-harness-present.test.sh`, `.github/workflows/ci.yml` (wiring del nuevo `.test.sh`)
+
+- [ ] `PostToolUse` matcher `Bash`. El comando se parte por los separadores
+      de shell (`&&`, `||`, `;`, `|`) y se exige que un **segmento completo**
+      empiece con `gh pr merge` — no que el texto lo mencione en cualquier
+      posición (bloqueante 3 de la ronda 1: un `grep -rn "gh pr merge"
+      .claude/` o un `git commit -m "gh pr merge era el problema"` no deben
+      disparar nada; le pasó literalmente al reviewer).
+- [ ] Extrae el número de PR escaneando **todos** los tokens del segmento,
+      no sólo el primero (bloqueante 2 de la ronda 1: `gh pr merge --auto
+      --squash 693` pone el número al final, no justo después de `merge`).
+      Si no hay ninguno, se resuelve contra la rama actual.
 - [ ] Confirma `state == MERGED` y `mergedAt` no vacío antes de avisar — un
       `gh pr merge --auto` que sólo encoló, o un merge fallido, no dispara nada.
 - [ ] Extrae `spec-[0-9]+[a-z]?` de `headRefName` (mismo patrón que
@@ -245,8 +337,15 @@ cumplió ("declara `**Archivos:**`" cuando ya está declarado).
       (`fase`/`phase`, separador tolerante, sufijo de letra) y lo incluye en el
       mensaje sin afirmarlo como certeza.
 - [ ] Mensaje vía `stderr` + `exit 2`: nombra el spec (y la fase, si se infirió),
-      recuerda las tres líneas de evidencia y el token `[done]`, y remite a
-      `docs/specs/CLAUDE.md`.
+      recuerda las tres líneas de evidencia y el token `[done]`, remite a
+      `docs/specs/CLAUDE.md`, y menciona que la fase 5 lo detecta igual si nadie
+      actúa sobre el recordatorio.
+- [ ] `.sh`: filtro barato en bash (`case "$INPUT" in *gh*)`) antes de
+      invocar node — medido: ~950ms/llamada con node+gh, ~220ms sin match
+      (medio de la ronda 1: este hook dispara en CADA comando Bash, no una
+      vez por merge, así que el filtro es obligatorio). `command -v node`
+      antes de invocar node — sin él, `node` ausente da un `exit 127` ruidoso
+      en cada llamada que mencione "gh" (M2 de la ronda 1).
 - [ ] Degradación: sin `gh` en PATH, sin red, o JSON inesperado → `exit 0`
       silencioso. Nunca bloquea un turno por un problema de infraestructura
       ajeno al trabajo.
@@ -254,10 +353,17 @@ cumplió ("declara `**Archivos:**`" cuando ya está declarado).
       `REQUIRED_HOOKS` — es harness, no accesorio.
 - [ ] Tests contra un `gh` falso en `PATH` (mismo patrón de mocking de binario
       externo que ya usan `check-phase-overlap.test.sh` para `git`, aplicado
-      aquí a `gh`): merge real con spec en la rama → avisa; merge real sin
-      spec en la rama → silencio; comando que no es `gh pr merge` → silencio;
-      `gh pr merge` que falla/queda en cola (`state != MERGED`) → silencio;
-      `gh` ausente → silencio, no crashea.
+      aquí a `gh` — incluyendo un fake **sensible a argumentos**, necesario
+      para que el test de "número tras las flags" detecte de verdad una
+      consulta al PR equivocado, no sólo "algo respondió"): merge real con
+      spec en la rama → avisa; merge real sin spec en la rama → silencio;
+      número tras las flags → consulta el PR correcto; `grep`/mensaje de
+      commit que menciona el patrón → nunca llama a `gh`; comando encadenado
+      (`echo x && gh pr merge ...`) → sí dispara; `gh pr merge` que
+      falla/queda en cola (`state != MERGED`) → silencio; `gh` ausente →
+      silencio, no crashea; `node` ausente → silencio, no `exit 127`; el
+      filtro de bash mide más rápido que el camino real (smoke test de
+      tiempo, no un presupuesto estricto).
 
 ### Fase 2 — El `exit 3` deja de mentir cuando `**Archivos:**` existe pero no resuelve `[in_progress]`
 
@@ -299,21 +405,40 @@ contra datos reales)
       - si no, se extrae cada `spec-N fase M` del bloque (backticks tolerados).
 - [ ] `findPhaseTokenByNumber(mdContent, faseNum)`: dado el contenido de OTRO
       spec y un número de fase, devuelve su token de heading
-      (`pending|in_progress|blocked|awaiting_user_test|done|parked`) o `null`
-      si no hay heading que case.
+      (`pending|in_progress|blocked|awaiting_user_test|done|parked`) o
+      `found: false` si ningún heading con token reconocido calza ese
+      número. **Bloqueante 1 de la ronda 2, cerrado aquí:** un heading en
+      prosa que MENCIONA "fase N" sin ser un heading de fase real (sin
+      token) ya no gana sobre el heading real que aparece después — sigue
+      buscando hasta encontrar uno con un token del vocabulario válido.
+      Reproducido literalmente contra `spec-85-discrepancias.md`: el heading
+      de la línea 222 ("### La costura entre esta fase y spec-80 fase 2",
+      sin token) casaba antes que el heading real de la línea 338
+      ("### Fase 2 — RPCs `[done]`") — spec-85 fase 2 es la dependencia más
+      citada del corpus (spec-86 fases 1/2a/2b/3, spec-80 fases 1/1b, spec-88
+      fase 1); el bug bloqueaba el primer backfill de lleno.
 - [ ] `check-phase-overlap.mjs`: por cada target, lee sus dependencias
       declaradas. Ausente o `explicitNone` o `indeterminate` → no bloquea.
       Por cada entrada declarada, resuelve `docs/specs/spec-<N>-*.md` en el
-      repo, lee su fase `M`; si no existe el spec, o el token no es `done`,
-      se acumula como dependencia no satisfecha.
-- [ ] Si hay una o más dependencias no satisfechas: mensaje propio («no
-      despachable todavía: spec-X fase Y depende de spec-N fase M, que está
-      `[token]`»), `exit 4`, **antes** de calcular solapamiento de superficie
-      (no se llega a imprimir el reporte de conflicto duro/blando).
+      repo, lee su fase `M`. Tres desenlaces distintos, no dos: spec
+      referenciado inexistente → dependencia no satisfecha (bloquea); token
+      encontrado y no es `done` → dependencia no satisfecha (bloquea); NINGÚN
+      heading con token reconocido calza ese número → **ambiguo, se avisa
+      (`::warning::`) y no bloquea** (no se puede distinguir de un typo real
+      en el número de fase, y adivinar sería peor que reportarlo).
+- [ ] Si hay una o más dependencias no satisfechas (los dos primeros casos,
+      nunca el ambiguo): mensaje propio («no despachable todavía: spec-X fase
+      Y depende de spec-N fase M, que está `[token]`»), `exit 4`, **antes**
+      de calcular solapamiento de superficie (no se llega a imprimir el
+      reporte de conflicto duro/blando).
 - [ ] Caso de aceptación real, sin fixture: `spec-84 fase 3` declarando
       `**Depende de:** spec-80 fase 3` — dado que `spec-80 fase 3` sigue
       `[pending]` hoy en el repo real, el CLI corrido contra los specs reales
       (no una copia) devuelve `exit 4` nombrando ambos.
+- [ ] Caso de aceptación real del bloqueante 1: un spec temporal dentro del
+      repo real declarando `**Depende de:** spec-85 fase 2` — el CLI corrido
+      contra el repo real devuelve `exit 0` (spec-85 fase 2 SÍ está `[done]`),
+      no `exit 4` con `[null]`.
 - [ ] `docs/specs/CLAUDE.md`: nueva sección junto a `**Archivos:**`
       documentando `**Depende de:**`, sus tres estados y por qué no es
       obligatorio todavía (la lección del Hueco 3, citada).
@@ -342,6 +467,68 @@ contra datos reales)
       sobre sí misma) — prueba que el guard realmente distingue las dos
       cosas y no que casualmente no encontró nada.
 
+### Fase 5 — Reconciliación en servidor: la garantía real del Hueco 1 `[in_progress]`
+
+**Añadida en ronda 2 de review.** Ver "La garantía real: reconciliación en
+servidor (detalle de la fase 5)" arriba para el razonamiento completo — esta
+fase existe porque ningún hook local puede cerrar el Hueco 1 de verdad.
+
+**Archivos:** `scripts/reconcile-stale-phases-lib.mjs`, `scripts/reconcile-stale-phases-lib.test.mjs`,
+`scripts/reconcile-stale-phases.mjs` (CLI + orquestación testeable por inyección de dependencias),
+`scripts/reconcile-stale-phases.test.mjs`, `.github/workflows/reconcile-stale-phases.yml`,
+`.github/workflows/ci.yml` (wiring de los dos `.test.mjs`)
+
+- [ ] `findInProgressPhases(specFiles)`: escanea `docs/specs/spec-*.md` y
+      extrae toda fase con token `[in_progress]`, con su spec id (del
+      nombre de fichero, no del contenido) y el texto de la fase.
+- [ ] `extractSpecIdsFromBranches(branchNames)`: mismo patrón tolerante que
+      `keep-going.sh` (`grep -oE 'spec-[0-9]+[a-z]?'`) sobre nombres de rama.
+- [ ] `computeStalePhases(inProgressPhases, openPrSpecIds)`: una fase es
+      rancia cuando su spec no tiene NINGÚN PR abierto que lo nombre —
+      chequeo a nivel de **spec**, no de fase individual (limitación
+      documentada, no bug: un PR abierto de OTRA fase del mismo spec
+      igual suprime el aviso para ésta; se acepta el falso negativo
+      ocasional a cambio de nunca gritar lobo sobre un spec genuinamente
+      activo).
+- [ ] `parseIssueBody`/`renderIssueBody`/`mergeStaleEntries`: el issue de
+      seguimiento es una tabla markdown con `firstSeen` por entrada. Una fase
+      YA rastreada conserva su fecha original (nunca se resetea a "hoy" sólo
+      porque el workflow corrió de nuevo); una fase nueva recibe "hoy"; una
+      fase que dejó de ser rancia se elimina de la tabla.
+- [ ] `runReconciliation(deps)`: orquestación con **toda su E/S inyectada**
+      (lectura de specs ya hecha, funciones para listar PRs abiertos y
+      leer/crear/editar/reabrir/cerrar el issue) — decisión de diseño
+      explícita: un `gh` falso en el `PATH` (el patrón usado en la fase 1)
+      no sirve aquí porque este script necesita pasar texto ARBITRARIO (el
+      cuerpo del issue) como argumento, no sólo un número validado; fabricar
+      ese `gh` de forma segura choca con el mismo muro de `.cmd`/`EINVAL` de
+      Windows documentado en `post-merge-remind.mjs`, sin ganar nada sobre
+      la inyección de dependencias.
+- [ ] Un único issue por repo, identificado por **label** (mismo patrón que
+      `qa-drift-watchdog.yml`, `--label qa-drift`), no por búsqueda de texto
+      en el título — más estable que confiar en que `gh issue list --search`
+      calce el título exacto.
+- [ ] Lista vacía y no había issue → no hace nada. Lista vacía y había issue
+      **abierto** → lo cierra con comentario. Issue **ya cerrado** y lista
+      sigue vacía → no-op (no lo vuelve a tocar). Issue cerrado y aparece una
+      fase rancia nueva → actualiza el cuerpo Y lo reabre.
+- [ ] Fallo al listar PRs abiertos (red/auth) → aborta SIN tocar el issue —
+      fail open a propósito: un error de listado no debe crear ruido falso
+      ("todo está rancio").
+- [ ] Workflow `.github/workflows/reconcile-stale-phases.yml`: dispara en
+      `push: main` y `schedule` diario. `permissions: issues: write,
+      pull-requests: read, contents: read`. No bloquea CI — es su propio job
+      independiente, nunca falla el pipeline de `main`.
+- [ ] Caso de aceptación real, como test: reproduce la forma exacta del
+      incidente que motivó el spec — `spec-89 fase 1` sigue `[in_progress]`
+      con su PR (#691) ya mergeado, cero PRs abiertos para `spec-89` hoy →
+      se reporta como rancia; `spec-91` (esta misma fase, con su propio PR
+      todavía abierto) NO aparece en la misma corrida.
+- [ ] Mutation-test: invertir la condición `existing.state === 'OPEN'` antes
+      de cerrar (rompe "no cierra dos veces"), e invertir la condición de
+      reapertura (rompe "sólo reabre si estaba cerrado") — las dos rompen un
+      test cuando se aplican, confirmado y revertido.
+
 ---
 
 ## Deliberadamente NO en este spec
@@ -353,7 +540,19 @@ contra datos reales)
   obligatoriedad.
 - Fallback en `keep-going.sh` para ramas sin nombre de spec (fases
   `[in_progress]` con rama remota desaparecida) — evaluado y descartado, ver
-  razón arriba.
+  razón arriba. La fase 5 lo reemplaza con una versión que sí funciona.
 - Inferencia certera de "qué fase exacta cierra este PR" — el hook nombra el
   spec y, como pista, la fase que el nombre de rama sugiere; el orquestador
   confirma.
+- Chequeo de dependencia a nivel de FASE en la fase 5 (sólo a nivel de spec)
+  — evaluado y descartado por ahora: exigiría parsear el número de fase de
+  cada rama abierta con el mismo patrón tolerante que ya falla a veces
+  (`fase1` sin separador, `fase-1b` con sufijo), y el costo de un falso
+  negativo ocasional (un PR abierto de otra fase del mismo spec suprime el
+  aviso) es más barato que el de un falso positivo que le pida a alguien
+  revisar una fase que en realidad sigue activa bajo otro PR.
+- Apagar `.claude/hooks/keep-going.sh` cuando el orquestador está dentro de
+  un worktree ajeno — evaluado y descartado (ver "Limitación conocida y
+  documentada, no arreglada aquí" arriba): apagaría la señal justo para los
+  `implementer` a los que existe para empujar. La solución es salir del
+  worktree, no apagar el guard.
