@@ -889,6 +889,22 @@ CREATE TABLE public.manifest_documents (
 > `UNIQUE` de tabla → falla con `duplicate key value violates unique
 > constraint`) — las tres corridas dentro de transacciones con `ROLLBACK`,
 > nunca persistidas en el contenedor compartido.
+>
+> **Downstream (2026-09-09, spec-81 fase 5 aterrizó):** el riesgo que esta
+> fase dejó declarado — `useUploadManifestDocument` sube directo al bucket
+> sin ruta offline, y si `upload` falla el archivo se pierde — queda cerrado
+> **a nivel de infraestructura**: `lib/offline/photos.ts`
+> (`enqueueManifestPhoto`/`sendManifestPhoto`) da a las fotos la misma cola
+> IndexedDB + drenado con reintento que ya tiene `close_manifest`, con el
+> mismo contrato de "fila huérfana imposible" que este hook ya cumplía del
+> lado online. **No cerrado todavía en esta pantalla:** `ManifestPhotoStrip`
+> sigue llamando a `useUploadManifestDocument` directo — spec-81 fase 5 no
+> tocó ese fichero a propósito (coordinación explícita con esta fase 4, en
+> vuelo en paralelo). «Las fotos también» (`5f`) es verdad para quien
+> conecte la captura real a `enqueueManifestPhoto`, pero **no lo es todavía
+> en el código que corre hoy** — sigue siendo el mismo hueco declarado aquí
+> hasta que esa conexión se haga, en esta fase o en la que toque después
+> `ManifestPhotoStrip.tsx`.
 
 ### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
 
@@ -901,6 +917,8 @@ El mock dice «expo-camera», que es la app Expo dormida (`apps/mobile`, ver `ls
 
 - [ ] Tests con `getUserMedia` mockeado.
 - [ ] Verificación en dispositivo real: `awaiting_user_test`, la cierra una persona con el teléfono.
+
+**Pendiente aparte del checklist de arriba — con dueño: lo cierra quien cablee `5g`/`5h` a `ManifestPhotoStrip.tsx` (M3, review del PR #712; nota de coordinación: este párrafo vive separado de la lista de checkboxes a propósito, para no chocar con la línea que #713 modifica).** `#713` entrega `5g`/`5h` **sin cablear**: `onUsePhoto` le pasa el `File` capturado al caller, y `ManifestPhotoStrip.tsx` queda intacto, con su `<input>` oculto — a propósito, para que la decisión de subir-o-encolar la tome quien una las dos piezas, no quien construyó la cámara. Esa unión debe llamar a `enqueueManifestPhoto` (`lib/offline/photos.ts`, spec-81 fase 5 — blob a IndexedDB, subida diferida con reintento, huérfano imposible), no a `useUploadManifestDocument` directo (la ruta ONLINE, sin salida sin señal): es lo que hace verdad «Las fotos también» (`5f`) en el código que corre, no sólo en la infraestructura que exista para recibirla.
 
 ### Fase 5 — `5i` carga cerrada `[pending]`
 

@@ -13,9 +13,18 @@
  * mocks de `rpc` de aquí en adelante devuelven el builder encadenable real
  * (`.abortSignal(signal)` → promesa), no una promesa directa.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPickupQueueSender, createLazyPickupQueueSender } from './offlineQueueSender';
+import { db } from '@/lib/db';
 import type { PickupQueueEntry } from '@/lib/db';
+
+beforeEach(async () => {
+  await db.pickup_queue.clear();
+});
+
+afterEach(async () => {
+  await db.pickup_queue.clear();
+});
 
 function closeManifestEntry(overrides: Partial<PickupQueueEntry> = {}): PickupQueueEntry {
   return {
@@ -62,7 +71,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('calls close_manifest with the queued manifest id and signatures, and reports sent on success', async () => {
     const { rpc } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -80,7 +89,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('imposes its own AbortSignal.timeout on the rpc call, not the browser default', async () => {
     const { rpc, abortSignal } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     await send(closeManifestEntry());
 
@@ -97,7 +106,7 @@ describe('createPickupQueueSender — close_manifest', () => {
     const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
     const { rpc } = rpcMock({ error: null, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     await send(closeManifestEntry());
 
@@ -120,7 +129,7 @@ describe('createPickupQueueSender — close_manifest', () => {
     try {
       const { rpc, abortSignal } = rpcMock({ error: null, data: null });
       const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-      const send = createPickupQueueSender(supabase);
+      const send = createPickupQueueSender(supabase, db);
 
       const result = await send(closeManifestEntry());
 
@@ -147,7 +156,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -163,7 +172,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -181,7 +190,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -206,7 +215,7 @@ describe('createPickupQueueSender — close_manifest', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -228,7 +237,7 @@ describe('createPickupQueueSender — close_manifest', () => {
   ])('reports retry (not dead) for a transient error: %s', async (_label, errorShape) => {
     const { rpc } = rpcMock({ error: errorShape, data: null });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry());
 
@@ -238,12 +247,152 @@ describe('createPickupQueueSender — close_manifest', () => {
   it('reports retry for an unrecognized pickup_scan entry instead of throwing (no producer enqueues these yet)', async () => {
     const rpc = vi.fn();
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createPickupQueueSender(supabase);
+    const send = createPickupQueueSender(supabase, db);
 
     const result = await send(closeManifestEntry({ type: 'pickup_scan', payload: { barcode: 'X' } }));
 
     expect(result.outcome).toBe('retry');
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  // spec-81 fase 5 — el mismo sender ahora despacha `manifest_photo` a
+  // `sendManifestPhoto` (`lib/offline/photos.ts`) en vez de caer al
+  // `'retry'` genérico de "tipo no reconocido" de arriba. Comportamiento
+  // completo de `sendManifestPhoto` (subida, insert, huérfano imposible,
+  // idempotencia) cubierto en `lib/offline/photos.test.ts`; aquí sólo se
+  // verifica el enrutamiento.
+  function manifestPhotoSupabaseStub() {
+    const rpc = vi.fn();
+    const upload = vi.fn(async () => ({ data: { path: 'x' }, error: null }));
+    const insert = vi.fn(async () => ({ data: [{}], error: null }));
+    const getSession = vi.fn(async () => ({ data: { session: null }, error: null }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
+    const supabase = {
+      rpc,
+      auth: { getSession },
+      storage: { from: vi.fn(() => ({ upload, remove })) },
+      from: vi.fn(() => ({ insert })),
+    } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    return { supabase, rpc, upload, insert, getSession, remove };
+  }
+
+  it('dispatches a manifest_photo entry to the storage/insert path instead of close_manifest', async () => {
+    const { supabase, rpc, upload } = manifestPhotoSupabaseStub();
+    const send = createPickupQueueSender(supabase, db);
+
+    const result = await send(
+      closeManifestEntry({
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(rpc).not.toHaveBeenCalled();
+    expect(upload).toHaveBeenCalled();
+    expect(result).toEqual({ outcome: 'sent' });
+  });
+
+  // B-2, ronda 3 de review del PR #712 (bloqueante) — `AppLayout.tsx` usa
+  // este gancho para invalidar `useManifestDocuments` cuando el drenador
+  // confirma una foto offline; sin este test, un futuro refactor del
+  // enrutamiento podía dejar de llamarlo sin que ningún test lo notara.
+  // Renombrado en la ronda 4 (de `onManifestPhotoSent`): `sendManifestPhoto`
+  // también lo dispara al renumerar tras una colisión — ver el test de más
+  // abajo y `photos.test.ts` para el detalle de esa rama.
+  it('calls onManifestDocumentsChanged only when the outcome is sent', async () => {
+    const { supabase } = manifestPhotoSupabaseStub();
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
+    const entry = closeManifestEntry({
+      type: 'manifest_photo',
+      payload: { sheetNumber: 1 },
+      blob: new Blob(['x'], { type: 'image/jpeg' }),
+    });
+
+    await send(entry);
+
+    expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
+    expect(onManifestDocumentsChanged).toHaveBeenCalledWith(entry);
+  });
+
+  it('does not call onManifestDocumentsChanged when the manifest_photo send does not succeed', async () => {
+    const { supabase } = manifestPhotoSupabaseStub();
+    supabase.storage.from = vi.fn(() => ({
+      upload: vi.fn(async () => ({ data: null, error: { name: 'StorageApiError', message: 'nope' } })),
+      remove: vi.fn(),
+    })) as unknown as typeof supabase.storage.from;
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
+
+    await send(
+      closeManifestEntry({
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
+  });
+
+  it('does not call onManifestDocumentsChanged for a close_manifest send', async () => {
+    const { rpc } = rpcMock({ error: null, data: null });
+    const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
+
+    await send(closeManifestEntry());
+
+    expect(onManifestDocumentsChanged).not.toHaveBeenCalled();
+  });
+
+  // Menor, ronda 4 de review del PR #712 — un renumerado por colisión
+  // (`outcome: 'retry'`) también dispara el gancho, a través del mismo
+  // enrutamiento sin inspección de `outcome` que el test de arriba verifica.
+  it('calls onManifestDocumentsChanged when a collision is discovered and renumbered', async () => {
+    const { supabase, insert } = manifestPhotoSupabaseStub();
+    let insertCalls = 0;
+    insert.mockImplementation(async () => {
+      insertCalls += 1;
+      if (insertCalls === 1) {
+        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+      }
+      return { data: [{}], error: null };
+    });
+    const select = vi.fn(() => {
+      let usedOrder = false;
+      const chain = {
+        eq: vi.fn(() => chain),
+        is: vi.fn(() => chain),
+        order: vi.fn(() => {
+          usedOrder = true;
+          return chain;
+        }),
+        limit: vi.fn(() => chain),
+        maybeSingle: vi.fn(async () =>
+          usedOrder
+            ? { data: { sheet_number: 5 }, error: null }
+            : { data: { storage_path: 'someone-else/other-manifest/sheet-1-different-client-op.jpg' }, error: null },
+        ),
+      };
+      return chain;
+    });
+    supabase.from = vi.fn(() => ({ insert, select })) as unknown as typeof supabase.from;
+    const onManifestDocumentsChanged = vi.fn();
+    const send = createPickupQueueSender(supabase, db, { onManifestDocumentsChanged });
+
+    const result = await send(
+      closeManifestEntry({
+        id: 1,
+        type: 'manifest_photo',
+        payload: { sheetNumber: 1 },
+        blob: new Blob(['x'], { type: 'image/jpeg' }),
+      }),
+    );
+
+    expect(result.outcome).toBe('retry');
+    expect(onManifestDocumentsChanged).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -270,7 +419,7 @@ describe('createLazyPickupQueueSender', () => {
   it('does not call the client factory at construction time', () => {
     const getClient = vi.fn();
 
-    createLazyPickupQueueSender(getClient);
+    createLazyPickupQueueSender(getClient, db);
 
     expect(getClient).not.toHaveBeenCalled();
   });
@@ -280,7 +429,7 @@ describe('createLazyPickupQueueSender', () => {
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
     const getClient = vi.fn(() => supabase);
 
-    const send = createLazyPickupQueueSender(getClient);
+    const send = createLazyPickupQueueSender(getClient, db);
     expect(getClient).not.toHaveBeenCalled();
 
     await send(closeManifestEntry());
@@ -293,7 +442,7 @@ describe('createLazyPickupQueueSender', () => {
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
     const getClient = vi.fn(() => supabase);
 
-    const send = createLazyPickupQueueSender(getClient);
+    const send = createLazyPickupQueueSender(getClient, db);
     await send(closeManifestEntry());
     await send(closeManifestEntry());
 
@@ -306,7 +455,7 @@ describe('createLazyPickupQueueSender', () => {
       data: null,
     });
     const supabase = { rpc } as unknown as Parameters<typeof createPickupQueueSender>[0];
-    const send = createLazyPickupQueueSender(() => supabase);
+    const send = createLazyPickupQueueSender(() => supabase, db);
 
     const result = await send(closeManifestEntry());
 
