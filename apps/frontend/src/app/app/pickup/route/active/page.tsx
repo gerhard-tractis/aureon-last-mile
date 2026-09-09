@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,10 @@ import {
 import { useAddManifestToRoute } from '@/hooks/pickup/useAddManifestToRoute';
 import { useRemoveManifestFromRoute } from '@/hooks/pickup/useRemoveManifestFromRoute';
 import { useClosePickupRoute } from '@/hooks/pickup/useClosePickupRoute';
+import {
+  useDownloadedManifestIds,
+  useDownloadManifest,
+} from '@/hooks/pickup/useManifestDownload';
 import { isManifestComplete } from '@/lib/pickup/manifestProgress';
 import { RouteProgressHeader } from '@/components/pickup/RouteProgressHeader';
 import { RouteMapPlaceholder } from '@/components/pickup/RouteMapPlaceholder';
@@ -49,6 +53,17 @@ export default function ActiveRoutePage() {
   const addMut = useAddManifestToRoute(operatorId);
   const removeMut = useRemoveManifestFromRoute(operatorId);
   const closeMut = useClosePickupRoute(operatorId);
+  // spec-82 fase 2 (mock 5c) — "DESCARGAR". `downloadedIdsList` puede ser
+  // `undefined` mientras la lectura local no resuelve; el `Set` que arma
+  // `useMemo` conserva ese `undefined` tal cual (nunca `?? []`) para que
+  // RouteManifestList siga sabiendo distinguir "no lo sé todavía" de "nada
+  // descargado" — ver su docstring.
+  const { data: downloadedIdsList } = useDownloadedManifestIds(operatorId);
+  const downloadedIds = useMemo(
+    () => (downloadedIdsList ? new Set(downloadedIdsList) : undefined),
+    [downloadedIdsList],
+  );
+  const downloadMut = useDownloadManifest(operatorId);
 
   if (routeLoading) {
     return (
@@ -140,6 +155,22 @@ export default function ActiveRoutePage() {
     );
   };
 
+  // spec-82 fase 2 — "DESCARGAR". La mutación necesita `externalLoadId`
+  // porque `useDownloadManifest` reconsulta Supabase con la misma clave que
+  // ya usa `useManifestOrders`/`5d`; `manifest.id` no se usa aquí (RouteManifestList
+  // lo pasa por simetría con `onManifestClick`/`onRemove`) — el spinner
+  // por-fila de abajo (`downloadingId`) se deriva de `downloadMut.variables`,
+  // no de este argumento.
+  const handleDownload = (_manifestId: string, externalLoadId: string) => {
+    downloadMut.mutate(externalLoadId, {
+      onSuccess: () => toast.success(`${externalLoadId} descargada para trabajar sin red`),
+      onError: (err) => toast.error(err.message),
+    });
+  };
+  const downloadingManifestId = downloadMut.isPending
+    ? (routeManifests.find((m) => m.external_load_id === downloadMut.variables)?.id ?? null)
+    : null;
+
   const handleClose = () => {
     closeMut.mutate(
       { routeId: route.id },
@@ -193,6 +224,9 @@ export default function ActiveRoutePage() {
                 // shares with useAddManifestToRoute / useCancelPickupRoute).
                 onRemove={operatorId ? handleRemove : undefined}
                 isRemoving={removeMut.isPending}
+                downloadedIds={downloadedIds}
+                onDownload={handleDownload}
+                downloadingId={downloadingManifestId}
               />
             </div>
           )}
