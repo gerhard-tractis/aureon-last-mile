@@ -64,6 +64,21 @@ CREATE INDEX IF NOT EXISTS idx_manifest_documents_deleted_at
 -- borrada) y una futura hoja "1" volvería a colisionar contra la fila
 -- muerta para siempre. Con el índice parcial, una fila borrada libera su
 -- número.
+--
+-- Ronda 2 de review del PR #706, seguimiento 3 — esta migración cambió de
+-- forma DESPUÉS de que algunas bases (el contenedor pgTAP compartido, en
+-- particular) ya la hubieran aplicado con el UNIQUE de tabla viejo.
+-- CREATE TABLE IF NOT EXISTS no toca una tabla existente, así que sin este
+-- DROP, forzar esta versión con `\i` sobre una de esas bases deja el UNIQUE
+-- viejo Y el índice parcial nuevo coexistiendo — el viejo sigue bloqueando
+-- exactamente el caso (reinsertar un sheet_number tras borrado suave) que
+-- el nuevo existe para permitir, y TEST 11 fallaría sin motivo aparente
+-- para quien no supiera que había dos constraints. Nombre por defecto de
+-- Postgres para un UNIQUE de columna(s) sin nombre explícito:
+-- <tabla>_<columnas>_key.
+ALTER TABLE public.manifest_documents
+  DROP CONSTRAINT IF EXISTS manifest_documents_manifest_id_sheet_number_key;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_manifest_documents_manifest_sheet
   ON public.manifest_documents (manifest_id, sheet_number)
   WHERE deleted_at IS NULL;
@@ -74,23 +89,30 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_manifest_documents_manifest_sheet
 -- -----------------------------------------------------------------------------
 ALTER TABLE public.manifest_documents ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  CREATE POLICY "manifest_documents_tenant_isolation" ON public.manifest_documents
-    FOR ALL
-    USING (operator_id = public.get_operator_id())
-    WITH CHECK (
-      operator_id = public.get_operator_id()
-      -- Ronda 2 (Mayor 1, "opcionalmente"): uploaded_by no puede mentir sobre
-      -- quién subió la foto — igual que close_manifest deriva la firma del
-      -- operador server-side porque "un nombre que controla el cliente no
-      -- sirve como evidencia de custodia" (spec-80 fase 1). NULL se permite
-      -- para una futura escritura de service_role (p.ej. backfill), que de
-      -- todos modos bypassa RLS.
-      AND (uploaded_by IS NULL OR uploaded_by = auth.uid())
-    );
-EXCEPTION
-  WHEN duplicate_object THEN NULL;
-END $$;
+-- Ronda 3 de review del PR #706 (seguimiento 3) — DROP + CREATE, no el
+-- patrón `CREATE POLICY ... EXCEPTION WHEN duplicate_object THEN NULL`
+-- de ronda 2. Ese patrón es correcto para una policy que nunca cambia,
+-- pero aquí la definición SÍ cambió entre ronda 1 y ronda 2 (se le añadió
+-- la cláusula de `uploaded_by`) con el MISMO nombre de policy: sobre una
+-- base que ya corrió la forma de ronda 1, `CREATE POLICY` habría chocado
+-- con `duplicate_object`, la excepción lo habría tragado en silencio, y la
+-- policy vieja (sin la protección de `uploaded_by`) habría seguido vigente
+-- — exactamente lo que TEST 10 detectó al forzar esta migración sobre una
+-- base simulada en la forma de ronda 1.
+DROP POLICY IF EXISTS "manifest_documents_tenant_isolation" ON public.manifest_documents;
+CREATE POLICY "manifest_documents_tenant_isolation" ON public.manifest_documents
+  FOR ALL
+  USING (operator_id = public.get_operator_id())
+  WITH CHECK (
+    operator_id = public.get_operator_id()
+    -- Ronda 2 (Mayor 1, "opcionalmente"): uploaded_by no puede mentir sobre
+    -- quién subió la foto — igual que close_manifest deriva la firma del
+    -- operador server-side porque "un nombre que controla el cliente no
+    -- sirve como evidencia de custodia" (spec-80 fase 1). NULL se permite
+    -- para una futura escritura de service_role (p.ej. backfill), que de
+    -- todos modos bypassa RLS.
+    AND (uploaded_by IS NULL OR uploaded_by = auth.uid())
+  );
 
 -- NO redundante pese a que la policy de arriba ya es FOR ALL (que incluye
 -- SELECT): Postgres exige que un UPDATE/DELETE, además de pasar el USING de

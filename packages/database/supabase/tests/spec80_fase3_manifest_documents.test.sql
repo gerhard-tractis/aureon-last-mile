@@ -221,20 +221,65 @@ END $$;
 ROLLBACK TO test_5;
 
 -- =============================================================================
--- TEST 6 (M2, ronda 2 de review del PR #706) — el USING de la policy, no sólo
--- el WITH CHECK: TEST 2/3 sólo ejercitan WITH CHECK (INSERT/UPDATE cambiando
--- operator_id de UNA fila propia). Con la policy mutada a USING(true) y el
--- WITH CHECK intacto, TEST 2/3 seguían en verde mientras un UPDATE en bloque
--- (sin WHERE por operator_id) sí tocaba filas de OTRO operador — verificado
--- con sonda real contra la policy rota antes de este test. Un UPDATE en
--- bloque que sólo afecta 0 filas ajenas es la única forma de probar el
--- USING sin pasar por WITH CHECK en absoluto.
+-- TEST 6 (M2, ronda 2; corregido en ronda 3 de review del PR #706) —
+-- aserción ESTRUCTURAL sobre pg_policy, no una demostración en runtime.
 --
--- No cubre DELETE: tras Mayor 1 (ronda 2), DELETE está revocado de
--- `authenticated` a nivel de GRANT (TEST 7/8) — un DELETE en bloque nunca
--- llega ni a evaluar el USING, así que ya no es el vector de esta prueba.
+-- La ronda 2 de este test hacía un UPDATE en bloque y esperaba 0 filas
+-- afectadas sobre la fila de otro operador, razonando que eso ejercitaba el
+-- USING del FOR ALL. Es falso: Postgres aplica SIEMPRE las policies de
+-- SELECT a las filas que un UPDATE necesita LEER para calcular la fila
+-- nueva — así que `manifest_documents_tenant_select` ya tapaba el agujero
+-- antes de que el USING del FOR ALL llegara a evaluarse. Re-aplicar la
+-- mutación de la ronda 1 (USING(true) sólo en el FOR ALL, WITH CHECK
+-- intacto) seguía dando el test en verde: el test no protegía lo que decía
+-- proteger.
+--
+-- (El vector real de la ronda 1 fue un DELETE sin WHERE — un DELETE no LEE
+-- la fila vieja, así que escapa a la policy de SELECT. Ya no es explotable:
+-- DELETE está revocado de `authenticated` a nivel de GRANT, ver TEST 7/8,
+-- así que un DELETE en bloque ni siquiera llega a RLS.)
+--
+-- Con INSERT cubierto por TEST 2/10, UPDATE cubierto por TEST 3 + la
+-- policy de SELECT, y DELETE cerrado por GRANT, la superficie real está
+-- cerrada. Lo que faltaba era un test que de verdad falle si alguien
+-- debilita el FOR ALL a USING(true) — este lo hace leyendo el catálogo,
+-- no ejecutando una sentencia que otra policy podría estar tapando.
 -- =============================================================================
 SAVEPOINT test_6;
+
+DO $$
+DECLARE v_qual TEXT;
+BEGIN
+  SELECT pg_get_expr(polqual, polrelid) INTO v_qual
+    FROM pg_policy
+    WHERE polrelid = 'public.manifest_documents'::regclass
+      AND polname = 'manifest_documents_tenant_isolation';
+
+  IF v_qual IS NULL THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: manifest_documents_tenant_isolation policy not found';
+  END IF;
+  IF v_qual = 'true' THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: FOR ALL policy USING clause is unconditionally true (%)', v_qual;
+  END IF;
+  IF v_qual NOT ILIKE '%get_operator_id%' THEN
+    RAISE EXCEPTION 'TEST 6 FAILED: FOR ALL policy USING clause does not reference get_operator_id() (got %)', v_qual;
+  END IF;
+
+  RAISE NOTICE '✓ TEST 6 PASSED: FOR ALL policy USING clause is scoped by get_operator_id(), not unconditionally true (%)', v_qual;
+END $$;
+
+ROLLBACK TO test_6;
+
+-- =============================================================================
+-- TEST 6b (documental, ronda 2) — la demostración en runtime que ronda 2
+-- tomó por guardia del USING. Se conserva porque SÍ prueba algo real: que
+-- hoy, en la práctica, un UPDATE en bloque de operator A no toca la fila de
+-- B. Pero el crédito es de `manifest_documents_tenant_select` (SELECT),
+-- no de este policy FOR ALL — ver TEST 6. No se usa como regresión de esa
+-- policy: la mutación de ronda 1 la deja en verde igual, por la razón de
+-- arriba.
+-- =============================================================================
+SAVEPOINT test_6b;
 
 INSERT INTO public.manifest_documents (operator_id, manifest_id, storage_path, sheet_number, uploaded_by)
 VALUES ('bbbbbbbb-bbbb-bbbb-bbbb-000000000080', '44440002-0000-0000-0000-000000000080',
@@ -248,12 +293,10 @@ BEGIN
     '{"sub":"aaaaaaaa-0000-4000-a000-000000000280","operator_id":"aaaaaaaa-aaaa-aaaa-aaaa-000000000080","role":"authenticated"}', true);
   SET LOCAL role = 'authenticated';
 
-  -- Blanket UPDATE, no WHERE at all — relies entirely on RLS to scope which
-  -- rows are "visible" to operator A.
   UPDATE public.manifest_documents SET captured_at = NOW();
   GET DIAGNOSTICS v_rows_updated = ROW_COUNT;
   IF v_rows_updated <> 0 THEN
-    RAISE EXCEPTION 'TEST 6 FAILED: operator A''s blanket UPDATE affected % row(s) — expected 0 (B''s row must stay invisible)', v_rows_updated;
+    RAISE EXCEPTION 'TEST 6b FAILED: operator A''s blanket UPDATE affected % row(s) — expected 0 (B''s row must stay invisible)', v_rows_updated;
   END IF;
 
   RESET role;
@@ -269,12 +312,12 @@ BEGIN
       AND storage_path = 'bbbbbbbb-bbbb-bbbb-bbbb-000000000080/44440002-0000-0000-0000-000000000080/sheet-1.jpg'
   ) INTO v_still_there;
   IF NOT v_still_there THEN
-    RAISE EXCEPTION 'TEST 6 FAILED: operator B''s row is gone after operator A''s blanket UPDATE';
+    RAISE EXCEPTION 'TEST 6b FAILED: operator B''s row is gone after operator A''s blanket UPDATE';
   END IF;
-  RAISE NOTICE '✓ TEST 6 PASSED: blanket UPDATE by operator A touches 0 rows of operator B (USING, not just WITH CHECK)';
+  RAISE NOTICE '✓ TEST 6b PASSED (documental): blanket UPDATE by operator A touches 0 rows of B in practice (credit: the SELECT policy, not this FOR ALL)';
 END $$;
 
-ROLLBACK TO test_6;
+ROLLBACK TO test_6b;
 
 -- =============================================================================
 -- TEST 7 (Mayor 1, ronda 2) — ACL: DELETE revoked from authenticated at the
@@ -393,5 +436,50 @@ END $$;
 RESET role;
 
 ROLLBACK TO test_10;
+
+-- =============================================================================
+-- TEST 11 (seguimiento 2, ronda 3 de review del PR #706) — el índice único
+-- PARCIAL (WHERE deleted_at IS NULL) es el motivo real de la corrección de
+-- ronda 2 sobre el UNIQUE de tabla que pedía el spec original. TEST 4 sólo
+-- comprueba el caso que es IDÉNTICO con las dos formas (dos filas vivas
+-- colisionan). Nada cubría el caso por el que existe el índice parcial:
+-- volver a un UNIQUE de tabla normal deja este test en rojo, y TEST 4 en
+-- verde de todos modos — sin este test, esa regresión no se detecta.
+-- =============================================================================
+SAVEPOINT test_11;
+
+DO $$
+DECLARE v_new_id UUID;
+BEGIN
+  -- Hoja 1 viva.
+  INSERT INTO public.manifest_documents (id, operator_id, manifest_id, storage_path, sheet_number, uploaded_by)
+  VALUES ('99990001-0000-0000-0000-000000000080', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000080',
+          '44440001-0000-0000-0000-000000000080',
+          'aaaaaaaa-aaaa-aaaa-aaaa-000000000080/44440001-0000-0000-0000-000000000080/sheet-1.jpg',
+          1, 'aaaaaaaa-0000-4000-a000-000000000280');
+
+  -- Borrado suave (no DELETE físico — authenticated no tiene ese privilegio
+  -- tras Mayor 1; el propio dueño de la tabla sí, para simular lo que la
+  -- app hará el día que exista un flujo de borrado).
+  UPDATE public.manifest_documents SET deleted_at = NOW()
+   WHERE id = '99990001-0000-0000-0000-000000000080';
+
+  -- Reinsertar la MISMA hoja 1 para el MISMO manifiesto debe tener éxito:
+  -- la fila muerta no debe bloquear el número que liberó.
+  INSERT INTO public.manifest_documents (id, operator_id, manifest_id, storage_path, sheet_number, uploaded_by)
+  VALUES ('99990002-0000-0000-0000-000000000080', 'aaaaaaaa-aaaa-aaaa-aaaa-000000000080',
+          '44440001-0000-0000-0000-000000000080',
+          'aaaaaaaa-aaaa-aaaa-aaaa-000000000080/44440001-0000-0000-0000-000000000080/sheet-1-retake.jpg',
+          1, 'aaaaaaaa-0000-4000-a000-000000000280')
+  RETURNING id INTO v_new_id;
+
+  IF v_new_id IS NULL THEN
+    RAISE EXCEPTION 'TEST 11 FAILED: reinsert of sheet_number 1 after soft-delete did not return an id';
+  END IF;
+
+  RAISE NOTICE '✓ TEST 11 PASSED: a soft-deleted sheet_number is reusable (partial unique index, not a table-level UNIQUE)';
+END $$;
+
+ROLLBACK TO test_11;
 
 ROLLBACK;

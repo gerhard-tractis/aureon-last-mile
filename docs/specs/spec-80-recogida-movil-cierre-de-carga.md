@@ -815,6 +815,58 @@ CREATE TABLE public.manifest_documents (
 > corregido arriba tras #703 (fase 3 quedó `[parked]`, no depende de este
 > patrón) — ver "Impacto downstream de la fase 3" más abajo, también
 > actualizada.
+>
+> **Ronda 3 de review del PR #706 (aprobado: "¿Mergeable? Sí", con tres
+> seguimientos exigidos antes de mergear porque el spec instruye copiar esta
+> migración como plantilla en f4):**
+>
+> 1. **TEST 6 no probaba lo que decía.** Postgres aplica siempre las policies de
+>    `SELECT` a las filas que un `UPDATE` necesita leer — así que
+>    `manifest_documents_tenant_select` tapaba el agujero antes de que el
+>    `USING` del `FOR ALL` llegara a evaluarse, y re-aplicar la mutación de
+>    ronda 1 (`USING(true)` en el `FOR ALL`, `WITH CHECK` intacto) daba 10/10
+>    en verde. Corregido con una aserción ESTRUCTURAL sobre `pg_policy`
+>    (`pg_get_expr(polqual, polrelid)` no puede ser `'true'` ni dejar de
+>    mencionar `get_operator_id()`) — lee el catálogo, no depende de qué otra
+>    policy tape el hueco en runtime. El test de runtime se conservó como
+>    TEST 6b, documental, con el crédito puesto donde es real (la policy de
+>    SELECT, no el FOR ALL).
+> 2. **La propia corrección de índice parcial no tenía test.** TEST 11 nuevo:
+>    borrado suave de la hoja 1, reinsertar hoja 1 → debe tener éxito. Revertir
+>    a un `UNIQUE` de tabla normal mata este test (verificado por mutación:
+>    `duplicate key value violates unique constraint`).
+> 3. **La migración no era re-aplicable sobre una base que ya corrió ronda 1.**
+>    Dos huecos, no uno — el segundo lo encontró el propio proceso de arreglar
+>    el primero: (a) faltaba `DROP CONSTRAINT IF EXISTS
+>    manifest_documents_manifest_id_sheet_number_key` antes de crear el índice
+>    parcial (`CREATE TABLE IF NOT EXISTS` nunca toca una tabla existente); (b)
+>    la policy `manifest_documents_tenant_isolation` seguía en el patrón
+>    `CREATE POLICY ... EXCEPTION WHEN duplicate_object THEN NULL`, que es
+>    correcto para una policy que nunca cambia pero **no** para ésta — su
+>    `WITH CHECK` sí cambió entre ronda 1 y ronda 2 (se le añadió la cláusula
+>    de `uploaded_by`), así que sobre una base en la forma de ronda 1 la
+>    excepción tragaba el choque de nombre y la policy vieja (sin protección
+>    de `uploaded_by`) seguía vigente. **No se dedujo — se verificó**: simulé
+>    la forma exacta de ronda 1 en el contenedor pgTAP, forcé esta migración
+>    encima con `\i`, y TEST 10 falló de verdad (`operator A inserted a row
+>    claiming a different user uploaded it`) antes del fix, y pasó después.
+>    Corregido a `DROP POLICY IF EXISTS` + `CREATE POLICY` sin captura de
+>    excepción.
+>
+> Spec: añadido "Riesgo aceptado" en la sección de Riesgos documentando que
+> `manifest_documents` es auditada pero no inmutable frente a su propio
+> dueño (un `authenticated` con `uploaded_by = auth.uid()` puede seguir
+> reescribiendo `storage_path`/`captured_at` de su propia fila) — quien
+> copie el patrón en un spec futuro hereda esa misma decisión.
+>
+> Verificado, los tres arreglos, contra el contenedor pgTAP compartido:
+> aplicación limpia desde cero (13 aserciones, 0 error), aplicación forzada
+> sobre la forma simulada de ronda 1 (13 aserciones, 0 error, sin el
+> `UNIQUE` viejo coexistiendo), y mutación de TEST 6 (`ALTER POLICY ...
+> USING (true)` → falla con el mensaje correcto) y TEST 11 (revertir al
+> `UNIQUE` de tabla → falla con `duplicate key value violates unique
+> constraint`) — las tres corridas dentro de transacciones con `ROLLBACK`,
+> nunca persistidas en el contenedor compartido.
 
 ### Fase 4 — `5g`/`5h` cámara y revisión `[pending]`
 
@@ -894,3 +946,15 @@ Releído cada spec downstream contra lo que **realmente** se mergeó en esta fas
 - **La fase 0 cambia el flujo bajo los pies de quien esté probando en QA.** Es el objetivo, pero conviene avisar antes de mergear.
 - **La fase 2 depende de spec-85.** Se decidió no tocar `package_status_enum`: la discrepancia es una fila resoluble, no un estado. Empezar la fase 2 antes de que exista `record_discrepancies` obliga a inventar un registro provisional que habría que migrar después.
 - **`5a`–`5d` se construyeron contra los mocks viejos** (`1l`, `1h`, `1i`, `3j`). Este spec no los revalida; eso es spec-82 y spec-83.
+- **Riesgo aceptado, fase 3 (ronda 3 de review del PR #706) — `manifest_documents` no
+  es inmutable frente a su propio dueño.** Un `authenticated` con `uploaded_by =
+  auth.uid()` en la fila puede seguir reescribiendo `storage_path` y `captured_at` de
+  su propia evidencia vía PostgREST (`UPDATE` sigue concedido, per el patrón
+  client-writable — no un RPC `SECURITY DEFINER`). Ya no es invisible: el trigger de
+  auditoría (Mayor 1) deja rastro de quién lo hizo y cuándo, en `audit_logs`. Pero
+  "auditado" no es "impedido" — es lo que separa esta tabla de una tabla verdaderamente
+  inmutable como la construiría un RPC. **Aceptado conscientemente**, no un descuido:
+  la razón de no usar RPC sigue siendo válida (el móvil sube foto a foto, y un RPC no
+  ayuda con la subida al bucket en sí). **Quien copie este patrón en un spec futuro
+  hereda esta misma decisión** — si la evidencia necesita ser literalmente inmutable
+  (no sólo auditada), ese spec necesita un RPC, no este patrón.
